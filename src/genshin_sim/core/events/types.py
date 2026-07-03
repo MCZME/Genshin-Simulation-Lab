@@ -12,6 +12,8 @@ class EventType(Enum):
     """
 
     FRAME_END = auto()
+    INPUT_KEY_EVENT = auto()
+    ACTION_DECISION = auto()
 
     BEFORE_DAMAGE = auto()
     AFTER_DAMAGE = auto()

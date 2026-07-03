@@ -53,17 +53,6 @@
 - `handler_key` 是代码实现绑定入口，不要用显示名称或 `asset_key` 直接绑定行为。
 - 缺资产、缺 handler、JSON 格式错误应在组装阶段报错，不延迟到仿真运行中。
 
-## 提交规范
-
-- 使用 Conventional Commits。
-- 格式：`type(scope): 中文摘要`，其中 `scope` 可选。
-- `type` 使用标准英文类型：`feat`、`fix`、`docs`、`refactor`、`test`、`chore`、`build`、`ci`、`perf`。
-- 摘要必须是中文，简短、明确、只表达一件事。
-- 一次提交只做一类事情，不把无关改动混在一起。
-- 破坏性变更在正文或 footer 中写 `BREAKING CHANGE:`。
-- 生成文件、锁文件与依赖变更一起提交，不单独拆散。
-- 首次提交建议使用：`chore: 初始化项目骨架、文档规范与测试基础`
-
 ## AI 工作流程
 
 1. 先读任务相关文档和现有代码。

@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from genshin_sim.core.events import EventType, GameEvent
+from genshin_sim.core.protocols import FrameUpdatable
 from genshin_sim.core.space import Space, Vector3
 
 if TYPE_CHECKING:
@@ -88,7 +88,7 @@ class ActionDecision:
         return self.lock.end_frame
 
 
-class ActionManager:
+class ActionManager(FrameUpdatable):
     """最小动作管理器。
 
     当前只表达输入是否能被动作层接受，以及动作或后摇占用到哪一帧。
@@ -177,7 +177,6 @@ class ActionManager:
                 reject_reason=ActionRejectReason.UNSUPPORTED,
             )
             self._decisions.append(decision)
-            self._publish_decision(context, decision)
             return decision
 
         blocking_lock = self.current_lock(request.frame)
@@ -189,7 +188,6 @@ class ActionManager:
                 lock=blocking_lock,
             )
             self._decisions.append(decision)
-            self._publish_decision(context, decision)
             return decision
 
         lock = self.reserve(
@@ -201,7 +199,6 @@ class ActionManager:
         instance = self._create_instance(context, request, lock)
         decision = ActionDecision(request=request, accepted=True, lock=lock, instance=instance)
         self._decisions.append(decision)
-        self._publish_decision(context, decision)
         return decision
 
     def _create_instance(
@@ -235,34 +232,4 @@ class ActionManager:
         return tuple(
             target.target_id
             for target in context.space.targets_in_radius(target_query.origin, target_query.radius)
-        )
-
-    def _publish_decision(
-        self,
-        context: SimulationContext,
-        decision: ActionDecision,
-    ) -> None:
-        context.events.publish(
-            GameEvent(
-                EventType.ACTION_DECISION,
-                frame=decision.request.frame,
-                source=self,
-                data={
-                    "key": decision.request.key,
-                    "active_slot": decision.request.active_slot,
-                    "accepted": decision.accepted,
-                    "reject_reason": (
-                        None
-                        if decision.reject_reason is None
-                        else decision.reject_reason.value
-                    ),
-                    "occupied_until_frame": decision.occupied_until_frame,
-                    "lock_source": None if decision.lock is None else decision.lock.source,
-                    "target_ids": (
-                        ()
-                        if decision.instance is None
-                        else decision.instance.target_ids
-                    ),
-                },
-            )
         )

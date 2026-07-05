@@ -2,9 +2,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum, auto
-from typing import Protocol
 
-from genshin_sim.core.events import EventType, GameEvent
+from genshin_sim.core.events import EmptyPayload, EventType, GameEvent, SimulationEndedPayload
+from genshin_sim.core.protocols import InputSystem, RuntimeWorld
 from genshin_sim.core.simulation.context import SimulationContext
 
 
@@ -24,35 +24,13 @@ class SimulationResult:
     frames_run: int
 
 
-class InputSystem(Protocol):
-    """按帧消费输入轨迹的运行时入口。"""
-
-    def process_frame(self, context: SimulationContext, frame: int) -> None:
-        """处理指定帧的输入事件。"""
-        ...
-
-    def is_finished(self) -> bool:
-        """输入轨迹是否已经消费完成。"""
-        ...
-
-
-class RuntimeWorld(Protocol):
-    """每帧推进运行时对象的统一入口。"""
-
-    def update_frame(self, context: SimulationContext, frame: int) -> None:
-        """推进指定帧的运行态。"""
-        ...
-
-    def is_idle(self) -> bool:
-        """运行世界是否已经没有待完成的动作或实体任务。"""
-        ...
-
-
 class Simulator:
     """最小帧驱动模拟器。
 
-    模拟器只负责帧循环、输入入口调用、运行世界推进、帧结束事件和停止条件。
+    模拟器只负责帧循环、输入入口调用、运行世界推进、基础生命周期事件和停止条件。
     它不理解具体按键含义、角色机制、资产来源或结果持久化。
+    第 0 帧是初始化帧，配置装配和运行时对象构造应在进入 ``run`` 前完成；
+    ``run`` 从下一帧开始处理输入和运行态更新。
     """
 
     def __init__(
@@ -64,7 +42,7 @@ class Simulator:
         max_frames: int = 18000,
     ) -> None:
         if max_frames < 0:
-            msg = "max_frames must be non-negative"
+            msg = "max_frames 不能为负数"
             raise ValueError(msg)
 
         self.context = context
@@ -74,25 +52,31 @@ class Simulator:
 
     def run(self) -> SimulationResult:
         start_frame = self.context.current_frame
+        self._publish_simulation_started(start_frame)
 
         while self.context.current_frame < self.max_frames:
             frame = self.context.advance_frame()
+            self._publish_frame_started(frame)
             self._process_input(frame)
             self._update_world(frame)
-            self._publish_frame_end(frame)
+            self._publish_frame_ended(frame)
 
             if self._is_finished():
-                return SimulationResult(
+                result = SimulationResult(
                     stop_reason=SimulationStopReason.COMPLETED,
                     end_frame=self.context.current_frame,
                     frames_run=self.context.current_frame - start_frame,
                 )
+                self._publish_simulation_ended(result)
+                return result
 
-        return SimulationResult(
+        result = SimulationResult(
             stop_reason=SimulationStopReason.MAX_FRAMES_REACHED,
             end_frame=self.context.current_frame,
             frames_run=self.context.current_frame - start_frame,
         )
+        self._publish_simulation_ended(result)
+        return result
 
     def _process_input(self, frame: int) -> None:
         if self.input_system is not None:
@@ -102,8 +86,49 @@ class Simulator:
         if self.runtime_world is not None:
             self.runtime_world.update_frame(self.context, frame)
 
-    def _publish_frame_end(self, frame: int) -> None:
-        self.context.events.publish(GameEvent(EventType.FRAME_END, frame=frame, record=False))
+    def _publish_simulation_started(self, frame: int) -> None:
+        self.context.events.publish(
+            GameEvent(
+                EventType.SIMULATION_STARTED,
+                frame=frame,
+                source=self,
+                payload=EmptyPayload(),
+            )
+        )
+
+    def _publish_simulation_ended(self, result: SimulationResult) -> None:
+        self.context.events.publish(
+            GameEvent(
+                EventType.SIMULATION_ENDED,
+                frame=result.end_frame,
+                source=self,
+                payload=SimulationEndedPayload(
+                    stop_reason=result.stop_reason.name,
+                    end_frame=result.end_frame,
+                    frames_run=result.frames_run,
+                ),
+            )
+        )
+
+    def _publish_frame_started(self, frame: int) -> None:
+        self.context.events.publish(
+            GameEvent(
+                EventType.FRAME_STARTED,
+                frame=frame,
+                source=self,
+                payload=EmptyPayload(),
+            )
+        )
+
+    def _publish_frame_ended(self, frame: int) -> None:
+        self.context.events.publish(
+            GameEvent(
+                EventType.FRAME_ENDED,
+                frame=frame,
+                source=self,
+                payload=EmptyPayload(),
+            )
+        )
 
     def _is_finished(self) -> bool:
         input_finished = self.input_system is None or self.input_system.is_finished()

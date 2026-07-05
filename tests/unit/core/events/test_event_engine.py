@@ -1,12 +1,22 @@
-from genshin_sim.core.events import EventEngine, EventType, GameEvent
+from genshin_sim.core.events import (
+    EmptyPayload,
+    EventEngine,
+    EventType,
+    GameEvent,
+    InputKeyConsumedPayload,
+)
 
 
 def test_publish_dispatches_subscribers():
     engine = EventEngine()
     received: list[GameEvent] = []
 
-    engine.subscribe(EventType.AFTER_DAMAGE, received.append)
-    event = GameEvent(EventType.AFTER_DAMAGE, frame=12, data={"damage": 100})
+    engine.subscribe(EventType.INPUT_KEY_CONSUMED, received.append)
+    event = GameEvent(
+        EventType.INPUT_KEY_CONSUMED,
+        frame=12,
+        payload=InputKeyConsumedPayload(key="keyboard.e", phase="press"),
+    )
 
     engine.publish(event)
 
@@ -17,10 +27,16 @@ def test_unsubscribe_removes_handler():
     engine = EventEngine()
     received: list[GameEvent] = []
 
-    engine.subscribe(EventType.AFTER_DAMAGE, received.append)
-    engine.unsubscribe(EventType.AFTER_DAMAGE, received.append)
+    engine.subscribe(EventType.INPUT_KEY_CONSUMED, received.append)
+    engine.unsubscribe(EventType.INPUT_KEY_CONSUMED, received.append)
 
-    engine.publish(GameEvent(EventType.AFTER_DAMAGE, frame=1))
+    engine.publish(
+        GameEvent(
+            EventType.INPUT_KEY_CONSUMED,
+            frame=1,
+            payload=InputKeyConsumedPayload(key="keyboard.e", phase="press"),
+        )
+    )
 
     assert received == []
 
@@ -35,9 +51,9 @@ def test_object_handler_can_receive_event():
 
     engine = EventEngine()
     handler = Handler()
-    event = GameEvent(EventType.AFTER_HEAL, frame=3)
+    event = GameEvent(EventType.SIMULATION_STARTED, frame=3, payload=EmptyPayload())
 
-    engine.subscribe(EventType.AFTER_HEAL, handler)
+    engine.subscribe(EventType.SIMULATION_STARTED, handler)
     engine.publish(event)
 
     assert handler.received == [event]
@@ -49,23 +65,32 @@ def test_cancelled_event_stops_later_handlers():
 
     def first(event: GameEvent) -> None:
         calls.append("first")
-        event.cancel()
+        event.cancelled = True
 
     def second(event: GameEvent) -> None:
         calls.append("second")
 
-    engine.subscribe(EventType.BEFORE_DAMAGE, first)
-    engine.subscribe(EventType.BEFORE_DAMAGE, second)
+    engine.subscribe(EventType.FRAME_STARTED, first)
+    engine.subscribe(EventType.FRAME_STARTED, second)
 
-    engine.publish(GameEvent(EventType.BEFORE_DAMAGE, frame=1))
+    engine.publish(GameEvent(EventType.FRAME_STARTED, frame=1, payload=EmptyPayload()))
 
     assert calls == ["first"]
 
 
 def test_frame_events_use_event_record_flag():
     engine = EventEngine()
-    recorded = GameEvent(EventType.AFTER_DAMAGE, frame=1)
-    ignored = GameEvent(EventType.FRAME_END, frame=1, record=False)
+    recorded = GameEvent(
+        EventType.INPUT_KEY_CONSUMED,
+        frame=1,
+        payload=InputKeyConsumedPayload(key="keyboard.e", phase="press"),
+    )
+    ignored = GameEvent(
+        EventType.FRAME_ENDED,
+        frame=1,
+        payload=EmptyPayload(),
+        record=False,
+    )
 
     engine.publish(recorded)
     engine.publish(ignored)

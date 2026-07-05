@@ -1,7 +1,7 @@
 import pytest
 
-from genshin_sim.core.events import EventType, GameEvent
-from genshin_sim.core.simulation import SimulationContext, create_context, get_context
+from genshin_sim.core.events import EventType, GameEvent, InputKeyConsumedPayload
+from genshin_sim.core.simulation import SimulationContext, get_context
 
 
 def test_context_manager_sets_and_restores_active_context():
@@ -16,19 +16,19 @@ def test_context_manager_sets_and_restores_active_context():
 
 
 def test_get_context_raises_without_active_context():
-    with pytest.raises(RuntimeError, match="No active SimulationContext"):
+    with pytest.raises(RuntimeError, match="没有活动的 SimulationContext"):
         get_context()
-
-
-def test_create_context_sets_active_context():
-    ctx = create_context()
-
-    assert get_context() is ctx
 
 
 def test_advance_frame_clears_previous_frame_events():
     ctx = SimulationContext()
-    ctx.events.publish(GameEvent(EventType.AFTER_DAMAGE, frame=0))
+    ctx.events.publish(
+        GameEvent(
+            EventType.INPUT_KEY_CONSUMED,
+            frame=0,
+            payload=InputKeyConsumedPayload(key="keyboard.e", phase="press"),
+        )
+    )
 
     assert len(ctx.events.frame_events) == 1
 
@@ -42,7 +42,13 @@ def test_advance_frame_clears_previous_frame_events():
 def test_reset_clears_clock_and_frame_events():
     ctx = SimulationContext()
     ctx.advance_frame(3)
-    ctx.events.publish(GameEvent(EventType.AFTER_DAMAGE, frame=3))
+    ctx.events.publish(
+        GameEvent(
+            EventType.INPUT_KEY_CONSUMED,
+            frame=3,
+            payload=InputKeyConsumedPayload(key="keyboard.e", phase="press"),
+        )
+    )
 
     assert ctx.current_frame == 3
     assert len(ctx.events.frame_events) == 1

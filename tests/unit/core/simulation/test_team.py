@@ -3,14 +3,13 @@ from __future__ import annotations
 import pytest
 
 from genshin_sim.core.actions import ActionManager, ActionRejectReason
-from genshin_sim.core.events import EventType, GameEvent
 from genshin_sim.core.simulation import (
     BasicRuntimeWorld,
     BasicTeamController,
-    InputFrame,
     InputState,
     KeyEvent,
     KeyEventDispatch,
+    KeyInputFrame,
     KeyPhase,
     SimulationContext,
     SimulationStopReason,
@@ -48,9 +47,9 @@ def test_team_runtime_state_switches_with_one_based_slots():
 @pytest.mark.parametrize(
     ("team_size", "active_slot", "message"),
     [
-        (0, 1, "team_size must be between 1 and 4"),
-        (5, 1, "team_size must be between 1 and 4"),
-        (2, 3, "active_slot must be within team size"),
+        (0, 1, "队伍槽位数量必须在 1 到 4 之间"),
+        (5, 1, "队伍槽位数量必须在 1 到 4 之间"),
+        (2, 3, "当前场上槽位必须在队伍槽位范围内"),
     ],
 )
 def test_team_runtime_state_validates_slots(
@@ -62,10 +61,8 @@ def test_team_runtime_state_validates_slots(
         TeamRuntimeState(team_size=team_size, active_slot=active_slot)
 
 
-def test_basic_team_controller_switches_on_number_press_and_publishes_event():
+def test_basic_team_controller_switches_on_number_press():
     ctx = SimulationContext()
-    events: list[GameEvent] = []
-    ctx.events.subscribe(EventType.AFTER_CHARACTER_SWITCH, events.append)
     controller = BasicTeamController()
 
     controller.handle_key_event(
@@ -79,12 +76,6 @@ def test_basic_team_controller_switches_on_number_press_and_publishes_event():
 
     assert controller.team_state.active_slot == 2
     assert controller.switch_results[0].status is TeamSwitchStatus.SWITCHED
-    assert len(events) == 1
-    assert events[0].frame == 7
-    assert events[0].data == {
-        "previous_slot": 1,
-        "active_slot": 2,
-    }
 
 
 def test_basic_team_controller_ignores_number_release():
@@ -140,22 +131,18 @@ def test_basic_team_controller_records_action_button_inputs_without_interpreting
 
 def test_basic_team_controller_rejects_action_button_during_switch_recovery():
     ctx = SimulationContext()
-    action_events: list[GameEvent] = []
-    input_events: list[GameEvent] = []
-    ctx.events.subscribe(EventType.ACTION_DECISION, action_events.append)
-    ctx.events.subscribe(EventType.INPUT_KEY_EVENT, input_events.append)
     action_manager = ActionManager()
     controller = BasicTeamController(action_manager=action_manager)
     input_system = TraceInputSystem(
         [
-            InputFrame(
+            KeyInputFrame(
                 1,
                 (
                     KeyEvent("keyboard.2", KeyPhase.PRESS),
                     KeyEvent("keyboard.e", KeyPhase.PRESS),
                 ),
             ),
-            InputFrame(
+            KeyInputFrame(
                 2,
                 (
                     KeyEvent("keyboard.2", KeyPhase.RELEASE),
@@ -176,42 +163,24 @@ def test_basic_team_controller_rejects_action_button_during_switch_recovery():
     assert decision.lock is not None
     assert decision.lock.source == "character_switch"
     assert controller.action_inputs[1].decision is None
-    assert [event.data["key"] for event in input_events] == [
-        "keyboard.2",
-        "keyboard.e",
-        "keyboard.2",
-        "keyboard.e",
-    ]
-    assert [event.data for event in action_events] == [
-        {
-            "key": "keyboard.e",
-            "active_slot": 2,
-            "accepted": False,
-            "reject_reason": "busy",
-            "occupied_until_frame": 2,
-            "lock_source": "character_switch",
-            "target_ids": (),
-        }
-    ]
+    assert action_manager.decisions == (decision,)
 
 
 def test_basic_team_controller_accepts_action_button_after_switch_recovery():
     ctx = SimulationContext()
-    action_events: list[GameEvent] = []
-    ctx.events.subscribe(EventType.ACTION_DECISION, action_events.append)
     action_manager = ActionManager()
     controller = BasicTeamController(action_manager=action_manager)
     input_system = TraceInputSystem(
         [
-            InputFrame(1, (KeyEvent("keyboard.2", KeyPhase.PRESS),)),
-            InputFrame(
+            KeyInputFrame(1, (KeyEvent("keyboard.2", KeyPhase.PRESS),)),
+            KeyInputFrame(
                 2,
                 (
                     KeyEvent("keyboard.2", KeyPhase.RELEASE),
                     KeyEvent("keyboard.e", KeyPhase.PRESS),
                 ),
             ),
-            InputFrame(3, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
+            KeyInputFrame(3, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
         ],
         controller,
     )
@@ -225,7 +194,7 @@ def test_basic_team_controller_accepts_action_button_after_switch_recovery():
     assert decision.reject_reason is None
     assert decision.lock is not None
     assert decision.lock.source == "keyboard.e"
-    assert [event.data["accepted"] for event in action_events] == [True]
+    assert action_manager.decisions == (decision,)
 
 
 def test_action_manager_keeps_simulator_running_until_action_lock_ends():
@@ -237,8 +206,8 @@ def test_action_manager_keeps_simulator_running_until_action_lock_ends():
     )
     input_system = TraceInputSystem(
         [
-            InputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
-            InputFrame(2, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
+            KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
+            KeyInputFrame(2, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
         ],
         controller,
     )
@@ -265,8 +234,8 @@ def test_switch_recovery_keeps_simulator_running_until_lock_ends():
     )
     input_system = TraceInputSystem(
         [
-            InputFrame(1, (KeyEvent("keyboard.2", KeyPhase.PRESS),)),
-            InputFrame(2, (KeyEvent("keyboard.2", KeyPhase.RELEASE),)),
+            KeyInputFrame(1, (KeyEvent("keyboard.2", KeyPhase.PRESS),)),
+            KeyInputFrame(2, (KeyEvent("keyboard.2", KeyPhase.RELEASE),)),
         ],
         controller,
     )
@@ -286,8 +255,6 @@ def test_switch_recovery_keeps_simulator_running_until_lock_ends():
 
 def test_basic_team_controller_rejects_switch_to_missing_slot():
     ctx = SimulationContext()
-    events: list[GameEvent] = []
-    ctx.events.subscribe(EventType.AFTER_CHARACTER_SWITCH, events.append)
     controller = BasicTeamController(TeamRuntimeState(team_size=2))
 
     controller.handle_key_event(
@@ -303,7 +270,6 @@ def test_basic_team_controller_rejects_switch_to_missing_slot():
     assert not result.accepted
     assert result.status is TeamSwitchStatus.INVALID_SLOT
     assert controller.team_state.active_slot == 1
-    assert events == []
 
 
 def test_trace_input_system_can_drive_basic_team_controller():
@@ -311,8 +277,8 @@ def test_trace_input_system_can_drive_basic_team_controller():
     controller = BasicTeamController()
     input_system = TraceInputSystem(
         [
-            InputFrame(1, (KeyEvent("keyboard.2", KeyPhase.PRESS),)),
-            InputFrame(2, (KeyEvent("keyboard.2", KeyPhase.RELEASE),)),
+            KeyInputFrame(1, (KeyEvent("keyboard.2", KeyPhase.PRESS),)),
+            KeyInputFrame(2, (KeyEvent("keyboard.2", KeyPhase.RELEASE),)),
         ],
         controller,
     )

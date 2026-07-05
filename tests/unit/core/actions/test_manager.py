@@ -3,15 +3,12 @@ from __future__ import annotations
 import pytest
 
 from genshin_sim.core.actions import ActionManager, ActionRejectReason, ActionRequest, TargetQuery
-from genshin_sim.core.events import EventType, GameEvent
 from genshin_sim.core.simulation import SimulationContext
 from genshin_sim.core.space import SceneTarget, Space, Vector3
 
 
 def test_action_manager_accepts_request_and_reserves_busy_window():
     ctx = SimulationContext()
-    events: list[GameEvent] = []
-    ctx.events.subscribe(EventType.ACTION_DECISION, events.append)
     manager = ActionManager()
 
     decision = manager.request_action(
@@ -31,17 +28,7 @@ def test_action_manager_accepts_request_and_reserves_busy_window():
     assert manager.is_busy(10)
     assert manager.is_busy(11)
     assert not manager.is_busy(12)
-    assert [event.data for event in events] == [
-        {
-            "key": "keyboard.e",
-            "active_slot": 2,
-            "accepted": True,
-            "reject_reason": None,
-            "occupied_until_frame": 12,
-            "lock_source": "keyboard.e",
-            "target_ids": (),
-        }
-    ]
+    assert manager.decisions == (decision,)
 
 
 def test_action_manager_is_updatable_until_locks_end():
@@ -97,8 +84,6 @@ def test_action_manager_tracks_active_instances_until_they_end():
 
 def test_action_manager_records_target_candidates_from_space_query():
     ctx = SimulationContext()
-    events: list[GameEvent] = []
-    ctx.events.subscribe(EventType.ACTION_DECISION, events.append)
     ctx.space = Space(
         [
             SceneTarget("near", position=Vector3(3, 999, 4)),
@@ -120,7 +105,6 @@ def test_action_manager_records_target_candidates_from_space_query():
     assert decision.accepted
     assert decision.instance is not None
     assert decision.instance.target_ids == ("near",)
-    assert events[0].data["target_ids"] == ("near",)
 
 
 def test_action_manager_accepts_target_query_without_space_with_empty_candidates():

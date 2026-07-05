@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from enum import StrEnum
 
 from genshin_sim.core.actions import ActionDecision, ActionManager, ActionRequest
-from genshin_sim.core.events import EventType, GameEvent
 from genshin_sim.core.simulation.context import SimulationContext
 from genshin_sim.core.simulation.input import InputState, KeyEventDispatch, KeyPhase
 
@@ -51,7 +50,7 @@ class TeamSwitchResult:
 
 @dataclass(frozen=True, slots=True)
 class ActionButtonInput:
-    """送达队伍控制器但尚未解释为具体动作的按钮输入。"""
+    """动作按钮输入记录。"""
 
     frame: int
     key: str
@@ -73,10 +72,10 @@ class TeamRuntimeState:
 
     def __post_init__(self) -> None:
         if not 1 <= self.team_size <= 4:
-            msg = "team_size must be between 1 and 4"
+            msg = "队伍槽位数量必须在 1 到 4 之间"
             raise ValueError(msg)
         if not 1 <= self.active_slot <= self.team_size:
-            msg = "active_slot must be within team size"
+            msg = "当前场上槽位必须在队伍槽位范围内"
             raise ValueError(msg)
 
     def switch_to(self, slot: int, frame: int) -> TeamSwitchResult:
@@ -126,10 +125,10 @@ class BasicTeamController:
         action_duration_frames: int = 1,
     ) -> None:
         if switch_recovery_frames < 0:
-            msg = "switch_recovery_frames must be non-negative"
+            msg = "切人恢复帧数不能为负数"
             raise ValueError(msg)
         if action_duration_frames <= 0:
-            msg = "action_duration_frames must be positive"
+            msg = "动作持续帧数必须为正整数"
             raise ValueError(msg)
 
         self.team_state = team_state or TeamRuntimeState()
@@ -180,27 +179,17 @@ class BasicTeamController:
         dispatch: KeyEventDispatch,
         slot: int,
     ) -> None:
+        del context
+
         result = self.team_state.switch_to(slot, dispatch.frame)
         self._switch_results.append(result)
 
-        if result.accepted:
-            if self.action_manager is not None and self.switch_recovery_frames > 0:
-                self.action_manager.reserve(
-                    frame=dispatch.frame,
-                    duration_frames=self.switch_recovery_frames,
-                    source="character_switch",
-                    active_slot=result.active_slot,
-                )
-            context.events.publish(
-                GameEvent(
-                    EventType.AFTER_CHARACTER_SWITCH,
-                    frame=dispatch.frame,
-                    source=self,
-                    data={
-                        "previous_slot": result.previous_slot,
-                        "active_slot": result.active_slot,
-                    },
-                )
+        if result.accepted and self.action_manager is not None and self.switch_recovery_frames > 0:
+            self.action_manager.reserve(
+                frame=dispatch.frame,
+                duration_frames=self.switch_recovery_frames,
+                source="character_switch",
+                active_slot=result.active_slot,
             )
 
     def _request_action(

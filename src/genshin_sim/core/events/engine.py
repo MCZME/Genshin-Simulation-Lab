@@ -2,7 +2,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 
-from genshin_sim.core.events.types import EventHandler, EventType, GameEvent
+from genshin_sim.core.events.handlers import EventHandler
+from genshin_sim.core.events.models import GameEvent
+from genshin_sim.core.events.types import EventType
 
 EventCallback = Callable[[GameEvent], None]
 EventSubscriber = EventCallback | EventHandler
@@ -21,7 +23,7 @@ class EventEngine:
     ) -> None:
         self._handlers: dict[EventType, list[EventSubscriber]] = {}
         self._frame_events: list[GameEvent] = []
-        self._record_filter = record_filter or (lambda event: event.record)
+        self._record_filter = record_filter or (lambda event: event.should_record)
 
     @property
     def frame_events(self) -> tuple[GameEvent, ...]:

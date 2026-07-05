@@ -2,10 +2,20 @@ from __future__ import annotations
 
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
-from typing import Any
+from types import TracebackType
+from typing import Protocol, TypeVar, runtime_checkable
 
 from genshin_sim.core.events import EventEngine
 from genshin_sim.core.simulation.clock import FrameClock
+from genshin_sim.core.space import Space
+
+_SystemT = TypeVar("_SystemT")
+
+
+@runtime_checkable
+class _InitializableSystem(Protocol):
+    def initialize(self, context: SimulationContext) -> None:
+        ...
 
 _current_context: ContextVar[SimulationContext | None] = ContextVar(
     "current_simulation_context", default=None
@@ -21,29 +31,27 @@ class SimulationContext:
 
     clock: FrameClock = field(default_factory=FrameClock)
     events: EventEngine = field(default_factory=EventEngine)
-    space: Any | None = None
-    _systems: list[Any] = field(default_factory=list, init=False, repr=False)
+    space: Space | None = None
+    # TODO: 引入明确系统协议后，将这里收紧为具体运行时系统类型。
+    _systems: list[object] = field(default_factory=list, init=False, repr=False)
+    # ContextVar.set 返回的恢复令牌，用于退出 with 块时恢复上一个活动上下文。
     _token: Token[SimulationContext | None] | None = field(default=None, init=False, repr=False)
 
     @property
     def current_frame(self) -> int:
         return self.clock.current_frame
 
-    @property
-    def event_engine(self) -> EventEngine:
-        """旧项目兼容入口。新代码优先使用 ``events``。"""
-
-        return self.events
-
-    @event_engine.setter
-    def event_engine(self, value: EventEngine) -> None:
-        self.events = value
-
     def __enter__(self) -> SimulationContext:
         self._token = _current_context.set(self)
         return self
 
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+    def __exit__(
+        self,
+        exc_type: type[BaseException] | None,
+        exc_val: BaseException | None,
+        exc_tb: TracebackType | None,
+    ) -> None:
+        del exc_type, exc_val, exc_tb
         if self._token is not None:
             _current_context.reset(self._token)
             self._token = None
@@ -61,13 +69,14 @@ class SimulationContext:
         self.clock.reset()
         self.events.clear_frame_events()
 
-    def register_system(self, system: Any) -> Any:
-        if hasattr(system, "initialize"):
+    def register_system(self, system: _SystemT) -> _SystemT:
+        # TODO: 系统协议收紧后，这里的 initialize 钩子也应改为显式协议调用。
+        if isinstance(system, _InitializableSystem):
             system.initialize(self)
         self._systems.append(system)
         return system
 
-    def get_system(self, cls_or_name: str | type[Any]) -> Any | None:
+    def get_system(self, cls_or_name: str | type[object]) -> object | None:
         for system in self._systems:
             if isinstance(cls_or_name, str):
                 if system.__class__.__name__ == cls_or_name:
@@ -83,16 +92,6 @@ class SimulationContext:
 def get_context() -> SimulationContext:
     ctx = _current_context.get()
     if ctx is None:
-        msg = "No active SimulationContext found."
+        msg = "没有活动的 SimulationContext。"
         raise RuntimeError(msg)
-    return ctx
-
-
-def set_context(ctx: SimulationContext) -> None:
-    _current_context.set(ctx)
-
-
-def create_context() -> SimulationContext:
-    ctx = SimulationContext()
-    set_context(ctx)
     return ctx

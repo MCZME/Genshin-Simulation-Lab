@@ -4,11 +4,11 @@ import pytest
 
 from genshin_sim.core.events import EventType, GameEvent
 from genshin_sim.core.simulation import (
-    InputFrame,
     InputState,
     InputTraceError,
     KeyEvent,
     KeyEventDispatch,
+    KeyInputFrame,
     KeyPhase,
     SimulationContext,
     TraceInputSystem,
@@ -42,14 +42,14 @@ def test_trace_input_system_dispatches_events_for_current_frame_in_order():
     controller = RecordingTeamController()
     input_system = TraceInputSystem(
         [
-            InputFrame(
+            KeyInputFrame(
                 frame=1,
                 events=(
                     KeyEvent("keyboard.e", KeyPhase.PRESS),
                     KeyEvent("mouse.left", KeyPhase.PRESS),
                 ),
             ),
-            InputFrame(
+            KeyInputFrame(
                 frame=3,
                 events=(
                     KeyEvent("keyboard.e", KeyPhase.RELEASE),
@@ -83,11 +83,11 @@ def test_trace_input_system_ignores_future_frames_until_reached():
     controller = RecordingTeamController()
     input_system = TraceInputSystem(
         [
-            InputFrame(
+            KeyInputFrame(
                 frame=2,
                 events=(KeyEvent("keyboard.q", KeyPhase.PRESS),),
             ),
-            InputFrame(
+            KeyInputFrame(
                 frame=3,
                 events=(KeyEvent("keyboard.q", KeyPhase.RELEASE),),
             ),
@@ -124,11 +124,11 @@ def test_trace_input_system_rejects_missed_input_frame():
     controller = RecordingTeamController()
     input_system = TraceInputSystem(
         [
-            InputFrame(
+            KeyInputFrame(
                 frame=1,
                 events=(KeyEvent("keyboard.q", KeyPhase.PRESS),),
             ),
-            InputFrame(
+            KeyInputFrame(
                 frame=2,
                 events=(KeyEvent("keyboard.q", KeyPhase.RELEASE),),
             ),
@@ -138,25 +138,19 @@ def test_trace_input_system_rejects_missed_input_frame():
 
     ctx.advance_frame(2)
 
-    with pytest.raises(InputTraceError, match="input frame 1 was missed before frame 2"):
+    with pytest.raises(InputTraceError, match="第 1 帧输入已错过，当前帧为 2"):
         input_system.process_frame(ctx, ctx.current_frame)
 
 
-def test_trace_input_system_publishes_input_key_events():
+def test_trace_input_system_publishes_input_key_consumed_events():
     ctx = SimulationContext()
     events: list[GameEvent] = []
-    ctx.events.subscribe(EventType.INPUT_KEY_EVENT, events.append)
+    ctx.events.subscribe(EventType.INPUT_KEY_CONSUMED, events.append)
     controller = RecordingTeamController()
     input_system = TraceInputSystem(
         [
-            InputFrame(
-                frame=1,
-                events=(KeyEvent("keyboard.e", KeyPhase.PRESS),),
-            ),
-            InputFrame(
-                frame=3,
-                events=(KeyEvent("keyboard.e", KeyPhase.RELEASE),),
-            ),
+            KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
+            KeyInputFrame(3, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
         ],
         controller,
     )
@@ -168,7 +162,7 @@ def test_trace_input_system_publishes_input_key_events():
     ctx.advance_frame()
     input_system.process_frame(ctx, ctx.current_frame)
 
-    assert [event.data for event in events] == [
+    assert [event.payload.to_dict() for event in events] == [
         {
             "key": "keyboard.e",
             "phase": "press",
@@ -185,19 +179,19 @@ def test_trace_input_system_publishes_input_key_events():
 @pytest.mark.parametrize(
     ("frames", "message"),
     [
-        ([InputFrame(-1, ())], "input frame must be positive"),
-        ([InputFrame(0, ())], "input frame must be positive"),
+        ([KeyInputFrame(-1, ())], "输入帧号必须为正整数"),
+        ([KeyInputFrame(0, ())], "输入帧号必须为正整数"),
         (
-            [InputFrame(1, ()), InputFrame(1, ())],
-            "input frames must be strictly increasing",
+            [KeyInputFrame(1, ()), KeyInputFrame(1, ())],
+            "输入帧号必须严格递增",
         ),
         (
-            [InputFrame(1, (KeyEvent("keyboard.w", KeyPhase.PRESS),))],
-            "unsupported input key: keyboard.w",
+            [KeyInputFrame(1, (KeyEvent("keyboard.w", KeyPhase.PRESS),))],
+            "不支持的输入按键：keyboard.w",
         ),
         (
             [
-                InputFrame(
+                KeyInputFrame(
                     1,
                     (
                         KeyEvent("keyboard.e", KeyPhase.PRESS),
@@ -205,27 +199,27 @@ def test_trace_input_system_publishes_input_key_events():
                     ),
                 )
             ],
-            "duplicate key in input frame 1: keyboard.e",
+            "第 1 帧存在重复按键：keyboard.e",
         ),
         (
             [
-                InputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
-                InputFrame(2, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
+                KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
+                KeyInputFrame(2, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
             ],
-            "key already pressed: keyboard.e",
+            "按键已经处于按下状态：keyboard.e",
         ),
         (
-            [InputFrame(1, (KeyEvent("keyboard.e", KeyPhase.RELEASE),))],
-            "key released before press: keyboard.e",
+            [KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.RELEASE),))],
+            "按键在按下前被释放：keyboard.e",
         ),
         (
-            [InputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),))],
-            "input trace ended with pressed keys: keyboard.e",
+            [KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),))],
+            "输入轨迹结束时仍有按键未释放：keyboard.e",
         ),
     ],
 )
 def test_trace_input_system_validates_input_trace(
-    frames: list[InputFrame],
+    frames: list[KeyInputFrame],
     message: str,
 ):
     controller = RecordingTeamController()

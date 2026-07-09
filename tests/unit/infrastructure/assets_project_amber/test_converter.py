@@ -24,6 +24,10 @@ def test_build_asset_manifest_from_project_amber_cache_writes_index_and_level_st
     assert summary.character_level_stat_count == 98
     assert summary.weapon_count == 1
     assert summary.weapon_level_stat_count == 96
+    assert summary.artifact_set_count == 2
+    assert summary.artifact_set_bonus_count == 3
+    assert summary.talent_scaling_count == 8
+    assert summary.effect_payload_count == 1
 
     manifest = load_asset_manifest(manifest_path)
     assert manifest.meta["source_name"] == "project-amber-yatta"
@@ -31,6 +35,10 @@ def test_build_asset_manifest_from_project_amber_cache_writes_index_and_level_st
     assert manifest.characters[0].asset_key == "character:10000002"
     assert manifest.characters[0].element == "cryo"
     assert manifest.weapons[0].weapon_type == "sword"
+    assert {item.asset_key for item in manifest.artifact_sets} == {
+        "artifact_set:15009",
+        "artifact_set:15032",
+    }
 
     build_asset_database_from_manifest(db_path, manifest_path)
     repository = SQLiteAssetRepository(db_path)
@@ -48,6 +56,15 @@ def test_build_asset_manifest_from_project_amber_cache_writes_index_and_level_st
         ascended=False,
     )
     weapon_level_20_post = repository.get_weapon_level_stats("weapon:11512", 20)
+    normal_attack_scalings = repository.get_talent_scalings(
+        "character:10000002",
+        "normal_attack",
+    )
+    burst_scalings = repository.get_talent_scalings("character:10000002", "elemental_burst")
+    weapon_effect = repository.get_effect_payloads("weapon:11512")[0]
+    artifact_two_piece = repository.get_artifact_set_bonuses("artifact_set:15032", 2)[0]
+    artifact_four_piece = repository.get_artifact_set_bonuses("artifact_set:15032", 4)[0]
+    artifact_one_piece = repository.get_artifact_set_bonuses("artifact_set:15009", 1)[0]
 
     assert character_level_20_pre.ascension_phase == 0
     assert character_level_20_pre.base_hp == 200.0
@@ -64,6 +81,27 @@ def test_build_asset_manifest_from_project_amber_cache_writes_index_and_level_st
     assert weapon_level_20_post.base_atk == 60.0
     assert weapon_level_20_post.secondary_stat == "crit_damage"
     assert weapon_level_20_post.secondary_value == 2.0
+    assert len(normal_attack_scalings) == 3
+    assert normal_attack_scalings[1].entry_key == "line_02_param_2_param_3"
+    assert normal_attack_scalings[1].scaling["components"][0]["values"][0] == 0.2
+    assert normal_attack_scalings[1].scaling["components"][1]["source_param"] == "param3"
+    assert burst_scalings[1].scaling["components"][0]["kind"] == "plain_ratio"
+    assert burst_scalings[1].scaling["components"][1]["kind"] == "plain_value"
+    assert weapon_effect.effect_key == "weapon:11512:passive:111512"
+    assert weapon_effect.handler_key == "weapon.unimplemented_passive"
+    assert weapon_effect.params["refinement_min"] == 1
+    assert weapon_effect.params["refinement_max"] == 5
+    assert weapon_effect.params["components"][0]["values"] == [0.12, 0.15, 0.18, 0.21, 0.24]
+    assert weapon_effect.params["components"][1]["values"] == [12.0, 10.5, 9.0, 7.5, 6.0]
+    assert artifact_two_piece.handler_key == "artifact.unimplemented_set_bonus"
+    assert artifact_two_piece.params["source_affix_id"] == "2150320"
+    assert artifact_two_piece.params["components"][0]["values"] == [0.2]
+    assert artifact_four_piece.params["piece_count"] == 4
+    assert artifact_four_piece.params["components"][0]["values"] == [0.25]
+    assert artifact_four_piece.params["components"][1]["values"] == [0.25]
+    assert artifact_four_piece.params["components"][2]["values"] == [2.0]
+    assert artifact_one_piece.piece_count == 1
+    assert artifact_one_piece.params["components"][0]["values"] == [0.4]
 
 
 def test_build_asset_manifest_uses_weapon_unlock_max_level(tmp_path):
@@ -110,6 +148,10 @@ def test_build_asset_manifest_uses_weapon_unlock_max_level(tmp_path):
     ]
     assert summary.weapon_count == 2
     assert summary.weapon_level_stat_count == 170
+    assert summary.artifact_set_count == 2
+    assert summary.artifact_set_bonus_count == 3
+    assert summary.talent_scaling_count == 8
+    assert summary.effect_payload_count == 1
     assert len(low_rarity_rows) == 74
     assert {row.level for row in low_rarity_rows} == set(range(1, 71))
     assert [row.ascension_phase for row in low_rarity_rows if row.level == 70] == [4]
@@ -127,8 +169,14 @@ def test_build_asset_manifest_skips_level_stats_without_detail_files(tmp_path):
     assert summary.character_level_stat_count == 0
     assert summary.weapon_count == 1
     assert summary.weapon_level_stat_count == 0
+    assert summary.artifact_set_count == 2
+    assert summary.artifact_set_bonus_count == 3
+    assert summary.talent_scaling_count == 0
+    assert summary.effect_payload_count == 0
     assert manifest.characters[0].name == "神里绫华"
     assert manifest.weapons[0].name == "静水流涌之辉"
+    assert manifest.artifact_sets[0].name == "祭火之人"
+    assert manifest.artifact_set_bonuses[0].piece_count == 1
 
 
 def _write_project_amber_cache(cache_dir, *, include_details: bool) -> None:
@@ -142,7 +190,7 @@ def _write_project_amber_cache(cache_dir, *, include_details: bool) -> None:
             "language": "chs",
             "fetched_at": "2026-07-09T00:00:00+00:00",
             "content_hash": "fixturehash",
-            "counts": {"characters": 1, "weapons": 1},
+            "counts": {"characters": 1, "weapons": 1, "artifact_sets": 2},
             "files": [],
         },
     )
@@ -193,6 +241,36 @@ def _write_project_amber_cache(cache_dir, *, include_details: bool) -> None:
             },
         },
     )
+    _write_json(
+        cache_dir / "reliquary" / "index.json",
+        {
+            "response": 200,
+            "data": {
+                "items": {
+                    "15032": {
+                        "id": 15032,
+                        "name": "黄金剧团",
+                        "levelList": [4, 5],
+                        "affixList": {
+                            "2150320": "元素战技造成的伤害提升20%。",
+                            "2150321": (
+                                "元素战技造成的伤害提升25%；此外，处于队伍后台时，"
+                                "元素战技造成的伤害还将进一步提升25%，该效果将在登场后2秒移除。"
+                            ),
+                        },
+                    },
+                    "15009": {
+                        "id": 15009,
+                        "name": "祭火之人",
+                        "levelList": [3, 4],
+                        "affixList": {
+                            "2150090": "受到的火元素附着效果的持续时间减少40%。",
+                        },
+                    },
+                }
+            },
+        },
+    )
     _write_json(cache_dir / "static" / "avatarCurve.json", _curve_payload("hp", "atk", "def"))
     _write_json(cache_dir / "static" / "weaponCurve.json", _curve_payload("w_atk", "w_crit"))
 
@@ -230,6 +308,7 @@ def _write_project_amber_cache(cache_dir, *, include_details: bool) -> None:
                     ],
                     "promote": _character_promotes(),
                 },
+                "talent": _character_talents(),
             },
         },
     )
@@ -256,6 +335,33 @@ def _write_project_amber_cache(cache_dir, *, include_details: bool) -> None:
                         },
                     ],
                     "promote": _weapon_promotes(),
+                },
+                "affix": {
+                    "111512": {
+                        "name": "测试被动",
+                        "upgrade": {
+                            "0": (
+                                "造成的伤害提高<color=#99FFFFFF>12%</color>。"
+                                "该效果每<color=#99FFFFFF>12</color>秒触发一次。"
+                            ),
+                            "1": (
+                                "造成的伤害提高<color=#99FFFFFF>15%</color>。"
+                                "该效果每<color=#99FFFFFF>10.5</color>秒触发一次。"
+                            ),
+                            "2": (
+                                "造成的伤害提高<color=#99FFFFFF>18%</color>。"
+                                "该效果每<color=#99FFFFFF>9</color>秒触发一次。"
+                            ),
+                            "3": (
+                                "造成的伤害提高<color=#99FFFFFF>21%</color>。"
+                                "该效果每<color=#99FFFFFF>7.5</color>秒触发一次。"
+                            ),
+                            "4": (
+                                "造成的伤害提高<color=#99FFFFFF>24%</color>。"
+                                "该效果每<color=#99FFFFFF>6</color>秒触发一次。"
+                            ),
+                        },
+                    }
                 },
             },
         },
@@ -298,6 +404,77 @@ def _character_promotes() -> list[dict[str, object]]:
             }
         },
     ]
+
+
+def _character_talents() -> dict[str, object]:
+    return {
+        "0": {
+            "skillId": 10001,
+            "name": "神里流·倾",
+            "type": 0,
+            "promote": _talent_promote(
+                [
+                    "一段伤害|{param1:F1P}",
+                    "重击伤害|{param2:F1P}+{param3:F1P}",
+                    "低空/高空坠地冲击伤害|{param4:P}/{param5:P}",
+                ],
+                [
+                    lambda level: 0.1 * level,
+                    lambda level: 0.2 * level,
+                    lambda level: 0.3 * level,
+                    lambda level: 0.4 * level,
+                    lambda level: 0.5 * level,
+                ],
+            ),
+        },
+        "1": {
+            "skillId": 10002,
+            "name": "神里流·冰华",
+            "type": 0,
+            "promote": _talent_promote(
+                [
+                    "技能伤害|{param1:P}",
+                    "冷却时间|{param2:F1}秒",
+                ],
+                [
+                    lambda level: 1.0 + level,
+                    lambda _level: 10.0,
+                ],
+            ),
+        },
+        "4": {
+            "skillId": 10003,
+            "name": "神里流·霜灭",
+            "type": 1,
+            "promote": _talent_promote(
+                [
+                    "切割伤害|{param1:P}",
+                    "领域发动治疗量|{param2:P}攻击力+{param3:I}",
+                    "元素能量|{param4:I}",
+                ],
+                [
+                    lambda level: 2.0 + level,
+                    lambda level: 0.05 * level,
+                    lambda level: 100.0 + level,
+                    lambda _level: 80.0,
+                ],
+            ),
+        },
+    }
+
+
+def _talent_promote(
+    description: list[str],
+    param_factories,
+) -> dict[str, object]:
+    return {
+        str(level): {
+            "level": level,
+            "description": description,
+            "params": [factory(level) for factory in param_factories],
+        }
+        for level in range(1, 16)
+    }
 
 
 def _weapon_promotes() -> list[dict[str, object]]:

@@ -1,9 +1,10 @@
 from __future__ import annotations
 
 from collections import Counter
-from collections.abc import Iterable
+from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass
 from pathlib import Path
+from typing import Any
 
 from genshin_sim.infrastructure.assets_sqlite.manifest import (
     AssetManifest,
@@ -40,6 +41,11 @@ _ALLOWED_STATS = frozenset(
         "anemo_damage_bonus",
     }
 )
+_ALLOWED_TALENT_SCALING_MODES = frozenset({"constant", "level_table"})
+_ALLOWED_TALENT_COMPONENT_KINDS = frozenset(
+    {"flat", "plain_ratio", "plain_value", "stat_ratio"}
+)
+_ALLOWED_ARTIFACT_SET_BONUS_PIECES = frozenset({1, 2, 4})
 
 
 @dataclass(frozen=True, slots=True)
@@ -448,6 +454,38 @@ def _audit_artifact_set_bonuses(
             )
         )
 
+    invalid_piece_counts = sorted(
+        f"{item.artifact_set_key}@{item.piece_count}"
+        for item in manifest.artifact_set_bonuses
+        if item.piece_count not in _ALLOWED_ARTIFACT_SET_BONUS_PIECES
+    )
+    if invalid_piece_counts:
+        issues.append(
+            AssetManifestAuditIssue(
+                code="invalid_artifact_set_bonus_piece_count",
+                message=(
+                    "圣遗物套装效果 piece_count 必须是 1、2 或 4，示例："
+                    f"{_format_examples(invalid_piece_counts)}"
+                ),
+            )
+        )
+
+    invalid_params = sorted(
+        f"{item.artifact_set_key}@{item.piece_count}"
+        for item in manifest.artifact_set_bonuses
+        if not _valid_artifact_set_bonus_params(item.params)
+    )
+    if invalid_params:
+        issues.append(
+            AssetManifestAuditIssue(
+                code="invalid_artifact_set_bonus_params",
+                message=(
+                    "圣遗物套装效果 params 不合法，示例："
+                    f"{_format_examples(invalid_params)}"
+                ),
+            )
+        )
+
 
 def _audit_talent_scalings(
     manifest: AssetManifest,
@@ -478,6 +516,114 @@ def _audit_talent_scalings(
                 message=f"技能倍率引用了不存在的角色，示例：{_format_examples(unknown_character_keys)}",
             )
         )
+
+    invalid_headers: list[str] = []
+    invalid_components: list[str] = []
+    invalid_values: list[str] = []
+    for item in manifest.talent_scalings:
+        item_ref = f"{item.character_key}@{item.talent_key}/{item.entry_key}"
+        _audit_talent_scaling_payload(
+            item.scaling,
+            item_ref=item_ref,
+            invalid_headers=invalid_headers,
+            invalid_components=invalid_components,
+            invalid_values=invalid_values,
+        )
+
+    if invalid_headers:
+        issues.append(
+            AssetManifestAuditIssue(
+                code="invalid_talent_scaling_header",
+                message=f"技能倍率 scaling 表头不合法，示例：{_format_examples(invalid_headers)}",
+            )
+        )
+    if invalid_components:
+        issues.append(
+            AssetManifestAuditIssue(
+                code="invalid_talent_scaling_components",
+                message=f"技能倍率 components 不合法，示例：{_format_examples(invalid_components)}",
+            )
+        )
+    if invalid_values:
+        issues.append(
+            AssetManifestAuditIssue(
+                code="invalid_talent_scaling_values",
+                message=f"技能倍率 values 不合法，示例：{_format_examples(invalid_values)}",
+            )
+        )
+
+
+def _audit_talent_scaling_payload(
+    scaling: Mapping[str, Any],
+    *,
+    item_ref: str,
+    invalid_headers: list[str],
+    invalid_components: list[str],
+    invalid_values: list[str],
+) -> None:
+    schema_version = scaling.get("schema_version")
+    mode = scaling.get("mode")
+    if schema_version != 1 or mode not in _ALLOWED_TALENT_SCALING_MODES:
+        invalid_headers.append(item_ref)
+        return
+
+    level_count = _talent_scaling_level_count(scaling, str(mode), item_ref, invalid_headers)
+    if level_count is None:
+        return
+
+    components = scaling.get("components")
+    if (
+        not isinstance(components, Sequence)
+        or isinstance(components, (str, bytes, bytearray))
+        or not components
+    ):
+        invalid_components.append(item_ref)
+        return
+
+    for index, raw_component in enumerate(components):
+        component_ref = f"{item_ref}.components[{index}]"
+        if not isinstance(raw_component, Mapping):
+            invalid_components.append(component_ref)
+            continue
+        kind = raw_component.get("kind")
+        if kind not in _ALLOWED_TALENT_COMPONENT_KINDS:
+            invalid_components.append(component_ref)
+            continue
+        values = raw_component.get("values")
+        if not _is_numeric_sequence(values, expected_length=level_count):
+            invalid_values.append(component_ref)
+
+
+def _talent_scaling_level_count(
+    scaling: Mapping[str, Any],
+    mode: str,
+    item_ref: str,
+    invalid_headers: list[str],
+) -> int | None:
+    if mode == "constant":
+        return 1
+
+    level_min = scaling.get("level_min")
+    level_max = scaling.get("level_max")
+    if (
+        not isinstance(level_min, int)
+        or isinstance(level_min, bool)
+        or not isinstance(level_max, int)
+        or isinstance(level_max, bool)
+        or level_min <= 0
+        or level_max < level_min
+    ):
+        invalid_headers.append(item_ref)
+        return None
+    return level_max - level_min + 1
+
+
+def _is_numeric_sequence(value: Any, *, expected_length: int) -> bool:
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes, bytearray)):
+        return False
+    if len(value) != expected_length:
+        return False
+    return all(isinstance(item, (int, float)) and not isinstance(item, bool) for item in value)
 
 
 def _audit_effect_payloads(
@@ -513,6 +659,75 @@ def _audit_effect_payloads(
                 ),
             )
         )
+
+    invalid_effect_payloads = sorted(
+        item.effect_key
+        for item in manifest.effect_payloads
+        if not _valid_effect_payload_params(item.params)
+    )
+    if invalid_effect_payloads:
+        issues.append(
+            AssetManifestAuditIssue(
+                code="invalid_effect_payload_params",
+                message=(
+                    "效果参数 params 不合法，示例："
+                    f"{_format_examples(invalid_effect_payloads)}"
+                ),
+            )
+        )
+
+
+def _valid_effect_payload_params(params: Mapping[str, Any]) -> bool:
+    if params.get("schema_version") != 1:
+        return False
+    components = params.get("components")
+    if components is None:
+        return True
+    if not isinstance(components, Sequence) or isinstance(components, (str, bytes, bytearray)):
+        return False
+
+    refinement_min = params.get("refinement_min")
+    refinement_max = params.get("refinement_max")
+    if refinement_min is not None or refinement_max is not None:
+        if (
+            not isinstance(refinement_min, int)
+            or isinstance(refinement_min, bool)
+            or not isinstance(refinement_max, int)
+            or isinstance(refinement_max, bool)
+            or refinement_min <= 0
+            or refinement_max < refinement_min
+        ):
+            return False
+        expected_length = refinement_max - refinement_min + 1
+    else:
+        expected_length = None
+
+    for component in components:
+        if not isinstance(component, Mapping):
+            return False
+        values = component.get("values")
+        if not isinstance(values, Sequence) or isinstance(values, (str, bytes, bytearray)):
+            return False
+        if expected_length is not None and len(values) != expected_length:
+            return False
+    return True
+
+
+def _valid_artifact_set_bonus_params(params: Mapping[str, Any]) -> bool:
+    if params.get("schema_version") != 1:
+        return False
+    components = params.get("components")
+    if components is None:
+        return True
+    if not isinstance(components, Sequence) or isinstance(components, (str, bytes, bytearray)):
+        return False
+    for component in components:
+        if not isinstance(component, Mapping):
+            return False
+        values = component.get("values")
+        if not isinstance(values, Sequence) or isinstance(values, (str, bytes, bytearray)):
+            return False
+    return True
 
 
 def _append_level_coverage_issues(

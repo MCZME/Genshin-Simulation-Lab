@@ -154,9 +154,15 @@ def _add_assets_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
         help="按 Project Amber ID 抓取一个武器详情，可重复传入。",
     )
     fetch_source_parser.add_argument(
+        "--artifact-set-id",
+        action="append",
+        default=[],
+        help="按 Project Amber ID 抓取一个圣遗物套装详情，可重复传入。",
+    )
+    fetch_source_parser.add_argument(
         "--all-details",
         action="store_true",
-        help="抓取全部角色和武器详情，可能较慢。",
+        help="抓取全部角色、武器和圣遗物套装详情，可能较慢。",
     )
     fetch_source_parser.add_argument(
         "--out",
@@ -300,6 +306,7 @@ def _cmd_assets_fetch_source(args: argparse.Namespace) -> int:
             output_dir,
             character_ids=args.character_id,
             weapon_ids=args.weapon_id,
+            artifact_set_ids=args.artifact_set_id,
             include_all_details=bool(args.all_details),
         )
 
@@ -311,8 +318,10 @@ def _cmd_assets_fetch_source(args: argparse.Namespace) -> int:
     print(f"source_version: {summary.source_version}")
     print(f"characters: {summary.character_count}")
     print(f"weapons: {summary.weapon_count}")
+    print(f"artifact_sets: {summary.artifact_set_count}")
     print(f"character_details: {summary.character_detail_count}")
     print(f"weapon_details: {summary.weapon_detail_count}")
+    print(f"artifact_set_details: {summary.artifact_set_detail_count}")
     print(f"files: {summary.file_count}")
     print(f"content_hash: {summary.content_hash}")
     return 0
@@ -330,6 +339,10 @@ def _cmd_assets_build_manifest(args: argparse.Namespace) -> int:
     print(f"character_level_stats: {summary.character_level_stat_count}")
     print(f"weapons: {summary.weapon_count}")
     print(f"weapon_level_stats: {summary.weapon_level_stat_count}")
+    print(f"artifact_sets: {summary.artifact_set_count}")
+    print(f"artifact_set_bonuses: {summary.artifact_set_bonus_count}")
+    print(f"talent_scalings: {summary.talent_scaling_count}")
+    print(f"effect_payloads: {summary.effect_payload_count}")
     print(f"content_hash: {summary.content_hash}")
     return 0
 

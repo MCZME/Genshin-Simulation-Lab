@@ -35,8 +35,10 @@ class ProjectAmberSourceCacheSummary:
     content_hash: str
     character_count: int
     weapon_count: int
+    artifact_set_count: int
     character_detail_count: int
     weapon_detail_count: int
+    artifact_set_detail_count: int
     file_count: int
 
 
@@ -80,6 +82,7 @@ def fetch_project_amber_source_cache(
     *,
     character_ids: Iterable[str] = (),
     weapon_ids: Iterable[str] = (),
+    artifact_set_ids: Iterable[str] = (),
     include_all_details: bool = False,
     client: JsonHttpClient | None = None,
     fetched_at: datetime | None = None,
@@ -138,6 +141,30 @@ def fetch_project_amber_source_cache(
             reuse_existing=True,
         )
 
+    reliquary_index = _fetch_and_write(
+        client=resolved_client,
+        url=f"{PROJECT_AMBER_BASE_URL}/reliquary",
+        output_path=target_dir / "reliquary" / "index.json",
+        cache_root=target_dir,
+        files=files,
+    )
+    indexed_artifact_set_ids = _extract_item_ids(reliquary_index, "reliquary/index")
+    selected_artifact_set_ids = _resolve_detail_ids(
+        indexed_ids=indexed_artifact_set_ids,
+        requested_ids=artifact_set_ids,
+        include_all_details=include_all_details,
+        label="圣遗物套装",
+    )
+    for artifact_set_id in selected_artifact_set_ids:
+        _fetch_and_write(
+            client=resolved_client,
+            url=f"{PROJECT_AMBER_BASE_URL}/reliquary/{artifact_set_id}",
+            output_path=target_dir / "reliquary" / f"{artifact_set_id}.json",
+            cache_root=target_dir,
+            files=files,
+            reuse_existing=True,
+        )
+
     _fetch_and_write(
         client=resolved_client,
         url=f"{PROJECT_AMBER_STATIC_URL}/avatarCurve",
@@ -167,8 +194,10 @@ def fetch_project_amber_source_cache(
         "counts": {
             "characters": len(indexed_character_ids),
             "weapons": len(indexed_weapon_ids),
+            "artifact_sets": len(indexed_artifact_set_ids),
             "character_details": len(selected_character_ids),
             "weapon_details": len(selected_weapon_ids),
+            "artifact_set_details": len(selected_artifact_set_ids),
         },
         "files": files,
     }
@@ -183,8 +212,10 @@ def fetch_project_amber_source_cache(
         content_hash=content_hash,
         character_count=len(indexed_character_ids),
         weapon_count=len(indexed_weapon_ids),
+        artifact_set_count=len(indexed_artifact_set_ids),
         character_detail_count=len(selected_character_ids),
         weapon_detail_count=len(selected_weapon_ids),
+        artifact_set_detail_count=len(selected_artifact_set_ids),
         file_count=len(files),
     )
 

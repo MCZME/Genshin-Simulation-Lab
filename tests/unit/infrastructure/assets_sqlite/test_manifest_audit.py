@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from typing import Any
 
 from genshin_sim.infrastructure.assets_sqlite import audit_asset_manifest
 
@@ -33,6 +34,62 @@ def test_asset_manifest_audit_accepts_low_rarity_weapon_level_70_coverage(tmp_pa
     assert report.ok
     assert report.weapon_level_stat_count == 74
     assert report.weapon_level_complete_count == 1
+
+
+def test_asset_manifest_audit_reports_invalid_talent_scaling_values(tmp_path):
+    manifest_path = tmp_path / "assets.json"
+    payload = _manifest_payload()
+    payload["talent_scalings"] = [_talent_scaling()]
+    payload["talent_scalings"][0]["scaling"]["components"][0]["values"] = [1.0]
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = audit_asset_manifest(manifest_path)
+
+    assert not report.ok
+    assert {issue.code for issue in report.issues} == {"invalid_talent_scaling_values"}
+
+
+def test_asset_manifest_audit_reports_invalid_effect_payload_params(tmp_path):
+    manifest_path = tmp_path / "assets.json"
+    payload = _manifest_payload()
+    payload["effect_payloads"] = [_effect_payload()]
+    payload["effect_payloads"][0]["params"]["components"][0]["values"] = [0.12]
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = audit_asset_manifest(manifest_path)
+
+    assert not report.ok
+    assert {issue.code for issue in report.issues} == {"invalid_effect_payload_params"}
+
+
+def test_asset_manifest_audit_reports_invalid_artifact_set_bonus_params(tmp_path):
+    manifest_path = tmp_path / "assets.json"
+    payload = _manifest_payload()
+    payload["artifact_sets"] = [_artifact_set()]
+    payload["artifact_set_bonuses"] = [_artifact_set_bonus()]
+    payload["artifact_set_bonuses"][0]["params"]["schema_version"] = 2
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = audit_asset_manifest(manifest_path)
+
+    assert not report.ok
+    assert {issue.code for issue in report.issues} == {"invalid_artifact_set_bonus_params"}
+
+
+def test_asset_manifest_audit_reports_invalid_artifact_set_bonus_piece_count(tmp_path):
+    manifest_path = tmp_path / "assets.json"
+    payload = _manifest_payload()
+    payload["artifact_sets"] = [_artifact_set()]
+    payload["artifact_set_bonuses"] = [_artifact_set_bonus()]
+    payload["artifact_set_bonuses"][0]["piece_count"] = 3
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = audit_asset_manifest(manifest_path)
+
+    assert not report.ok
+    assert {issue.code for issue in report.issues} == {
+        "invalid_artifact_set_bonus_piece_count"
+    }
 
 
 def test_asset_manifest_audit_reports_common_data_issues(tmp_path):
@@ -139,6 +196,83 @@ def _low_rarity_weapon_level_stats(weapon_key: str) -> list[dict[str, object]]:
         for level in range(1, 71)
         for phase in _low_rarity_weapon_phases_for_level(level)
     ]
+
+
+def _talent_scaling() -> dict[str, Any]:
+    return {
+        "character_key": "character:audit_char",
+        "talent_key": "normal_attack",
+        "entry_key": "line_01_param_1",
+        "label": "一段伤害",
+        "scaling": {
+            "schema_version": 1,
+            "mode": "level_table",
+            "level_min": 1,
+            "level_max": 15,
+            "components": [
+                {
+                    "kind": "plain_ratio",
+                    "source_param": "param1",
+                    "format": "F1P",
+                    "values": [0.1 for _level in range(15)],
+                }
+            ],
+        },
+    }
+
+
+def _effect_payload() -> dict[str, Any]:
+    return {
+        "effect_key": "weapon:audit_weapon:passive:fixture",
+        "owner_type": "weapon",
+        "owner_key": "weapon:audit_weapon",
+        "effect_kind": "passive",
+        "handler_key": "weapon.unimplemented_passive",
+        "params": {
+            "schema_version": 1,
+            "source": "project-amber-yatta",
+            "refinement_min": 1,
+            "refinement_max": 5,
+            "components": [
+                {
+                    "kind": "numeric",
+                    "source_value": "highlight_1",
+                    "format": "percent",
+                    "raw_values": ["12%", "15%", "18%", "21%", "24%"],
+                    "values": [0.12, 0.15, 0.18, 0.21, 0.24],
+                }
+            ],
+        },
+    }
+
+
+def _artifact_set() -> dict[str, Any]:
+    return {
+        "asset_key": "artifact_set:audit_set",
+        "source_id": "audit_set",
+        "name": "Audit Set",
+    }
+
+
+def _artifact_set_bonus() -> dict[str, Any]:
+    return {
+        "artifact_set_key": "artifact_set:audit_set",
+        "piece_count": 2,
+        "handler_key": "artifact.unimplemented_set_bonus",
+        "params": {
+            "schema_version": 1,
+            "source": "project-amber-yatta",
+            "components": [
+                {
+                    "kind": "numeric",
+                    "source_value": "number_1",
+                    "format": "percent",
+                    "raw_values": ["18%"],
+                    "values": [0.18],
+                }
+            ],
+        },
+    }
 
 
 def _low_rarity_weapon_phases_for_level(level: int) -> tuple[int, ...]:

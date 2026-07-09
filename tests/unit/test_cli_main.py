@@ -107,7 +107,9 @@ def test_cli_assets_fetch_source_uses_project_amber_service(tmp_path, capsys, mo
     assert f"fetched asset source cache: {cache_dir}" in captured.out
     assert "source_name: project-amber-yatta" in captured.out
     assert "characters: 1" in captured.out
+    assert "artifact_sets: 1" in captured.out
     assert "character_details: 0" in captured.out
+    assert "artifact_set_details: 0" in captured.out
 
 
 def test_cli_assets_build_manifest_uses_project_amber_converter(tmp_path, capsys, monkeypatch):
@@ -144,6 +146,10 @@ def test_cli_assets_build_manifest_uses_project_amber_converter(tmp_path, capsys
     assert f"source_cache: {cache_dir}" in captured.out
     assert "character_level_stats: 98" in captured.out
     assert "weapon_level_stats: 96" in captured.out
+    assert "artifact_sets: 1" in captured.out
+    assert "artifact_set_bonuses: 2" in captured.out
+    assert "talent_scalings: 8" in captured.out
+    assert "effect_payloads: 1" in captured.out
 
 
 def test_cli_assets_audit_manifest_prints_report(tmp_path, capsys, monkeypatch):
@@ -268,9 +274,11 @@ class _FakeSourceSummary:
     source_version: str = "default"
     character_count: int = 1
     weapon_count: int = 1
+    artifact_set_count: int = 1
     character_detail_count: int = 0
     weapon_detail_count: int = 0
-    file_count: int = 6
+    artifact_set_detail_count: int = 0
+    file_count: int = 5
     content_hash: str = "abc123"
 
 
@@ -282,6 +290,10 @@ class _FakeManifestSummary:
     character_level_stat_count: int = 98
     weapon_count: int = 1
     weapon_level_stat_count: int = 96
+    artifact_set_count: int = 1
+    artifact_set_bonus_count: int = 2
+    talent_scaling_count: int = 8
+    effect_payload_count: int = 1
     content_hash: str = "manifest123"
 
 

@@ -27,6 +27,14 @@ def test_fetch_project_amber_source_cache_writes_raw_files(tmp_path):
                 "response": 200,
                 "data": {"id": 11512, "name": "静水流涌之辉"},
             },
+            "https://gi.yatta.moe/api/v2/chs/reliquary": {
+                "response": 200,
+                "data": {"items": {"15032": {"name": "黄金剧团"}}},
+            },
+            "https://gi.yatta.moe/api/v2/chs/reliquary/15032": {
+                "response": 200,
+                "data": {"id": 15032, "name": "黄金剧团"},
+            },
             "https://gi.yatta.moe/api/v2/static/avatarCurve": {
                 "response": 200,
                 "data": {"1": {"curveInfos": {}}},
@@ -47,10 +55,13 @@ def test_fetch_project_amber_source_cache_writes_raw_files(tmp_path):
 
     assert summary.character_count == 1
     assert summary.weapon_count == 1
-    assert summary.file_count == 6
+    assert summary.artifact_set_count == 1
+    assert summary.file_count == 8
     assert (tmp_path / "cache" / "avatar" / "index.json").exists()
     assert (tmp_path / "cache" / "avatar" / "75.json").exists()
     assert (tmp_path / "cache" / "weapon" / "11512.json").exists()
+    assert (tmp_path / "cache" / "reliquary" / "index.json").exists()
+    assert (tmp_path / "cache" / "reliquary" / "15032.json").exists()
 
     manifest = json.loads((tmp_path / "cache" / "fetch_manifest.json").read_text("utf-8"))
     assert manifest["source_name"] == "project-amber-yatta"
@@ -58,14 +69,18 @@ def test_fetch_project_amber_source_cache_writes_raw_files(tmp_path):
     assert manifest["counts"] == {
         "characters": 1,
         "weapons": 1,
+        "artifact_sets": 1,
         "character_details": 1,
         "weapon_details": 1,
+        "artifact_set_details": 1,
     }
     assert {item["path"] for item in manifest["files"]} == {
         "avatar/index.json",
         "avatar/75.json",
         "weapon/index.json",
         "weapon/11512.json",
+        "reliquary/index.json",
+        "reliquary/15032.json",
         "static/avatarCurve.json",
         "static/weaponCurve.json",
     }
@@ -83,6 +98,10 @@ def test_fetch_project_amber_source_cache_skips_details_by_default(tmp_path):
                 "response": 200,
                 "data": {"items": {"11512": {"name": "静水流涌之辉"}}},
             },
+            "https://gi.yatta.moe/api/v2/chs/reliquary": {
+                "response": 200,
+                "data": {"items": {"15032": {"name": "黄金剧团"}}},
+            },
             "https://gi.yatta.moe/api/v2/static/avatarCurve": {
                 "response": 200,
                 "data": {"1": {"curveInfos": {}}},
@@ -98,21 +117,28 @@ def test_fetch_project_amber_source_cache_skips_details_by_default(tmp_path):
 
     assert summary.character_detail_count == 0
     assert summary.weapon_detail_count == 0
-    assert summary.file_count == 4
+    assert summary.artifact_set_detail_count == 0
+    assert summary.file_count == 5
     assert not (tmp_path / "cache" / "avatar" / "75.json").exists()
     assert not (tmp_path / "cache" / "weapon" / "11512.json").exists()
+    assert not (tmp_path / "cache" / "reliquary" / "15032.json").exists()
 
 
 def test_fetch_project_amber_source_cache_reuses_existing_detail_files(tmp_path):
     cache_dir = tmp_path / "cache"
     (cache_dir / "avatar").mkdir(parents=True)
     (cache_dir / "weapon").mkdir(parents=True)
+    (cache_dir / "reliquary").mkdir(parents=True)
     (cache_dir / "avatar" / "75.json").write_text(
         json.dumps({"response": 200, "data": {"id": 75, "name": "芙宁娜"}}),
         encoding="utf-8",
     )
     (cache_dir / "weapon" / "11512.json").write_text(
         json.dumps({"response": 200, "data": {"id": 11512, "name": "静水流涌之辉"}}),
+        encoding="utf-8",
+    )
+    (cache_dir / "reliquary" / "15032.json").write_text(
+        json.dumps({"response": 200, "data": {"id": 15032, "name": "黄金剧团"}}),
         encoding="utf-8",
     )
     client = FakeJsonClient(
@@ -124,6 +150,10 @@ def test_fetch_project_amber_source_cache_reuses_existing_detail_files(tmp_path)
             "https://gi.yatta.moe/api/v2/chs/weapon": {
                 "response": 200,
                 "data": {"items": {"11512": {"name": "静水流涌之辉"}}},
+            },
+            "https://gi.yatta.moe/api/v2/chs/reliquary": {
+                "response": 200,
+                "data": {"items": {"15032": {"name": "黄金剧团"}}},
             },
             "https://gi.yatta.moe/api/v2/static/avatarCurve": {
                 "response": 200,
@@ -140,9 +170,11 @@ def test_fetch_project_amber_source_cache_reuses_existing_detail_files(tmp_path)
 
     assert summary.character_detail_count == 1
     assert summary.weapon_detail_count == 1
-    assert summary.file_count == 6
+    assert summary.artifact_set_detail_count == 1
+    assert summary.file_count == 8
     assert "https://gi.yatta.moe/api/v2/chs/avatar/75" not in client.requested_urls
     assert "https://gi.yatta.moe/api/v2/chs/weapon/11512" not in client.requested_urls
+    assert "https://gi.yatta.moe/api/v2/chs/reliquary/15032" not in client.requested_urls
 
 
 def test_urllib_json_client_retries_transient_failures(monkeypatch):

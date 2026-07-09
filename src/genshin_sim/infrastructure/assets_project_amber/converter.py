@@ -76,10 +76,13 @@ _BASE_PROPS = frozenset({_BASE_HP, _BASE_ATTACK, _BASE_DEFENSE})
 _TALENT_LEVELS = tuple(range(1, 16))
 _TALENT_PARAM_PATTERN = re.compile(r"\{param(?P<index>\d+):(?P<format>[^}]+)\}")
 _AFFIX_HIGHLIGHT_PATTERN = re.compile(r"<color=[^>]+>(?P<value>.*?)</color>")
+_HTML_TAG_PATTERN = re.compile(r"<[^>]+>")
 _AFFIX_NUMBER_PATTERN = re.compile(r"^-?\d+(?:\.\d+)?%?$")
 _TEXT_NUMBER_PATTERN = re.compile(r"-?\d+(?:\.\d+)?%?")
 _WEAPON_PASSIVE_HANDLER_KEY = "weapon.unimplemented_passive"
 _ARTIFACT_SET_BONUS_HANDLER_KEY = "artifact.unimplemented_set_bonus"
+_CHARACTER_PASSIVE_HANDLER_KEY = "character.unimplemented_passive"
+_CHARACTER_CONSTELLATION_HANDLER_KEY = "character.unimplemented_constellation"
 
 
 @dataclass(frozen=True, slots=True)
@@ -131,7 +134,10 @@ def build_asset_manifest_from_project_amber_cache(
     talent_scalings = _build_talent_scalings(cache_dir, characters)
     weapons = _build_weapons(weapon_index)
     weapon_level_stats = _build_weapon_level_stats(cache_dir, weapons, weapon_curve)
-    effect_payloads = _build_weapon_effect_payloads(cache_dir, weapons)
+    effect_payloads = (
+        *_build_character_effect_payloads(cache_dir, characters),
+        *_build_weapon_effect_payloads(cache_dir, weapons),
+    )
     artifact_sets = _build_artifact_sets(reliquary_index)
     artifact_set_bonuses = _build_artifact_set_bonuses(reliquary_index, artifact_sets)
     content_hash = str(cache_meta.get("content_hash") or _hash_cache_inputs(cache_dir))
@@ -345,17 +351,13 @@ def _artifact_set_bonus_params(
     piece_count: int,
     description: str,
 ) -> dict[str, Any]:
-    raw_values = _text_number_values(description)
     return {
         "schema_version": 1,
         "source": "project-amber-yatta",
         "source_affix_id": affix_id,
         "piece_count": piece_count,
         "source_template": description,
-        "components": [
-            _single_text_number_component(position, raw_value)
-            for position, raw_value in enumerate(raw_values)
-        ],
+        "components": _text_number_components(description),
     }
 
 
@@ -371,7 +373,8 @@ def _single_text_number_component(position: int, raw_value: str) -> dict[str, An
 
 
 def _text_number_values(text: str) -> tuple[str, ...]:
-    return tuple(match.group(0) for match in _TEXT_NUMBER_PATTERN.finditer(text))
+    plain_text = _HTML_TAG_PATTERN.sub("", text)
+    return tuple(match.group(0) for match in _TEXT_NUMBER_PATTERN.finditer(plain_text))
 
 
 def _build_character_level_stats(
@@ -635,6 +638,191 @@ def _talent_sort_key(source_talent_key: str) -> tuple[int, str]:
         return int(source_talent_key), source_talent_key
     except ValueError:
         return 9999, source_talent_key
+
+
+def _build_character_effect_payloads(
+    cache_dir: Path,
+    characters: tuple[CharacterAsset, ...],
+) -> tuple[EffectPayload, ...]:
+    rows: list[EffectPayload] = []
+    for character in characters:
+        detail_path = cache_dir / "avatar" / f"{character.source_id}.json"
+        if not detail_path.exists():
+            continue
+        detail = _payload_data(_read_json(detail_path), f"avatar/{character.source_id}")
+        rows.extend(_build_character_passive_payloads(character, detail))
+        rows.extend(_build_character_constellation_payloads(character, detail))
+    return tuple(rows)
+
+
+def _build_character_passive_payloads(
+    character: CharacterAsset,
+    detail: Mapping[str, Any],
+) -> tuple[EffectPayload, ...]:
+    raw_talents = detail.get("talent")
+    if raw_talents is None:
+        return ()
+    talents = _require_mapping(raw_talents, f"avatar/{character.source_id}.talent")
+    rows: list[EffectPayload] = []
+    for source_talent_key, raw_talent in sorted(
+        talents.items(),
+        key=lambda item: _talent_sort_key(str(item[0])),
+    ):
+        talent = _require_mapping(
+            raw_talent,
+            f"avatar/{character.source_id}.talent[{source_talent_key}]",
+        )
+        if talent.get("type") != 2 or "promote" in talent:
+            continue
+        if _is_empty_placeholder_talent(talent):
+            continue
+        passive_kind = (
+            "passive_exploration"
+            if _is_exploration_passive(str(source_talent_key), talent)
+            else "passive"
+        )
+        rows.append(
+            EffectPayload(
+                effect_key=f"{character.asset_key}:{passive_kind}:{source_talent_key}",
+                owner_type="character",
+                owner_key=character.asset_key,
+                effect_kind=passive_kind,
+                unlock_key=f"passive:{source_talent_key}",
+                handler_key=_CHARACTER_PASSIVE_HANDLER_KEY,
+                params=_character_talent_effect_params(
+                    source_talent_key=str(source_talent_key),
+                    talent=talent,
+                    effect_kind=passive_kind,
+                    item_path=f"avatar/{character.source_id}.talent[{source_talent_key}]",
+                ),
+            )
+        )
+    return tuple(rows)
+
+
+def _build_character_constellation_payloads(
+    character: CharacterAsset,
+    detail: Mapping[str, Any],
+) -> tuple[EffectPayload, ...]:
+    raw_constellations = detail.get("constellation")
+    if raw_constellations is None:
+        return ()
+    constellations = _require_mapping(
+        raw_constellations,
+        f"avatar/{character.source_id}.constellation",
+    )
+    rows: list[EffectPayload] = []
+    for source_constellation_key, raw_constellation in sorted(
+        constellations.items(),
+        key=lambda item: _numeric_sort_key(str(item[0])),
+    ):
+        constellation = _require_mapping(
+            raw_constellation,
+            f"avatar/{character.source_id}.constellation[{source_constellation_key}]",
+        )
+        unlock_key = _constellation_unlock_key(str(source_constellation_key))
+        rows.append(
+            EffectPayload(
+                effect_key=f"{character.asset_key}:constellation:{unlock_key}",
+                owner_type="character",
+                owner_key=character.asset_key,
+                effect_kind="constellation",
+                unlock_key=unlock_key,
+                handler_key=_CHARACTER_CONSTELLATION_HANDLER_KEY,
+                params=_character_constellation_effect_params(
+                    source_constellation_key=str(source_constellation_key),
+                    constellation=constellation,
+                    unlock_key=unlock_key,
+                    item_path=(
+                        f"avatar/{character.source_id}"
+                        f".constellation[{source_constellation_key}]"
+                    ),
+                ),
+            )
+        )
+    return tuple(rows)
+
+
+def _character_talent_effect_params(
+    *,
+    source_talent_key: str,
+    talent: Mapping[str, Any],
+    effect_kind: str,
+    item_path: str,
+) -> dict[str, Any]:
+    description = _required_str(talent, "description", item_path)
+    return {
+        "schema_version": 1,
+        "source": "project-amber-yatta",
+        "source_talent_key": source_talent_key,
+        "source_skill_id": talent.get("skillId"),
+        "name": _required_str(talent, "name", item_path),
+        "effect_kind": effect_kind,
+        "source_template": description,
+        "components": _text_number_components(description),
+    }
+
+
+def _character_constellation_effect_params(
+    *,
+    source_constellation_key: str,
+    constellation: Mapping[str, Any],
+    unlock_key: str,
+    item_path: str,
+) -> dict[str, Any]:
+    description = _required_str(constellation, "description", item_path)
+    return {
+        "schema_version": 1,
+        "source": "project-amber-yatta",
+        "source_constellation_key": source_constellation_key,
+        "source_talent_id": constellation.get("talentId"),
+        "unlock_key": unlock_key,
+        "name": _required_str(constellation, "name", item_path),
+        "source_template": description,
+        "components": _text_number_components(description),
+    }
+
+
+def _text_number_components(text: str) -> list[dict[str, Any]]:
+    return [
+        _single_text_number_component(position, raw_value)
+        for position, raw_value in enumerate(_text_number_values(text))
+    ]
+
+
+def _constellation_unlock_key(source_constellation_key: str) -> str:
+    try:
+        level = int(source_constellation_key) + 1
+    except ValueError as exc:
+        raise AssetValidationError(f"命座键必须是整数：{source_constellation_key!r}") from exc
+    if level < 1:
+        raise AssetValidationError(f"命座键不能小于 0：{source_constellation_key!r}")
+    return f"c{level}"
+
+
+def _is_exploration_passive(source_talent_key: str, talent: Mapping[str, Any]) -> bool:
+    if source_talent_key == "9":
+        return True
+    name = talent.get("name")
+    description = talent.get("description")
+    text = " ".join(part for part in (name, description) if isinstance(part, str))
+    exploration_markers = (
+        "小地图",
+        "探索派遣",
+        "合成",
+        "锻造",
+        "烹饪",
+        "游泳",
+        "滑翔",
+        "冲刺",
+        "采集",
+        "异色原海异种",
+    )
+    return any(marker in text for marker in exploration_markers)
+
+
+def _is_empty_placeholder_talent(talent: Mapping[str, Any]) -> bool:
+    return not talent.get("name") and not talent.get("description")
 
 
 def _build_weapon_level_stats(

@@ -62,6 +62,28 @@ def test_asset_manifest_audit_reports_invalid_effect_payload_params(tmp_path):
     assert {issue.code for issue in report.issues} == {"invalid_effect_payload_params"}
 
 
+def test_asset_manifest_audit_reports_invalid_effect_payload_unlock_key(tmp_path):
+    manifest_path = tmp_path / "assets.json"
+    payload = _manifest_payload()
+    payload["effect_payloads"] = [
+        {
+            "effect_key": "character:audit_char:constellation:c7",
+            "owner_type": "character",
+            "owner_key": "character:audit_char",
+            "effect_kind": "constellation",
+            "unlock_key": "c7",
+            "handler_key": "character.unimplemented_constellation",
+            "params": {"schema_version": 1},
+        }
+    ]
+    manifest_path.write_text(json.dumps(payload), encoding="utf-8")
+
+    report = audit_asset_manifest(manifest_path)
+
+    assert not report.ok
+    assert {issue.code for issue in report.issues} == {"invalid_effect_payload_unlock_key"}
+
+
 def test_asset_manifest_audit_reports_invalid_artifact_set_bonus_params(tmp_path):
     manifest_path = tmp_path / "assets.json"
     payload = _manifest_payload()

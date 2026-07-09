@@ -27,7 +27,7 @@ def test_build_asset_manifest_from_project_amber_cache_writes_index_and_level_st
     assert summary.artifact_set_count == 2
     assert summary.artifact_set_bonus_count == 3
     assert summary.talent_scaling_count == 8
-    assert summary.effect_payload_count == 1
+    assert summary.effect_payload_count == 10
 
     manifest = load_asset_manifest(manifest_path)
     assert manifest.meta["source_name"] == "project-amber-yatta"
@@ -61,6 +61,7 @@ def test_build_asset_manifest_from_project_amber_cache_writes_index_and_level_st
         "normal_attack",
     )
     burst_scalings = repository.get_talent_scalings("character:10000002", "elemental_burst")
+    character_effects = repository.get_effect_payloads("character:10000002")
     weapon_effect = repository.get_effect_payloads("weapon:11512")[0]
     artifact_two_piece = repository.get_artifact_set_bonuses("artifact_set:15032", 2)[0]
     artifact_four_piece = repository.get_artifact_set_bonuses("artifact_set:15032", 4)[0]
@@ -87,6 +88,24 @@ def test_build_asset_manifest_from_project_amber_cache_writes_index_and_level_st
     assert normal_attack_scalings[1].scaling["components"][1]["source_param"] == "param3"
     assert burst_scalings[1].scaling["components"][0]["kind"] == "plain_ratio"
     assert burst_scalings[1].scaling["components"][1]["kind"] == "plain_value"
+    assert len(character_effects) == 9
+    character_effect_by_key = {effect.effect_key: effect for effect in character_effects}
+    passive_5 = character_effect_by_key["character:10000002:passive:5"]
+    passive_6 = character_effect_by_key["character:10000002:passive:6"]
+    passive_7 = character_effect_by_key["character:10000002:passive_exploration:7"]
+    constellation_1 = character_effect_by_key["character:10000002:constellation:c1"]
+    assert passive_5.handler_key == "character.unimplemented_passive"
+    assert passive_5.unlock_key == "passive:5"
+    assert passive_5.params["components"][0]["values"] == [6.0]
+    assert passive_6.effect_kind == "passive"
+    assert passive_6.params["components"][0]["values"] == [10.0]
+    assert passive_6.params["components"][1]["values"] == [0.18]
+    assert passive_7.effect_kind == "passive_exploration"
+    assert passive_7.params["source_talent_key"] == "7"
+    assert constellation_1.handler_key == "character.unimplemented_constellation"
+    assert constellation_1.unlock_key == "c1"
+    assert constellation_1.params["source_constellation_key"] == "0"
+    assert constellation_1.params["components"][0]["values"] == [0.5]
     assert weapon_effect.effect_key == "weapon:11512:passive:111512"
     assert weapon_effect.handler_key == "weapon.unimplemented_passive"
     assert weapon_effect.params["refinement_min"] == 1
@@ -151,7 +170,7 @@ def test_build_asset_manifest_uses_weapon_unlock_max_level(tmp_path):
     assert summary.artifact_set_count == 2
     assert summary.artifact_set_bonus_count == 3
     assert summary.talent_scaling_count == 8
-    assert summary.effect_payload_count == 1
+    assert summary.effect_payload_count == 10
     assert len(low_rarity_rows) == 74
     assert {row.level for row in low_rarity_rows} == set(range(1, 71))
     assert [row.ascension_phase for row in low_rarity_rows if row.level == 70] == [4]
@@ -309,6 +328,7 @@ def _write_project_amber_cache(cache_dir, *, include_details: bool) -> None:
                     "promote": _character_promotes(),
                 },
                 "talent": _character_talents(),
+                "constellation": _character_constellations(),
             },
         },
     )
@@ -460,6 +480,45 @@ def _character_talents() -> dict[str, object]:
                 ],
             ),
         },
+        "5": {
+            "skillId": 221,
+            "name": "天罪国罪镇词",
+            "type": 2,
+            "description": (
+                "施放<color=#FFD780FF>神里流·冰华</color>后的6秒内，"
+                "普通攻击与重击造成的伤害提升30%。"
+            ),
+        },
+        "6": {
+            "skillId": 222,
+            "name": "寒天宣命祝词",
+            "type": 2,
+            "description": "恢复10点体力；获得18%冰元素伤害加成，持续10秒。",
+        },
+        "7": {
+            "skillId": 223,
+            "name": "鉴查心得",
+            "type": 2,
+            "description": "合成武器突破素材时，有10%概率获得2倍产出。",
+        },
+        "8": {
+            "skillId": 224,
+            "name": "",
+            "type": 2,
+            "description": "",
+        },
+    }
+
+
+def _character_constellations() -> dict[str, object]:
+    return {
+        str(index): {
+            "id": index,
+            "talentId": 210 + index,
+            "name": f"测试命座{index + 1}",
+            "description": f"造成伤害时有50%概率触发第{index + 1}层效果。",
+        }
+        for index in range(6)
     }
 
 

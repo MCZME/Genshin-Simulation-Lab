@@ -676,6 +676,26 @@ def _audit_effect_payloads(
             )
         )
 
+    invalid_unlock_keys = sorted(
+        item.effect_key
+        for item in manifest.effect_payloads
+        if not _valid_effect_payload_unlock_key(
+            item.owner_type,
+            item.effect_kind,
+            item.unlock_key,
+        )
+    )
+    if invalid_unlock_keys:
+        issues.append(
+            AssetManifestAuditIssue(
+                code="invalid_effect_payload_unlock_key",
+                message=(
+                    "效果参数 unlock_key 不合法，示例："
+                    f"{_format_examples(invalid_unlock_keys)}"
+                ),
+            )
+        )
+
 
 def _valid_effect_payload_params(params: Mapping[str, Any]) -> bool:
     if params.get("schema_version") != 1:
@@ -710,6 +730,24 @@ def _valid_effect_payload_params(params: Mapping[str, Any]) -> bool:
             return False
         if expected_length is not None and len(values) != expected_length:
             return False
+    return True
+
+
+def _valid_effect_payload_unlock_key(
+    owner_type: str,
+    effect_kind: str,
+    unlock_key: str | None,
+) -> bool:
+    if owner_type != "character":
+        return True
+    if effect_kind == "constellation":
+        return unlock_key in {"c1", "c2", "c3", "c4", "c5", "c6"}
+    if effect_kind in {"passive", "passive_exploration"}:
+        return (
+            isinstance(unlock_key, str)
+            and unlock_key.startswith("passive:")
+            and len(unlock_key) > len("passive:")
+        )
     return True
 
 

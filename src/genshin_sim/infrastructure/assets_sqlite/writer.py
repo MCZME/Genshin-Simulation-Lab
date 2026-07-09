@@ -81,7 +81,7 @@ def write_minimal_static_asset_database(db_path: str | Path) -> Path:
                 element="anemo",
                 weapon_type="sword",
                 rarity=5,
-                handler_key="generic.test_character",
+                handler_key="character.testing.runtime_probe",
             ),
         ),
         character_level_stats=(

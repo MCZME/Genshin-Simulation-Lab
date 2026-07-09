@@ -29,8 +29,14 @@ class MemoryAssetRepository:
         assert character_key == "character:test"
         return self.list_characters()[0]
 
-    def get_character_level_stats(self, character_key: str, level: int):
-        raise LookupError((character_key, level))
+    def get_character_level_stats(
+        self,
+        character_key: str,
+        level: int,
+        *,
+        ascended: bool = True,
+    ):
+        raise LookupError((character_key, level, ascended))
 
     def list_weapons(self, weapon_type: str | None = None):
         return (
@@ -47,8 +53,14 @@ class MemoryAssetRepository:
         assert weapon_key == "weapon:test"
         return self.list_weapons()[0]
 
-    def get_weapon_level_stats(self, weapon_key: str, level: int):
-        raise LookupError((weapon_key, level))
+    def get_weapon_level_stats(
+        self,
+        weapon_key: str,
+        level: int,
+        *,
+        ascended: bool = True,
+    ):
+        raise LookupError((weapon_key, level, ascended))
 
     def list_artifact_sets(self):
         return ()

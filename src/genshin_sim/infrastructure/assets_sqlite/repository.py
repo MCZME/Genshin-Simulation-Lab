@@ -20,9 +20,12 @@ from genshin_sim.assets import (
     WeaponLevelStats,
 )
 
+# 可选择突破前/突破后属性的等级。
+_ASCENDABLE_LEVELS = frozenset({20, 40, 50, 60, 70, 80})
+
 
 class SQLiteAssetRepository:
-    """Read asset models from a SQLite asset database."""
+    """从 SQLite 资产数据库读取资产模型。"""
 
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
@@ -72,15 +75,18 @@ class SQLiteAssetRepository:
         self,
         character_key: str,
         level: int,
+        *,
+        ascended: bool = True,
     ) -> CharacterLevelStats:
+        phase_order = "DESC" if ascended or level not in _ASCENDABLE_LEVELS else "ASC"
         with closing(self._connect()) as connection:
             row = connection.execute(
-                """
+                f"""
                 SELECT character_key, level, ascension_phase, base_hp, base_atk, base_def,
                        ascension_stat, ascension_value
                 FROM character_level_stats
                 WHERE character_key = ? AND level = ?
-                ORDER BY ascension_phase DESC
+                ORDER BY ascension_phase {phase_order}
                 LIMIT 1
                 """,
                 (character_key, level),
@@ -129,15 +135,22 @@ class SQLiteAssetRepository:
             raise AssetNotFoundError(f"weapon not found: {weapon_key}")
         return _weapon_from_row(row)
 
-    def get_weapon_level_stats(self, weapon_key: str, level: int) -> WeaponLevelStats:
+    def get_weapon_level_stats(
+        self,
+        weapon_key: str,
+        level: int,
+        *,
+        ascended: bool = True,
+    ) -> WeaponLevelStats:
+        phase_order = "DESC" if ascended or level not in _ASCENDABLE_LEVELS else "ASC"
         with closing(self._connect()) as connection:
             row = connection.execute(
-                """
+                f"""
                 SELECT weapon_key, level, ascension_phase, base_atk, secondary_stat,
                        secondary_value
                 FROM weapon_level_stats
                 WHERE weapon_key = ? AND level = ?
-                ORDER BY ascension_phase DESC
+                ORDER BY ascension_phase {phase_order}
                 LIMIT 1
                 """,
                 (weapon_key, level),

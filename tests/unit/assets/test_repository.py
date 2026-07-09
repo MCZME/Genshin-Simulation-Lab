@@ -99,9 +99,12 @@ class MemoryAssetRepository:
         self,
         character_key: str,
         level: int,
+        *,
+        ascended: bool = True,
     ) -> CharacterLevelStats:
         assert character_key == "character:75"
         assert level == 90
+        assert ascended
         return self.character_stats
 
     def list_weapons(self, weapon_type: str | None = None) -> tuple[WeaponAsset, ...]:
@@ -112,9 +115,16 @@ class MemoryAssetRepository:
         assert weapon_key == "weapon:11512"
         return self.weapon
 
-    def get_weapon_level_stats(self, weapon_key: str, level: int) -> WeaponLevelStats:
+    def get_weapon_level_stats(
+        self,
+        weapon_key: str,
+        level: int,
+        *,
+        ascended: bool = True,
+    ) -> WeaponLevelStats:
         assert weapon_key == "weapon:11512"
         assert level == 90
+        assert ascended
         return self.weapon_stats
 
     def list_artifact_sets(self) -> tuple[ArtifactSetAsset, ...]:

@@ -4,6 +4,9 @@ from genshin_sim.application.services.assets import (
     AssetDatabaseService,
     AssetListItem,
     AssetListKind,
+    AssetManifestAuditService,
+    AssetManifestBuildService,
+    AssetSourceCacheService,
     AssetsService,
 )
 from genshin_sim.application.services.config_validation import ConfigValidationService
@@ -24,6 +27,9 @@ __all__ = [
     "AssetDatabaseService",
     "AssetListItem",
     "AssetListKind",
+    "AssetManifestAuditService",
+    "AssetManifestBuildService",
+    "AssetSourceCacheService",
     "AssetsService",
     "ConfigValidationService",
     "ConfigValidator",

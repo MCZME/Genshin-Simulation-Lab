@@ -12,3 +12,7 @@ htmlcov/
 
 # Virtual environments
 .venv
+
+# Generated asset source caches
+data/assets/sources/
+data/assets/manifests/

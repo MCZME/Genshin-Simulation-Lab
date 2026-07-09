@@ -94,3 +94,49 @@ class AssetDatabaseService:
     def validate_database(self, db_path: str | Path) -> None:
         self._validate_database(db_path)
         logger.info("资产数据库校验通过", extra={"asset_db": str(db_path)})
+
+
+class AssetSourceCacheService:
+    """开发期资产源 raw cache 抓取操作。"""
+
+    def __init__(self, *, fetch_source_cache: Callable[[str | Path], Any]) -> None:
+        self._fetch_source_cache = fetch_source_cache
+
+    def fetch_source_cache(self, output_dir: str | Path) -> Any:
+        summary = self._fetch_source_cache(output_dir)
+        logger.info("资产源 raw cache 已抓取", extra={"output_dir": str(output_dir)})
+        return summary
+
+
+class AssetManifestBuildService:
+    """开发期资产 manifest 构建操作。"""
+
+    def __init__(
+        self,
+        *,
+        build_manifest: Callable[[str | Path, str | Path], Any],
+    ) -> None:
+        self._build_manifest = build_manifest
+
+    def build_manifest(self, source_cache_dir: str | Path, output_path: str | Path) -> Any:
+        summary = self._build_manifest(source_cache_dir, output_path)
+        logger.info(
+            "资产 manifest 已构建",
+            extra={"source_cache_dir": str(source_cache_dir), "output_path": str(output_path)},
+        )
+        return summary
+
+
+class AssetManifestAuditService:
+    """开发期资产 manifest 验收操作。"""
+
+    def __init__(self, *, audit_manifest: Callable[[str | Path], Any]) -> None:
+        self._audit_manifest = audit_manifest
+
+    def audit_manifest(self, manifest_path: str | Path) -> Any:
+        report = self._audit_manifest(manifest_path)
+        logger.info(
+            "资产 manifest 验收完成",
+            extra={"manifest_path": str(manifest_path), "issue_count": report.issue_count},
+        )
+        return report

@@ -35,6 +35,8 @@ class AssetRepository(Protocol):
         self,
         character_key: str,
         level: int,
+        *,
+        ascended: bool = True,
     ) -> CharacterLevelStats:
         ...
 
@@ -44,7 +46,13 @@ class AssetRepository(Protocol):
     def get_weapon(self, weapon_key: str) -> WeaponAsset:
         ...
 
-    def get_weapon_level_stats(self, weapon_key: str, level: int) -> WeaponLevelStats:
+    def get_weapon_level_stats(
+        self,
+        weapon_key: str,
+        level: int,
+        *,
+        ascended: bool = True,
+    ) -> WeaponLevelStats:
         ...
 
     def list_artifact_sets(self) -> tuple[ArtifactSetAsset, ...]:

@@ -27,7 +27,7 @@ def test_build_asset_manifest_from_project_amber_cache_writes_index_and_level_st
     assert summary.artifact_set_count == 2
     assert summary.artifact_set_bonus_count == 3
     assert summary.talent_scaling_count == 8
-    assert summary.effect_payload_count == 10
+    assert summary.effect_payload_count == 11
 
     manifest = load_asset_manifest(manifest_path)
     assert manifest.meta["source_name"] == "project-amber-yatta"
@@ -88,12 +88,18 @@ def test_build_asset_manifest_from_project_amber_cache_writes_index_and_level_st
     assert normal_attack_scalings[1].scaling["components"][1]["source_param"] == "param3"
     assert burst_scalings[1].scaling["components"][0]["kind"] == "plain_ratio"
     assert burst_scalings[1].scaling["components"][1]["kind"] == "plain_value"
-    assert len(character_effects) == 9
+    assert len(character_effects) == 10
     character_effect_by_key = {effect.effect_key: effect for effect in character_effects}
+    alternate_sprint = character_effect_by_key["character:10000002:alternate_sprint:2"]
     passive_5 = character_effect_by_key["character:10000002:passive:5"]
     passive_6 = character_effect_by_key["character:10000002:passive:6"]
     passive_7 = character_effect_by_key["character:10000002:passive_exploration:7"]
     constellation_1 = character_effect_by_key["character:10000002:constellation:c1"]
+    assert alternate_sprint.handler_key == "character.unimplemented_special_talent"
+    assert alternate_sprint.unlock_key == "talent:2"
+    assert alternate_sprint.effect_kind == "alternate_sprint"
+    assert alternate_sprint.params["promote_entries"][0]["components"][0]["values"] == [10.0]
+    assert alternate_sprint.params["promote_entries"][2]["components"][0]["values"] == [5.0]
     assert passive_5.handler_key == "character.unimplemented_passive"
     assert passive_5.unlock_key == "passive:5"
     assert passive_5.params["components"][0]["values"] == [6.0]
@@ -170,7 +176,7 @@ def test_build_asset_manifest_uses_weapon_unlock_max_level(tmp_path):
     assert summary.artifact_set_count == 2
     assert summary.artifact_set_bonus_count == 3
     assert summary.talent_scaling_count == 8
-    assert summary.effect_payload_count == 10
+    assert summary.effect_payload_count == 11
     assert len(low_rarity_rows) == 74
     assert {row.level for row in low_rarity_rows} == set(range(1, 71))
     assert [row.ascension_phase for row in low_rarity_rows if row.level == 70] == [4]
@@ -461,6 +467,23 @@ def _character_talents() -> dict[str, object]:
                     lambda _level: 10.0,
                 ],
             ),
+        },
+        "2": {
+            "skillId": 10013,
+            "name": "神里流·霰步",
+            "type": 0,
+            "description": "<color=#FFD780FF>替代冲刺</color>，结束时获得冰元素附魔。",
+            "promote": {
+                "1": {
+                    "level": 1,
+                    "description": [
+                        "启动体力消耗|{param1:F1}点",
+                        "持续体力消耗|每秒{param2:F1}点",
+                        "附魔持续时间|{param3:F1}秒",
+                    ],
+                    "params": [10.0, 15.0, 5.0],
+                }
+            },
         },
         "4": {
             "skillId": 10003,

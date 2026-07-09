@@ -748,6 +748,12 @@ def _valid_effect_payload_unlock_key(
             and unlock_key.startswith("passive:")
             and len(unlock_key) > len("passive:")
         )
+    if effect_kind in {"alternate_sprint", "special_movement", "special_talent"}:
+        return (
+            isinstance(unlock_key, str)
+            and unlock_key.startswith("talent:")
+            and len(unlock_key) > len("talent:")
+        )
     return True
 
 

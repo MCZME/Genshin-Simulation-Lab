@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from genshin_sim.content.characters.mondstadt.barbara.actions import (
     BarbaraActionInterpreter,
+    create_barbara_actions,
 )
 from genshin_sim.content.characters.mondstadt.barbara.constants import (
     BARBARA_CHARACTER_HANDLER_KEY,
@@ -25,6 +26,7 @@ def create_barbara_content(
         handler_key=request.handler_key,
         slot=request.slot,
         action_interpreter=BarbaraActionInterpreter(),
+        actions=create_barbara_actions(),
         state_extension=BarbaraState(),
         impact_factories={impact_key: impact_factory for impact_key in BARBARA_HIT_IMPACT_KEYS},
         metadata={"purpose": "barbara_action_state_machine"},

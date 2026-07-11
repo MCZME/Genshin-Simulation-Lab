@@ -2,7 +2,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
 
 from genshin_sim.content.characters.mondstadt.barbara.constants import (
     BARBARA_CHARACTER_HANDLER_KEY,
@@ -23,15 +22,13 @@ from genshin_sim.content.characters.mondstadt.barbara.constants import (
     BARBARA_NORMAL_ATTACK_4_IMPACT_KEY,
 )
 from genshin_sim.core.actions import (
-    ActionInterpretation,
+    ActionInterpretationResult,
     ActionInterpretationTrigger,
-    ActionTimelineSpec,
+    ActionOwnerRef,
+    InputSessionView,
+    PreparedAction,
+    TimedImpactAction,
 )
-
-if TYPE_CHECKING:
-    from genshin_sim.core.actions import InputActionSession
-    from genshin_sim.core.simulation import SimulationContext
-
 
 NORMAL_ATTACK_INPUT = "normal_attack"
 CHARGED_ATTACK_INPUT = "charged_attack"
@@ -174,38 +171,46 @@ class BarbaraActionInterpreter:
         self._last_action_start_frame: int | None = None
 
     @property
+    def supported_action_keys(self) -> tuple[str, ...]:
+        return tuple(self._action_table)
+
+    @property
     def last_action_key(self) -> str | None:
         return self._last_action_key
 
-    def interpret(
-        self,
-        context: SimulationContext,
-        session: InputActionSession,
-        trigger: ActionInterpretationTrigger,
-    ) -> ActionInterpretation:
+    def interpret(self, context, session: InputSessionView) -> ActionInterpretationResult:
         del context
-        if trigger is ActionInterpretationTrigger.PRESS:
-            return ActionInterpretation.defer()
-
+        if session.trigger is ActionInterpretationTrigger.PRESS:
+            return ActionInterpretationResult.wait()
+        if session.trigger is not ActionInterpretationTrigger.RELEASE:
+            return ActionInterpretationResult.wait()
         if session.release_frame is None:
-            return ActionInterpretation.reject("缺少释放帧")
+            return ActionInterpretationResult.reject("缺少释放帧")
 
         input_kind = INPUT_KIND_BY_KEY.get(session.key)
         if input_kind is None:
-            return ActionInterpretation.reject(f"芭芭拉不支持输入：{session.key}")
+            return ActionInterpretationResult.reject(f"芭芭拉不支持输入：{session.key}")
 
-        transition_rejection = self._transition_rejection(
-            input_kind,
-            session.release_frame,
-        )
+        transition_rejection = self._transition_rejection(input_kind, session.release_frame)
         if transition_rejection is not None:
-            return ActionInterpretation.reject(transition_rejection)
+            return ActionInterpretationResult.reject(transition_rejection)
 
         action = self._select_action(input_kind)
-        timeline = self._build_timeline(action, session)
         self._last_action_key = action.action_key
         self._last_action_start_frame = session.release_frame
-        return ActionInterpretation.schedule(timeline)
+        return ActionInterpretationResult.start(
+            PreparedAction(
+                action_key=action.action_key,
+                owner=ActionOwnerRef.character(session.owner.slot or 1),
+                requested_start_frame=session.current_frame,
+                params={
+                    "content_handler_key": BARBARA_CHARACTER_HANDLER_KEY,
+                    "barbara_action_kind": action.action_kind,
+                    "barbara_hit_frame": action.hit_frame,
+                },
+                source_session_id=session.session_id,
+            )
+        )
 
     def _transition_rejection(self, input_kind: str, frame: int) -> str | None:
         if self._last_action_key is None or self._last_action_start_frame is None:
@@ -214,9 +219,7 @@ class BarbaraActionInterpreter:
         previous = self._action_table[self._last_action_key]
         transition_frame = previous.transitions.get(input_kind)
         if transition_frame is None:
-            return (
-                f"芭芭拉动作缺少 {previous.action_key} -> {input_kind} 的衔接数据"
-            )
+            return f"芭芭拉动作缺少 {previous.action_key} -> {input_kind} 的衔接数据"
 
         earliest_frame = self._last_action_start_frame + transition_frame
         if frame < earliest_frame:
@@ -248,29 +251,24 @@ class BarbaraActionInterpreter:
         next_index = (last_index + 1) % len(BARBARA_NORMAL_ATTACK_ACTION_KEYS)
         return self._action_table[BARBARA_NORMAL_ATTACK_ACTION_KEYS[next_index]]
 
-    def _build_timeline(
-        self,
-        action: BarbaraActionSpec,
-        session: InputActionSession,
-    ) -> ActionTimelineSpec:
+
+def create_barbara_actions(
+    action_table: Mapping[str, BarbaraActionSpec] | None = None,
+) -> tuple[TimedImpactAction, ...]:
+    table = dict(action_table or BARBARA_ACTION_TABLE)
+    actions: list[TimedImpactAction] = []
+    for action in table.values():
         impact_keys: tuple[str, ...] = ()
         impact_frame_offsets: dict[str, int] = {}
         if action.impact_key is not None and action.hit_frame is not None:
             impact_keys = (action.impact_key,)
             impact_frame_offsets[action.impact_key] = action.hit_frame
-
-        return ActionTimelineSpec(
-            action_key=action.action_key,
-            source_key=session.key,
-            owner_slot=session.owner_slot_at_press,
-            start_frame=session.release_frame or session.press_frame,
-            duration_frames=action.duration_frames,
-            impact_keys=impact_keys,
-            impact_frame_offsets=impact_frame_offsets,
-            create_default_impact_point=False,
-            params={
-                "content_handler_key": BARBARA_CHARACTER_HANDLER_KEY,
-                "barbara_action_kind": action.action_kind,
-                "barbara_hit_frame": action.hit_frame,
-            },
+        actions.append(
+            TimedImpactAction(
+                action_key=action.action_key,
+                duration_frames=action.duration_frames,
+                impact_keys=impact_keys,
+                impact_frame_offsets=impact_frame_offsets,
+            )
         )
+    return tuple(actions)

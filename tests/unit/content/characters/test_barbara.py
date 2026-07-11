@@ -3,13 +3,10 @@ from __future__ import annotations
 from genshin_sim.content.characters.mondstadt.barbara import (
     BARBARA_CHARACTER_HANDLER_KEY,
     BARBARA_CHARGED_ATTACK_ACTION_KEY,
-    BARBARA_CHARGED_ATTACK_IMPACT_KEY,
     BARBARA_ELEMENTAL_BURST_ACTION_KEY,
     BARBARA_ELEMENTAL_SKILL_ACTION_KEY,
-    BARBARA_ELEMENTAL_SKILL_IMPACT_KEY,
     BARBARA_HIT_IMPACT_KEYS,
     BARBARA_JUMP_ACTION_KEY,
-    BARBARA_JUMP_IMPACT_KEY,
     BARBARA_NORMAL_ATTACK_1_ACTION_KEY,
     BARBARA_NORMAL_ATTACK_1_IMPACT_KEY,
     BARBARA_NORMAL_ATTACK_2_ACTION_KEY,
@@ -18,30 +15,37 @@ from genshin_sim.content.characters.mondstadt.barbara import (
     BarbaraState,
     create_barbara_content,
 )
+from genshin_sim.content.characters.mondstadt.barbara.actions import create_barbara_actions
 from genshin_sim.content.registry import CharacterRuntimeRequest
 from genshin_sim.core.actions import (
-    ActionInterpretation,
     ActionInterpretationKind,
     ActionInterpretationTrigger,
-    InputActionSession,
+    ActionOwnerRef,
+    InputPhysicalState,
+    InputSessionView,
 )
 from genshin_sim.core.simulation import SimulationContext
 
 
-def test_barbara_interpreter_schedules_first_normal_attack_with_hit_frame():
+def test_barbara_interpreter_starts_first_normal_attack():
     interpreter = BarbaraActionInterpreter()
 
     interpretation = _release(interpreter, "mouse.left", frame=10)
 
-    assert interpretation.kind is ActionInterpretationKind.SCHEDULE_TIMELINE
-    assert interpretation.timeline is not None
-    assert interpretation.timeline.action_key == BARBARA_NORMAL_ATTACK_1_ACTION_KEY
-    assert interpretation.timeline.start_frame == 10
-    assert interpretation.timeline.duration_frames == 15
-    assert interpretation.timeline.impact_keys == (BARBARA_NORMAL_ATTACK_1_IMPACT_KEY,)
-    assert interpretation.timeline.impact_frame_offsets == {
-        BARBARA_NORMAL_ATTACK_1_IMPACT_KEY: 6
-    }
+    assert interpretation.kind is ActionInterpretationKind.START_ACTION
+    assert interpretation.prepared_action is not None
+    assert interpretation.prepared_action.action_key == BARBARA_NORMAL_ATTACK_1_ACTION_KEY
+    assert interpretation.prepared_action.requested_start_frame == 10
+    assert interpretation.prepared_action.params["barbara_action_kind"] == "normal_attack"
+
+
+def test_barbara_registered_action_preserves_hit_frame():
+    actions = {action.action_key: action for action in create_barbara_actions()}
+    normal_1 = actions[BARBARA_NORMAL_ATTACK_1_ACTION_KEY]
+
+    assert normal_1.duration_frames == 15
+    assert normal_1.impact_keys == (BARBARA_NORMAL_ATTACK_1_IMPACT_KEY,)
+    assert normal_1.impact_frame_offsets == {BARBARA_NORMAL_ATTACK_1_IMPACT_KEY: 6}
 
 
 def test_barbara_normal_attack_chain_uses_confirmed_transition_frames():
@@ -54,10 +58,11 @@ def test_barbara_normal_attack_chain_uses_confirmed_transition_frames():
     assert too_early.kind is ActionInterpretationKind.REJECT
     assert too_early.reason is not None
     assert "最早可在第 15 帧衔接" in too_early.reason
-    assert chained.kind is ActionInterpretationKind.SCHEDULE_TIMELINE
-    assert chained.timeline is not None
-    assert chained.timeline.action_key == BARBARA_NORMAL_ATTACK_2_ACTION_KEY
-    assert chained.timeline.impact_frame_offsets == {
+    assert chained.kind is ActionInterpretationKind.START_ACTION
+    assert chained.prepared_action is not None
+    assert chained.prepared_action.action_key == BARBARA_NORMAL_ATTACK_2_ACTION_KEY
+    actions = {action.action_key: action for action in create_barbara_actions()}
+    assert actions[BARBARA_NORMAL_ATTACK_2_ACTION_KEY].impact_frame_offsets == {
         BARBARA_NORMAL_ATTACK_2_IMPACT_KEY: 11
     }
 
@@ -81,15 +86,15 @@ def test_barbara_charged_attack_can_link_to_burst_at_confirmed_frame():
     too_early = _release(interpreter, "keyboard.q", frame=86)
     burst = _release(interpreter, "keyboard.q", frame=87)
 
-    assert charged.kind is ActionInterpretationKind.SCHEDULE_TIMELINE
-    assert charged.timeline is not None
-    assert charged.timeline.action_key == BARBARA_CHARGED_ATTACK_ACTION_KEY
-    assert charged.timeline.impact_frame_offsets == {BARBARA_CHARGED_ATTACK_IMPACT_KEY: 55}
+    assert charged.kind is ActionInterpretationKind.START_ACTION
+    assert charged.prepared_action is not None
+    assert charged.prepared_action.action_key == BARBARA_CHARGED_ATTACK_ACTION_KEY
     assert too_early.kind is ActionInterpretationKind.REJECT
-    assert burst.kind is ActionInterpretationKind.SCHEDULE_TIMELINE
-    assert burst.timeline is not None
-    assert burst.timeline.action_key == BARBARA_ELEMENTAL_BURST_ACTION_KEY
-    assert burst.timeline.impact_keys == ()
+    assert burst.kind is ActionInterpretationKind.START_ACTION
+    assert burst.prepared_action is not None
+    assert burst.prepared_action.action_key == BARBARA_ELEMENTAL_BURST_ACTION_KEY
+    actions = {action.action_key: action for action in create_barbara_actions()}
+    assert actions[BARBARA_ELEMENTAL_BURST_ACTION_KEY].impact_keys == ()
 
 
 def test_barbara_elemental_skill_jump_transition_uses_early_cancel_frame():
@@ -99,16 +104,13 @@ def test_barbara_elemental_skill_jump_transition_uses_early_cancel_frame():
     too_early = _release(interpreter, "keyboard.space", frame=7)
     jump = _release(interpreter, "keyboard.space", frame=8)
 
-    assert skill.kind is ActionInterpretationKind.SCHEDULE_TIMELINE
-    assert skill.timeline is not None
-    assert skill.timeline.action_key == BARBARA_ELEMENTAL_SKILL_ACTION_KEY
-    assert skill.timeline.duration_frames == 5
-    assert skill.timeline.impact_frame_offsets == {BARBARA_ELEMENTAL_SKILL_IMPACT_KEY: 42}
+    assert skill.kind is ActionInterpretationKind.START_ACTION
+    assert skill.prepared_action is not None
+    assert skill.prepared_action.action_key == BARBARA_ELEMENTAL_SKILL_ACTION_KEY
     assert too_early.kind is ActionInterpretationKind.REJECT
-    assert jump.kind is ActionInterpretationKind.SCHEDULE_TIMELINE
-    assert jump.timeline is not None
-    assert jump.timeline.action_key == BARBARA_JUMP_ACTION_KEY
-    assert jump.timeline.impact_frame_offsets == {BARBARA_JUMP_IMPACT_KEY: 31}
+    assert jump.kind is ActionInterpretationKind.START_ACTION
+    assert jump.prepared_action is not None
+    assert jump.prepared_action.action_key == BARBARA_JUMP_ACTION_KEY
 
 
 def test_barbara_content_contribution_registers_action_state_machine():
@@ -123,6 +125,7 @@ def test_barbara_content_contribution_registers_action_state_machine():
 
     assert contribution.handler_key == BARBARA_CHARACTER_HANDLER_KEY
     assert contribution.action_interpreter is not None
+    assert len(contribution.actions) == 8
     assert contribution.state_extension == BarbaraState()
     assert tuple(contribution.impact_factories) == BARBARA_HIT_IMPACT_KEYS
 
@@ -132,16 +135,18 @@ def _release(
     key: str,
     *,
     frame: int,
-) -> ActionInterpretation:
-    session = InputActionSession(
-        session_id=frame + 1,
-        key=key,
-        owner_slot_at_press=1,
-        press_frame=frame,
-        release_frame=frame,
-    )
+):
     return interpreter.interpret(
         SimulationContext(),
-        session,
-        ActionInterpretationTrigger.RELEASE,
+        InputSessionView(
+            session_id=frame + 1,
+            key=key,
+            trigger=ActionInterpretationTrigger.RELEASE,
+            press_frame=frame,
+            current_frame=frame,
+            held_frames=0,
+            physical_state=InputPhysicalState.RELEASED,
+            owner=ActionOwnerRef.character(1),
+            release_frame=frame,
+        ),
     )

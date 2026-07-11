@@ -2,6 +2,7 @@ from genshin_sim.content.characters.mondstadt.barbara.actions import (
     BARBARA_ACTION_TABLE,
     BarbaraActionInterpreter,
     BarbaraActionSpec,
+    create_barbara_actions,
 )
 from genshin_sim.content.characters.mondstadt.barbara.constants import (
     BARBARA_CHARACTER_HANDLER_KEY,
@@ -50,6 +51,7 @@ __all__ = [
     "BarbaraActionInterpreter",
     "BarbaraActionSpec",
     "BarbaraState",
+    "create_barbara_actions",
     "create_barbara_content",
     "register",
 ]

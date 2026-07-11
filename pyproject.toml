@@ -7,7 +7,9 @@ authors = [
     { name = "MCZME", email = "126310378+MCZME@users.noreply.github.com" }
 ]
 requires-python = ">=3.14"
-dependencies = []
+dependencies = [
+    "flet>=0.85.3",
+]
 
 [dependency-groups]
 dev = [

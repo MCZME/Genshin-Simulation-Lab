@@ -2,26 +2,28 @@ from __future__ import annotations
 
 import pytest
 
-from genshin_sim.core.actions import ActionManager, ActionRejectReason
-from genshin_sim.core.simulation import (
-    BasicRuntimeWorld,
-    BasicTeamController,
-    InputState,
-    KeyEvent,
-    KeyEventDispatch,
-    KeyInputFrame,
-    KeyPhase,
-    SimulationContext,
-    SimulationStopReason,
-    Simulator,
-    TeamRuntimeState,
-    TeamSwitchStatus,
-    TraceInputSystem,
-)
+from genshin_sim.core.entity_states import CharacterRuntimeState
+from genshin_sim.core.simulation import TeamRuntimeState, TeamSwitchStatus
+
+
+def _character(slot: int, *, combat_entity_id: str = "") -> CharacterRuntimeState:
+    return CharacterRuntimeState(
+        slot=slot,
+        character_key=f"character:{slot}",
+        level=90,
+        combat_entity_id=combat_entity_id,
+    )
+
+
+def _team_state(size: int = 4, *, active_slot: int = 1) -> TeamRuntimeState:
+    return TeamRuntimeState(
+        (_character(slot) for slot in range(1, size + 1)),
+        active_slot=active_slot,
+    )
 
 
 def test_team_runtime_state_switches_with_one_based_slots():
-    team_state = TeamRuntimeState(team_size=4, active_slot=1)
+    team_state = _team_state(size=4, active_slot=1)
 
     switched = team_state.switch_to(3, frame=10)
 
@@ -44,250 +46,39 @@ def test_team_runtime_state_switches_with_one_based_slots():
     assert team_state.active_slot == 3
 
 
+def test_team_runtime_state_exposes_current_character():
+    team_state = _team_state(size=3, active_slot=2)
+
+    assert team_state.team_size == 3
+    assert team_state.slots == (1, 2, 3)
+    assert team_state.current_character.slot == 2
+    assert team_state.get_character(3) is not None
+    assert team_state.get_character(4) is None
+
+    team_state.switch_to(3, frame=1)
+
+    assert team_state.current_character.slot == 3
+
+
 @pytest.mark.parametrize(
-    ("team_size", "active_slot", "message"),
+    ("characters", "active_slot", "message"),
     [
-        (0, 1, "队伍槽位数量必须在 1 到 4 之间"),
-        (5, 1, "队伍槽位数量必须在 1 到 4 之间"),
-        (2, 3, "当前场上槽位必须在队伍槽位范围内"),
+        ([], 1, "队伍至少需要一个角色运行态"),
+        ([_character(slot) for slot in range(1, 6)], 1, "队伍角色数量必须在 1 到 4 之间"),
+        ([_character(1), _character(1)], 1, "队伍槽位重复：1"),
+        ([_character(1), _character(3)], 1, "队伍槽位必须从 1 开始连续排列"),
+        (
+            [_character(1, combat_entity_id="same"), _character(2, combat_entity_id="same")],
+            1,
+            "角色战斗实体 id 不能重复",
+        ),
+        ([_character(1), _character(2)], 3, "当前场上槽位必须在队伍槽位范围内"),
     ],
 )
 def test_team_runtime_state_validates_slots(
-    team_size: int,
+    characters: list[CharacterRuntimeState],
     active_slot: int,
     message: str,
 ):
     with pytest.raises(ValueError, match=message):
-        TeamRuntimeState(team_size=team_size, active_slot=active_slot)
-
-
-def test_basic_team_controller_switches_on_number_press():
-    ctx = SimulationContext()
-    controller = BasicTeamController()
-
-    controller.handle_key_event(
-        ctx,
-        KeyEventDispatch(
-            frame=7,
-            event=KeyEvent("keyboard.2", KeyPhase.PRESS),
-        ),
-        InputState(),
-    )
-
-    assert controller.team_state.active_slot == 2
-    assert controller.switch_results[0].status is TeamSwitchStatus.SWITCHED
-
-
-def test_basic_team_controller_ignores_number_release():
-    controller = BasicTeamController(TeamRuntimeState(active_slot=1))
-
-    controller.handle_key_event(
-        SimulationContext(),
-        KeyEventDispatch(
-            frame=8,
-            event=KeyEvent("keyboard.2", KeyPhase.RELEASE),
-            held_frames=1,
-        ),
-        InputState(),
-    )
-
-    assert controller.team_state.active_slot == 1
-    assert controller.switch_results == ()
-    assert controller.action_inputs == ()
-
-
-def test_basic_team_controller_records_action_button_inputs_without_interpreting_action():
-    controller = BasicTeamController(TeamRuntimeState(active_slot=2))
-
-    controller.handle_key_event(
-        SimulationContext(),
-        KeyEventDispatch(
-            frame=10,
-            event=KeyEvent("keyboard.e", KeyPhase.PRESS),
-        ),
-        InputState(),
-    )
-    controller.handle_key_event(
-        SimulationContext(),
-        KeyEventDispatch(
-            frame=13,
-            event=KeyEvent("keyboard.e", KeyPhase.RELEASE),
-            held_frames=3,
-        ),
-        InputState(),
-    )
-
-    action_inputs = [
-        (item.key, item.phase, item.active_slot, item.held_frames)
-        for item in controller.action_inputs
-    ]
-
-    assert action_inputs == [
-        ("keyboard.e", KeyPhase.PRESS, 2, None),
-        ("keyboard.e", KeyPhase.RELEASE, 2, 3),
-    ]
-    assert controller.switch_results == ()
-
-
-def test_basic_team_controller_rejects_action_button_during_switch_recovery():
-    ctx = SimulationContext()
-    action_manager = ActionManager()
-    controller = BasicTeamController(action_manager=action_manager)
-    input_system = TraceInputSystem(
-        [
-            KeyInputFrame(
-                1,
-                (
-                    KeyEvent("keyboard.2", KeyPhase.PRESS),
-                    KeyEvent("keyboard.e", KeyPhase.PRESS),
-                ),
-            ),
-            KeyInputFrame(
-                2,
-                (
-                    KeyEvent("keyboard.2", KeyPhase.RELEASE),
-                    KeyEvent("keyboard.e", KeyPhase.RELEASE),
-                ),
-            ),
-        ],
-        controller,
-    )
-
-    result = Simulator(ctx, input_system=input_system, max_frames=10).run()
-
-    decision = controller.action_inputs[0].decision
-    assert result.stop_reason is SimulationStopReason.COMPLETED
-    assert decision is not None
-    assert not decision.accepted
-    assert decision.reject_reason is ActionRejectReason.BUSY
-    assert decision.lock is not None
-    assert decision.lock.source == "character_switch"
-    assert controller.action_inputs[1].decision is None
-    assert action_manager.decisions == (decision,)
-
-
-def test_basic_team_controller_accepts_action_button_after_switch_recovery():
-    ctx = SimulationContext()
-    action_manager = ActionManager()
-    controller = BasicTeamController(action_manager=action_manager)
-    input_system = TraceInputSystem(
-        [
-            KeyInputFrame(1, (KeyEvent("keyboard.2", KeyPhase.PRESS),)),
-            KeyInputFrame(
-                2,
-                (
-                    KeyEvent("keyboard.2", KeyPhase.RELEASE),
-                    KeyEvent("keyboard.e", KeyPhase.PRESS),
-                ),
-            ),
-            KeyInputFrame(3, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
-        ],
-        controller,
-    )
-
-    result = Simulator(ctx, input_system=input_system, max_frames=10).run()
-
-    decision = controller.action_inputs[0].decision
-    assert result.stop_reason is SimulationStopReason.COMPLETED
-    assert decision is not None
-    assert decision.accepted
-    assert decision.reject_reason is None
-    assert decision.lock is not None
-    assert decision.lock.source == "keyboard.e"
-    assert action_manager.decisions == (decision,)
-
-
-def test_action_manager_keeps_simulator_running_until_action_lock_ends():
-    ctx = SimulationContext()
-    action_manager = ActionManager()
-    controller = BasicTeamController(
-        action_manager=action_manager,
-        action_duration_frames=3,
-    )
-    input_system = TraceInputSystem(
-        [
-            KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
-            KeyInputFrame(2, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
-        ],
-        controller,
-    )
-    runtime_world = BasicRuntimeWorld([action_manager])
-
-    result = Simulator(
-        ctx,
-        input_system=input_system,
-        runtime_world=runtime_world,
-        max_frames=10,
-    ).run()
-
-    assert result.stop_reason is SimulationStopReason.COMPLETED
-    assert result.end_frame == 4
-    assert action_manager.is_idle()
-
-
-def test_switch_recovery_keeps_simulator_running_until_lock_ends():
-    ctx = SimulationContext()
-    action_manager = ActionManager()
-    controller = BasicTeamController(
-        action_manager=action_manager,
-        switch_recovery_frames=3,
-    )
-    input_system = TraceInputSystem(
-        [
-            KeyInputFrame(1, (KeyEvent("keyboard.2", KeyPhase.PRESS),)),
-            KeyInputFrame(2, (KeyEvent("keyboard.2", KeyPhase.RELEASE),)),
-        ],
-        controller,
-    )
-    runtime_world = BasicRuntimeWorld([action_manager])
-
-    result = Simulator(
-        ctx,
-        input_system=input_system,
-        runtime_world=runtime_world,
-        max_frames=10,
-    ).run()
-
-    assert result.stop_reason is SimulationStopReason.COMPLETED
-    assert result.end_frame == 4
-    assert action_manager.is_idle()
-
-
-def test_basic_team_controller_rejects_switch_to_missing_slot():
-    ctx = SimulationContext()
-    controller = BasicTeamController(TeamRuntimeState(team_size=2))
-
-    controller.handle_key_event(
-        ctx,
-        KeyEventDispatch(
-            frame=9,
-            event=KeyEvent("keyboard.3", KeyPhase.PRESS),
-        ),
-        InputState(),
-    )
-
-    result = controller.switch_results[0]
-    assert not result.accepted
-    assert result.status is TeamSwitchStatus.INVALID_SLOT
-    assert controller.team_state.active_slot == 1
-
-
-def test_trace_input_system_can_drive_basic_team_controller():
-    ctx = SimulationContext()
-    controller = BasicTeamController()
-    input_system = TraceInputSystem(
-        [
-            KeyInputFrame(1, (KeyEvent("keyboard.2", KeyPhase.PRESS),)),
-            KeyInputFrame(2, (KeyEvent("keyboard.2", KeyPhase.RELEASE),)),
-        ],
-        controller,
-    )
-
-    result = Simulator(ctx, input_system=input_system, max_frames=10).run()
-
-    assert result.stop_reason is SimulationStopReason.COMPLETED
-    assert result.end_frame == 2
-    assert controller.team_state.active_slot == 2
-    assert [switch.status for switch in controller.switch_results] == [
-        TeamSwitchStatus.SWITCHED,
-    ]
+        TeamRuntimeState(characters, active_slot=active_slot)

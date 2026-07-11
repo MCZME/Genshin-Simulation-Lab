@@ -20,6 +20,12 @@ def test_get_context_raises_without_active_context():
         get_context()
 
 
+def test_context_starts_without_space_runtime():
+    ctx = SimulationContext()
+
+    assert ctx.space_runtime is None
+
+
 def test_advance_frame_clears_previous_frame_events():
     ctx = SimulationContext()
     ctx.events.publish(

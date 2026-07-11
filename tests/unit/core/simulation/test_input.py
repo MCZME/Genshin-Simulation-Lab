@@ -15,7 +15,7 @@ from genshin_sim.core.simulation import (
 )
 
 
-class RecordingTeamController:
+class RecordingInputEventHandler:
     def __init__(self) -> None:
         self.received: list[tuple[int, str, KeyPhase, int | None, frozenset[str]]] = []
 
@@ -39,7 +39,7 @@ class RecordingTeamController:
 
 def test_trace_input_system_dispatches_events_for_current_frame_in_order():
     ctx = SimulationContext()
-    controller = RecordingTeamController()
+    handler = RecordingInputEventHandler()
     input_system = TraceInputSystem(
         [
             KeyInputFrame(
@@ -57,7 +57,7 @@ def test_trace_input_system_dispatches_events_for_current_frame_in_order():
                 ),
             ),
         ],
-        controller,
+        handler,
     )
 
     ctx.advance_frame()
@@ -69,7 +69,7 @@ def test_trace_input_system_dispatches_events_for_current_frame_in_order():
     ctx.advance_frame()
     input_system.process_frame(ctx, ctx.current_frame)
 
-    assert controller.received == [
+    assert handler.received == [
         (1, "keyboard.e", KeyPhase.PRESS, None, frozenset({"keyboard.e"})),
         (1, "mouse.left", KeyPhase.PRESS, None, frozenset({"keyboard.e", "mouse.left"})),
         (3, "keyboard.e", KeyPhase.RELEASE, 2, frozenset({"mouse.left"})),
@@ -80,7 +80,7 @@ def test_trace_input_system_dispatches_events_for_current_frame_in_order():
 
 def test_trace_input_system_ignores_future_frames_until_reached():
     ctx = SimulationContext()
-    controller = RecordingTeamController()
+    handler = RecordingInputEventHandler()
     input_system = TraceInputSystem(
         [
             KeyInputFrame(
@@ -92,19 +92,19 @@ def test_trace_input_system_ignores_future_frames_until_reached():
                 events=(KeyEvent("keyboard.q", KeyPhase.RELEASE),),
             ),
         ],
-        controller,
+        handler,
     )
 
     ctx.advance_frame()
     input_system.process_frame(ctx, ctx.current_frame)
 
-    assert controller.received == []
+    assert handler.received == []
     assert not input_system.is_finished()
 
     ctx.advance_frame()
     input_system.process_frame(ctx, ctx.current_frame)
 
-    assert [entry[1:3] for entry in controller.received] == [
+    assert [entry[1:3] for entry in handler.received] == [
         ("keyboard.q", KeyPhase.PRESS),
     ]
     assert not input_system.is_finished()
@@ -112,7 +112,7 @@ def test_trace_input_system_ignores_future_frames_until_reached():
     ctx.advance_frame()
     input_system.process_frame(ctx, ctx.current_frame)
 
-    assert [entry[1:3] for entry in controller.received] == [
+    assert [entry[1:3] for entry in handler.received] == [
         ("keyboard.q", KeyPhase.PRESS),
         ("keyboard.q", KeyPhase.RELEASE),
     ]
@@ -121,7 +121,7 @@ def test_trace_input_system_ignores_future_frames_until_reached():
 
 def test_trace_input_system_rejects_missed_input_frame():
     ctx = SimulationContext()
-    controller = RecordingTeamController()
+    handler = RecordingInputEventHandler()
     input_system = TraceInputSystem(
         [
             KeyInputFrame(
@@ -133,7 +133,7 @@ def test_trace_input_system_rejects_missed_input_frame():
                 events=(KeyEvent("keyboard.q", KeyPhase.RELEASE),),
             ),
         ],
-        controller,
+        handler,
     )
 
     ctx.advance_frame(2)
@@ -146,13 +146,13 @@ def test_trace_input_system_publishes_input_key_consumed_events():
     ctx = SimulationContext()
     events: list[GameEvent] = []
     ctx.events.subscribe(EventType.INPUT_KEY_CONSUMED, events.append)
-    controller = RecordingTeamController()
+    handler = RecordingInputEventHandler()
     input_system = TraceInputSystem(
         [
             KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
             KeyInputFrame(3, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
         ],
-        controller,
+        handler,
     )
 
     ctx.advance_frame()
@@ -222,7 +222,7 @@ def test_trace_input_system_validates_input_trace(
     frames: list[KeyInputFrame],
     message: str,
 ):
-    controller = RecordingTeamController()
+    handler = RecordingInputEventHandler()
 
     with pytest.raises(InputTraceError, match=message):
-        TraceInputSystem(frames, controller)
+        TraceInputSystem(frames, handler)

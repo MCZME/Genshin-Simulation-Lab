@@ -3,19 +3,21 @@ from __future__ import annotations
 from contextvars import ContextVar, Token
 from dataclasses import dataclass, field
 from types import TracebackType
-from typing import Protocol, TypeVar, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, TypeVar, runtime_checkable
 
 from genshin_sim.core.events import EventEngine
 from genshin_sim.core.simulation.clock import FrameClock
-from genshin_sim.core.space import Space
+
+if TYPE_CHECKING:
+    from genshin_sim.core.space.runtime import SpaceRuntime
 
 _SystemT = TypeVar("_SystemT")
 
 
 @runtime_checkable
 class _InitializableSystem(Protocol):
-    def initialize(self, context: SimulationContext) -> None:
-        ...
+    def initialize(self, context: SimulationContext) -> None: ...
+
 
 _current_context: ContextVar[SimulationContext | None] = ContextVar(
     "current_simulation_context", default=None
@@ -31,7 +33,7 @@ class SimulationContext:
 
     clock: FrameClock = field(default_factory=FrameClock)
     events: EventEngine = field(default_factory=EventEngine)
-    space: Space | None = None
+    space_runtime: SpaceRuntime | None = None
     # TODO: 引入明确系统协议后，将这里收紧为具体运行时系统类型。
     _systems: list[object] = field(default_factory=list, init=False, repr=False)
     # ContextVar.set 返回的恢复令牌，用于退出 with 块时恢复上一个活动上下文。

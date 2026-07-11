@@ -44,7 +44,7 @@ class RecordingRuntimeWorld:
         return bool(self.frames) and self.frames[-1] >= self.idle_after_frame
 
 
-class RecordingTeamController:
+class RecordingInputEventHandler:
     def __init__(self, calls: list[str]) -> None:
         self.calls = calls
 
@@ -175,7 +175,7 @@ def test_simulator_rejects_negative_max_frames():
 def test_simulator_runs_trace_input_system_and_basic_runtime_world_together():
     calls: list[str] = []
     ctx = SimulationContext()
-    controller = RecordingTeamController(calls)
+    handler = RecordingInputEventHandler(calls)
     input_system = TraceInputSystem(
         [
             KeyInputFrame(
@@ -187,7 +187,7 @@ def test_simulator_runs_trace_input_system_and_basic_runtime_world_together():
                 events=(KeyEvent("keyboard.e", KeyPhase.RELEASE),),
             ),
         ],
-        controller,
+        handler,
     )
     runtime_world = BasicRuntimeWorld([RecordingRuntimeWorld(calls)])
 

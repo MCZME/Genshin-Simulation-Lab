@@ -12,13 +12,13 @@ from genshin_sim.core.simulation.context import (
 )
 from genshin_sim.core.simulation.input import (
     SUPPORTED_INPUT_KEYS,
+    InputEventHandler,
     InputState,
     InputTraceError,
     KeyEvent,
     KeyEventDispatch,
     KeyInputFrame,
     KeyPhase,
-    TeamController,
     TraceInputSystem,
 )
 from genshin_sim.core.simulation.simulator import (
@@ -27,10 +27,6 @@ from genshin_sim.core.simulation.simulator import (
     Simulator,
 )
 from genshin_sim.core.simulation.team import (
-    ACTION_BUTTON_KEYS,
-    SWITCH_KEY_TO_SLOT,
-    ActionButtonInput,
-    BasicTeamController,
     TeamRuntimeState,
     TeamSwitchResult,
     TeamSwitchStatus,
@@ -38,17 +34,14 @@ from genshin_sim.core.simulation.team import (
 from genshin_sim.core.simulation.world import BasicRuntimeWorld
 
 __all__ = [
-    "ACTION_BUTTON_KEYS",
     "SUPPORTED_INPUT_KEYS",
-    "SWITCH_KEY_TO_SLOT",
-    "ActionButtonInput",
     "BasicRuntimeWorld",
-    "BasicTeamController",
     "FrameUpdatable",
     "FrameClock",
     "InputState",
     "InputSystem",
     "InputTraceError",
+    "InputEventHandler",
     "KeyInputFrame",
     "KeyEvent",
     "KeyEventDispatch",
@@ -58,7 +51,6 @@ __all__ = [
     "SimulationResult",
     "SimulationStopReason",
     "Simulator",
-    "TeamController",
     "TeamRuntimeState",
     "TeamSwitchResult",
     "TeamSwitchStatus",

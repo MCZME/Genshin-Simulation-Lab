@@ -50,7 +50,7 @@ class KeyInputFrame:
 
 @dataclass(frozen=True, slots=True)
 class KeyEventDispatch:
-    """送达控制器的按键事件上下文。"""
+    """送达运行时输入处理器的按键事件上下文。"""
 
     frame: int
     event: KeyEvent
@@ -85,8 +85,8 @@ class InputState:
         return frame - pressed_at
 
 
-class TeamController(Protocol):
-    """输入事件进入队伍控制层的最小协议。"""
+class InputEventHandler(Protocol):
+    """输入事件进入运行时控制层的最小协议。"""
 
     def handle_key_event(
         self,
@@ -108,11 +108,11 @@ class TraceInputSystem(InputSystem):
     def __init__(
         self,
         input_frames: Iterable[KeyInputFrame],
-        controller: TeamController,
+        handler: InputEventHandler,
     ) -> None:
         self._frames = tuple(input_frames)
         self._validate_trace(self._frames)
-        self._controller = controller
+        self._handler = handler
         self._state = InputState()
         self._next_index = 0
 
@@ -132,7 +132,7 @@ class TraceInputSystem(InputSystem):
             for event in input_frame.events:
                 held_frames = self._state.apply(event, frame)
                 dispatch = KeyEventDispatch(frame=frame, event=event, held_frames=held_frames)
-                self._controller.handle_key_event(context, dispatch, self._state)
+                self._handler.handle_key_event(context, dispatch, self._state)
                 self._publish_input_key_consumed(context, dispatch)
             self._next_index += 1
 

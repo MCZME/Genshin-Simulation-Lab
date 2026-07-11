@@ -38,7 +38,7 @@ def test_process_runner_runs_file_and_persists_result(tmp_path: Path):
     assert result.state is SimulationJobState.COMPLETED
     assert result.session_id is not None
     assert result.summary is not None
-    assert result.summary.frames_run == 2
+    assert result.summary.frames_run == 3
 
     detail = SQLiteResultRepository(result_db).get_run(result.session_id)
     assert detail.summary.stop_reason == "COMPLETED"

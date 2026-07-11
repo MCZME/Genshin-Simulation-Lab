@@ -49,7 +49,7 @@ class FakeExecutor:
             events=(
                 RecordedEvent(
                     frame=1,
-                    event_type="INPUT_KEY_CONSUMED",
+                    event_type="INPUT_KEY_RECEIVED",
                     data={"key": "keyboard.e"},
                 ),
             ),

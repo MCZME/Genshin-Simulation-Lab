@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from enum import Enum, auto
 
 from genshin_sim.core.events import EmptyPayload, EventType, GameEvent, SimulationEndedPayload
-from genshin_sim.core.protocols import InputSystem, RuntimeWorld
+from genshin_sim.core.protocols import RuntimeWorld
 from genshin_sim.core.simulation.context import SimulationContext
 
 
@@ -27,7 +27,7 @@ class SimulationResult:
 class Simulator:
     """最小帧驱动模拟器。
 
-    模拟器只负责帧循环、输入入口调用、运行世界推进、基础生命周期事件和停止条件。
+    模拟器只负责帧循环、运行世界推进、基础生命周期事件和停止条件。
     它不理解具体按键含义、角色机制、资产来源或结果持久化。
     第 0 帧是初始化帧，配置装配和运行时对象构造应在进入 ``run`` 前完成；
     ``run`` 从下一帧开始处理输入和运行态更新。
@@ -37,7 +37,6 @@ class Simulator:
         self,
         context: SimulationContext,
         *,
-        input_system: InputSystem | None = None,
         runtime_world: RuntimeWorld | None = None,
         max_frames: int = 18000,
     ) -> None:
@@ -46,7 +45,6 @@ class Simulator:
             raise ValueError(msg)
 
         self.context = context
-        self.input_system = input_system
         self.runtime_world = runtime_world
         self.max_frames = max_frames
 
@@ -57,7 +55,6 @@ class Simulator:
         while self.context.current_frame < self.max_frames:
             frame = self.context.advance_frame()
             self._publish_frame_started(frame)
-            self._process_input(frame)
             self._update_world(frame)
             self._publish_frame_ended(frame)
 
@@ -77,10 +74,6 @@ class Simulator:
         )
         self._publish_simulation_ended(result)
         return result
-
-    def _process_input(self, frame: int) -> None:
-        if self.input_system is not None:
-            self.input_system.process_frame(self.context, frame)
 
     def _update_world(self, frame: int) -> None:
         if self.runtime_world is not None:
@@ -131,6 +124,5 @@ class Simulator:
         )
 
     def _is_finished(self) -> bool:
-        input_finished = self.input_system is None or self.input_system.is_finished()
         world_idle = self.runtime_world is None or self.runtime_world.is_idle()
-        return input_finished and world_idle
+        return world_idle

@@ -2,189 +2,63 @@ from __future__ import annotations
 
 import pytest
 
-from genshin_sim.core.events import EventType, GameEvent
 from genshin_sim.core.simulation import (
-    InputState,
+    InputTraceCompiler,
     InputTraceError,
     KeyEvent,
-    KeyEventDispatch,
     KeyInputFrame,
     KeyPhase,
-    SimulationContext,
-    TraceInputSystem,
 )
 
 
-class RecordingInputEventHandler:
-    def __init__(self) -> None:
-        self.received: list[tuple[int, str, KeyPhase, int | None, frozenset[str]]] = []
-
-    def handle_key_event(
-        self,
-        context: SimulationContext,
-        dispatch: KeyEventDispatch,
-        state: InputState,
-    ) -> None:
-        assert context.current_frame == dispatch.frame
-        self.received.append(
-            (
-                dispatch.frame,
-                dispatch.event.key,
-                dispatch.event.phase,
-                dispatch.held_frames,
-                state.pressed_keys,
-            )
-        )
-
-
-def test_trace_input_system_dispatches_events_for_current_frame_in_order():
-    ctx = SimulationContext()
-    handler = RecordingInputEventHandler()
-    input_system = TraceInputSystem(
+def test_input_trace_compiler_pairs_sessions_and_preserves_boundary_order():
+    trace = InputTraceCompiler().compile(
         [
             KeyInputFrame(
-                frame=1,
-                events=(
+                1,
+                (
+                    KeyEvent("keyboard.2", KeyPhase.PRESS),
                     KeyEvent("keyboard.e", KeyPhase.PRESS),
-                    KeyEvent("mouse.left", KeyPhase.PRESS),
                 ),
             ),
             KeyInputFrame(
-                frame=3,
-                events=(
+                4,
+                (
                     KeyEvent("keyboard.e", KeyPhase.RELEASE),
-                    KeyEvent("mouse.left", KeyPhase.RELEASE),
+                    KeyEvent("keyboard.2", KeyPhase.RELEASE),
                 ),
             ),
-        ],
-        handler,
+        ]
     )
 
-    ctx.advance_frame()
-    input_system.process_frame(ctx, ctx.current_frame)
-
-    ctx.advance_frame()
-    input_system.process_frame(ctx, ctx.current_frame)
-
-    ctx.advance_frame()
-    input_system.process_frame(ctx, ctx.current_frame)
-
-    assert handler.received == [
-        (1, "keyboard.e", KeyPhase.PRESS, None, frozenset({"keyboard.e"})),
-        (1, "mouse.left", KeyPhase.PRESS, None, frozenset({"keyboard.e", "mouse.left"})),
-        (3, "keyboard.e", KeyPhase.RELEASE, 2, frozenset({"mouse.left"})),
-        (3, "mouse.left", KeyPhase.RELEASE, 2, frozenset()),
+    session_summaries = [
+        (session.session_id, session.key, session.held_frames) for session in trace.sessions
     ]
-    assert input_system.is_finished()
-
-
-def test_trace_input_system_ignores_future_frames_until_reached():
-    ctx = SimulationContext()
-    handler = RecordingInputEventHandler()
-    input_system = TraceInputSystem(
-        [
-            KeyInputFrame(
-                frame=2,
-                events=(KeyEvent("keyboard.q", KeyPhase.PRESS),),
-            ),
-            KeyInputFrame(
-                frame=3,
-                events=(KeyEvent("keyboard.q", KeyPhase.RELEASE),),
-            ),
-        ],
-        handler,
-    )
-
-    ctx.advance_frame()
-    input_system.process_frame(ctx, ctx.current_frame)
-
-    assert handler.received == []
-    assert not input_system.is_finished()
-
-    ctx.advance_frame()
-    input_system.process_frame(ctx, ctx.current_frame)
-
-    assert [entry[1:3] for entry in handler.received] == [
-        ("keyboard.q", KeyPhase.PRESS),
+    assert session_summaries == [
+        (1, "keyboard.2", 3),
+        (2, "keyboard.e", 3),
     ]
-    assert not input_system.is_finished()
-
-    ctx.advance_frame()
-    input_system.process_frame(ctx, ctx.current_frame)
-
-    assert [entry[1:3] for entry in handler.received] == [
-        ("keyboard.q", KeyPhase.PRESS),
-        ("keyboard.q", KeyPhase.RELEASE),
+    assert [(item.frame, item.order, item.session_id, item.phase) for item in trace.boundaries] == [
+        (1, 0, 1, KeyPhase.PRESS),
+        (1, 1, 2, KeyPhase.PRESS),
+        (4, 0, 2, KeyPhase.RELEASE),
+        (4, 1, 1, KeyPhase.RELEASE),
     ]
-    assert input_system.is_finished()
-
-
-def test_trace_input_system_rejects_missed_input_frame():
-    ctx = SimulationContext()
-    handler = RecordingInputEventHandler()
-    input_system = TraceInputSystem(
-        [
-            KeyInputFrame(
-                frame=1,
-                events=(KeyEvent("keyboard.q", KeyPhase.PRESS),),
-            ),
-            KeyInputFrame(
-                frame=2,
-                events=(KeyEvent("keyboard.q", KeyPhase.RELEASE),),
-            ),
-        ],
-        handler,
-    )
-
-    ctx.advance_frame(2)
-
-    with pytest.raises(InputTraceError, match="第 1 帧输入已错过，当前帧为 2"):
-        input_system.process_frame(ctx, ctx.current_frame)
-
-
-def test_trace_input_system_publishes_input_key_consumed_events():
-    ctx = SimulationContext()
-    events: list[GameEvent] = []
-    ctx.events.subscribe(EventType.INPUT_KEY_CONSUMED, events.append)
-    handler = RecordingInputEventHandler()
-    input_system = TraceInputSystem(
-        [
-            KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
-            KeyInputFrame(3, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
-        ],
-        handler,
-    )
-
-    ctx.advance_frame()
-    input_system.process_frame(ctx, ctx.current_frame)
-    ctx.advance_frame()
-    input_system.process_frame(ctx, ctx.current_frame)
-    ctx.advance_frame()
-    input_system.process_frame(ctx, ctx.current_frame)
-
-    assert [event.payload.to_dict() for event in events] == [
-        {
-            "key": "keyboard.e",
-            "phase": "press",
-            "held_frames": None,
-        },
-        {
-            "key": "keyboard.e",
-            "phase": "release",
-            "held_frames": 2,
-        },
-    ]
+    assert [item.session_id for item in trace.boundaries_at(1)] == [1, 2]
 
 
 @pytest.mark.parametrize(
     ("frames", "message"),
     [
-        ([KeyInputFrame(-1, ())], "输入帧号必须为正整数"),
         ([KeyInputFrame(0, ())], "输入帧号必须为正整数"),
         (
-            [KeyInputFrame(1, ()), KeyInputFrame(1, ())],
+            [
+                KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
+                KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
+            ],
             "输入帧号必须严格递增",
         ),
+        ([KeyInputFrame(1, ())], "第 1 帧必须至少包含一个输入事件"),
         (
             [KeyInputFrame(1, (KeyEvent("keyboard.w", KeyPhase.PRESS),))],
             "不支持的输入按键：keyboard.w",
@@ -218,11 +92,9 @@ def test_trace_input_system_publishes_input_key_consumed_events():
         ),
     ],
 )
-def test_trace_input_system_validates_input_trace(
+def test_input_trace_compiler_validates_trace(
     frames: list[KeyInputFrame],
     message: str,
 ):
-    handler = RecordingInputEventHandler()
-
     with pytest.raises(InputTraceError, match=message):
-        TraceInputSystem(frames, handler)
+        InputTraceCompiler().compile(frames)

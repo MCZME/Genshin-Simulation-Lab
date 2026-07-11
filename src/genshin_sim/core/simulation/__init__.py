@@ -2,7 +2,6 @@
 
 from genshin_sim.core.protocols import (
     FrameUpdatable,
-    InputSystem,
     RuntimeWorld,
 )
 from genshin_sim.core.simulation.clock import FrameClock
@@ -12,14 +11,14 @@ from genshin_sim.core.simulation.context import (
 )
 from genshin_sim.core.simulation.input import (
     SUPPORTED_INPUT_KEYS,
-    InputEventHandler,
-    InputState,
+    InputSessionBoundary,
+    InputSessionPlan,
+    InputSessionTrace,
+    InputTraceCompiler,
     InputTraceError,
     KeyEvent,
-    KeyEventDispatch,
     KeyInputFrame,
     KeyPhase,
-    TraceInputSystem,
 )
 from genshin_sim.core.simulation.simulator import (
     SimulationResult,
@@ -38,13 +37,13 @@ __all__ = [
     "BasicRuntimeWorld",
     "FrameUpdatable",
     "FrameClock",
-    "InputState",
-    "InputSystem",
     "InputTraceError",
-    "InputEventHandler",
+    "InputSessionBoundary",
+    "InputSessionPlan",
+    "InputSessionTrace",
+    "InputTraceCompiler",
     "KeyInputFrame",
     "KeyEvent",
-    "KeyEventDispatch",
     "KeyPhase",
     "RuntimeWorld",
     "SimulationContext",
@@ -54,6 +53,5 @@ __all__ = [
     "TeamRuntimeState",
     "TeamSwitchResult",
     "TeamSwitchStatus",
-    "TraceInputSystem",
     "get_context",
 ]

@@ -18,7 +18,8 @@ from genshin_sim.core.events.models import GameEvent
 from genshin_sim.core.events.payloads import (
     EmptyPayload,
     EventPayload,
-    InputKeyConsumedPayload,
+    InputKeyReceivedPayload,
+    InputSessionBoundaryPayload,
     SimulationEndedPayload,
 )
 from genshin_sim.core.events.specs import (
@@ -44,7 +45,8 @@ __all__ = [
     "EventSubscriber",
     "EventType",
     "GameEvent",
-    "InputKeyConsumedPayload",
+    "InputKeyReceivedPayload",
+    "InputSessionBoundaryPayload",
     "SimulationEndedPayload",
     "get_event_category_spec",
     "get_event_spec",

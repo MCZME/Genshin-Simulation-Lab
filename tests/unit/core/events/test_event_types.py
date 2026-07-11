@@ -6,7 +6,8 @@ from genshin_sim.core.events import (
     EventSpec,
     EventType,
     GameEvent,
-    InputKeyConsumedPayload,
+    InputKeyReceivedPayload,
+    InputSessionBoundaryPayload,
     SimulationEndedPayload,
     get_event_category_spec,
     get_event_spec,
@@ -30,7 +31,8 @@ def test_event_type_defines_current_events():
         "SIMULATION_ENDED",
         "FRAME_STARTED",
         "FRAME_ENDED",
-        "INPUT_KEY_CONSUMED",
+        "INPUT_KEY_RECEIVED",
+        "INPUT_SESSION_BOUNDARY_REACHED",
     ]
 
 
@@ -107,11 +109,17 @@ def test_event_specs_define_current_default_rules():
     assert get_event_spec(EventType.FRAME_STARTED).effective_record_by_default is False
     assert get_event_spec(EventType.FRAME_ENDED).effective_record_by_default is False
 
-    input_key_consumed = get_event_spec(EventType.INPUT_KEY_CONSUMED)
-    assert input_key_consumed.category is EventCategory.INTENT
-    assert input_key_consumed.payload_type is InputKeyConsumedPayload
-    assert input_key_consumed.effective_record_by_default is True
-    assert input_key_consumed.effective_result_committed is False
+    input_key_received = get_event_spec(EventType.INPUT_KEY_RECEIVED)
+    assert input_key_received.category is EventCategory.INTENT
+    assert input_key_received.payload_type is InputKeyReceivedPayload
+    assert input_key_received.effective_record_by_default is True
+    assert input_key_received.effective_result_committed is False
+
+    input_session_boundary = get_event_spec(EventType.INPUT_SESSION_BOUNDARY_REACHED)
+    assert input_session_boundary.category is EventCategory.INTENT
+    assert input_session_boundary.payload_type is InputSessionBoundaryPayload
+    assert input_session_boundary.effective_record_by_default is True
+    assert input_session_boundary.effective_result_committed is False
 
 
 def test_event_payloads_convert_to_serializable_dicts():
@@ -125,40 +133,77 @@ def test_event_payloads_convert_to_serializable_dicts():
         "end_frame": 12,
         "frames_run": 12,
     }
-    assert InputKeyConsumedPayload(
+    assert InputKeyReceivedPayload(
         key="keyboard.e",
         phase="release",
-        held_frames=2,
+        order=1,
+        session_id=7,
     ).to_dict() == {
         "key": "keyboard.e",
         "phase": "release",
+        "order": 1,
+        "session_id": 7,
+    }
+    assert InputSessionBoundaryPayload(
+        session_id=7,
+        key="keyboard.e",
+        phase="release",
+        order=1,
+        press_frame=3,
+        held_frames=2,
+        physical_state="released",
+        control_state="listening",
+        owner_kind="character",
+        owner_slot=1,
+        interpreter_id="character:1",
+        binding_scope="active_character",
+        will_interpret=True,
+    ).to_dict() == {
+        "session_id": 7,
+        "key": "keyboard.e",
+        "phase": "release",
+        "order": 1,
+        "press_frame": 3,
         "held_frames": 2,
+        "physical_state": "released",
+        "control_state": "listening",
+        "owner_kind": "character",
+        "owner_slot": 1,
+        "interpreter_id": "character:1",
+        "binding_scope": "active_character",
+        "will_interpret": True,
+        "skip_reason": None,
     }
 
 
 def test_game_event_rejects_wrong_payload_type():
     try:
         GameEvent(
-            EventType.INPUT_KEY_CONSUMED,
+            EventType.INPUT_KEY_RECEIVED,
             frame=1,
             payload=EmptyPayload(),
         )
     except TypeError as exc:
-        assert "INPUT_KEY_CONSUMED 事件载荷类型错误" in str(exc)
+        assert "INPUT_KEY_RECEIVED 事件载荷类型错误" in str(exc)
     else:
         raise AssertionError("wrong payload type should fail")
 
 
 def test_game_event_rejects_cancel_for_non_cancelable_event():
     event = GameEvent(
-        EventType.INPUT_KEY_CONSUMED,
+        EventType.INPUT_KEY_RECEIVED,
         frame=1,
-        payload=InputKeyConsumedPayload(key="keyboard.e", phase="press"),
+        payload=InputKeyReceivedPayload(
+            key="keyboard.e",
+            phase="press",
+            order=0,
+            session_id=1,
+        ),
     )
 
     try:
         event.cancel()
     except RuntimeError as exc:
-        assert str(exc) == "INPUT_KEY_CONSUMED 事件不允许取消"
+        assert str(exc) == "INPUT_KEY_RECEIVED 事件不允许取消"
     else:
         raise AssertionError("non-cancelable event should fail")

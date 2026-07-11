@@ -509,6 +509,9 @@ def _validate_input_trace(input_trace: tuple[InputFrameConfig, ...]) -> None:
             raise ConfigError("input_trace 帧号必须严格递增")
         previous_frame = input_frame.frame
 
+        if not input_frame.events:
+            raise ConfigError(f"input_trace 第 {input_frame.frame} 帧必须至少包含一个输入事件")
+
         keys_in_frame: set[str] = set()
         for event in input_frame.events:
             if event.key in keys_in_frame:

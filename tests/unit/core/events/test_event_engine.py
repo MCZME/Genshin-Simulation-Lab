@@ -3,7 +3,7 @@ from genshin_sim.core.events import (
     EventEngine,
     EventType,
     GameEvent,
-    InputKeyConsumedPayload,
+    InputKeyReceivedPayload,
 )
 
 
@@ -11,11 +11,16 @@ def test_publish_dispatches_subscribers():
     engine = EventEngine()
     received: list[GameEvent] = []
 
-    engine.subscribe(EventType.INPUT_KEY_CONSUMED, received.append)
+    engine.subscribe(EventType.INPUT_KEY_RECEIVED, received.append)
     event = GameEvent(
-        EventType.INPUT_KEY_CONSUMED,
+        EventType.INPUT_KEY_RECEIVED,
         frame=12,
-        payload=InputKeyConsumedPayload(key="keyboard.e", phase="press"),
+        payload=InputKeyReceivedPayload(
+            key="keyboard.e",
+            phase="press",
+            order=0,
+            session_id=1,
+        ),
     )
 
     engine.publish(event)
@@ -27,14 +32,19 @@ def test_unsubscribe_removes_handler():
     engine = EventEngine()
     received: list[GameEvent] = []
 
-    engine.subscribe(EventType.INPUT_KEY_CONSUMED, received.append)
-    engine.unsubscribe(EventType.INPUT_KEY_CONSUMED, received.append)
+    engine.subscribe(EventType.INPUT_KEY_RECEIVED, received.append)
+    engine.unsubscribe(EventType.INPUT_KEY_RECEIVED, received.append)
 
     engine.publish(
         GameEvent(
-            EventType.INPUT_KEY_CONSUMED,
+            EventType.INPUT_KEY_RECEIVED,
             frame=1,
-            payload=InputKeyConsumedPayload(key="keyboard.e", phase="press"),
+            payload=InputKeyReceivedPayload(
+                key="keyboard.e",
+                phase="press",
+                order=0,
+                session_id=1,
+            ),
         )
     )
 
@@ -81,9 +91,14 @@ def test_cancelled_event_stops_later_handlers():
 def test_frame_events_use_event_record_flag():
     engine = EventEngine()
     recorded = GameEvent(
-        EventType.INPUT_KEY_CONSUMED,
+        EventType.INPUT_KEY_RECEIVED,
         frame=1,
-        payload=InputKeyConsumedPayload(key="keyboard.e", phase="press"),
+        payload=InputKeyReceivedPayload(
+            key="keyboard.e",
+            phase="press",
+            order=0,
+            session_id=1,
+        ),
     )
     ignored = GameEvent(
         EventType.FRAME_ENDED,

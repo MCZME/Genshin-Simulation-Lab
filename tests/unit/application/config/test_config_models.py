@@ -159,6 +159,14 @@ def test_simulation_config_rejects_unbalanced_input_trace():
         SimulationConfig.from_mapping(payload)
 
 
+def test_simulation_config_rejects_empty_input_frame():
+    payload = _minimal_config_payload()
+    payload["input_trace"] = [{"frame": 1, "events": []}]
+
+    with pytest.raises(ConfigError, match="第 1 帧必须至少包含一个输入事件"):
+        SimulationConfig.from_mapping(payload)
+
+
 def test_simulation_config_json_file_round_trip(tmp_path: Path):
     payload = _minimal_config_payload()
     path = tmp_path / "config.json"

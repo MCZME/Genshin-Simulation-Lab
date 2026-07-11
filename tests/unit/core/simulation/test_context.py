@@ -1,6 +1,6 @@
 import pytest
 
-from genshin_sim.core.events import EventType, GameEvent, InputKeyConsumedPayload
+from genshin_sim.core.events import EventType, GameEvent, InputKeyReceivedPayload
 from genshin_sim.core.simulation import SimulationContext, get_context
 
 
@@ -30,9 +30,14 @@ def test_advance_frame_clears_previous_frame_events():
     ctx = SimulationContext()
     ctx.events.publish(
         GameEvent(
-            EventType.INPUT_KEY_CONSUMED,
+            EventType.INPUT_KEY_RECEIVED,
             frame=0,
-            payload=InputKeyConsumedPayload(key="keyboard.e", phase="press"),
+            payload=InputKeyReceivedPayload(
+                key="keyboard.e",
+                phase="press",
+                order=0,
+                session_id=1,
+            ),
         )
     )
 
@@ -50,9 +55,14 @@ def test_reset_clears_clock_and_frame_events():
     ctx.advance_frame(3)
     ctx.events.publish(
         GameEvent(
-            EventType.INPUT_KEY_CONSUMED,
+            EventType.INPUT_KEY_RECEIVED,
             frame=3,
-            payload=InputKeyConsumedPayload(key="keyboard.e", phase="press"),
+            payload=InputKeyReceivedPayload(
+                key="keyboard.e",
+                phase="press",
+                order=0,
+                session_id=1,
+            ),
         )
     )
 

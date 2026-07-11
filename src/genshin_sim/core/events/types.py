@@ -10,4 +10,5 @@ class EventType(Enum):
     SIMULATION_ENDED = auto()
     FRAME_STARTED = auto()
     FRAME_ENDED = auto()
-    INPUT_KEY_CONSUMED = auto()
+    INPUT_KEY_RECEIVED = auto()
+    INPUT_SESSION_BOUNDARY_REACHED = auto()

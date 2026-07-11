@@ -14,5 +14,10 @@ htmlcov/
 .venv
 
 # Generated asset source caches
+data/assets/*
+!data/assets/.gitkeep
 data/assets/sources/
 data/assets/manifests/
+
+# Local run examples
+examples/*

@@ -3,6 +3,10 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Any, cast
 
+from genshin_sim.application.assembly.attributes import (
+    AttributeRuntimeBundle,
+    build_attribute_runtime,
+)
 from genshin_sim.application.assembly.errors import (
     InvalidRuntimePayloadError,
     MissingRuntimeAssetError,
@@ -14,8 +18,10 @@ from genshin_sim.assets.models import (
     ArtifactSetAsset,
     ArtifactSetBonus,
     CharacterAsset,
+    CharacterLevelStats,
     EffectPayload,
     WeaponAsset,
+    WeaponLevelStats,
 )
 from genshin_sim.content import (
     ArtifactRuntimeRequest,
@@ -83,7 +89,9 @@ ACTION_BUTTON_KEYS = (
 class RuntimeAssetBundle:
     slot: int
     character: CharacterAsset
+    character_level_stats: CharacterLevelStats
     weapon: WeaponAsset | None
+    weapon_level_stats: WeaponLevelStats | None
     artifact_sets: tuple[ArtifactSetAsset, ...]
     artifact_bonuses: tuple[ArtifactSetBonus, ...]
     effect_payloads: tuple[EffectPayload, ...]
@@ -114,6 +122,7 @@ class AssembledSimulation:
     space_runtime: SpaceRuntime
     impact_runtime: ImpactRuntime
     content_bundle: RuntimeContentBundle
+    attribute_runtime: AttributeRuntimeBundle
     runtime_world: BasicRuntimeWorld
     assets: tuple[RuntimeAssetBundle, ...]
 
@@ -136,8 +145,14 @@ class SimulationAssembler:
         assets = tuple(self._load_slot_assets(slot) for slot in config.team)
         contributions = self._prepare_handlers(assets)
         content_bundle = self._build_content_bundle(contributions)
+        attribute_runtime = build_attribute_runtime(
+            config=config,
+            assets=assets,
+            contributions=contributions,
+        )
 
         context = SimulationContext()
+        context.register_system(attribute_runtime.resolver)
         target_states = TargetRuntimeCollection(
             TargetRuntimeState(
                 target_id=target.target_id,
@@ -247,6 +262,7 @@ class SimulationAssembler:
             space_runtime=space_runtime,
             impact_runtime=impact_runtime,
             content_bundle=content_bundle,
+            attribute_runtime=attribute_runtime,
             runtime_world=runtime_world,
             assets=assets,
         )
@@ -254,15 +270,19 @@ class SimulationAssembler:
     def _load_slot_assets(self, slot: TeamSlotConfig) -> RuntimeAssetBundle:
         try:
             character = self.asset_repository.get_character(slot.character.asset_key)
-            self.asset_repository.get_character_level_stats(
+            character_level_stats = self.asset_repository.get_character_level_stats(
                 character.asset_key,
                 slot.character.level,
             )
 
             weapon = None
+            weapon_level_stats = None
             if slot.weapon is not None:
                 weapon = self.asset_repository.get_weapon(slot.weapon.asset_key)
-                self.asset_repository.get_weapon_level_stats(weapon.asset_key, slot.weapon.level)
+                weapon_level_stats = self.asset_repository.get_weapon_level_stats(
+                    weapon.asset_key,
+                    slot.weapon.level,
+                )
 
             artifact_sets: list[ArtifactSetAsset] = []
             artifact_bonuses: list[ArtifactSetBonus] = []
@@ -289,7 +309,9 @@ class SimulationAssembler:
         return RuntimeAssetBundle(
             slot=slot.slot,
             character=character,
+            character_level_stats=character_level_stats,
             weapon=weapon,
+            weapon_level_stats=weapon_level_stats,
             artifact_sets=tuple(artifact_sets),
             artifact_bonuses=tuple(artifact_bonuses),
             effect_payloads=tuple(effect_payloads),

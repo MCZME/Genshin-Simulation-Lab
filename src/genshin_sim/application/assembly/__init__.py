@@ -6,6 +6,7 @@ from genshin_sim.application.assembly.assembler import (
     RuntimeContentBundle,
     SimulationAssembler,
 )
+from genshin_sim.application.assembly.attributes import AttributeRuntimeBundle
 from genshin_sim.application.assembly.errors import (
     AssemblyError,
     InvalidRuntimePayloadError,
@@ -16,6 +17,7 @@ from genshin_sim.application.assembly.errors import (
 __all__ = [
     "AssembledSimulation",
     "AssemblyError",
+    "AttributeRuntimeBundle",
     "InvalidRuntimePayloadError",
     "MissingRuntimeAssetError",
     "MissingRuntimeHandlerError",

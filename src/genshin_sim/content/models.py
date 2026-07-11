@@ -3,8 +3,9 @@ from __future__ import annotations
 import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
-from enum import StrEnum
 from typing import Protocol, TypeVar, cast, overload
+
+from genshin_sim.core.attributes import AttributeDefinition, ModifierProvider, ModifierTerm
 
 type JSONScalar = str | int | float | bool | None
 type JSONValue = JSONScalar | list[JSONValue] | dict[str, JSONValue]
@@ -96,37 +97,21 @@ class EventHook(Protocol):
     def handle(self, event: object, context: object) -> HookResult: ...
 
 
-class ModifierOperation(StrEnum):
-    FLAT_ADD = "flat_add"
-    PERCENT_ADD = "percent_add"
-    FINAL_MULTIPLIER = "final_multiplier"
-    OVERRIDE = "override"
-
-
-@dataclass(frozen=True, slots=True)
-class ModifierTerm:
-    target: str
-    operation: ModifierOperation
-    value: int | float
-    source: str
-    tags: Sequence[str] = field(default_factory=tuple)
-
-    def __post_init__(self) -> None:
-        _validate_non_empty_text(self.target, "target")
-        _validate_non_empty_text(self.source, "source")
-        if not isinstance(self.operation, ModifierOperation):
-            raise TypeError("operation 必须是 ModifierOperation")
-        if isinstance(self.value, bool) or not isinstance(self.value, int | float):
-            raise TypeError("value 必须是数字")
-        object.__setattr__(self, "tags", tuple(self.tags))
-
-
 class Modifier(Protocol):
-    modifier_key: str
-    owner_ref: str
-    targets: Sequence[str]
-    scope: str
-    priority: int
+    @property
+    def modifier_key(self) -> str: ...
+
+    @property
+    def owner_ref(self) -> str: ...
+
+    @property
+    def targets(self) -> Sequence[str]: ...
+
+    @property
+    def scope(self) -> str: ...
+
+    @property
+    def priority(self) -> int: ...
 
     def evaluate(self, query: object, context: object) -> Sequence[ModifierTerm]: ...
 
@@ -144,6 +129,8 @@ class ContentRuntimeContribution:
     created_object_behaviors: Mapping[str, object] = field(default_factory=dict)
     event_hooks: Sequence[EventHook] = field(default_factory=tuple)
     modifiers: Sequence[Modifier] = field(default_factory=tuple)
+    attribute_definitions: Sequence[AttributeDefinition] = field(default_factory=tuple)
+    attribute_providers: Sequence[ModifierProvider] = field(default_factory=tuple)
     metadata: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -167,6 +154,8 @@ class ContentRuntimeContribution:
         )
         object.__setattr__(self, "event_hooks", tuple(self.event_hooks))
         object.__setattr__(self, "modifiers", tuple(self.modifiers))
+        object.__setattr__(self, "attribute_definitions", tuple(self.attribute_definitions))
+        object.__setattr__(self, "attribute_providers", tuple(self.attribute_providers))
         object.__setattr__(self, "metadata", dict(self.metadata))
 
 
@@ -428,3 +417,5 @@ class ContentStateSnapshot:
 
 class ContentStateSnapshotProvider(Protocol):
     def snapshot_state(self, frame: int, state: object) -> ContentStateSnapshot: ...
+
+

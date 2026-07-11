@@ -12,8 +12,6 @@ from genshin_sim.content import (
     ContentStateStore,
     ContentStateTypeError,
     HookResult,
-    ModifierOperation,
-    ModifierTerm,
 )
 
 
@@ -154,24 +152,28 @@ def test_content_state_snapshot_rejects_non_json_payload():
         )
 
 
-def test_hook_result_and_modifier_term_basic_construction():
+def test_hook_result_basic_construction():
     hook_result = HookResult(
         impact_requests=["impact.request"],
         modifier_commands=[{"command": "add"}],
         state_patches=[{"path": ["fanfare"], "value": 43}],
         audit_notes=["triggered"],
     )
-    term = ModifierTerm(
-        target="damage.hydro",
-        operation=ModifierOperation.PERCENT_ADD,
-        value=0.15,
-        source="artifact.golden_troupe",
-        tags=["skill"],
-    )
 
     assert hook_result.impact_requests == ("impact.request",)
     assert hook_result.modifier_commands == ({"command": "add"},)
     assert hook_result.state_patches == ({"path": ["fanfare"], "value": 43},)
     assert hook_result.audit_notes == ("triggered",)
-    assert term.operation is ModifierOperation.PERCENT_ADD
-    assert term.tags == ("skill",)
+
+
+def test_content_runtime_contribution_freezes_attribute_extensions():
+    contribution = ContentRuntimeContribution(
+        owner_type="character",
+        owner_key="character:1",
+        handler_key="character.test",
+        attribute_definitions=[],
+        attribute_providers=[],
+    )
+
+    assert contribution.attribute_definitions == ()
+    assert contribution.attribute_providers == ()

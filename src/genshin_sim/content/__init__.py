@@ -49,8 +49,6 @@ from genshin_sim.content.models import (
     HookResult,
     JSONValue,
     Modifier,
-    ModifierOperation,
-    ModifierTerm,
     validate_json_compatible,
 )
 from genshin_sim.content.registry import (
@@ -121,8 +119,6 @@ __all__ = [
     "ImpactRuntimeRequest",
     "JSONValue",
     "Modifier",
-    "ModifierOperation",
-    "ModifierTerm",
     "NoOpRuntimeHandler",
     "RegistryError",
     "RUNTIME_PROBE_ACTION_KEY",

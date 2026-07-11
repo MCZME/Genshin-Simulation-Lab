@@ -11,6 +11,7 @@ from genshin_sim.application.assembly import (
     MissingRuntimeHandlerError,
     SimulationAssembler,
 )
+from genshin_sim.application.assembly.attributes import build_attribute_runtime
 from genshin_sim.application.config import SimulationConfig
 from genshin_sim.assets import AssetDbInfo
 from genshin_sim.assets.models import (
@@ -30,6 +31,25 @@ from genshin_sim.core.actions import (
     InputSessionView,
     PreparedAction,
     TimedImpactAction,
+)
+from genshin_sim.core.attributes import (
+    RESISTANCE_HYDRO,
+    STAT_ATK_BASE,
+    STAT_ATK_TOTAL,
+    STAT_CRIT_RATE,
+    STAT_HP_MAX,
+    AttributeDefinition,
+    AttributeKey,
+    AttributeQuery,
+    AttributeSubjectKind,
+    AttributeSubjectRef,
+    AttributeVisibility,
+    ModifierProviderSpec,
+    ModifierStage,
+    ModifierTerm,
+    RuntimeSourceKind,
+    RuntimeSourceRef,
+    StaticModifierProvider,
 )
 from genshin_sim.core.impacts import ActionImpactContext, ImpactKind, ImpactRequest
 from genshin_sim.core.space import CreatedObjectRuntimeState, SpatialEntityKind
@@ -102,6 +122,26 @@ class TestCreatedObjectBehavior:
     def create_tick_requests(self, state: CreatedObjectRuntimeState, frame: int):
         del state, frame
         return ()
+
+
+class TestAttributeModifier:
+    modifier_key = "modifier.test.crit_rate"
+    owner_ref = "character:slot_1"
+    targets = (str(STAT_CRIT_RATE),)
+    scope = "attribute"
+    priority = 0
+
+    def evaluate(self, query, context):
+        del query, context
+        return (
+            ModifierTerm(
+                target_key=STAT_CRIT_RATE,
+                stage=ModifierStage.FLAT_ADD,
+                value=0.2,
+                provider_key=self.modifier_key,
+                source_ref=RuntimeSourceRef(RuntimeSourceKind.CONTENT, self.modifier_key),
+            ),
+        )
 
 
 class FakeAssetRepository:
@@ -309,6 +349,27 @@ def test_assembler_builds_minimal_runtime_graph():
         assembled.impact_runtime,
         assembled.space_runtime,
     )
+    character_ref = AttributeSubjectRef.character("character:slot_1")
+    target_ref = AttributeSubjectRef.target("target:target_1")
+    assert (
+        assembled.attribute_runtime.resolver.resolve(
+            AttributeQuery(character_ref, STAT_ATK_BASE, frame=0)
+        ).final_value
+        == 1500
+    )
+    assert (
+        assembled.attribute_runtime.resolver.resolve(
+            AttributeQuery(character_ref, STAT_ATK_TOTAL, frame=0)
+        ).final_value
+        == 1500
+    )
+    assert (
+        assembled.attribute_runtime.resolver.resolve(
+            AttributeQuery(target_ref, RESISTANCE_HYDRO, frame=0)
+        ).final_value
+        == 0.1
+    )
+    assert assembled.context.get_system("AttributeResolver") is assembled.attribute_runtime.resolver
 
 
 def test_assembler_injects_character_runtime_contribution_and_actions():
@@ -371,6 +432,169 @@ def test_assembler_injects_character_runtime_contribution_and_actions():
     assert assembled.action_manager.instances[0].impact_points[0].impact_key == (
         "impact.character_runtime"
     )
+
+
+def test_assembler_injects_content_attribute_modifier_as_core_term():
+    class RuntimeRepository(FakeAssetRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.character = CharacterAsset(
+                asset_key="character:75",
+                source_id="75",
+                name="test",
+                element="hydro",
+                weapon_type="sword",
+                rarity=5,
+                handler_key="character.attribute_modifier",
+            )
+
+    registry = create_default_registry()
+    registry.register_character_factory(
+        "character.attribute_modifier",
+        lambda request: ContentRuntimeContribution(
+            owner_type="character",
+            owner_key=request.character_key,
+            handler_key=request.handler_key,
+            slot=request.slot,
+            modifiers=(TestAttributeModifier(),),
+        ),
+    )
+
+    assembled = SimulationAssembler(RuntimeRepository(), registry).assemble(_minimal_config())
+    character_ref = AttributeSubjectRef.character("character:slot_1")
+    resolution = assembled.attribute_runtime.resolver.resolve(
+        AttributeQuery(character_ref, STAT_CRIT_RATE, frame=0)
+    )
+
+    assert resolution.final_value == 0.2
+    assert resolution.applied_terms[0].provider_key == "modifier.test.crit_rate"
+    target_resolution = assembled.attribute_runtime.resolver.resolve(
+        AttributeQuery(
+            AttributeSubjectRef.target("target:target_1"),
+            STAT_CRIT_RATE,
+            frame=0,
+        )
+    )
+    assert target_resolution.final_value == 0.0
+
+
+def test_attribute_runtime_isolates_static_asset_modifiers_by_character_slot():
+    @dataclass(frozen=True, slots=True)
+    class AttributeAssetBundle:
+        slot: int
+        character_level_stats: CharacterLevelStats
+        weapon_level_stats: WeaponLevelStats | None = None
+
+    runtime = build_attribute_runtime(
+        config=_minimal_config(),
+        assets=(
+            AttributeAssetBundle(
+                slot=1,
+                character_level_stats=CharacterLevelStats(
+                    character_key="character:slot_1",
+                    level=90,
+                    ascension_phase=6,
+                    base_hp=1000,
+                    base_atk=100,
+                    base_def=100,
+                    ascension_stat="hp_percent",
+                    ascension_value=0.2,
+                ),
+            ),
+            AttributeAssetBundle(
+                slot=2,
+                character_level_stats=CharacterLevelStats(
+                    character_key="character:slot_2",
+                    level=90,
+                    ascension_phase=6,
+                    base_hp=2000,
+                    base_atk=200,
+                    base_def=200,
+                    ascension_stat="hp_percent",
+                    ascension_value=0.5,
+                ),
+            ),
+        ),
+        contributions=(),
+    )
+
+    slot_1 = runtime.resolver.resolve(
+        AttributeQuery(AttributeSubjectRef.character("character:slot_1"), STAT_HP_MAX, frame=0)
+    )
+    slot_2 = runtime.resolver.resolve(
+        AttributeQuery(AttributeSubjectRef.character("character:slot_2"), STAT_HP_MAX, frame=0)
+    )
+
+    assert slot_1.final_value == 1200
+    assert slot_2.final_value == 3000
+
+
+def test_assembler_registers_content_private_attribute_and_native_provider():
+    private_key = AttributeKey("character.attribute_modifier.private_bonus")
+    subject_ref = AttributeSubjectRef.character("character:slot_1")
+
+    class RuntimeRepository(FakeAssetRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.character = CharacterAsset(
+                asset_key="character:75",
+                source_id="75",
+                name="test",
+                element="hydro",
+                weapon_type="sword",
+                rarity=5,
+                handler_key="character.attribute_modifier",
+            )
+
+    provider_key = "character.attribute_modifier.private_provider"
+    provider = StaticModifierProvider(
+        ModifierProviderSpec(
+            provider_key=provider_key,
+            writes=frozenset({private_key}),
+            private_namespace="character.attribute_modifier",
+            owner_ref=subject_ref,
+        ),
+        (
+            ModifierTerm(
+                target_key=private_key,
+                stage=ModifierStage.FLAT_ADD,
+                value=0.25,
+                provider_key=provider_key,
+                source_ref=RuntimeSourceRef(
+                    RuntimeSourceKind.CONTENT,
+                    "character.attribute_modifier",
+                ),
+            ),
+        ),
+        subject_ref=subject_ref,
+    )
+    registry = create_default_registry()
+    registry.register_character_factory(
+        "character.attribute_modifier",
+        lambda request: ContentRuntimeContribution(
+            owner_type="character",
+            owner_key=request.character_key,
+            handler_key=request.handler_key,
+            slot=request.slot,
+            attribute_definitions=(
+                AttributeDefinition(
+                    key=private_key,
+                    owner_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
+                    policy_key="additive",
+                    visibility=AttributeVisibility.CONTENT_PRIVATE,
+                    namespace_owner="character.attribute_modifier",
+                ),
+            ),
+            attribute_providers=(provider,),
+        ),
+    )
+
+    assembled = SimulationAssembler(RuntimeRepository(), registry).assemble(_minimal_config())
+    resolution = assembled.attribute_runtime.resolver.resolve(
+        AttributeQuery(subject_ref, private_key, frame=0)
+    )
+
+    assert resolution.final_value == 0.25
 
 
 def test_assembler_rejects_action_interpreter_from_weapon():

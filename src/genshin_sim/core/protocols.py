@@ -6,18 +6,6 @@ if TYPE_CHECKING:
     from genshin_sim.core.simulation.context import SimulationContext
 
 
-class InputSystem(Protocol):
-    """按帧消费输入轨迹的运行时入口。"""
-
-    def process_frame(self, context: SimulationContext, frame: int) -> None:
-        """处理指定帧的输入事件。"""
-        ...
-
-    def is_finished(self) -> bool:
-        """输入轨迹是否已经消费完成。"""
-        ...
-
-
 class RuntimeWorld(Protocol):
     """每帧推进运行时对象的统一入口。"""
 

@@ -138,6 +138,7 @@ class ContentRuntimeContribution:
     handler_key: str
     slot: int | None = None
     action_interpreter: object | None = None
+    actions: Sequence[object] = field(default_factory=tuple)
     state_extension: object | None = None
     impact_factories: Mapping[str, object] = field(default_factory=dict)
     created_object_behaviors: Mapping[str, object] = field(default_factory=dict)
@@ -153,6 +154,7 @@ class ContentRuntimeContribution:
             isinstance(self.slot, bool) or not isinstance(self.slot, int)
         ):
             raise ValueError("slot 提供时必须是整数")
+        object.__setattr__(self, "actions", tuple(self.actions))
         for impact_key in self.impact_factories:
             _validate_non_empty_text(impact_key, "impact_factories key")
         for behavior_key in self.created_object_behaviors:

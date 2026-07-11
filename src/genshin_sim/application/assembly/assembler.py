@@ -30,26 +30,36 @@ from genshin_sim.content import (
     WeaponRuntimeRequest,
 )
 from genshin_sim.core.actions import (
-    TEAM_SWITCH_ACTION_KEY,
+    Action,
+    ActionInterpreter,
+    ActionInterpreterRegistry,
     ActionManager,
-    CharacterActionInterpreter,
-    TeamActionController,
+    ActionRegistry,
+    ActiveCharacterInterpreterSelector,
+    TeamActionInterpreter,
+    TeamInterpreterSelector,
+    TeamSwitchAction,
 )
 from genshin_sim.core.entity_states import (
     CharacterRuntimeState,
     TargetRuntimeCollection,
     TargetRuntimeState,
 )
-from genshin_sim.core.impacts import ImpactDispatcher, ImpactFactory, ImpactRuntime
+from genshin_sim.core.impacts import (
+    ImpactDispatcher,
+    ImpactFactory,
+    ImpactRequestDispatcher,
+    ImpactRuntime,
+)
 from genshin_sim.core.simulation import (
     BasicRuntimeWorld,
+    InputSessionTrace,
+    InputTraceCompiler,
     SimulationContext,
     Simulator,
     TeamRuntimeState,
-    TraceInputSystem,
 )
 from genshin_sim.core.space import (
-    ACTIVE_CHARACTER_ENTITY_ID,
     CreatedObjectBehavior,
     CreatedObjectRuntime,
     Space,
@@ -57,7 +67,16 @@ from genshin_sim.core.space import (
     SpatialEntityKind,
     Vector3,
 )
-from genshin_sim.core.space.runtime import SpaceRuntime, TeamSwitchActionConsumer
+from genshin_sim.core.space.runtime import SpaceRuntime
+
+TEAM_INPUT_KEYS = ("keyboard.1", "keyboard.2", "keyboard.3", "keyboard.4")
+ACTION_BUTTON_KEYS = (
+    "keyboard.e",
+    "keyboard.q",
+    "keyboard.space",
+    "mouse.left",
+    "mouse.right",
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -74,20 +93,12 @@ class RuntimeAssetBundle:
 class RuntimeContentBundle:
     contributions: tuple[ContentRuntimeContribution, ...]
     content_state_store: ContentStateStore
-    action_interpreters: dict[int, CharacterActionInterpreter]
+    action_interpreters: dict[int, ActionInterpreter]
+    actions: tuple[Action, ...]
     impact_factories: dict[str, ImpactFactory]
     created_object_behaviors: dict[str, CreatedObjectBehavior]
     event_hooks: tuple[EventHook, ...]
     modifiers: tuple[Modifier, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class _TeamActiveSlotProvider:
-    team_state: TeamRuntimeState
-
-    @property
-    def active_slot(self) -> int:
-        return self.team_state.active_slot
 
 
 @dataclass(slots=True)
@@ -96,13 +107,13 @@ class AssembledSimulation:
     context: SimulationContext
     simulator: Simulator
     action_manager: ActionManager
-    team_action_controller: TeamActionController
+    action_interpreter_registry: ActionInterpreterRegistry
+    action_registry: ActionRegistry
     impact_dispatcher: ImpactDispatcher
+    impact_request_dispatcher: ImpactRequestDispatcher
     space_runtime: SpaceRuntime
     impact_runtime: ImpactRuntime
-    team_switch_consumer: TeamSwitchActionConsumer
     content_bundle: RuntimeContentBundle
-    input_system: TraceInputSystem
     runtime_world: BasicRuntimeWorld
     assets: tuple[RuntimeAssetBundle, ...]
 
@@ -180,41 +191,46 @@ class SimulationAssembler:
             ),
             active_slot=1,
         )
-        action_manager = ActionManager()
-        team_action_controller = TeamActionController(
-            _TeamActiveSlotProvider(team_state),
-            action_manager,
-            interpreters=content_bundle.action_interpreters,
-        )
-        impact_dispatcher = ImpactDispatcher(content_bundle.impact_factories)
-        team_switch_consumer = TeamSwitchActionConsumer(
-            on_switch_accepted=team_action_controller.cancel_pending_sessions_for_slot,
-        )
+        input_trace = InputTraceCompiler().compile(config.to_core_input_frames())
         created_object_runtime = CreatedObjectRuntime(content_bundle.created_object_behaviors)
         space_runtime = SpaceRuntime(
             space=space,
             team_state=team_state,
             targets=target_states,
             created_object_runtime=created_object_runtime,
-            action_manager=action_manager,
-        )
-        space_runtime.register_consumer(
-            ACTIVE_CHARACTER_ENTITY_ID,
-            TEAM_SWITCH_ACTION_KEY,
-            team_switch_consumer,
         )
         context.space_runtime = space_runtime
+
+        action_interpreter_registry = ActionInterpreterRegistry()
+        team_selector = TeamInterpreterSelector(TeamActionInterpreter())
+        for key in TEAM_INPUT_KEYS:
+            action_interpreter_registry.register(key, team_selector)
+        character_selector = ActiveCharacterInterpreterSelector(content_bundle.action_interpreters)
+        for key in ACTION_BUTTON_KEYS:
+            action_interpreter_registry.register(key, character_selector)
+        self._validate_input_interpreters(input_trace, config.team, content_bundle)
+
+        try:
+            action_registry = ActionRegistry((TeamSwitchAction(), *content_bundle.actions))
+        except ValueError as exc:
+            raise InvalidRuntimePayloadError(str(exc)) from exc
+        self._validate_action_bindings(content_bundle, action_registry)
+
+        action_manager = ActionManager(
+            input_trace=input_trace,
+            interpreter_registry=action_interpreter_registry,
+            action_registry=action_registry,
+        )
+        impact_dispatcher = ImpactDispatcher(content_bundle.impact_factories)
+        impact_request_dispatcher = ImpactRequestDispatcher()
         impact_runtime = ImpactRuntime(
             action_manager,
             impact_dispatcher,
+            impact_request_dispatcher,
         )
-        input_system = TraceInputSystem(config.to_core_input_frames(), team_action_controller)
-        runtime_world = BasicRuntimeWorld(
-            [team_action_controller, action_manager, space_runtime, impact_runtime]
-        )
+        runtime_world = BasicRuntimeWorld([action_manager, impact_runtime, space_runtime])
         simulator = Simulator(
             context,
-            input_system=input_system,
             runtime_world=runtime_world,
             max_frames=config.run_options.max_frames,
         )
@@ -224,13 +240,13 @@ class SimulationAssembler:
             context=context,
             simulator=simulator,
             action_manager=action_manager,
-            team_action_controller=team_action_controller,
+            action_interpreter_registry=action_interpreter_registry,
+            action_registry=action_registry,
             impact_dispatcher=impact_dispatcher,
+            impact_request_dispatcher=impact_request_dispatcher,
             space_runtime=space_runtime,
             impact_runtime=impact_runtime,
-            team_switch_consumer=team_switch_consumer,
             content_bundle=content_bundle,
-            input_system=input_system,
             runtime_world=runtime_world,
             assets=assets,
         )
@@ -461,7 +477,8 @@ class SimulationAssembler:
         contributions: tuple[ContentRuntimeContribution, ...],
     ) -> RuntimeContentBundle:
         state_store = ContentStateStore()
-        action_interpreters: dict[int, CharacterActionInterpreter] = {}
+        action_interpreters: dict[int, ActionInterpreter] = {}
+        actions: list[Action] = []
         impact_factories: dict[str, ImpactFactory] = {}
         created_object_behaviors: dict[str, CreatedObjectBehavior] = {}
         event_hooks: list[EventHook] = []
@@ -470,6 +487,7 @@ class SimulationAssembler:
         for contribution in contributions:
             self._register_content_state(state_store, contribution)
             self._register_action_interpreter(action_interpreters, contribution)
+            self._register_actions(actions, contribution)
             self._register_impact_factories(impact_factories, contribution)
             self._register_created_object_behaviors(created_object_behaviors, contribution)
             event_hooks.extend(contribution.event_hooks)
@@ -479,6 +497,7 @@ class SimulationAssembler:
             contributions=contributions,
             content_state_store=state_store,
             action_interpreters=action_interpreters,
+            actions=tuple(actions),
             impact_factories=impact_factories,
             created_object_behaviors=created_object_behaviors,
             event_hooks=tuple(event_hooks),
@@ -524,7 +543,7 @@ class SimulationAssembler:
 
     def _register_action_interpreter(
         self,
-        action_interpreters: dict[int, CharacterActionInterpreter],
+        action_interpreters: dict[int, ActionInterpreter],
         contribution: ContentRuntimeContribution,
     ) -> None:
         if contribution.action_interpreter is None:
@@ -536,9 +555,46 @@ class SimulationAssembler:
         if contribution.slot in action_interpreters:
             raise InvalidRuntimePayloadError(f"队伍槽位 {contribution.slot} 重复贡献动作解释器")
         action_interpreters[contribution.slot] = cast(
-            CharacterActionInterpreter,
+            ActionInterpreter,
             contribution.action_interpreter,
         )
+
+    def _register_actions(
+        self,
+        actions: list[Action],
+        contribution: ContentRuntimeContribution,
+    ) -> None:
+        for action in contribution.actions:
+            actions.append(cast(Action, action))
+
+    def _validate_input_interpreters(
+        self,
+        input_trace: InputSessionTrace,
+        team_slots: tuple[TeamSlotConfig, ...],
+        content_bundle: RuntimeContentBundle,
+    ) -> None:
+        input_keys = {session.key for session in input_trace.sessions}
+        if not input_keys.intersection(ACTION_BUTTON_KEYS):
+            return
+
+        missing_slots = [
+            slot.slot for slot in team_slots if slot.slot not in content_bundle.action_interpreters
+        ]
+        if missing_slots:
+            slots = ", ".join(str(slot) for slot in missing_slots)
+            raise InvalidRuntimePayloadError(f"动作输入需要队伍槽位提供动作解释器：{slots}")
+
+    def _validate_action_bindings(
+        self,
+        content_bundle: RuntimeContentBundle,
+        action_registry: ActionRegistry,
+    ) -> None:
+        for slot, interpreter in content_bundle.action_interpreters.items():
+            for action_key in interpreter.supported_action_keys:
+                if not action_registry.contains(action_key):
+                    raise InvalidRuntimePayloadError(
+                        f"槽位 {slot} 的动作解释器声明了未注册 action：{action_key}"
+                    )
 
     def _register_impact_factories(
         self,

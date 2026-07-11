@@ -1,21 +1,29 @@
 from __future__ import annotations
 
-from collections.abc import Sequence
-from dataclasses import replace
-
 from genshin_sim.content.characters.testing.runtime_probe.constants import (
     RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
 )
-from genshin_sim.core.impacts import ImpactRequest
+from genshin_sim.core.impacts import ActionImpactContext, ImpactKind, ImpactRequest
 
 
 class RuntimeProbeImpactFactory:
     """记录 impact 分发已到达 content 的测试工厂。"""
 
-    def create_impact_requests(self, request: ImpactRequest) -> Sequence[ImpactRequest]:
-        params = dict(request.params)
+    def create_requests(self, context: ActionImpactContext) -> tuple[ImpactRequest, ...]:
+        params = dict(context.params)
         params["runtime_probe"] = {
             "handler_key": RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-            "source_impact_key": request.impact_key,
+            "source_impact_key": context.impact_key,
         }
-        return (replace(request, params=params),)
+        return (
+            ImpactRequest(
+                frame=context.frame,
+                kind=ImpactKind.DAMAGE,
+                impact_key=context.impact_key,
+                owner_slot=context.owner.slot,
+                action_key=context.action_key,
+                source_impact_point_id=context.impact_point_id,
+                target_refs=tuple(target.target_id for target in context.target_refs),
+                params=params,
+            ),
+        )

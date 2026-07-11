@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from genshin_sim.content.characters.testing.runtime_probe.actions import (
     RuntimeProbeActionInterpreter,
+    create_runtime_probe_action,
 )
 from genshin_sim.content.characters.testing.runtime_probe.constants import (
     RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
@@ -24,6 +25,7 @@ def create_runtime_probe_content(
         handler_key=request.handler_key,
         slot=request.slot,
         action_interpreter=RuntimeProbeActionInterpreter(),
+        actions=(create_runtime_probe_action(),),
         state_extension=RuntimeProbeState(),
         impact_factories={RUNTIME_PROBE_IMPACT_KEY: RuntimeProbeImpactFactory()},
         metadata={"purpose": "testing_runtime_probe"},

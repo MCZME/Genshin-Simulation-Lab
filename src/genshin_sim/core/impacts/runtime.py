@@ -2,16 +2,17 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
 
-from genshin_sim.core.actions.manager import ActionImpactPoint, ActionManager
+from genshin_sim.core.actions import (
+    ActionImpactPoint,
+    ActionManager,
+    CandidateTargetRef,
+    SnapshotPolicy,
+)
 from genshin_sim.core.impacts.dispatcher import ImpactDispatcher
-from genshin_sim.core.impacts.models import ImpactKind, ImpactRequest
+from genshin_sim.core.impacts.models import ActionImpactContext, ImpactKind, ImpactRequest
 from genshin_sim.core.protocols import FrameUpdatable
-from genshin_sim.core.space import CreatedObjectSpec, Vector3
-
-if TYPE_CHECKING:
-    from genshin_sim.core.simulation import SimulationContext
+from genshin_sim.core.space import CreatedObjectSpec, SpatialEntityKind, Vector3
 
 
 @dataclass(frozen=True, slots=True)
@@ -43,25 +44,12 @@ class IgnoredImpactRecord:
     reason: str
 
 
-class ImpactRuntime(FrameUpdatable):
-    """把动作影响点展开为机制请求，并处理创建空间实体的最小运行时。"""
+class ImpactRequestDispatcher:
+    """按机制请求 kind 转交具体运行时系统。"""
 
-    def __init__(
-        self,
-        action_manager: ActionManager,
-        dispatcher: ImpactDispatcher,
-    ) -> None:
-        self.action_manager = action_manager
-        self.dispatcher = dispatcher
-        self._current_frame = 0
-        self._processed_impact_points: set[tuple[int, int, str]] = set()
-        self._dispatch_records: list[ImpactDispatchRecord] = []
+    def __init__(self) -> None:
         self._created_object_records: list[CreatedObjectRecord] = []
         self._ignored_requests: list[IgnoredImpactRecord] = []
-
-    @property
-    def dispatch_records(self) -> tuple[ImpactDispatchRecord, ...]:
-        return tuple(self._dispatch_records)
 
     @property
     def created_object_records(self) -> tuple[CreatedObjectRecord, ...]:
@@ -71,61 +59,7 @@ class ImpactRuntime(FrameUpdatable):
     def ignored_requests(self) -> tuple[IgnoredImpactRecord, ...]:
         return tuple(self._ignored_requests)
 
-    def update_frame(self, context: SimulationContext, frame: int) -> None:
-        if frame < 0:
-            msg = "帧号不能为负数"
-            raise ValueError(msg)
-
-        self._current_frame = frame
-        self._dispatch_due_action_impacts(context, frame)
-        if context.space_runtime is None:
-            return
-        created_object_runtime = context.space_runtime.created_object_runtime
-        created_object_runtime.update_frame(context, frame)
-        self._handle_requests(context, created_object_runtime.drain_impact_requests())
-        self._sync_created_objects_to_space(context)
-
-    def is_idle(self) -> bool:
-        return True
-
-    def _dispatch_due_action_impacts(self, context: SimulationContext, frame: int) -> None:
-        for instance in self.action_manager.instances:
-            for impact_point in instance.impact_points:
-                if impact_point.frame > frame:
-                    continue
-                point_id = (instance.instance_id, impact_point.frame, impact_point.impact_key)
-                if point_id in self._processed_impact_points:
-                    continue
-                self._processed_impact_points.add(point_id)
-
-                if not self.dispatcher.has_factory(impact_point.impact_key):
-                    continue
-
-                seed = _request_from_action_impact_point(
-                    impact_point,
-                    owner_slot=instance.owner_slot,
-                    action_key=instance.action_key,
-                    source_impact_point_id=_source_impact_point_id(
-                        instance.instance_id,
-                        impact_point,
-                    ),
-                )
-                requests = self.dispatcher.dispatch(seed)
-                self._dispatch_records.append(
-                    ImpactDispatchRecord(
-                        frame=frame,
-                        action_key=instance.action_key,
-                        impact_key=impact_point.impact_key,
-                        requests=requests,
-                    )
-                )
-                self._handle_requests(context, requests)
-
-    def _handle_requests(
-        self,
-        context: SimulationContext,
-        requests: tuple[ImpactRequest, ...],
-    ) -> None:
+    def dispatch_requests(self, context, requests: tuple[ImpactRequest, ...]) -> None:
         for request in requests:
             if request.kind is ImpactKind.CREATE_ENTITY:
                 self._handle_create_entity_request(context, request)
@@ -138,11 +72,7 @@ class ImpactRuntime(FrameUpdatable):
                 )
             )
 
-    def _handle_create_entity_request(
-        self,
-        context: SimulationContext,
-        request: ImpactRequest,
-    ) -> None:
+    def _handle_create_entity_request(self, context, request: ImpactRequest) -> None:
         if context.space_runtime is None:
             self._ignored_requests.append(
                 IgnoredImpactRecord(
@@ -168,42 +98,108 @@ class ImpactRuntime(FrameUpdatable):
         )
         context.space_runtime.sync_entity_to_space(state.entity)
 
-    def _sync_created_objects_to_space(self, context: SimulationContext) -> None:
+
+class ImpactRuntime(FrameUpdatable):
+    """把到期动作影响点展开为机制请求，并交给请求分发器。"""
+
+    def __init__(
+        self,
+        action_manager: ActionManager,
+        dispatcher: ImpactDispatcher,
+        request_dispatcher: ImpactRequestDispatcher | None = None,
+    ) -> None:
+        self.action_manager = action_manager
+        self.dispatcher = dispatcher
+        self.request_dispatcher = request_dispatcher or ImpactRequestDispatcher()
+        self._current_frame = 0
+        self._dispatch_records: list[ImpactDispatchRecord] = []
+
+    @property
+    def dispatch_records(self) -> tuple[ImpactDispatchRecord, ...]:
+        return tuple(self._dispatch_records)
+
+    @property
+    def created_object_records(self) -> tuple[CreatedObjectRecord, ...]:
+        return self.request_dispatcher.created_object_records
+
+    @property
+    def ignored_requests(self) -> tuple[IgnoredImpactRecord, ...]:
+        return self.request_dispatcher.ignored_requests
+
+    def update_frame(self, context, frame: int) -> None:
+        if frame < 0:
+            msg = "帧号不能为负数"
+            raise ValueError(msg)
+
+        self._current_frame = frame
+        self._dispatch_due_action_impacts(context, frame)
         if context.space_runtime is None:
             return
+        created_object_runtime = context.space_runtime.created_object_runtime
+        created_object_runtime.update_frame(context, frame)
+        self.request_dispatcher.dispatch_requests(
+            context,
+            created_object_runtime.drain_impact_requests(),
+        )
         context.space_runtime.sync_created_objects_to_space()
 
+    def is_idle(self) -> bool:
+        return True
 
-def _request_from_action_impact_point(
-    impact_point: ActionImpactPoint,
-    *,
-    owner_slot: int,
-    action_key: str,
-    source_impact_point_id: str,
-) -> ImpactRequest:
-    return ImpactRequest(
-        frame=impact_point.frame,
-        kind=ImpactKind.ACTION,
-        impact_key=impact_point.impact_key,
-        owner_slot=owner_slot,
-        action_key=action_key,
-        source_impact_point_id=source_impact_point_id,
-        target_refs=tuple(target.target_id for target in impact_point.candidate_targets),
-        params={
-            "candidate_entity_ids": tuple(impact_point.candidate_entity_ids),
-            "candidate_targets": tuple(
-                {
-                    "spatial_entity_id": target.spatial_entity_id,
-                    "target_id": target.target_id,
-                }
-                for target in impact_point.candidate_targets
-            ),
-        },
-    )
+    def _dispatch_due_action_impacts(self, context, frame: int) -> None:
+        for impact_point in self.action_manager.due_impact_points(frame):
+            if not self.dispatcher.has_factory(impact_point.impact_key):
+                self.action_manager.mark_impact_dispatched(impact_point.impact_point_id)
+                continue
+            target_refs = self._resolve_target_refs(context, impact_point)
+            impact_context = ActionImpactContext(
+                frame=frame,
+                impact_point_id=impact_point.impact_point_id,
+                source_instance_id=impact_point.source_instance_id,
+                owner=impact_point.owner,
+                action_key=impact_point.action_key,
+                impact_key=impact_point.impact_key,
+                target_refs=target_refs,
+                params=impact_point.params,
+            )
+            requests = self.dispatcher.dispatch(impact_context)
+            self._dispatch_records.append(
+                ImpactDispatchRecord(
+                    frame=frame,
+                    action_key=impact_point.action_key,
+                    impact_key=impact_point.impact_key,
+                    requests=requests,
+                )
+            )
+            self.request_dispatcher.dispatch_requests(context, requests)
+            self.action_manager.mark_impact_dispatched(impact_point.impact_point_id)
+
+    def _resolve_target_refs(
+        self,
+        context,
+        impact_point: ActionImpactPoint,
+    ) -> tuple[CandidateTargetRef, ...]:
+        targeting = impact_point.targeting
+        if targeting is None or context.space_runtime is None:
+            return ()
+        if targeting.snapshot_policy is SnapshotPolicy.SNAPSHOT_ON_EMIT:
+            return context.space_runtime.resolve_candidate_targets(targeting.snapshot_entity_ids)
+        kinds = _spatial_entity_kinds(targeting.kinds)
+        entities = context.space_runtime.entities_in_radius(
+            targeting.origin,
+            targeting.radius,
+            kinds=kinds,
+            exclude_entity_ids=targeting.exclude_entity_ids,
+        )
+        return context.space_runtime.resolve_candidate_targets(
+            tuple(entity.entity_id for entity in entities)
+        )
 
 
-def _source_impact_point_id(instance_id: int, impact_point: ActionImpactPoint) -> str:
-    return f"action:{instance_id}:{impact_point.frame}:{impact_point.impact_key}"
+def _spatial_entity_kinds(kinds: tuple[str, ...]) -> set[SpatialEntityKind] | None:
+    if not kinds:
+        return None
+    return {SpatialEntityKind(kind) for kind in kinds}
 
 
 def _created_object_spec_from_request(request: ImpactRequest) -> CreatedObjectSpec:

@@ -3,13 +3,13 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from typing import Protocol
 
-from genshin_sim.core.impacts.models import ImpactRequest
+from genshin_sim.core.impacts.models import ActionImpactContext, ImpactRequest
 
 
 class ImpactFactory(Protocol):
     """把通用影响入口请求展开为一个或多个机制请求。"""
 
-    def create_impact_requests(self, request: ImpactRequest) -> Sequence[ImpactRequest]:
+    def create_requests(self, context: ActionImpactContext) -> Sequence[ImpactRequest]:
         """根据入口请求创建待结算影响请求。"""
         ...
 
@@ -34,12 +34,12 @@ class ImpactDispatcher:
         _validate_impact_key(impact_key)
         self._factories[impact_key] = factory
 
-    def dispatch(self, request: ImpactRequest) -> tuple[ImpactRequest, ...]:
-        factory = self._factories.get(request.impact_key)
+    def dispatch(self, context: ActionImpactContext) -> tuple[ImpactRequest, ...]:
+        factory = self._factories.get(context.impact_key)
         if factory is None:
-            msg = f"未注册 impact factory：{request.impact_key}"
+            msg = f"未注册 impact factory：{context.impact_key}"
             raise KeyError(msg)
-        return tuple(factory.create_impact_requests(request))
+        return tuple(factory.create_requests(context))
 
 
 def _validate_impact_key(impact_key: str) -> None:

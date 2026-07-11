@@ -2,12 +2,6 @@ from __future__ import annotations
 
 import pytest
 
-from genshin_sim.core.actions import (
-    TEAM_SWITCH_ACTION_KEY,
-    TEAM_SWITCH_TARGET_SLOT_PARAM,
-    ActionManager,
-    ActionTimelineSpec,
-)
 from genshin_sim.core.entity_states import CharacterRuntimeState, EntityLifecycle
 from genshin_sim.core.simulation import BasicRuntimeWorld, SimulationContext, TeamRuntimeState
 from genshin_sim.core.space import (
@@ -17,7 +11,7 @@ from genshin_sim.core.space import (
     SpatialEntityKind,
     Vector3,
 )
-from genshin_sim.core.space.runtime import SpaceRuntime, TeamSwitchActionConsumer
+from genshin_sim.core.space.runtime import SpaceRuntime
 
 
 def _team_state(size: int = 2, *, active_slot: int = 1) -> TeamRuntimeState:
@@ -130,8 +124,7 @@ def test_space_rejects_duplicate_entity_ids():
 def test_space_runtime_can_be_attached_to_simulation_context_and_runtime_world():
     ctx = SimulationContext()
     space = Space([SpatialEntity("target_1", SpatialEntityKind.TARGET, position=Vector3())])
-    manager = ActionManager()
-    runtime = SpaceRuntime(space=space, team_state=_team_state(), action_manager=manager)
+    runtime = SpaceRuntime(space=space, team_state=_team_state())
     ctx.space_runtime = runtime
     runtime_world = BasicRuntimeWorld([runtime])
 
@@ -142,77 +135,24 @@ def test_space_runtime_can_be_attached_to_simulation_context_and_runtime_world()
     assert runtime_world.is_idle()
 
 
-def test_space_runtime_consumes_team_switch_action():
-    ctx = SimulationContext()
-    space = Space(
-        [
-            SpatialEntity(
-                "player:active",
-                SpatialEntityKind.ACTIVE_CHARACTER,
-                position=Vector3(),
-                active_slot=1,
-            )
-        ]
-    )
-    team_state = _team_state(size=2)
-    manager = ActionManager()
-    consumer = TeamSwitchActionConsumer()
+def test_space_runtime_updates_active_character_slot_through_controlled_interface():
     runtime = SpaceRuntime(
-        space=space,
-        team_state=team_state,
-        action_manager=manager,
-        consumers={("player:active", TEAM_SWITCH_ACTION_KEY): consumer},
-    )
-    ctx.space_runtime = runtime
-
-    decision = manager.schedule_timeline(
-        ctx,
-        ActionTimelineSpec(
-            action_key=TEAM_SWITCH_ACTION_KEY,
-            source_key="keyboard.2",
-            owner_slot=1,
-            start_frame=1,
-            actor_entity_id="player:active",
-            params={TEAM_SWITCH_TARGET_SLOT_PARAM: 2},
+        space=Space(
+            [
+                SpatialEntity(
+                    "player:active",
+                    SpatialEntityKind.ACTIVE_CHARACTER,
+                    position=Vector3(),
+                    active_slot=1,
+                )
+            ]
         ),
+        team_state=_team_state(size=2),
     )
-    runtime.update_frame(ctx, frame=1)
+
+    runtime.team_state.switch_to(2, frame=1)
+    runtime.update_active_character_slot(2)
 
     player = runtime.get_entity("player:active")
-    assert decision.instance is not None
-    assert team_state.active_slot == 2
     assert player is not None
     assert player.active_slot == 2
-    assert consumer.results[0].accepted
-    assert manager.consumption_records[0].instance_id == decision.instance.instance_id
-    assert manager.consumption_records[0].status == "switched"
-
-
-def test_space_runtime_records_invalid_team_switch_as_consumed():
-    ctx = SimulationContext()
-    team_state = _team_state(size=1)
-    manager = ActionManager()
-    runtime = SpaceRuntime(
-        space=Space(),
-        team_state=team_state,
-        action_manager=manager,
-        consumers={("player:active", TEAM_SWITCH_ACTION_KEY): TeamSwitchActionConsumer()},
-    )
-    ctx.space_runtime = runtime
-
-    manager.schedule_timeline(
-        ctx,
-        ActionTimelineSpec(
-            action_key=TEAM_SWITCH_ACTION_KEY,
-            source_key="keyboard.2",
-            owner_slot=1,
-            start_frame=1,
-            actor_entity_id="player:active",
-            params={TEAM_SWITCH_TARGET_SLOT_PARAM: 2},
-        ),
-    )
-    runtime.update_frame(ctx, frame=1)
-
-    assert team_state.active_slot == 1
-    assert manager.consumption_records[0].status == "invalid_slot"
-    assert runtime.is_idle()

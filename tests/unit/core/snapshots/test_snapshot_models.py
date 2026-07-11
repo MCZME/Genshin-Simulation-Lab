@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from genshin_sim.core.events import EventType, GameEvent, InputKeyConsumedPayload
+from genshin_sim.core.events import EventType, GameEvent, InputKeyReceivedPayload
 from genshin_sim.core.simulation import SimulationContext
 from genshin_sim.core.snapshots import EventSnapshot, SimulationSnapshot, export_snapshot
 
@@ -8,9 +8,14 @@ from genshin_sim.core.snapshots import EventSnapshot, SimulationSnapshot, export
 def test_snapshot_exports_current_frame_events():
     ctx = SimulationContext()
     event = GameEvent(
-        EventType.INPUT_KEY_CONSUMED,
+        EventType.INPUT_KEY_RECEIVED,
         frame=2,
-        payload=InputKeyConsumedPayload(key="keyboard.e", phase="press"),
+        payload=InputKeyReceivedPayload(
+            key="keyboard.e",
+            phase="press",
+            order=0,
+            session_id=1,
+        ),
     )
     ctx.events.publish(event)
 
@@ -26,12 +31,12 @@ def test_snapshot_to_dict_is_serializable():
         frame=1,
         events=(
             EventSnapshot(
-                event_type="INPUT_KEY_CONSUMED",
+                event_type="INPUT_KEY_RECEIVED",
                 frame=1,
-                data={"key": "keyboard.e", "phase": "press", "held_frames": None},
+                data={"key": "keyboard.e", "phase": "press", "order": 0, "session_id": 1},
             ),
         ),
         meta={"name": "demo"},
     )
 
-    assert snapshot.to_dict()["events"][0]["event_type"] == "INPUT_KEY_CONSUMED"
+    assert snapshot.to_dict()["events"][0]["event_type"] == "INPUT_KEY_RECEIVED"

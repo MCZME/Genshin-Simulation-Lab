@@ -42,21 +42,27 @@ def test_cli_run_persists_minimal_config_to_result_database(
     assert detail.summary.end_frame == 3
     assert event_types == [
         "SIMULATION_STARTED",
-        "INPUT_KEY_CONSUMED",
-        "INPUT_KEY_CONSUMED",
+        "INPUT_KEY_RECEIVED",
+        "INPUT_SESSION_BOUNDARY_REACHED",
+        "INPUT_KEY_RECEIVED",
+        "INPUT_SESSION_BOUNDARY_REACHED",
         "SIMULATION_ENDED",
     ]
     assert detail.events[1].data == {
         "key": "keyboard.e",
         "phase": "press",
-        "held_frames": None,
+        "order": 0,
+        "session_id": 1,
     }
-    assert detail.events[2].data == {
+    assert detail.events[2].data["will_interpret"] is True
+    assert detail.events[3].data == {
         "key": "keyboard.e",
         "phase": "release",
-        "held_frames": 1,
+        "order": 0,
+        "session_id": 1,
     }
-    assert detail.events[3].data == {
+    assert detail.events[4].data["held_frames"] == 1
+    assert detail.events[5].data == {
         "stop_reason": "COMPLETED",
         "end_frame": 3,
         "frames_run": 3,

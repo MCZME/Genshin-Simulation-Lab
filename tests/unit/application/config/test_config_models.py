@@ -83,9 +83,48 @@ def test_simulation_config_round_trips_to_dict():
     assert config.schema_version == 1
     assert config.kind == "simulation_config"
     assert config.team[0].character.asset_key == "character:75"
+    assert config.scene.player.position.x == 0
+    assert config.scene.player.facing.z == 1
     assert config.scene.targets[0].target_id == "target_1"
     assert config.input_trace[0].events[0].phase.value == "press"
     assert config.to_dict()["meta"]["name"] == "demo"
+    assert config.to_dict()["scene"]["player"]["facing"]["z"] == 1
+
+
+def test_simulation_config_accepts_scene_player_start():
+    payload = _minimal_config_payload()
+    payload["scene"] = {
+        "player": {
+            "position": {"x": 1, "y": 2, "z": 3},
+            "facing": {"x": 1, "y": 0, "z": 0},
+        },
+        "targets": [
+            {
+                "id": "target_1",
+                "level": 90,
+                "position": {"x": 0, "y": 0, "z": 5},
+                "resistance": {},
+            }
+        ],
+    }
+
+    config = SimulationConfig.from_mapping(payload)
+
+    assert config.scene.player.position.x == 1
+    assert config.scene.player.position.y == 2
+    assert config.scene.player.position.z == 3
+    assert config.scene.player.facing.x == 1
+
+
+def test_simulation_config_rejects_zero_xz_player_facing():
+    payload = _minimal_config_payload()
+    payload["scene"] = {
+        "player": {"facing": {"x": 0, "y": 1, "z": 0}},
+        "targets": [],
+    }
+
+    with pytest.raises(ConfigError, match="scene\\.player\\.facing"):
+        SimulationConfig.from_mapping(payload)
 
 
 def test_simulation_config_rejects_invalid_team_key():
@@ -114,9 +153,7 @@ def test_simulation_config_rejects_invalid_scene_target_id():
 
 def test_simulation_config_rejects_unbalanced_input_trace():
     payload = _minimal_config_payload()
-    payload["input_trace"] = [
-        {"frame": 1, "events": [{"key": "keyboard.e", "phase": "press"}]}
-    ]
+    payload["input_trace"] = [{"frame": 1, "events": [{"key": "keyboard.e", "phase": "press"}]}]
 
     with pytest.raises(ConfigError, match="输入轨迹结束时仍有按键未释放"):
         SimulationConfig.from_mapping(payload)

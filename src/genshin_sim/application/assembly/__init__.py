@@ -3,6 +3,7 @@
 from genshin_sim.application.assembly.assembler import (
     AssembledSimulation,
     RuntimeAssetBundle,
+    RuntimeContentBundle,
     SimulationAssembler,
 )
 from genshin_sim.application.assembly.errors import (
@@ -19,5 +20,6 @@ __all__ = [
     "MissingRuntimeAssetError",
     "MissingRuntimeHandlerError",
     "RuntimeAssetBundle",
+    "RuntimeContentBundle",
     "SimulationAssembler",
 ]

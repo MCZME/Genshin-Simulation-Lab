@@ -221,6 +221,36 @@ class Vector3Config:
         return {"x": self.x, "y": self.y, "z": self.z}
 
 
+def _default_facing_config() -> Vector3Config:
+    return Vector3Config(0.0, 0.0, 1.0)
+
+
+@dataclass(frozen=True, slots=True)
+class ScenePlayerConfig:
+    position: Vector3Config = field(default_factory=Vector3Config)
+    facing: Vector3Config = field(default_factory=_default_facing_config)
+
+    @classmethod
+    def from_mapping(cls, raw: Mapping[str, Any]) -> ScenePlayerConfig:
+        position = Vector3Config.from_mapping(
+            _require_mapping(raw.get("position", {}), "scene.player.position"),
+            "scene.player.position",
+        )
+        facing = Vector3Config.from_mapping(
+            _require_mapping(raw.get("facing", {"z": 1.0}), "scene.player.facing"),
+            "scene.player.facing",
+        )
+        if facing.x == 0 and facing.z == 0:
+            raise ConfigError("scene.player.facing 的 X/Z 方向不能同时为 0")
+        return cls(position=position, facing=facing)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "position": self.position.to_dict(),
+            "facing": self.facing.to_dict(),
+        }
+
+
 @dataclass(frozen=True, slots=True)
 class SceneTargetConfig:
     target_id: str
@@ -253,10 +283,14 @@ class SceneTargetConfig:
 
 @dataclass(frozen=True, slots=True)
 class SceneConfig:
+    player: ScenePlayerConfig = field(default_factory=ScenePlayerConfig)
     targets: tuple[SceneTargetConfig, ...] = ()
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any]) -> SceneConfig:
+        player = ScenePlayerConfig.from_mapping(
+            _require_mapping(raw.get("player", {}), "scene.player")
+        )
         targets = tuple(
             SceneTargetConfig.from_mapping(
                 _require_mapping(item, f"scene.targets[{index}]"),
@@ -267,10 +301,13 @@ class SceneConfig:
         target_ids = [target.target_id for target in targets]
         if len(target_ids) != len(set(target_ids)):
             raise ConfigError("scene.targets 不能包含重复 id")
-        return cls(targets=targets)
+        return cls(player=player, targets=targets)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"targets": [target.to_dict() for target in self.targets]}
+        return {
+            "player": self.player.to_dict(),
+            "targets": [target.to_dict() for target in self.targets],
+        }
 
 
 @dataclass(frozen=True, slots=True)

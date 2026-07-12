@@ -1,6 +1,7 @@
 from genshin_sim.core.events import (
     EVENT_CATEGORY_SPECS,
     EVENT_SPECS,
+    DamageResolvedPayload,
     EmptyPayload,
     EventCategory,
     EventSpec,
@@ -33,6 +34,7 @@ def test_event_type_defines_current_events():
         "FRAME_ENDED",
         "INPUT_KEY_RECEIVED",
         "INPUT_SESSION_BOUNDARY_REACHED",
+        "DAMAGE_RESOLVED",
     ]
 
 
@@ -120,6 +122,12 @@ def test_event_specs_define_current_default_rules():
     assert input_session_boundary.payload_type is InputSessionBoundaryPayload
     assert input_session_boundary.effective_record_by_default is True
     assert input_session_boundary.effective_result_committed is False
+
+    damage_resolved = get_event_spec(EventType.DAMAGE_RESOLVED)
+    assert damage_resolved.category is EventCategory.FACT
+    assert damage_resolved.payload_type is DamageResolvedPayload
+    assert damage_resolved.effective_record_by_default is True
+    assert damage_resolved.effective_result_committed is True
 
 
 def test_event_payloads_convert_to_serializable_dicts():

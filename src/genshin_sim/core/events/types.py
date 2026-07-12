@@ -12,3 +12,4 @@ class EventType(Enum):
     FRAME_ENDED = auto()
     INPUT_KEY_RECEIVED = auto()
     INPUT_SESSION_BOUNDARY_REACHED = auto()
+    DAMAGE_RESOLVED = auto()

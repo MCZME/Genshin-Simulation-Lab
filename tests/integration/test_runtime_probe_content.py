@@ -11,6 +11,7 @@ from genshin_sim.content import (
     RuntimeProbeState,
     create_default_registry,
 )
+from genshin_sim.core.events import EventType
 from genshin_sim.infrastructure.assets_sqlite import (
     SQLiteAssetRepository,
     write_minimal_static_asset_database,
@@ -27,12 +28,17 @@ def test_runtime_probe_asset_connects_to_content_runtime(tmp_path: Path):
     ).assemble(SimulationConfig.from_mapping(_runtime_probe_config_payload()))
 
     assert assembled.assets[0].character.handler_key == RUNTIME_PROBE_CHARACTER_HANDLER_KEY
-    assert assembled.content_bundle.content_state_store.get_character_state(
-        slot=1,
-        handler_key=RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-        expected_type=RuntimeProbeState,
-    ) == RuntimeProbeState()
+    assert (
+        assembled.content_bundle.content_state_store.get_character_state(
+            slot=1,
+            handler_key=RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
+            expected_type=RuntimeProbeState,
+        )
+        == RuntimeProbeState()
+    )
     assert assembled.impact_dispatcher.factory_keys == (RUNTIME_PROBE_IMPACT_KEY,)
+    damage_events = []
+    assembled.context.events.subscribe(EventType.DAMAGE_RESOLVED, damage_events.append)
 
     result = assembled.simulator.run()
 
@@ -47,6 +53,13 @@ def test_runtime_probe_asset_connects_to_content_runtime(tmp_path: Path):
         "handler_key": RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
         "source_impact_key": RUNTIME_PROBE_IMPACT_KEY,
     }
+    assert len(assembled.damage_handler.records) == 1
+    damage = assembled.damage_handler.records[0].result
+    assert damage.base_damage == 200.0
+    assert damage.defense.multiplier == 0.5
+    assert damage.final_damage == 100.0
+    assert [event.event_type for event in damage_events] == [EventType.DAMAGE_RESOLVED]
+
 
 def _runtime_probe_config_payload() -> dict[str, object]:
     return {

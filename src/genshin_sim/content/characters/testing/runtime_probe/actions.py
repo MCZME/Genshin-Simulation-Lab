@@ -11,6 +11,7 @@ from genshin_sim.core.actions import (
     ActionOwnerRef,
     InputSessionView,
     PreparedAction,
+    TargetingSpec,
     TimedImpactAction,
 )
 
@@ -45,4 +46,5 @@ def create_runtime_probe_action(*, duration_frames: int = 1) -> TimedImpactActio
         action_key=RUNTIME_PROBE_ACTION_KEY,
         duration_frames=duration_frames,
         impact_keys=(RUNTIME_PROBE_IMPACT_KEY,),
+        targeting=TargetingSpec(radius=1.0),
     )

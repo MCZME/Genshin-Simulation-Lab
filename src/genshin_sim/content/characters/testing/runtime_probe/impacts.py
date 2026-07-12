@@ -15,6 +15,18 @@ class RuntimeProbeImpactFactory:
             "handler_key": RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
             "source_impact_key": context.impact_key,
         }
+        params["damage"] = {
+            "damage_type": "general",
+            "scaling_terms": (
+                {
+                    "component_key": "atk",
+                    "attribute_key": "stat.atk.total",
+                    "coefficient": 1.0,
+                },
+            ),
+            "can_crit": False,
+            "tags": ("direct_damage", "testing.runtime_probe"),
+        }
         return (
             ImpactRequest(
                 frame=context.frame,
@@ -24,6 +36,7 @@ class RuntimeProbeImpactFactory:
                 action_key=context.action_key,
                 source_impact_point_id=context.impact_point_id,
                 target_refs=tuple(target.target_id for target in context.target_refs),
+                element="anemo",
                 params=params,
             ),
         )

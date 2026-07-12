@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from genshin_sim.core.events.categories import EventCategory, get_event_category_spec
 from genshin_sim.core.events.payloads import (
+    DamageResolvedPayload,
     EmptyPayload,
     InputKeyReceivedPayload,
     InputSessionBoundaryPayload,
@@ -84,6 +85,10 @@ EVENT_SPECS: dict[EventType, EventSpec] = {
     EventType.INPUT_SESSION_BOUNDARY_REACHED: EventSpec(
         category=EventCategory.INTENT,
         payload_type=InputSessionBoundaryPayload,
+    ),
+    EventType.DAMAGE_RESOLVED: EventSpec(
+        category=EventCategory.FACT,
+        payload_type=DamageResolvedPayload,
     ),
 }
 

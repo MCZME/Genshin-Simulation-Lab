@@ -16,6 +16,7 @@ from genshin_sim.core.events.engine import (
 from genshin_sim.core.events.handlers import EventHandler
 from genshin_sim.core.events.models import GameEvent
 from genshin_sim.core.events.payloads import (
+    DamageResolvedPayload,
     EmptyPayload,
     EventPayload,
     InputKeyReceivedPayload,
@@ -44,6 +45,7 @@ __all__ = [
     "EventRecordFilter",
     "EventSubscriber",
     "EventType",
+    "DamageResolvedPayload",
     "GameEvent",
     "InputKeyReceivedPayload",
     "InputSessionBoundaryPayload",

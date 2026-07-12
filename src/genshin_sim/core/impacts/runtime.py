@@ -13,6 +13,7 @@ from genshin_sim.core.impacts.dispatcher import ImpactDispatcher
 from genshin_sim.core.impacts.models import ActionImpactContext, ImpactKind, ImpactRequest
 from genshin_sim.core.protocols import FrameUpdatable
 from genshin_sim.core.space import CreatedObjectSpec, SpatialEntityKind, Vector3
+from genshin_sim.core.systems.damage import DamageRequestHandler, DamageResolutionRecord
 
 
 @dataclass(frozen=True, slots=True)
@@ -47,7 +48,8 @@ class IgnoredImpactRecord:
 class ImpactRequestDispatcher:
     """按机制请求 kind 转交具体运行时系统。"""
 
-    def __init__(self) -> None:
+    def __init__(self, damage_handler: DamageRequestHandler | None = None) -> None:
+        self.damage_handler = damage_handler
         self._created_object_records: list[CreatedObjectRecord] = []
         self._ignored_requests: list[IgnoredImpactRecord] = []
 
@@ -59,8 +61,17 @@ class ImpactRequestDispatcher:
     def ignored_requests(self) -> tuple[IgnoredImpactRecord, ...]:
         return tuple(self._ignored_requests)
 
+    @property
+    def damage_records(self) -> tuple[DamageResolutionRecord, ...]:
+        if self.damage_handler is None:
+            return ()
+        return self.damage_handler.records
+
     def dispatch_requests(self, context, requests: tuple[ImpactRequest, ...]) -> None:
         for request in requests:
+            if request.kind is ImpactKind.DAMAGE:
+                self._handle_damage_request(context, request)
+                continue
             if request.kind is ImpactKind.CREATE_ENTITY:
                 self._handle_create_entity_request(context, request)
                 continue
@@ -71,6 +82,36 @@ class ImpactRequestDispatcher:
                     reason="机制系统尚未接入该影响请求类型",
                 )
             )
+
+    def _handle_damage_request(self, context, request: ImpactRequest) -> None:
+        if self.damage_handler is None:
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="伤害请求处理器尚未接入",
+                )
+            )
+            return
+        if not self.damage_handler.has_damage_contract(request):
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="伤害请求缺少结构化 params.damage 契约",
+                )
+            )
+            return
+        if not request.target_refs:
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="伤害请求没有目标",
+                )
+            )
+            return
+        self.damage_handler.handle_impact_request(context, request)
 
     def _handle_create_entity_request(self, context, request: ImpactRequest) -> None:
         if context.space_runtime is None:
@@ -125,6 +166,10 @@ class ImpactRuntime(FrameUpdatable):
     @property
     def ignored_requests(self) -> tuple[IgnoredImpactRecord, ...]:
         return self.request_dispatcher.ignored_requests
+
+    @property
+    def damage_records(self) -> tuple[DamageResolutionRecord, ...]:
+        return self.request_dispatcher.damage_records
 
     def update_frame(self, context, frame: int) -> None:
         if frame < 0:

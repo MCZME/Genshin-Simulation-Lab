@@ -74,6 +74,16 @@ from genshin_sim.core.space import (
     Vector3,
 )
 from genshin_sim.core.space.runtime import SpaceRuntime
+from genshin_sim.core.systems.damage import (
+    DamageFormulaRegistry,
+    DamageModifierIndex,
+    DamageModifierProvider,
+    DamageModifierStackingGroupDefinition,
+    DamageRequestHandler,
+    DamageResolver,
+    DamageSystemError,
+    GeneralDamageFormula,
+)
 
 TEAM_INPUT_KEYS = ("keyboard.1", "keyboard.2", "keyboard.3", "keyboard.4")
 ACTION_BUTTON_KEYS = (
@@ -107,6 +117,8 @@ class RuntimeContentBundle:
     created_object_behaviors: dict[str, CreatedObjectBehavior]
     event_hooks: tuple[EventHook, ...]
     modifiers: tuple[Modifier, ...]
+    damage_modifier_providers: tuple[DamageModifierProvider, ...]
+    damage_modifier_stacking_groups: tuple[DamageModifierStackingGroupDefinition, ...]
 
 
 @dataclass(slots=True)
@@ -119,6 +131,7 @@ class AssembledSimulation:
     action_registry: ActionRegistry
     impact_dispatcher: ImpactDispatcher
     impact_request_dispatcher: ImpactRequestDispatcher
+    damage_handler: DamageRequestHandler
     space_runtime: SpaceRuntime
     impact_runtime: ImpactRuntime
     content_bundle: RuntimeContentBundle
@@ -237,7 +250,21 @@ class SimulationAssembler:
             action_registry=action_registry,
         )
         impact_dispatcher = ImpactDispatcher(content_bundle.impact_factories)
-        impact_request_dispatcher = ImpactRequestDispatcher()
+        try:
+            damage_modifier_index = DamageModifierIndex(
+                content_bundle.damage_modifier_providers,
+                content_bundle.damage_modifier_stacking_groups,
+            )
+            damage_handler = DamageRequestHandler(
+                DamageResolver(
+                    attribute_resolver=attribute_runtime.resolver,
+                    modifier_index=damage_modifier_index,
+                    formula_registry=DamageFormulaRegistry((GeneralDamageFormula(),)),
+                )
+            )
+        except DamageSystemError as exc:
+            raise InvalidRuntimePayloadError(str(exc)) from exc
+        impact_request_dispatcher = ImpactRequestDispatcher(damage_handler)
         impact_runtime = ImpactRuntime(
             action_manager,
             impact_dispatcher,
@@ -259,6 +286,7 @@ class SimulationAssembler:
             action_registry=action_registry,
             impact_dispatcher=impact_dispatcher,
             impact_request_dispatcher=impact_request_dispatcher,
+            damage_handler=damage_handler,
             space_runtime=space_runtime,
             impact_runtime=impact_runtime,
             content_bundle=content_bundle,
@@ -505,6 +533,8 @@ class SimulationAssembler:
         created_object_behaviors: dict[str, CreatedObjectBehavior] = {}
         event_hooks: list[EventHook] = []
         modifiers: list[Modifier] = []
+        damage_modifier_providers: list[DamageModifierProvider] = []
+        damage_modifier_stacking_groups: list[DamageModifierStackingGroupDefinition] = []
 
         for contribution in contributions:
             self._register_content_state(state_store, contribution)
@@ -514,6 +544,8 @@ class SimulationAssembler:
             self._register_created_object_behaviors(created_object_behaviors, contribution)
             event_hooks.extend(contribution.event_hooks)
             modifiers.extend(contribution.modifiers)
+            damage_modifier_providers.extend(contribution.damage_modifier_providers)
+            damage_modifier_stacking_groups.extend(contribution.damage_modifier_stacking_groups)
 
         return RuntimeContentBundle(
             contributions=contributions,
@@ -524,6 +556,8 @@ class SimulationAssembler:
             created_object_behaviors=created_object_behaviors,
             event_hooks=tuple(event_hooks),
             modifiers=tuple(modifiers),
+            damage_modifier_providers=tuple(damage_modifier_providers),
+            damage_modifier_stacking_groups=tuple(damage_modifier_stacking_groups),
         )
 
     def _register_content_state(

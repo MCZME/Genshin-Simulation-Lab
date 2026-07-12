@@ -6,6 +6,10 @@ from dataclasses import dataclass, field
 from typing import Protocol, TypeVar, cast, overload
 
 from genshin_sim.core.attributes import AttributeDefinition, ModifierProvider, ModifierTerm
+from genshin_sim.core.systems.damage import (
+    DamageModifierProvider,
+    DamageModifierStackingGroupDefinition,
+)
 
 type JSONScalar = str | int | float | bool | None
 type JSONValue = JSONScalar | list[JSONValue] | dict[str, JSONValue]
@@ -131,6 +135,10 @@ class ContentRuntimeContribution:
     modifiers: Sequence[Modifier] = field(default_factory=tuple)
     attribute_definitions: Sequence[AttributeDefinition] = field(default_factory=tuple)
     attribute_providers: Sequence[ModifierProvider] = field(default_factory=tuple)
+    damage_modifier_providers: Sequence[DamageModifierProvider] = field(default_factory=tuple)
+    damage_modifier_stacking_groups: Sequence[DamageModifierStackingGroupDefinition] = field(
+        default_factory=tuple
+    )
     metadata: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -156,6 +164,16 @@ class ContentRuntimeContribution:
         object.__setattr__(self, "modifiers", tuple(self.modifiers))
         object.__setattr__(self, "attribute_definitions", tuple(self.attribute_definitions))
         object.__setattr__(self, "attribute_providers", tuple(self.attribute_providers))
+        object.__setattr__(
+            self,
+            "damage_modifier_providers",
+            tuple(self.damage_modifier_providers),
+        )
+        object.__setattr__(
+            self,
+            "damage_modifier_stacking_groups",
+            tuple(self.damage_modifier_stacking_groups),
+        )
         object.__setattr__(self, "metadata", dict(self.metadata))
 
 
@@ -417,5 +435,3 @@ class ContentStateSnapshot:
 
 class ContentStateSnapshotProvider(Protocol):
     def snapshot_state(self, frame: int, state: object) -> ContentStateSnapshot: ...
-
-

@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
+
+if TYPE_CHECKING:
+    from genshin_sim.core.systems.damage.models import DamageResult
 
 
 class EventPayload(Protocol):
@@ -90,3 +93,13 @@ class InputSessionBoundaryPayload:
             "will_interpret": self.will_interpret,
             "skip_reason": self.skip_reason,
         }
+
+
+@dataclass(frozen=True, slots=True)
+class DamageResolvedPayload:
+    """一次伤害数值已经完成结算的事实载荷。"""
+
+    result: DamageResult
+
+    def to_dict(self) -> dict[str, object]:
+        return {"result": self.result.to_dict()}

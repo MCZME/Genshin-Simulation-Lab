@@ -182,4 +182,4 @@ def test_impact_runtime_handles_created_object_tick_requests():
 
     assert created_object_runtime.pending_impact_requests == ()
     assert impact_runtime.ignored_requests[-1].request.impact_key == "furina.salon_member.tick"
-    assert impact_runtime.ignored_requests[-1].reason == "机制系统尚未接入该影响请求类型"
+    assert impact_runtime.ignored_requests[-1].reason == "伤害请求处理器尚未接入"

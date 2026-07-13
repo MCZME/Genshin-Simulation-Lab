@@ -4,6 +4,8 @@ from dataclasses import dataclass
 
 from genshin_sim.core.events.categories import EventCategory, get_event_category_spec
 from genshin_sim.core.events.payloads import (
+    CharacterHealthChangedPayload,
+    CharacterMaxHpChangedPayload,
     DamageResolvedPayload,
     EmptyPayload,
     InputKeyReceivedPayload,
@@ -89,6 +91,14 @@ EVENT_SPECS: dict[EventType, EventSpec] = {
     EventType.DAMAGE_RESOLVED: EventSpec(
         category=EventCategory.FACT,
         payload_type=DamageResolvedPayload,
+    ),
+    EventType.CHARACTER_HEALTH_CHANGED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=CharacterHealthChangedPayload,
+    ),
+    EventType.CHARACTER_MAX_HP_CHANGED: EventSpec(
+        category=EventCategory.AUDIT,
+        payload_type=CharacterMaxHpChangedPayload,
     ),
 }
 

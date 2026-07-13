@@ -46,8 +46,17 @@ from genshin_sim.core.actions import (
     TeamInterpreterSelector,
     TeamSwitchAction,
 )
+from genshin_sim.core.attributes import (
+    STAT_HP_MAX,
+    AttributeQuery,
+    AttributeResolveOptions,
+    AttributeSubjectRef,
+    AttributeSystemError,
+    TraceLevel,
+)
 from genshin_sim.core.entity_states import (
     CharacterRuntimeState,
+    HealthState,
     TargetRuntimeCollection,
     TargetRuntimeState,
 )
@@ -83,6 +92,12 @@ from genshin_sim.core.systems.damage import (
     DamageResolver,
     DamageSystemError,
     GeneralDamageFormula,
+)
+from genshin_sim.core.systems.health import (
+    CharacterHealthStore,
+    HealthRuntime,
+    HealthSystemError,
+    validate_health_float,
 )
 
 TEAM_INPUT_KEYS = ("keyboard.1", "keyboard.2", "keyboard.3", "keyboard.4")
@@ -132,6 +147,7 @@ class AssembledSimulation:
     impact_dispatcher: ImpactDispatcher
     impact_request_dispatcher: ImpactRequestDispatcher
     damage_handler: DamageRequestHandler
+    health_runtime: HealthRuntime
     space_runtime: SpaceRuntime
     impact_runtime: ImpactRuntime
     content_bundle: RuntimeContentBundle
@@ -166,6 +182,29 @@ class SimulationAssembler:
 
         context = SimulationContext()
         context.register_system(attribute_runtime.resolver)
+        team_state = TeamRuntimeState(
+            (
+                self._build_character_runtime_state(
+                    slot,
+                    attribute_runtime=attribute_runtime,
+                )
+                for slot in config.team
+            ),
+            active_slot=1,
+        )
+        health_store = CharacterHealthStore(
+            (
+                AttributeSubjectRef.character(character.combat_entity_id),
+                character.health,
+            )
+            for character in team_state.characters
+        )
+        health_runtime = HealthRuntime(
+            attribute_runtime.resolver,
+            health_store,
+            context.events,
+        )
+        context.register_system(health_runtime)
         target_states = TargetRuntimeCollection(
             TargetRuntimeState(
                 target_id=target.target_id,
@@ -204,20 +243,6 @@ class SimulationAssembler:
                     for target in config.scene.targets
                 ),
             ]
-        )
-
-        team_state = TeamRuntimeState(
-            (
-                CharacterRuntimeState(
-                    slot=slot.slot,
-                    character_key=slot.character.asset_key,
-                    level=slot.character.level,
-                    constellation=slot.character.constellation,
-                    talent_levels=slot.character.talents,
-                )
-                for slot in config.team
-            ),
-            active_slot=1,
         )
         input_trace = InputTraceCompiler().compile(config.to_core_input_frames())
         created_object_runtime = CreatedObjectRuntime(content_bundle.created_object_behaviors)
@@ -287,6 +312,7 @@ class SimulationAssembler:
             impact_dispatcher=impact_dispatcher,
             impact_request_dispatcher=impact_request_dispatcher,
             damage_handler=damage_handler,
+            health_runtime=health_runtime,
             space_runtime=space_runtime,
             impact_runtime=impact_runtime,
             content_bundle=content_bundle,
@@ -294,6 +320,49 @@ class SimulationAssembler:
             runtime_world=runtime_world,
             assets=assets,
         )
+
+    def _build_character_runtime_state(
+        self,
+        slot: TeamSlotConfig,
+        *,
+        attribute_runtime: AttributeRuntimeBundle,
+    ) -> CharacterRuntimeState:
+        subject_ref = AttributeSubjectRef.character(f"character:slot_{slot.slot}")
+        max_hp = self._resolve_initial_max_hp(
+            attribute_runtime=attribute_runtime,
+            subject_ref=subject_ref,
+            slot=slot.slot,
+        )
+        return CharacterRuntimeState(
+            slot=slot.slot,
+            character_key=slot.character.asset_key,
+            level=slot.character.level,
+            constellation=slot.character.constellation,
+            talent_levels=slot.character.talents,
+            health=HealthState(max_hp),
+        )
+
+    @staticmethod
+    def _resolve_initial_max_hp(
+        *,
+        attribute_runtime: AttributeRuntimeBundle,
+        subject_ref: AttributeSubjectRef,
+        slot: int,
+    ) -> float:
+        try:
+            resolution = attribute_runtime.resolver.resolve(
+                AttributeQuery(subject_ref, STAT_HP_MAX, frame=0),
+                options=AttributeResolveOptions(trace_level=TraceLevel.NONE),
+            )
+        except AttributeSystemError as exc:
+            raise InvalidRuntimePayloadError(f"槽位 {slot} 最大生命解析失败：{exc}") from exc
+        try:
+            max_hp = validate_health_float(resolution.final_value, f"槽位 {slot} 最大生命")
+        except HealthSystemError as exc:
+            raise InvalidRuntimePayloadError(f"槽位 {slot} 最大生命非法：{exc}") from exc
+        if max_hp <= 0:
+            raise InvalidRuntimePayloadError(f"槽位 {slot} 最大生命必须是正数")
+        return max_hp
 
     def _load_slot_assets(self, slot: TeamSlotConfig) -> RuntimeAssetBundle:
         try:

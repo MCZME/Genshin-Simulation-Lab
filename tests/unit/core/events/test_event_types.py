@@ -1,6 +1,11 @@
+from typing import cast
+
+from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.events import (
     EVENT_CATEGORY_SPECS,
     EVENT_SPECS,
+    CharacterHealthChangedPayload,
+    CharacterMaxHpChangedPayload,
     DamageResolvedPayload,
     EmptyPayload,
     EventCategory,
@@ -12,6 +17,11 @@ from genshin_sim.core.events import (
     SimulationEndedPayload,
     get_event_category_spec,
     get_event_spec,
+)
+from genshin_sim.core.systems.health import (
+    CharacterHealthChangeResult,
+    CharacterMaxHpReconcileResult,
+    HealthChangeKind,
 )
 
 
@@ -35,6 +45,8 @@ def test_event_type_defines_current_events():
         "INPUT_KEY_RECEIVED",
         "INPUT_SESSION_BOUNDARY_REACHED",
         "DAMAGE_RESOLVED",
+        "CHARACTER_HEALTH_CHANGED",
+        "CHARACTER_MAX_HP_CHANGED",
     ]
 
 
@@ -129,6 +141,17 @@ def test_event_specs_define_current_default_rules():
     assert damage_resolved.effective_record_by_default is True
     assert damage_resolved.effective_result_committed is True
 
+    health_changed = get_event_spec(EventType.CHARACTER_HEALTH_CHANGED)
+    assert health_changed.category is EventCategory.STATE_CHANGE
+    assert health_changed.payload_type is CharacterHealthChangedPayload
+    assert health_changed.effective_record_by_default is True
+    assert health_changed.effective_result_committed is True
+
+    max_hp_changed = get_event_spec(EventType.CHARACTER_MAX_HP_CHANGED)
+    assert max_hp_changed.category is EventCategory.AUDIT
+    assert max_hp_changed.payload_type is CharacterMaxHpChangedPayload
+    assert max_hp_changed.effective_record_by_default is False
+
 
 def test_event_payloads_convert_to_serializable_dicts():
     assert EmptyPayload().to_dict() == {}
@@ -182,6 +205,32 @@ def test_event_payloads_convert_to_serializable_dicts():
         "will_interpret": True,
         "skip_reason": None,
     }
+    character_ref = AttributeSubjectRef.character("character:slot_1")
+    health_result = CharacterHealthChangeResult(
+        change_id="health:1",
+        frame=3,
+        change_kind=HealthChangeKind.DAMAGE,
+        target_ref=character_ref,
+        source_ref=None,
+        requested_amount=300,
+        effective_amount=300,
+        unapplied_amount=0,
+        hp_before=1000,
+        hp_after=700,
+        max_hp=1000,
+    )
+    health_payload = CharacterHealthChangedPayload(health_result).to_dict()
+    assert cast(dict[str, object], health_payload["result"])["hp_after"] == 700
+    max_hp_result = CharacterMaxHpReconcileResult(
+        frame=3,
+        target_ref=character_ref,
+        old_max_hp=1000,
+        new_max_hp=1200,
+        hp_before=500,
+        hp_after=600,
+    )
+    max_hp_payload = CharacterMaxHpChangedPayload(max_hp_result).to_dict()
+    assert cast(dict[str, object], max_hp_payload["result"])["new_max_hp"] == 1200
 
 
 def test_game_event_rejects_wrong_payload_type():

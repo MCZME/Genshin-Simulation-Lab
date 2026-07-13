@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from genshin_sim.core.entity_states.health import HealthState
+
 
 @dataclass(slots=True)
 class CharacterRuntimeState:
@@ -18,6 +20,7 @@ class CharacterRuntimeState:
     talent_levels: Mapping[str, int] = field(default_factory=dict)
     energy: float = 0.0
     combat_entity_id: str = ""
+    health: HealthState = field(default_factory=lambda: HealthState(0.0))
 
     def __post_init__(self) -> None:
         if self.slot <= 0:
@@ -34,6 +37,9 @@ class CharacterRuntimeState:
             raise ValueError(msg)
         if self.energy < 0:
             msg = "角色能量不能为负数"
+            raise ValueError(msg)
+        if not isinstance(self.health, HealthState):
+            msg = "角色生命状态必须是 HealthState"
             raise ValueError(msg)
 
         talent_levels = dict(self.talent_levels)

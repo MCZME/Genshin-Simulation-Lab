@@ -28,6 +28,28 @@ def test_result_writer_and_repository_round_trip_completed_run(tmp_path):
                 data={"ok": True},
                 source_type="Simulator",
             ),
+            RecordedEvent(
+                frame=2,
+                event_type="CHARACTER_HEALTH_CHANGED",
+                data={
+                    "result": {
+                        "change_id": "health:1",
+                        "change_kind": "damage",
+                        "target_ref": {
+                            "kind": "character",
+                            "entity_id": "character:slot_1",
+                        },
+                        "requested_amount": 300,
+                        "effective_amount": 300,
+                        "unapplied_amount": 0,
+                        "hp_before": 1000,
+                        "hp_after": 700,
+                        "max_hp": 1000,
+                        "minimum_remaining_hp": None,
+                    }
+                },
+                source_type="HealthRuntime",
+            ),
         ),
         created_at="2026-07-04T00:00:00+00:00",
     )
@@ -40,6 +62,8 @@ def test_result_writer_and_repository_round_trip_completed_run(tmp_path):
 
     assert items[0].session_id == session_id
     assert items[0].name == "Smoke Run"
-    assert items[0].event_count == 1
+    assert items[0].event_count == 2
     assert detail.summary.frames_run == 120
     assert detail.events[0].data == {"ok": True}
+    assert detail.events[1].event_type == "CHARACTER_HEALTH_CHANGED"
+    assert detail.events[1].data["result"]["hp_after"] == 700

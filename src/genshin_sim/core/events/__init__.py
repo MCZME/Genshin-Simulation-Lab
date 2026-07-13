@@ -16,6 +16,8 @@ from genshin_sim.core.events.engine import (
 from genshin_sim.core.events.handlers import EventHandler
 from genshin_sim.core.events.models import GameEvent
 from genshin_sim.core.events.payloads import (
+    CharacterHealthChangedPayload,
+    CharacterMaxHpChangedPayload,
     DamageResolvedPayload,
     EmptyPayload,
     EventPayload,
@@ -45,6 +47,8 @@ __all__ = [
     "EventRecordFilter",
     "EventSubscriber",
     "EventType",
+    "CharacterHealthChangedPayload",
+    "CharacterMaxHpChangedPayload",
     "DamageResolvedPayload",
     "GameEvent",
     "InputKeyReceivedPayload",

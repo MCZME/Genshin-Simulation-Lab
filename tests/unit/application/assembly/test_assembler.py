@@ -53,6 +53,7 @@ from genshin_sim.core.attributes import (
 )
 from genshin_sim.core.impacts import ActionImpactContext, ImpactKind, ImpactRequest
 from genshin_sim.core.space import CreatedObjectRuntimeState, SpatialEntityKind
+from genshin_sim.core.systems.health import UnsupportedHealthSubjectError
 
 
 class BrokenRegistry:
@@ -338,7 +339,9 @@ def test_assembler_builds_minimal_runtime_graph():
     assert runtime_target is not None
     assert runtime_target.level == 90
     assert runtime_target.resistance == {"hydro": 0.1}
+    assert not hasattr(runtime_target, "health")
     assert assembled.space_runtime.team_state.current_character.character_key == "character:75"
+    assert assembled.space_runtime.team_state.current_character.health.current_hp == 10000
     assert assembled.simulator.max_frames == 10
     assert assembled.action_manager.is_idle()
     assert assembled.action_registry.action_keys == ("team.switch",)
@@ -351,6 +354,11 @@ def test_assembler_builds_minimal_runtime_graph():
     )
     character_ref = AttributeSubjectRef.character("character:slot_1")
     target_ref = AttributeSubjectRef.target("target:target_1")
+    assert assembled.health_runtime.get_current_hp(character_ref) == 10000
+    assert assembled.health_runtime.get_max_hp(character_ref, frame=0) == 10000
+    assert assembled.health_runtime.get_hp_ratio(character_ref, frame=0) == 1.0
+    with pytest.raises(UnsupportedHealthSubjectError):
+        assembled.health_runtime.get_current_hp(target_ref)
     assert (
         assembled.attribute_runtime.resolver.resolve(
             AttributeQuery(character_ref, STAT_ATK_BASE, frame=0)
@@ -527,6 +535,41 @@ def test_attribute_runtime_isolates_static_asset_modifiers_by_character_slot():
 
     assert slot_1.final_value == 1200
     assert slot_2.final_value == 3000
+
+
+def test_assembler_initializes_character_health_from_final_max_hp():
+    class RuntimeRepository(FakeAssetRepository):
+        def get_character_level_stats(
+            self,
+            character_key: str,
+            level: int,
+            *,
+            ascended: bool = True,
+        ):
+            stats = super().get_character_level_stats(
+                character_key,
+                level,
+                ascended=ascended,
+            )
+            return CharacterLevelStats(
+                character_key=stats.character_key,
+                level=stats.level,
+                ascension_phase=stats.ascension_phase,
+                base_hp=10000,
+                base_atk=stats.base_atk,
+                base_def=stats.base_def,
+                ascension_stat="hp_percent",
+                ascension_value=0.2,
+            )
+
+    assembled = SimulationAssembler(RuntimeRepository(), create_default_registry()).assemble(
+        _minimal_config()
+    )
+    character_ref = AttributeSubjectRef.character("character:slot_1")
+
+    assert assembled.health_runtime.get_current_hp(character_ref) == 12000
+    assert assembled.space_runtime.team_state.current_character.health.current_hp == 12000
+    assert assembled.context.get_system("HealthRuntime") is assembled.health_runtime
 
 
 def test_assembler_registers_content_private_attribute_and_native_provider():

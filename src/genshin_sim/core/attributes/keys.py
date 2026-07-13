@@ -36,6 +36,7 @@ STAT_ENERGY_RECHARGE = AttributeKey("stat.energy_recharge")
 
 BONUS_HEALING_OUTGOING = AttributeKey("bonus.healing.outgoing")
 BONUS_HEALING_INCOMING = AttributeKey("bonus.healing.incoming")
+BONUS_SHIELD_STRENGTH = AttributeKey("bonus.shield.strength")
 BONUS_DAMAGE_PHYSICAL = AttributeKey("bonus.damage.physical")
 BONUS_DAMAGE_PYRO = AttributeKey("bonus.damage.pyro")
 BONUS_DAMAGE_HYDRO = AttributeKey("bonus.damage.hydro")
@@ -67,6 +68,7 @@ PUBLIC_ATTRIBUTE_KEYS = (
     STAT_ENERGY_RECHARGE,
     BONUS_HEALING_OUTGOING,
     BONUS_HEALING_INCOMING,
+    BONUS_SHIELD_STRENGTH,
     BONUS_DAMAGE_PHYSICAL,
     BONUS_DAMAGE_PYRO,
     BONUS_DAMAGE_HYDRO,
@@ -121,4 +123,3 @@ def attribute_key(value: str | AttributeKey) -> AttributeKey:
 
 def is_public_attribute_key(value: str | AttributeKey) -> bool:
     return attribute_key(value) in PUBLIC_ATTRIBUTE_KEYS
-

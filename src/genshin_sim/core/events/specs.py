@@ -6,11 +6,16 @@ from genshin_sim.core.events.categories import EventCategory, get_event_category
 from genshin_sim.core.events.payloads import (
     CharacterHealthChangedPayload,
     CharacterMaxHpChangedPayload,
+    DamageAppliedPayload,
     DamageResolvedPayload,
     EmptyPayload,
     HealingResolvedPayload,
     InputKeyReceivedPayload,
     InputSessionBoundaryPayload,
+    ShieldAbsorptionResolvedPayload,
+    ShieldCapacityChangedPayload,
+    ShieldGrantedPayload,
+    ShieldRemovedPayload,
     SimulationEndedPayload,
 )
 from genshin_sim.core.events.types import EventType
@@ -104,6 +109,26 @@ EVENT_SPECS: dict[EventType, EventSpec] = {
     EventType.CHARACTER_MAX_HP_CHANGED: EventSpec(
         category=EventCategory.AUDIT,
         payload_type=CharacterMaxHpChangedPayload,
+    ),
+    EventType.SHIELD_GRANTED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=ShieldGrantedPayload,
+    ),
+    EventType.SHIELD_CAPACITY_CHANGED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=ShieldCapacityChangedPayload,
+    ),
+    EventType.SHIELD_REMOVED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=ShieldRemovedPayload,
+    ),
+    EventType.SHIELD_ABSORPTION_RESOLVED: EventSpec(
+        category=EventCategory.FACT,
+        payload_type=ShieldAbsorptionResolvedPayload,
+    ),
+    EventType.DAMAGE_APPLIED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=DamageAppliedPayload,
     ),
 }
 

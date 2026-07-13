@@ -11,6 +11,7 @@ class ImpactKind(StrEnum):
     """动作或运行态实体发起的机制请求类型。"""
 
     DAMAGE = "damage"
+    SHIELD = "shield"
     HEAL = "heal"
     APPLY_AURA = "apply_aura"
     APPLY_STATUS = "apply_status"

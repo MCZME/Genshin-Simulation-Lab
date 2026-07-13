@@ -16,3 +16,8 @@ class EventType(Enum):
     HEALING_RESOLVED = auto()
     CHARACTER_HEALTH_CHANGED = auto()
     CHARACTER_MAX_HP_CHANGED = auto()
+    SHIELD_GRANTED = auto()
+    SHIELD_CAPACITY_CHANGED = auto()
+    SHIELD_REMOVED = auto()
+    SHIELD_ABSORPTION_RESOLVED = auto()
+    DAMAGE_APPLIED = auto()

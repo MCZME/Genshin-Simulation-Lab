@@ -18,6 +18,7 @@ from genshin_sim.core.attributes import (
     BONUS_DAMAGE_PHYSICAL,
     BONUS_DAMAGE_PYRO,
     BONUS_HEALING_OUTGOING,
+    BONUS_SHIELD_STRENGTH,
     RESISTANCE_KEYS_BY_ELEMENT,
     STAT_ATK_BASE,
     STAT_ATK_TOTAL,
@@ -343,9 +344,7 @@ def _attribute_subject_ref(owner_ref: str) -> AttributeSubjectRef:
         return AttributeSubjectRef.character(owner_ref)
     if owner_ref.startswith("target:"):
         return AttributeSubjectRef.target(owner_ref)
-    raise InvalidRuntimePayloadError(
-        f"content attribute modifier owner_ref 不支持：{owner_ref!r}"
-    )
+    raise InvalidRuntimePayloadError(f"content attribute modifier owner_ref 不支持：{owner_ref!r}")
 
 
 _ASSET_STAT_TO_MODIFIER: Mapping[str, tuple[AttributeKey, ModifierStage]] = {
@@ -357,6 +356,7 @@ _ASSET_STAT_TO_MODIFIER: Mapping[str, tuple[AttributeKey, ModifierStage]] = {
     "elemental_mastery": (STAT_ELEMENTAL_MASTERY, ModifierStage.FLAT_ADD),
     "energy_recharge": (STAT_ENERGY_RECHARGE, ModifierStage.FLAT_ADD),
     "healing_bonus": (BONUS_HEALING_OUTGOING, ModifierStage.FLAT_ADD),
+    "shield_strength": (BONUS_SHIELD_STRENGTH, ModifierStage.FLAT_ADD),
     "physical_damage_bonus": (BONUS_DAMAGE_PHYSICAL, ModifierStage.FLAT_ADD),
     "pyro_damage_bonus": (BONUS_DAMAGE_PYRO, ModifierStage.FLAT_ADD),
     "hydro_damage_bonus": (BONUS_DAMAGE_HYDRO, ModifierStage.FLAT_ADD),

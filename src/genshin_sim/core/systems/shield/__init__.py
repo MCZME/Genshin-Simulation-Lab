@@ -1,0 +1,115 @@
+"""角色队伍护盾的类型化授予、并行吸收和生命提交入口。"""
+
+from genshin_sim.core.systems.shield.enums import (
+    ShieldChangeReason,
+    ShieldElement,
+    ShieldGrantOutcome,
+    ShieldGrantPolicy,
+    ShieldProtectionKind,
+    ShieldRemovalReason,
+)
+from genshin_sim.core.systems.shield.errors import (
+    ShieldAtomicCommitError,
+    ShieldAttributeError,
+    ShieldCapacityError,
+    ShieldErrorDetail,
+    ShieldInstanceNotFoundError,
+    ShieldPolicyError,
+    ShieldProtectionNotFoundError,
+    ShieldStateConflictError,
+    ShieldSystemError,
+    ShieldTargetMismatchError,
+    ShieldValidationError,
+)
+from genshin_sim.core.systems.shield.formulas import (
+    ShieldCapacityComponentResult,
+    ShieldCapacityFormula,
+    ShieldCapacityFormulaResult,
+    ShieldNativeMultiplierResult,
+    ShieldNativeMultiplierTerm,
+    ShieldScalingTerm,
+    normalize_shield_zero,
+    validate_non_negative_shield_float,
+    validate_shield_float,
+)
+from genshin_sim.core.systems.shield.handler import (
+    IncomingDamageHandler,
+    ShieldGrantRecord,
+    ShieldImpactRequestHandler,
+)
+from genshin_sim.core.systems.shield.models import (
+    CharacterIncomingDamage,
+    IncomingDamageApplicationRecord,
+    ShieldAbsorptionResult,
+    ShieldCapacityChangeResult,
+    ShieldComponent,
+    ShieldGrantRequest,
+    ShieldGrantResolution,
+    ShieldGrantResult,
+    ShieldHitResult,
+    ShieldProtectionRef,
+    ShieldRemovalResult,
+)
+from genshin_sim.core.systems.shield.resolver import ShieldResolver
+from genshin_sim.core.systems.shield.runtime import (
+    ShieldRuntime,
+    elemental_absorption_multiplier,
+)
+from genshin_sim.core.systems.shield.snapshots import (
+    ShieldInstanceSnapshot,
+    ShieldSnapshot,
+)
+from genshin_sim.core.systems.shield.store import (
+    ShieldComponentStore,
+    ShieldComponentUpdate,
+)
+
+__all__ = [
+    "CharacterIncomingDamage",
+    "IncomingDamageApplicationRecord",
+    "IncomingDamageHandler",
+    "ShieldAbsorptionResult",
+    "ShieldAtomicCommitError",
+    "ShieldAttributeError",
+    "ShieldCapacityChangeResult",
+    "ShieldCapacityComponentResult",
+    "ShieldCapacityError",
+    "ShieldCapacityFormula",
+    "ShieldCapacityFormulaResult",
+    "ShieldChangeReason",
+    "ShieldComponent",
+    "ShieldComponentStore",
+    "ShieldComponentUpdate",
+    "ShieldElement",
+    "ShieldErrorDetail",
+    "ShieldGrantOutcome",
+    "ShieldGrantPolicy",
+    "ShieldGrantRecord",
+    "ShieldGrantRequest",
+    "ShieldGrantResolution",
+    "ShieldGrantResult",
+    "ShieldHitResult",
+    "ShieldImpactRequestHandler",
+    "ShieldInstanceNotFoundError",
+    "ShieldInstanceSnapshot",
+    "ShieldNativeMultiplierResult",
+    "ShieldNativeMultiplierTerm",
+    "ShieldPolicyError",
+    "ShieldProtectionKind",
+    "ShieldProtectionNotFoundError",
+    "ShieldProtectionRef",
+    "ShieldRemovalReason",
+    "ShieldRemovalResult",
+    "ShieldResolver",
+    "ShieldRuntime",
+    "ShieldScalingTerm",
+    "ShieldSnapshot",
+    "ShieldStateConflictError",
+    "ShieldSystemError",
+    "ShieldTargetMismatchError",
+    "ShieldValidationError",
+    "elemental_absorption_multiplier",
+    "normalize_shield_zero",
+    "validate_non_negative_shield_float",
+    "validate_shield_float",
+]

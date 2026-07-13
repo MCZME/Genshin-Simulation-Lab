@@ -6,6 +6,7 @@ from genshin_sim.core.events import (
     EVENT_SPECS,
     CharacterHealthChangedPayload,
     CharacterMaxHpChangedPayload,
+    DamageAppliedPayload,
     DamageResolvedPayload,
     EmptyPayload,
     EventCategory,
@@ -15,6 +16,10 @@ from genshin_sim.core.events import (
     HealingResolvedPayload,
     InputKeyReceivedPayload,
     InputSessionBoundaryPayload,
+    ShieldAbsorptionResolvedPayload,
+    ShieldCapacityChangedPayload,
+    ShieldGrantedPayload,
+    ShieldRemovedPayload,
     SimulationEndedPayload,
     get_event_category_spec,
     get_event_spec,
@@ -53,6 +58,11 @@ def test_event_type_defines_current_events():
         "HEALING_RESOLVED",
         "CHARACTER_HEALTH_CHANGED",
         "CHARACTER_MAX_HP_CHANGED",
+        "SHIELD_GRANTED",
+        "SHIELD_CAPACITY_CHANGED",
+        "SHIELD_REMOVED",
+        "SHIELD_ABSORPTION_RESOLVED",
+        "DAMAGE_APPLIED",
     ]
 
 
@@ -163,6 +173,18 @@ def test_event_specs_define_current_default_rules():
     assert max_hp_changed.category is EventCategory.AUDIT
     assert max_hp_changed.payload_type is CharacterMaxHpChangedPayload
     assert max_hp_changed.effective_record_by_default is False
+
+    assert get_event_spec(EventType.SHIELD_GRANTED).payload_type is ShieldGrantedPayload
+    assert (
+        get_event_spec(EventType.SHIELD_CAPACITY_CHANGED).payload_type
+        is ShieldCapacityChangedPayload
+    )
+    assert get_event_spec(EventType.SHIELD_REMOVED).payload_type is ShieldRemovedPayload
+    assert (
+        get_event_spec(EventType.SHIELD_ABSORPTION_RESOLVED).payload_type
+        is ShieldAbsorptionResolvedPayload
+    )
+    assert get_event_spec(EventType.DAMAGE_APPLIED).payload_type is DamageAppliedPayload
 
 
 def test_event_payloads_convert_to_serializable_dicts():

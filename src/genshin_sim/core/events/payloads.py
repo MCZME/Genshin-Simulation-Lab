@@ -10,6 +10,13 @@ if TYPE_CHECKING:
         CharacterHealthChangeResult,
         CharacterMaxHpReconcileResult,
     )
+    from genshin_sim.core.systems.shield.models import (
+        IncomingDamageApplicationRecord,
+        ShieldAbsorptionResult,
+        ShieldCapacityChangeResult,
+        ShieldGrantResult,
+        ShieldRemovalResult,
+    )
 
 
 class EventPayload(Protocol):
@@ -138,3 +145,53 @@ class CharacterMaxHpChangedPayload:
 
     def to_dict(self) -> dict[str, object]:
         return {"result": self.result.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class ShieldGrantedPayload:
+    """护盾实例已经创建、替换或刷新的状态载荷。"""
+
+    result: ShieldGrantResult
+
+    def to_dict(self) -> dict[str, object]:
+        return {"result": self.result.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class ShieldCapacityChangedPayload:
+    """护盾原生剩余量已经变化的状态载荷。"""
+
+    result: ShieldCapacityChangeResult
+
+    def to_dict(self) -> dict[str, object]:
+        return {"result": self.result.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class ShieldRemovedPayload:
+    """护盾实例已经离开活动状态的状态载荷。"""
+
+    result: ShieldRemovalResult
+
+    def to_dict(self) -> dict[str, object]:
+        return {"result": self.result.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class ShieldAbsorptionResolvedPayload:
+    """一次并行护盾吸收已经提交完成的事实载荷。"""
+
+    result: ShieldAbsorptionResult
+
+    def to_dict(self) -> dict[str, object]:
+        return {"result": self.result.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class DamageAppliedPayload:
+    """一次角色来伤已经完成护盾与生命提交的状态载荷。"""
+
+    record: IncomingDamageApplicationRecord
+
+    def to_dict(self) -> dict[str, object]:
+        return {"record": self.record.to_dict()}

@@ -18,6 +18,7 @@ from genshin_sim.core.attributes.keys import (
     BONUS_DAMAGE_PYRO,
     BONUS_HEALING_INCOMING,
     BONUS_HEALING_OUTGOING,
+    BONUS_SHIELD_STRENGTH,
     PUBLIC_ATTRIBUTE_KEYS,
     RESISTANCE_ANEMO,
     RESISTANCE_CRYO,
@@ -232,7 +233,12 @@ def create_public_attribute_registry() -> AttributeDefinitionRegistry:
         }
     )
     for key in additive_keys:
-        owners = target_only if str(key).startswith("resistance.") else owner_both
+        if str(key).startswith("resistance."):
+            owners = target_only
+        elif key == BONUS_SHIELD_STRENGTH:
+            owners = character_only
+        else:
+            owners = owner_both
         definitions.append(AttributeDefinition(key, owners, "additive", default_value=0.0))
     return AttributeDefinitionRegistry(tuple(definitions))
 
@@ -244,6 +250,7 @@ PUBLIC_ADDITIVE_KEYS = (
     STAT_ENERGY_RECHARGE,
     BONUS_HEALING_OUTGOING,
     BONUS_HEALING_INCOMING,
+    BONUS_SHIELD_STRENGTH,
     BONUS_DAMAGE_PHYSICAL,
     BONUS_DAMAGE_PYRO,
     BONUS_DAMAGE_HYDRO,

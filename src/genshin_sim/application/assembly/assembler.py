@@ -66,6 +66,7 @@ from genshin_sim.core.impacts import (
     ImpactRequestDispatcher,
     ImpactRuntime,
 )
+from genshin_sim.core.mechanics import MechanicRuntime
 from genshin_sim.core.simulation import (
     BasicRuntimeWorld,
     InputSessionTrace,
@@ -103,6 +104,13 @@ from genshin_sim.core.systems.health import (
     HealthRuntime,
     HealthSystemError,
     validate_health_float,
+)
+from genshin_sim.core.systems.shield import (
+    IncomingDamageHandler,
+    ShieldComponentStore,
+    ShieldImpactRequestHandler,
+    ShieldResolver,
+    ShieldRuntime,
 )
 
 TEAM_INPUT_KEYS = ("keyboard.1", "keyboard.2", "keyboard.3", "keyboard.4")
@@ -154,6 +162,12 @@ class AssembledSimulation:
     damage_handler: DamageRequestHandler
     healing_handler: HealingRequestHandler
     health_runtime: HealthRuntime
+    mechanic_runtime: MechanicRuntime
+    shield_component_store: ShieldComponentStore
+    shield_resolver: ShieldResolver
+    shield_runtime: ShieldRuntime
+    shield_handler: ShieldImpactRequestHandler
+    incoming_damage_handler: IncomingDamageHandler
     space_runtime: SpaceRuntime
     impact_runtime: ImpactRuntime
     content_bundle: RuntimeContentBundle
@@ -303,13 +317,36 @@ class SimulationAssembler:
         except HealingSystemError as exc:
             raise InvalidRuntimePayloadError(str(exc)) from exc
         context.register_system(healing_handler)
-        impact_request_dispatcher = ImpactRequestDispatcher(damage_handler)
+        mechanic_runtime = MechanicRuntime()
+        shield_component_store = ShieldComponentStore()
+        shield_resolver = ShieldResolver(attribute_runtime.resolver)
+        shield_runtime = ShieldRuntime(
+            resolver=shield_resolver,
+            mechanic_runtime=mechanic_runtime,
+            component_store=shield_component_store,
+            attribute_resolver=attribute_runtime.resolver,
+            health_runtime=health_runtime,
+            event_engine=context.events,
+            team_state=team_state,
+        )
+        shield_handler = ShieldImpactRequestHandler(shield_runtime)
+        incoming_damage_handler = IncomingDamageHandler(shield_runtime)
+        context.register_system(mechanic_runtime)
+        context.register_system(shield_runtime)
+        context.register_system(shield_handler)
+        context.register_system(incoming_damage_handler)
+        impact_request_dispatcher = ImpactRequestDispatcher(
+            damage_handler,
+            shield_handler,
+        )
         impact_runtime = ImpactRuntime(
             action_manager,
             impact_dispatcher,
             impact_request_dispatcher,
         )
-        runtime_world = BasicRuntimeWorld([action_manager, impact_runtime, space_runtime])
+        runtime_world = BasicRuntimeWorld(
+            [mechanic_runtime, action_manager, impact_runtime, space_runtime]
+        )
         simulator = Simulator(
             context,
             runtime_world=runtime_world,
@@ -328,6 +365,12 @@ class SimulationAssembler:
             damage_handler=damage_handler,
             healing_handler=healing_handler,
             health_runtime=health_runtime,
+            mechanic_runtime=mechanic_runtime,
+            shield_component_store=shield_component_store,
+            shield_resolver=shield_resolver,
+            shield_runtime=shield_runtime,
+            shield_handler=shield_handler,
+            incoming_damage_handler=incoming_damage_handler,
             space_runtime=space_runtime,
             impact_runtime=impact_runtime,
             content_bundle=content_bundle,

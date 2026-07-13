@@ -10,14 +10,17 @@ from genshin_sim.core.attributes import (
     RuntimeSourceKind,
     RuntimeSourceRef,
 )
+from genshin_sim.core.coordination.character_damage_taken import (
+    CharacterDamageTakenTargetError,
+    CharacterDamageTakenValidationError,
+    CharacterIncomingDamage,
+)
 from genshin_sim.core.systems.damage import DamageElement
 from genshin_sim.core.systems.shield import (
-    CharacterIncomingDamage,
     ShieldCapacityFormula,
     ShieldGrantPolicy,
     ShieldNativeMultiplierTerm,
     ShieldPolicyError,
-    ShieldProtectionRef,
     ShieldScalingTerm,
     ShieldValidationError,
 )
@@ -67,14 +70,13 @@ def test_grant_policy_requires_capacity_limit_only_for_capped_refresh(make_grant
 
 
 @pytest.mark.parametrize("value", [True, -1, float("nan"), float("inf")])
-def test_incoming_damage_rejects_invalid_mitigated_amount(value):
-    with pytest.raises(ShieldValidationError):
+def test_incoming_damage_rejects_invalid_amount(value):
+    with pytest.raises(CharacterDamageTakenValidationError):
         CharacterIncomingDamage(
             damage_id="damage:1",
             frame=1,
-            protection_ref=ShieldProtectionRef.active_team(),
             target_ref=CHARACTER,
-            mitigated_amount=value,
+            amount=value,
             element=DamageElement.PYRO,
         )
 
@@ -87,10 +89,20 @@ def test_models_are_immutable_and_serialize_stable_tags(make_grant):
     incoming = CharacterIncomingDamage(
         damage_id="damage:1",
         frame=1,
-        protection_ref=ShieldProtectionRef.active_team(),
         target_ref=CHARACTER,
-        mitigated_amount=100,
+        amount=100,
         element=DamageElement.PYRO,
         tags=frozenset({"z", "a"}),
     )
     assert incoming.to_dict()["tags"] == ("a", "z")
+
+
+def test_incoming_damage_rejects_non_character_target():
+    with pytest.raises(CharacterDamageTakenTargetError):
+        CharacterIncomingDamage(
+            damage_id="damage:target",
+            frame=1,
+            target_ref=AttributeSubjectRef.target("target:1"),
+            amount=100,
+            element=DamageElement.PYRO,
+        )

@@ -217,6 +217,39 @@ class CharacterHealthChangeResult:
 
 
 @dataclass(frozen=True, slots=True)
+class CharacterDamagePlan:
+    application: CharacterDamageApplication
+    operation_id: str
+    expected_store_version: int
+    expected_health: float
+    expected_max_hp: float
+    result: CharacterHealthChangeResult
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_text(self.operation_id, "operation_id")
+        if (
+            isinstance(self.expected_store_version, bool)
+            or not isinstance(self.expected_store_version, int)
+            or self.expected_store_version < 0
+        ):
+            raise HealthValidationError("expected_store_version 必须是非负整数")
+        object.__setattr__(
+            self,
+            "expected_health",
+            validate_non_negative_health_float(self.expected_health, "expected_health"),
+        )
+        max_hp = validate_health_float(self.expected_max_hp, "expected_max_hp")
+        if max_hp <= 0:
+            raise HealthValidationError("expected_max_hp 必须是正数")
+        object.__setattr__(self, "expected_max_hp", max_hp)
+
+
+@dataclass(frozen=True, slots=True)
+class HealthCommitReceipt:
+    plan: CharacterDamagePlan
+
+
+@dataclass(frozen=True, slots=True)
 class CharacterMaxHpReconcileResult:
     frame: int
     target_ref: AttributeSubjectRef

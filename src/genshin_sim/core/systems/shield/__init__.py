@@ -1,10 +1,11 @@
-"""角色队伍护盾的类型化授予、并行吸收和生命提交入口。"""
+"""角色队伍护盾的完整聚合、类型化授予和并行吸收入口。"""
 
 from genshin_sim.core.systems.shield.enums import (
     ShieldChangeReason,
     ShieldElement,
     ShieldGrantOutcome,
     ShieldGrantPolicy,
+    ShieldLifecycleState,
     ShieldProtectionKind,
     ShieldRemovalReason,
 )
@@ -14,6 +15,7 @@ from genshin_sim.core.systems.shield.errors import (
     ShieldCapacityError,
     ShieldErrorDetail,
     ShieldInstanceNotFoundError,
+    ShieldPlanConflictError,
     ShieldPolicyError,
     ShieldProtectionNotFoundError,
     ShieldStateConflictError,
@@ -33,22 +35,25 @@ from genshin_sim.core.systems.shield.formulas import (
     validate_shield_float,
 )
 from genshin_sim.core.systems.shield.handler import (
-    IncomingDamageHandler,
     ShieldGrantRecord,
     ShieldImpactRequestHandler,
 )
 from genshin_sim.core.systems.shield.models import (
-    CharacterIncomingDamage,
-    IncomingDamageApplicationRecord,
+    ShieldAbsorptionPlan,
+    ShieldAbsorptionRequest,
     ShieldAbsorptionResult,
     ShieldCapacityChangeResult,
-    ShieldComponent,
+    ShieldCommitReceipt,
     ShieldGrantRequest,
     ShieldGrantResolution,
     ShieldGrantResult,
     ShieldHitResult,
+    ShieldInstanceRef,
+    ShieldMutationPlan,
     ShieldProtectionRef,
+    ShieldRecord,
     ShieldRemovalResult,
+    ShieldState,
 )
 from genshin_sim.core.systems.shield.resolver import ShieldResolver
 from genshin_sim.core.systems.shield.runtime import (
@@ -59,15 +64,11 @@ from genshin_sim.core.systems.shield.snapshots import (
     ShieldInstanceSnapshot,
     ShieldSnapshot,
 )
-from genshin_sim.core.systems.shield.store import (
-    ShieldComponentStore,
-    ShieldComponentUpdate,
-)
+from genshin_sim.core.systems.shield.store import ShieldStore
 
 __all__ = [
-    "CharacterIncomingDamage",
-    "IncomingDamageApplicationRecord",
-    "IncomingDamageHandler",
+    "ShieldAbsorptionPlan",
+    "ShieldAbsorptionRequest",
     "ShieldAbsorptionResult",
     "ShieldAtomicCommitError",
     "ShieldAttributeError",
@@ -77,9 +78,7 @@ __all__ = [
     "ShieldCapacityFormula",
     "ShieldCapacityFormulaResult",
     "ShieldChangeReason",
-    "ShieldComponent",
-    "ShieldComponentStore",
-    "ShieldComponentUpdate",
+    "ShieldCommitReceipt",
     "ShieldElement",
     "ShieldErrorDetail",
     "ShieldGrantOutcome",
@@ -90,21 +89,28 @@ __all__ = [
     "ShieldGrantResult",
     "ShieldHitResult",
     "ShieldImpactRequestHandler",
+    "ShieldInstanceRef",
+    "ShieldMutationPlan",
     "ShieldInstanceNotFoundError",
     "ShieldInstanceSnapshot",
     "ShieldNativeMultiplierResult",
     "ShieldNativeMultiplierTerm",
+    "ShieldLifecycleState",
     "ShieldPolicyError",
+    "ShieldPlanConflictError",
     "ShieldProtectionKind",
     "ShieldProtectionNotFoundError",
     "ShieldProtectionRef",
     "ShieldRemovalReason",
     "ShieldRemovalResult",
+    "ShieldRecord",
     "ShieldResolver",
     "ShieldRuntime",
     "ShieldScalingTerm",
     "ShieldSnapshot",
     "ShieldStateConflictError",
+    "ShieldState",
+    "ShieldStore",
     "ShieldSystemError",
     "ShieldTargetMismatchError",
     "ShieldValidationError",

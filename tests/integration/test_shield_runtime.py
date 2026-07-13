@@ -19,13 +19,10 @@ from genshin_sim.content.characters.testing.runtime_probe.constants import (
     RUNTIME_PROBE_IMPACT_KEY,
 )
 from genshin_sim.core.attributes import AttributeSubjectRef
+from genshin_sim.core.coordination.character_damage_taken import CharacterIncomingDamage
 from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import ActionImpactContext, ImpactKind, ImpactRequest
 from genshin_sim.core.systems.damage import DamageElement
-from genshin_sim.core.systems.shield import (
-    CharacterIncomingDamage,
-    ShieldProtectionRef,
-)
 from genshin_sim.infrastructure.assets_sqlite import (
     SQLiteAssetRepository,
     write_minimal_static_asset_database,
@@ -109,22 +106,21 @@ def test_action_impact_grants_shield_and_incoming_damage_reaches_health_runtime(
     assert len(assembled.shield_handler.records) == 1
     grant = assembled.shield_handler.records[0].result
     assert grant.resolution.granted_absorption == 1_000
-    assert assembled.runtime_world.updatables[0] is assembled.mechanic_runtime
+    assert assembled.runtime_world.updatables[0] is assembled.shield_runtime
     assert (
-        assembled.shield_component_store.require(grant.instance_id).remaining_native_absorption
+        assembled.shield_store.require(grant.instance_ref).state.remaining_native_absorption
         == 1_000
     )
 
     target_ref = AttributeSubjectRef.character(
         assembled.space_runtime.team_state.current_character.combat_entity_id
     )
-    application = assembled.incoming_damage_handler.apply(
+    application = assembled.character_damage_taken_coordinator.apply(
         CharacterIncomingDamage(
             damage_id="testing.incoming:1",
             frame=simulation_result.end_frame,
-            protection_ref=ShieldProtectionRef.active_team(),
             target_ref=target_ref,
-            mitigated_amount=1_500,
+            amount=1_500,
             element=DamageElement.PHYSICAL,
         )
     )
@@ -133,7 +129,7 @@ def test_action_impact_grants_shield_and_incoming_damage_reaches_health_runtime(
     assert application.shield_result.health_bound_damage == 500
     assert application.health_result.effective_amount == 500
     assert assembled.health_runtime.get_current_hp(target_ref) == 9_500
-    assert assembled.shield_component_store.components == ()
+    assert assembled.shield_store.active_records == ()
 
     new_event_names = [event.event_type.name for event in captured]
     assert new_event_names == [

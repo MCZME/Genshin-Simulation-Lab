@@ -1,4 +1,4 @@
-"""ImpactRequest 到类型化护盾请求，以及角色来伤应用处理器。"""
+"""ImpactRequest 到类型化护盾授予请求的适配器。"""
 
 from __future__ import annotations
 
@@ -27,8 +27,6 @@ from genshin_sim.core.systems.shield.formulas import (
     ShieldScalingTerm,
 )
 from genshin_sim.core.systems.shield.models import (
-    CharacterIncomingDamage,
-    IncomingDamageApplicationRecord,
     ShieldGrantRequest,
     ShieldGrantResult,
     ShieldProtectionRef,
@@ -131,29 +129,8 @@ class ShieldImpactRequestHandler:
             capacity_limit_formula=capacity_limit_formula,
             grant_policy=grant_policy,
             conflict_key=_required_text(payload, "conflict_key"),
-            grants_interruption_resistance=_boolean(
-                payload.get("grants_interruption_resistance", False),
-                "grants_interruption_resistance",
-            ),
             tags=frozenset((*request.tags, *payload_tags)),
         )
-
-
-class IncomingDamageHandler:
-    """角色来伤到护盾和生命提交的显式编排入口。"""
-
-    def __init__(self, runtime: ShieldRuntime) -> None:
-        self.runtime = runtime
-        self._records: list[IncomingDamageApplicationRecord] = []
-
-    @property
-    def records(self) -> tuple[IncomingDamageApplicationRecord, ...]:
-        return tuple(self._records)
-
-    def apply(self, request: CharacterIncomingDamage) -> IncomingDamageApplicationRecord:
-        record = self.runtime.apply_incoming_damage(request)
-        self._records.append(record)
-        return record
 
 
 def _protection_ref(value: object) -> ShieldProtectionRef:
@@ -235,12 +212,6 @@ def _number(value: object, field_name: str) -> float:
 def _positive_int(value: object, field_name: str) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise ShieldValidationError(f"shield.{field_name} 必须是正整数")
-    return value
-
-
-def _boolean(value: object, field_name: str) -> bool:
-    if not isinstance(value, bool):
-        raise ShieldValidationError(f"shield.{field_name} 必须是布尔值")
     return value
 
 

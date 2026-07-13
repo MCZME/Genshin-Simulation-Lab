@@ -2,6 +2,7 @@
 
 from genshin_sim.core.systems.health.errors import (
     CharacterHealthNotFoundError,
+    HealthPlanConflictError,
     HealthSystemError,
     HealthValidationError,
     InvalidCurrentHealthError,
@@ -10,11 +11,13 @@ from genshin_sim.core.systems.health.errors import (
 )
 from genshin_sim.core.systems.health.models import (
     CharacterDamageApplication,
+    CharacterDamagePlan,
     CharacterHealingApplication,
     CharacterHealthChangeResult,
     CharacterHpDeduction,
     CharacterMaxHpReconcileResult,
     HealthChangeKind,
+    HealthCommitReceipt,
     validate_health_float,
     validate_non_negative_health_float,
 )
@@ -23,6 +26,7 @@ from genshin_sim.core.systems.health.store import CharacterHealthStore
 
 __all__ = [
     "CharacterDamageApplication",
+    "CharacterDamagePlan",
     "CharacterHealingApplication",
     "CharacterHealthChangeResult",
     "CharacterHealthNotFoundError",
@@ -30,9 +34,11 @@ __all__ = [
     "CharacterHpDeduction",
     "CharacterMaxHpReconcileResult",
     "HealthChangeKind",
+    "HealthCommitReceipt",
     "HealthRuntime",
     "HealthSystemError",
     "HealthValidationError",
+    "HealthPlanConflictError",
     "InvalidCurrentHealthError",
     "InvalidMaxHealthError",
     "UnsupportedHealthSubjectError",

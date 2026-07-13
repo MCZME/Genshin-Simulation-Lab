@@ -20,20 +20,17 @@ from genshin_sim.core.attributes import (
     RuntimeSourceRef,
     create_public_attribute_registry,
 )
-from genshin_sim.core.entity_states import CharacterRuntimeState, HealthState
 from genshin_sim.core.events import EventEngine
-from genshin_sim.core.mechanics import MechanicRuntime
 from genshin_sim.core.simulation import TeamRuntimeState
-from genshin_sim.core.systems.health import CharacterHealthStore, HealthRuntime
 from genshin_sim.core.systems.shield import (
     ShieldCapacityError,
     ShieldCapacityFormula,
-    ShieldComponentStore,
     ShieldGrantPolicy,
     ShieldNativeMultiplierTerm,
     ShieldResolver,
     ShieldRuntime,
     ShieldScalingTerm,
+    ShieldStore,
 )
 
 
@@ -140,29 +137,18 @@ def test_creator_attribute_changes_do_not_retroactively_change_existing_native_c
         ),
         modifier_index=ModifierProviderIndex((provider,), registry=registry),
     )
-    character = CharacterRuntimeState(
-        slot=1,
-        character_key="character:test",
-        level=90,
-        health=HealthState(1_000),
-    )
+    from genshin_sim.core.entity_states import CharacterRuntimeState, HealthState
+
+    character = CharacterRuntimeState(1, "character:test", 90, health=HealthState(1_000))
     team_state = TeamRuntimeState((character,))
     events = EventEngine()
-    health_runtime = HealthRuntime(
-        attribute_resolver,
-        CharacterHealthStore(((character_ref, character.health),)),
-        events,
-    )
-    mechanic_runtime = MechanicRuntime()
-    component_store = ShieldComponentStore()
+    shield_store = ShieldStore()
     resolver = ShieldResolver(attribute_resolver)
     runtime = ShieldRuntime(
-        resolver,
-        mechanic_runtime,
-        component_store,
-        attribute_resolver,
-        health_runtime,
-        events,
+        resolver=resolver,
+        shield_store=shield_store,
+        attribute_resolver=attribute_resolver,
+        event_engine=events,
         team_state=team_state,
     )
     request = replace(
@@ -178,4 +164,4 @@ def test_creator_attribute_changes_do_not_retroactively_change_existing_native_c
 
     assert grant.resolution.granted_absorption == 1_000
     assert later_resolution.granted_absorption == 2_000
-    assert component_store.require(grant.instance_id).remaining_native_absorption == 1_000
+    assert shield_store.require(grant.instance_ref).state.remaining_native_absorption == 1_000

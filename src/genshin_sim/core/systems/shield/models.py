@@ -10,15 +10,12 @@ from genshin_sim.core.attributes import (
     RuntimeSourceRef,
 )
 from genshin_sim.core.systems.damage import DamageElement
-from genshin_sim.core.systems.health import (
-    CharacterDamageApplication,
-    CharacterHealthChangeResult,
-)
 from genshin_sim.core.systems.shield.enums import (
     ShieldChangeReason,
     ShieldElement,
     ShieldGrantOutcome,
     ShieldGrantPolicy,
+    ShieldLifecycleState,
     ShieldProtectionKind,
     ShieldRemovalReason,
 )
@@ -102,7 +99,6 @@ class ShieldGrantRequest:
     grant_policy: ShieldGrantPolicy
     conflict_key: str
     capacity_limit_formula: ShieldCapacityFormula | None = None
-    grants_interruption_resistance: bool = False
     tags: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
@@ -126,8 +122,6 @@ class ShieldGrantRequest:
             raise ShieldValidationError("grant_formula 必须是 ShieldCapacityFormula")
         if not isinstance(self.grant_policy, ShieldGrantPolicy):
             raise ShieldValidationError("grant_policy 不受支持")
-        if not isinstance(self.grants_interruption_resistance, bool):
-            raise ShieldValidationError("grants_interruption_resistance 必须是布尔值")
         if self.grant_policy is ShieldGrantPolicy.ADD_CAPPED_REFRESH:
             if self.capacity_limit_formula is None:
                 raise ShieldPolicyError("add_capped_refresh 必须提供 capacity_limit_formula")
@@ -201,11 +195,22 @@ class ShieldGrantResolution:
         }
 
 
+@dataclass(frozen=True, order=True, slots=True)
+class ShieldInstanceRef:
+    sequence: int
+    domain_key: str = "shield"
+
+    def __post_init__(self) -> None:
+        validate_positive_int(self.sequence, "sequence")
+        if self.domain_key != "shield":
+            raise ShieldValidationError("ShieldInstanceRef.domain_key 必须是 shield")
+
+    def to_dict(self) -> dict[str, object]:
+        return {"domain_key": self.domain_key, "sequence": self.sequence}
+
+
 @dataclass(frozen=True, slots=True)
-class ShieldComponent:
-    instance_id: int
-    mechanic_key: str
-    handler_key: str
+class ShieldState:
     protection_ref: ShieldProtectionRef
     creator_ref: AttributeSubjectRef
     source_context: RuntimeSourceRef
@@ -213,15 +218,11 @@ class ShieldComponent:
     maximum_native_absorption: float
     remaining_native_absorption: float
     conflict_key: str
-    grants_interruption_resistance: bool
     grant_snapshot_ref: str
     tags: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
-        validate_positive_int(self.instance_id, "instance_id")
         for value, name in (
-            (self.mechanic_key, "mechanic_key"),
-            (self.handler_key, "handler_key"),
             (self.conflict_key, "conflict_key"),
             (self.grant_snapshot_ref, "grant_snapshot_ref"),
         ):
@@ -235,23 +236,64 @@ class ShieldComponent:
             self.remaining_native_absorption,
             "remaining_native_absorption",
         )
-        if maximum <= 0 or remaining <= 0 or remaining > maximum:
+        if maximum <= 0 or remaining < 0 or remaining > maximum:
             raise ShieldCapacityError(
-                "活动护盾必须满足 0 < remaining_native_absorption <= maximum_native_absorption"
+                "护盾状态必须满足 0 <= remaining_native_absorption <= maximum_native_absorption"
             )
         object.__setattr__(self, "maximum_native_absorption", maximum)
         object.__setattr__(self, "remaining_native_absorption", remaining)
-        if not isinstance(self.grants_interruption_resistance, bool):
-            raise ShieldValidationError("grants_interruption_resistance 必须是布尔值")
         object.__setattr__(self, "tags", normalize_tags(self.tags))
+
+
+@dataclass(frozen=True, slots=True)
+class ShieldRecord:
+    instance_ref: ShieldInstanceRef
+    mechanic_key: str
+    handler_key: str
+    created_frame: int
+    expires_at_frame: int
+    lifecycle_state: ShieldLifecycleState
+    state: ShieldState
+    removed_frame: int | None = None
+    removal_reason: ShieldRemovalReason | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.instance_ref, ShieldInstanceRef):
+            raise ShieldValidationError("instance_ref 必须是 ShieldInstanceRef")
+        validate_non_empty_text(self.mechanic_key, "mechanic_key")
+        validate_non_empty_text(self.handler_key, "handler_key")
+        validate_frame(self.created_frame, "created_frame")
+        validate_frame(self.expires_at_frame, "expires_at_frame")
+        if self.created_frame >= self.expires_at_frame:
+            raise ShieldValidationError("created_frame 必须早于 expires_at_frame")
+        if not isinstance(self.lifecycle_state, ShieldLifecycleState):
+            raise ShieldValidationError("lifecycle_state 不受支持")
+        if not isinstance(self.state, ShieldState):
+            raise ShieldValidationError("state 必须是 ShieldState")
+        if self.lifecycle_state is ShieldLifecycleState.ACTIVE:
+            if self.removed_frame is not None or self.removal_reason is not None:
+                raise ShieldValidationError("活动护盾不能携带移除信息")
+            if self.state.remaining_native_absorption <= 0:
+                raise ShieldCapacityError("活动护盾的 remaining_native_absorption 必须为正数")
+        else:
+            if self.removed_frame is None or self.removal_reason is None:
+                raise ShieldValidationError("非活动护盾必须携带移除帧和原因")
+            validate_frame(self.removed_frame, "removed_frame")
+
+    def is_active_at(self, frame: int) -> bool:
+        validate_frame(frame)
+        return (
+            self.lifecycle_state is ShieldLifecycleState.ACTIVE
+            and self.created_frame <= frame < self.expires_at_frame
+        )
 
 
 @dataclass(frozen=True, slots=True)
 class ShieldGrantResult:
     resolution: ShieldGrantResolution
     outcome: ShieldGrantOutcome
-    instance_id: int
-    replaced_instance_id: int | None
+    instance_ref: ShieldInstanceRef
+    replaced_instance_ref: ShieldInstanceRef | None
     remaining_before: float
     remaining_after: float
     maximum_after: float
@@ -259,9 +301,12 @@ class ShieldGrantResult:
     expires_at_after: int
 
     def __post_init__(self) -> None:
-        validate_positive_int(self.instance_id, "instance_id")
-        if self.replaced_instance_id is not None:
-            validate_positive_int(self.replaced_instance_id, "replaced_instance_id")
+        if not isinstance(self.instance_ref, ShieldInstanceRef):
+            raise ShieldValidationError("instance_ref 必须是 ShieldInstanceRef")
+        if self.replaced_instance_ref is not None and not isinstance(
+            self.replaced_instance_ref, ShieldInstanceRef
+        ):
+            raise ShieldValidationError("replaced_instance_ref 必须是 ShieldInstanceRef 或 None")
         if not isinstance(self.outcome, ShieldGrantOutcome):
             raise ShieldValidationError("outcome 不受支持")
         for field_name in ("remaining_before", "remaining_after", "maximum_after"):
@@ -282,8 +327,10 @@ class ShieldGrantResult:
         return {
             "resolution": self.resolution.to_dict(),
             "outcome": self.outcome.value,
-            "instance_id": self.instance_id,
-            "replaced_instance_id": self.replaced_instance_id,
+            "instance_ref": self.instance_ref.to_dict(),
+            "replaced_instance_ref": None
+            if self.replaced_instance_ref is None
+            else self.replaced_instance_ref.to_dict(),
             "remaining_before": self.remaining_before,
             "remaining_after": self.remaining_after,
             "maximum_after": self.maximum_after,
@@ -295,7 +342,7 @@ class ShieldGrantResult:
 @dataclass(frozen=True, slots=True)
 class ShieldCapacityChangeResult:
     frame: int
-    instance_id: int
+    instance_ref: ShieldInstanceRef
     mechanic_key: str
     protection_ref: ShieldProtectionRef
     reason: ShieldChangeReason
@@ -306,7 +353,8 @@ class ShieldCapacityChangeResult:
 
     def __post_init__(self) -> None:
         validate_frame(self.frame)
-        validate_positive_int(self.instance_id, "instance_id")
+        if not isinstance(self.instance_ref, ShieldInstanceRef):
+            raise ShieldValidationError("instance_ref 必须是 ShieldInstanceRef")
         validate_non_empty_text(self.mechanic_key, "mechanic_key")
         if not isinstance(self.reason, ShieldChangeReason):
             raise ShieldValidationError("change reason 不受支持")
@@ -325,7 +373,7 @@ class ShieldCapacityChangeResult:
     def to_dict(self) -> dict[str, object]:
         return {
             "frame": self.frame,
-            "instance_id": self.instance_id,
+            "instance_ref": self.instance_ref.to_dict(),
             "mechanic_key": self.mechanic_key,
             "protection_ref": self.protection_ref.to_dict(),
             "reason": self.reason.value,
@@ -339,7 +387,7 @@ class ShieldCapacityChangeResult:
 @dataclass(frozen=True, slots=True)
 class ShieldRemovalResult:
     frame: int
-    instance_id: int
+    instance_ref: ShieldInstanceRef
     mechanic_key: str
     protection_ref: ShieldProtectionRef
     reason: ShieldRemovalReason
@@ -347,7 +395,8 @@ class ShieldRemovalResult:
 
     def __post_init__(self) -> None:
         validate_frame(self.frame)
-        validate_positive_int(self.instance_id, "instance_id")
+        if not isinstance(self.instance_ref, ShieldInstanceRef):
+            raise ShieldValidationError("instance_ref 必须是 ShieldInstanceRef")
         validate_non_empty_text(self.mechanic_key, "mechanic_key")
         if not isinstance(self.reason, ShieldRemovalReason):
             raise ShieldValidationError("removal reason 不受支持")
@@ -360,7 +409,7 @@ class ShieldRemovalResult:
     def to_dict(self) -> dict[str, object]:
         return {
             "frame": self.frame,
-            "instance_id": self.instance_id,
+            "instance_ref": self.instance_ref.to_dict(),
             "mechanic_key": self.mechanic_key,
             "protection_ref": self.protection_ref.to_dict(),
             "reason": self.reason.value,
@@ -369,12 +418,11 @@ class ShieldRemovalResult:
 
 
 @dataclass(frozen=True, slots=True)
-class CharacterIncomingDamage:
+class ShieldAbsorptionRequest:
     damage_id: str
     frame: int
-    protection_ref: ShieldProtectionRef
     target_ref: AttributeSubjectRef
-    mitigated_amount: float
+    incoming_amount: float
     element: DamageElement
     source_ref: AttributeSubjectRef | None = None
     source_context: RuntimeSourceRef | None = None
@@ -386,8 +434,8 @@ class CharacterIncomingDamage:
         validate_character_ref(self.target_ref, "target_ref")
         object.__setattr__(
             self,
-            "mitigated_amount",
-            validate_non_negative_shield_float(self.mitigated_amount, "mitigated_amount"),
+            "incoming_amount",
+            validate_non_negative_shield_float(self.incoming_amount, "incoming_amount"),
         )
         if not isinstance(self.element, DamageElement):
             raise ShieldValidationError("damage element 不受支持")
@@ -400,19 +448,12 @@ class CharacterIncomingDamage:
             raise ShieldValidationError("source_context 必须是 RuntimeSourceRef 或 None")
         object.__setattr__(self, "tags", normalize_tags(self.tags))
 
-    @property
-    def amount(self) -> float:
-        """兼容调用方术语；语义始终是护盾前减免后的来伤量。"""
-
-        return self.mitigated_amount
-
     def to_dict(self) -> dict[str, object]:
         return {
             "damage_id": self.damage_id,
             "frame": self.frame,
-            "protection_ref": self.protection_ref.to_dict(),
             "target_ref": _subject_ref_to_dict(self.target_ref),
-            "mitigated_amount": self.mitigated_amount,
+            "incoming_amount": self.incoming_amount,
             "element": self.element.value,
             "source_ref": None
             if self.source_ref is None
@@ -426,8 +467,9 @@ class CharacterIncomingDamage:
 
 @dataclass(frozen=True, slots=True)
 class ShieldHitResult:
-    instance_id: int
+    instance_ref: ShieldInstanceRef
     mechanic_key: str
+    protection_ref: ShieldProtectionRef
     element: ShieldElement
     native_before: float
     native_cost: float
@@ -440,7 +482,8 @@ class ShieldHitResult:
     depleted: bool
 
     def __post_init__(self) -> None:
-        validate_positive_int(self.instance_id, "instance_id")
+        if not isinstance(self.instance_ref, ShieldInstanceRef):
+            raise ShieldValidationError("instance_ref 必须是 ShieldInstanceRef")
         validate_non_empty_text(self.mechanic_key, "mechanic_key")
         for field_name in (
             "native_before",
@@ -466,8 +509,9 @@ class ShieldHitResult:
 
     def to_dict(self) -> dict[str, object]:
         return {
-            "instance_id": self.instance_id,
+            "instance_ref": self.instance_ref.to_dict(),
             "mechanic_key": self.mechanic_key,
+            "protection_ref": self.protection_ref.to_dict(),
             "element": self.element.value,
             "native_before": self.native_before,
             "native_cost": self.native_cost,
@@ -485,17 +529,17 @@ class ShieldHitResult:
 class ShieldAbsorptionResult:
     damage_id: str
     frame: int
-    protection_ref: ShieldProtectionRef
     target_ref: AttributeSubjectRef
-    mitigated_amount: float
+    incoming_amount: float
     element: DamageElement
+    matched_protection_refs: tuple[ShieldProtectionRef, ...]
     active_character_shield_strength: float
     shield_hits: tuple[ShieldHitResult, ...]
     protected_damage: float
     health_bound_damage: float
     had_active_shield_before: bool
     has_active_shield_after: bool
-    depleted_instance_ids: tuple[int, ...]
+    depleted_instance_refs: tuple[ShieldInstanceRef, ...]
 
     def __post_init__(self) -> None:
         validate_non_empty_text(self.damage_id, "damage_id")
@@ -504,11 +548,16 @@ class ShieldAbsorptionResult:
         object.__setattr__(self, "shield_hits", tuple(self.shield_hits))
         object.__setattr__(
             self,
-            "depleted_instance_ids",
-            tuple(sorted(self.depleted_instance_ids)),
+            "matched_protection_refs",
+            tuple(sorted(set(self.matched_protection_refs), key=lambda item: item.to_key())),
+        )
+        object.__setattr__(
+            self,
+            "depleted_instance_refs",
+            tuple(sorted(self.depleted_instance_refs)),
         )
         for field_name in (
-            "mitigated_amount",
+            "incoming_amount",
             "active_character_shield_strength",
             "protected_damage",
             "health_bound_damage",
@@ -518,50 +567,117 @@ class ShieldAbsorptionResult:
                 field_name,
                 validate_shield_float(getattr(self, field_name), field_name),
             )
-        if min(self.mitigated_amount, self.protected_damage, self.health_bound_damage) < 0:
+        if min(self.incoming_amount, self.protected_damage, self.health_bound_damage) < 0:
             raise ShieldCapacityError("来伤和保护量不能为负数")
         if not math.isclose(
-            self.mitigated_amount,
+            self.incoming_amount,
             self.protected_damage + self.health_bound_damage,
             rel_tol=1e-12,
             abs_tol=1e-12,
         ):
             raise ShieldCapacityError(
-                "mitigated_amount 必须等于 protected_damage + health_bound_damage"
+                "incoming_amount 必须等于 protected_damage + health_bound_damage"
             )
 
     def to_dict(self) -> dict[str, object]:
         return {
             "damage_id": self.damage_id,
             "frame": self.frame,
-            "protection_ref": self.protection_ref.to_dict(),
             "target_ref": _subject_ref_to_dict(self.target_ref),
-            "mitigated_amount": self.mitigated_amount,
+            "incoming_amount": self.incoming_amount,
             "element": self.element.value,
+            "matched_protection_refs": tuple(
+                item.to_dict() for item in self.matched_protection_refs
+            ),
             "active_character_shield_strength": self.active_character_shield_strength,
             "shield_hits": tuple(hit.to_dict() for hit in self.shield_hits),
             "protected_damage": self.protected_damage,
             "health_bound_damage": self.health_bound_damage,
             "had_active_shield_before": self.had_active_shield_before,
             "has_active_shield_after": self.has_active_shield_after,
-            "depleted_instance_ids": self.depleted_instance_ids,
+            "depleted_instance_refs": tuple(item.to_dict() for item in self.depleted_instance_refs),
         }
 
 
 @dataclass(frozen=True, slots=True)
-class IncomingDamageApplicationRecord:
-    incoming_damage: CharacterIncomingDamage
-    shield_result: ShieldAbsorptionResult
-    health_application: CharacterDamageApplication
-    health_result: CharacterHealthChangeResult
+class ShieldMutationPlan:
+    operation_id: str
+    frame: int
+    expected_store_version: int
+    expected_records: tuple[ShieldRecord, ...]
+    replacement_records: tuple[ShieldRecord, ...]
 
-    def to_dict(self) -> dict[str, object]:
-        return {
-            "incoming_damage": self.incoming_damage.to_dict(),
-            "shield_result": self.shield_result.to_dict(),
-            "health_application": _health_application_to_dict(self.health_application),
-            "health_result": self.health_result.to_dict(),
-        }
+    def __post_init__(self) -> None:
+        validate_non_empty_text(self.operation_id, "operation_id")
+        validate_frame(self.frame)
+        if (
+            isinstance(self.expected_store_version, bool)
+            or not isinstance(self.expected_store_version, int)
+            or self.expected_store_version < 0
+        ):
+            raise ShieldValidationError("expected_store_version 必须是非负整数")
+        if any(not isinstance(record, ShieldRecord) for record in self.expected_records):
+            raise ShieldValidationError("expected_records 必须全部是 ShieldRecord")
+        if any(not isinstance(record, ShieldRecord) for record in self.replacement_records):
+            raise ShieldValidationError("replacement_records 必须全部是 ShieldRecord")
+        object.__setattr__(
+            self,
+            "expected_records",
+            tuple(sorted(self.expected_records, key=lambda item: item.instance_ref)),
+        )
+        object.__setattr__(
+            self,
+            "replacement_records",
+            tuple(sorted(self.replacement_records, key=lambda item: item.instance_ref)),
+        )
+        expected_refs = [record.instance_ref for record in self.expected_records]
+        replacement_refs = [record.instance_ref for record in self.replacement_records]
+        if len(expected_refs) != len(set(expected_refs)):
+            raise ShieldValidationError("expected_records 包含重复 instance_ref")
+        if len(replacement_refs) != len(set(replacement_refs)):
+            raise ShieldValidationError("replacement_records 包含重复 instance_ref")
+
+
+@dataclass(frozen=True, slots=True)
+class ShieldAbsorptionPlan:
+    damage_id: str
+    frame: int
+    target_ref: AttributeSubjectRef
+    operation_id: str
+    expected_store_version: int
+    expected_records: tuple[ShieldRecord, ...]
+    replacement_records: tuple[ShieldRecord, ...]
+    result: ShieldAbsorptionResult
+    capacity_changes: tuple[ShieldCapacityChangeResult, ...]
+    removals: tuple[ShieldRemovalResult, ...]
+
+    def __post_init__(self) -> None:
+        validate_non_empty_text(self.damage_id, "damage_id")
+        validate_character_ref(self.target_ref, "target_ref")
+        if not isinstance(self.result, ShieldAbsorptionResult):
+            raise ShieldValidationError("result 必须是 ShieldAbsorptionResult")
+        if (
+            self.result.damage_id != self.damage_id
+            or self.result.frame != self.frame
+            or self.result.target_ref != self.target_ref
+        ):
+            raise ShieldValidationError("ShieldAbsorptionPlan 与 result 身份不一致")
+        object.__setattr__(self, "capacity_changes", tuple(self.capacity_changes))
+        object.__setattr__(self, "removals", tuple(self.removals))
+        normalized = ShieldMutationPlan(
+            operation_id=self.operation_id,
+            frame=self.frame,
+            expected_store_version=self.expected_store_version,
+            expected_records=self.expected_records,
+            replacement_records=self.replacement_records,
+        )
+        object.__setattr__(self, "expected_records", normalized.expected_records)
+        object.__setattr__(self, "replacement_records", normalized.replacement_records)
+
+
+@dataclass(frozen=True, slots=True)
+class ShieldCommitReceipt:
+    plan: ShieldAbsorptionPlan
 
 
 def normalize_capacity_after(value: float) -> float:
@@ -590,22 +706,4 @@ def _attribute_resolution_to_dict(result: AttributeResolution) -> dict[str, obje
         "base_value": result.base_value,
         "final_value": result.final_value,
         "policy_key": result.policy_key,
-    }
-
-
-def _health_application_to_dict(
-    request: CharacterDamageApplication,
-) -> dict[str, object]:
-    return {
-        "change_id": request.change_id,
-        "frame": request.frame,
-        "target_ref": _subject_ref_to_dict(request.target_ref),
-        "amount": request.amount,
-        "source_ref": None
-        if request.source_ref is None
-        else _subject_ref_to_dict(request.source_ref),
-        "source_context": None
-        if request.source_context is None
-        else _runtime_source_ref_to_dict(request.source_context),
-        "tags": tuple(sorted(request.tags)),
     }

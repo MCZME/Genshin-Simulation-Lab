@@ -35,6 +35,11 @@
 - `infrastructure/` 保存 SQLite、文件存储、日志等具体技术实现。
 - `analysis/` 只做结果加工、聚合、对比和报告模型，不写库、不画 UI。
 - `ui/` 和 `cli/` 通过 `application/` 调用能力，不直接访问 SQLite 或组装仿真核心对象。
+- `core/systems/<domain>/` 实行系统自治：每个系统只拥有本领域的状态、公式、计划、写入口和领域事实。
+- 一个领域系统不能 import 另一个领域系统的具体 Runtime 或 Store，也不能直接修改另一个系统的状态；只读依赖必须通过中立共享模型或窄协议表达。
+- 跨系统仿真流程统一放在 `core/coordination/`，由限定场景的 coordinator 负责编排准备、校验、无回调提交和事实顺序。
+- `core/coordination/` 不拥有长期领域状态，不实现领域公式，不提供全局万能调度器；每个 coordinator 只处理一个明确跨系统流程。
+- `EventEngine` 只发布和记录已经发生的事实，不作为跨系统写入或当前结算递归调用入口。
 
 ## 文档规则
 

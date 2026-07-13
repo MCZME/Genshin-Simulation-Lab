@@ -48,3 +48,9 @@ class ShieldChangeReason(StrEnum):
 class ShieldProtectionKind(StrEnum):
     ACTIVE_TEAM = "active_team"
     CHARACTER = "character"
+
+
+class ShieldLifecycleState(StrEnum):
+    ACTIVE = "active"
+    EXPIRED = "expired"
+    REMOVED = "removed"

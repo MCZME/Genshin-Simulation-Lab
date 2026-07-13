@@ -184,7 +184,9 @@ def test_event_specs_define_current_default_rules():
         get_event_spec(EventType.SHIELD_ABSORPTION_RESOLVED).payload_type
         is ShieldAbsorptionResolvedPayload
     )
-    assert get_event_spec(EventType.DAMAGE_APPLIED).payload_type is DamageAppliedPayload
+    damage_applied = get_event_spec(EventType.DAMAGE_APPLIED)
+    assert damage_applied.category is EventCategory.FACT
+    assert damage_applied.payload_type is DamageAppliedPayload
 
 
 def test_event_payloads_convert_to_serializable_dicts():

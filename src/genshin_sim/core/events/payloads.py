@@ -4,6 +4,9 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
+    from genshin_sim.core.coordination.character_damage_taken.models import (
+        CharacterDamageTakenRecord,
+    )
     from genshin_sim.core.systems.damage.models import DamageResult
     from genshin_sim.core.systems.healing.models import HealingResult
     from genshin_sim.core.systems.health.models import (
@@ -11,7 +14,6 @@ if TYPE_CHECKING:
         CharacterMaxHpReconcileResult,
     )
     from genshin_sim.core.systems.shield.models import (
-        IncomingDamageApplicationRecord,
         ShieldAbsorptionResult,
         ShieldCapacityChangeResult,
         ShieldGrantResult,
@@ -189,9 +191,9 @@ class ShieldAbsorptionResolvedPayload:
 
 @dataclass(frozen=True, slots=True)
 class DamageAppliedPayload:
-    """一次角色来伤已经完成护盾与生命提交的状态载荷。"""
+    """一份正伤害已经以角色为应用目标的事实载荷。"""
 
-    record: IncomingDamageApplicationRecord
+    record: CharacterDamageTakenRecord
 
     def to_dict(self) -> dict[str, object]:
         return {"record": self.record.to_dict()}

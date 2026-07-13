@@ -354,15 +354,14 @@ def test_assembler_builds_minimal_runtime_graph():
     assert assembled.impact_dispatcher.factory_keys == ()
     assert assembled.space_runtime.created_object_runtime.behavior_keys == ()
     assert assembled.runtime_world.updatables == (
-        assembled.mechanic_runtime,
+        assembled.shield_runtime,
         assembled.action_manager,
         assembled.impact_runtime,
         assembled.space_runtime,
     )
-    assert assembled.shield_runtime.mechanic_runtime is assembled.mechanic_runtime
-    assert assembled.shield_runtime.component_store is assembled.shield_component_store
+    assert assembled.shield_runtime.shield_store is assembled.shield_store
     assert assembled.shield_handler.runtime is assembled.shield_runtime
-    assert assembled.incoming_damage_handler.runtime is assembled.shield_runtime
+    assert assembled.character_damage_taken_coordinator.shield_port is assembled.shield_runtime
     character_ref = AttributeSubjectRef.character("character:slot_1")
     target_ref = AttributeSubjectRef.target("target:target_1")
     assert assembled.health_runtime.get_current_hp(character_ref) == 10000

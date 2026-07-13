@@ -22,20 +22,22 @@ from genshin_sim.core.attributes import (
     StaticModifierProvider,
     create_public_attribute_registry,
 )
+from genshin_sim.core.coordination.character_damage_taken import (
+    CharacterDamageTakenCoordinator,
+)
 from genshin_sim.core.entity_states import CharacterRuntimeState, HealthState
 from genshin_sim.core.events import EventEngine
-from genshin_sim.core.mechanics import MechanicRuntime
 from genshin_sim.core.simulation import TeamRuntimeState
 from genshin_sim.core.systems.health import CharacterHealthStore, HealthRuntime
 from genshin_sim.core.systems.shield import (
     ShieldCapacityFormula,
-    ShieldComponentStore,
     ShieldElement,
     ShieldGrantPolicy,
     ShieldGrantRequest,
     ShieldProtectionRef,
     ShieldResolver,
     ShieldRuntime,
+    ShieldStore,
 )
 
 CHARACTER_A = AttributeSubjectRef.character("character:slot_1")
@@ -47,8 +49,8 @@ PROTECTION_REF = ShieldProtectionRef.active_team()
 @dataclass(slots=True)
 class ShieldTestRig:
     runtime: ShieldRuntime
-    mechanic_runtime: MechanicRuntime
-    component_store: ShieldComponentStore
+    shield_store: ShieldStore
+    coordinator: CharacterDamageTakenCoordinator
     health_runtime: HealthRuntime
     event_engine: EventEngine
     team_state: TeamRuntimeState
@@ -106,22 +108,20 @@ def build_rig(
     )
     events = EventEngine()
     health_runtime = HealthRuntime(attribute_resolver, health_store, events)
-    mechanic_runtime = MechanicRuntime()
-    component_store = ShieldComponentStore()
+    shield_store = ShieldStore()
     resolver = ShieldResolver(attribute_resolver)
     runtime = ShieldRuntime(
         resolver=resolver,
-        mechanic_runtime=mechanic_runtime,
-        component_store=component_store,
+        shield_store=shield_store,
         attribute_resolver=attribute_resolver,
-        health_runtime=health_runtime,
         event_engine=events,
         team_state=team_state,
     )
+    coordinator = CharacterDamageTakenCoordinator(runtime, health_runtime, events)
     return ShieldTestRig(
         runtime=runtime,
-        mechanic_runtime=mechanic_runtime,
-        component_store=component_store,
+        shield_store=shield_store,
+        coordinator=coordinator,
         health_runtime=health_runtime,
         event_engine=events,
         team_state=team_state,

@@ -43,6 +43,10 @@ class ShieldAtomicCommitError(ShieldSystemError):
     """一次护盾批量提交无法完整应用。"""
 
 
+class ShieldPlanConflictError(ShieldAtomicCommitError):
+    """护盾计划的 Store 版本、前值或提交状态发生冲突。"""
+
+
 @dataclass(frozen=True, slots=True)
 class ShieldErrorDetail:
     code: str

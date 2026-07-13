@@ -25,3 +25,7 @@ class InvalidCurrentHealthError(HealthSystemError, ValueError):
 
 class UnsupportedHealthSubjectError(HealthSystemError, ValueError):
     code = "unsupported_health_subject"
+
+
+class HealthPlanConflictError(HealthSystemError):
+    code = "health_plan_conflict"

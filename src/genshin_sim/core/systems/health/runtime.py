@@ -26,11 +26,13 @@ from genshin_sim.core.systems.health.errors import (
 )
 from genshin_sim.core.systems.health.models import (
     CharacterDamageApplication,
+    CharacterDamagePlan,
     CharacterHealingApplication,
     CharacterHealthChangeResult,
     CharacterHpDeduction,
     CharacterMaxHpReconcileResult,
     HealthChangeKind,
+    HealthCommitReceipt,
     validate_health_float,
     validate_non_negative_health_float,
 )
@@ -84,7 +86,14 @@ class HealthRuntime:
         return self.character_health_store.require(character_ref).is_zero
 
     def apply_damage(self, request: CharacterDamageApplication) -> CharacterHealthChangeResult:
-        health, hp_before, max_hp = self._prepare_commit(request.target_ref, request.frame)
+        plan = self.prepare_damage(request)
+        self.validate(plan)
+        receipt = self.commit_prevalidated(plan)
+        self.publish_receipt(receipt)
+        return plan.result
+
+    def prepare_damage(self, request: CharacterDamageApplication) -> CharacterDamagePlan:
+        _health, hp_before, max_hp = self._prepare_commit(request.target_ref, request.frame)
         requested_amount = request.amount
         effective_amount = min(requested_amount, hp_before)
         hp_after = _normalize_zero(hp_before - effective_amount)
@@ -104,9 +113,43 @@ class HealthRuntime:
             max_hp=max_hp,
             tags=request.tags,
         )
-        health.current_hp = result.hp_after
-        self._publish_health_changed(result)
-        return result
+        return CharacterDamagePlan(
+            application=request,
+            operation_id=f"character-damage:{request.change_id}:{request.frame}:{request.target_ref.entity_id}",
+            expected_store_version=self.character_health_store.version,
+            expected_health=hp_before,
+            expected_max_hp=max_hp,
+            result=result,
+        )
+
+    def validate(self, plan: CharacterDamagePlan) -> None:
+        self.character_health_store.validate_damage_plan(plan)
+        current_max_hp = self.get_max_hp(plan.application.target_ref, plan.application.frame)
+        if current_max_hp != plan.expected_max_hp:
+            from genshin_sim.core.systems.health.errors import HealthPlanConflictError
+
+            raise HealthPlanConflictError("角色最大生命前值冲突")
+
+    def commit_prevalidated(self, plan: CharacterDamagePlan) -> HealthCommitReceipt:
+        self.character_health_store.commit_damage_prevalidated(plan)
+        return HealthCommitReceipt(plan)
+
+    def publish_receipt(self, receipt: HealthCommitReceipt) -> None:
+        for event in self.events_for(receipt):
+            self.event_engine.publish(event)
+
+    def events_for(self, receipt: HealthCommitReceipt) -> tuple[GameEvent, ...]:
+        result = receipt.plan.result
+        if result.effective_amount <= 0:
+            return ()
+        return (
+            GameEvent(
+                event_type=EventType.CHARACTER_HEALTH_CHANGED,
+                frame=result.frame,
+                payload=CharacterHealthChangedPayload(result),
+                source=self,
+            ),
+        )
 
     def apply_healing(self, request: CharacterHealingApplication) -> CharacterHealthChangeResult:
         health, hp_before, max_hp = self._prepare_commit(request.target_ref, request.frame)

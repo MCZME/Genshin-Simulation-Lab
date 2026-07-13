@@ -127,7 +127,7 @@ EVENT_SPECS: dict[EventType, EventSpec] = {
         payload_type=ShieldAbsorptionResolvedPayload,
     ),
     EventType.DAMAGE_APPLIED: EventSpec(
-        category=EventCategory.STATE_CHANGE,
+        category=EventCategory.FACT,
         payload_type=DamageAppliedPayload,
     ),
 }

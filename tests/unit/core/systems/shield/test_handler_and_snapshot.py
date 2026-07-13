@@ -5,9 +5,8 @@ from types import SimpleNamespace
 from genshin_sim.core.impacts import ImpactKind, ImpactRequest
 from genshin_sim.core.systems.damage import DamageElement
 from genshin_sim.core.systems.shield import (
-    CharacterIncomingDamage,
+    ShieldAbsorptionRequest,
     ShieldImpactRequestHandler,
-    ShieldProtectionRef,
 )
 
 
@@ -52,7 +51,8 @@ def test_shield_impact_handler_adapts_free_mapping_once(shield_rig):
     assert result.resolution.creator_ref.entity_id == "character:slot_1"
     assert handler.records[0].grant_request.grant_formula.scaling_terms[0].component_key == "hp"
     assert (
-        shield_rig.component_store.require(result.instance_id).remaining_native_absorption == 1_320
+        shield_rig.shield_store.require(result.instance_ref).state.remaining_native_absorption
+        == 1_320
     )
 
 
@@ -62,12 +62,11 @@ def test_shield_snapshot_keeps_native_capacity_and_stable_refs(
 ):
     grant = shield_rig.runtime.grant(make_grant(flat_absorption=1_000))
     shield_rig.runtime.absorb(
-        CharacterIncomingDamage(
+        ShieldAbsorptionRequest(
             damage_id="damage:1",
             frame=2,
-            protection_ref=ShieldProtectionRef.active_team(),
             target_ref=grant.resolution.creator_ref,
-            mitigated_amount=250,
+            incoming_amount=250,
             element=DamageElement.PHYSICAL,
         )
     )
@@ -76,7 +75,7 @@ def test_shield_snapshot_keeps_native_capacity_and_stable_refs(
 
     assert len(snapshot.instances) == 1
     instance = snapshot.instances[0]
-    assert instance.instance_id == grant.instance_id
+    assert instance.instance_ref == grant.instance_ref
     assert instance.maximum_native_absorption == 1_000
     assert instance.remaining_native_absorption == 750
     assert instance.created_frame == 1

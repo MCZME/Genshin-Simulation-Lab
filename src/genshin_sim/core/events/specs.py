@@ -8,6 +8,7 @@ from genshin_sim.core.events.payloads import (
     CharacterMaxHpChangedPayload,
     DamageResolvedPayload,
     EmptyPayload,
+    HealingResolvedPayload,
     InputKeyReceivedPayload,
     InputSessionBoundaryPayload,
     SimulationEndedPayload,
@@ -91,6 +92,10 @@ EVENT_SPECS: dict[EventType, EventSpec] = {
     EventType.DAMAGE_RESOLVED: EventSpec(
         category=EventCategory.FACT,
         payload_type=DamageResolvedPayload,
+    ),
+    EventType.HEALING_RESOLVED: EventSpec(
+        category=EventCategory.FACT,
+        payload_type=HealingResolvedPayload,
     ),
     EventType.CHARACTER_HEALTH_CHANGED: EventSpec(
         category=EventCategory.STATE_CHANGE,

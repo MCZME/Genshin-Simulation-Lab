@@ -1,6 +1,6 @@
 from typing import cast
 
-from genshin_sim.core.attributes import AttributeSubjectRef
+from genshin_sim.core.attributes import STAT_HP_MAX, AttributeSubjectRef
 from genshin_sim.core.events import (
     EVENT_CATEGORY_SPECS,
     EVENT_SPECS,
@@ -12,11 +12,16 @@ from genshin_sim.core.events import (
     EventSpec,
     EventType,
     GameEvent,
+    HealingResolvedPayload,
     InputKeyReceivedPayload,
     InputSessionBoundaryPayload,
     SimulationEndedPayload,
     get_event_category_spec,
     get_event_spec,
+)
+from genshin_sim.core.systems.healing import (
+    HealingComponentResult,
+    HealingResult,
 )
 from genshin_sim.core.systems.health import (
     CharacterHealthChangeResult,
@@ -45,6 +50,7 @@ def test_event_type_defines_current_events():
         "INPUT_KEY_RECEIVED",
         "INPUT_SESSION_BOUNDARY_REACHED",
         "DAMAGE_RESOLVED",
+        "HEALING_RESOLVED",
         "CHARACTER_HEALTH_CHANGED",
         "CHARACTER_MAX_HP_CHANGED",
     ]
@@ -141,6 +147,12 @@ def test_event_specs_define_current_default_rules():
     assert damage_resolved.effective_record_by_default is True
     assert damage_resolved.effective_result_committed is True
 
+    healing_resolved = get_event_spec(EventType.HEALING_RESOLVED)
+    assert healing_resolved.category is EventCategory.FACT
+    assert healing_resolved.payload_type is HealingResolvedPayload
+    assert healing_resolved.effective_record_by_default is True
+    assert healing_resolved.effective_result_committed is True
+
     health_changed = get_event_spec(EventType.CHARACTER_HEALTH_CHANGED)
     assert health_changed.category is EventCategory.STATE_CHANGE
     assert health_changed.payload_type is CharacterHealthChangedPayload
@@ -206,6 +218,30 @@ def test_event_payloads_convert_to_serializable_dicts():
         "skip_reason": None,
     }
     character_ref = AttributeSubjectRef.character("character:slot_1")
+    healing_result = HealingResult(
+        healing_id="healing:1",
+        frame=3,
+        source_ref=character_ref,
+        target_ref=character_ref,
+        component_results=(
+            HealingComponentResult(
+                component_key="hp",
+                attribute_key=STAT_HP_MAX,
+                scaling_value=1000,
+                coefficient=0.1,
+                value=100,
+            ),
+        ),
+        flat_healing=0,
+        base_healing=100,
+        outgoing_healing_bonus=0.2,
+        incoming_healing_bonus=0,
+        healing_bonus_multiplier=1.2,
+        final_healing=120,
+    )
+    healing_payload = HealingResolvedPayload(healing_result).to_dict()
+    healing_payload_result = cast(dict[str, object], healing_payload["result"])
+    assert healing_payload_result["final_healing"] == 120.0
     health_result = CharacterHealthChangeResult(
         change_id="health:1",
         frame=3,

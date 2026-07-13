@@ -93,6 +93,11 @@ from genshin_sim.core.systems.damage import (
     DamageSystemError,
     GeneralDamageFormula,
 )
+from genshin_sim.core.systems.healing import (
+    HealingRequestHandler,
+    HealingResolver,
+    HealingSystemError,
+)
 from genshin_sim.core.systems.health import (
     CharacterHealthStore,
     HealthRuntime,
@@ -147,6 +152,7 @@ class AssembledSimulation:
     impact_dispatcher: ImpactDispatcher
     impact_request_dispatcher: ImpactRequestDispatcher
     damage_handler: DamageRequestHandler
+    healing_handler: HealingRequestHandler
     health_runtime: HealthRuntime
     space_runtime: SpaceRuntime
     impact_runtime: ImpactRuntime
@@ -289,6 +295,14 @@ class SimulationAssembler:
             )
         except DamageSystemError as exc:
             raise InvalidRuntimePayloadError(str(exc)) from exc
+        try:
+            healing_handler = HealingRequestHandler(
+                HealingResolver(attribute_runtime.resolver),
+                health_runtime,
+            )
+        except HealingSystemError as exc:
+            raise InvalidRuntimePayloadError(str(exc)) from exc
+        context.register_system(healing_handler)
         impact_request_dispatcher = ImpactRequestDispatcher(damage_handler)
         impact_runtime = ImpactRuntime(
             action_manager,
@@ -312,6 +326,7 @@ class SimulationAssembler:
             impact_dispatcher=impact_dispatcher,
             impact_request_dispatcher=impact_request_dispatcher,
             damage_handler=damage_handler,
+            healing_handler=healing_handler,
             health_runtime=health_runtime,
             space_runtime=space_runtime,
             impact_runtime=impact_runtime,

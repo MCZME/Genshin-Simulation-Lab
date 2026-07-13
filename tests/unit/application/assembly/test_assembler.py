@@ -51,9 +51,15 @@ from genshin_sim.core.attributes import (
     RuntimeSourceRef,
     StaticModifierProvider,
 )
+from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import ActionImpactContext, ImpactKind, ImpactRequest
 from genshin_sim.core.space import CreatedObjectRuntimeState, SpatialEntityKind
-from genshin_sim.core.systems.health import UnsupportedHealthSubjectError
+from genshin_sim.core.systems.healing import HealingRequest, HealingRequestHandler
+from genshin_sim.core.systems.health import (
+    CharacterDamageApplication,
+    HealthChangeKind,
+    UnsupportedHealthSubjectError,
+)
 
 
 class BrokenRegistry:
@@ -357,6 +363,10 @@ def test_assembler_builds_minimal_runtime_graph():
     assert assembled.health_runtime.get_current_hp(character_ref) == 10000
     assert assembled.health_runtime.get_max_hp(character_ref, frame=0) == 10000
     assert assembled.health_runtime.get_hp_ratio(character_ref, frame=0) == 1.0
+    assert isinstance(assembled.healing_handler, HealingRequestHandler)
+    assert assembled.healing_handler.health_runtime is assembled.health_runtime
+    assert assembled.healing_handler.event_engine is assembled.context.events
+    assert assembled.context.get_system("HealingRequestHandler") is assembled.healing_handler
     with pytest.raises(UnsupportedHealthSubjectError):
         assembled.health_runtime.get_current_hp(target_ref)
     assert (
@@ -378,6 +388,49 @@ def test_assembler_builds_minimal_runtime_graph():
         == 0.1
     )
     assert assembled.context.get_system("AttributeResolver") is assembled.attribute_runtime.resolver
+
+
+def test_assembler_healing_handler_runs_real_single_target_loop():
+    assembled = SimulationAssembler(FakeAssetRepository(), create_default_registry()).assemble(
+        _minimal_config()
+    )
+    character_ref = AttributeSubjectRef.character("character:slot_1")
+    source_context = RuntimeSourceRef(RuntimeSourceKind.CONTENT, "assembler.healing")
+
+    assembled.health_runtime.apply_damage(
+        CharacterDamageApplication(
+            change_id="damage:setup",
+            frame=0,
+            target_ref=character_ref,
+            amount=500,
+            source_ref=character_ref,
+            source_context=source_context,
+        )
+    )
+    assembled.context.events.clear_frame_events()
+
+    record = assembled.healing_handler.handle(
+        HealingRequest(
+            healing_id="healing:assembled:1",
+            frame=1,
+            source_ref=character_ref,
+            target_ref=character_ref,
+            flat_healing=250,
+            source_context=source_context,
+            tags=frozenset({"assembler"}),
+        )
+    )
+
+    assert record.result.final_healing == 250
+    assert record.health_result.change_kind is HealthChangeKind.HEALING
+    assert record.health_result.effective_amount == 250
+    assert assembled.health_runtime.get_current_hp(character_ref) == 9750
+    assert assembled.space_runtime.team_state.current_character.health.current_hp == 9750
+    assert [event.event_type for event in assembled.context.events.frame_events] == [
+        EventType.HEALING_RESOLVED,
+        EventType.CHARACTER_HEALTH_CHANGED,
+    ]
+    assert assembled.healing_handler.records == (record,)
 
 
 def test_assembler_injects_character_runtime_contribution_and_actions():

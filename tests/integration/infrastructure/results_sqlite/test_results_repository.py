@@ -6,6 +6,7 @@ from genshin_sim.application.execution import (
     SimulationRunSummary,
 )
 from genshin_sim.infrastructure.results_sqlite import SQLiteResultRepository, SQLiteResultWriter
+from genshin_sim.infrastructure.results_sqlite.schema import RESULTS_SCHEMA_VERSION
 
 
 def test_result_writer_and_repository_round_trip_completed_run(tmp_path):
@@ -30,6 +31,40 @@ def test_result_writer_and_repository_round_trip_completed_run(tmp_path):
             ),
             RecordedEvent(
                 frame=2,
+                event_type="HEALING_RESOLVED",
+                data={
+                    "result": {
+                        "healing_id": "healing:1",
+                        "frame": 2,
+                        "source_ref": {
+                            "kind": "character",
+                            "entity_id": "character:slot_1",
+                        },
+                        "target_ref": {
+                            "kind": "character",
+                            "entity_id": "character:slot_1",
+                        },
+                        "component_results": [
+                            {
+                                "component_key": "hp",
+                                "attribute_key": "stat.hp.max",
+                                "scaling_value": 1000,
+                                "coefficient": 0.1,
+                                "value": 100,
+                            }
+                        ],
+                        "flat_healing": 0,
+                        "base_healing": 100,
+                        "outgoing_healing_bonus": 0,
+                        "incoming_healing_bonus": 0,
+                        "healing_bonus_multiplier": 1,
+                        "final_healing": 100,
+                    }
+                },
+                source_type="HealingRequestHandler",
+            ),
+            RecordedEvent(
+                frame=3,
                 event_type="CHARACTER_HEALTH_CHANGED",
                 data={
                     "result": {
@@ -62,8 +97,11 @@ def test_result_writer_and_repository_round_trip_completed_run(tmp_path):
 
     assert items[0].session_id == session_id
     assert items[0].name == "Smoke Run"
-    assert items[0].event_count == 2
+    assert items[0].event_count == 3
     assert detail.summary.frames_run == 120
     assert detail.events[0].data == {"ok": True}
-    assert detail.events[1].event_type == "CHARACTER_HEALTH_CHANGED"
-    assert detail.events[1].data["result"]["hp_after"] == 700
+    assert detail.events[1].event_type == "HEALING_RESOLVED"
+    assert detail.events[1].data["result"]["final_healing"] == 100
+    assert detail.events[2].event_type == "CHARACTER_HEALTH_CHANGED"
+    assert detail.events[2].data["result"]["hp_after"] == 700
+    assert RESULTS_SCHEMA_VERSION == "1"

@@ -5,6 +5,7 @@ from typing import TYPE_CHECKING, Protocol
 
 if TYPE_CHECKING:
     from genshin_sim.core.systems.damage.models import DamageResult
+    from genshin_sim.core.systems.healing.models import HealingResult
     from genshin_sim.core.systems.health.models import (
         CharacterHealthChangeResult,
         CharacterMaxHpReconcileResult,
@@ -104,6 +105,16 @@ class DamageResolvedPayload:
     """一次伤害数值已经完成结算的事实载荷。"""
 
     result: DamageResult
+
+    def to_dict(self) -> dict[str, object]:
+        return {"result": self.result.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class HealingResolvedPayload:
+    """一次理论治疗量已经完成结算的事实载荷。"""
+
+    result: HealingResult
 
     def to_dict(self) -> dict[str, object]:
         return {"result": self.result.to_dict()}

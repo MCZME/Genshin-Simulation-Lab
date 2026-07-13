@@ -66,9 +66,7 @@ class CompletedSimulationRun:
     config_snapshot: dict[str, Any]
     summary: SimulationRunSummary
     events: tuple[RecordedEvent, ...]
-    created_at: str = field(
-        default_factory=lambda: datetime.now(UTC).isoformat(timespec="seconds")
-    )
+    created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat(timespec="seconds"))
 
     def to_dict(self) -> dict[str, Any]:
         return {

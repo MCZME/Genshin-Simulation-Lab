@@ -238,7 +238,7 @@ def _write_project_amber_cache(cache_dir, *, include_details: bool) -> None:
                         "name": "奇偶·男性",
                         "element": None,
                         "weaponType": "WEAPON_SWORD_ONE_HAND",
-                    }
+                    },
                 }
             },
         },
@@ -261,7 +261,7 @@ def _write_project_amber_cache(cache_dir, *, include_details: bool) -> None:
                         "name": "蛇噬",
                         "type": "WEAPON_SWORD_ONE_HAND",
                         "isWeaponSkin": True,
-                    }
+                    },
                 }
             },
         },
@@ -414,7 +414,7 @@ def _character_promotes() -> list[dict[str, object]]:
                 "FIGHT_PROP_BASE_ATTACK": 10.0,
                 "FIGHT_PROP_BASE_DEFENSE": 20.0,
                 "FIGHT_PROP_CRITICAL_HURT": 0.096,
-            }
+            },
         },
         {"unlockMaxLevel": 50, "addProps": {"FIGHT_PROP_BASE_HP": 200.0}},
         {"unlockMaxLevel": 60, "addProps": {"FIGHT_PROP_BASE_HP": 300.0}},
@@ -427,7 +427,7 @@ def _character_promotes() -> list[dict[str, object]]:
                 "FIGHT_PROP_BASE_ATTACK": 60.0,
                 "FIGHT_PROP_BASE_DEFENSE": 120.0,
                 "FIGHT_PROP_CRITICAL_HURT": 0.384,
-            }
+            },
         },
     ]
 

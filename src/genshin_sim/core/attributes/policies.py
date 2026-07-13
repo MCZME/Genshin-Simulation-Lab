@@ -83,9 +83,7 @@ class TotalStatPolicy(ResolutionPolicy):
             raise ValueError(f"total_stat 属性 {definition.key} 必须有且只有一个依赖")
         dependency = dependencies[0]
         base_value = float(dependency.final_value)
-        percent = math.fsum(
-            term.value for term in terms if term.stage is ModifierStage.PERCENT_ADD
-        )
+        percent = math.fsum(term.value for term in terms if term.stage is ModifierStage.PERCENT_ADD)
         flat = math.fsum(term.value for term in terms if term.stage is ModifierStage.FLAT_ADD)
         result = math.fsum((base_value * (1.0 + percent), flat))
         for term in terms:

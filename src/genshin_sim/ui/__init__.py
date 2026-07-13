@@ -20,8 +20,7 @@ class PageLike(Protocol):
 
     title: str
 
-    def add(self, *controls: object) -> None:
-        ...
+    def add(self, *controls: object) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)

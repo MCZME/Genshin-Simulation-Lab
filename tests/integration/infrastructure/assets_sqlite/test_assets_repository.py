@@ -115,16 +115,22 @@ def test_level_stats_can_select_pre_or_post_ascension(tmp_path):
     repository = SQLiteAssetRepository(db_path)
 
     assert repository.get_character_level_stats("character:test", 20).ascension_phase == 1
-    assert repository.get_character_level_stats(
-        "character:test",
-        20,
-        ascended=False,
-    ).ascension_phase == 0
-    assert repository.get_character_level_stats(
-        "character:test",
-        21,
-        ascended=False,
-    ).ascension_phase == 1
+    assert (
+        repository.get_character_level_stats(
+            "character:test",
+            20,
+            ascended=False,
+        ).ascension_phase
+        == 0
+    )
+    assert (
+        repository.get_character_level_stats(
+            "character:test",
+            21,
+            ascended=False,
+        ).ascension_phase
+        == 1
+    )
     assert repository.get_weapon_level_stats("weapon:test", 20).base_atk == 120
     assert repository.get_weapon_level_stats("weapon:test", 20, ascended=False).base_atk == 100
     assert repository.get_weapon_level_stats("weapon:test", 21, ascended=False).base_atk == 125

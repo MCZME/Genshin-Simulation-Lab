@@ -118,26 +118,22 @@ class RuntimeHandler(Protocol):
     def prepare_character_runtime(
         self,
         request: CharacterRuntimeRequest,
-    ) -> RuntimeContribution:
-        ...
+    ) -> RuntimeContribution: ...
 
     def prepare_weapon_runtime(
         self,
         request: WeaponRuntimeRequest,
-    ) -> RuntimeContribution:
-        ...
+    ) -> RuntimeContribution: ...
 
     def prepare_artifact_runtime(
         self,
         request: ArtifactRuntimeRequest,
-    ) -> RuntimeContribution:
-        ...
+    ) -> RuntimeContribution: ...
 
     def prepare_impact_runtime(
         self,
         request: ImpactRuntimeRequest,
-    ) -> RuntimeContribution:
-        ...
+    ) -> RuntimeContribution: ...
 
 
 class NoOpRuntimeHandler:

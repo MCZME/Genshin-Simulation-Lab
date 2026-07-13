@@ -221,8 +221,7 @@ def test_base_sum_total_stat_and_additive_policies():
 
     assert resolver.resolve(AttributeQuery(CHARACTER, STAT_ATK_BASE, frame=1)).final_value == 1510
     assert (
-        resolver.resolve(AttributeQuery(CHARACTER, STAT_ATK_TOTAL, frame=1)).final_value
-        == 3154.8
+        resolver.resolve(AttributeQuery(CHARACTER, STAT_ATK_TOTAL, frame=1)).final_value == 3154.8
     )
     assert resolver.resolve(AttributeQuery(CHARACTER, STAT_CRIT_RATE, frame=1)).final_value == 0.25
 

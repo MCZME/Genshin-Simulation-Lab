@@ -301,4 +301,3 @@ def _project_resolution(
         policy_key=resolution.policy_key,
         trace_metadata=resolution.trace_metadata,
     )
-

@@ -42,9 +42,7 @@ _ALLOWED_STATS = frozenset(
     }
 )
 _ALLOWED_TALENT_SCALING_MODES = frozenset({"constant", "level_table"})
-_ALLOWED_TALENT_COMPONENT_KINDS = frozenset(
-    {"flat", "plain_ratio", "plain_value", "stat_ratio"}
-)
+_ALLOWED_TALENT_COMPONENT_KINDS = frozenset({"flat", "plain_ratio", "plain_value", "stat_ratio"})
 _ALLOWED_ARTIFACT_SET_BONUS_PIECES = frozenset({1, 2, 4})
 
 
@@ -291,8 +289,7 @@ def _audit_character_level_stats(
             AssetManifestAuditIssue(
                 code="invalid_character_ascension_stat",
                 message=(
-                    "角色突破属性存在不支持的 stat，示例："
-                    f"{_format_examples(invalid_stat_rows)}"
+                    f"角色突破属性存在不支持的 stat，示例：{_format_examples(invalid_stat_rows)}"
                 ),
             )
         )
@@ -479,10 +476,7 @@ def _audit_artifact_set_bonuses(
         issues.append(
             AssetManifestAuditIssue(
                 code="invalid_artifact_set_bonus_params",
-                message=(
-                    "圣遗物套装效果 params 不合法，示例："
-                    f"{_format_examples(invalid_params)}"
-                ),
+                message=(f"圣遗物套装效果 params 不合法，示例：{_format_examples(invalid_params)}"),
             )
         )
 
@@ -654,8 +648,7 @@ def _audit_effect_payloads(
             AssetManifestAuditIssue(
                 code="orphan_effect_payload",
                 message=(
-                    "效果参数引用了不存在的 owner，示例："
-                    f"{_format_examples(unknown_owner_refs)}"
+                    f"效果参数引用了不存在的 owner，示例：{_format_examples(unknown_owner_refs)}"
                 ),
             )
         )
@@ -670,8 +663,7 @@ def _audit_effect_payloads(
             AssetManifestAuditIssue(
                 code="invalid_effect_payload_params",
                 message=(
-                    "效果参数 params 不合法，示例："
-                    f"{_format_examples(invalid_effect_payloads)}"
+                    f"效果参数 params 不合法，示例：{_format_examples(invalid_effect_payloads)}"
                 ),
             )
         )
@@ -690,8 +682,7 @@ def _audit_effect_payloads(
             AssetManifestAuditIssue(
                 code="invalid_effect_payload_unlock_key",
                 message=(
-                    "效果参数 unlock_key 不合法，示例："
-                    f"{_format_examples(invalid_unlock_keys)}"
+                    f"效果参数 unlock_key 不合法，示例：{_format_examples(invalid_unlock_keys)}"
                 ),
             )
         )
@@ -846,9 +837,7 @@ def _expected_level_phase_pairs(
     promote_max_levels: tuple[int, ...],
 ) -> tuple[tuple[int, int], ...]:
     return tuple(
-        (level, phase)
-        for level in levels
-        for phase in _phases_for_level(level, promote_max_levels)
+        (level, phase) for level in levels for phase in _phases_for_level(level, promote_max_levels)
     )
 
 

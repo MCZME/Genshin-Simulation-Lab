@@ -66,8 +66,7 @@ class UrllibJsonHttpClient:
                 last_error = exc
                 if attempt >= self.max_attempts:
                     raise AssetValidationError(
-                        f"资产源请求失败：{url}；已重试 {self.max_attempts} 次；"
-                        f"最后错误：{exc}"
+                        f"资产源请求失败：{url}；已重试 {self.max_attempts} 次；最后错误：{exc}"
                     ) from exc
                 time.sleep(self.retry_delay_seconds)
         else:
@@ -287,7 +286,7 @@ def _read_existing_cache_file(path: Path, url: str) -> tuple[Mapping[str, Any], 
     try:
         text = path.read_text(encoding="utf-8")
         payload = json.loads(text)
-    except (OSError, json.JSONDecodeError):
+    except OSError, json.JSONDecodeError:
         return None
     if not isinstance(payload, Mapping):
         return None

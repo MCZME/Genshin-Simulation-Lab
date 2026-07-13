@@ -131,9 +131,7 @@ def test_asset_manifest_audit_reports_invalid_artifact_set_bonus_piece_count(tmp
     report = audit_asset_manifest(manifest_path)
 
     assert not report.ok
-    assert {issue.code for issue in report.issues} == {
-        "invalid_artifact_set_bonus_piece_count"
-    }
+    assert {issue.code for issue in report.issues} == {"invalid_artifact_set_bonus_piece_count"}
 
 
 def test_asset_manifest_audit_reports_common_data_issues(tmp_path):

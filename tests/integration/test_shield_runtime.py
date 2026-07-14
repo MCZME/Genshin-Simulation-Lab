@@ -106,7 +106,10 @@ def test_action_impact_grants_shield_and_incoming_damage_reaches_health_runtime(
     assert len(assembled.shield_handler.records) == 1
     grant = assembled.shield_handler.records[0].result
     assert grant.resolution.granted_absorption == 1_000
-    assert assembled.runtime_world.updatables[0] is assembled.shield_runtime
+    assert assembled.runtime_world.updatables[:2] == (
+        assembled.buff_runtime,
+        assembled.shield_runtime,
+    )
     assert (
         assembled.shield_store.require(grant.instance_ref).state.remaining_native_absorption
         == 1_000

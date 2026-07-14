@@ -5,7 +5,13 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Protocol, TypeVar, cast, overload
 
-from genshin_sim.core.attributes import AttributeDefinition, ModifierProvider, ModifierTerm
+from genshin_sim.core.attributes import (
+    AttributeDefinition,
+    ModifierProvider,
+    ModifierStackingGroupDefinition,
+    ModifierTerm,
+)
+from genshin_sim.core.systems.buff import BuffDefinition
 from genshin_sim.core.systems.damage import (
     DamageModifierProvider,
     DamageModifierStackingGroupDefinition,
@@ -134,7 +140,11 @@ class ContentRuntimeContribution:
     event_hooks: Sequence[EventHook] = field(default_factory=tuple)
     modifiers: Sequence[Modifier] = field(default_factory=tuple)
     attribute_definitions: Sequence[AttributeDefinition] = field(default_factory=tuple)
+    attribute_stacking_groups: Sequence[ModifierStackingGroupDefinition] = field(
+        default_factory=tuple
+    )
     attribute_providers: Sequence[ModifierProvider] = field(default_factory=tuple)
+    buff_definitions: Sequence[BuffDefinition] = field(default_factory=tuple)
     damage_modifier_providers: Sequence[DamageModifierProvider] = field(default_factory=tuple)
     damage_modifier_stacking_groups: Sequence[DamageModifierStackingGroupDefinition] = field(
         default_factory=tuple
@@ -163,7 +173,13 @@ class ContentRuntimeContribution:
         object.__setattr__(self, "event_hooks", tuple(self.event_hooks))
         object.__setattr__(self, "modifiers", tuple(self.modifiers))
         object.__setattr__(self, "attribute_definitions", tuple(self.attribute_definitions))
+        object.__setattr__(
+            self,
+            "attribute_stacking_groups",
+            tuple(self.attribute_stacking_groups),
+        )
         object.__setattr__(self, "attribute_providers", tuple(self.attribute_providers))
+        object.__setattr__(self, "buff_definitions", tuple(self.buff_definitions))
         object.__setattr__(
             self,
             "damage_modifier_providers",

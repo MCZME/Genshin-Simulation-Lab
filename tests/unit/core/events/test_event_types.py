@@ -4,6 +4,8 @@ from genshin_sim.core.attributes import STAT_HP_MAX, AttributeSubjectRef
 from genshin_sim.core.events import (
     EVENT_CATEGORY_SPECS,
     EVENT_SPECS,
+    BuffAppliedPayload,
+    BuffRemovedPayload,
     CharacterHealthChangedPayload,
     CharacterMaxHpChangedPayload,
     DamageAppliedPayload,
@@ -63,6 +65,8 @@ def test_event_type_defines_current_events():
         "SHIELD_REMOVED",
         "SHIELD_ABSORPTION_RESOLVED",
         "DAMAGE_APPLIED",
+        "BUFF_APPLIED",
+        "BUFF_REMOVED",
     ]
 
 
@@ -187,6 +191,8 @@ def test_event_specs_define_current_default_rules():
     damage_applied = get_event_spec(EventType.DAMAGE_APPLIED)
     assert damage_applied.category is EventCategory.FACT
     assert damage_applied.payload_type is DamageAppliedPayload
+    assert get_event_spec(EventType.BUFF_APPLIED).payload_type is BuffAppliedPayload
+    assert get_event_spec(EventType.BUFF_REMOVED).payload_type is BuffRemovedPayload
 
 
 def test_event_payloads_convert_to_serializable_dicts():

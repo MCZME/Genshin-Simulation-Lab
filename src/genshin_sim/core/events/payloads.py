@@ -7,6 +7,10 @@ if TYPE_CHECKING:
     from genshin_sim.core.coordination.character_damage_taken.models import (
         CharacterDamageTakenRecord,
     )
+    from genshin_sim.core.systems.buff.models import (
+        BuffApplicationResult,
+        BuffRemovalResult,
+    )
     from genshin_sim.core.systems.damage.models import DamageResult
     from genshin_sim.core.systems.healing.models import HealingResult
     from genshin_sim.core.systems.health.models import (
@@ -197,3 +201,23 @@ class DamageAppliedPayload:
 
     def to_dict(self) -> dict[str, object]:
         return {"record": self.record.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class BuffAppliedPayload:
+    """Buff 实例已经创建、刷新、替换或叠层的状态载荷。"""
+
+    result: BuffApplicationResult
+
+    def to_dict(self) -> dict[str, object]:
+        return {"result": self.result.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class BuffRemovedPayload:
+    """Buff 实例已经离开活动状态的状态载荷。"""
+
+    result: BuffRemovalResult
+
+    def to_dict(self) -> dict[str, object]:
+        return {"result": self.result.to_dict()}

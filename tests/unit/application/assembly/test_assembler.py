@@ -47,6 +47,7 @@ from genshin_sim.core.attributes import (
     ModifierProviderSpec,
     ModifierStage,
     ModifierTerm,
+    ProviderAttributeRead,
     RuntimeSourceKind,
     RuntimeSourceRef,
     StaticModifierProvider,
@@ -54,6 +55,12 @@ from genshin_sim.core.attributes import (
 from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import ActionImpactContext, ImpactKind, ImpactRequest
 from genshin_sim.core.space import CreatedObjectRuntimeState, SpatialEntityKind
+from genshin_sim.core.systems.buff import (
+    BuffApplicationPolicy,
+    BuffAttributeModifierTemplate,
+    BuffDefinition,
+    BuffValueRefreshPolicy,
+)
 from genshin_sim.core.systems.healing import HealingRequest, HealingRequestHandler
 from genshin_sim.core.systems.health import (
     CharacterDamageApplication,
@@ -354,11 +361,16 @@ def test_assembler_builds_minimal_runtime_graph():
     assert assembled.impact_dispatcher.factory_keys == ()
     assert assembled.space_runtime.created_object_runtime.behavior_keys == ()
     assert assembled.runtime_world.updatables == (
+        assembled.buff_runtime,
         assembled.shield_runtime,
         assembled.action_manager,
         assembled.impact_runtime,
         assembled.space_runtime,
     )
+    assert assembled.buff_definitions == ()
+    assert assembled.buff_runtime.buff_store is assembled.buff_store
+    assert assembled.buff_handler.runtime is assembled.buff_runtime
+    assert assembled.impact_request_dispatcher.buff_handler is assembled.buff_handler
     assert assembled.shield_runtime.shield_store is assembled.shield_store
     assert assembled.shield_handler.runtime is assembled.shield_runtime
     assert assembled.character_damage_taken_coordinator.shield_port is assembled.shield_runtime
@@ -371,6 +383,8 @@ def test_assembler_builds_minimal_runtime_graph():
     assert assembled.healing_handler.health_runtime is assembled.health_runtime
     assert assembled.healing_handler.event_engine is assembled.context.events
     assert assembled.context.get_system("HealingRequestHandler") is assembled.healing_handler
+    assert assembled.context.get_system("BuffRuntime") is assembled.buff_runtime
+    assert assembled.context.get_system("BuffImpactRequestHandler") is assembled.buff_handler
     with pytest.raises(UnsupportedHealthSubjectError):
         assembled.health_runtime.get_current_hp(target_ref)
     assert (
@@ -541,6 +555,270 @@ def test_assembler_injects_content_attribute_modifier_as_core_term():
         )
     )
     assert target_resolution.final_value == 0.0
+
+
+def test_assembler_injects_content_buff_definition_and_attribute_provider():
+    class RuntimeRepository(FakeAssetRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.character = CharacterAsset(
+                asset_key="character:75",
+                source_id="75",
+                name="test",
+                element="hydro",
+                weapon_type="sword",
+                rarity=5,
+                handler_key="character.buff",
+            )
+
+    definition = BuffDefinition(
+        definition_key="buff.assembler.atk",
+        mechanic_key="mechanic.assembler.atk",
+        handler_key="character.buff",
+        conflict_key="buff.assembler.atk",
+        target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
+        application_policy=BuffApplicationPolicy.REFRESH,
+        value_refresh_policy=BuffValueRefreshPolicy.REPLACE_LATEST,
+        max_stacks=1,
+        attribute_modifiers=(
+            BuffAttributeModifierTemplate(
+                term_key="assembler.atk.flat",
+                target_key=STAT_ATK_TOTAL,
+                stage=ModifierStage.FLAT_ADD,
+            ),
+        ),
+        tags=frozenset({"assembler"}),
+    )
+    registry = create_default_registry()
+    registry.register_character_factory(
+        "character.buff",
+        lambda request: ContentRuntimeContribution(
+            owner_type="character",
+            owner_key=request.character_key,
+            handler_key=request.handler_key,
+            slot=request.slot,
+            buff_definitions=(definition,),
+        ),
+    )
+
+    assembled = SimulationAssembler(RuntimeRepository(), registry).assemble(_minimal_config())
+    character_ref = AttributeSubjectRef.character("character:slot_1")
+
+    assert assembled.buff_definitions == (definition,)
+    assert (
+        assembled.attribute_runtime.resolver.resolve(
+            AttributeQuery(character_ref, STAT_ATK_TOTAL, frame=1)
+        ).final_value
+        == 1500
+    )
+
+    assembled.impact_request_dispatcher.dispatch_requests(
+        assembled.context,
+        (
+            ImpactRequest(
+                frame=1,
+                kind=ImpactKind.APPLY_STATUS,
+                impact_key="impact.assembler.buff",
+                owner_slot=1,
+                request_id="impact:assembler:buff:1",
+                target_refs=("character:slot_1",),
+                params={
+                    "buff": {
+                        "definition_key": definition.definition_key,
+                        "duration_frames": 10,
+                        "modifier_values": ({"term_key": "assembler.atk.flat", "value": 200},),
+                    }
+                },
+            ),
+        ),
+    )
+
+    resolution = assembled.attribute_runtime.resolver.resolve(
+        AttributeQuery(character_ref, STAT_ATK_TOTAL, frame=1)
+    )
+    assert resolution.final_value == 1700
+    assert assembled.impact_request_dispatcher.buff_records[0].results[0].definition_key == (
+        definition.definition_key
+    )
+    assert assembled.context.events.frame_events[-1].event_type is EventType.BUFF_APPLIED
+
+
+def test_assembler_rejects_buff_definition_with_dynamic_hp_dependency_via_provider_reads():
+    private_key = AttributeKey("character.buff.private_hp_seed")
+    subject_ref = AttributeSubjectRef.character("character:slot_1")
+
+    class RuntimeRepository(FakeAssetRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.character = CharacterAsset(
+                asset_key="character:75",
+                source_id="75",
+                name="test",
+                element="hydro",
+                weapon_type="sword",
+                rarity=5,
+                handler_key="character.buff",
+            )
+
+    provider_key = "character.buff.max_hp_from_private"
+    provider = StaticModifierProvider(
+        ModifierProviderSpec(
+            provider_key=provider_key,
+            reads=(ProviderAttributeRead(private_key),),
+            writes=frozenset({STAT_HP_MAX}),
+            private_namespace="character.buff",
+            owner_ref=subject_ref,
+        ),
+        (
+            ModifierTerm(
+                target_key=STAT_HP_MAX,
+                stage=ModifierStage.FLAT_ADD,
+                value=0.0,
+                provider_key=provider_key,
+                source_ref=RuntimeSourceRef(RuntimeSourceKind.CONTENT, provider_key),
+            ),
+        ),
+        subject_ref=subject_ref,
+    )
+    definition = BuffDefinition(
+        definition_key="buff.assembler.private_hp",
+        mechanic_key="mechanic.assembler.private_hp",
+        handler_key="character.buff",
+        conflict_key="buff.assembler.private_hp",
+        target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
+        application_policy=BuffApplicationPolicy.REFRESH,
+        value_refresh_policy=BuffValueRefreshPolicy.REPLACE_LATEST,
+        max_stacks=1,
+        attribute_modifiers=(
+            BuffAttributeModifierTemplate(
+                term_key="assembler.private_hp.flat",
+                target_key=private_key,
+                stage=ModifierStage.FLAT_ADD,
+            ),
+        ),
+        tags=frozenset({"assembler"}),
+    )
+    registry = create_default_registry()
+    registry.register_character_factory(
+        "character.buff",
+        lambda request: ContentRuntimeContribution(
+            owner_type="character",
+            owner_key=request.character_key,
+            handler_key=request.handler_key,
+            slot=request.slot,
+            attribute_definitions=(
+                AttributeDefinition(
+                    key=private_key,
+                    owner_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
+                    policy_key="additive",
+                    visibility=AttributeVisibility.CONTENT_PRIVATE,
+                    namespace_owner="character.buff",
+                ),
+            ),
+            attribute_providers=(provider,),
+            buff_definitions=(definition,),
+        ),
+    )
+
+    assembler = SimulationAssembler(RuntimeRepository(), registry)
+
+    with pytest.raises(
+        InvalidRuntimePayloadError,
+        match="第一版不能动态影响 stat.hp.max",
+    ):
+        assembler.assemble(_minimal_config())
+
+
+def test_assembler_rejects_buff_definition_with_unknown_attribute_target():
+    class RuntimeRepository(FakeAssetRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.character = CharacterAsset(
+                asset_key="character:75",
+                source_id="75",
+                name="test",
+                element="hydro",
+                weapon_type="sword",
+                rarity=5,
+                handler_key="character.buff",
+            )
+
+    unknown_key = AttributeKey("character.buff.unknown")
+    definition = BuffDefinition(
+        definition_key="buff.assembler.unknown",
+        mechanic_key="mechanic.assembler.unknown",
+        handler_key="character.buff",
+        conflict_key="buff.assembler.unknown",
+        target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
+        application_policy=BuffApplicationPolicy.REFRESH,
+        value_refresh_policy=BuffValueRefreshPolicy.REPLACE_LATEST,
+        max_stacks=1,
+        attribute_modifiers=(
+            BuffAttributeModifierTemplate(
+                term_key="assembler.unknown.flat",
+                target_key=unknown_key,
+                stage=ModifierStage.FLAT_ADD,
+            ),
+        ),
+        tags=frozenset({"assembler"}),
+    )
+    registry = create_default_registry()
+    registry.register_character_factory(
+        "character.buff",
+        lambda request: ContentRuntimeContribution(
+            owner_type="character",
+            owner_key=request.character_key,
+            handler_key=request.handler_key,
+            slot=request.slot,
+            buff_definitions=(definition,),
+        ),
+    )
+
+    assembler = SimulationAssembler(RuntimeRepository(), registry)
+
+    with pytest.raises(InvalidRuntimePayloadError, match="写入未知属性"):
+        assembler.assemble(_minimal_config())
+
+
+def test_assembler_converts_buff_validation_error_raised_inside_content_factory():
+    class RuntimeRepository(FakeAssetRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.character = CharacterAsset(
+                asset_key="character:75",
+                source_id="75",
+                name="test",
+                element="hydro",
+                weapon_type="sword",
+                rarity=5,
+                handler_key="character.buff",
+            )
+
+    def create_invalid_contribution(request) -> ContentRuntimeContribution:
+        definition = BuffDefinition(
+            definition_key="buff.assembler.invalid",
+            mechanic_key="mechanic.assembler.invalid",
+            handler_key=request.handler_key,
+            conflict_key="buff.assembler.invalid",
+            target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
+            application_policy=BuffApplicationPolicy.REFRESH,
+            value_refresh_policy=BuffValueRefreshPolicy.REPLACE_LATEST,
+            max_stacks=0,
+            marker_only=True,
+        )
+        return ContentRuntimeContribution(
+            owner_type="character",
+            owner_key=request.character_key,
+            handler_key=request.handler_key,
+            slot=request.slot,
+            buff_definitions=(definition,),
+        )
+
+    registry = create_default_registry()
+    registry.register_character_factory("character.buff", create_invalid_contribution)
+
+    with pytest.raises(InvalidRuntimePayloadError, match="max_stacks"):
+        SimulationAssembler(RuntimeRepository(), registry).assemble(_minimal_config())
 
 
 def test_attribute_runtime_isolates_static_asset_modifiers_by_character_slot():

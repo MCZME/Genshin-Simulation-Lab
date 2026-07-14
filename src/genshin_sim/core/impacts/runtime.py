@@ -13,6 +13,7 @@ from genshin_sim.core.impacts.dispatcher import ImpactDispatcher
 from genshin_sim.core.impacts.models import ActionImpactContext, ImpactKind, ImpactRequest
 from genshin_sim.core.protocols import FrameUpdatable
 from genshin_sim.core.space import CreatedObjectSpec, SpatialEntityKind, Vector3
+from genshin_sim.core.systems.buff import BuffApplicationRecord, BuffImpactRequestHandler
 from genshin_sim.core.systems.damage import DamageRequestHandler, DamageResolutionRecord
 from genshin_sim.core.systems.shield import ShieldGrantRecord, ShieldImpactRequestHandler
 
@@ -53,9 +54,11 @@ class ImpactRequestDispatcher:
         self,
         damage_handler: DamageRequestHandler | None = None,
         shield_handler: ShieldImpactRequestHandler | None = None,
+        buff_handler: BuffImpactRequestHandler | None = None,
     ) -> None:
         self.damage_handler = damage_handler
         self.shield_handler = shield_handler
+        self.buff_handler = buff_handler
         self._created_object_records: list[CreatedObjectRecord] = []
         self._ignored_requests: list[IgnoredImpactRecord] = []
 
@@ -79,6 +82,12 @@ class ImpactRequestDispatcher:
             return ()
         return self.shield_handler.records
 
+    @property
+    def buff_records(self) -> tuple[BuffApplicationRecord, ...]:
+        if self.buff_handler is None:
+            return ()
+        return self.buff_handler.records
+
     def dispatch_requests(self, context, requests: tuple[ImpactRequest, ...]) -> None:
         for request in requests:
             if request.kind is ImpactKind.DAMAGE:
@@ -86,6 +95,9 @@ class ImpactRequestDispatcher:
                 continue
             if request.kind is ImpactKind.SHIELD:
                 self._handle_shield_request(context, request)
+                continue
+            if request.kind is ImpactKind.APPLY_STATUS:
+                self._handle_apply_status_request(context, request)
                 continue
             if request.kind is ImpactKind.CREATE_ENTITY:
                 self._handle_create_entity_request(context, request)
@@ -149,6 +161,18 @@ class ImpactRequestDispatcher:
             return
         self.shield_handler.handle_impact_request(context, request)
 
+    def _handle_apply_status_request(self, context, request: ImpactRequest) -> None:
+        if self.buff_handler is None:
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="状态效果请求处理器尚未接入",
+                )
+            )
+            return
+        self.buff_handler.handle_impact_request(context, request)
+
     def _handle_create_entity_request(self, context, request: ImpactRequest) -> None:
         if context.space_runtime is None:
             self._ignored_requests.append(
@@ -210,6 +234,10 @@ class ImpactRuntime(FrameUpdatable):
     @property
     def shield_records(self) -> tuple[ShieldGrantRecord, ...]:
         return self.request_dispatcher.shield_records
+
+    @property
+    def buff_records(self) -> tuple[BuffApplicationRecord, ...]:
+        return self.request_dispatcher.buff_records
 
     def update_frame(self, context, frame: int) -> None:
         if frame < 0:

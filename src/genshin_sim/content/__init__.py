@@ -70,6 +70,7 @@ from genshin_sim.content.registry import (
     WeaponHandlerFactory,
     WeaponRuntimeRequest,
 )
+from genshin_sim.core.systems.buff import BuffDefinition
 
 __all__ = [
     "NOOP_HANDLER_KEY",
@@ -101,6 +102,7 @@ __all__ = [
     "BarbaraState",
     "CharacterHandlerFactory",
     "CharacterRuntimeRequest",
+    "BuffDefinition",
     "ContentRuntimeContribution",
     "ContentStateNotFoundError",
     "ContentStateSlotError",

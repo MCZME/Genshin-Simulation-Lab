@@ -21,3 +21,5 @@ class EventType(Enum):
     SHIELD_REMOVED = auto()
     SHIELD_ABSORPTION_RESOLVED = auto()
     DAMAGE_APPLIED = auto()
+    BUFF_APPLIED = auto()
+    BUFF_REMOVED = auto()

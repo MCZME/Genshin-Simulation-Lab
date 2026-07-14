@@ -7,6 +7,11 @@ from genshin_sim.application.assembly.attributes import (
     AttributeRuntimeBundle,
     build_attribute_runtime,
 )
+from genshin_sim.application.assembly.buffs import (
+    build_buff_attribute_providers,
+    build_buff_definition_registry,
+    validate_buff_definitions_for_assembly,
+)
 from genshin_sim.application.assembly.errors import (
     InvalidRuntimePayloadError,
     MissingRuntimeAssetError,
@@ -52,6 +57,7 @@ from genshin_sim.core.attributes import (
     AttributeResolveOptions,
     AttributeSubjectRef,
     AttributeSystemError,
+    ModifierStackingGroupDefinition,
     TraceLevel,
 )
 from genshin_sim.core.coordination.character_damage_taken import (
@@ -86,6 +92,14 @@ from genshin_sim.core.space import (
     Vector3,
 )
 from genshin_sim.core.space.runtime import SpaceRuntime
+from genshin_sim.core.systems.buff import (
+    BuffDefinition,
+    BuffImpactRequestHandler,
+    BuffResolver,
+    BuffRuntime,
+    BuffStore,
+    BuffSystemError,
+)
 from genshin_sim.core.systems.damage import (
     DamageFormulaRegistry,
     DamageModifierIndex,
@@ -146,6 +160,8 @@ class RuntimeContentBundle:
     created_object_behaviors: dict[str, CreatedObjectBehavior]
     event_hooks: tuple[EventHook, ...]
     modifiers: tuple[Modifier, ...]
+    attribute_stacking_groups: tuple[ModifierStackingGroupDefinition, ...]
+    buff_definitions: tuple[BuffDefinition, ...]
     damage_modifier_providers: tuple[DamageModifierProvider, ...]
     damage_modifier_stacking_groups: tuple[DamageModifierStackingGroupDefinition, ...]
 
@@ -163,6 +179,11 @@ class AssembledSimulation:
     damage_handler: DamageRequestHandler
     healing_handler: HealingRequestHandler
     health_runtime: HealthRuntime
+    buff_definitions: tuple[BuffDefinition, ...]
+    buff_store: BuffStore
+    buff_resolver: BuffResolver
+    buff_runtime: BuffRuntime
+    buff_handler: BuffImpactRequestHandler
     shield_store: ShieldStore
     shield_resolver: ShieldResolver
     shield_runtime: ShieldRuntime
@@ -192,12 +213,33 @@ class SimulationAssembler:
             raise MissingRuntimeAssetError("仿真运行至少需要一个队伍槽位")
 
         assets = tuple(self._load_slot_assets(slot) for slot in config.team)
-        contributions = self._prepare_handlers(assets)
+        try:
+            contributions = self._prepare_handlers(assets)
+        except BuffSystemError as exc:
+            raise InvalidRuntimePayloadError(str(exc)) from exc
         content_bundle = self._build_content_bundle(contributions)
-        attribute_runtime = build_attribute_runtime(
+        buff_registry = build_buff_definition_registry(content_bundle.buff_definitions)
+        attribute_runtime_without_buffs = build_attribute_runtime(
             config=config,
             assets=assets,
             contributions=contributions,
+        )
+        buff_store = BuffStore()
+        validate_buff_definitions_for_assembly(
+            definitions=buff_registry.definitions,
+            attribute_definitions=attribute_runtime_without_buffs.definitions,
+            modifier_providers=attribute_runtime_without_buffs.modifier_index.providers,
+        )
+        buff_attribute_providers = build_buff_attribute_providers(buff_registry, buff_store)
+        attribute_runtime = (
+            build_attribute_runtime(
+                config=config,
+                assets=assets,
+                contributions=contributions,
+                extra_providers=buff_attribute_providers,
+            )
+            if buff_attribute_providers
+            else attribute_runtime_without_buffs
         )
 
         context = SimulationContext()
@@ -317,6 +359,17 @@ class SimulationAssembler:
         except HealingSystemError as exc:
             raise InvalidRuntimePayloadError(str(exc)) from exc
         context.register_system(healing_handler)
+        try:
+            buff_resolver = BuffResolver()
+            buff_runtime = BuffRuntime(
+                definition_registry=buff_registry,
+                resolver=buff_resolver,
+                buff_store=buff_store,
+                event_engine=context.events,
+            )
+            buff_handler = BuffImpactRequestHandler(buff_runtime)
+        except BuffSystemError as exc:
+            raise InvalidRuntimePayloadError(str(exc)) from exc
         shield_store = ShieldStore()
         shield_resolver = ShieldResolver(attribute_runtime.resolver)
         shield_runtime = ShieldRuntime(
@@ -332,12 +385,15 @@ class SimulationAssembler:
             health_runtime,
             context.events,
         )
+        context.register_system(buff_runtime)
+        context.register_system(buff_handler)
         context.register_system(shield_runtime)
         context.register_system(shield_handler)
         context.register_system(character_damage_taken_coordinator)
         impact_request_dispatcher = ImpactRequestDispatcher(
             damage_handler,
             shield_handler,
+            buff_handler,
         )
         impact_runtime = ImpactRuntime(
             action_manager,
@@ -345,7 +401,7 @@ class SimulationAssembler:
             impact_request_dispatcher,
         )
         runtime_world = BasicRuntimeWorld(
-            [shield_runtime, action_manager, impact_runtime, space_runtime]
+            [buff_runtime, shield_runtime, action_manager, impact_runtime, space_runtime]
         )
         simulator = Simulator(
             context,
@@ -365,6 +421,11 @@ class SimulationAssembler:
             damage_handler=damage_handler,
             healing_handler=healing_handler,
             health_runtime=health_runtime,
+            buff_definitions=buff_registry.definitions,
+            buff_store=buff_store,
+            buff_resolver=buff_resolver,
+            buff_runtime=buff_runtime,
+            buff_handler=buff_handler,
             shield_store=shield_store,
             shield_resolver=shield_resolver,
             shield_runtime=shield_runtime,
@@ -661,6 +722,8 @@ class SimulationAssembler:
         modifiers: list[Modifier] = []
         damage_modifier_providers: list[DamageModifierProvider] = []
         damage_modifier_stacking_groups: list[DamageModifierStackingGroupDefinition] = []
+        attribute_stacking_groups: list[ModifierStackingGroupDefinition] = []
+        buff_definitions: list[BuffDefinition] = []
 
         for contribution in contributions:
             self._register_content_state(state_store, contribution)
@@ -670,6 +733,8 @@ class SimulationAssembler:
             self._register_created_object_behaviors(created_object_behaviors, contribution)
             event_hooks.extend(contribution.event_hooks)
             modifiers.extend(contribution.modifiers)
+            attribute_stacking_groups.extend(contribution.attribute_stacking_groups)
+            self._register_buff_definitions(buff_definitions, contribution)
             damage_modifier_providers.extend(contribution.damage_modifier_providers)
             damage_modifier_stacking_groups.extend(contribution.damage_modifier_stacking_groups)
 
@@ -682,6 +747,8 @@ class SimulationAssembler:
             created_object_behaviors=created_object_behaviors,
             event_hooks=tuple(event_hooks),
             modifiers=tuple(modifiers),
+            attribute_stacking_groups=tuple(attribute_stacking_groups),
+            buff_definitions=tuple(buff_definitions),
             damage_modifier_providers=tuple(damage_modifier_providers),
             damage_modifier_stacking_groups=tuple(damage_modifier_stacking_groups),
         )
@@ -799,6 +866,19 @@ class SimulationAssembler:
             if behavior_key in created_object_behaviors:
                 raise InvalidRuntimePayloadError(f"重复内容创建对象行为：{behavior_key}")
             created_object_behaviors[behavior_key] = cast(CreatedObjectBehavior, behavior)
+
+    def _register_buff_definitions(
+        self,
+        buff_definitions: list[BuffDefinition],
+        contribution: ContentRuntimeContribution,
+    ) -> None:
+        for definition in contribution.buff_definitions:
+            if definition.handler_key != contribution.handler_key:
+                raise InvalidRuntimePayloadError(
+                    f"content {contribution.handler_key!r} 不能贡献 handler_key "
+                    f"{definition.handler_key!r} 的 BuffDefinition"
+                )
+            buff_definitions.append(definition)
 
     @staticmethod
     def _validate_payload_params(handler_key: str, params: dict[str, Any]) -> None:

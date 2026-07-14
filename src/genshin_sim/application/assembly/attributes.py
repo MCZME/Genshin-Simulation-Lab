@@ -35,11 +35,13 @@ from genshin_sim.core.attributes import (
     AttributeQuery,
     AttributeResolver,
     AttributeSubjectRef,
+    AttributeSystemError,
     BaseAttributeContribution,
     BaseAttributeSet,
     ModifierProvider,
     ModifierProviderIndex,
     ModifierProviderSpec,
+    ModifierStackingGroupDefinition,
     ModifierStage,
     ModifierTerm,
     RuntimeSourceKind,
@@ -84,22 +86,27 @@ def build_attribute_runtime(
     config: SimulationConfig,
     assets: Sequence[AttributeRuntimeAssetBundle],
     contributions: Sequence[ContentRuntimeContribution],
+    extra_providers: Sequence[ModifierProvider] = (),
 ) -> AttributeRuntimeBundle:
-    definitions = create_public_attribute_registry()
-    _register_content_attribute_definitions(definitions, contributions)
-    base_contributions = tuple(_iter_base_contributions(config=config, assets=assets))
-    static_providers = tuple(_iter_static_asset_modifier_providers(assets))
-    content_providers = tuple(_iter_content_attribute_providers(contributions, definitions))
-    base_attributes = BaseAttributeSet(base_contributions)
-    modifier_index = ModifierProviderIndex(
-        (*static_providers, *content_providers),
-        registry=definitions,
-    )
-    resolver = AttributeResolver(
-        definitions=definitions,
-        base_attributes=base_attributes,
-        modifier_index=modifier_index,
-    )
+    try:
+        definitions = create_public_attribute_registry()
+        _register_content_attribute_definitions(definitions, contributions)
+        _register_content_attribute_stacking_groups(definitions, contributions)
+        base_contributions = tuple(_iter_base_contributions(config=config, assets=assets))
+        static_providers = tuple(_iter_static_asset_modifier_providers(assets))
+        content_providers = tuple(_iter_content_attribute_providers(contributions, definitions))
+        base_attributes = BaseAttributeSet(base_contributions)
+        modifier_index = ModifierProviderIndex(
+            (*static_providers, *content_providers, *tuple(extra_providers)),
+            registry=definitions,
+        )
+        resolver = AttributeResolver(
+            definitions=definitions,
+            base_attributes=base_attributes,
+            modifier_index=modifier_index,
+        )
+    except AttributeSystemError as exc:
+        raise InvalidRuntimePayloadError(str(exc)) from exc
     return AttributeRuntimeBundle(
         definitions=definitions,
         base_attributes=base_attributes,
@@ -117,7 +124,10 @@ def _iter_base_contributions(
         subject_ref = AttributeSubjectRef.character(_character_entity_id(bundle.slot))
         source_ref = RuntimeSourceRef(
             RuntimeSourceKind.ASSET,
-            f"{bundle.character_level_stats.character_key}:level:{bundle.character_level_stats.level}",
+            (
+                f"{bundle.character_level_stats.character_key}:level:"
+                f"{bundle.character_level_stats.level}"
+            ),
         )
         yield (
             subject_ref,
@@ -303,6 +313,29 @@ def _register_content_attribute_definitions(
                     f"{definition.namespace_owner!r} 的私有属性"
                 )
             definitions.register(definition)
+
+
+def _register_content_attribute_stacking_groups(
+    definitions: AttributeDefinitionRegistry,
+    contributions: Sequence[ContentRuntimeContribution],
+) -> None:
+    for contribution in contributions:
+        seen: set[str] = set()
+        for group in contribution.attribute_stacking_groups:
+            if not isinstance(group, ModifierStackingGroupDefinition):
+                raise InvalidRuntimePayloadError("attribute_stacking_groups 必须是属性叠加组定义")
+            if group.group_key in seen:
+                raise InvalidRuntimePayloadError(
+                    f"content {contribution.handler_key!r} 重复声明 stacking group："
+                    f"{group.group_key}"
+                )
+            seen.add(group.group_key)
+            if not group.group_key.startswith(f"{contribution.handler_key}."):
+                raise InvalidRuntimePayloadError(
+                    f"content {contribution.handler_key!r} 不能注册越界 stacking group："
+                    f"{group.group_key}"
+                )
+            definitions.register_stacking_group(group)
 
 
 def _is_registered_attribute_key(

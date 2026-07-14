@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import math
 import re
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
@@ -59,7 +60,12 @@ def _require_non_negative_int(value: int, field_name: str) -> None:
 
 
 def _require_non_negative_number(value: float, field_name: str) -> None:
-    if not isinstance(value, (int, float)) or isinstance(value, bool) or value < 0:
+    if (
+        not isinstance(value, (int, float))
+        or isinstance(value, bool)
+        or not math.isfinite(value)
+        or value < 0
+    ):
         raise AssetValidationError(f"{field_name} must be a non-negative number")
 
 
@@ -99,6 +105,7 @@ class CharacterAsset:
     element: str
     weapon_type: str
     rarity: int
+    burst_energy_cost: float | None = None
     handler_key: str | None = None
 
     def __post_init__(self) -> None:
@@ -107,6 +114,8 @@ class CharacterAsset:
         _require_non_empty_string(self.element, "element")
         _require_non_empty_string(self.weapon_type, "weapon_type")
         _require_positive_int(self.rarity, "rarity")
+        if self.burst_energy_cost is not None:
+            _require_non_negative_number(self.burst_energy_cost, "burst_energy_cost")
         _require_optional_non_empty_string(self.handler_key, "handler_key")
 
 

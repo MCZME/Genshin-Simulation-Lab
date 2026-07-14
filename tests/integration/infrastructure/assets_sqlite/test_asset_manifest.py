@@ -30,6 +30,7 @@ def test_asset_manifest_builds_valid_database(tmp_path):
     assert info.weapon_count == 1
     assert info.artifact_set_count == 1
     assert repository.get_character("character:fixture_char").handler_key is None
+    assert repository.get_character("character:fixture_char").burst_energy_cost == 60.0
     assert repository.get_character_level_stats("character:fixture_char", 20).base_hp == 2200.0
     assert repository.get_weapon_level_stats("weapon:fixture_sword", 90).secondary_value == 0.413
     assert repository.get_artifact_set_bonuses("artifact_set:fixture_set", 2)[0].params == {
@@ -71,6 +72,7 @@ def _manifest_payload():
                 "element": "hydro",
                 "weapon_type": "sword",
                 "rarity": 5,
+                "burst_energy_cost": 60.0,
             }
         ],
         "character_level_stats": [

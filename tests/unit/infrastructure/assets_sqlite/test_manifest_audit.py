@@ -175,6 +175,7 @@ def _manifest_payload():
                 "element": "pyro",
                 "weapon_type": "polearm",
                 "rarity": 5,
+                "burst_energy_cost": 60.0,
             }
         ],
         "character_level_stats": _character_level_stats("character:audit_char"),

@@ -110,6 +110,15 @@ from genshin_sim.core.systems.damage import (
     DamageSystemError,
     GeneralDamageFormula,
 )
+from genshin_sim.core.systems.energy import (
+    CharacterEnergyProfile,
+    CharacterEnergyStore,
+    EnergyElement,
+    EnergyImpactRequestHandler,
+    EnergyRuntime,
+    EnergySystemError,
+    EnergyTransitQueue,
+)
 from genshin_sim.core.systems.healing import (
     HealingRequestHandler,
     HealingResolver,
@@ -136,6 +145,13 @@ ACTION_BUTTON_KEYS = (
     "mouse.left",
     "mouse.right",
 )
+
+
+def _energy_element_from_asset(value: str) -> EnergyElement:
+    try:
+        return EnergyElement(value)
+    except ValueError as exc:
+        raise InvalidRuntimePayloadError(f"角色元素不支持标准元素能量：{value}") from exc
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +195,10 @@ class AssembledSimulation:
     damage_handler: DamageRequestHandler
     healing_handler: HealingRequestHandler
     health_runtime: HealthRuntime
+    energy_store: CharacterEnergyStore
+    energy_transit_queue: EnergyTransitQueue
+    energy_runtime: EnergyRuntime
+    energy_handler: EnergyImpactRequestHandler
     buff_definitions: tuple[BuffDefinition, ...]
     buff_store: BuffStore
     buff_resolver: BuffResolver
@@ -213,6 +233,7 @@ class SimulationAssembler:
             raise MissingRuntimeAssetError("仿真运行至少需要一个队伍槽位")
 
         assets = tuple(self._load_slot_assets(slot) for slot in config.team)
+        assets_by_slot = {bundle.slot: bundle for bundle in assets}
         try:
             contributions = self._prepare_handlers(assets)
         except BuffSystemError as exc:
@@ -267,6 +288,40 @@ class SimulationAssembler:
             context.events,
         )
         context.register_system(health_runtime)
+        try:
+            energy_entries = []
+            for character in team_state.characters:
+                asset_bundle = assets_by_slot[character.slot]
+                burst_energy_cost = asset_bundle.character.burst_energy_cost
+                if burst_energy_cost is None:
+                    raise InvalidRuntimePayloadError(
+                        f"槽位 {character.slot} 角色资产缺少 burst_energy_cost"
+                    )
+                energy_entries.append(
+                    (
+                        CharacterEnergyProfile(
+                            AttributeSubjectRef.character(character.combat_entity_id),
+                            asset_bundle.character.asset_key,
+                            _energy_element_from_asset(asset_bundle.character.element),
+                            burst_energy_cost,
+                        ),
+                        character.energy,
+                    )
+                )
+            energy_store = CharacterEnergyStore(energy_entries)
+            energy_transit_queue = EnergyTransitQueue()
+            energy_runtime = EnergyRuntime(
+                attribute_runtime.resolver,
+                team_state,
+                energy_store,
+                energy_transit_queue,
+                context.events,
+            )
+            energy_handler = EnergyImpactRequestHandler(energy_runtime)
+        except EnergySystemError as exc:
+            raise InvalidRuntimePayloadError(f"元素能量组装失败：{exc}") from exc
+        context.register_system(energy_runtime)
+        context.register_system(energy_handler)
         target_states = TargetRuntimeCollection(
             TargetRuntimeState(
                 target_id=target.target_id,
@@ -394,6 +449,7 @@ class SimulationAssembler:
             damage_handler,
             shield_handler,
             buff_handler,
+            energy_handler,
         )
         impact_runtime = ImpactRuntime(
             action_manager,
@@ -401,7 +457,14 @@ class SimulationAssembler:
             impact_request_dispatcher,
         )
         runtime_world = BasicRuntimeWorld(
-            [buff_runtime, shield_runtime, action_manager, impact_runtime, space_runtime]
+            [
+                buff_runtime,
+                shield_runtime,
+                action_manager,
+                impact_runtime,
+                energy_runtime,
+                space_runtime,
+            ]
         )
         simulator = Simulator(
             context,
@@ -421,6 +484,10 @@ class SimulationAssembler:
             damage_handler=damage_handler,
             healing_handler=healing_handler,
             health_runtime=health_runtime,
+            energy_store=energy_store,
+            energy_transit_queue=energy_transit_queue,
+            energy_runtime=energy_runtime,
+            energy_handler=energy_handler,
             buff_definitions=buff_registry.definitions,
             buff_store=buff_store,
             buff_resolver=buff_resolver,

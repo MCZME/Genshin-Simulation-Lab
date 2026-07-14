@@ -81,6 +81,7 @@ def write_minimal_static_asset_database(db_path: str | Path) -> Path:
                 element="anemo",
                 weapon_type="sword",
                 rarity=5,
+                burst_energy_cost=60.0,
                 handler_key="character.testing.runtime_probe",
             ),
         ),
@@ -221,9 +222,9 @@ def _insert_characters(
     connection.executemany(
         """
         INSERT INTO characters(
-            asset_key, source_id, name, element, weapon_type, rarity, handler_key
+            asset_key, source_id, name, element, weapon_type, rarity, burst_energy_cost, handler_key
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             (
@@ -233,6 +234,7 @@ def _insert_characters(
                 item.element,
                 item.weapon_type,
                 item.rarity,
+                item.burst_energy_cost,
                 item.handler_key,
             )
             for item in characters

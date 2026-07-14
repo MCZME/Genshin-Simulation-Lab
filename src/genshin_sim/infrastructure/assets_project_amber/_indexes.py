@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from pathlib import Path
 from typing import Any
 
 from genshin_sim.assets import ArtifactSetAsset, AssetValidationError, CharacterAsset, WeaponAsset
@@ -10,19 +11,42 @@ from genshin_sim.infrastructure.assets_project_amber._common import (
     _items_mapping,
     _map_value,
     _optional_str,
+    _payload_data,
+    _read_json,
     _require_mapping,
     _required_int,
     _required_str,
 )
 
 
-def _build_characters(avatar_index_data: Mapping[str, Any]) -> tuple[CharacterAsset, ...]:
+def _build_characters(
+    cache_dir: Path,
+    avatar_index_data: Mapping[str, Any],
+) -> tuple[CharacterAsset, ...]:
     items = _items_mapping(avatar_index_data, "avatar/index")
     characters: list[CharacterAsset] = []
     for source_id, raw in sorted(items.items()):
         item = _require_mapping(raw, f"avatar.items[{source_id}]")
         if not _has_supported_character_index_fields(item):
             continue
+        detail_path = cache_dir / "avatar" / f"{source_id}.json"
+        detail = _payload_data(_read_json(detail_path), f"avatar/{source_id}")
+        talents = _require_mapping(detail.get("talent"), f"avatar/{source_id}.talent")
+        costs = []
+        for talent_key, raw_talent in talents.items():
+            talent = _require_mapping(raw_talent, f"avatar/{source_id}.talent[{talent_key}]")
+            if talent.get("type") != 1:
+                continue
+            cost = talent.get("cost")
+            if isinstance(cost, bool) or not isinstance(cost, int | float):
+                raise AssetValidationError(
+                    f"avatar/{source_id}.talent[{talent_key}].cost 必须是数值"
+                )
+            costs.append(float(cost))
+        if len(costs) != 1:
+            raise AssetValidationError(
+                f"avatar/{source_id} 必须恰好有一个 type == 1 的元素爆发天赋"
+            )
         characters.append(
             CharacterAsset(
                 asset_key=f"character:{source_id}",
@@ -39,6 +63,7 @@ def _build_characters(avatar_index_data: Mapping[str, Any]) -> tuple[CharacterAs
                     f"avatar.items[{source_id}].weaponType",
                 ),
                 rarity=_required_int(item, "rank", f"avatar.items[{source_id}]"),
+                burst_energy_cost=costs[0],
             )
         )
     return tuple(characters)

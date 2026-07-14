@@ -12,6 +12,11 @@ if TYPE_CHECKING:
         BuffRemovalResult,
     )
     from genshin_sim.core.systems.damage.models import DamageResult
+    from genshin_sim.core.systems.energy.models import (
+        CharacterEnergyChangeResult,
+        EnergyPickupRecord,
+        EnergyPickupSettlementResult,
+    )
     from genshin_sim.core.systems.healing.models import HealingResult
     from genshin_sim.core.systems.health.models import (
         CharacterHealthChangeResult,
@@ -148,6 +153,46 @@ class CharacterMaxHpChangedPayload:
     """一次角色最大生命同步造成当前生命同比调整的审计载荷。"""
 
     result: CharacterMaxHpReconcileResult
+
+    def to_dict(self) -> dict[str, object]:
+        return {"result": self.result.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class EnergyPickupSpawnedPayload:
+    """元素微粒或晶球已进入在途队列。"""
+
+    record: EnergyPickupRecord
+
+    def to_dict(self) -> dict[str, object]:
+        return {"record": self.record.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class EnergyPickupSettledPayload:
+    """元素微粒或晶球已向整个队伍完成结算。"""
+
+    result: EnergyPickupSettlementResult
+
+    def to_dict(self) -> dict[str, object]:
+        return {"result": self.result.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class DirectEnergyChangeResolvedPayload:
+    """直接恢复、直接扣除或爆发扣能已提交。"""
+
+    result: CharacterEnergyChangeResult
+
+    def to_dict(self) -> dict[str, object]:
+        return {"result": self.result.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class CharacterEnergyChangedPayload:
+    """角色当前元素能量实际发生变化。"""
+
+    result: CharacterEnergyChangeResult
 
     def to_dict(self) -> dict[str, object]:
         return {"result": self.result.to_dict()}

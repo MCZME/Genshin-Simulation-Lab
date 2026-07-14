@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from genshin_sim.core.entity_states.characters import CharacterRuntimeState
+    from genshin_sim.core.entity_states.energy import EnergyState
     from genshin_sim.core.entity_states.health import HealthState
     from genshin_sim.core.entity_states.lifecycle import EntityLifecycle, EntityLifecycleState
     from genshin_sim.core.entity_states.targets import TargetRuntimeCollection, TargetRuntimeState
@@ -15,6 +16,7 @@ __all__ = [
     "CharacterRuntimeState",
     "EntityLifecycle",
     "EntityLifecycleState",
+    "EnergyState",
     "HealthState",
     "TargetRuntimeCollection",
     "TargetRuntimeState",
@@ -24,6 +26,7 @@ _EXPORT_MODULES = {
     "CharacterRuntimeState": "genshin_sim.core.entity_states.characters",
     "EntityLifecycle": "genshin_sim.core.entity_states.lifecycle",
     "EntityLifecycleState": "genshin_sim.core.entity_states.lifecycle",
+    "EnergyState": "genshin_sim.core.entity_states.energy",
     "HealthState": "genshin_sim.core.entity_states.health",
     "TargetRuntimeCollection": "genshin_sim.core.entity_states.targets",
     "TargetRuntimeState": "genshin_sim.core.entity_states.targets",

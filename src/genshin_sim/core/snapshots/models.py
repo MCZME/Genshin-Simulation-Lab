@@ -5,6 +5,7 @@ from typing import Any
 
 from genshin_sim.core.events import GameEvent
 from genshin_sim.core.simulation import SimulationContext
+from genshin_sim.core.systems.energy import EnergyRuntime
 
 
 @dataclass(frozen=True, slots=True)
@@ -36,6 +37,7 @@ class EventSnapshot:
 class SimulationSnapshot:
     frame: int
     events: tuple[EventSnapshot, ...] = ()
+    energy: dict[str, Any] | None = None
     meta: dict[str, Any] = field(default_factory=dict)
 
     @classmethod
@@ -45,9 +47,14 @@ class SimulationSnapshot:
         *,
         meta: dict[str, Any] | None = None,
     ) -> SimulationSnapshot:
+        energy_runtime = context.get_system(EnergyRuntime)
+        energy = None
+        if isinstance(energy_runtime, EnergyRuntime):
+            energy = energy_runtime.snapshot(context.current_frame).to_dict()
         return cls(
             frame=context.current_frame,
             events=tuple(EventSnapshot.from_event(event) for event in context.events.frame_events),
+            energy=energy,
             meta={} if meta is None else dict(meta),
         )
 
@@ -55,6 +62,7 @@ class SimulationSnapshot:
         return {
             "frame": self.frame,
             "events": [event.to_dict() for event in self.events],
+            "energy": None if self.energy is None else dict(self.energy),
             "meta": dict(self.meta),
         }
 

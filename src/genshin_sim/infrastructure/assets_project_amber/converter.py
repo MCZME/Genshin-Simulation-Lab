@@ -79,7 +79,7 @@ def build_asset_manifest_from_project_amber_cache(
         "static/weaponCurve",
     )
 
-    characters = _build_characters(avatar_index)
+    characters = _build_characters(cache_dir, avatar_index)
     character_level_stats = _build_character_level_stats(cache_dir, characters, avatar_curve)
     talent_scalings = _build_talent_scalings(cache_dir, characters)
     weapons = _build_weapons(weapon_index)

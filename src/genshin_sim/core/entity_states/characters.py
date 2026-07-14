@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from genshin_sim.core.entity_states.energy import EnergyState
 from genshin_sim.core.entity_states.health import HealthState
 
 
@@ -18,7 +19,7 @@ class CharacterRuntimeState:
     level: int
     constellation: int = 0
     talent_levels: Mapping[str, int] = field(default_factory=dict)
-    energy: float = 0.0
+    energy: EnergyState = field(default_factory=EnergyState)
     combat_entity_id: str = ""
     health: HealthState = field(default_factory=lambda: HealthState(0.0))
 
@@ -35,8 +36,8 @@ class CharacterRuntimeState:
         if not 0 <= self.constellation <= 6:
             msg = "角色命座必须在 0 到 6 之间"
             raise ValueError(msg)
-        if self.energy < 0:
-            msg = "角色能量不能为负数"
+        if not isinstance(self.energy, EnergyState):
+            msg = "角色元素能量状态必须是 EnergyState"
             raise ValueError(msg)
         if not isinstance(self.health, HealthState):
             msg = "角色生命状态必须是 HealthState"
@@ -57,20 +58,3 @@ class CharacterRuntimeState:
         if not self.combat_entity_id.strip():
             msg = "角色战斗实体 id 必须是非空字符串"
             raise ValueError(msg)
-
-    def gain_energy(self, amount: float) -> None:
-        _validate_non_negative_amount(amount, "获得能量")
-        self.energy += amount
-
-    def consume_energy(self, amount: float) -> bool:
-        _validate_non_negative_amount(amount, "消耗能量")
-        if self.energy < amount:
-            return False
-        self.energy -= amount
-        return True
-
-
-def _validate_non_negative_amount(amount: float, label: str) -> None:
-    if isinstance(amount, bool) or not isinstance(amount, (int, float)) or amount < 0:
-        msg = f"{label}数值必须是非负数"
-        raise ValueError(msg)

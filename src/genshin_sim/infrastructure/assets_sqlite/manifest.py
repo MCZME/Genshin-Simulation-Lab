@@ -168,7 +168,16 @@ def _load_character(raw: Any, path: str) -> CharacterAsset:
     item = _require_mapping(raw, path)
     _reject_unknown_keys(
         item,
-        {"asset_key", "source_id", "name", "element", "weapon_type", "rarity", "handler_key"},
+        {
+            "asset_key",
+            "source_id",
+            "name",
+            "element",
+            "weapon_type",
+            "rarity",
+            "burst_energy_cost",
+            "handler_key",
+        },
         path,
     )
     return CharacterAsset(
@@ -178,6 +187,7 @@ def _load_character(raw: Any, path: str) -> CharacterAsset:
         element=_required_str(item, "element", path),
         weapon_type=_required_str(item, "weapon_type", path),
         rarity=_required_int(item, "rarity", path),
+        burst_energy_cost=_required_float(item, "burst_energy_cost", path),
         handler_key=_optional_str(item, "handler_key", path),
     )
 

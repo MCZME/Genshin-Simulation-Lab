@@ -15,6 +15,7 @@ from genshin_sim.core.protocols import FrameUpdatable
 from genshin_sim.core.space import CreatedObjectSpec, SpatialEntityKind, Vector3
 from genshin_sim.core.systems.buff import BuffApplicationRecord, BuffImpactRequestHandler
 from genshin_sim.core.systems.damage import DamageRequestHandler, DamageResolutionRecord
+from genshin_sim.core.systems.energy import EnergyImpactRecord, EnergyImpactRequestHandler
 from genshin_sim.core.systems.shield import ShieldGrantRecord, ShieldImpactRequestHandler
 
 
@@ -55,10 +56,12 @@ class ImpactRequestDispatcher:
         damage_handler: DamageRequestHandler | None = None,
         shield_handler: ShieldImpactRequestHandler | None = None,
         buff_handler: BuffImpactRequestHandler | None = None,
+        energy_handler: EnergyImpactRequestHandler | None = None,
     ) -> None:
         self.damage_handler = damage_handler
         self.shield_handler = shield_handler
         self.buff_handler = buff_handler
+        self.energy_handler = energy_handler
         self._created_object_records: list[CreatedObjectRecord] = []
         self._ignored_requests: list[IgnoredImpactRecord] = []
 
@@ -88,6 +91,12 @@ class ImpactRequestDispatcher:
             return ()
         return self.buff_handler.records
 
+    @property
+    def energy_records(self) -> tuple[EnergyImpactRecord, ...]:
+        if self.energy_handler is None:
+            return ()
+        return self.energy_handler.records
+
     def dispatch_requests(self, context, requests: tuple[ImpactRequest, ...]) -> None:
         for request in requests:
             if request.kind is ImpactKind.DAMAGE:
@@ -98,6 +107,9 @@ class ImpactRequestDispatcher:
                 continue
             if request.kind is ImpactKind.APPLY_STATUS:
                 self._handle_apply_status_request(context, request)
+                continue
+            if request.kind is ImpactKind.ENERGY:
+                self._handle_energy_request(context, request)
                 continue
             if request.kind is ImpactKind.CREATE_ENTITY:
                 self._handle_create_entity_request(context, request)
@@ -173,6 +185,21 @@ class ImpactRequestDispatcher:
             return
         self.buff_handler.handle_impact_request(context, request)
 
+    def _handle_energy_request(self, context, request: ImpactRequest) -> None:
+        if self.energy_handler is None:
+            self._ignored_requests.append(
+                IgnoredImpactRecord(request.frame, request, "元素能量请求处理器尚未接入")
+            )
+            return
+        if not self.energy_handler.has_energy_contract(request):
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    request.frame, request, "元素能量请求缺少结构化 params.energy 契约"
+                )
+            )
+            return
+        self.energy_handler.handle_impact_request(context, request)
+
     def _handle_create_entity_request(self, context, request: ImpactRequest) -> None:
         if context.space_runtime is None:
             self._ignored_requests.append(
@@ -238,6 +265,10 @@ class ImpactRuntime(FrameUpdatable):
     @property
     def buff_records(self) -> tuple[BuffApplicationRecord, ...]:
         return self.request_dispatcher.buff_records
+
+    @property
+    def energy_records(self) -> tuple[EnergyImpactRecord, ...]:
+        return self.request_dispatcher.energy_records
 
     def update_frame(self, context, frame: int) -> None:
         if frame < 0:

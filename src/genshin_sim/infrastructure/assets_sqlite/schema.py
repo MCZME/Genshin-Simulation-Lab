@@ -9,7 +9,7 @@ from pathlib import Path
 
 from genshin_sim.assets import AssetValidationError
 
-ASSET_SCHEMA_VERSION = "1"
+ASSET_SCHEMA_VERSION = "2"
 
 _REQUIRED_TABLES = {
     "asset_db_meta",
@@ -22,6 +22,10 @@ _REQUIRED_TABLES = {
     "artifact_set_bonuses",
     "talent_scaling_entries",
     "effect_payloads",
+}
+
+_REQUIRED_COLUMNS = {
+    "characters": {"burst_energy_cost"},
 }
 
 _SCHEMA_SQL = """
@@ -50,6 +54,7 @@ CREATE TABLE IF NOT EXISTS characters (
     element TEXT NOT NULL,
     weapon_type TEXT NOT NULL,
     rarity INTEGER NOT NULL,
+    burst_energy_cost REAL NOT NULL,
     handler_key TEXT NULL
 );
 
@@ -154,8 +159,15 @@ def init_asset_database(
     }
     if meta is not None:
         default_meta.update({str(key): str(value) for key, value in meta.items()})
+    if default_meta["schema_version"] != ASSET_SCHEMA_VERSION:
+        raise AssetValidationError(f"asset database schema_version 必须是 {ASSET_SCHEMA_VERSION!r}")
 
     with closing(sqlite3.connect(path)) as connection:
+        connection.row_factory = sqlite3.Row
+        if _has_existing_schema(connection):
+            _validate_required_tables(connection)
+            _validate_required_columns(connection)
+            _validate_schema_version(connection)
         connection.executescript(_SCHEMA_SQL)
         connection.executemany(
             """
@@ -179,6 +191,7 @@ def validate_asset_database(db_path: str | Path) -> None:
         with closing(sqlite3.connect(path)) as connection:
             connection.row_factory = sqlite3.Row
             _validate_required_tables(connection)
+            _validate_required_columns(connection)
             _validate_schema_version(connection)
             _validate_foreign_keys(connection)
             _validate_json_payloads(connection)
@@ -192,6 +205,29 @@ def _validate_required_tables(connection: sqlite3.Connection) -> None:
     missing = sorted(_REQUIRED_TABLES - tables)
     if missing:
         raise AssetValidationError(f"missing asset database tables: {', '.join(missing)}")
+
+
+def _has_existing_schema(connection: sqlite3.Connection) -> bool:
+    row = connection.execute(
+        """
+        SELECT 1
+        FROM sqlite_master
+        WHERE type = 'table' AND name NOT LIKE 'sqlite_%'
+        LIMIT 1
+        """
+    ).fetchone()
+    return row is not None
+
+
+def _validate_required_columns(connection: sqlite3.Connection) -> None:
+    missing = []
+    for table_name, required_columns in _REQUIRED_COLUMNS.items():
+        columns = {str(row[1]) for row in connection.execute(f"PRAGMA table_info({table_name})")}
+        missing.extend(
+            f"{table_name}.{column_name}" for column_name in sorted(required_columns - columns)
+        )
+    if missing:
+        raise AssetValidationError(f"missing asset database columns: {', '.join(missing)}")
 
 
 def _validate_schema_version(connection: sqlite3.Connection) -> None:

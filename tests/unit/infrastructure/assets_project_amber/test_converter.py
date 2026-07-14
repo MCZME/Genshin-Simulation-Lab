@@ -2,6 +2,9 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
+from genshin_sim.assets import AssetValidationError
 from genshin_sim.infrastructure.assets_project_amber import (
     build_asset_manifest_from_project_amber_cache,
 )
@@ -34,6 +37,7 @@ def test_build_asset_manifest_from_project_amber_cache_writes_index_and_level_st
     assert manifest.meta["source_version"] == "default"
     assert manifest.characters[0].asset_key == "character:10000002"
     assert manifest.characters[0].element == "cryo"
+    assert manifest.characters[0].burst_energy_cost == 80.0
     assert manifest.weapons[0].weapon_type == "sword"
     assert {item.asset_key for item in manifest.artifact_sets} == {
         "artifact_set:15009",
@@ -182,26 +186,13 @@ def test_build_asset_manifest_uses_weapon_unlock_max_level(tmp_path):
     assert [row.ascension_phase for row in low_rarity_rows if row.level == 70] == [4]
 
 
-def test_build_asset_manifest_skips_level_stats_without_detail_files(tmp_path):
+def test_build_asset_manifest_rejects_characters_without_burst_cost_source(tmp_path):
     cache_dir = tmp_path / "cache"
     manifest_path = tmp_path / "manifest.json"
     _write_project_amber_cache(cache_dir, include_details=False)
 
-    summary = build_asset_manifest_from_project_amber_cache(cache_dir, manifest_path)
-    manifest = load_asset_manifest(manifest_path)
-
-    assert summary.character_count == 1
-    assert summary.character_level_stat_count == 0
-    assert summary.weapon_count == 1
-    assert summary.weapon_level_stat_count == 0
-    assert summary.artifact_set_count == 2
-    assert summary.artifact_set_bonus_count == 3
-    assert summary.talent_scaling_count == 0
-    assert summary.effect_payload_count == 0
-    assert manifest.characters[0].name == "神里绫华"
-    assert manifest.weapons[0].name == "静水流涌之辉"
-    assert manifest.artifact_sets[0].name == "祭火之人"
-    assert manifest.artifact_set_bonuses[0].piece_count == 1
+    with pytest.raises(AssetValidationError, match="cache 文件"):
+        build_asset_manifest_from_project_amber_cache(cache_dir, manifest_path)
 
 
 def _write_project_amber_cache(cache_dir, *, include_details: bool) -> None:
@@ -489,6 +480,7 @@ def _character_talents() -> dict[str, object]:
             "skillId": 10003,
             "name": "神里流·霜灭",
             "type": 1,
+            "cost": 80,
             "promote": _talent_promote(
                 [
                     "切割伤害|{param1:P}",

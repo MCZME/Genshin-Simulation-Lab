@@ -23,3 +23,7 @@ class EventType(Enum):
     DAMAGE_APPLIED = auto()
     BUFF_APPLIED = auto()
     BUFF_REMOVED = auto()
+    ENERGY_PICKUP_SPAWNED = auto()
+    ENERGY_PICKUP_SETTLED = auto()
+    DIRECT_ENERGY_CHANGE_RESOLVED = auto()
+    CHARACTER_ENERGY_CHANGED = auto()

@@ -54,6 +54,7 @@ from genshin_sim.core.attributes import (
 )
 from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import ActionImpactContext, ImpactKind, ImpactRequest
+from genshin_sim.core.snapshots import export_snapshot
 from genshin_sim.core.space import CreatedObjectRuntimeState, SpatialEntityKind
 from genshin_sim.core.systems.buff import (
     BuffApplicationPolicy,
@@ -167,6 +168,7 @@ class FakeAssetRepository:
             element="hydro",
             weapon_type="sword",
             rarity=5,
+            burst_energy_cost=60.0,
             handler_key="generic.test_character",
         )
         self.weapon = WeaponAsset(
@@ -185,12 +187,12 @@ class FakeAssetRepository:
         )
 
     def get_meta(self) -> dict[str, str]:
-        return {"schema_version": "1"}
+        return {"schema_version": "2"}
 
     def get_info(self) -> AssetDbInfo:
-        return AssetDbInfo(meta={"schema_version": "1"})
+        return AssetDbInfo(meta={"schema_version": "2"})
 
-    def list_characters(self):
+    def list_characters(self) -> tuple[CharacterAsset, ...]:
         return (self.character,)
 
     def get_character(self, character_key: str):
@@ -279,6 +281,61 @@ class FakeAssetRepository:
         return ()
 
 
+class SlotAwareAssetRepository(FakeAssetRepository):
+    def __init__(self) -> None:
+        super().__init__()
+        self.characters = {
+            "character:pyro": CharacterAsset(
+                asset_key="character:pyro",
+                source_id="pyro",
+                name="Pyro",
+                element="pyro",
+                weapon_type="sword",
+                rarity=4,
+                burst_energy_cost=40.0,
+                handler_key="generic.test_character",
+            ),
+            "character:electro": CharacterAsset(
+                asset_key="character:electro",
+                source_id="electro",
+                name="Electro",
+                element="electro",
+                weapon_type="sword",
+                rarity=5,
+                burst_energy_cost=80.0,
+                handler_key="generic.test_character",
+            ),
+        }
+
+    def list_characters(self) -> tuple[CharacterAsset, ...]:
+        return tuple(self.characters.values())
+
+    def get_character(self, character_key: str):
+        return self.characters[character_key]
+
+    def get_character_level_stats(
+        self,
+        character_key: str,
+        level: int,
+        *,
+        ascended: bool = True,
+    ):
+        assert level == 90
+        assert ascended
+        return CharacterLevelStats(
+            character_key=character_key,
+            level=level,
+            ascension_phase=6,
+            base_hp=10000,
+            base_atk=1000,
+            base_def=700,
+        )
+
+    def get_effect_payloads(self, owner_key: str, effect_kind: str | None = None):
+        del owner_key, effect_kind
+        return ()
+
+
 def _minimal_config(*, input_trace: list[dict[str, object]] | None = None) -> SimulationConfig:
     return SimulationConfig.from_mapping(
         {
@@ -328,6 +385,31 @@ def _minimal_config(*, input_trace: list[dict[str, object]] | None = None) -> Si
     )
 
 
+def _reordered_two_slot_config() -> SimulationConfig:
+    payload = _minimal_config().to_dict()
+    payload["team"] = [
+        {
+            "slot": 2,
+            "character": {
+                "asset_key": "character:electro",
+                "level": 90,
+                "constellation": 0,
+                "talents": {"normal_attack": 1},
+            },
+        },
+        {
+            "slot": 1,
+            "character": {
+                "asset_key": "character:pyro",
+                "level": 90,
+                "constellation": 0,
+                "talents": {"normal_attack": 1},
+            },
+        },
+    ]
+    return SimulationConfig.from_mapping(payload)
+
+
 def _skill_input_trace() -> list[dict[str, object]]:
     return [
         {"frame": 1, "events": [{"key": "keyboard.e", "phase": "press"}]},
@@ -365,8 +447,117 @@ def test_assembler_builds_minimal_runtime_graph():
         assembled.shield_runtime,
         assembled.action_manager,
         assembled.impact_runtime,
+        assembled.energy_runtime,
         assembled.space_runtime,
     )
+
+
+def test_assembler_matches_energy_profiles_by_slot_not_team_input_order():
+    assembled = SimulationAssembler(SlotAwareAssetRepository(), create_default_registry()).assemble(
+        _reordered_two_slot_config()
+    )
+
+    slot_one = assembled.energy_store.require_profile(
+        AttributeSubjectRef.character("character:slot_1")
+    )
+    slot_two = assembled.energy_store.require_profile(
+        AttributeSubjectRef.character("character:slot_2")
+    )
+
+    assert [bundle.slot for bundle in assembled.assets] == [2, 1]
+    assert (slot_one.character_key, slot_one.element.value, slot_one.capacity) == (
+        "character:pyro",
+        "pyro",
+        40.0,
+    )
+    assert (slot_two.character_key, slot_two.element.value, slot_two.capacity) == (
+        "character:electro",
+        "electro",
+        80.0,
+    )
+
+
+def test_assembler_rejects_character_asset_without_burst_energy_cost():
+    repository = FakeAssetRepository()
+    repository.character = CharacterAsset(
+        asset_key="character:75",
+        source_id="75",
+        name="test",
+        element="hydro",
+        weapon_type="sword",
+        rarity=5,
+        handler_key="generic.test_character",
+    )
+
+    with pytest.raises(InvalidRuntimePayloadError, match="缺少 burst_energy_cost"):
+        SimulationAssembler(repository, create_default_registry()).assemble(_minimal_config())
+
+
+def test_assembler_routes_structured_energy_impact_and_settles_pickup():
+    assembler = SimulationAssembler(FakeAssetRepository(), create_default_registry())
+    assembled = assembler.assemble(_minimal_config())
+
+    request = ImpactRequest(
+        frame=3,
+        kind=ImpactKind.ENERGY,
+        impact_key="test.energy.pickup",
+        owner_slot=1,
+        request_id="energy:pickup:1",
+        params={
+            "energy": {
+                "schema_version": 1,
+                "operation": "spawn_pickup",
+                "pickup_kind": "particle",
+                "element": "hydro",
+                "count": 1,
+                "travel_frames": 0,
+            }
+        },
+    )
+
+    assembled.impact_request_dispatcher.dispatch_requests(assembled.context, (request,))
+    assembled.energy_runtime.update_frame(assembled.context, 3)
+
+    restore_request = ImpactRequest(
+        frame=4,
+        kind=ImpactKind.ENERGY,
+        impact_key="test.energy.restore",
+        request_id="energy:restore:1",
+        target_refs=("character:slot_1",),
+        params={
+            "energy": {
+                "schema_version": 1,
+                "operation": "restore",
+                "amount": 4.0,
+            }
+        },
+    )
+    assembled.impact_request_dispatcher.dispatch_requests(assembled.context, (restore_request,))
+
+    ref = AttributeSubjectRef.character("character:slot_1")
+    assert assembled.energy_runtime.get_current_energy(ref) == 7.0
+    assert assembled.energy_transit_queue.is_empty()
+    assert export_snapshot(assembled.context).to_dict()["energy"] == {
+        "frame": 0,
+        "characters": (
+            {
+                "character_ref": {"kind": "character", "entity_id": "character:slot_1"},
+                "character_key": "character:75",
+                "element": "hydro",
+                "current_energy": 7.0,
+                "capacity": 60.0,
+                "burst_ready": False,
+            },
+        ),
+        "pending_pickups": (),
+    }
+    assert [event.event_type for event in assembled.context.events.frame_events] == [
+        EventType.ENERGY_PICKUP_SPAWNED,
+        EventType.ENERGY_PICKUP_SETTLED,
+        EventType.CHARACTER_ENERGY_CHANGED,
+        EventType.DIRECT_ENERGY_CHANGE_RESOLVED,
+        EventType.CHARACTER_ENERGY_CHANGED,
+    ]
     assert assembled.buff_definitions == ()
     assert assembled.buff_runtime.buff_store is assembled.buff_store
     assert assembled.buff_handler.runtime is assembled.buff_runtime
@@ -462,6 +653,7 @@ def test_assembler_injects_character_runtime_contribution_and_actions():
                 element="hydro",
                 weapon_type="sword",
                 rarity=5,
+                burst_energy_cost=60.0,
                 handler_key="character.runtime",
             )
 
@@ -524,6 +716,7 @@ def test_assembler_injects_content_attribute_modifier_as_core_term():
                 element="hydro",
                 weapon_type="sword",
                 rarity=5,
+                burst_energy_cost=60.0,
                 handler_key="character.attribute_modifier",
             )
 
@@ -568,6 +761,7 @@ def test_assembler_injects_content_buff_definition_and_attribute_provider():
                 element="hydro",
                 weapon_type="sword",
                 rarity=5,
+                burst_energy_cost=60.0,
                 handler_key="character.buff",
             )
 
@@ -657,6 +851,7 @@ def test_assembler_rejects_buff_definition_with_dynamic_hp_dependency_via_provid
                 element="hydro",
                 weapon_type="sword",
                 rarity=5,
+                burst_energy_cost=60.0,
                 handler_key="character.buff",
             )
 
@@ -740,6 +935,7 @@ def test_assembler_rejects_buff_definition_with_unknown_attribute_target():
                 element="hydro",
                 weapon_type="sword",
                 rarity=5,
+                burst_energy_cost=60.0,
                 handler_key="character.buff",
             )
 
@@ -791,6 +987,7 @@ def test_assembler_converts_buff_validation_error_raised_inside_content_factory(
                 element="hydro",
                 weapon_type="sword",
                 rarity=5,
+                burst_energy_cost=60.0,
                 handler_key="character.buff",
             )
 
@@ -921,6 +1118,7 @@ def test_assembler_registers_content_private_attribute_and_native_provider():
                 element="hydro",
                 weapon_type="sword",
                 rarity=5,
+                burst_energy_cost=60.0,
                 handler_key="character.attribute_modifier",
             )
 
@@ -1024,6 +1222,7 @@ def test_assembler_rejects_interpreter_declared_action_without_registered_action
                 element="hydro",
                 weapon_type="sword",
                 rarity=5,
+                burst_energy_cost=60.0,
                 handler_key="character.runtime",
             )
 

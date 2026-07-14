@@ -75,6 +75,7 @@ def test_cli_assets_build_from_manifest(tmp_path, capsys):
                         "element": "pyro",
                         "weapon_type": "polearm",
                         "rarity": 4,
+                        "burst_energy_cost": 40.0,
                     }
                 ],
             }

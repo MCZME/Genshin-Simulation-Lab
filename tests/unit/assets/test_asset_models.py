@@ -34,10 +34,12 @@ def test_character_asset_validates_key_and_name():
         element="hydro",
         weapon_type="sword",
         rarity=5,
+        burst_energy_cost=60,
         handler_key="generic.test_character",
     )
 
     assert asset.asset_key == "character:75"
+    assert asset.burst_energy_cost == 60.0
 
 
 def test_weapon_asset_requires_valid_key():

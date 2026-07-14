@@ -6,11 +6,15 @@ from genshin_sim.core.events.categories import EventCategory, get_event_category
 from genshin_sim.core.events.payloads import (
     BuffAppliedPayload,
     BuffRemovedPayload,
+    CharacterEnergyChangedPayload,
     CharacterHealthChangedPayload,
     CharacterMaxHpChangedPayload,
     DamageAppliedPayload,
     DamageResolvedPayload,
+    DirectEnergyChangeResolvedPayload,
     EmptyPayload,
+    EnergyPickupSettledPayload,
+    EnergyPickupSpawnedPayload,
     HealingResolvedPayload,
     InputKeyReceivedPayload,
     InputSessionBoundaryPayload,
@@ -139,6 +143,22 @@ EVENT_SPECS: dict[EventType, EventSpec] = {
     EventType.BUFF_REMOVED: EventSpec(
         category=EventCategory.STATE_CHANGE,
         payload_type=BuffRemovedPayload,
+    ),
+    EventType.ENERGY_PICKUP_SPAWNED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=EnergyPickupSpawnedPayload,
+    ),
+    EventType.ENERGY_PICKUP_SETTLED: EventSpec(
+        category=EventCategory.FACT,
+        payload_type=EnergyPickupSettledPayload,
+    ),
+    EventType.DIRECT_ENERGY_CHANGE_RESOLVED: EventSpec(
+        category=EventCategory.FACT,
+        payload_type=DirectEnergyChangeResolvedPayload,
+    ),
+    EventType.CHARACTER_ENERGY_CHANGED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=CharacterEnergyChangedPayload,
     ),
 }
 

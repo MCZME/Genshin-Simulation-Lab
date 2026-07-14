@@ -50,7 +50,8 @@ class SQLiteAssetRepository:
         with closing(self._connect()) as connection:
             rows = connection.execute(
                 """
-                SELECT asset_key, source_id, name, element, weapon_type, rarity, handler_key
+                SELECT asset_key, source_id, name, element, weapon_type, rarity,
+                       burst_energy_cost, handler_key
                 FROM characters
                 ORDER BY asset_key
                 """
@@ -61,7 +62,8 @@ class SQLiteAssetRepository:
         with closing(self._connect()) as connection:
             row = connection.execute(
                 """
-                SELECT asset_key, source_id, name, element, weapon_type, rarity, handler_key
+                SELECT asset_key, source_id, name, element, weapon_type, rarity,
+                       burst_energy_cost, handler_key
                 FROM characters
                 WHERE asset_key = ?
                 """,
@@ -311,6 +313,7 @@ def _character_from_row(row: sqlite3.Row) -> CharacterAsset:
         element=str(row["element"]),
         weapon_type=str(row["weapon_type"]),
         rarity=int(row["rarity"]),
+        burst_energy_cost=float(row["burst_energy_cost"]),
         handler_key=_optional_str(row["handler_key"]),
     )
 

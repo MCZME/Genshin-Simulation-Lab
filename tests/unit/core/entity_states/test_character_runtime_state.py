@@ -4,7 +4,7 @@ from typing import Any, cast
 
 import pytest
 
-from genshin_sim.core.entity_states import CharacterRuntimeState
+from genshin_sim.core.entity_states import CharacterRuntimeState, EnergyState
 
 
 def test_character_runtime_state_builds_default_combat_entity_id_and_copies_talents():
@@ -23,16 +23,13 @@ def test_character_runtime_state_builds_default_combat_entity_id_and_copies_tale
     assert character.talent_levels == {"normal_attack": 1}
 
 
-def test_character_runtime_state_tracks_energy_with_controlled_methods():
+def test_character_runtime_state_owns_energy_state_without_direct_write_methods():
     character = CharacterRuntimeState(slot=1, character_key="character:75", level=90)
 
-    character.gain_energy(30)
-    consumed = character.consume_energy(20)
-    failed = character.consume_energy(20)
-
-    assert consumed
-    assert not failed
-    assert character.energy == 10
+    assert isinstance(character.energy, EnergyState)
+    assert character.energy.current_energy == 0.0
+    assert not hasattr(character, "gain_energy")
+    assert not hasattr(character, "consume_energy")
 
 
 @pytest.mark.parametrize(
@@ -46,8 +43,8 @@ def test_character_runtime_state_tracks_energy_with_controlled_methods():
             "角色命座必须在 0 到 6 之间",
         ),
         (
-            {"slot": 1, "character_key": "character:75", "level": 90, "energy": -1},
-            "角色能量不能为负数",
+            {"slot": 1, "character_key": "character:75", "level": 90, "energy": 1},
+            "角色元素能量状态必须是 EnergyState",
         ),
         (
             {
@@ -68,10 +65,6 @@ def test_character_runtime_state_validates_minimum_fields(
         CharacterRuntimeState(**cast(Any, kwargs))
 
 
-@pytest.mark.parametrize("method_name", ["gain_energy", "consume_energy"])
-def test_character_runtime_state_rejects_negative_energy_amount(method_name: str):
-    character = CharacterRuntimeState(slot=1, character_key="character:75", level=90)
-    method = getattr(character, method_name)
-
-    with pytest.raises(ValueError, match="数值必须是非负数"):
-        method(-1)
+def test_character_runtime_state_rejects_invalid_energy_state():
+    with pytest.raises(ValueError, match="角色元素能量状态必须是 EnergyState"):
+        CharacterRuntimeState(slot=1, character_key="character:75", level=90, energy=cast(Any, 1))

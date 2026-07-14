@@ -6,11 +6,15 @@ from genshin_sim.core.events import (
     EVENT_SPECS,
     BuffAppliedPayload,
     BuffRemovedPayload,
+    CharacterEnergyChangedPayload,
     CharacterHealthChangedPayload,
     CharacterMaxHpChangedPayload,
     DamageAppliedPayload,
     DamageResolvedPayload,
+    DirectEnergyChangeResolvedPayload,
     EmptyPayload,
+    EnergyPickupSettledPayload,
+    EnergyPickupSpawnedPayload,
     EventCategory,
     EventSpec,
     EventType,
@@ -67,6 +71,10 @@ def test_event_type_defines_current_events():
         "DAMAGE_APPLIED",
         "BUFF_APPLIED",
         "BUFF_REMOVED",
+        "ENERGY_PICKUP_SPAWNED",
+        "ENERGY_PICKUP_SETTLED",
+        "DIRECT_ENERGY_CHANGE_RESOLVED",
+        "CHARACTER_ENERGY_CHANGED",
     ]
 
 
@@ -193,6 +201,20 @@ def test_event_specs_define_current_default_rules():
     assert damage_applied.payload_type is DamageAppliedPayload
     assert get_event_spec(EventType.BUFF_APPLIED).payload_type is BuffAppliedPayload
     assert get_event_spec(EventType.BUFF_REMOVED).payload_type is BuffRemovedPayload
+    assert (
+        get_event_spec(EventType.ENERGY_PICKUP_SPAWNED).payload_type is EnergyPickupSpawnedPayload
+    )
+    assert (
+        get_event_spec(EventType.ENERGY_PICKUP_SETTLED).payload_type is EnergyPickupSettledPayload
+    )
+    assert (
+        get_event_spec(EventType.DIRECT_ENERGY_CHANGE_RESOLVED).payload_type
+        is DirectEnergyChangeResolvedPayload
+    )
+    assert (
+        get_event_spec(EventType.CHARACTER_ENERGY_CHANGED).payload_type
+        is CharacterEnergyChangedPayload
+    )
 
 
 def test_event_payloads_convert_to_serializable_dicts():

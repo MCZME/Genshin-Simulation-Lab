@@ -18,7 +18,7 @@ def test_minimal_static_asset_database_round_trips(tmp_path):
     repository = SQLiteAssetRepository(db_path)
     info = repository.get_info()
 
-    assert info.meta["schema_version"] == "1"
+    assert info.meta["schema_version"] == "2"
     assert info.meta["data_version"] == "local-static-1"
     assert info.character_count == 1
     assert info.weapon_count == 1
@@ -27,6 +27,7 @@ def test_minimal_static_asset_database_round_trips(tmp_path):
     character = repository.get_character("character:test_character")
     assert character.name == "Test Character"
     assert character.handler_key == "character.testing.runtime_probe"
+    assert character.burst_energy_cost == 60.0
     assert repository.get_character_level_stats("character:test_character", 90).base_hp == 10000.0
     assert repository.list_weapons("sword")[0].asset_key == "weapon:test_sword"
     weapon = repository.get_weapon("weapon:test_sword")
@@ -53,6 +54,7 @@ def test_level_stats_can_select_pre_or_post_ascension(tmp_path):
                 element="anemo",
                 weapon_type="sword",
                 rarity=5,
+                burst_energy_cost=60.0,
             ),
         ),
         character_level_stats=(

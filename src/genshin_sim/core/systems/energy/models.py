@@ -43,6 +43,12 @@ class EnergyRecipientStatus(StrEnum):
     NO_ELEMENTAL_ENERGY_RESOURCE = "no_elemental_energy_resource"
 
 
+class BurstEnergyConditionStatus(StrEnum):
+    READY = "ready"
+    INSUFFICIENT_ENERGY = "insufficient_energy"
+    NONSTANDARD_RESOURCE = "nonstandard_resource"
+
+
 def validate_energy_float(value: float | int, field_name: str) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float):
         raise EnergyValidationError(f"{field_name} 必须是数字")
@@ -96,6 +102,51 @@ class CharacterEnergyProfile:
         object.__setattr__(
             self, "capacity", validate_non_negative_energy_float(self.capacity, "capacity")
         )
+
+
+@dataclass(frozen=True, slots=True)
+class BurstEnergyConditionResult:
+    character_ref: AttributeSubjectRef
+    frame: int
+    status: BurstEnergyConditionStatus
+    current_energy: float
+    capacity: float
+
+    def __post_init__(self) -> None:
+        validate_character_ref(self.character_ref)
+        validate_frame(self.frame)
+        if not isinstance(self.status, BurstEnergyConditionStatus):
+            raise EnergyValidationError("burst energy condition status 不受支持")
+        object.__setattr__(
+            self,
+            "current_energy",
+            validate_non_negative_energy_float(self.current_energy, "current_energy"),
+        )
+        object.__setattr__(
+            self, "capacity", validate_non_negative_energy_float(self.capacity, "capacity")
+        )
+        if self.current_energy > self.capacity:
+            raise EnergyValidationError("current_energy 不能超过 capacity")
+        expected = (
+            BurstEnergyConditionStatus.NONSTANDARD_RESOURCE
+            if self.capacity == 0.0
+            else (
+                BurstEnergyConditionStatus.READY
+                if self.current_energy >= self.capacity
+                else BurstEnergyConditionStatus.INSUFFICIENT_ENERGY
+            )
+        )
+        if self.status is not expected:
+            raise EnergyValidationError("burst energy condition 状态与能量数值不一致")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "character_ref": _subject_dict(self.character_ref),
+            "frame": self.frame,
+            "status": self.status.value,
+            "current_energy": self.current_energy,
+            "capacity": self.capacity,
+        }
 
 
 @dataclass(frozen=True, slots=True)

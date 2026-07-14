@@ -3,6 +3,8 @@
 from genshin_sim.core.systems.energy.errors import *  # noqa: F403
 from genshin_sim.core.systems.energy.handler import EnergyImpactRecord, EnergyImpactRequestHandler
 from genshin_sim.core.systems.energy.models import (
+    BurstEnergyConditionResult,
+    BurstEnergyConditionStatus,
     CharacterEnergyChangeResult,
     CharacterEnergyProfile,
     DrainEnergyRequest,
@@ -23,6 +25,8 @@ from genshin_sim.core.systems.energy.snapshots import CharacterEnergySnapshot, E
 from genshin_sim.core.systems.energy.store import CharacterEnergyStore
 
 __all__ = [
+    "BurstEnergyConditionResult",
+    "BurstEnergyConditionStatus",
     "CharacterEnergyChangeResult",
     "CharacterEnergyProfile",
     "CharacterEnergySnapshot",

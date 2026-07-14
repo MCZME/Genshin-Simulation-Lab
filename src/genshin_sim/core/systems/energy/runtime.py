@@ -27,6 +27,8 @@ from genshin_sim.core.systems.energy.formulas import (
     recharge_multiplier,
 )
 from genshin_sim.core.systems.energy.models import (
+    BurstEnergyConditionResult,
+    BurstEnergyConditionStatus,
     CharacterEnergyChangeResult,
     DrainEnergyRequest,
     EnergyChangeKind,
@@ -81,6 +83,10 @@ class EnergyReadPort(Protocol):
 
     def is_burst_ready(self, character_ref: AttributeSubjectRef) -> bool: ...
 
+    def query_burst_condition(
+        self, character_ref: AttributeSubjectRef, frame: int
+    ) -> BurstEnergyConditionResult: ...
+
 
 class EnergyRuntime:
     """元素能量唯一写入口，负责在途载体与直接能量变化。"""
@@ -115,6 +121,22 @@ class EnergyRuntime:
     def is_burst_ready(self, character_ref: AttributeSubjectRef) -> bool:
         capacity = self.get_capacity(character_ref)
         return capacity > 0.0 and self.get_current_energy(character_ref) >= capacity
+
+    def query_burst_condition(
+        self, character_ref: AttributeSubjectRef, frame: int
+    ) -> BurstEnergyConditionResult:
+        profile = self.energy_store.require_profile(character_ref)
+        current = self.get_current_energy(character_ref)
+        status = (
+            BurstEnergyConditionStatus.NONSTANDARD_RESOURCE
+            if profile.capacity == 0.0
+            else (
+                BurstEnergyConditionStatus.READY
+                if current >= profile.capacity
+                else BurstEnergyConditionStatus.INSUFFICIENT_ENERGY
+            )
+        )
+        return BurstEnergyConditionResult(character_ref, frame, status, current, profile.capacity)
 
     def spawn_pickup(self, request: SpawnEnergyPickupRequest) -> EnergyPickupRecord:
         with self._mutation_scope():

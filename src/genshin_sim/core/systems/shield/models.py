@@ -340,6 +340,55 @@ class ShieldGrantResult:
 
 
 @dataclass(frozen=True, slots=True)
+class ShieldGrantPlan:
+    """护盾授予的完整记录替换计划。"""
+
+    operation_id: str
+    frame: int
+    expected_store_version: int
+    expected_records: tuple[ShieldRecord, ...]
+    replacement_records: tuple[ShieldRecord, ...]
+    result: ShieldGrantResult
+    capacity_changes: tuple[ShieldCapacityChangeResult, ...] = ()
+    removals: tuple[ShieldRemovalResult, ...] = ()
+
+    def __post_init__(self) -> None:
+        validate_non_empty_text(self.operation_id, "operation_id")
+        validate_frame(self.frame)
+        if (
+            isinstance(self.expected_store_version, bool)
+            or not isinstance(self.expected_store_version, int)
+            or self.expected_store_version < 0
+        ):
+            raise ShieldValidationError("expected_store_version 必须是非负整数")
+        if not isinstance(self.result, ShieldGrantResult):
+            raise ShieldValidationError("result 必须是 ShieldGrantResult")
+        if self.result.resolution.frame != self.frame:
+            raise ShieldValidationError("ShieldGrantPlan 与 result 帧不一致")
+        expected = tuple(sorted(self.expected_records, key=lambda item: item.instance_ref))
+        replacements = tuple(sorted(self.replacement_records, key=lambda item: item.instance_ref))
+        if any(not isinstance(record, ShieldRecord) for record in expected):
+            raise ShieldValidationError("expected_records 必须全部是 ShieldRecord")
+        if any(not isinstance(record, ShieldRecord) for record in replacements):
+            raise ShieldValidationError("replacement_records 必须全部是 ShieldRecord")
+        if len({record.instance_ref for record in expected}) != len(expected):
+            raise ShieldValidationError("expected_records 包含重复 instance_ref")
+        if len({record.instance_ref for record in replacements}) != len(replacements):
+            raise ShieldValidationError("replacement_records 包含重复 instance_ref")
+        object.__setattr__(self, "expected_records", expected)
+        object.__setattr__(self, "replacement_records", replacements)
+        object.__setattr__(self, "capacity_changes", tuple(self.capacity_changes))
+        object.__setattr__(self, "removals", tuple(self.removals))
+
+
+@dataclass(frozen=True, slots=True)
+class ShieldGrantCommitReceipt:
+    """已经提交的护盾授予计划回执。"""
+
+    plan: ShieldGrantPlan
+
+
+@dataclass(frozen=True, slots=True)
 class ShieldCapacityChangeResult:
     frame: int
     instance_ref: ShieldInstanceRef

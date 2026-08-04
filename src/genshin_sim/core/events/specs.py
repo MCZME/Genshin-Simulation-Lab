@@ -4,6 +4,10 @@ from dataclasses import dataclass
 
 from genshin_sim.core.events.categories import EventCategory, get_event_category_spec
 from genshin_sim.core.events.payloads import (
+    AuraAppliedPayload,
+    AuraDepletedPayload,
+    AuraIcdResolvedPayload,
+    AuraInteractionResolvedPayload,
     BuffAppliedPayload,
     BuffRemovedPayload,
     CharacterEnergyChangedPayload,
@@ -12,12 +16,15 @@ from genshin_sim.core.events.payloads import (
     DamageAppliedPayload,
     DamageResolvedPayload,
     DirectEnergyChangeResolvedPayload,
+    ElementalInteractionResolvedPayload,
     EmptyPayload,
     EnergyPickupSettledPayload,
     EnergyPickupSpawnedPayload,
     HealingResolvedPayload,
     InputKeyReceivedPayload,
     InputSessionBoundaryPayload,
+    ReactionOccurredPayload,
+    ReactionStateChangedPayload,
     ShieldAbsorptionResolvedPayload,
     ShieldCapacityChangedPayload,
     ShieldGrantedPayload,
@@ -159,6 +166,34 @@ EVENT_SPECS: dict[EventType, EventSpec] = {
     EventType.CHARACTER_ENERGY_CHANGED: EventSpec(
         category=EventCategory.STATE_CHANGE,
         payload_type=CharacterEnergyChangedPayload,
+    ),
+    EventType.AURA_ICD_RESOLVED: EventSpec(
+        category=EventCategory.FACT,
+        payload_type=AuraIcdResolvedPayload,
+    ),
+    EventType.AURA_APPLIED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=AuraAppliedPayload,
+    ),
+    EventType.AURA_DEPLETED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=AuraDepletedPayload,
+    ),
+    EventType.AURA_INTERACTION_RESOLVED: EventSpec(
+        category=EventCategory.FACT,
+        payload_type=AuraInteractionResolvedPayload,
+    ),
+    EventType.REACTION_STATE_CHANGED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=ReactionStateChangedPayload,
+    ),
+    EventType.REACTION_OCCURRED: EventSpec(
+        category=EventCategory.FACT,
+        payload_type=ReactionOccurredPayload,
+    ),
+    EventType.ELEMENTAL_INTERACTION_RESOLVED: EventSpec(
+        category=EventCategory.FACT,
+        payload_type=ElementalInteractionResolvedPayload,
     ),
 }
 

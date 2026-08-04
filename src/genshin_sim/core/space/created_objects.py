@@ -94,7 +94,10 @@ class CreatedObjectRuntimeState:
         return self.entity.is_active_at(frame)
 
     def expire(self) -> None:
-        self.entity.lifecycle.expire()
+        self.entity = replace(
+            self.entity,
+            lifecycle=self.entity.lifecycle.expired(),
+        )
         self.next_tick_frame = None
 
 

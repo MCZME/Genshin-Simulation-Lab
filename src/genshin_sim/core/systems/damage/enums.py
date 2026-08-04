@@ -27,6 +27,19 @@ class DamageType(StrEnum):
     LUNAR_REACTION = "lunar_reaction"
 
 
+class LunarReactionDamageMode(StrEnum):
+    """月曜伤害的来源模式。"""
+
+    CHARACTER_DIRECT = "character_direct"
+    REACTION_COMPOSITE = "reaction_composite"
+
+
+class DamageReactionCapability(StrEnum):
+    """Damage Profile 声明的反应公式扩展能力。"""
+
+    SECONDARY_AMPLIFYING = "secondary_amplifying"
+
+
 class DamageModifierStage(StrEnum):
     """伤害专用修饰项进入流水线的计算阶段。"""
 

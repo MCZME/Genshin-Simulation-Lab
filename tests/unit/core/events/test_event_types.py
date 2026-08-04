@@ -4,6 +4,9 @@ from genshin_sim.core.attributes import STAT_HP_MAX, AttributeSubjectRef
 from genshin_sim.core.events import (
     EVENT_CATEGORY_SPECS,
     EVENT_SPECS,
+    AuraAppliedPayload,
+    AuraIcdResolvedPayload,
+    AuraInteractionResolvedPayload,
     BuffAppliedPayload,
     BuffRemovedPayload,
     CharacterEnergyChangedPayload,
@@ -12,6 +15,7 @@ from genshin_sim.core.events import (
     DamageAppliedPayload,
     DamageResolvedPayload,
     DirectEnergyChangeResolvedPayload,
+    ElementalInteractionResolvedPayload,
     EmptyPayload,
     EnergyPickupSettledPayload,
     EnergyPickupSpawnedPayload,
@@ -22,6 +26,8 @@ from genshin_sim.core.events import (
     HealingResolvedPayload,
     InputKeyReceivedPayload,
     InputSessionBoundaryPayload,
+    ReactionOccurredPayload,
+    ReactionStateChangedPayload,
     ShieldAbsorptionResolvedPayload,
     ShieldCapacityChangedPayload,
     ShieldGrantedPayload,
@@ -75,6 +81,13 @@ def test_event_type_defines_current_events():
         "ENERGY_PICKUP_SETTLED",
         "DIRECT_ENERGY_CHANGE_RESOLVED",
         "CHARACTER_ENERGY_CHANGED",
+        "AURA_ICD_RESOLVED",
+        "AURA_APPLIED",
+        "AURA_DEPLETED",
+        "AURA_INTERACTION_RESOLVED",
+        "REACTION_STATE_CHANGED",
+        "REACTION_OCCURRED",
+        "ELEMENTAL_INTERACTION_RESOLVED",
     ]
 
 
@@ -214,6 +227,20 @@ def test_event_specs_define_current_default_rules():
     assert (
         get_event_spec(EventType.CHARACTER_ENERGY_CHANGED).payload_type
         is CharacterEnergyChangedPayload
+    )
+    assert get_event_spec(EventType.AURA_ICD_RESOLVED).payload_type is AuraIcdResolvedPayload
+    assert get_event_spec(EventType.AURA_APPLIED).payload_type is AuraAppliedPayload
+    assert (
+        get_event_spec(EventType.AURA_INTERACTION_RESOLVED).payload_type
+        is AuraInteractionResolvedPayload
+    )
+    assert get_event_spec(EventType.REACTION_OCCURRED).payload_type is ReactionOccurredPayload
+    reaction_state_changed = get_event_spec(EventType.REACTION_STATE_CHANGED)
+    assert reaction_state_changed.category is EventCategory.STATE_CHANGE
+    assert reaction_state_changed.payload_type is ReactionStateChangedPayload
+    assert (
+        get_event_spec(EventType.ELEMENTAL_INTERACTION_RESOLVED).payload_type
+        is ElementalInteractionResolvedPayload
     )
 
 

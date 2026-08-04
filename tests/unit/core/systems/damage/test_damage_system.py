@@ -6,6 +6,7 @@ from genshin_sim.core.attributes import (
     BONUS_DAMAGE_HYDRO,
     RESISTANCE_HYDRO,
     STAT_CRIT_DAMAGE,
+    STAT_ELEMENTAL_MASTERY,
     STAT_HP_BASE,
     STAT_HP_MAX,
     AttributeQueryContext,
@@ -19,15 +20,17 @@ from genshin_sim.core.attributes import (
     TraceLevel,
     create_public_attribute_registry,
 )
+from genshin_sim.core.elements import Element, TransformativeReactionSourceKind
 from genshin_sim.core.entity_states import (
     CharacterRuntimeState,
     TargetRuntimeCollection,
     TargetRuntimeState,
 )
-from genshin_sim.core.impacts import ImpactKind, ImpactRequest
+from genshin_sim.core.impacts import DamageImpactSpec, ImpactKind, ImpactRequest
 from genshin_sim.core.simulation import SimulationContext, TeamRuntimeState
 from genshin_sim.core.space.runtime import SpaceRuntime
 from genshin_sim.core.systems.damage import (
+    AmplifyingReactionInput,
     CritOutcome,
     DamageElement,
     DamageFormulaContext,
@@ -40,23 +43,34 @@ from genshin_sim.core.systems.damage import (
     DamageModifierStackingPolicy,
     DamageModifierStage,
     DamageModifierTerm,
+    DamageProfile,
+    DamageProfileRegistry,
     DamageProviderViolationError,
     DamageQuery,
+    DamageReactionCapability,
     DamageRequest,
     DamageRequestHandler,
     DamageResolver,
     DamageScalingTerm,
     DamageType,
+    DamageValidationError,
     DebugDamageAdjustment,
     DuplicateDamageFormulaError,
     FixedCriticalDecisionProvider,
     GeneralDamageFormula,
     InvalidDamageScalingError,
+    LunarReactionDamageFormula,
+    LunarReactionDamageInput,
+    LunarReactionDamageMode,
+    LunarReactionParticipantInput,
+    SecondaryAmplifyingReactionInput,
     StandardCriticalZonePolicy,
     StandardDefensePolicy,
     StandardResistancePolicy,
     StaticDamageModifierProvider,
+    TransformativeReactionInput,
     UnsupportedDamageTypeError,
+    create_default_damage_formula_registry,
 )
 
 SOURCE = AttributeSubjectRef.character("character:slot_1")
@@ -84,6 +98,7 @@ def _attribute_resolver(
     hydro_bonus: float = 0.2,
     hydro_resistance: float = 0.1,
     crit_damage: float = 0.5,
+    elemental_mastery: float = 0.0,
 ) -> AttributeResolver:
     contributions = (
         (
@@ -97,6 +112,10 @@ def _attribute_resolver(
         (
             SOURCE,
             BaseAttributeContribution(STAT_CRIT_DAMAGE, crit_damage, CONFIG_SOURCE),
+        ),
+        (
+            SOURCE,
+            BaseAttributeContribution(STAT_ELEMENTAL_MASTERY, elemental_mastery, CONFIG_SOURCE),
         ),
         (
             TARGET,
@@ -117,6 +136,8 @@ def _query(
     damage_type: DamageType = DamageType.GENERAL,
     scaling_terms: tuple[DamageScalingTerm, ...] | None = None,
     flat_base_damage: float = 0.0,
+    amplifying_reaction: AmplifyingReactionInput | None = None,
+    lunar_reaction: LunarReactionDamageInput | None = None,
 ) -> DamageQuery:
     source_context = AttributeQueryContext(target_ref=TARGET)
     target_context = AttributeQueryContext(target_ref=SOURCE)
@@ -137,10 +158,265 @@ def _query(
             flat_base_damage=flat_base_damage,
             can_crit=can_crit,
             source_context=CONFIG_SOURCE,
+            amplifying_reaction=amplifying_reaction,
+            lunar_reaction=lunar_reaction,
         ),
         source_attribute_context=source_context,
         target_attribute_context=target_context,
     )
+
+
+def _transformative_input() -> TransformativeReactionInput:
+    return TransformativeReactionInput(
+        occurrence_ref="occurrence:swirl",
+        reaction_profile_key="reaction_profile.swirl.incoming_anemo_on_pyro",
+        source_kind=TransformativeReactionSourceKind.CHARACTER,
+        source_level=90,
+        level_multiplier_table_key="character.level_multiplier.test",
+        level_multiplier=100.0,
+        elemental_mastery=0.0,
+        mastery_bonus=0.0,
+        reaction_bonus=0.0,
+        base_multiplier=0.6,
+    )
+
+
+def _secondary_amplifying_reaction() -> SecondaryAmplifyingReactionInput:
+    return SecondaryAmplifyingReactionInput(
+        target_impact_ref="impact:swirl:target:1",
+        occurrence_ref="occurrence:vaporize",
+        reaction_profile_key="reaction_profile.vaporize.incoming_pyro_on_hydro",
+        trigger_element=Element.PYRO,
+        base_multiplier=1.5,
+        captured_elemental_mastery=180.0,
+    )
+
+
+def _transformative_query(
+    secondary_amplifying_reaction: SecondaryAmplifyingReactionInput,
+) -> DamageQuery:
+    return DamageQuery(
+        request=DamageRequest(
+            request_id="damage:swirl:target:1",
+            frame=10,
+            damage_type=DamageType.TRANSFORMATIVE_REACTION,
+            impact_key="impact.reaction.swirl.emission",
+            source_ref=SOURCE,
+            target_ref=TARGET,
+            source_level=90,
+            target_level=90,
+            element=DamageElement.HYDRO,
+            source_context=CONFIG_SOURCE,
+            profile_key="damage_profile.reaction.swirl",
+            reaction_capabilities=frozenset({DamageReactionCapability.SECONDARY_AMPLIFYING}),
+            can_crit=False,
+            transformative_reaction=_transformative_input(),
+            secondary_amplifying_reaction=secondary_amplifying_reaction,
+        ),
+        source_attribute_context=AttributeQueryContext(target_ref=TARGET),
+        target_attribute_context=AttributeQueryContext(target_ref=SOURCE),
+    )
+
+
+def _secondary_amplifying_impact() -> ImpactRequest:
+    return ImpactRequest(
+        frame=10,
+        kind=ImpactKind.DAMAGE,
+        impact_key="impact.reaction.swirl.emission",
+        owner_slot=1,
+        request_id="impact:swirl:target:1",
+        target_refs=("target_1",),
+        damage_spec=DamageImpactSpec(
+            impact_ref="impact:swirl:target:1",
+            main_attack_tag="test.reaction.transformative",
+            element=DamageElement.HYDRO,
+            can_crit=False,
+        ),
+    )
+
+
+@pytest.mark.parametrize(("base_multiplier", "expected"), [(2.0, 2.0), (1.5, 1.5)])
+def test_general_formula_applies_amplifying_reaction_with_zero_mastery(
+    base_multiplier: float,
+    expected: float,
+):
+    reaction = AmplifyingReactionInput(
+        "occurrence:1",
+        "reaction_profile:test",
+        Element.PYRO,
+        base_multiplier,
+    )
+    result = DamageResolver(_attribute_resolver()).resolve(_query(amplifying_reaction=reaction))
+
+    assert result.reaction_multiplier == expected
+    assert result.reaction_details is not None
+    assert result.reaction_details.elemental_mastery == 0.0
+    assert result.reaction_details.mastery_bonus == 0.0
+    assert result.reaction_details.reaction_bonus == 0.0
+
+
+def test_general_formula_adds_mastery_and_reaction_bonus_inside_amplifying_multiplier():
+    reaction = AmplifyingReactionInput(
+        "occurrence:1",
+        "reaction_profile:test",
+        Element.PYRO,
+        1.5,
+        reaction_bonus=0.15,
+    )
+    result = DamageResolver(_attribute_resolver(elemental_mastery=180.0)).resolve(
+        _query(amplifying_reaction=reaction)
+    )
+
+    expected_mastery_bonus = 2.78 * 180 / (180 + 1400)
+    assert result.reaction_multiplier == pytest.approx(1.5 * (1 + expected_mastery_bonus + 0.15))
+    assert result.reaction_details is not None
+    assert result.reaction_details.mastery_bonus == pytest.approx(expected_mastery_bonus)
+
+
+def test_secondary_amplifying_input_keeps_target_impact_and_captured_mastery():
+    reaction = SecondaryAmplifyingReactionInput(
+        target_impact_ref="impact:swirl:target:1",
+        occurrence_ref="occurrence:vaporize",
+        reaction_profile_key="reaction_profile.vaporize.incoming_pyro_on_hydro",
+        trigger_element=Element.PYRO,
+        base_multiplier=1.5,
+        captured_elemental_mastery=180.0,
+        reaction_bonus=0.0,
+    )
+
+    assert reaction.target_impact_ref == "impact:swirl:target:1"
+    assert reaction.captured_elemental_mastery == 180.0
+
+
+@pytest.mark.parametrize(
+    ("trigger_element", "reaction_profile_key", "base_multiplier", "reaction_bonus"),
+    (
+        (
+            Element.PYRO,
+            "reaction_profile.vaporize.incoming_pyro_on_hydro",
+            1.5,
+            0.15,
+        ),
+        (
+            Element.CRYO,
+            "reaction_profile.melt.incoming_cryo_on_pyro",
+            2.0,
+            0.0,
+        ),
+    ),
+)
+def test_transformative_damage_applies_secondary_amplifying_with_captured_mastery(
+    trigger_element: Element,
+    reaction_profile_key: str,
+    base_multiplier: float,
+    reaction_bonus: float,
+):
+    secondary = SecondaryAmplifyingReactionInput(
+        target_impact_ref="impact:swirl:target:1",
+        occurrence_ref=f"occurrence:{trigger_element.value}",
+        reaction_profile_key=reaction_profile_key,
+        trigger_element=trigger_element,
+        base_multiplier=base_multiplier,
+        captured_elemental_mastery=180.0,
+        reaction_bonus=reaction_bonus,
+    )
+
+    result = DamageResolver(_attribute_resolver(hydro_resistance=0.0)).resolve(
+        _transformative_query(secondary)
+    )
+
+    expected_mastery_bonus = 2.78 * 180 / (180 + 1400)
+    expected_secondary_multiplier = base_multiplier * (1 + expected_mastery_bonus + reaction_bonus)
+    assert result.base_damage == 60.0
+    assert result.reaction_multiplier == 1.0
+    assert result.final_damage == pytest.approx(60 * expected_secondary_multiplier)
+    assert result.secondary_amplifying_resolution is not None
+    assert result.secondary_amplifying_resolution.mastery_bonus == pytest.approx(
+        expected_mastery_bonus
+    )
+    assert result.secondary_amplifying_resolution.multiplier == pytest.approx(
+        expected_secondary_multiplier
+    )
+    payload = result.to_dict()
+    audit = payload["secondary_amplifying_reaction"]
+    assert audit == {
+        "target_impact_ref": "impact:swirl:target:1",
+        "occurrence_ref": f"occurrence:{trigger_element.value}",
+        "reaction_profile_key": reaction_profile_key,
+        "trigger_element": trigger_element.value,
+        "base_multiplier": base_multiplier,
+        "captured_elemental_mastery": 180.0,
+        "mastery_bonus": pytest.approx(expected_mastery_bonus),
+        "reaction_bonus": reaction_bonus,
+        "multiplier": pytest.approx(expected_secondary_multiplier),
+    }
+
+
+def test_handler_requires_capable_profile_and_matching_target_impact_for_secondary_amplifying():
+    reaction = _secondary_amplifying_reaction()
+    impact = _secondary_amplifying_impact()
+    transformative = _transformative_input()
+    handler = DamageRequestHandler(
+        DamageResolver(_attribute_resolver(hydro_resistance=0.0)),
+        profile_registry=DamageProfileRegistry(
+            (
+                DamageProfile(
+                    "damage_profile.test.transformative",
+                    DamageType.TRANSFORMATIVE_REACTION,
+                    frozenset({"test.reaction.transformative"}),
+                ),
+            )
+        ),
+    )
+
+    with pytest.raises(DamageValidationError, match="未声明二次增幅 capability"):
+        handler.prepare_impact_request(
+            _damage_context(),
+            impact,
+            transformative_reactions={"target_1": transformative},
+            secondary_amplifying_reactions={"target_1": reaction},
+        )
+
+    capable_handler = DamageRequestHandler(
+        DamageResolver(_attribute_resolver(hydro_resistance=0.0)),
+        profile_registry=DamageProfileRegistry(
+            (
+                DamageProfile(
+                    "damage_profile.test.transformative",
+                    DamageType.TRANSFORMATIVE_REACTION,
+                    frozenset({"test.reaction.transformative"}),
+                    frozenset({DamageReactionCapability.SECONDARY_AMPLIFYING}),
+                ),
+            )
+        ),
+    )
+    mismatched = SecondaryAmplifyingReactionInput(
+        target_impact_ref="impact:other",
+        occurrence_ref=reaction.occurrence_ref,
+        reaction_profile_key=reaction.reaction_profile_key,
+        trigger_element=reaction.trigger_element,
+        base_multiplier=reaction.base_multiplier,
+        captured_elemental_mastery=reaction.captured_elemental_mastery,
+    )
+
+    with pytest.raises(DamageValidationError, match="同一 target impact ref"):
+        capable_handler.prepare_impact_request(
+            _damage_context(),
+            impact,
+            transformative_reactions={"target_1": transformative},
+            secondary_amplifying_reactions={"target_1": mismatched},
+        )
+
+    records = capable_handler.prepare_impact_request(
+        _damage_context(),
+        impact,
+        transformative_reactions={"target_1": transformative},
+        secondary_amplifying_reactions={"target_1": reaction},
+    )
+    assert records[0].damage_request.reaction_capabilities == frozenset(
+        {DamageReactionCapability.SECONDARY_AMPLIFYING}
+    )
+    assert records[0].result.secondary_amplifying_resolution is not None
 
 
 def _term(
@@ -417,12 +693,114 @@ def test_registry_rejects_duplicate_and_unregistered_damage_type():
         DamageFormulaRegistry((GeneralDamageFormula(), GeneralDamageFormula()))
     assert "重复伤害公式" in str(duplicate.value)
 
-    resolver = DamageResolver(_attribute_resolver())
-
+    resolver = DamageResolver(
+        _attribute_resolver(),
+        formula_registry=DamageFormulaRegistry(()),
+    )
     with pytest.raises(UnsupportedDamageTypeError):
-        resolver.resolve(
-            _query(
-                damage_type=DamageType.CATALYZE_REACTION,
-                scaling_terms=(),
-            )
+        resolver.resolve(_query())
+
+
+def test_default_registry_registers_production_lunar_formula():
+    registry = create_default_damage_formula_registry()
+    formula = registry.require(DamageType.LUNAR_REACTION)
+    assert isinstance(formula, LunarReactionDamageFormula)
+    assert formula.level_base_damage == {
+        80: 1077.4,
+        90: 1446.9,
+        95: 1561.5,
+        100: 1674.8,
+    }
+    assert formula.mastery_numerator == 6.0
+    assert formula.mastery_denominator == 2000.0
+
+
+def test_lunar_direct_formula_resolves_one_component_without_normal_damage_bonus():
+    lunar = LunarReactionDamageInput(
+        reaction_profile_key="reaction_profile.lunar.direct",
+        mode=LunarReactionDamageMode.CHARACTER_DIRECT,
+        participants=(
+            LunarReactionParticipantInput(
+                participant_ref=SOURCE,
+                source_level=90,
+                scaling_terms=(DamageScalingTerm("hp", STAT_HP_MAX, 1.0),),
+                can_crit=True,
+                ascension_multiplier=1.1,
+            ),
+        ),
+        reaction_multiplier=2.0,
+        base_damage_bonus=0.1,
+        reaction_bonus=0.2,
+    )
+    formula = LunarReactionDamageFormula(
+        level_base_damage={90: 100.0},
+        mastery_numerator=6.0,
+        mastery_denominator=2000.0,
+        critical_policy=StandardCriticalZonePolicy(
+            FixedCriticalDecisionProvider(CritOutcome.CRITICAL)
+        ),
+    )
+    result = DamageResolver(
+        _attribute_resolver(
+            hp=1000.0,
+            hydro_bonus=0.8,
+            hydro_resistance=0.0,
+            crit_damage=0.5,
+            elemental_mastery=200.0,
+        ),
+        formula_registry=DamageFormulaRegistry((formula,)),
+    ).resolve(
+        _query(
+            damage_type=DamageType.LUNAR_REACTION,
+            scaling_terms=(),
+            lunar_reaction=lunar,
         )
+    )
+
+    mastery_bonus = 6.0 * 200.0 / 2200.0
+    expected_component = 1000.0 * 2.0 * 1.1 * (1 + mastery_bonus + 0.2) * 1.5 * 1.1
+    assert result.lunar_reaction_resolution is not None
+    assert result.lunar_reaction_resolution.components[0].weight == 1.0
+    assert result.final_damage == pytest.approx(expected_component)
+    assert result.damage_bonus_multiplier == 1.0
+    assert result.resistance.multiplier == 1.0
+
+
+def test_lunar_composite_sorts_complete_components_before_weighting():
+    source_2 = AttributeSubjectRef.character("character:slot_2")
+    source_3 = AttributeSubjectRef.character("character:slot_3")
+    lunar = LunarReactionDamageInput(
+        reaction_profile_key="reaction_profile.lunar.composite",
+        mode=LunarReactionDamageMode.REACTION_COMPOSITE,
+        participants=(
+            LunarReactionParticipantInput(SOURCE, 90, can_crit=False),
+            LunarReactionParticipantInput(source_2, 80, can_crit=False),
+            LunarReactionParticipantInput(source_3, 70, can_crit=False),
+        ),
+        reaction_multiplier=1.0,
+    )
+    result = DamageResolver(
+        _attribute_resolver(hydro_resistance=0.0),
+        formula_registry=DamageFormulaRegistry(
+            (
+                LunarReactionDamageFormula(
+                    level_base_damage={90: 100.0, 80: 80.0, 70: 40.0},
+                    mastery_numerator=0.0,
+                    mastery_denominator=1.0,
+                ),
+            )
+        ),
+    ).resolve(
+        _query(
+            damage_type=DamageType.LUNAR_REACTION,
+            scaling_terms=(),
+            lunar_reaction=lunar,
+        )
+    )
+
+    resolution = result.lunar_reaction_resolution
+    assert resolution is not None
+    assert [item.source_level for item in resolution.components] == [90, 80, 70]
+    assert [item.weight for item in resolution.components] == [0.6, 0.3, 0.05]
+    assert result.final_damage == pytest.approx(86.0)
+    assert result.to_dict()["lunar_reaction"] == resolution.to_dict()

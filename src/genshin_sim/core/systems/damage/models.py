@@ -16,15 +16,27 @@ from genshin_sim.core.attributes import (
     RuntimeSourceRef,
     TraceLevel,
 )
+from genshin_sim.core.elements import Element, TransformativeReactionSourceKind
 from genshin_sim.core.systems.damage.enums import (
     CritOutcome,
     DamageElement,
     DamageModifierStage,
+    DamageReactionCapability,
     DamageType,
+    LunarReactionDamageMode,
 )
 from genshin_sim.core.systems.damage.errors import (
     DamageValidationError,
     InvalidDamageScalingError,
+)
+
+_CHARACTER_TARGET_DAMAGE_PROFILE_KEYS = frozenset(
+    {
+        "damage_profile.reaction.bloom_explosion",
+        "damage_profile.reaction.hyperbloom",
+        "damage_profile.reaction.burgeon",
+        "damage_profile.reaction.lunar_bloom",
+    }
 )
 
 
@@ -67,6 +79,337 @@ class DamageScalingTerm:
 
 
 @dataclass(frozen=True, slots=True)
+class DamageProfile:
+    """主攻击标签映射到完整伤害公式的稳定定义。"""
+
+    profile_key: str
+    damage_type: DamageType
+    main_attack_tags: frozenset[str]
+    reaction_capabilities: frozenset[DamageReactionCapability] = frozenset()
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_text(self.profile_key, "profile_key")
+        if not isinstance(self.damage_type, DamageType):
+            raise DamageValidationError("DamageProfile 的 damage_type 不受支持")
+        tags = frozenset(self.main_attack_tags)
+        if not tags:
+            raise DamageValidationError("DamageProfile 至少需要一个主攻击标签")
+        for tag in tags:
+            _validate_non_empty_text(tag, "main_attack_tag")
+        object.__setattr__(self, "main_attack_tags", tags)
+        capabilities = frozenset(self.reaction_capabilities)
+        if any(not isinstance(capability, DamageReactionCapability) for capability in capabilities):
+            raise DamageValidationError("DamageProfile 包含不支持的 reaction capability")
+        object.__setattr__(self, "reaction_capabilities", capabilities)
+
+
+@dataclass(frozen=True, slots=True)
+class AmplifyingReactionInput:
+    """Damage 接收的强类型增幅反应输入。"""
+
+    occurrence_ref: str
+    reaction_profile_key: str
+    trigger_element: Element
+    base_multiplier: float
+    reaction_bonus: float = 0.0
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_text(self.occurrence_ref, "occurrence_ref")
+        _validate_non_empty_text(self.reaction_profile_key, "reaction_profile_key")
+        if not isinstance(self.trigger_element, Element):
+            raise DamageValidationError("trigger_element 不受支持")
+        base_multiplier = validate_damage_float(self.base_multiplier, "base_multiplier")
+        if base_multiplier <= 0:
+            raise DamageValidationError("base_multiplier 必须为正数")
+        reaction_bonus = validate_damage_float(self.reaction_bonus, "reaction_bonus")
+        if 1 + reaction_bonus <= 0:
+            raise DamageValidationError("reaction_bonus 不能使反应乘数为非正数")
+        object.__setattr__(self, "base_multiplier", base_multiplier)
+        object.__setattr__(self, "reaction_bonus", reaction_bonus)
+
+
+@dataclass(frozen=True, slots=True)
+class SecondaryAmplifyingReactionInput:
+    """扩散剧变伤害作为 Base Hit 时使用的捕获式增幅输入。"""
+
+    target_impact_ref: str
+    occurrence_ref: str
+    reaction_profile_key: str
+    trigger_element: Element
+    base_multiplier: float
+    captured_elemental_mastery: float
+    reaction_bonus: float = 0.0
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.target_impact_ref, "target_impact_ref"),
+            (self.occurrence_ref, "occurrence_ref"),
+            (self.reaction_profile_key, "reaction_profile_key"),
+        ):
+            _validate_non_empty_text(value, name)
+        if not isinstance(self.trigger_element, Element):
+            raise DamageValidationError("trigger_element 不受支持")
+        base_multiplier = validate_damage_float(self.base_multiplier, "base_multiplier")
+        if base_multiplier <= 0:
+            raise DamageValidationError("base_multiplier 必须为正数")
+        captured_mastery = validate_damage_float(
+            self.captured_elemental_mastery,
+            "captured_elemental_mastery",
+        )
+        if captured_mastery < 0:
+            raise DamageValidationError("captured_elemental_mastery 不能为负数")
+        reaction_bonus = validate_damage_float(self.reaction_bonus, "reaction_bonus")
+        if 1 + reaction_bonus <= 0:
+            raise DamageValidationError("reaction_bonus 不能使反应乘数为非正数")
+        object.__setattr__(self, "base_multiplier", base_multiplier)
+        object.__setattr__(self, "captured_elemental_mastery", captured_mastery)
+        object.__setattr__(self, "reaction_bonus", reaction_bonus)
+
+
+@dataclass(frozen=True, slots=True)
+class SecondaryAmplifyingReactionResolution:
+    """二次蒸发或融化乘区的不可变审计结果。"""
+
+    reaction: SecondaryAmplifyingReactionInput
+    mastery_bonus: float
+    multiplier: float
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.reaction, SecondaryAmplifyingReactionInput):
+            raise DamageValidationError("二次增幅审计必须引用 SecondaryAmplifyingReactionInput")
+        mastery_bonus = validate_damage_float(self.mastery_bonus, "mastery_bonus")
+        expected_mastery_bonus = (
+            2.78
+            * self.reaction.captured_elemental_mastery
+            / (self.reaction.captured_elemental_mastery + 1400)
+        )
+        if not math.isclose(mastery_bonus, expected_mastery_bonus, rel_tol=0.0, abs_tol=1e-12):
+            raise DamageValidationError("二次增幅 mastery_bonus 必须匹配捕获元素精通")
+        multiplier = validate_damage_float(self.multiplier, "multiplier")
+        expected_multiplier = self.reaction.base_multiplier * (
+            1 + mastery_bonus + self.reaction.reaction_bonus
+        )
+        if not math.isclose(multiplier, expected_multiplier, rel_tol=0.0, abs_tol=1e-12):
+            raise DamageValidationError("二次增幅 multiplier 必须匹配捕获式公式")
+        if multiplier <= 0:
+            raise DamageValidationError("二次增幅 multiplier 必须为正数")
+        object.__setattr__(self, "mastery_bonus", mastery_bonus)
+        object.__setattr__(self, "multiplier", multiplier)
+
+
+@dataclass(frozen=True, slots=True)
+class CatalyzeReactionInput:
+    """Damage 接收的强类型激化基础伤害增加输入。"""
+
+    target_impact_ref: str
+    occurrence_ref: str
+    reaction_profile_key: str
+    trigger_element: Element
+    reaction_multiplier: float
+    reaction_bonus: float = 0.0
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.target_impact_ref, "target_impact_ref"),
+            (self.occurrence_ref, "occurrence_ref"),
+            (self.reaction_profile_key, "reaction_profile_key"),
+        ):
+            _validate_non_empty_text(value, name)
+        if not isinstance(self.trigger_element, Element):
+            raise DamageValidationError("trigger_element 不受支持")
+        reaction_multiplier = validate_damage_float(
+            self.reaction_multiplier,
+            "reaction_multiplier",
+        )
+        if reaction_multiplier <= 0:
+            raise DamageValidationError("reaction_multiplier 必须为正数")
+        reaction_bonus = validate_damage_float(self.reaction_bonus, "reaction_bonus")
+        object.__setattr__(self, "reaction_multiplier", reaction_multiplier)
+        object.__setattr__(self, "reaction_bonus", reaction_bonus)
+
+
+@dataclass(frozen=True, slots=True)
+class TransformativeReactionInput:
+    """剧变派生伤害在 occurrence 时冻结的完整公式输入。"""
+
+    occurrence_ref: str | None
+    reaction_profile_key: str
+    source_kind: TransformativeReactionSourceKind
+    source_level: int
+    level_multiplier_table_key: str
+    level_multiplier: float
+    elemental_mastery: float
+    mastery_bonus: float
+    reaction_bonus: float
+    base_multiplier: float
+    defense_policy: str = "approximate_unity"
+    cause_ref: str | None = None
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.reaction_profile_key, "reaction_profile_key"),
+            (self.level_multiplier_table_key, "level_multiplier_table_key"),
+            (self.defense_policy, "defense_policy"),
+        ):
+            _validate_non_empty_text(value, name)
+        if self.occurrence_ref is None and self.cause_ref is None:
+            raise DamageValidationError("剧变输入必须具有 occurrence_ref 或 cause_ref")
+        if self.occurrence_ref is not None:
+            _validate_non_empty_text(self.occurrence_ref, "occurrence_ref")
+        if self.cause_ref is None:
+            object.__setattr__(self, "cause_ref", self.occurrence_ref)
+        else:
+            _validate_non_empty_text(self.cause_ref, "cause_ref")
+        if not isinstance(self.source_kind, TransformativeReactionSourceKind):
+            raise DamageValidationError("剧变反应来源分类不受支持")
+        if isinstance(self.source_level, bool) or not isinstance(self.source_level, int):
+            raise DamageValidationError("剧变反应来源等级必须是整数")
+        for field_name in (
+            "level_multiplier",
+            "elemental_mastery",
+            "mastery_bonus",
+            "reaction_bonus",
+            "base_multiplier",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                validate_damage_float(getattr(self, field_name), field_name),
+            )
+        if self.level_multiplier <= 0 or self.base_multiplier <= 0:
+            raise DamageValidationError("剧变等级系数和基础倍率必须为正数")
+        if self.elemental_mastery < 0:
+            raise DamageValidationError("剧变元素精通不能为负数")
+        if self.defense_policy != "approximate_unity":
+            raise DamageValidationError("剧变反应只支持 approximate_unity 防御策略")
+        expected_mastery_bonus = 16 * self.elemental_mastery / (self.elemental_mastery + 2000)
+        if not math.isclose(self.mastery_bonus, expected_mastery_bonus, rel_tol=0.0, abs_tol=1e-12):
+            raise DamageValidationError("剧变 mastery_bonus 必须匹配已冻结元素精通")
+        if 1 + self.mastery_bonus + self.reaction_bonus <= 0:
+            raise DamageValidationError("剧变反应乘数必须为正数")
+
+
+@dataclass(frozen=True, slots=True)
+class LunarReactionParticipantInput:
+    """月曜伤害中一个角色参与者的 Damage 侧输入。"""
+
+    participant_ref: AttributeSubjectRef
+    source_level: int
+    scaling_terms: tuple[DamageScalingTerm, ...] = ()
+    flat_base_damage: float = 0.0
+    additional_base_damage: float = 0.0
+    can_crit: bool = True
+    ascension_multiplier: float = 1.0
+
+    def __post_init__(self) -> None:
+        if self.participant_ref.kind is not AttributeSubjectKind.CHARACTER:
+            raise DamageValidationError("月曜伤害参与者必须是角色主体")
+        if (
+            isinstance(self.source_level, bool)
+            or not isinstance(self.source_level, int)
+            or self.source_level <= 0
+        ):
+            raise DamageValidationError("月曜伤害参与者等级必须是正整数")
+        terms = tuple(self.scaling_terms)
+        if any(not isinstance(term, DamageScalingTerm) for term in terms):
+            raise DamageValidationError("月曜伤害参与者 scaling_terms 不受支持")
+        component_keys = [term.component_key for term in terms]
+        if len(component_keys) != len(set(component_keys)):
+            raise InvalidDamageScalingError("月曜伤害参与者 component_key 不能重复")
+        flat_base_damage = validate_damage_float(
+            self.flat_base_damage,
+            "lunar participant flat_base_damage",
+        )
+        additional_base_damage = validate_damage_float(
+            self.additional_base_damage,
+            "lunar participant additional_base_damage",
+        )
+        if additional_base_damage < 0:
+            raise DamageValidationError("月曜伤害参与者 additional_base_damage 不能为负数")
+        if not isinstance(self.can_crit, bool):
+            raise DamageValidationError("月曜伤害参与者 can_crit 必须是布尔值")
+        ascension_multiplier = validate_damage_float(
+            self.ascension_multiplier,
+            "lunar participant ascension_multiplier",
+        )
+        if ascension_multiplier <= 0:
+            raise DamageValidationError("月曜伤害参与者 ascension_multiplier 必须为正数")
+        object.__setattr__(self, "scaling_terms", terms)
+        object.__setattr__(self, "flat_base_damage", flat_base_damage)
+        object.__setattr__(self, "additional_base_damage", additional_base_damage)
+        object.__setattr__(self, "ascension_multiplier", ascension_multiplier)
+
+
+@dataclass(frozen=True, slots=True)
+class LunarReactionDamageInput:
+    """月曜完整公式使用的单来源或多来源输入。"""
+
+    reaction_profile_key: str
+    mode: LunarReactionDamageMode
+    participants: tuple[LunarReactionParticipantInput, ...]
+    reaction_multiplier: float
+    base_damage_bonus: float = 0.0
+    reaction_bonus: float = 0.0
+    occurrence_ref: str | None = None
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_text(self.reaction_profile_key, "reaction_profile_key")
+        if not isinstance(self.mode, LunarReactionDamageMode):
+            raise DamageValidationError("月曜伤害 mode 不受支持")
+        participants = tuple(self.participants)
+        if not participants:
+            raise DamageValidationError("月曜伤害至少需要一个参与者")
+        if any(not isinstance(item, LunarReactionParticipantInput) for item in participants):
+            raise DamageValidationError("月曜伤害 participants 不受支持")
+        participant_ids = [item.participant_ref.entity_id for item in participants]
+        if len(participant_ids) != len(set(participant_ids)):
+            raise DamageValidationError("月曜伤害 participants 不能重复角色")
+        if self.mode is LunarReactionDamageMode.CHARACTER_DIRECT and len(participants) != 1:
+            raise DamageValidationError("角色直接月曜伤害必须只有一个参与者")
+        participants = tuple(
+            sorted(participants, key=lambda item: item.participant_ref.entity_id)
+        )
+        reaction_multiplier = validate_damage_float(
+            self.reaction_multiplier,
+            "lunar reaction_multiplier",
+        )
+        if reaction_multiplier <= 0:
+            raise DamageValidationError("月曜 reaction_multiplier 必须为正数")
+        base_damage_bonus = validate_damage_float(
+            self.base_damage_bonus,
+            "lunar base_damage_bonus",
+        )
+        reaction_bonus = validate_damage_float(self.reaction_bonus, "lunar reaction_bonus")
+        if 1 + base_damage_bonus <= 0:
+            raise DamageValidationError("月曜 base_damage_bonus 不能使基础倍率为非正数")
+        object.__setattr__(self, "participants", participants)
+        object.__setattr__(self, "reaction_multiplier", reaction_multiplier)
+        object.__setattr__(self, "base_damage_bonus", base_damage_bonus)
+        object.__setattr__(self, "reaction_bonus", reaction_bonus)
+        if self.occurrence_ref is not None:
+            _validate_non_empty_text(self.occurrence_ref, "occurrence_ref")
+
+    @property
+    def participant_refs(self) -> tuple[AttributeSubjectRef, ...]:
+        """返回本次月曜伤害实际使用的角色引用。"""
+
+        return tuple(item.participant_ref for item in self.participants)
+
+    def to_dict(self) -> dict[str, object]:
+        """返回稳定的月曜输入摘要。"""
+
+        return {
+            "reaction_profile_key": self.reaction_profile_key,
+            "mode": self.mode.value,
+            "participant_refs": tuple(item.participant_ref.entity_id for item in self.participants),
+            "reaction_multiplier": self.reaction_multiplier,
+            "base_damage_bonus": self.base_damage_bonus,
+            "reaction_bonus": self.reaction_bonus,
+            "occurrence_ref": self.occurrence_ref,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class DamageRequest:
     """进入伤害结算器前已经解析出来源、目标和倍率的类型化请求。"""
 
@@ -84,6 +427,13 @@ class DamageRequest:
     flat_base_damage: float = 0.0
     tags: frozenset[str] = frozenset()
     can_crit: bool = True
+    profile_key: str | None = None
+    reaction_capabilities: frozenset[DamageReactionCapability] = frozenset()
+    amplifying_reaction: AmplifyingReactionInput | None = None
+    secondary_amplifying_reaction: SecondaryAmplifyingReactionInput | None = None
+    transformative_reaction: TransformativeReactionInput | None = None
+    catalyze_reaction: CatalyzeReactionInput | None = None
+    lunar_reaction: LunarReactionDamageInput | None = None
 
     def __post_init__(self) -> None:
         """冻结集合字段，并校验第一版直接伤害的边界条件。"""
@@ -96,8 +446,11 @@ class DamageRequest:
             raise DamageValidationError("damage_type 不受支持")
         if self.source_ref.kind is not AttributeSubjectKind.CHARACTER:
             raise DamageValidationError("伤害来源第一版必须是角色主体")
-        if self.target_ref.kind is not AttributeSubjectKind.TARGET:
-            raise DamageValidationError("伤害目标第一版必须是目标主体")
+        if self.target_ref.kind not in {
+            AttributeSubjectKind.TARGET,
+            AttributeSubjectKind.CHARACTER,
+        }:
+            raise DamageValidationError("伤害目标必须是目标或角色主体")
         for field_name, value in (
             ("source_level", self.source_level),
             ("target_level", self.target_level),
@@ -119,9 +472,78 @@ class DamageRequest:
             _validate_non_empty_text(tag, "damage tag")
         if not isinstance(self.can_crit, bool):
             raise DamageValidationError("can_crit 必须是布尔值")
+        if self.profile_key is not None:
+            _validate_non_empty_text(self.profile_key, "profile_key")
+        if (
+            self.target_ref.kind is AttributeSubjectKind.CHARACTER
+            and self.profile_key not in _CHARACTER_TARGET_DAMAGE_PROFILE_KEYS
+        ):
+            raise DamageValidationError("只有绽放系列 DamageProfile 可以指定角色受方")
+        capabilities = frozenset(self.reaction_capabilities)
+        if any(not isinstance(capability, DamageReactionCapability) for capability in capabilities):
+            raise DamageValidationError("DamageRequest 包含不支持的 reaction capability")
+        if self.secondary_amplifying_reaction is not None and not isinstance(
+            self.secondary_amplifying_reaction,
+            SecondaryAmplifyingReactionInput,
+        ):
+            raise DamageValidationError("secondary_amplifying_reaction 不受支持")
+        if self.lunar_reaction is not None and not isinstance(
+            self.lunar_reaction,
+            LunarReactionDamageInput,
+        ):
+            raise DamageValidationError("lunar_reaction 不受支持")
+        if self.damage_type is DamageType.LUNAR_REACTION:
+            if self.lunar_reaction is None:
+                raise DamageValidationError("月曜伤害必须提供 LunarReactionDamageInput")
+            if self.transformative_reaction is not None:
+                raise DamageValidationError("月曜伤害不能同时提供剧变反应输入")
+            if self.secondary_amplifying_reaction is not None:
+                raise DamageValidationError("月曜伤害不能同时提供二次增幅输入")
+            if self.amplifying_reaction is not None:
+                raise DamageValidationError("月曜伤害不能同时提供增幅反应输入")
+            if self.catalyze_reaction is not None:
+                raise DamageValidationError("月曜伤害不能同时提供激化输入")
+            if terms or flat_base_damage != 0:
+                raise DamageValidationError("月曜伤害不能携带普通倍率或 flat base")
+        elif self.damage_type is DamageType.TRANSFORMATIVE_REACTION:
+            if self.transformative_reaction is None:
+                raise DamageValidationError("剧变伤害必须提供 TransformativeReactionInput")
+            if self.lunar_reaction is not None:
+                raise DamageValidationError("剧变伤害不能同时提供月曜反应输入")
+            if self.amplifying_reaction is not None:
+                raise DamageValidationError("剧变伤害不能同时提供增幅反应输入")
+            if self.secondary_amplifying_reaction is not None:
+                if self.profile_key is None:
+                    raise DamageValidationError("二次增幅剧变伤害必须提供 DamageProfile")
+                if DamageReactionCapability.SECONDARY_AMPLIFYING not in capabilities:
+                    raise DamageValidationError("DamageProfile 未声明二次增幅 capability")
+            if terms or flat_base_damage != 0 or self.can_crit:
+                raise DamageValidationError("剧变伤害不能携带普通倍率、flat base 或暴击能力")
+        else:
+            if self.lunar_reaction is not None:
+                raise DamageValidationError("非月曜伤害不能提供 LunarReactionDamageInput")
+            if self.transformative_reaction is not None:
+                raise DamageValidationError("非剧变伤害不能提供 TransformativeReactionInput")
+            if self.secondary_amplifying_reaction is not None:
+                raise DamageValidationError("非剧变伤害不能提供二次增幅反应输入")
+        if self.catalyze_reaction is not None:
+            if not isinstance(self.catalyze_reaction, CatalyzeReactionInput):
+                raise DamageValidationError("catalyze_reaction 不受支持")
+            if self.damage_type is not DamageType.CATALYZE_REACTION:
+                raise DamageValidationError("只有激化完整公式可以接收 CatalyzeReactionInput")
+            if self.amplifying_reaction is not None:
+                raise DamageValidationError("激化伤害不能同时提供增幅反应输入")
+            if self.catalyze_reaction.trigger_element.value != self.element.value:
+                raise DamageValidationError("激化 trigger_element 必须匹配当前伤害元素")
+        elif (
+            self.damage_type is DamageType.CATALYZE_REACTION
+            and self.amplifying_reaction is not None
+        ):
+            raise DamageValidationError("激化伤害不能同时提供增幅反应输入")
         object.__setattr__(self, "scaling_terms", terms)
         object.__setattr__(self, "flat_base_damage", flat_base_damage)
         object.__setattr__(self, "tags", tags)
+        object.__setattr__(self, "reaction_capabilities", capabilities)
 
 
 @dataclass(frozen=True, slots=True)
@@ -281,14 +703,40 @@ class CriticalZoneResolution:
 
 @dataclass(frozen=True, slots=True)
 class GeneralReactionZoneResolution:
-    """通用公式反应区审计。第一轮无反应时固定为 1.0。"""
+    """通用公式反应区审计，保存增幅反应的全部中间量。"""
 
     multiplier: float = 1.0
+    occurrence_ref: str | None = None
+    reaction_profile_key: str | None = None
+    base_multiplier: float = 1.0
+    elemental_mastery: float = 0.0
+    mastery_bonus: float = 0.0
+    reaction_bonus: float = 0.0
+    elemental_mastery_trace: AttributeResolution | None = None
 
     def __post_init__(self) -> None:
         """校验反应区乘数。"""
 
-        object.__setattr__(self, "multiplier", validate_damage_float(self.multiplier, "multiplier"))
+        for field_name in (
+            "multiplier",
+            "base_multiplier",
+            "elemental_mastery",
+            "mastery_bonus",
+            "reaction_bonus",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                validate_damage_float(getattr(self, field_name), field_name),
+            )
+        if self.multiplier <= 0 or self.base_multiplier <= 0:
+            raise DamageValidationError("反应区乘数必须为正数")
+        if self.elemental_mastery < 0:
+            raise DamageValidationError("元素精通不能为负数")
+        if self.occurrence_ref is not None:
+            _validate_non_empty_text(self.occurrence_ref, "occurrence_ref")
+        if self.reaction_profile_key is not None:
+            _validate_non_empty_text(self.reaction_profile_key, "reaction_profile_key")
 
 
 @dataclass(frozen=True, slots=True)
@@ -328,6 +776,209 @@ class ResistanceResolution:
 
         object.__setattr__(self, "resistance", validate_damage_float(self.resistance, "resistance"))
         object.__setattr__(self, "multiplier", validate_damage_float(self.multiplier, "multiplier"))
+
+
+@dataclass(frozen=True, slots=True)
+class LunarReactionComponentResolution:
+    """月曜伤害中一个角色组分完成公式后的审计结果。"""
+
+    participant_ref: AttributeSubjectRef
+    source_level: int
+    base_damage_source: str
+    scaling: ScalingZoneResolution | None
+    core_base_damage: float
+    reaction_multiplier: float
+    base_damage_bonus: float
+    elemental_mastery: float
+    mastery_bonus: float
+    reaction_bonus: float
+    reaction_uplift_multiplier: float
+    base_damage_after_reaction: float
+    additional_base_damage: float
+    critical: CriticalZoneResolution
+    ascension_multiplier: float
+    resistance: ResistanceResolution
+    component_damage: float
+    weight: float
+    weighted_damage: float
+    source_attribute_trace: tuple[AttributeResolution, ...] = ()
+    target_attribute_trace: tuple[AttributeResolution, ...] = ()
+    applied_terms: tuple[DamageModifierTerm, ...] = ()
+    rejected_terms: tuple[DamageModifierTerm, ...] = ()
+
+    def __post_init__(self) -> None:
+        if self.participant_ref.kind is not AttributeSubjectKind.CHARACTER:
+            raise DamageValidationError("月曜伤害组分参与者必须是角色主体")
+        if (
+            isinstance(self.source_level, bool)
+            or not isinstance(self.source_level, int)
+            or self.source_level <= 0
+        ):
+            raise DamageValidationError("月曜伤害组分 source_level 必须是正整数")
+        _validate_non_empty_text(self.base_damage_source, "base_damage_source")
+        if self.scaling is not None and not isinstance(self.scaling, ScalingZoneResolution):
+            raise DamageValidationError("月曜伤害组分 scaling 不受支持")
+        if not isinstance(self.critical, CriticalZoneResolution):
+            raise DamageValidationError("月曜伤害组分 critical 不受支持")
+        if not isinstance(self.resistance, ResistanceResolution):
+            raise DamageValidationError("月曜伤害组分 resistance 不受支持")
+        for field_name in (
+            "core_base_damage",
+            "reaction_multiplier",
+            "base_damage_bonus",
+            "elemental_mastery",
+            "mastery_bonus",
+            "reaction_bonus",
+            "reaction_uplift_multiplier",
+            "base_damage_after_reaction",
+            "additional_base_damage",
+            "ascension_multiplier",
+            "component_damage",
+            "weight",
+            "weighted_damage",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                validate_damage_float(getattr(self, field_name), field_name),
+            )
+        if self.elemental_mastery < 0:
+            raise DamageValidationError("月曜伤害组分元素精通不能为负数")
+        if self.reaction_multiplier <= 0 or self.reaction_uplift_multiplier <= 0:
+            raise DamageValidationError("月曜伤害组分反应乘数必须为正数")
+        if self.additional_base_damage < 0 or self.ascension_multiplier <= 0:
+            raise DamageValidationError("月曜伤害组分基础加值和擢升倍率必须合法")
+        if self.component_damage < 0 or self.weight < 0 or self.weighted_damage < 0:
+            raise DamageValidationError("月曜伤害组分结果不能为负数")
+        expected_weighted_damage = self.component_damage * self.weight
+        if not math.isclose(
+            self.weighted_damage,
+            expected_weighted_damage,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        ):
+            raise DamageValidationError("月曜伤害组分 weighted_damage 必须匹配权重")
+        object.__setattr__(self, "source_attribute_trace", tuple(self.source_attribute_trace))
+        object.__setattr__(self, "target_attribute_trace", tuple(self.target_attribute_trace))
+        object.__setattr__(self, "applied_terms", tuple(self.applied_terms))
+        object.__setattr__(self, "rejected_terms", tuple(self.rejected_terms))
+
+    def to_dict(self) -> dict[str, object]:
+        """返回组分的完整数值审计摘要。"""
+
+        return {
+            "participant_ref": self.participant_ref.entity_id,
+            "source_level": self.source_level,
+            "base_damage_source": self.base_damage_source,
+            "core_base_damage": self.core_base_damage,
+            "reaction_multiplier": self.reaction_multiplier,
+            "base_damage_bonus": self.base_damage_bonus,
+            "elemental_mastery": self.elemental_mastery,
+            "mastery_bonus": self.mastery_bonus,
+            "reaction_bonus": self.reaction_bonus,
+            "reaction_uplift_multiplier": self.reaction_uplift_multiplier,
+            "base_damage_after_reaction": self.base_damage_after_reaction,
+            "additional_base_damage": self.additional_base_damage,
+            "crit_outcome": self.critical.outcome.value,
+            "crit_rate": self.critical.crit_rate,
+            "crit_damage": self.critical.crit_damage,
+            "crit_multiplier": self.critical.multiplier,
+            "ascension_multiplier": self.ascension_multiplier,
+            "resistance_multiplier": self.resistance.multiplier,
+            "component_damage": self.component_damage,
+            "weight": self.weight,
+            "weighted_damage": self.weighted_damage,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class LunarReactionDamageResolution:
+    """月曜伤害完成所有组分结算、排序和加权后的结果。"""
+
+    reaction: LunarReactionDamageInput
+    components: tuple[LunarReactionComponentResolution, ...]
+    weighted_base_damage: float
+    resistance: ResistanceResolution
+    official_damage: float
+    debug_multiplier: float
+    final_damage: float
+    source_attribute_trace: tuple[AttributeResolution, ...] = ()
+    target_attribute_trace: tuple[AttributeResolution, ...] = ()
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.reaction, LunarReactionDamageInput):
+            raise DamageValidationError("月曜伤害 reaction 必须是 LunarReactionDamageInput")
+        components = tuple(self.components)
+        if not components:
+            raise DamageValidationError("月曜伤害 resolution 至少需要一个组分")
+        if any(not isinstance(item, LunarReactionComponentResolution) for item in components):
+            raise DamageValidationError("月曜伤害 components 不受支持")
+        if not isinstance(self.resistance, ResistanceResolution):
+            raise DamageValidationError("月曜伤害 resistance 不受支持")
+        for field_name in (
+            "weighted_base_damage",
+            "official_damage",
+            "debug_multiplier",
+            "final_damage",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                validate_damage_float(getattr(self, field_name), field_name),
+            )
+        if self.weighted_base_damage < 0 or self.official_damage < 0 or self.final_damage < 0:
+            raise DamageValidationError("月曜伤害 resolution 不能为负数")
+        if self.debug_multiplier < 0:
+            raise DamageValidationError("月曜 debug_multiplier 不能为负数")
+        expected_participants = {item.participant_ref for item in self.reaction.participants}
+        actual_participants = {item.participant_ref for item in components}
+        if actual_participants != expected_participants:
+            raise DamageValidationError("月曜伤害 components 必须覆盖且仅覆盖参与者")
+        expected_weighted_base_damage = math.fsum(
+            item.base_damage_after_reaction * item.weight for item in components
+        )
+        if not math.isclose(
+            self.weighted_base_damage,
+            expected_weighted_base_damage,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        ):
+            raise DamageValidationError("月曜 weighted_base_damage 必须匹配组分权重")
+        expected_official_damage = math.fsum(item.weighted_damage for item in components)
+        if not math.isclose(
+            self.official_damage,
+            expected_official_damage,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        ):
+            raise DamageValidationError("月曜伤害 official_damage 必须匹配组分加权合计")
+        expected_final_damage = self.official_damage * self.debug_multiplier
+        if not math.isclose(
+            self.final_damage,
+            expected_final_damage,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        ):
+            raise DamageValidationError("月曜伤害 final_damage 必须匹配 debug_multiplier")
+        object.__setattr__(self, "components", components)
+        object.__setattr__(self, "source_attribute_trace", tuple(self.source_attribute_trace))
+        object.__setattr__(self, "target_attribute_trace", tuple(self.target_attribute_trace))
+
+    def to_dict(self) -> dict[str, object]:
+        """返回月曜伤害的完整聚合审计摘要。"""
+
+        return {
+            "reaction": self.reaction.to_dict(),
+            "participant_refs": tuple(
+                item.participant_ref.entity_id for item in self.reaction.participants
+            ),
+            "components": tuple(item.to_dict() for item in self.components),
+            "weighted_base_damage": self.weighted_base_damage,
+            "resistance_multiplier": self.resistance.multiplier,
+            "official_damage": self.official_damage,
+            "debug_multiplier": self.debug_multiplier,
+            "final_damage": self.final_damage,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -373,7 +1024,137 @@ class GeneralDamageResolution:
         object.__setattr__(self, "target_attribute_trace", tuple(self.target_attribute_trace))
 
 
-type DamageFormulaResolution = GeneralDamageResolution
+@dataclass(frozen=True, slots=True)
+class TransformativeReactionResolution:
+    """剧变公式的不可变审计结果。"""
+
+    reaction: TransformativeReactionInput
+    defense: DefenseResolution
+    resistance: ResistanceResolution
+    official_damage: float
+    debug_multiplier: float
+    final_damage: float
+    target_attribute_trace: tuple[AttributeResolution, ...] = ()
+    secondary_amplifying_resolution: SecondaryAmplifyingReactionResolution | None = None
+
+    def __post_init__(self) -> None:
+        for field_name in ("official_damage", "debug_multiplier", "final_damage"):
+            value = validate_damage_float(getattr(self, field_name), field_name)
+            if value < 0:
+                raise DamageValidationError(f"{field_name} 不能为负数")
+            object.__setattr__(self, field_name, value)
+        if self.secondary_amplifying_resolution is not None and not isinstance(
+            self.secondary_amplifying_resolution,
+            SecondaryAmplifyingReactionResolution,
+        ):
+            raise DamageValidationError("secondary_amplifying_resolution 不受支持")
+        object.__setattr__(self, "target_attribute_trace", tuple(self.target_attribute_trace))
+
+
+@dataclass(frozen=True, slots=True)
+class CatalyzeReactionResolution:
+    """激化基础伤害增加区的不可变审计结果。"""
+
+    target_impact_ref: str
+    occurrence_ref: str
+    reaction_profile_key: str
+    trigger_element: Element
+    source_level: int
+    level_multiplier_table_key: str
+    level_multiplier: float
+    elemental_mastery: float
+    mastery_bonus: float
+    reaction_multiplier: float
+    reaction_bonus: float
+    base_damage_addition: BaseDamageAddition
+    elemental_mastery_trace: AttributeResolution | None = None
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.target_impact_ref, "target_impact_ref"),
+            (self.occurrence_ref, "occurrence_ref"),
+            (self.reaction_profile_key, "reaction_profile_key"),
+            (self.level_multiplier_table_key, "level_multiplier_table_key"),
+        ):
+            _validate_non_empty_text(value, name)
+        if not isinstance(self.trigger_element, Element):
+            raise DamageValidationError("trigger_element 不受支持")
+        if isinstance(self.source_level, bool) or not isinstance(self.source_level, int):
+            raise DamageValidationError("source_level 必须是整数")
+        if self.source_level <= 0:
+            raise DamageValidationError("source_level 必须是正整数")
+        if not isinstance(self.base_damage_addition, BaseDamageAddition):
+            raise DamageValidationError("base_damage_addition 必须是 BaseDamageAddition")
+        for field_name in (
+            "level_multiplier",
+            "elemental_mastery",
+            "mastery_bonus",
+            "reaction_multiplier",
+            "reaction_bonus",
+        ):
+            object.__setattr__(
+                self,
+                field_name,
+                validate_damage_float(getattr(self, field_name), field_name),
+            )
+        if self.level_multiplier <= 0 or self.reaction_multiplier <= 0:
+            raise DamageValidationError("激化等级系数和反应倍率必须为正数")
+        if self.elemental_mastery < 0:
+            raise DamageValidationError("元素精通不能为负数")
+        expected_mastery_bonus = 5 * self.elemental_mastery / (1200 + self.elemental_mastery)
+        if not math.isclose(self.mastery_bonus, expected_mastery_bonus, rel_tol=0.0, abs_tol=1e-12):
+            raise DamageValidationError("激化 mastery_bonus 必须匹配实时元素精通")
+        expected_addition = (
+            self.level_multiplier
+            * self.reaction_multiplier
+            * (1 + self.mastery_bonus + self.reaction_bonus)
+        )
+        if not math.isclose(
+            self.base_damage_addition.value,
+            expected_addition,
+            rel_tol=0.0,
+            abs_tol=1e-12,
+        ):
+            raise DamageValidationError("激化 base_damage_addition 必须匹配已确认公式")
+        if expected_addition < 0:
+            raise DamageValidationError("激化基础伤害附加值不能为负数")
+
+
+@dataclass(frozen=True, slots=True)
+class CatalyzeReactionDamageResolution:
+    """激化完整公式的各区审计与输出结果。"""
+
+    scaling: ScalingZoneResolution
+    damage_bonus: DamageBonusZoneResolution
+    critical: CriticalZoneResolution
+    reaction: GeneralReactionZoneResolution
+    defense: DefenseResolution
+    resistance: ResistanceResolution
+    official_damage: float
+    debug_multiplier: float
+    final_damage: float
+    catalyze: CatalyzeReactionResolution | None = None
+    source_attribute_trace: tuple[AttributeResolution, ...] = ()
+    target_attribute_trace: tuple[AttributeResolution, ...] = ()
+
+    def __post_init__(self) -> None:
+        for field_name in ("official_damage", "debug_multiplier", "final_damage"):
+            value = validate_damage_float(getattr(self, field_name), field_name)
+            if value < 0:
+                raise DamageValidationError(f"{field_name} 不能为负数")
+            object.__setattr__(self, field_name, value)
+        if self.catalyze is not None and not isinstance(self.catalyze, CatalyzeReactionResolution):
+            raise DamageValidationError("catalyze 必须是 CatalyzeReactionResolution")
+        object.__setattr__(self, "source_attribute_trace", tuple(self.source_attribute_trace))
+        object.__setattr__(self, "target_attribute_trace", tuple(self.target_attribute_trace))
+
+
+type DamageFormulaResolution = (
+    GeneralDamageResolution
+    | CatalyzeReactionDamageResolution
+    | TransformativeReactionResolution
+    | LunarReactionDamageResolution
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -399,6 +1180,10 @@ class DamageResult:
     official_damage: float
     debug_multiplier: float
     final_damage: float
+    reaction_details: GeneralReactionZoneResolution | TransformativeReactionInput | None = None
+    secondary_amplifying_resolution: SecondaryAmplifyingReactionResolution | None = None
+    catalyze_reaction_resolution: CatalyzeReactionResolution | None = None
+    lunar_reaction_resolution: LunarReactionDamageResolution | None = None
     component_results: tuple[DamageComponentResult, ...] = ()
     source_attribute_trace: tuple[AttributeResolution, ...] = ()
     target_attribute_trace: tuple[AttributeResolution, ...] = ()
@@ -439,6 +1224,26 @@ class DamageResult:
             raise DamageValidationError("official_damage 不能为负数")
         if self.debug_multiplier < 0:
             raise DamageValidationError("debug_multiplier 不能为负数")
+        if self.secondary_amplifying_resolution is not None and not isinstance(
+            self.secondary_amplifying_resolution,
+            SecondaryAmplifyingReactionResolution,
+        ):
+            raise DamageValidationError("secondary_amplifying_resolution 不受支持")
+        if self.catalyze_reaction_resolution is not None and not isinstance(
+            self.catalyze_reaction_resolution,
+            CatalyzeReactionResolution,
+        ):
+            raise DamageValidationError("catalyze_reaction_resolution 不受支持")
+        if self.lunar_reaction_resolution is not None and not isinstance(
+            self.lunar_reaction_resolution,
+            LunarReactionDamageResolution,
+        ):
+            raise DamageValidationError("lunar_reaction_resolution 不受支持")
+        if (
+            self.lunar_reaction_resolution is not None
+            and self.damage_type is not DamageType.LUNAR_REACTION
+        ):
+            raise DamageValidationError("只有月曜伤害可以携带 lunar_reaction_resolution")
         object.__setattr__(self, "base_damage_additions", tuple(self.base_damage_additions))
         object.__setattr__(self, "component_results", tuple(self.component_results))
         object.__setattr__(self, "source_attribute_trace", tuple(self.source_attribute_trace))
@@ -470,6 +1275,12 @@ class DamageResult:
             "crit_damage": self.crit_damage,
             "crit_multiplier": self.crit_multiplier,
             "reaction_multiplier": self.reaction_multiplier,
+            "reaction": _reaction_details_to_dict(self.reaction_details),
+            "secondary_amplifying_reaction": _secondary_amplifying_to_dict(
+                self.secondary_amplifying_resolution
+            ),
+            "catalyze_reaction": _catalyze_reaction_to_dict(self.catalyze_reaction_resolution),
+            "lunar_reaction": _lunar_reaction_to_dict(self.lunar_reaction_resolution),
             "defense_multiplier": self.defense.multiplier,
             "resistance_multiplier": self.resistance.multiplier,
             "final_multiplier": self.final_multiplier,
@@ -477,3 +1288,87 @@ class DamageResult:
             "debug_multiplier": self.debug_multiplier,
             "final_damage": self.final_damage,
         }
+
+
+def _reaction_details_to_dict(
+    details: GeneralReactionZoneResolution | TransformativeReactionInput | None,
+) -> dict[str, object] | None:
+    if details is None:
+        return None
+    if isinstance(details, TransformativeReactionInput):
+        payload = {
+            "kind": "transformative",
+            "occurrence_ref": details.occurrence_ref,
+            "reaction_profile_key": details.reaction_profile_key,
+            "source_kind": details.source_kind.value,
+            "source_level": details.source_level,
+            "level_multiplier_table_key": details.level_multiplier_table_key,
+            "level_multiplier": details.level_multiplier,
+            "base_multiplier": details.base_multiplier,
+            "elemental_mastery": details.elemental_mastery,
+            "mastery_bonus": details.mastery_bonus,
+            "reaction_bonus": details.reaction_bonus,
+            "defense_policy": details.defense_policy,
+        }
+        if details.cause_ref != details.occurrence_ref:
+            payload["cause_ref"] = details.cause_ref
+        return payload
+    return {
+        "kind": "amplifying",
+        "occurrence_ref": details.occurrence_ref,
+        "reaction_profile_key": details.reaction_profile_key,
+        "base_multiplier": details.base_multiplier,
+        "elemental_mastery": details.elemental_mastery,
+        "mastery_bonus": details.mastery_bonus,
+        "reaction_bonus": details.reaction_bonus,
+        "multiplier": details.multiplier,
+    }
+
+
+def _secondary_amplifying_to_dict(
+    resolution: SecondaryAmplifyingReactionResolution | None,
+) -> dict[str, object] | None:
+    if resolution is None:
+        return None
+    reaction = resolution.reaction
+    return {
+        "target_impact_ref": reaction.target_impact_ref,
+        "occurrence_ref": reaction.occurrence_ref,
+        "reaction_profile_key": reaction.reaction_profile_key,
+        "trigger_element": reaction.trigger_element.value,
+        "base_multiplier": reaction.base_multiplier,
+        "captured_elemental_mastery": reaction.captured_elemental_mastery,
+        "mastery_bonus": resolution.mastery_bonus,
+        "reaction_bonus": reaction.reaction_bonus,
+        "multiplier": resolution.multiplier,
+    }
+
+
+def _catalyze_reaction_to_dict(
+    resolution: CatalyzeReactionResolution | None,
+) -> dict[str, object] | None:
+    if resolution is None:
+        return None
+    return {
+        "target_impact_ref": resolution.target_impact_ref,
+        "occurrence_ref": resolution.occurrence_ref,
+        "reaction_profile_key": resolution.reaction_profile_key,
+        "trigger_element": resolution.trigger_element.value,
+        "source_level": resolution.source_level,
+        "level_multiplier_table_key": resolution.level_multiplier_table_key,
+        "level_multiplier": resolution.level_multiplier,
+        "elemental_mastery": resolution.elemental_mastery,
+        "mastery_bonus": resolution.mastery_bonus,
+        "reaction_multiplier": resolution.reaction_multiplier,
+        "reaction_bonus": resolution.reaction_bonus,
+        "base_damage_addition": resolution.base_damage_addition.value,
+        "addition_key": resolution.base_damage_addition.addition_key,
+    }
+
+
+def _lunar_reaction_to_dict(
+    resolution: LunarReactionDamageResolution | None,
+) -> dict[str, object] | None:
+    if resolution is None:
+        return None
+    return resolution.to_dict()

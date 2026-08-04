@@ -13,6 +13,7 @@ class SpatialEntityKind(StrEnum):
     ACTIVE_CHARACTER = "active_character"
     TARGET = "target"
     CREATED_OBJECT = "created_object"
+    REACTION_OBJECT = "reaction_object"
 
 
 @dataclass(frozen=True, slots=True)

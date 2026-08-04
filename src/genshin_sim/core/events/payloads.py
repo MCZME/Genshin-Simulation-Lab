@@ -1,12 +1,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, cast
 
 if TYPE_CHECKING:
     from genshin_sim.core.coordination.character_damage_taken.models import (
         CharacterDamageTakenRecord,
     )
+    from genshin_sim.core.coordination.elemental_reaction.models import (
+        ElementalInteractionBatchRecord,
+    )
+    from genshin_sim.core.systems.aura.models import (
+        AuraApplicationResult,
+        AuraTransitionResult,
+    )
+    from genshin_sim.core.systems.aura_icd.models import IcdResolution
     from genshin_sim.core.systems.buff.models import (
         BuffApplicationResult,
         BuffRemovalResult,
@@ -22,6 +30,16 @@ if TYPE_CHECKING:
         CharacterHealthChangeResult,
         CharacterMaxHpReconcileResult,
     )
+    from genshin_sim.core.systems.reaction.models import (
+        CapturedCrystallizeShieldBasis,
+        CapturedTransformativeScalingBasis,
+        DynamicTransformativeScalingBasis,
+        ReactionOccurrence,
+    )
+    from genshin_sim.core.systems.reaction.states import (
+        ReactionStateChange,
+        ReactionStateRecord,
+    )
     from genshin_sim.core.systems.shield.models import (
         ShieldAbsorptionResult,
         ShieldCapacityChangeResult,
@@ -36,6 +54,15 @@ class EventPayload(Protocol):
     def to_dict(self) -> dict[str, object]:
         """转换为可序列化字典。"""
         ...
+
+
+class _ElementalStateLinkLike(Protocol):
+    link_key: str
+
+
+class _FrozenStateLike(Protocol):
+    state_link_ref: _ElementalStateLinkLike
+    created_frame: int
 
 
 @dataclass(frozen=True, slots=True)
@@ -266,3 +293,434 @@ class BuffRemovedPayload:
 
     def to_dict(self) -> dict[str, object]:
         return {"result": self.result.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class AuraIcdResolvedPayload:
+    """元素附着 ICD 已提交本次命中系数的事实载荷。"""
+
+    result: IcdResolution
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "request_id": self.result.request_id,
+            "impact_ref": self.result.impact_ref,
+            "order": self.result.order,
+            "outcome": self.result.outcome.value,
+            "coefficient": self.result.coefficient.to_dict(),
+            "allows_application": self.result.allows_application,
+            "label_key": self.result.label_key,
+            "definition_key": self.result.definition_key,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class AuraAppliedPayload:
+    """普通附着或同元素叠加已提交的事实载荷。"""
+
+    result: AuraApplicationResult
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "request_id": self.result.request_id,
+            "application_id": self.result.application_id,
+            "subject_ref": self.result.subject_ref.entity_id,
+            "aura_kind": self.result.aura_kind.value,
+            "outcome": self.result.outcome.value,
+            "amount_after": None
+            if self.result.after is None
+            else self.result.after.current_amount.to_dict(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class AuraInteractionResolvedPayload:
+    """Reaction 驱动的 Aura 元素量变化已提交的事实载荷。"""
+
+    result: AuraTransitionResult
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "interaction_id": self.result.interaction_id,
+            "subject_ref": self.result.subject_ref.entity_id,
+            "aura_kind": self.result.aura_kind.value,
+            "amount_before": self.result.amount_before.to_dict(),
+            "amount_consumed": self.result.amount_consumed.to_dict(),
+            "amount_after": self.result.amount_after.to_dict(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class AuraDepletedPayload:
+    """Aura 自然衰减归零并移除 Component 的事实载荷。"""
+
+    result: AuraTransitionResult
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "interaction_id": self.result.interaction_id,
+            "subject_ref": self.result.subject_ref.entity_id,
+            "aura_kind": self.result.aura_kind.value,
+            "amount_before": self.result.amount_before.to_dict(),
+            "amount_after": self.result.amount_after.to_dict(),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ReactionOccurredPayload:
+    """无状态普通 Reaction occurrence 已提交的事实载荷。"""
+
+    occurrence: ReactionOccurrence
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "occurrence_ref": self.occurrence.occurrence_ref,
+            "parent_occurrence_ref": self.occurrence.parent_occurrence_ref,
+            "interaction_id": self.occurrence.interaction_id,
+            "reaction_key": self.occurrence.reaction_key,
+            "direction_key": self.occurrence.direction_key,
+            "profile_key": self.occurrence.profile_key,
+            "effect_groups": tuple(
+                _reaction_effect_group_to_dict(group) for group in self.occurrence.effect_groups
+            ),
+        }
+
+
+def _reaction_effect_group_to_dict(group) -> dict[str, object]:
+    from genshin_sim.core.systems.reaction.models import (
+        OccurrenceCause,
+        ScheduledStateTickCause,
+    )
+
+    cause = group.cause
+    if isinstance(cause, OccurrenceCause):
+        cause_payload: dict[str, object] = {
+            "kind": "occurrence",
+            "occurrence_ref": cause.occurrence_ref,
+        }
+    elif isinstance(cause, ScheduledStateTickCause):
+        cause_payload = _scheduled_state_tick_cause_to_dict(cause)
+    else:
+        raise ValueError("Reaction Effect group 缺少受支持的因果来源")
+    return {
+        "effect_group_ref": group.effect_group_ref,
+        "execution_scope": group.execution_scope.value,
+        "cause": cause_payload,
+        "effect_refs": tuple(effect.effect_ref for effect in group.effects),
+        "suppressed_effect_refs": group.suppressed_effect_refs,
+    }
+
+
+def _scheduled_state_tick_cause_to_dict(cause) -> dict[str, object]:
+    return {
+        "kind": "scheduled_state_tick",
+        "cause_ref": cause.cause_ref,
+        "state_instance_ref": cause.state_instance_ref.value,
+        "scheduled_frame": cause.scheduled_frame,
+        "tick_kind": cause.tick_kind.value,
+        "tick_index": cause.tick_index,
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class ReactionStateChangedPayload:
+    """ReactionState 完整创建、替换或移除已提交的通用状态事实。"""
+
+    change: ReactionStateChange
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "slot": self.change.slot_key.slot.value,
+            "scope_key": self.change.slot_key.scope_key.value,
+            "subject": {
+                "kind": self.change.slot_key.subject_ref.kind.value,
+                "entity_id": self.change.slot_key.subject_ref.entity_id,
+            },
+            "before": _reaction_state_to_dict(self.change.before),
+            "after": _reaction_state_to_dict(self.change.after),
+        }
+
+
+def _reaction_state_to_dict(record: ReactionStateRecord | None) -> dict[str, object] | None:
+    if record is None:
+        return None
+    from genshin_sim.core.systems.reaction.states import (
+        BurningState,
+        CrystallizeShardState,
+        DendroCoreState,
+        ElectroChargedState,
+        LunarCageState,
+        LunarCrystallizeAccumulatorState,
+        LunarStormCloudState,
+        QuickenState,
+        SprawlingShotState,
+    )
+
+    if isinstance(record, ElectroChargedState):
+        return {
+            "instance_ref": record.instance_ref.value,
+            "created_frame": record.created_frame,
+            "created_by_occurrence_ref": record.created_by_occurrence_ref,
+            "current_effect_owner": record.current_effect_owner.to_dict(),
+            "captured_scaling_basis": _captured_basis_to_dict(record.captured_scaling_basis),
+            "next_required_frame": record.next_required_frame,
+            "next_tick_frame": record.next_tick_frame,
+            "next_tick_index": record.next_tick_index,
+            "revision": record.revision,
+        }
+    if isinstance(record, BurningState):
+        return {
+            "instance_ref": record.instance_ref.value,
+            "burning_aura_link_ref": record.burning_aura_link_ref.link_key,
+            "dendro_like_link_refs": [item.link_key for item in record.dendro_like_link_refs],
+            "created_frame": record.created_frame,
+            "created_by_occurrence_ref": record.created_by_occurrence_ref,
+            "current_effect_owner": record.current_effect_owner.to_dict(),
+            "captured_scaling_basis": _captured_basis_to_dict(record.captured_scaling_basis),
+            "next_required_frame": record.next_required_frame,
+            "next_dendro_like_depletion_frame": record.next_dendro_like_depletion_frame,
+            "next_damage_tick_frame": record.next_damage_tick_frame,
+            "next_damage_tick_index": record.next_damage_tick_index,
+            "next_pyro_application_frame": record.next_pyro_application_frame,
+            "next_pyro_application_index": record.next_pyro_application_index,
+            "revision": record.revision,
+        }
+    if isinstance(record, QuickenState):
+        return {
+            "instance_ref": record.instance_ref.value,
+            "quicken_aura_link_ref": record.quicken_aura_link_ref.link_key,
+            "created_frame": record.created_frame,
+            "created_by_occurrence_ref": record.created_by_occurrence_ref,
+            "last_updated_by_occurrence_ref": record.last_updated_by_occurrence_ref,
+            "next_required_frame": record.next_required_frame,
+            "revision": record.revision,
+        }
+    if isinstance(record, CrystallizeShardState):
+        return {
+            "instance_ref": record.instance_ref.value,
+            "space_entity_ref": record.space_entity_ref,
+            "element": record.element.value,
+            "created_by_occurrence_ref": record.created_by_occurrence_ref,
+            "trigger_source": record.trigger_source.to_dict(),
+            "captured_shield_basis": _captured_crystallize_basis_to_dict(
+                record.captured_shield_basis
+            ),
+            "created_frame": record.created_frame,
+            "expires_at_frame": record.expires_at_frame,
+            "lifecycle_state": record.lifecycle_state.value,
+            "terminal_frame": record.terminal_frame,
+            "next_required_frame": record.next_required_frame,
+            "revision": record.revision,
+        }
+    if isinstance(record, DendroCoreState):
+        return {
+            "instance_ref": record.instance_ref.value,
+            "space_entity_ref": record.space_entity_ref,
+            "created_by_occurrence_ref": record.created_by_occurrence_ref,
+            "core_creator_ref": record.core_creator_ref.to_dict(),
+            "dynamic_scaling_basis": _dynamic_basis_to_dict(record.dynamic_scaling_basis),
+            "pool_scope": record.pool_scope,
+            "created_frame": record.created_frame,
+            "expires_at_frame": record.expires_at_frame,
+            "creation_sequence": record.creation_sequence,
+            "next_required_frame": record.next_required_frame,
+            "revision": record.revision,
+        }
+    if isinstance(record, LunarStormCloudState):
+        return {
+            "instance_ref": record.instance_ref.value,
+            "space_entity_ref": record.space_entity_ref,
+            "created_by_occurrence_ref": record.created_by_occurrence_ref,
+            "trigger_source_ref": record.trigger_source_ref.to_dict(),
+            "team_ref": record.team_ref,
+            "created_frame": record.created_frame,
+            "expires_at_frame": record.expires_at_frame,
+            "next_attack_frame": record.next_attack_frame,
+            "next_attack_index": record.next_attack_index,
+            "attack_interval_frames": record.attack_interval_frames,
+            "next_required_frame": record.next_required_frame,
+            "revision": record.revision,
+        }
+    if isinstance(record, LunarCageState):
+        return {
+            "instance_ref": record.instance_ref.value,
+            "space_entity_ref": record.space_entity_ref,
+            "created_by_occurrence_ref": record.created_by_occurrence_ref,
+            "trigger_source_ref": record.trigger_source_ref.to_dict(),
+            "team_ref": record.team_ref,
+            "created_frame": record.created_frame,
+            "last_harmony_frame": record.last_harmony_frame,
+            "next_attack_frame": record.next_attack_frame,
+            "expires_at_frame": record.expires_at_frame,
+            "attack_index": record.attack_index,
+            "next_required_frame": record.next_required_frame,
+            "revision": record.revision,
+        }
+    if isinstance(record, LunarCrystallizeAccumulatorState):
+        return {
+            "instance_ref": record.instance_ref.value,
+            "team_ref": record.team_ref,
+            "subject": {
+                "kind": record.subject_ref.kind.value,
+                "entity_id": record.subject_ref.entity_id,
+            },
+            "pending_records": [
+                {
+                    "occurrence_ref": item.occurrence_ref,
+                    "frame": item.frame,
+                    "order": item.order,
+                    "participant_refs": [
+                        participant.to_dict() for participant in item.participant_refs
+                    ],
+                }
+                for item in record.pending_records
+            ],
+            "max_layers": record.max_layers,
+            "next_required_frame": record.next_required_frame,
+            "revision": record.revision,
+        }
+    if isinstance(record, SprawlingShotState):
+        return {
+            "instance_ref": record.instance_ref.value,
+            "space_entity_ref": record.space_entity_ref,
+            "source_core_ref": record.source_core_ref.value,
+            "trigger_source_ref": record.trigger_source_ref.to_dict(),
+            "dynamic_scaling_basis": _dynamic_basis_to_dict(record.dynamic_scaling_basis),
+            "selected_target": {
+                "kind": record.selected_target_ref.kind.value,
+                "entity_id": record.selected_target_ref.entity_id,
+            },
+            "created_frame": record.created_frame,
+            "revision": record.revision,
+        }
+    payload: dict[str, object] = {
+        "instance_ref": record.instance_ref.value,
+        "decay_rate": record.decay_rate,
+        "decay_rate_updated_frame": record.decay_rate_updated_frame,
+        "next_required_frame": record.next_required_frame,
+    }
+    if record.slot_key.slot.value == "frozen":
+        frozen = cast(_FrozenStateLike, record)
+        payload["state_link_ref"] = frozen.state_link_ref.link_key
+        payload["created_frame"] = frozen.created_frame
+    return payload
+
+
+def _captured_basis_to_dict(basis: CapturedTransformativeScalingBasis) -> dict[str, object]:
+    """保持事件层对 Reaction 基础的序列化只读，不引入运行时写依赖。"""
+
+    return {
+        "basis_ref": basis.basis_ref,
+        "captured_frame": basis.captured_frame,
+        "source_ref": basis.source_ref.to_dict(),
+        "source_kind": basis.source_kind.value,
+        "source_level": basis.source_level,
+        "elemental_mastery": basis.elemental_mastery,
+        "reaction_bonus": basis.reaction_bonus,
+        "reaction_profile_key": basis.reaction_profile_key,
+        "damage_profile_key": basis.damage_profile_key,
+        "level_multiplier_table_key": basis.level_multiplier_table_key,
+        "level_multiplier": basis.level_multiplier,
+        "source_observation_ref": basis.source_observation_ref,
+        "source_owner_slot": basis.source_owner_slot,
+    }
+
+
+def _dynamic_basis_to_dict(basis: DynamicTransformativeScalingBasis) -> dict[str, object]:
+    return {
+        "basis_ref": basis.basis_ref,
+        "source_ref": basis.source_ref.to_dict(),
+        "source_observation_profile_key": basis.source_observation_profile_key,
+        "reaction_profile_key": basis.reaction_profile_key,
+        "damage_profile_key": basis.damage_profile_key,
+        "reaction_bonus": basis.reaction_bonus,
+    }
+
+
+def _captured_crystallize_basis_to_dict(
+    basis: CapturedCrystallizeShieldBasis,
+) -> dict[str, object]:
+    return {
+        "source_ref": basis.source_ref.to_dict(),
+        "captured_frame": basis.captured_frame,
+        "source_level": basis.source_level,
+        "source_elemental_mastery": basis.source_elemental_mastery,
+        "crystallize_level_coefficient": basis.crystallize_level_coefficient,
+        "elemental_mastery_bonus": basis.elemental_mastery_bonus,
+        "native_absorption": basis.native_absorption,
+    }
+
+
+@dataclass(frozen=True, slots=True)
+class ElementalInteractionResolvedPayload:
+    """整批元素交互已完成状态提交和关联伤害结算的事实载荷。"""
+
+    record: ElementalInteractionBatchRecord
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "batch_id": self.record.batch_id,
+            "root_work_id": self.record.root_work_id,
+            "settlement_round": self.record.settlement_round,
+            "work_ids": list(self.record.work_ids),
+            "icd_request_ids": list(self.record.icd_request_ids),
+            "reaction_occurrence_refs": list(self.record.reaction_occurrence_refs),
+            "reaction_decision_steps": [
+                {
+                    "interaction_id": step.interaction_id,
+                    "step_ordinal": step.step_ordinal,
+                    "selected_candidate_keys": list(step.selected_candidate_keys),
+                    "occurrence_refs": list(step.occurrence_refs),
+                    "state_transition_refs": list(step.state_transition_refs),
+                    "state_planning_intent_refs": list(step.state_planning_intent_refs),
+                }
+                for step in self.record.reaction_decision_steps
+            ],
+            "current_impact_adjustment_refs": list(self.record.current_impact_adjustment_refs),
+            "damage_request_ids": list(self.record.damage_request_ids),
+            "batch_kind": self.record.batch_kind.value,
+            "parent_work_id": self.record.parent_work_id,
+            "parent_occurrence_refs": list(self.record.parent_occurrence_refs),
+            "effect_group_refs": list(self.record.effect_group_refs),
+            "effect_refs": list(self.record.effect_refs),
+            "emission_batch_ref": self.record.emission_batch_ref,
+            "generated_impact_refs": list(self.record.generated_impact_refs),
+            "simultaneous_application_policy_keys": list(
+                self.record.simultaneous_application_policy_keys
+            ),
+            "captured_source_observation_ref": self.record.captured_source_observation_ref,
+            "target_effect_outcomes": [
+                {
+                    "target_order": outcome.target_order,
+                    "subject_ref": {
+                        "kind": outcome.subject_ref.kind.value,
+                        "entity_id": outcome.subject_ref.entity_id,
+                    },
+                    "relation": outcome.relation.value,
+                    "capabilities": sorted(capability.value for capability in outcome.capabilities),
+                    "aura_outcome": outcome.aura_outcome,
+                    "damage_outcome": outcome.damage_outcome,
+                    "status_outcome": outcome.status_outcome,
+                    "gate_resolution_ref": outcome.gate_resolution_ref,
+                    "damage_request_id": outcome.damage_request_id,
+                    "buff_request_id": outcome.buff_request_id,
+                }
+                for outcome in self.record.target_effect_outcomes
+            ],
+            "gate_resolution_refs": list(self.record.gate_resolution_refs),
+            "buff_request_ids": list(self.record.buff_request_ids),
+            "buff_instance_refs": list(self.record.buff_instance_refs),
+            "follow_up_work_ids": list(self.record.follow_up_work_ids),
+            "spatial_entity_refs": list(self.record.spatial_entity_refs),
+            "reaction_state_binding_refs": list(self.record.reaction_state_binding_refs),
+            "establishment_gate_resolution_refs": list(
+                self.record.establishment_gate_resolution_refs
+            ),
+            "scheduled_root_work_id": self.record.scheduled_root_work_id,
+            "scheduled_tick_index": self.record.scheduled_tick_index,
+            "scheduled_root_outcome": self.record.scheduled_root_outcome,
+            "scheduled_state_tick_causes": [
+                _scheduled_state_tick_cause_to_dict(cause)
+                for cause in self.record.scheduled_state_tick_causes
+            ],
+        }

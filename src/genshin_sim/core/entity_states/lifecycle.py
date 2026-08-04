@@ -11,7 +11,7 @@ class EntityLifecycleState(StrEnum):
     EXPIRED = "expired"
 
 
-@dataclass(slots=True)
+@dataclass(frozen=True, slots=True)
 class EntityLifecycle:
     """实体身份共享的生命周期信息。
 
@@ -40,5 +40,13 @@ class EntityLifecycle:
             return False
         return self.expires_at_frame is None or frame < self.expires_at_frame
 
-    def expire(self) -> None:
-        self.state = EntityLifecycleState.EXPIRED
+    def expired(self) -> EntityLifecycle:
+        """返回终结后的生命周期值，不修改已共享的原值。"""
+
+        if self.state is EntityLifecycleState.EXPIRED:
+            return self
+        return EntityLifecycle(
+            created_frame=self.created_frame,
+            expires_at_frame=self.expires_at_frame,
+            state=EntityLifecycleState.EXPIRED,
+        )

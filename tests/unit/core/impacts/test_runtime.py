@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import cast
+
 from genshin_sim.core.actions import (
     ActionInterpretationResult,
     ActionInterpretationTrigger,
@@ -15,10 +17,13 @@ from genshin_sim.core.actions import (
 from genshin_sim.core.entity_states import CharacterRuntimeState
 from genshin_sim.core.impacts import (
     ActionImpactContext,
+    DamageImpactSpec,
     ImpactDispatcher,
     ImpactKind,
     ImpactRequest,
+    ImpactRequestDispatcher,
     ImpactRuntime,
+    StrikeType,
 )
 from genshin_sim.core.simulation import (
     InputTraceCompiler,
@@ -36,6 +41,7 @@ from genshin_sim.core.space import (
     Vector3,
 )
 from genshin_sim.core.space.runtime import SpaceRuntime
+from genshin_sim.core.systems.damage import DamageElement, DamageRequestHandler
 
 
 class ReleaseInterpreter:
@@ -90,6 +96,24 @@ class DamageTickBehavior:
                 owner_slot=1,
             ),
         )
+
+
+class _RecordingElementalSettlement:
+    def __init__(self) -> None:
+        self.damage_requests: list[ImpactRequest] = []
+
+    def settle_damage_impact(self, context, request: ImpactRequest) -> None:
+        del context
+        self.damage_requests.append(request)
+
+    def settle_aura_impact(self, context, request: ImpactRequest) -> None:
+        raise AssertionError("本测试不应处理无伤害元素施加")
+
+
+class _UnusedDamageHandler:
+    @staticmethod
+    def has_damage_contract(request: ImpactRequest) -> bool:
+        return request.damage_spec is not None
 
 
 def _runtime_pair(
@@ -183,3 +207,29 @@ def test_impact_runtime_handles_created_object_tick_requests():
     assert created_object_runtime.pending_impact_requests == ()
     assert impact_runtime.ignored_requests[-1].request.impact_key == "furina.salon_member.tick"
     assert impact_runtime.ignored_requests[-1].reason == "伤害请求处理器尚未接入"
+
+
+def test_blunt_zero_element_damage_routes_to_elemental_settlement_for_state_reactions():
+    settlement = _RecordingElementalSettlement()
+    dispatcher = ImpactRequestDispatcher(
+        damage_handler=cast(DamageRequestHandler, _UnusedDamageHandler()),
+        elemental_settlement_coordinator=settlement,
+    )
+    request = ImpactRequest(
+        frame=1,
+        kind=ImpactKind.DAMAGE,
+        impact_key="testing.blunt",
+        owner_slot=1,
+        request_id="impact:blunt",
+        target_refs=("target_1",),
+        damage_spec=DamageImpactSpec(
+            impact_ref="impact:blunt",
+            main_attack_tag="testing.blunt",
+            element=DamageElement.PHYSICAL,
+            strike_type=StrikeType.BLUNT,
+        ),
+    )
+
+    dispatcher.dispatch_requests(object(), (request,))
+
+    assert settlement.damage_requests == [request]

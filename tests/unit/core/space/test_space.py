@@ -7,6 +7,8 @@ from genshin_sim.core.simulation import BasicRuntimeWorld, SimulationContext, Te
 from genshin_sim.core.space import (
     CircleArea,
     Space,
+    SpaceEntityMutationPlan,
+    SpaceEntityPlanConflictError,
     SpatialEntity,
     SpatialEntityKind,
     Vector3,
@@ -95,6 +97,22 @@ def test_space_can_query_created_object_entities_by_kind():
     ) == (created,)
 
 
+def test_space_can_query_reaction_object_entities_by_kind():
+    reaction_object = SpatialEntity(
+        "reaction_object:crystallize_shard:1",
+        SpatialEntityKind.REACTION_OBJECT,
+        position=Vector3(1, 0, 0),
+        tags=("reaction_object", "crystallize_shard"),
+    )
+    space = Space([reaction_object])
+
+    assert space.entities_in_radius(
+        Vector3(),
+        5,
+        kinds={SpatialEntityKind.REACTION_OBJECT},
+    ) == (reaction_object,)
+
+
 def test_space_queries_ignore_entities_expired_at_current_frame():
     ctx = SimulationContext()
     created = SpatialEntity(
@@ -119,6 +137,100 @@ def test_space_rejects_duplicate_entity_ids():
         space.add_entity(
             SpatialEntity("target_1", SpatialEntityKind.TARGET, position=Vector3(1, 0, 0))
         )
+
+
+def test_space_direct_entity_writes_advance_version_only_for_real_entity_changes():
+    first = SpatialEntity("target:first", SpatialEntityKind.TARGET, position=Vector3())
+    space = Space([first])
+
+    assert space.entity_version == 1
+    assert space.update_entity(first) is first
+    assert space.entity_version == 1
+
+    updated = SpatialEntity("target:first", SpatialEntityKind.TARGET, position=Vector3(1, 0, 0))
+    assert space.update_entity(updated) is updated
+    assert space.entity_version == 2
+    assert space.remove_entity("target:first") is updated
+    assert space.entity_version == 3
+
+    space.update_frame(SimulationContext(), frame=9)
+    assert space.entity_version == 3
+
+
+def test_space_entity_plan_commits_create_and_remove_once_with_stable_snapshot():
+    removed = SpatialEntity("target:z", SpatialEntityKind.TARGET, position=Vector3())
+    space = Space([removed])
+    creation = SpatialEntity(
+        "reaction_object:a",
+        SpatialEntityKind.REACTION_OBJECT,
+        position=Vector3(1, 0, 0),
+    )
+    planner = space.begin_entity_mutation(operation_id="space-op:replace", frame=0)
+    assert planner.remove(removed.entity_id) is removed
+    assert planner.create(creation) is creation
+    plan = planner.seal()
+
+    receipt = space.commit_prevalidated_entity_plan(plan)
+
+    assert receipt.plan is plan
+    assert receipt.entity_version == 2
+    assert space.entities == (creation,)
+    assert space.snapshot(0).entities == (creation,)
+
+
+def test_space_entity_plan_retries_before_version_validation_and_rejects_changed_operation():
+    space = Space()
+    creation = SpatialEntity("reaction_object:1", SpatialEntityKind.REACTION_OBJECT, Vector3())
+    planner = space.begin_entity_mutation(operation_id="space-op:create", frame=0)
+    planner.create(creation)
+    plan = planner.seal()
+    receipt = space.commit_prevalidated_entity_plan(plan)
+
+    space.add_entity(SpatialEntity("target:later", SpatialEntityKind.TARGET, Vector3()))
+
+    assert space.commit_prevalidated_entity_plan(plan) is receipt
+    with pytest.raises(SpaceEntityPlanConflictError, match="operation_id"):
+        space.commit_prevalidated_entity_plan(
+            SpaceEntityMutationPlan(
+                operation_id="space-op:create",
+                frame=0,
+                expected_entity_version=space.entity_version,
+            )
+        )
+
+
+def test_space_entity_plan_rejects_stale_version_and_mismatched_removal_preimage():
+    target = SpatialEntity("target:one", SpatialEntityKind.TARGET, Vector3())
+    space = Space([target])
+    planner = space.begin_entity_mutation(operation_id="space-op:stale", frame=0)
+    planner.remove(target.entity_id)
+    stale_plan = planner.seal()
+    space.add_entity(SpatialEntity("target:other", SpatialEntityKind.TARGET, Vector3()))
+
+    with pytest.raises(SpaceEntityPlanConflictError, match="已经过期"):
+        space.commit_prevalidated_entity_plan(stale_plan)
+
+    wrong_preimage = SpatialEntity("target:one", SpatialEntityKind.TARGET, Vector3(2, 0, 0))
+    with pytest.raises(SpaceEntityPlanConflictError, match="删除前值"):
+        space.commit_prevalidated_entity_plan(
+            SpaceEntityMutationPlan(
+                operation_id="space-op:preimage",
+                frame=0,
+                expected_entity_version=space.entity_version,
+                removals=(wrong_preimage,),
+            )
+        )
+
+
+def test_empty_space_entity_plan_is_idempotent_without_version_change():
+    space = Space()
+    plan = SpaceEntityMutationPlan("space-op:empty", frame=0, expected_entity_version=0)
+
+    receipt = space.commit_prevalidated_entity_plan(plan)
+
+    assert receipt.entity_version == 0
+    assert space.entity_version == 0
+    assert space.commit_prevalidated_entity_plan(plan) is receipt
 
 
 def test_space_runtime_can_be_attached_to_simulation_context_and_runtime_world():

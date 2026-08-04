@@ -233,7 +233,9 @@ def create_public_attribute_registry() -> AttributeDefinitionRegistry:
         }
     )
     for key in additive_keys:
-        if str(key).startswith("resistance."):
+        if key == RESISTANCE_DENDRO:
+            owners = owner_both
+        elif str(key).startswith("resistance."):
             owners = target_only
         elif key == BONUS_SHIELD_STRENGTH:
             owners = character_only

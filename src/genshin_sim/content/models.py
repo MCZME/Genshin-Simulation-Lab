@@ -11,6 +11,9 @@ from genshin_sim.core.attributes import (
     ModifierStackingGroupDefinition,
     ModifierTerm,
 )
+from genshin_sim.core.coordination.elemental_reaction.capabilities import (
+    validate_reaction_capability_key,
+)
 from genshin_sim.core.systems.buff import BuffDefinition
 from genshin_sim.core.systems.damage import (
     DamageModifierProvider,
@@ -149,6 +152,7 @@ class ContentRuntimeContribution:
     damage_modifier_stacking_groups: Sequence[DamageModifierStackingGroupDefinition] = field(
         default_factory=tuple
     )
+    reaction_capability_keys: Sequence[str] = field(default_factory=tuple)
     metadata: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -159,6 +163,16 @@ class ContentRuntimeContribution:
             isinstance(self.slot, bool) or not isinstance(self.slot, int)
         ):
             raise ValueError("slot 提供时必须是整数")
+        capability_keys = tuple(self.reaction_capability_keys)
+        if capability_keys and self.owner_type != "character":
+            raise ValueError("只有角色 content 可以声明 reaction capability")
+        if capability_keys and self.slot is None:
+            raise ValueError("声明 reaction capability 的角色 content 必须提供 slot")
+        for capability_key in capability_keys:
+            validate_reaction_capability_key(capability_key)
+        if len(set(capability_keys)) != len(capability_keys):
+            raise ValueError("reaction_capability_keys 不能包含重复 key")
+        object.__setattr__(self, "reaction_capability_keys", capability_keys)
         object.__setattr__(self, "actions", tuple(self.actions))
         for impact_key in self.impact_factories:
             _validate_non_empty_text(impact_key, "impact_factories key")

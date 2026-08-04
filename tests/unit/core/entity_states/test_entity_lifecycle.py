@@ -13,10 +13,11 @@ def test_entity_lifecycle_tracks_active_window_and_expiration():
     assert lifecycle.is_active_at(14)
     assert not lifecycle.is_active_at(15)
 
-    lifecycle.expire()
+    expired = lifecycle.expired()
 
-    assert lifecycle.state is EntityLifecycleState.EXPIRED
-    assert not lifecycle.is_active_at(12)
+    assert lifecycle.state is EntityLifecycleState.ACTIVE
+    assert expired.state is EntityLifecycleState.EXPIRED
+    assert not expired.is_active_at(12)
 
 
 def test_entity_lifecycle_valid_case_smoke():

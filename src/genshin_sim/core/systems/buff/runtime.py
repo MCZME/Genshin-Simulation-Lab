@@ -130,6 +130,11 @@ class BuffRuntime:
             for result in plan.removal_results
         )
 
+    def publish_committed_facts(self, receipt: BuffCommitReceipt) -> None:
+        """发布已提交计划的 Buff 事实，并保留事件期写入保护。"""
+
+        self._publish_events(self.events_for(receipt))
+
     def update_frame(self, context, frame: int) -> None:
         del context
         validate_frame(frame)

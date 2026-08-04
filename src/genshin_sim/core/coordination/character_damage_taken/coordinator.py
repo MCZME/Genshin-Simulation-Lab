@@ -6,6 +6,7 @@ from genshin_sim.core.coordination.character_damage_taken.errors import (
     CharacterDamageTakenReentrancyError,
 )
 from genshin_sim.core.coordination.character_damage_taken.models import (
+    CharacterDamageTakenPlan,
     CharacterDamageTakenRecord,
     CharacterIncomingDamage,
 )
@@ -38,58 +39,84 @@ class CharacterDamageTakenCoordinator:
         return tuple(self._records)
 
     def apply(self, request: CharacterIncomingDamage) -> CharacterDamageTakenRecord:
-        if self._active:
-            raise CharacterDamageTakenReentrancyError("角色受伤协调器不允许同步重入")
-        self._active = True
-        try:
-            shield_plan = self.shield_port.prepare_absorption(
-                ShieldAbsorptionRequest(
-                    damage_id=request.damage_id,
-                    frame=request.frame,
-                    target_ref=request.target_ref,
-                    incoming_amount=request.amount,
-                    element=request.element,
-                    source_ref=request.source_ref,
-                    source_context=request.source_context,
-                    tags=request.tags,
-                )
-            )
-            health_application = CharacterDamageApplication(
-                change_id=request.damage_id,
+        plan = self.prepare(request)
+        self.validate(plan)
+        return self.commit_prevalidated(plan)
+
+    def prepare(self, request: CharacterIncomingDamage) -> CharacterDamageTakenPlan:
+        """只读取护盾和生命领域，构造可供外层事务预校验的计划。"""
+
+        shield_plan = self.shield_port.prepare_absorption(
+            ShieldAbsorptionRequest(
+                damage_id=request.damage_id,
                 frame=request.frame,
                 target_ref=request.target_ref,
-                amount=shield_plan.result.health_bound_damage,
+                incoming_amount=request.amount,
+                element=request.element,
                 source_ref=request.source_ref,
                 source_context=request.source_context,
                 tags=request.tags,
             )
-            health_plan = self.health_port.prepare_damage(health_application)
-            self._validate_cross_plan(request, shield_plan, health_plan)
-            self.shield_port.validate(shield_plan)
-            self.health_port.validate(health_plan)
+        )
+        health_application = CharacterDamageApplication(
+            change_id=request.damage_id,
+            frame=request.frame,
+            target_ref=request.target_ref,
+            amount=shield_plan.result.health_bound_damage,
+            source_ref=request.source_ref,
+            source_context=request.source_context,
+            tags=request.tags,
+        )
+        health_plan = self.health_port.prepare_damage(health_application)
+        plan = CharacterDamageTakenPlan(
+            incoming_damage=request,
+            shield_plan=shield_plan,
+            health_application=health_application,
+            health_plan=health_plan,
+        )
+        self._validate_cross_plan(request, shield_plan, health_plan)
+        return plan
+
+    def validate(self, plan: CharacterDamageTakenPlan) -> None:
+        self._validate_cross_plan(
+            plan.incoming_damage,
+            plan.shield_plan,
+            plan.health_plan,
+        )
+        self.shield_port.validate(plan.shield_plan)
+        self.health_port.validate(plan.health_plan)
+
+    def commit_prevalidated(
+        self,
+        plan: CharacterDamageTakenPlan,
+    ) -> CharacterDamageTakenRecord:
+        if self._active:
+            raise CharacterDamageTakenReentrancyError("角色受伤协调器不允许同步重入")
+        self._active = True
+        try:
             try:
-                shield_receipt = self.shield_port.commit_prevalidated(shield_plan)
-                health_receipt = self.health_port.commit_prevalidated(health_plan)
+                shield_receipt = self.shield_port.commit_prevalidated(plan.shield_plan)
+                health_receipt = self.health_port.commit_prevalidated(plan.health_plan)
             except Exception as exc:
                 raise CharacterDamageTakenCommitError(
                     f"预校验后的领域提交违反不得失败契约：{exc}"
                 ) from exc
             record = CharacterDamageTakenRecord(
-                incoming_damage=request,
-                shield_result=shield_plan.result,
-                health_application=health_application,
-                health_result=health_plan.result,
+                incoming_damage=plan.incoming_damage,
+                shield_result=plan.shield_plan.result,
+                health_application=plan.health_application,
+                health_result=plan.health_plan.result,
             )
             self._records.append(record)
             for event in self.shield_port.events_for(shield_receipt):
                 self.event_engine.publish(event)
             for event in self.health_port.events_for(health_receipt):
                 self.event_engine.publish(event)
-            if request.amount > 0:
+            if plan.incoming_damage.amount > 0:
                 self.event_engine.publish(
                     GameEvent(
                         event_type=EventType.DAMAGE_APPLIED,
-                        frame=request.frame,
+                        frame=plan.incoming_damage.frame,
                         payload=DamageAppliedPayload(record),
                         source=self,
                     )

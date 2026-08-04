@@ -1,0 +1,10 @@
+"""冻结稳定机制 key。"""
+
+FROZEN_REACTION_KEY = "reaction.frozen"
+FROZEN_HANDLER_KEY = "reaction_handler.frozen"
+HYDRO_ON_CRYO = "incoming_hydro_on_cryo"
+CRYO_ON_HYDRO = "incoming_cryo_on_hydro"
+HYDRO_ON_CRYO_PROFILE_KEY = "reaction_profile.frozen.incoming_hydro_on_cryo"
+CRYO_ON_HYDRO_PROFILE_KEY = "reaction_profile.frozen.incoming_cryo_on_hydro"
+FROZEN_STATE_KEY = "reaction_state.frozen"
+FREEZE_RECOVERY_STATE_KEY = "reaction_state.freeze_recovery"

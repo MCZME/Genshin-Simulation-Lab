@@ -1,8 +1,9 @@
 from __future__ import annotations
 
-from collections.abc import Iterator
+from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import replace
+from typing import overload
 
 from genshin_sim.core.attributes import (
     BONUS_SHIELD_STRENGTH,
@@ -47,6 +48,8 @@ from genshin_sim.core.systems.shield.models import (
     ShieldAbsorptionResult,
     ShieldCapacityChangeResult,
     ShieldCommitReceipt,
+    ShieldGrantCommitReceipt,
+    ShieldGrantPlan,
     ShieldGrantRequest,
     ShieldGrantResult,
     ShieldHitResult,
@@ -80,39 +83,72 @@ class ShieldRuntime:
         self.team_state = team_state
         self._mutation_active = False
         self._publishing_events = False
+        self._fact_publication_active = False
+        self._external_write_guard: Callable[[], bool] | None = None
         self._pending_events: list[GameEvent] = []
 
     def grant(self, request: ShieldGrantRequest) -> ShieldGrantResult:
         with self._mutation_scope():
-            resolution = self.resolver.resolve(request)
-            candidates = self.shield_store.conflicts(
-                request.protection_ref,
-                request.conflict_key,
-                frame=request.frame,
+            plan = self._prepare_grant_unchecked(request)
+            self.validate(plan)
+            receipt = self.commit_prevalidated(plan)
+            for event in self.events_for(receipt):
+                self._emit_event(event)
+            return plan.result
+
+    def prepare_grant(self, request: ShieldGrantRequest) -> ShieldGrantPlan:
+        """冻结护盾授予公式、冲突决策与完整记录替换，但不提交。"""
+
+        self._ensure_can_write()
+        return self._prepare_grant_unchecked(request)
+
+    def _prepare_grant_unchecked(self, request: ShieldGrantRequest) -> ShieldGrantPlan:
+        resolution = self.resolver.resolve(request)
+        candidates = self.shield_store.conflicts(
+            request.protection_ref,
+            request.conflict_key,
+            frame=request.frame,
+        )
+        if len(candidates) > 1:
+            raise ShieldStateConflictError(
+                f"conflict_key {request.conflict_key!r} 存在多个活动实例"
             )
-            if len(candidates) > 1:
+        existing = candidates[0] if candidates else None
+        if request.grant_policy is ShieldGrantPolicy.REPLACE:
+            return self._prepare_create_grant(
+                request,
+                resolution,
+                (
+                    ShieldGrantOutcome.REPLACED
+                    if existing is not None
+                    else ShieldGrantOutcome.CREATED
+                ),
+                replaced_record=existing,
+            )
+        if request.grant_policy is ShieldGrantPolicy.COEXIST:
+            if existing is not None:
                 raise ShieldStateConflictError(
-                    f"conflict_key {request.conflict_key!r} 存在多个活动实例"
+                    "coexist 第一版不允许同一 conflict_key 存在多个活动实例"
                 )
-            existing = candidates[0] if candidates else None
-            if request.grant_policy is ShieldGrantPolicy.REPLACE:
-                return self._grant_replace(request, resolution, existing)
-            if request.grant_policy is ShieldGrantPolicy.COEXIST:
-                if existing is not None:
-                    raise ShieldStateConflictError(
-                        "coexist 第一版不允许同一 conflict_key 存在多个活动实例"
-                    )
-                return self._create_grant(request, resolution, ShieldGrantOutcome.CREATED)
-            if existing is None:
-                return self._create_grant(request, resolution, ShieldGrantOutcome.CREATED)
-            if (
-                existing.mechanic_key != request.mechanic_key
-                or existing.handler_key != request.handler_key
-            ):
-                raise ShieldStateConflictError(
-                    "刷新策略要求活动实例使用相同 mechanic_key 和 handler_key"
-                )
-            return self._refresh_grant(request, resolution, existing)
+            return self._prepare_create_grant(
+                request,
+                resolution,
+                ShieldGrantOutcome.CREATED,
+            )
+        if existing is None:
+            return self._prepare_create_grant(
+                request,
+                resolution,
+                ShieldGrantOutcome.CREATED,
+            )
+        if (
+            existing.mechanic_key != request.mechanic_key
+            or existing.handler_key != request.handler_key
+        ):
+            raise ShieldStateConflictError(
+                "刷新策略要求活动实例使用相同 mechanic_key 和 handler_key"
+            )
+        return self._prepare_refresh_grant(request, resolution, existing)
 
     def remove(
         self,
@@ -262,15 +298,57 @@ class ShieldRuntime:
             removals=tuple(removals),
         )
 
-    def validate(self, plan: ShieldAbsorptionPlan) -> None:
+    def validate(self, plan: ShieldAbsorptionPlan | ShieldGrantPlan) -> None:
         self.shield_store.validate(plan)
 
-    def commit_prevalidated(self, plan: ShieldAbsorptionPlan) -> ShieldCommitReceipt:
+    @overload
+    def commit_prevalidated(self, plan: ShieldAbsorptionPlan) -> ShieldCommitReceipt: ...
+
+    @overload
+    def commit_prevalidated(self, plan: ShieldGrantPlan) -> ShieldGrantCommitReceipt: ...
+
+    def commit_prevalidated(
+        self,
+        plan: ShieldAbsorptionPlan | ShieldGrantPlan,
+    ) -> ShieldCommitReceipt | ShieldGrantCommitReceipt:
         self.shield_store.commit_prevalidated(plan)
+        if isinstance(plan, ShieldGrantPlan):
+            return ShieldGrantCommitReceipt(plan)
         return ShieldCommitReceipt(plan)
 
-    def events_for(self, receipt: ShieldCommitReceipt) -> tuple[GameEvent, ...]:
+    def events_for(
+        self,
+        receipt: ShieldCommitReceipt | ShieldGrantCommitReceipt,
+    ) -> tuple[GameEvent, ...]:
         plan = receipt.plan
+        if isinstance(plan, ShieldGrantPlan):
+            events = [
+                GameEvent(
+                    event_type=EventType.SHIELD_REMOVED,
+                    frame=item.frame,
+                    payload=ShieldRemovedPayload(item),
+                    source=self,
+                )
+                for item in plan.removals
+            ]
+            events.extend(
+                GameEvent(
+                    event_type=EventType.SHIELD_CAPACITY_CHANGED,
+                    frame=item.frame,
+                    payload=ShieldCapacityChangedPayload(item),
+                    source=self,
+                )
+                for item in plan.capacity_changes
+            )
+            events.append(
+                GameEvent(
+                    event_type=EventType.SHIELD_GRANTED,
+                    frame=plan.frame,
+                    payload=ShieldGrantedPayload(plan.result),
+                    source=self,
+                )
+            )
+            return tuple(events)
         events = [
             GameEvent(
                 event_type=EventType.SHIELD_CAPACITY_CHANGED,
@@ -299,6 +377,19 @@ class ShieldRuntime:
                 )
             )
         return tuple(events)
+
+    def publish_committed_facts(
+        self,
+        receipt: ShieldGrantCommitReceipt,
+    ) -> None:
+        """发布已经完整提交的护盾授予事实，并阻止事件期护盾回写。"""
+
+        with self.event_publication_guard():
+            for event in self.events_for(receipt):
+                self.event_engine.publish(event)
+
+    def set_external_write_guard(self, guard: Callable[[], bool] | None) -> None:
+        self._external_write_guard = guard
 
     def absorb(self, request: ShieldAbsorptionRequest) -> ShieldAbsorptionResult:
         plan = self.prepare_absorption(request)
@@ -332,30 +423,14 @@ class ShieldRuntime:
     def is_idle(self) -> bool:
         return True
 
-    def _grant_replace(self, request, resolution, existing) -> ShieldGrantResult:
-        replaced_ref = None
-        if existing is not None:
-            replaced_ref = existing.instance_ref
-        outcome = (
-            ShieldGrantOutcome.REPLACED if replaced_ref is not None else ShieldGrantOutcome.CREATED
-        )
-        return self._create_grant(
-            request,
-            resolution,
-            outcome,
-            replaced_instance_ref=replaced_ref,
-            replaced_record=existing,
-        )
-
-    def _create_grant(
+    def _prepare_create_grant(
         self,
         request,
         resolution,
         outcome,
         *,
-        replaced_instance_ref=None,
         replaced_record=None,
-    ) -> ShieldGrantResult:
+    ) -> ShieldGrantPlan:
         maximum = resolution.granted_absorption
         if request.grant_policy is ShieldGrantPolicy.ADD_CAPPED_REFRESH:
             if resolution.capacity_limit is None:
@@ -364,7 +439,7 @@ class ShieldRuntime:
         remaining = min(resolution.granted_absorption, maximum)
         if remaining <= 0:
             raise ShieldCapacityError("新护盾容量必须是正数")
-        ref = self.shield_store.allocate_ref()
+        ref = self.shield_store.preview_next_ref()
         record = ShieldRecord(
             instance_ref=ref,
             mechanic_key=request.mechanic_key,
@@ -386,7 +461,7 @@ class ShieldRuntime:
         )
         replacements = [record]
         expected = ()
-        removed = None
+        removals = ()
         if replaced_record is not None:
             removed = self._removed_record(
                 replaced_record,
@@ -395,29 +470,36 @@ class ShieldRuntime:
             )
             expected = (replaced_record,)
             replacements.append(removed)
-        self._commit_records(
-            operation_id=f"shield-grant:{request.grant_id}:{request.frame}",
-            frame=request.frame,
-            expected=expected,
-            replacements=tuple(replacements),
-        )
+            removals = (self._removal_result(removed),)
         result = ShieldGrantResult(
             resolution=resolution,
             outcome=outcome,
             instance_ref=ref,
-            replaced_instance_ref=replaced_instance_ref,
+            replaced_instance_ref=(
+                None if replaced_record is None else replaced_record.instance_ref
+            ),
             remaining_before=0.0,
             remaining_after=remaining,
             maximum_after=maximum,
             expires_at_before=None,
             expires_at_after=record.expires_at_frame,
         )
-        if removed is not None:
-            self._publish_removed(self._removal_result(removed))
-        self._publish_granted(result)
-        return result
+        return ShieldGrantPlan(
+            operation_id=f"shield-grant:{request.grant_id}:{request.frame}",
+            frame=request.frame,
+            expected_store_version=self.shield_store.version,
+            expected_records=expected,
+            replacement_records=tuple(replacements),
+            result=result,
+            removals=removals,
+        )
 
-    def _refresh_grant(self, request, resolution, existing: ShieldRecord) -> ShieldGrantResult:
+    def _prepare_refresh_grant(
+        self,
+        request,
+        resolution,
+        existing: ShieldRecord,
+    ) -> ShieldGrantPlan:
         state = existing.state
         remaining_before = state.remaining_native_absorption
         maximum_before = state.maximum_native_absorption
@@ -458,12 +540,6 @@ class ShieldRuntime:
                 tags=request.tags,
             ),
         )
-        self._commit_records(
-            operation_id=f"shield-refresh:{request.grant_id}:{request.frame}",
-            frame=request.frame,
-            expected=(existing,),
-            replacements=(refreshed,),
-        )
         result = ShieldGrantResult(
             resolution=resolution,
             outcome=outcome,
@@ -475,8 +551,9 @@ class ShieldRuntime:
             expires_at_before=existing.expires_at_frame,
             expires_at_after=refreshed.expires_at_frame,
         )
+        capacity_changes = ()
         if remaining_before != remaining_after or maximum_before != maximum_after:
-            self._publish_capacity_changed(
+            capacity_changes = (
                 ShieldCapacityChangeResult(
                     frame=request.frame,
                     instance_ref=existing.instance_ref,
@@ -487,10 +564,17 @@ class ShieldRuntime:
                     native_after=remaining_after,
                     maximum_before=maximum_before,
                     maximum_after=maximum_after,
-                )
+                ),
             )
-        self._publish_granted(result)
-        return result
+        return ShieldGrantPlan(
+            operation_id=f"shield-refresh:{request.grant_id}:{request.frame}",
+            frame=request.frame,
+            expected_store_version=self.shield_store.version,
+            expected_records=(existing,),
+            replacement_records=(refreshed,),
+            result=result,
+            capacity_changes=capacity_changes,
+        )
 
     def _calculate_hit(
         self,
@@ -637,14 +721,34 @@ class ShieldRuntime:
 
     @contextmanager
     def _mutation_scope(self) -> Iterator[None]:
-        if self._mutation_active or self._publishing_events:
-            raise ShieldStateConflictError("护盾状态提交或事实事件发布期间不允许重入修改")
+        self._ensure_can_write()
         self._mutation_active = True
         try:
             yield
         finally:
             self._mutation_active = False
             self._flush_pending_events()
+
+    @contextmanager
+    def event_publication_guard(self) -> Iterator[None]:
+        """在跨领域已提交事实发布期间拒绝护盾写入。"""
+
+        if self._fact_publication_active or self._publishing_events:
+            raise ShieldStateConflictError("护盾事实发布不允许嵌套")
+        self._fact_publication_active = True
+        try:
+            yield
+        finally:
+            self._fact_publication_active = False
+
+    def _ensure_can_write(self) -> None:
+        if (
+            self._mutation_active
+            or self._publishing_events
+            or self._fact_publication_active
+            or (self._external_write_guard is not None and self._external_write_guard())
+        ):
+            raise ShieldStateConflictError("护盾状态提交或事实事件发布期间不允许重入修改")
 
     def _emit_event(self, event: GameEvent) -> None:
         if self._mutation_active:

@@ -17,6 +17,9 @@ from genshin_sim.application.assembly.errors import (
     MissingRuntimeAssetError,
     MissingRuntimeHandlerError,
 )
+from genshin_sim.application.assembly.reaction_capabilities import (
+    build_static_reaction_eligibility_port,
+)
 from genshin_sim.application.config import SimulationConfig, TeamSlotConfig
 from genshin_sim.assets import AssetError, AssetRepository
 from genshin_sim.assets.models import (
@@ -63,6 +66,27 @@ from genshin_sim.core.attributes import (
 from genshin_sim.core.coordination.character_damage_taken import (
     CharacterDamageTakenCoordinator,
 )
+from genshin_sim.core.coordination.elemental_reaction import (
+    BloomCoreTriggerCoordinator,
+    CrystallizeShardPickupCoordinator,
+    DendroCoreExpiryCoordinator,
+    ElementalInteractionCoordinator,
+    ElementalSettlementCoordinator,
+    ElementalStateFrameCoordinator,
+    LunarCageExpiryCoordinator,
+    LunarStormCloudExpiryCoordinator,
+    ReactionBoundEntityExpiryCoordinator,
+    ReactionEligibilityReadPort,
+    ReactionSpatialPlanningAdapter,
+)
+from genshin_sim.core.coordination.elemental_reaction.observers import (
+    CharacterCrystallizeSourceObserver,
+    CharacterTransformativeSourceObserver,
+)
+from genshin_sim.core.coordination.elemental_reaction.status import (
+    ReactionStatusBuffAdapter,
+    superconduct_buff_definition,
+)
 from genshin_sim.core.entity_states import (
     CharacterRuntimeState,
     HealthState,
@@ -92,6 +116,8 @@ from genshin_sim.core.space import (
     Vector3,
 )
 from genshin_sim.core.space.runtime import SpaceRuntime
+from genshin_sim.core.systems.aura import AuraApplicationProfileRegistry, AuraRuntime
+from genshin_sim.core.systems.aura_icd import AuraIcdRuntime
 from genshin_sim.core.systems.buff import (
     BuffDefinition,
     BuffImpactRequestHandler,
@@ -105,10 +131,13 @@ from genshin_sim.core.systems.damage import (
     DamageModifierIndex,
     DamageModifierProvider,
     DamageModifierStackingGroupDefinition,
+    DamageProfile,
+    DamageProfileRegistry,
     DamageRequestHandler,
     DamageResolver,
     DamageSystemError,
-    GeneralDamageFormula,
+    DamageType,
+    create_default_damage_formula_registry,
 )
 from genshin_sim.core.systems.energy import (
     CharacterEnergyProfile,
@@ -129,6 +158,30 @@ from genshin_sim.core.systems.health import (
     HealthRuntime,
     HealthSystemError,
     validate_health_float,
+)
+from genshin_sim.core.systems.reaction import (
+    ReactionRuntime,
+    create_default_reaction_bootstrap,
+)
+from genshin_sim.core.systems.reaction.mechanics.bloom import bloom_damage_profiles
+from genshin_sim.core.systems.reaction.mechanics.burning import (
+    burning_damage_profile,
+    burning_pyro_aura_application_profile,
+)
+from genshin_sim.core.systems.reaction.mechanics.catalyze import catalyze_damage_profile
+from genshin_sim.core.systems.reaction.mechanics.lunar_bloom import (
+    lunar_bloom_damage_profiles,
+)
+from genshin_sim.core.systems.reaction.mechanics.lunar_crystallize import (
+    lunar_crystallize_damage_profiles,
+)
+from genshin_sim.core.systems.reaction.mechanics.lunar_electro_charged import (
+    lunar_electro_charged_damage_profiles,
+)
+from genshin_sim.core.systems.reaction.mechanics.swirl import (
+    SwirlGeneratedImpactDamageInputAdapter,
+    swirl_aura_application_profile,
+    swirl_damage_profile,
 )
 from genshin_sim.core.systems.shield import (
     ShieldImpactRequestHandler,
@@ -193,6 +246,14 @@ class AssembledSimulation:
     impact_dispatcher: ImpactDispatcher
     impact_request_dispatcher: ImpactRequestDispatcher
     damage_handler: DamageRequestHandler
+    aura_runtime: AuraRuntime
+    aura_icd_runtime: AuraIcdRuntime
+    reaction_runtime: ReactionRuntime
+    bloom_core_trigger_coordinator: BloomCoreTriggerCoordinator
+    crystallize_shard_pickup_coordinator: CrystallizeShardPickupCoordinator
+    elemental_state_frame_coordinator: ElementalStateFrameCoordinator
+    elemental_interaction_coordinator: ElementalInteractionCoordinator
+    elemental_settlement_coordinator: ElementalSettlementCoordinator
     healing_handler: HealingRequestHandler
     health_runtime: HealthRuntime
     energy_store: CharacterEnergyStore
@@ -212,6 +273,7 @@ class AssembledSimulation:
     space_runtime: SpaceRuntime
     impact_runtime: ImpactRuntime
     content_bundle: RuntimeContentBundle
+    reaction_eligibility_port: ReactionEligibilityReadPort
     attribute_runtime: AttributeRuntimeBundle
     runtime_world: BasicRuntimeWorld
     assets: tuple[RuntimeAssetBundle, ...]
@@ -224,9 +286,12 @@ class SimulationAssembler:
         self,
         asset_repository: AssetRepository,
         handler_registry: HandlerRegistry,
+        *,
+        damage_formula_registry: DamageFormulaRegistry | None = None,
     ) -> None:
         self.asset_repository = asset_repository
         self.handler_registry = handler_registry
+        self.damage_formula_registry = damage_formula_registry
 
     def assemble(self, config: SimulationConfig) -> AssembledSimulation:
         if not config.team:
@@ -239,7 +304,12 @@ class SimulationAssembler:
         except BuffSystemError as exc:
             raise InvalidRuntimePayloadError(str(exc)) from exc
         content_bundle = self._build_content_bundle(contributions)
-        buff_registry = build_buff_definition_registry(content_bundle.buff_definitions)
+        reaction_eligibility_port = build_static_reaction_eligibility_port(
+            content_bundle.contributions
+        )
+        buff_registry = build_buff_definition_registry(
+            (*content_bundle.buff_definitions, superconduct_buff_definition())
+        )
         attribute_runtime_without_buffs = build_attribute_runtime(
             config=config,
             assets=assets,
@@ -401,8 +471,48 @@ class SimulationAssembler:
                 DamageResolver(
                     attribute_resolver=attribute_runtime.resolver,
                     modifier_index=damage_modifier_index,
-                    formula_registry=DamageFormulaRegistry((GeneralDamageFormula(),)),
-                )
+                    formula_registry=(
+                        self.damage_formula_registry
+                        if self.damage_formula_registry is not None
+                        else create_default_damage_formula_registry()
+                    ),
+                ),
+                profile_registry=DamageProfileRegistry(
+                    (
+                        DamageProfile(
+                            "damage_profile.testing.runtime_probe",
+                            DamageType.GENERAL,
+                            frozenset({"testing.runtime_probe.direct"}),
+                        ),
+                        DamageProfile(
+                            "damage_profile.reaction.overloaded",
+                            DamageType.TRANSFORMATIVE_REACTION,
+                            frozenset({"reaction.overloaded"}),
+                        ),
+                        DamageProfile(
+                            "damage_profile.reaction.superconduct",
+                            DamageType.TRANSFORMATIVE_REACTION,
+                            frozenset({"reaction.superconduct"}),
+                        ),
+                        DamageProfile(
+                            "damage_profile.reaction.shattered",
+                            DamageType.TRANSFORMATIVE_REACTION,
+                            frozenset({"reaction.shattered"}),
+                        ),
+                        DamageProfile(
+                            "damage_profile.reaction.electro_charged",
+                            DamageType.TRANSFORMATIVE_REACTION,
+                            frozenset({"reaction.electro_charged"}),
+                        ),
+                        swirl_damage_profile(),
+                        burning_damage_profile(),
+                        catalyze_damage_profile(),
+                        *bloom_damage_profiles(),
+                        *lunar_bloom_damage_profiles(),
+                        *lunar_electro_charged_damage_profiles(),
+                        *lunar_crystallize_damage_profiles(),
+                    )
+                ),
             )
         except DamageSystemError as exc:
             raise InvalidRuntimePayloadError(str(exc)) from exc
@@ -445,11 +555,111 @@ class SimulationAssembler:
         context.register_system(shield_runtime)
         context.register_system(shield_handler)
         context.register_system(character_damage_taken_coordinator)
+        aura_runtime = AuraRuntime()
+        aura_icd_runtime = AuraIcdRuntime()
+        reaction_bootstrap = create_default_reaction_bootstrap()
+        reaction_runtime = reaction_bootstrap.create_runtime()
+        reaction_spatial_planning_port = ReactionSpatialPlanningAdapter(space)
+        crystallize_shard_pickup_coordinator = CrystallizeShardPickupCoordinator(
+            reaction_state_port=reaction_runtime,
+            spatial_planning_port=reaction_spatial_planning_port,
+            shield_grant_port=shield_runtime,
+        )
+        elemental_state_frame_coordinator = ElementalStateFrameCoordinator(
+            aura_runtime,
+            aura_icd_runtime,
+            reaction_runtime,
+            ReactionBoundEntityExpiryCoordinator(
+                reaction_state_port=reaction_runtime,
+                spatial_planning_port=reaction_spatial_planning_port,
+            ),
+            DendroCoreExpiryCoordinator(
+                reaction_state_port=reaction_runtime,
+                spatial_planning_port=reaction_spatial_planning_port,
+            ),
+            LunarStormCloudExpiryCoordinator(
+                reaction_state_port=reaction_runtime,
+                spatial_planning_port=reaction_spatial_planning_port,
+            ),
+            lunar_cage_expiry_coordinator=LunarCageExpiryCoordinator(
+                reaction_state_port=reaction_runtime,
+                spatial_planning_port=reaction_spatial_planning_port,
+            ),
+        )
+        elemental_interaction_coordinator = ElementalInteractionCoordinator(
+            aura_runtime=aura_runtime,
+            icd_runtime=aura_icd_runtime,
+            reaction_runtime=reaction_runtime,
+            damage_handler=damage_handler,
+            frame_coordinator=elemental_state_frame_coordinator,
+            transformative_source_observer=CharacterTransformativeSourceObserver(
+                attribute_runtime.resolver
+            ),
+            crystallize_source_observer=CharacterCrystallizeSourceObserver(
+                attribute_runtime.resolver
+            ),
+            reaction_eligibility_port=reaction_eligibility_port,
+            spatial_planning_port=reaction_spatial_planning_port,
+        )
+        bloom_core_trigger_coordinator = BloomCoreTriggerCoordinator(
+            reaction_state_port=reaction_runtime,
+            spatial_planning_port=reaction_spatial_planning_port,
+            impact_evidence_port=elemental_interaction_coordinator,
+        )
+        elemental_settlement_coordinator = ElementalSettlementCoordinator(
+            elemental_interaction_coordinator,
+            reaction_runtime=reaction_runtime,
+            aura_runtime=aura_runtime,
+            frame_coordinator=elemental_state_frame_coordinator,
+            damage_handler=damage_handler,
+            generated_impact_damage_input_adapter=SwirlGeneratedImpactDamageInputAdapter(),
+            buff_runtime=buff_runtime,
+            status_adapter=ReactionStatusBuffAdapter(),
+            dynamic_transformative_source_observer=CharacterTransformativeSourceObserver(
+                attribute_runtime.resolver
+            ),
+            bloom_core_trigger_coordinator=bloom_core_trigger_coordinator,
+            character_damage_taken_coordinator=character_damage_taken_coordinator,
+            aura_application_profile_registry=AuraApplicationProfileRegistry(
+                (
+                    swirl_aura_application_profile(),
+                    burning_pyro_aura_application_profile(),
+                )
+            ),
+        )
+        reaction_runtime.set_external_write_guard(
+            lambda: (
+                elemental_settlement_coordinator.is_publishing_facts
+                or crystallize_shard_pickup_coordinator.is_publishing_facts
+            )
+        )
+        space.set_external_write_guard(
+            lambda: (
+                elemental_settlement_coordinator.is_publishing_facts
+                or crystallize_shard_pickup_coordinator.is_publishing_facts
+            )
+        )
+        damage_handler.set_external_write_guard(
+            lambda: elemental_settlement_coordinator.is_publishing_facts
+        )
+        shield_runtime.set_external_write_guard(
+            lambda: (
+                elemental_settlement_coordinator.is_publishing_facts
+                or crystallize_shard_pickup_coordinator.is_publishing_facts
+            )
+        )
+        context.register_system(aura_runtime)
+        context.register_system(aura_icd_runtime)
+        context.register_system(reaction_runtime)
+        context.register_system(elemental_state_frame_coordinator)
+        context.register_system(elemental_interaction_coordinator)
+        context.register_system(elemental_settlement_coordinator)
         impact_request_dispatcher = ImpactRequestDispatcher(
             damage_handler,
             shield_handler,
             buff_handler,
             energy_handler,
+            elemental_settlement_coordinator,
         )
         impact_runtime = ImpactRuntime(
             action_manager,
@@ -460,6 +670,7 @@ class SimulationAssembler:
             [
                 buff_runtime,
                 shield_runtime,
+                elemental_settlement_coordinator,
                 action_manager,
                 impact_runtime,
                 energy_runtime,
@@ -482,13 +693,21 @@ class SimulationAssembler:
             impact_dispatcher=impact_dispatcher,
             impact_request_dispatcher=impact_request_dispatcher,
             damage_handler=damage_handler,
+            aura_runtime=aura_runtime,
+            aura_icd_runtime=aura_icd_runtime,
+            reaction_runtime=reaction_runtime,
+            bloom_core_trigger_coordinator=bloom_core_trigger_coordinator,
+            crystallize_shard_pickup_coordinator=crystallize_shard_pickup_coordinator,
+            elemental_state_frame_coordinator=elemental_state_frame_coordinator,
+            elemental_interaction_coordinator=elemental_interaction_coordinator,
+            elemental_settlement_coordinator=elemental_settlement_coordinator,
             healing_handler=healing_handler,
             health_runtime=health_runtime,
             energy_store=energy_store,
             energy_transit_queue=energy_transit_queue,
             energy_runtime=energy_runtime,
             energy_handler=energy_handler,
-            buff_definitions=buff_registry.definitions,
+            buff_definitions=content_bundle.buff_definitions,
             buff_store=buff_store,
             buff_resolver=buff_resolver,
             buff_runtime=buff_runtime,
@@ -501,6 +720,7 @@ class SimulationAssembler:
             space_runtime=space_runtime,
             impact_runtime=impact_runtime,
             content_bundle=content_bundle,
+            reaction_eligibility_port=reaction_eligibility_port,
             attribute_runtime=attribute_runtime,
             runtime_world=runtime_world,
             assets=assets,

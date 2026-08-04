@@ -12,6 +12,7 @@ from genshin_sim.core.coordination.character_damage_taken.errors import (
     CharacterDamageTakenValidationError,
 )
 from genshin_sim.core.coordination.character_damage_taken.models import (
+    CharacterDamageTakenPlan,
     CharacterDamageTakenRecord,
     CharacterIncomingDamage,
 )
@@ -23,6 +24,7 @@ from genshin_sim.core.coordination.character_damage_taken.protocols import (
 __all__ = [
     "CharacterDamageTakenCommitError",
     "CharacterDamageTakenCoordinator",
+    "CharacterDamageTakenPlan",
     "CharacterDamageTakenError",
     "CharacterDamageTakenPlanConflictError",
     "CharacterDamageTakenRecord",

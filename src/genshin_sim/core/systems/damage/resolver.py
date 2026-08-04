@@ -16,6 +16,7 @@ from genshin_sim.core.attributes import (
     ProviderAttributeSubjectScope,
     TraceLevel,
 )
+from genshin_sim.core.systems.damage.enums import CritOutcome
 from genshin_sim.core.systems.damage.errors import DamageProviderViolationError
 from genshin_sim.core.systems.damage.formulas import (
     DamageFormulaContext,
@@ -24,9 +25,13 @@ from genshin_sim.core.systems.damage.formulas import (
     create_default_damage_formula_registry,
 )
 from genshin_sim.core.systems.damage.models import (
+    CatalyzeReactionDamageResolution,
     DamageQuery,
     DamageResult,
+    DefenseResolution,
     GeneralDamageResolution,
+    LunarReactionDamageResolution,
+    TransformativeReactionResolution,
 )
 from genshin_sim.core.systems.damage.modifiers import (
     DamageAttributeRead,
@@ -178,11 +183,131 @@ def _validate_formula_stages(
 
 def _build_damage_result(
     query: DamageQuery,
-    resolution: GeneralDamageResolution,
+    resolution: (
+        GeneralDamageResolution
+        | CatalyzeReactionDamageResolution
+        | TransformativeReactionResolution
+        | LunarReactionDamageResolution
+    ),
     modifiers: DamageModifierCollection,
     trace_level: TraceLevel,
 ) -> DamageResult:
     """把公式专属 resolution 映射回第一轮兼容的扁平结果模型。"""
+
+    if isinstance(resolution, LunarReactionDamageResolution):
+        return DamageResult(
+            request_id=query.request.request_id,
+            frame=query.request.frame,
+            damage_type=query.request.damage_type,
+            source_ref=query.request.source_ref,
+            target_ref=query.request.target_ref,
+            element=query.request.element,
+            base_damage=resolution.weighted_base_damage,
+            base_damage_additions=(),
+            damage_bonus_multiplier=1.0,
+            crit_outcome=CritOutcome.NOT_APPLICABLE,
+            crit_rate=0.0,
+            crit_damage=0.0,
+            crit_multiplier=1.0,
+            reaction_multiplier=1.0,
+            defense=DefenseResolution(
+                source_level=query.request.source_level,
+                target_level=query.request.target_level,
+                defense_reduction=0.0,
+                defense_ignore=0.0,
+                multiplier=1.0,
+            ),
+            resistance=resolution.resistance,
+            official_damage=resolution.official_damage,
+            debug_multiplier=resolution.debug_multiplier,
+            final_damage=resolution.final_damage,
+            lunar_reaction_resolution=resolution,
+            source_attribute_trace=(
+                () if trace_level is TraceLevel.NONE else resolution.source_attribute_trace
+            ),
+            target_attribute_trace=(
+                () if trace_level is TraceLevel.NONE else resolution.target_attribute_trace
+            ),
+            applied_terms=(),
+            rejected_terms=(),
+            trace_level=trace_level,
+            trace_metadata={
+                "lunar_mode": resolution.reaction.mode.value,
+                "lunar_participant_count": len(resolution.components),
+            },
+        )
+
+    if isinstance(resolution, TransformativeReactionResolution):
+        return DamageResult(
+            request_id=query.request.request_id,
+            frame=query.request.frame,
+            damage_type=query.request.damage_type,
+            source_ref=query.request.source_ref,
+            target_ref=query.request.target_ref,
+            element=query.request.element,
+            base_damage=resolution.reaction.level_multiplier * resolution.reaction.base_multiplier,
+            base_damage_additions=(),
+            damage_bonus_multiplier=1.0,
+            crit_outcome=CritOutcome.NOT_APPLICABLE,
+            crit_rate=0.0,
+            crit_damage=0.0,
+            crit_multiplier=1.0,
+            reaction_multiplier=1
+            + resolution.reaction.mastery_bonus
+            + resolution.reaction.reaction_bonus,
+            defense=resolution.defense,
+            resistance=resolution.resistance,
+            official_damage=resolution.official_damage,
+            debug_multiplier=resolution.debug_multiplier,
+            final_damage=resolution.final_damage,
+            reaction_details=resolution.reaction,
+            secondary_amplifying_resolution=resolution.secondary_amplifying_resolution,
+            source_attribute_trace=(),
+            target_attribute_trace=(
+                () if trace_level is TraceLevel.NONE else resolution.target_attribute_trace
+            ),
+            applied_terms=(),
+            rejected_terms=(),
+            trace_level=trace_level,
+            trace_metadata={"defense_policy": resolution.reaction.defense_policy},
+        )
+
+
+    if isinstance(resolution, CatalyzeReactionDamageResolution):
+        applied_terms = () if trace_level is TraceLevel.NONE else modifiers.applied_terms
+        rejected_terms = modifiers.rejected_terms if trace_level is TraceLevel.FULL else ()
+        source_trace = () if trace_level is TraceLevel.NONE else resolution.source_attribute_trace
+        target_trace = () if trace_level is TraceLevel.NONE else resolution.target_attribute_trace
+        return DamageResult(
+            request_id=query.request.request_id,
+            frame=query.request.frame,
+            damage_type=query.request.damage_type,
+            source_ref=query.request.source_ref,
+            target_ref=query.request.target_ref,
+            element=query.request.element,
+            base_damage=resolution.scaling.value,
+            base_damage_additions=resolution.scaling.additions,
+            damage_bonus_multiplier=resolution.damage_bonus.multiplier,
+            crit_outcome=resolution.critical.outcome,
+            crit_rate=resolution.critical.crit_rate,
+            crit_damage=resolution.critical.crit_damage,
+            crit_multiplier=resolution.critical.multiplier,
+            reaction_multiplier=resolution.reaction.multiplier,
+            defense=resolution.defense,
+            resistance=resolution.resistance,
+            official_damage=resolution.official_damage,
+            debug_multiplier=resolution.debug_multiplier,
+            final_damage=resolution.final_damage,
+            reaction_details=resolution.reaction,
+            catalyze_reaction_resolution=resolution.catalyze,
+            component_results=resolution.scaling.component_results,
+            source_attribute_trace=source_trace,
+            target_attribute_trace=target_trace,
+            applied_terms=applied_terms,
+            rejected_terms=rejected_terms,
+            trace_level=trace_level,
+            trace_metadata={"effective_crit_rate": resolution.critical.effective_crit_rate},
+        )
 
     applied_terms = () if trace_level is TraceLevel.NONE else modifiers.applied_terms
     rejected_terms = modifiers.rejected_terms if trace_level is TraceLevel.FULL else ()
@@ -208,6 +333,7 @@ def _build_damage_result(
         official_damage=resolution.official_damage,
         debug_multiplier=resolution.debug_multiplier,
         final_damage=resolution.final_damage,
+        reaction_details=resolution.reaction,
         component_results=resolution.scaling.component_results,
         source_attribute_trace=source_trace,
         target_attribute_trace=target_trace,

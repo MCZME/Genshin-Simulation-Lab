@@ -8,7 +8,7 @@ from genshin_sim.core.protocols import FrameUpdatable
 from genshin_sim.core.simulation.team import TeamRuntimeState
 from genshin_sim.core.space.created_objects import CreatedObjectRuntime
 from genshin_sim.core.space.entities import SpatialEntity, SpatialEntityKind
-from genshin_sim.core.space.geometry import CircleArea, Vector3
+from genshin_sim.core.space.geometry import CircleArea, CircleSectorArea, OrientedBoxArea, Vector3
 from genshin_sim.core.space.space import Space
 
 
@@ -62,7 +62,7 @@ class SpaceRuntime(FrameUpdatable):
 
     def entities_in_area(
         self,
-        area: CircleArea,
+        area: CircleArea | CircleSectorArea | OrientedBoxArea,
         *,
         kinds: Iterable[SpatialEntityKind] | None = None,
         exclude_entity_ids: Iterable[str] = (),

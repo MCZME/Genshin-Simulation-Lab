@@ -10,6 +10,7 @@ from genshin_sim.core.systems.shield.errors import (
 )
 from genshin_sim.core.systems.shield.models import (
     ShieldAbsorptionPlan,
+    ShieldGrantPlan,
     ShieldInstanceRef,
     ShieldMutationPlan,
     ShieldProtectionRef,
@@ -51,6 +52,11 @@ class ShieldStore:
         ref = ShieldInstanceRef(self._next_sequence)
         self._next_sequence += 1
         return ref
+
+    def preview_next_ref(self) -> ShieldInstanceRef:
+        """为计划冻结下一引用；只有成功提交记录时才推进序号。"""
+
+        return ShieldInstanceRef(self._next_sequence)
 
     def get(self, instance_ref: ShieldInstanceRef) -> ShieldRecord | None:
         return self._records.get(instance_ref)
@@ -118,7 +124,10 @@ class ShieldStore:
             if record.state.conflict_key == conflict_key
         )
 
-    def validate(self, plan: ShieldAbsorptionPlan | ShieldMutationPlan) -> None:
+    def validate(
+        self,
+        plan: ShieldAbsorptionPlan | ShieldGrantPlan | ShieldMutationPlan,
+    ) -> None:
         if plan.operation_id in self._committed_operations:
             raise ShieldPlanConflictError(f"护盾计划已提交：{plan.operation_id}")
         if plan.expected_store_version != self._version:
@@ -130,11 +139,18 @@ class ShieldStore:
             if self._records.get(expected.instance_ref) != expected:
                 raise ShieldPlanConflictError(f"护盾记录前值冲突：{expected.instance_ref}")
 
-    def commit_prevalidated(self, plan: ShieldAbsorptionPlan | ShieldMutationPlan) -> None:
+    def commit_prevalidated(
+        self,
+        plan: ShieldAbsorptionPlan | ShieldGrantPlan | ShieldMutationPlan,
+    ) -> None:
         # 所有可能产生领域错误的判断必须在 validate 中完成。
         for record in plan.replacement_records:
             self._records[record.instance_ref] = record
         if plan.replacement_records:
+            self._next_sequence = max(
+                self._next_sequence,
+                max(record.instance_ref.sequence for record in plan.replacement_records) + 1,
+            )
             self._version += 1
         self._committed_operations.add(plan.operation_id)
 

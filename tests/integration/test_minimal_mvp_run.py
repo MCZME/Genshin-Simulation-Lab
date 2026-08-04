@@ -46,7 +46,10 @@ def test_cli_run_persists_minimal_config_to_result_database(
         "INPUT_SESSION_BOUNDARY_REACHED",
         "INPUT_KEY_RECEIVED",
         "INPUT_SESSION_BOUNDARY_REACHED",
+        "AURA_ICD_RESOLVED",
+        "AURA_APPLIED",
         "DAMAGE_RESOLVED",
+        "ELEMENTAL_INTERACTION_RESOLVED",
         "SIMULATION_ENDED",
     ]
     assert detail.events[1].data == {
@@ -63,8 +66,8 @@ def test_cli_run_persists_minimal_config_to_result_database(
         "session_id": 1,
     }
     assert detail.events[4].data["held_frames"] == 1
-    assert detail.events[5].data["result"]["final_damage"] > 0
-    assert detail.events[6].data == {
+    assert detail.events[7].data["result"]["final_damage"] > 0
+    assert detail.events[9].data == {
         "stop_reason": "COMPLETED",
         "end_frame": 3,
         "frames_run": 3,

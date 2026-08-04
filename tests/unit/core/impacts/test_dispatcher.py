@@ -1,14 +1,21 @@
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from genshin_sim.core.actions import ActionOwnerRef
+from genshin_sim.core.elements import AuraAmount
 from genshin_sim.core.impacts import (
     ActionImpactContext,
+    DamageImpactSpec,
     ImpactDispatcher,
     ImpactKind,
     ImpactRequest,
+    StrikeType,
 )
+from genshin_sim.core.systems.aura import AuraStrength
+from genshin_sim.core.systems.damage import DamageElement, DamageScalingTerm
 
 
 class RecordingImpactFactory:
@@ -58,3 +65,48 @@ def test_impact_dispatcher_reports_missing_factory():
 
     with pytest.raises(KeyError, match="未注册 impact factory：character.test.skill.hit"):
         dispatcher.dispatch(context)
+
+
+def test_damage_impact_spec_rejects_invalid_elemental_field_types_in_chinese():
+    with pytest.raises(ValueError, match="scaling_terms 必须是 DamageScalingTerm 序列"):
+        DamageImpactSpec(
+            impact_ref="test.impact",
+            main_attack_tag="test.attack",
+            element=DamageElement.HYDRO,
+            scaling_terms=(cast(DamageScalingTerm, "invalid"),),
+        )
+
+
+def test_damage_impact_spec_requires_strike_type_enum_when_provided():
+    with pytest.raises(ValueError, match="StrikeType"):
+        DamageImpactSpec(
+            impact_ref="test.impact",
+            main_attack_tag="test.attack",
+            element=DamageElement.PHYSICAL,
+            strike_type=cast(StrikeType, "blunt"),
+        )
+
+    spec = DamageImpactSpec(
+        impact_ref="test.impact",
+        main_attack_tag="test.attack",
+        element=DamageElement.PHYSICAL,
+        strike_type=StrikeType.BLUNT,
+    )
+    assert spec.strike_type is StrikeType.BLUNT
+
+    with pytest.raises(ValueError, match="elemental_amount 必须是 AuraAmount"):
+        DamageImpactSpec(
+            impact_ref="test.impact",
+            main_attack_tag="test.attack",
+            element=DamageElement.HYDRO,
+            elemental_amount=cast(AuraAmount, 1),
+        )
+
+    with pytest.raises(ValueError, match="elemental_strength 必须是 AuraStrength 或 None"):
+        DamageImpactSpec(
+            impact_ref="test.impact",
+            main_attack_tag="test.attack",
+            element=DamageElement.HYDRO,
+            elemental_strength=cast(AuraStrength, "weak"),
+            elemental_amount=AuraAmount.one(),
+        )

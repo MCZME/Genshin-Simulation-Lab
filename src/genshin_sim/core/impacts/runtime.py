@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
+from typing import Protocol
 
 from genshin_sim.core.actions import (
     ActionImpactPoint,
@@ -17,6 +18,18 @@ from genshin_sim.core.systems.buff import BuffApplicationRecord, BuffImpactReque
 from genshin_sim.core.systems.damage import DamageRequestHandler, DamageResolutionRecord
 from genshin_sim.core.systems.energy import EnergyImpactRecord, EnergyImpactRequestHandler
 from genshin_sim.core.systems.shield import ShieldGrantRecord, ShieldImpactRequestHandler
+
+
+class ElementalSettlementPort(Protocol):
+    """元素 settlement 协调器暴露给 ImpactRuntime 的窄入口。"""
+
+    def settle_damage_impact(self, context, request: ImpactRequest) -> object:
+        """结算一个携带元素施加的 Damage Impact。"""
+        ...
+
+    def settle_aura_impact(self, context, request: ImpactRequest) -> object:
+        """结算一个不造成伤害的元素施加 Impact。"""
+        ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -57,11 +70,13 @@ class ImpactRequestDispatcher:
         shield_handler: ShieldImpactRequestHandler | None = None,
         buff_handler: BuffImpactRequestHandler | None = None,
         energy_handler: EnergyImpactRequestHandler | None = None,
+        elemental_settlement_coordinator: ElementalSettlementPort | None = None,
     ) -> None:
         self.damage_handler = damage_handler
         self.shield_handler = shield_handler
         self.buff_handler = buff_handler
         self.energy_handler = energy_handler
+        self.elemental_settlement_coordinator = elemental_settlement_coordinator
         self._created_object_records: list[CreatedObjectRecord] = []
         self._ignored_requests: list[IgnoredImpactRecord] = []
 
@@ -101,6 +116,9 @@ class ImpactRequestDispatcher:
         for request in requests:
             if request.kind is ImpactKind.DAMAGE:
                 self._handle_damage_request(context, request)
+                continue
+            if request.kind is ImpactKind.APPLY_AURA:
+                self._handle_apply_aura_request(context, request)
                 continue
             if request.kind is ImpactKind.SHIELD:
                 self._handle_shield_request(context, request)
@@ -150,7 +168,51 @@ class ImpactRequestDispatcher:
                 )
             )
             return
+        if (
+            request.damage_spec is not None
+            and (
+                (
+                    request.damage_spec.elemental_strength is not None
+                    and not request.damage_spec.elemental_amount.is_zero
+                )
+                or request.damage_spec.strike_type is not None
+                or request.damage_spec.icd_label_key is not None
+            )
+            and self.elemental_settlement_coordinator is not None
+        ):
+            self.elemental_settlement_coordinator.settle_damage_impact(context, request)
+            return
         self.damage_handler.handle_impact_request(context, request)
+
+    def _handle_apply_aura_request(self, context, request: ImpactRequest) -> None:
+        if request.elemental_application_spec is None:
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="元素施加请求缺少 ElementalApplicationSpec",
+                )
+            )
+            return
+        if not request.target_refs:
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="元素施加请求没有目标",
+                )
+            )
+            return
+        if self.elemental_settlement_coordinator is None:
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="元素施加结算协调器尚未接入",
+                )
+            )
+            return
+        self.elemental_settlement_coordinator.settle_aura_impact(context, request)
 
     def _handle_shield_request(self, context, request: ImpactRequest) -> None:
         if self.shield_handler is None:

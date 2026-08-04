@@ -10,6 +10,7 @@ from genshin_sim.core.attributes import (
     ELEMENT_TO_DAMAGE_BONUS_KEY,
     STAT_CRIT_DAMAGE,
     STAT_CRIT_RATE,
+    STAT_ELEMENTAL_MASTERY,
     AttributeResolution,
 )
 from genshin_sim.core.systems.damage.enums import CritOutcome, DamageModifierStage
@@ -247,7 +248,11 @@ class StandardCriticalZonePolicy:
 class GeneralReactionZonePolicy(Protocol):
     """通用公式反应区协议。"""
 
-    def resolve(self, query: DamageQuery) -> GeneralReactionZoneResolution:
+    def resolve(
+        self,
+        query: DamageQuery,
+        session: DamageResolutionSession,
+    ) -> GeneralReactionZoneResolution:
         """返回通用公式反应区乘数。"""
 
         ...
@@ -256,11 +261,46 @@ class GeneralReactionZonePolicy(Protocol):
 class IdentityGeneralReactionZonePolicy:
     """第一轮通用公式无增幅反应时使用的单位反应区。"""
 
-    def resolve(self, query: DamageQuery) -> GeneralReactionZoneResolution:
+    def resolve(
+        self,
+        query: DamageQuery,
+        session: DamageResolutionSession,
+    ) -> GeneralReactionZoneResolution:
         """忽略查询，返回单位乘数。"""
 
-        del query
+        del query, session
         return GeneralReactionZoneResolution(1.0)
+
+
+class StandardGeneralReactionZonePolicy:
+    """按第一版确认公式计算增幅反应的反应区。"""
+
+    def resolve(
+        self,
+        query: DamageQuery,
+        session: DamageResolutionSession,
+    ) -> GeneralReactionZoneResolution:
+        reaction = query.request.amplifying_reaction
+        if reaction is None:
+            return GeneralReactionZoneResolution(1.0)
+        mastery_trace = session.resolve_source(STAT_ELEMENTAL_MASTERY)
+        mastery = validate_damage_float(mastery_trace.final_value, "elemental_mastery")
+        if mastery < 0:
+            raise DamageResolutionError("元素精通不能为负数")
+        mastery_bonus = 2.78 * mastery / (mastery + 1400.0)
+        multiplier = reaction.base_multiplier * (1.0 + mastery_bonus + reaction.reaction_bonus)
+        if not math.isfinite(multiplier) or multiplier <= 0:
+            raise DamageResolutionError("增幅反应乘数必须是有限正数")
+        return GeneralReactionZoneResolution(
+            multiplier=multiplier,
+            occurrence_ref=reaction.occurrence_ref,
+            reaction_profile_key=reaction.reaction_profile_key,
+            base_multiplier=reaction.base_multiplier,
+            elemental_mastery=mastery,
+            mastery_bonus=mastery_bonus,
+            reaction_bonus=reaction.reaction_bonus,
+            elemental_mastery_trace=mastery_trace,
+        )
 
 
 class StandardDefensePolicy:

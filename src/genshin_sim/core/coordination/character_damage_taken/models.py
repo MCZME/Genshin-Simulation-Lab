@@ -15,9 +15,10 @@ from genshin_sim.core.coordination.character_damage_taken.errors import (
 from genshin_sim.core.systems.damage import DamageElement
 from genshin_sim.core.systems.health import (
     CharacterDamageApplication,
+    CharacterDamagePlan,
     CharacterHealthChangeResult,
 )
-from genshin_sim.core.systems.shield import ShieldAbsorptionResult
+from genshin_sim.core.systems.shield import ShieldAbsorptionPlan, ShieldAbsorptionResult
 
 
 def _text(value: str, field_name: str) -> None:
@@ -87,6 +88,16 @@ class CharacterIncomingDamage:
             "source_context": None if self.source_context is None else _source(self.source_context),
             "tags": tuple(sorted(self.tags)),
         }
+
+
+@dataclass(frozen=True, slots=True)
+class CharacterDamageTakenPlan:
+    """角色受伤的完整预校验单元，供跨领域协调器一并提交。"""
+
+    incoming_damage: CharacterIncomingDamage
+    shield_plan: ShieldAbsorptionPlan
+    health_application: CharacterDamageApplication
+    health_plan: CharacterDamagePlan
 
 
 @dataclass(frozen=True, slots=True)

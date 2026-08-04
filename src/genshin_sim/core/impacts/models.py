@@ -5,6 +5,9 @@ from dataclasses import dataclass, field
 from enum import StrEnum
 
 from genshin_sim.core.actions import ActionOwnerRef, CandidateTargetRef
+from genshin_sim.core.elements import AuraAmount, Element
+from genshin_sim.core.systems.aura import AuraStrength
+from genshin_sim.core.systems.damage import DamageElement, DamageScalingTerm
 
 
 class ImpactKind(StrEnum):
@@ -18,6 +21,113 @@ class ImpactKind(StrEnum):
     CREATE_ENTITY = "create_entity"
     ENERGY = "energy"
     MOVEMENT = "movement"
+
+
+class StrikeType(StrEnum):
+    """Damage Impact 提供给状态型 Reaction 的稳定打击证据。"""
+
+    BLUNT = "blunt"
+
+
+@dataclass(frozen=True, slots=True)
+class DamageImpactSpec:
+    """所有 Damage Impact 共用的类型化命中意图。"""
+
+    impact_ref: str
+    main_attack_tag: str
+    element: DamageElement
+    scaling_terms: tuple[DamageScalingTerm, ...] = ()
+    flat_base_damage: float = 0.0
+    can_crit: bool = True
+    additional_attack_tags: tuple[str, ...] = ()
+    strike_type: StrikeType | None = None
+    range_type: str | None = None
+    elemental_strength: AuraStrength | None = None
+    elemental_amount: AuraAmount = field(default_factory=AuraAmount.zero)
+    icd_label_key: str | None = None
+    icd_definition_key: str | None = None
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.impact_ref, "impact_ref"),
+            (self.main_attack_tag, "main_attack_tag"),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} 必须是非空字符串")
+        if not isinstance(self.element, DamageElement):
+            raise ValueError("DamageImpactSpec 的 element 不受支持")
+        terms = tuple(self.scaling_terms)
+        if any(not isinstance(term, DamageScalingTerm) for term in terms):
+            raise ValueError("scaling_terms 必须是 DamageScalingTerm 序列")
+        if len({term.component_key for term in terms}) != len(terms):
+            raise ValueError("DamageImpactSpec 的 component_key 不能重复")
+        if isinstance(self.flat_base_damage, bool) or not isinstance(
+            self.flat_base_damage,
+            int | float,
+        ):
+            raise ValueError("flat_base_damage 必须是数字")
+        if not isinstance(self.can_crit, bool):
+            raise ValueError("can_crit 必须是布尔值")
+        tags = tuple(self.additional_attack_tags)
+        if any(not isinstance(tag, str) or not tag.strip() for tag in tags):
+            raise ValueError("additional_attack_tags 必须是非空字符串序列")
+        if self.strike_type is not None and not isinstance(self.strike_type, StrikeType):
+            raise ValueError("strike_type 提供时必须是 StrikeType")
+        if self.range_type is not None and (
+            not isinstance(self.range_type, str) or not self.range_type.strip()
+        ):
+            raise ValueError("range_type 提供时必须是非空字符串")
+        if self.elemental_strength is not None and not isinstance(
+            self.elemental_strength,
+            AuraStrength,
+        ):
+            raise ValueError("elemental_strength 必须是 AuraStrength 或 None")
+        if not isinstance(self.elemental_amount, AuraAmount):
+            raise ValueError("elemental_amount 必须是 AuraAmount")
+        if self.elemental_strength is None and not self.elemental_amount.is_zero:
+            raise ValueError("elemental_amount 为正时必须提供 elemental_strength")
+        if self.elemental_strength is not None and self.element is DamageElement.PHYSICAL:
+            raise ValueError("物理伤害不能携带元素施加")
+        if (self.icd_label_key is None) != (self.icd_definition_key is None):
+            raise ValueError("ICD label 与 definition 必须同时提供或同时省略")
+        for value, name in (
+            (self.icd_label_key, "icd_label_key"),
+            (self.icd_definition_key, "icd_definition_key"),
+        ):
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"{name} 提供时必须是非空字符串")
+        object.__setattr__(self, "scaling_terms", terms)
+        object.__setattr__(self, "additional_attack_tags", tags)
+
+
+@dataclass(frozen=True, slots=True)
+class ElementalApplicationSpec:
+    """不造成伤害的元素施加类型化意图。"""
+
+    impact_ref: str
+    element: Element
+    elemental_strength: AuraStrength
+    elemental_amount: AuraAmount = field(default_factory=AuraAmount.one)
+    icd_label_key: str | None = None
+    icd_definition_key: str | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.impact_ref, str) or not self.impact_ref.strip():
+            raise ValueError("impact_ref 必须是非空字符串")
+        if not isinstance(self.element, Element):
+            raise ValueError("ElementalApplicationSpec 的 element 不受支持")
+        if not isinstance(self.elemental_strength, AuraStrength):
+            raise ValueError("ElementalApplicationSpec 的 elemental_strength 不受支持")
+        if not isinstance(self.elemental_amount, AuraAmount) or self.elemental_amount.is_zero:
+            raise ValueError("ElementalApplicationSpec 的 elemental_amount 必须为正数")
+        if (self.icd_label_key is None) != (self.icd_definition_key is None):
+            raise ValueError("ICD label 与 definition 必须同时提供或同时省略")
+        for value, name in (
+            (self.icd_label_key, "icd_label_key"),
+            (self.icd_definition_key, "icd_definition_key"),
+        ):
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"{name} 提供时必须是非空字符串")
 
 
 @dataclass(frozen=True, slots=True)
@@ -39,6 +149,8 @@ class ImpactRequest:
     element: str | None = None
     tags: tuple[str, ...] = ()
     params: Mapping[str, object] = field(default_factory=dict)
+    damage_spec: DamageImpactSpec | None = None
+    elemental_application_spec: ElementalApplicationSpec | None = None
 
     def __post_init__(self) -> None:
         if self.frame < 0:
@@ -54,6 +166,32 @@ class ImpactRequest:
         object.__setattr__(self, "target_refs", tuple(self.target_refs))
         object.__setattr__(self, "tags", tuple(self.tags))
         object.__setattr__(self, "params", dict(self.params))
+        if self.damage_spec is not None and self.kind is not ImpactKind.DAMAGE:
+            raise ValueError("只有 DAMAGE ImpactRequest 可以携带 damage_spec")
+        if self.elemental_application_spec is not None and self.kind is not ImpactKind.APPLY_AURA:
+            raise ValueError("只有 APPLY_AURA ImpactRequest 可以携带 elemental_application_spec")
+        if self.damage_spec is not None and self.elemental_application_spec is not None:
+            raise ValueError("ImpactRequest 不能同时携带 damage_spec 与 elemental_application_spec")
+        for value, name in (
+            (self.request_id, "request_id"),
+            (self.source_impact_point_id, "source_impact_point_id"),
+        ):
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"{name} 提供时必须是非空字符串")
+        if self._requires_elemental_root_identity() and not (
+            self.request_id or self.source_impact_point_id
+        ):
+            raise ValueError("元素交互 ImpactRequest 必须提供 request_id 或 source_impact_point_id")
+
+    def _requires_elemental_root_identity(self) -> bool:
+        spec = self.damage_spec
+        return self.elemental_application_spec is not None or (
+            spec is not None
+            and (
+                (spec.elemental_strength is not None and not spec.elemental_amount.is_zero)
+                or spec.strike_type is not None
+            )
+        )
 
 
 @dataclass(frozen=True, slots=True)

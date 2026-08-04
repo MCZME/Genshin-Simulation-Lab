@@ -445,6 +445,7 @@ def test_assembler_builds_minimal_runtime_graph():
     assert assembled.runtime_world.updatables == (
         assembled.buff_runtime,
         assembled.shield_runtime,
+        assembled.elemental_settlement_coordinator,
         assembled.action_manager,
         assembled.impact_runtime,
         assembled.energy_runtime,

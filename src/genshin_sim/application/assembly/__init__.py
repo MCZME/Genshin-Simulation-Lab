@@ -13,6 +13,10 @@ from genshin_sim.application.assembly.errors import (
     MissingRuntimeAssetError,
     MissingRuntimeHandlerError,
 )
+from genshin_sim.application.assembly.reaction_capabilities import (
+    StaticReactionEligibilityPort,
+    build_static_reaction_eligibility_port,
+)
 
 __all__ = [
     "AssembledSimulation",
@@ -24,4 +28,6 @@ __all__ = [
     "RuntimeAssetBundle",
     "RuntimeContentBundle",
     "SimulationAssembler",
+    "StaticReactionEligibilityPort",
+    "build_static_reaction_eligibility_port",
 ]

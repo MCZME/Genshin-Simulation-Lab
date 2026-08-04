@@ -129,3 +129,19 @@ def test_created_object_runtime_expires_at_end_frame_and_becomes_idle():
     assert runtime.pending_impact_requests == ()
     assert behavior.calls == []
     assert runtime.is_idle()
+
+
+def test_created_object_expiration_replaces_the_immutable_spatial_entity():
+    ctx = SimulationContext()
+    runtime = CreatedObjectRuntime()
+    obj = runtime.create_or_refresh(
+        CreatedObjectSpec(object_key="created.short", duration_frames=1),
+        frame=1,
+    )
+    entity_before_expiry = obj.entity
+
+    runtime.update_frame(ctx, 2)
+
+    assert entity_before_expiry.lifecycle.state is EntityLifecycleState.ACTIVE
+    assert obj.entity.lifecycle.state is EntityLifecycleState.EXPIRED
+    assert obj.entity is not entity_before_expiry

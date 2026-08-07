@@ -50,7 +50,6 @@ from genshin_sim.core.systems.aura import (
     AuraView,
 )
 from genshin_sim.core.systems.damage import (
-    DamageElement,
     DamageProfile,
     DamageProfileRegistry,
     DamageReactionCapability,
@@ -350,16 +349,16 @@ def test_generated_damage_component_passes_captured_secondary_amplification_inpu
 @pytest.mark.parametrize(
     ("aura_kind", "output_element", "damage_element"),
     (
-        (AuraKind.PYRO, Element.PYRO, DamageElement.PYRO),
-        (AuraKind.ELECTRO, Element.ELECTRO, DamageElement.ELECTRO),
-        (AuraKind.CRYO, Element.CRYO, DamageElement.CRYO),
+        (AuraKind.PYRO, Element.PYRO, Element.PYRO),
+        (AuraKind.ELECTRO, Element.ELECTRO, Element.ELECTRO),
+        (AuraKind.CRYO, Element.CRYO, Element.CRYO),
     ),
 )
 def test_swirl_non_hydro_emission_applies_damage_and_regular_aura_to_six_meter_targets(
     tmp_path: Path,
     aura_kind: AuraKind,
     output_element: Element,
-    damage_element: DamageElement,
+    damage_element: Element,
 ):
     assembled = _assemble(tmp_path)
     coordinator, handler = _swirl_settlement_coordinator(assembled)
@@ -843,7 +842,7 @@ def _single_electro_damage_batch(root_work_id: str) -> ReactionGeneratedImpactBa
                 damage_component=ReactionGeneratedImpactDamageComponent(
                     main_attack_tag="reaction.electro_charged",
                     damage_profile_key="damage_profile.reaction.electro_charged",
-                    damage_element=DamageElement.ELECTRO,
+                    damage_element=Element.ELECTRO,
                     gate_definition_key="reaction_gate.electro_charged.damage",
                     damage_kind_key="reaction_damage.electro_charged",
                 ),
@@ -886,7 +885,7 @@ def _single_hydro_secondary_damage_batch(root_work_id: str) -> ReactionGenerated
                 damage_component=ReactionGeneratedImpactDamageComponent(
                     main_attack_tag="test.generated.swirl",
                     damage_profile_key="damage_profile.test.generated_swirl",
-                    damage_element=DamageElement.HYDRO,
+                    damage_element=Element.HYDRO,
                     gate_definition_key="reaction_gate.electro_charged.damage",
                     damage_kind_key="reaction_damage.electro_charged",
                 ),

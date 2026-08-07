@@ -6,7 +6,6 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from genshin_sim.core.elements import Element
-from genshin_sim.core.systems.damage import DamageElement
 from genshin_sim.core.systems.reaction.mechanics.burning import (
     BURNING_DAMAGE_BASE_MULTIPLIER,
     BURNING_DAMAGE_KIND_KEY,
@@ -243,7 +242,7 @@ def _electro_charged_tick_effect_group(
         parent_occurrence_ref=None,
         main_attack_tag=ELECTRO_CHARGED_REACTION_KEY,
         damage_profile_key=state.captured_scaling_basis.damage_profile_key,
-        damage_element=DamageElement.ELECTRO,
+        damage_element=Element.ELECTRO,
         gate_definition_key=ELECTRO_CHARGED_GATE_DEFINITION_KEY,
         damage_kind_key=ELECTRO_CHARGED_DAMAGE_KIND_KEY,
         captured_scaling_basis=state.captured_scaling_basis,
@@ -280,7 +279,7 @@ def _burning_tick_effect_group(
         parent_occurrence_ref=None,
         main_attack_tag=BURNING_REACTION_KEY,
         damage_profile_key=state.captured_scaling_basis.damage_profile_key,
-        damage_element=DamageElement.PYRO,
+        damage_element=Element.PYRO,
         gate_definition_key=BURNING_GATE_DEFINITION_KEY,
         damage_kind_key=BURNING_DAMAGE_KIND_KEY,
         captured_scaling_basis=state.captured_scaling_basis,
@@ -356,7 +355,7 @@ def _lunar_storm_cloud_attack_effect_group(
         effect_order=0,
         main_attack_tag=LUNAR_ELECTRO_CHARGED_REACTION_KEY,
         damage_profile_key=LUNAR_ELECTRO_CHARGED_DAMAGE_PROFILE_KEY,
-        damage_element=DamageElement.ELECTRO,
+        damage_element=Element.ELECTRO,
         damage_kind_key=LUNAR_ELECTRO_CHARGED_DAMAGE_KIND_KEY,
         trigger_source_ref=state.trigger_source_ref,
         reaction_profile_key=LUNAR_ELECTRO_CHARGED_ATTACK_PROFILE_KEY,

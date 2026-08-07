@@ -5,7 +5,7 @@ from typing import cast
 import pytest
 
 from genshin_sim.core.actions import ActionOwnerRef
-from genshin_sim.core.elements import AuraAmount
+from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.impacts import (
     ActionImpactContext,
     DamageImpactSpec,
@@ -15,7 +15,7 @@ from genshin_sim.core.impacts import (
     StrikeType,
 )
 from genshin_sim.core.systems.aura import AuraStrength
-from genshin_sim.core.systems.damage import DamageElement, DamageScalingTerm
+from genshin_sim.core.systems.damage import DamageScalingTerm
 
 
 class RecordingImpactFactory:
@@ -72,7 +72,7 @@ def test_damage_impact_spec_rejects_invalid_elemental_field_types_in_chinese():
         DamageImpactSpec(
             impact_ref="test.impact",
             main_attack_tag="test.attack",
-            element=DamageElement.HYDRO,
+            element=Element.HYDRO,
             scaling_terms=(cast(DamageScalingTerm, "invalid"),),
         )
 
@@ -82,14 +82,14 @@ def test_damage_impact_spec_requires_strike_type_enum_when_provided():
         DamageImpactSpec(
             impact_ref="test.impact",
             main_attack_tag="test.attack",
-            element=DamageElement.PHYSICAL,
+            element=Element.PHYSICAL,
             strike_type=cast(StrikeType, "blunt"),
         )
 
     spec = DamageImpactSpec(
         impact_ref="test.impact",
         main_attack_tag="test.attack",
-        element=DamageElement.PHYSICAL,
+        element=Element.PHYSICAL,
         strike_type=StrikeType.BLUNT,
     )
     assert spec.strike_type is StrikeType.BLUNT
@@ -98,7 +98,7 @@ def test_damage_impact_spec_requires_strike_type_enum_when_provided():
         DamageImpactSpec(
             impact_ref="test.impact",
             main_attack_tag="test.attack",
-            element=DamageElement.HYDRO,
+            element=Element.HYDRO,
             elemental_amount=cast(AuraAmount, 1),
         )
 
@@ -106,7 +106,7 @@ def test_damage_impact_spec_requires_strike_type_enum_when_provided():
         DamageImpactSpec(
             impact_ref="test.impact",
             main_attack_tag="test.attack",
-            element=DamageElement.HYDRO,
+            element=Element.HYDRO,
             elemental_strength=cast(AuraStrength, "weak"),
             elemental_amount=AuraAmount.one(),
         )

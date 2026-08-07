@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from genshin_sim.core.elements import AuraAmount, AuraKind, Element
-from genshin_sim.core.systems.damage import DamageElement
 from genshin_sim.core.systems.reaction.gates import ReactionDamageGateDefinition
 from genshin_sim.core.systems.reaction.models import (
     CapturedTransformativeScalingBasis,
@@ -81,7 +80,7 @@ class ElectroChargedRule:
             parent_occurrence_ref=occurrence_ref,
             main_attack_tag=ELECTRO_CHARGED_REACTION_KEY,
             damage_profile_key=profile.damage_profile_key,
-            damage_element=DamageElement.ELECTRO,
+            damage_element=Element.ELECTRO,
             gate_definition_key=profile.gate_definition_key,
             damage_kind_key=profile.damage_kind_key,
             captured_scaling_basis=basis,
@@ -149,7 +148,7 @@ def electro_charged_definition() -> ReactionDefinition:
                 HYDRO_ON_ELECTRO,
                 Element.HYDRO,
                 ELECTRO_CHARGED_DAMAGE_PROFILE_KEY,
-                DamageElement.ELECTRO,
+                Element.ELECTRO,
                 ELECTRO_CHARGED_BASE_MULTIPLIER,
                 ELECTRO_CHARGED_GATE_DEFINITION_KEY,
                 ELECTRO_CHARGED_DAMAGE_KIND_KEY,
@@ -160,7 +159,7 @@ def electro_charged_definition() -> ReactionDefinition:
                 ELECTRO_ON_HYDRO,
                 Element.ELECTRO,
                 ELECTRO_CHARGED_DAMAGE_PROFILE_KEY,
-                DamageElement.ELECTRO,
+                Element.ELECTRO,
                 ELECTRO_CHARGED_BASE_MULTIPLIER,
                 ELECTRO_CHARGED_GATE_DEFINITION_KEY,
                 ELECTRO_CHARGED_DAMAGE_KIND_KEY,

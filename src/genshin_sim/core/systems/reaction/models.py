@@ -19,7 +19,6 @@ from genshin_sim.core.elements import (
 from genshin_sim.core.impacts import StrikeType
 from genshin_sim.core.space import Vector3
 from genshin_sim.core.systems.aura import AuraLossPolicy, AuraView
-from genshin_sim.core.systems.damage.enums import DamageElement
 from genshin_sim.core.systems.reaction.establishment_gates import (
     ReactionEstablishmentGateDecision,
     ReactionEstablishmentGateMutationPlan,
@@ -181,7 +180,7 @@ class TransformativeReactionProfile:
     direction_key: str
     trigger_element: Element
     damage_profile_key: str
-    damage_element: DamageElement
+    damage_element: Element
     base_multiplier: float
     gate_definition_key: str
     damage_kind_key: str
@@ -198,8 +197,8 @@ class TransformativeReactionProfile:
             _text(value, name)
         if self.base_multiplier <= 0:
             raise ValueError("剧变反应基础倍率必须为正数")
-        if not isinstance(self.damage_element, DamageElement):
-            raise ValueError("剧变反应 damage_element 必须是 DamageElement")
+        if not isinstance(self.damage_element, Element):
+            raise ValueError("剧变反应 damage_element 必须是 Element")
 
 
 @dataclass(frozen=True, slots=True)
@@ -872,7 +871,7 @@ class GeneratedDamageImpactEffect:
     parent_occurrence_ref: str | None
     main_attack_tag: str
     damage_profile_key: str
-    damage_element: DamageElement
+    damage_element: Element
     gate_definition_key: str
     damage_kind_key: str
     captured_scaling_basis: CapturedTransformativeScalingBasis | DynamicTransformativeScalingBasis
@@ -907,8 +906,8 @@ class GeneratedDamageImpactEffect:
             CapturedTransformativeScalingBasis | DynamicTransformativeScalingBasis,
         ):
             raise ValueError("captured_scaling_basis 必须是已捕获或动态剧变缩放基础")
-        if not isinstance(self.damage_element, DamageElement):
-            raise ValueError("剧变派生 Damage Impact 必须使用 DamageElement")
+        if not isinstance(self.damage_element, Element):
+            raise ValueError("剧变派生 Damage Impact 必须使用 Element")
         if self.strike_type is not None and not isinstance(self.strike_type, StrikeType):
             raise ValueError("剧变派生 Damage Impact 的 strike_type 必须是 StrikeType 或 None")
         base_multiplier = _finite_non_negative(
@@ -955,7 +954,7 @@ class LunarReactionDamageImpactEffect:
     parent_occurrence_ref: str | None
     main_attack_tag: str
     damage_profile_key: str
-    damage_element: DamageElement
+    damage_element: Element
     damage_kind_key: str
     trigger_source_ref: ElementalSourceRef
     participant_refs: tuple[ElementalSourceRef, ...]
@@ -984,8 +983,8 @@ class LunarReactionDamageImpactEffect:
             or self.effect_order < 0
         ):
             raise ValueError("effect_order 必须是非负整数")
-        if not isinstance(self.damage_element, DamageElement):
-            raise ValueError("月曜 Damage Impact 必须使用 DamageElement")
+        if not isinstance(self.damage_element, Element):
+            raise ValueError("月曜 Damage Impact 必须使用 Element")
         if not isinstance(self.trigger_source_ref, ElementalSourceRef):
             raise ValueError("月曜 Damage Impact 的 trigger_source_ref 必须是 ElementalSourceRef")
 
@@ -1046,7 +1045,7 @@ class LunarStormCloudAttackEffect:
     effect_order: int
     main_attack_tag: str
     damage_profile_key: str
-    damage_element: DamageElement
+    damage_element: Element
     damage_kind_key: str
     trigger_source_ref: ElementalSourceRef
     reaction_profile_key: str
@@ -1075,8 +1074,8 @@ class LunarStormCloudAttackEffect:
             or self.effect_order < 0
         ):
             raise ValueError("effect_order 必须是非负整数")
-        if not isinstance(self.damage_element, DamageElement):
-            raise ValueError("雷暴云攻击必须使用 DamageElement")
+        if not isinstance(self.damage_element, Element):
+            raise ValueError("雷暴云攻击必须使用 Element")
         if not isinstance(self.trigger_source_ref, ElementalSourceRef):
             raise ValueError("雷暴云攻击 trigger_source_ref 必须是 ElementalSourceRef")
         reaction_multiplier = _finite_non_negative(
@@ -1134,7 +1133,7 @@ class ReactionGeneratedImpactDamageComponent:
 
     main_attack_tag: str
     damage_profile_key: str
-    damage_element: DamageElement
+    damage_element: Element
     gate_definition_key: str
     damage_kind_key: str
 
@@ -1146,8 +1145,8 @@ class ReactionGeneratedImpactDamageComponent:
             (self.damage_kind_key, "damage_kind_key"),
         ):
             _text(value, name)
-        if not isinstance(self.damage_element, DamageElement):
-            raise ValueError("派生元素 Impact 的 damage_element 必须是 DamageElement")
+        if not isinstance(self.damage_element, Element):
+            raise ValueError("派生元素 Impact 的 damage_element 必须是 Element")
 
 
 @dataclass(frozen=True, slots=True)

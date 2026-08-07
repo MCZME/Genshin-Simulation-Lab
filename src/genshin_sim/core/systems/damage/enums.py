@@ -5,19 +5,6 @@ from __future__ import annotations
 from enum import StrEnum
 
 
-class DamageElement(StrEnum):
-    """伤害结算支持的稳定元素类型。"""
-
-    PHYSICAL = "physical"
-    PYRO = "pyro"
-    HYDRO = "hydro"
-    ELECTRO = "electro"
-    CRYO = "cryo"
-    ANEMO = "anemo"
-    GEO = "geo"
-    DENDRO = "dendro"
-
-
 class DamageType(StrEnum):
     """按完整公式结构选择伤害结算路径的稳定类型。"""
 

@@ -9,7 +9,7 @@ from genshin_sim.core.attributes import (
     AttributeSubjectRef,
     RuntimeSourceRef,
 )
-from genshin_sim.core.systems.damage import DamageElement
+from genshin_sim.core.elements import Element
 from genshin_sim.core.systems.shield.enums import (
     ShieldChangeReason,
     ShieldElement,
@@ -472,7 +472,7 @@ class ShieldAbsorptionRequest:
     frame: int
     target_ref: AttributeSubjectRef
     incoming_amount: float
-    element: DamageElement
+    element: Element
     source_ref: AttributeSubjectRef | None = None
     source_context: RuntimeSourceRef | None = None
     tags: frozenset[str] = frozenset()
@@ -486,7 +486,7 @@ class ShieldAbsorptionRequest:
             "incoming_amount",
             validate_non_negative_shield_float(self.incoming_amount, "incoming_amount"),
         )
-        if not isinstance(self.element, DamageElement):
+        if not isinstance(self.element, Element):
             raise ShieldValidationError("damage element 不受支持")
         if self.source_ref is not None and not isinstance(self.source_ref, AttributeSubjectRef):
             raise ShieldValidationError("source_ref 必须是 AttributeSubjectRef 或 None")
@@ -580,7 +580,7 @@ class ShieldAbsorptionResult:
     frame: int
     target_ref: AttributeSubjectRef
     incoming_amount: float
-    element: DamageElement
+    element: Element
     matched_protection_refs: tuple[ShieldProtectionRef, ...]
     active_character_shield_strength: float
     shield_hits: tuple[ShieldHitResult, ...]

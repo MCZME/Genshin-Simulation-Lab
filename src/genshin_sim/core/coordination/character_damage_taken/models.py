@@ -12,7 +12,7 @@ from genshin_sim.core.coordination.character_damage_taken.errors import (
     CharacterDamageTakenTargetError,
     CharacterDamageTakenValidationError,
 )
-from genshin_sim.core.systems.damage import DamageElement
+from genshin_sim.core.elements import Element
 from genshin_sim.core.systems.health import (
     CharacterDamageApplication,
     CharacterDamagePlan,
@@ -40,7 +40,7 @@ class CharacterIncomingDamage:
     frame: int
     target_ref: AttributeSubjectRef
     amount: float
-    element: DamageElement
+    element: Element
     source_ref: AttributeSubjectRef | None = None
     source_context: RuntimeSourceRef | None = None
     tags: frozenset[str] = frozenset()
@@ -60,7 +60,7 @@ class CharacterIncomingDamage:
         if not math.isfinite(amount) or amount < 0:
             raise CharacterDamageTakenValidationError("amount 必须是有限非负数")
         object.__setattr__(self, "amount", 0.0 if amount == 0 else amount)
-        if not isinstance(self.element, DamageElement):
+        if not isinstance(self.element, Element):
             raise CharacterDamageTakenValidationError("element 不受支持")
         if self.source_ref is not None and not isinstance(self.source_ref, AttributeSubjectRef):
             raise CharacterDamageTakenValidationError(

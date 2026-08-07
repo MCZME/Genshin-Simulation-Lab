@@ -2,9 +2,8 @@
 
 from __future__ import annotations
 
-from genshin_sim.core.elements import AuraAmount, AuraKind
+from genshin_sim.core.elements import AuraAmount, AuraKind, Element
 from genshin_sim.core.impacts import StrikeType
-from genshin_sim.core.systems.damage import DamageElement
 from genshin_sim.core.systems.reaction.gates import ReactionDamageGateDefinition
 from genshin_sim.core.systems.reaction.models import (
     CapturedTransformativeScalingBasis,
@@ -71,7 +70,7 @@ class ShatteredRule:
             parent_occurrence_ref=occurrence_ref,
             main_attack_tag=SHATTERED_REACTION_KEY,
             damage_profile_key=SHATTERED_DAMAGE_PROFILE_KEY,
-            damage_element=DamageElement.PHYSICAL,
+            damage_element=Element.PHYSICAL,
             gate_definition_key=SHATTERED_GATE_DEFINITION_KEY,
             damage_kind_key=SHATTERED_DAMAGE_KIND_KEY,
             captured_scaling_basis=basis,

@@ -14,6 +14,7 @@ from genshin_sim.core.actions import (
     PreparedAction,
     TimedImpactAction,
 )
+from genshin_sim.core.elements import Element
 from genshin_sim.core.entity_states import CharacterRuntimeState
 from genshin_sim.core.impacts import (
     ActionImpactContext,
@@ -41,7 +42,7 @@ from genshin_sim.core.space import (
     Vector3,
 )
 from genshin_sim.core.space.runtime import SpaceRuntime
-from genshin_sim.core.systems.damage import DamageElement, DamageRequestHandler
+from genshin_sim.core.systems.damage import DamageRequestHandler
 
 
 class ReleaseInterpreter:
@@ -225,7 +226,7 @@ def test_blunt_zero_element_damage_routes_to_elemental_settlement_for_state_reac
         damage_spec=DamageImpactSpec(
             impact_ref="impact:blunt",
             main_attack_tag="testing.blunt",
-            element=DamageElement.PHYSICAL,
+            element=Element.PHYSICAL,
             strike_type=StrikeType.BLUNT,
         ),
     )

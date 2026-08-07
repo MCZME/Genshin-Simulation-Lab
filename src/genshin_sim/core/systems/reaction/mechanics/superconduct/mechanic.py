@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from genshin_sim.core.elements import AuraAmount, AuraKind, Element
-from genshin_sim.core.systems.damage import DamageElement
 from genshin_sim.core.systems.reaction.gates import ReactionDamageGateDefinition
 from genshin_sim.core.systems.reaction.models import (
     AreaAroundSubjectSelection,
@@ -146,7 +145,7 @@ def superconduct_definition() -> ReactionDefinition:
                 CRYO_ON_ELECTRO,
                 Element.CRYO,
                 SUPERCONDUCT_DAMAGE_PROFILE_KEY,
-                DamageElement.CRYO,
+                Element.CRYO,
                 1.5,
                 SUPERCONDUCT_GATE_DEFINITION_KEY,
                 SUPERCONDUCT_DAMAGE_KIND_KEY,
@@ -157,7 +156,7 @@ def superconduct_definition() -> ReactionDefinition:
                 ELECTRO_ON_CRYO,
                 Element.ELECTRO,
                 SUPERCONDUCT_DAMAGE_PROFILE_KEY,
-                DamageElement.CRYO,
+                Element.CRYO,
                 1.5,
                 SUPERCONDUCT_GATE_DEFINITION_KEY,
                 SUPERCONDUCT_DAMAGE_KIND_KEY,

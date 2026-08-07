@@ -14,9 +14,9 @@ from genshin_sim.core.attributes import (
     TraceLevel,
     attribute_key,
 )
+from genshin_sim.core.elements import Element
 from genshin_sim.core.events import DamageResolvedPayload, EventType, GameEvent
 from genshin_sim.core.systems.damage.enums import (
-    DamageElement,
     DamageReactionCapability,
     DamageType,
 )
@@ -374,14 +374,14 @@ class DamageRequestHandler:
 def _damage_element(
     request: ImpactRequest,
     payload: Mapping[str, object],
-) -> DamageElement:
+) -> Element:
     """从 ImpactRequest 或 payload 中读取并校验伤害元素。"""
 
     raw = request.element or payload.get("element")
     if not isinstance(raw, str) or not raw.strip():
         raise UnsupportedDamageElementError("伤害请求缺少 element")
     try:
-        return DamageElement(raw)
+        return Element(raw)
     except ValueError as exc:
         raise UnsupportedDamageElementError(f"不支持的伤害元素：{raw}") from exc
 

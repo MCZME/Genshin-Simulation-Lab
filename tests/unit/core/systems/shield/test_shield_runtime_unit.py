@@ -9,8 +9,8 @@ from genshin_sim.core.coordination.character_damage_taken import (
     CharacterDamageTakenReentrancyError,
     CharacterIncomingDamage,
 )
+from genshin_sim.core.elements import Element
 from genshin_sim.core.events import EventType
-from genshin_sim.core.systems.damage import DamageElement
 from genshin_sim.core.systems.health import CharacterHpDeduction, HealthPlanConflictError
 from genshin_sim.core.systems.shield import (
     ShieldAbsorptionRequest,
@@ -36,7 +36,7 @@ def _incoming(
     damage_id: str = "damage:1",
     frame: int = 2,
     target_ref: AttributeSubjectRef = CHARACTER_A,
-    element: DamageElement = DamageElement.PHYSICAL,
+    element: Element = Element.PHYSICAL,
 ) -> CharacterIncomingDamage:
     return CharacterIncomingDamage(
         damage_id=damage_id,
@@ -267,7 +267,7 @@ def test_case_b_same_element_shield_uses_2_5_multiplier(shield_rig, make_grant):
     grant = shield_rig.runtime.grant(make_grant(flat_absorption=1_000, element=ShieldElement.PYRO))
 
     result = shield_rig.coordinator.apply(
-        _incoming(2_000, element=DamageElement.PYRO)
+        _incoming(2_000, element=Element.PYRO)
     ).shield_result
 
     assert result.shield_hits[0].element_multiplier == 2.5
@@ -345,7 +345,7 @@ def test_case_e_multiple_shields_absorb_same_snapshot_without_capacity_sum(
     )
     shield_rig.event_engine.clear_frame_events()
 
-    record = shield_rig.coordinator.apply(_incoming(1_700, element=DamageElement.PYRO))
+    record = shield_rig.coordinator.apply(_incoming(1_700, element=Element.PYRO))
 
     assert record.shield_result.protected_damage == 1_500
     assert record.shield_result.health_bound_damage == 200

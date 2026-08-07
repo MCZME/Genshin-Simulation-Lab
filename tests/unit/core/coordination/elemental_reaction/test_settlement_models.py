@@ -26,7 +26,6 @@ from genshin_sim.core.elements import (
     TransformativeReactionSourceKind,
 )
 from genshin_sim.core.systems.aura import AuraView
-from genshin_sim.core.systems.damage import DamageElement
 from genshin_sim.core.systems.reaction import (
     CapturedTransformativeScalingBasis,
     CurrentSubjectSelection,
@@ -421,7 +420,7 @@ def _impact(
             ReactionGeneratedImpactDamageComponent(
                 main_attack_tag="reaction.swirl",
                 damage_profile_key="damage_profile.reaction.swirl",
-                damage_element=DamageElement.PYRO,
+                damage_element=Element.PYRO,
                 gate_definition_key="reaction_gate.swirl.damage",
                 damage_kind_key="reaction_damage.swirl.pyro",
             )

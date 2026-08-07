@@ -11,7 +11,6 @@ from genshin_sim.core.systems.aura import (
     AuraView,
 )
 from genshin_sim.core.systems.damage import (
-    DamageElement,
     DamageProfile,
     DamageReactionCapability,
     DamageType,
@@ -66,7 +65,7 @@ class _SwirlCandidate:
     aura_kind: AuraKind
     direction_key: str
     output_element: Element
-    damage_element: DamageElement
+    damage_element: Element
     gate_definition_key: str
     damage_kind_key: str
 
@@ -76,7 +75,7 @@ _SINGLE_AURA_CANDIDATES = (
         AuraKind.PYRO,
         PYRO_SWIRL,
         Element.PYRO,
-        DamageElement.PYRO,
+        Element.PYRO,
         PYRO_SWIRL_GATE_DEFINITION_KEY,
         "reaction_damage.swirl.pyro",
     ),
@@ -84,7 +83,7 @@ _SINGLE_AURA_CANDIDATES = (
         AuraKind.HYDRO,
         HYDRO_SWIRL,
         Element.HYDRO,
-        DamageElement.HYDRO,
+        Element.HYDRO,
         HYDRO_SWIRL_GATE_DEFINITION_KEY,
         "reaction_damage.swirl.hydro",
     ),
@@ -92,7 +91,7 @@ _SINGLE_AURA_CANDIDATES = (
         AuraKind.ELECTRO,
         ELECTRO_SWIRL,
         Element.ELECTRO,
-        DamageElement.ELECTRO,
+        Element.ELECTRO,
         ELECTRO_SWIRL_GATE_DEFINITION_KEY,
         "reaction_damage.swirl.electro",
     ),
@@ -100,7 +99,7 @@ _SINGLE_AURA_CANDIDATES = (
         AuraKind.CRYO,
         CRYO_SWIRL,
         Element.CRYO,
-        DamageElement.CRYO,
+        Element.CRYO,
         CRYO_SWIRL_GATE_DEFINITION_KEY,
         "reaction_damage.swirl.cryo",
     ),
@@ -108,7 +107,7 @@ _SINGLE_AURA_CANDIDATES = (
         AuraKind.FROZEN,
         FROZEN_SWIRL,
         Element.CRYO,
-        DamageElement.CRYO,
+        Element.CRYO,
         CRYO_SWIRL_GATE_DEFINITION_KEY,
         "reaction_damage.swirl.cryo",
     ),
@@ -718,22 +717,22 @@ _SWIRL_PROFILE_KEYS = frozenset(
 
 def _range_damage_spec_for(
     element: Element,
-) -> tuple[DamageElement, str, str] | None:
+) -> tuple[Element, str, str] | None:
     if element is Element.PYRO:
         return (
-            DamageElement.PYRO,
+            Element.PYRO,
             PYRO_SWIRL_GATE_DEFINITION_KEY,
             "reaction_damage.swirl.pyro",
         )
     if element is Element.ELECTRO:
         return (
-            DamageElement.ELECTRO,
+            Element.ELECTRO,
             ELECTRO_SWIRL_GATE_DEFINITION_KEY,
             "reaction_damage.swirl.electro",
         )
     if element is Element.CRYO:
         return (
-            DamageElement.CRYO,
+            Element.CRYO,
             CRYO_SWIRL_GATE_DEFINITION_KEY,
             "reaction_damage.swirl.cryo",
         )

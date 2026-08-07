@@ -10,11 +10,10 @@ from genshin_sim.core.coordination.elemental_reaction.protocols import (
     ReactionSpatialBatchPlanningPort,
     ReactionStateBatchPlanningPort,
 )
-from genshin_sim.core.elements import ElementalSubjectRef
+from genshin_sim.core.elements import Element, ElementalSubjectRef
 from genshin_sim.core.entity_states import EntityLifecycle
 from genshin_sim.core.space import SpatialEntity, SpatialEntityKind
 from genshin_sim.core.space.geometry import Vector3
-from genshin_sim.core.systems.damage import DamageElement
 from genshin_sim.core.systems.reaction.mechanics.lunar_crystallize.keys import (
     LUNAR_CAGE_AGGRO_HEIGHT,
     LUNAR_CAGE_AGGRO_RADIUS,
@@ -248,7 +247,7 @@ def _harmony_effect_group(
                 parent_occurrence_ref=consuming_occurrence_ref,
                 main_attack_tag=LUNAR_CRYSTALLIZE_REACTION_KEY,
                 damage_profile_key=LUNAR_CRYSTALLIZE_DAMAGE_PROFILE_KEY,
-                damage_element=DamageElement.GEO,
+                damage_element=Element.GEO,
                 damage_kind_key=LUNAR_CRYSTALLIZE_DAMAGE_KIND_KEY,
                 trigger_source_ref=intent.trigger_source_ref,
                 participant_refs=participants,

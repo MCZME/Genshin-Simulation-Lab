@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 
-from genshin_sim.core.systems.damage import DamageElement
+from genshin_sim.core.elements import Element
 from genshin_sim.core.systems.reaction.mechanics.bloom.keys import (
     BLOOM_EXPLOSION_DAMAGE_KIND_KEY,
     BLOOM_FAMILY_GATE_DEFINITION_KEY,
@@ -25,7 +25,7 @@ class BloomTerminationDamageProfile:
     character_multiplier: float
     radius: float
     gate_definition_key: str = BLOOM_FAMILY_GATE_DEFINITION_KEY
-    damage_element: DamageElement = DamageElement.DENDRO
+    damage_element: Element = Element.DENDRO
 
 
 BLOOM_EXPLOSION_DAMAGE_PROFILE = BloomTerminationDamageProfile(

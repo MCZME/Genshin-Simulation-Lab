@@ -21,7 +21,6 @@ from genshin_sim.core.systems.aura import (
     AuraView,
 )
 from genshin_sim.core.systems.damage import (
-    DamageElement,
     DamageReactionCapability,
     DamageType,
 )
@@ -55,17 +54,17 @@ TARGET = ElementalSubjectRef.target("target:target_1")
 @pytest.mark.parametrize(
     ("aura_kind", "output_element", "damage_element", "has_range_damage"),
     (
-        (AuraKind.PYRO, Element.PYRO, DamageElement.PYRO, True),
-        (AuraKind.HYDRO, Element.HYDRO, DamageElement.HYDRO, False),
-        (AuraKind.ELECTRO, Element.ELECTRO, DamageElement.ELECTRO, True),
-        (AuraKind.CRYO, Element.CRYO, DamageElement.CRYO, True),
-        (AuraKind.FROZEN, Element.CRYO, DamageElement.CRYO, True),
+        (AuraKind.PYRO, Element.PYRO, Element.PYRO, True),
+        (AuraKind.HYDRO, Element.HYDRO, Element.HYDRO, False),
+        (AuraKind.ELECTRO, Element.ELECTRO, Element.ELECTRO, True),
+        (AuraKind.CRYO, Element.CRYO, Element.CRYO, True),
+        (AuraKind.FROZEN, Element.CRYO, Element.CRYO, True),
     ),
 )
 def test_swirl_maps_the_single_aura_to_center_damage_and_range_emission(
     aura_kind: AuraKind,
     output_element: Element,
-    damage_element: DamageElement,
+    damage_element: Element,
     has_range_damage: bool,
 ):
     resolution = _runtime().evaluate(_request(aura_kind, AuraAmount("0.8"), AuraAmount(1)))

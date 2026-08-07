@@ -27,9 +27,9 @@ from genshin_sim.content.registries import (
 )
 from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.coordination.character_damage_taken import CharacterIncomingDamage
+from genshin_sim.core.elements import Element
 from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import ActionImpactContext, ImpactKind, ImpactRequest
-from genshin_sim.core.systems.damage import DamageElement
 from genshin_sim.infrastructure.assets_sqlite import (
     SQLiteAssetRepository,
     write_minimal_static_asset_database,
@@ -132,7 +132,7 @@ def test_action_impact_grants_shield_and_incoming_damage_reaches_health_runtime(
             frame=simulation_result.end_frame,
             target_ref=target_ref,
             amount=1_500,
-            element=DamageElement.PHYSICAL,
+            element=Element.PHYSICAL,
         )
     )
 

@@ -7,7 +7,7 @@ from enum import StrEnum
 from genshin_sim.core.actions import ActionOwnerRef, CandidateTargetRef
 from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.systems.aura import AuraStrength
-from genshin_sim.core.systems.damage import DamageElement, DamageScalingTerm
+from genshin_sim.core.systems.damage import DamageScalingTerm
 
 
 class ImpactKind(StrEnum):
@@ -35,7 +35,7 @@ class DamageImpactSpec:
 
     impact_ref: str
     main_attack_tag: str
-    element: DamageElement
+    element: Element
     scaling_terms: tuple[DamageScalingTerm, ...] = ()
     flat_base_damage: float = 0.0
     can_crit: bool = True
@@ -54,7 +54,7 @@ class DamageImpactSpec:
         ):
             if not isinstance(value, str) or not value.strip():
                 raise ValueError(f"{name} 必须是非空字符串")
-        if not isinstance(self.element, DamageElement):
+        if not isinstance(self.element, Element):
             raise ValueError("DamageImpactSpec 的 element 不受支持")
         terms = tuple(self.scaling_terms)
         if any(not isinstance(term, DamageScalingTerm) for term in terms):
@@ -86,7 +86,7 @@ class DamageImpactSpec:
             raise ValueError("elemental_amount 必须是 AuraAmount")
         if self.elemental_strength is None and not self.elemental_amount.is_zero:
             raise ValueError("elemental_amount 为正时必须提供 elemental_strength")
-        if self.elemental_strength is not None and self.element is DamageElement.PHYSICAL:
+        if self.elemental_strength is not None and self.element is Element.PHYSICAL:
             raise ValueError("物理伤害不能携带元素施加")
         if (self.icd_label_key is None) != (self.icd_definition_key is None):
             raise ValueError("ICD label 与 definition 必须同时提供或同时省略")

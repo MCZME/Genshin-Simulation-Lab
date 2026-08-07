@@ -20,7 +20,6 @@ from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import DamageImpactSpec, ImpactKind, ImpactRequest
 from genshin_sim.core.systems.aura import AuraApplicationRequest, AuraStrength
 from genshin_sim.core.systems.damage import (
-    DamageElement,
     DamageScalingTerm,
     DamageType,
 )
@@ -205,7 +204,7 @@ def _geo_impact(*, frame: int, request_id: str) -> ImpactRequest:
         damage_spec=DamageImpactSpec(
             impact_ref=request_id,
             main_attack_tag="testing.runtime_probe.direct",
-            element=DamageElement.GEO,
+            element=Element.GEO,
             scaling_terms=(DamageScalingTerm("atk", STAT_ATK_TOTAL, 1.0),),
             can_crit=False,
             elemental_strength=AuraStrength.WEAK,

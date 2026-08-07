@@ -18,7 +18,6 @@ from genshin_sim.core.elements import (
 )
 from genshin_sim.core.impacts import ElementalApplicationSpec, ImpactKind, ImpactRequest
 from genshin_sim.core.systems.aura import AuraApplicationRequest, AuraStrength
-from genshin_sim.core.systems.damage import DamageElement
 from genshin_sim.core.systems.reaction import (
     CrystallizeShardLifecycleState,
     ReactionStateInstanceRef,
@@ -110,7 +109,7 @@ def test_production_pickup_grants_and_consumes_crystallize_shield(
             frame=1,
             target_ref=target_ref,
             amount=10.0,
-            element=DamageElement.PYRO,
+            element=Element.PYRO,
         )
     )
     assert damage.shield_result.protected_damage == 10.0

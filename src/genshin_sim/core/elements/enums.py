@@ -1,6 +1,7 @@
 """跨领域共享的元素语义。
 
-物理伤害仍由伤害领域负责，因此 ``Element`` 只表示可以参与元素交互的元素。
+``Element`` 是元素语义的唯一枚举，伤害领域不再维护平行枚举。物理是伤害侧
+合法元素，但不参与元素交互；``aura_kind_for_element`` 对物理返回 None。
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from enum import StrEnum
 
 
 class Element(StrEnum):
+    PHYSICAL = "physical"
     PYRO = "pyro"
     HYDRO = "hydro"
     ELECTRO = "electro"

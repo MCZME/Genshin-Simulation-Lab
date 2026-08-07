@@ -15,6 +15,7 @@ from genshin_sim.core.attributes import (
     AttributeSystemError,
     TraceLevel,
 )
+from genshin_sim.core.elements import Element
 from genshin_sim.core.events import (
     EventEngine,
     EventType,
@@ -25,7 +26,6 @@ from genshin_sim.core.events import (
     ShieldRemovedPayload,
 )
 from genshin_sim.core.simulation import TeamRuntimeState
-from genshin_sim.core.systems.damage import DamageElement
 from genshin_sim.core.systems.shield.enums import (
     ShieldChangeReason,
     ShieldElement,
@@ -775,7 +775,7 @@ class ShieldRuntime:
 
 def elemental_absorption_multiplier(
     shield_element: ShieldElement,
-    damage_element: DamageElement,
+    damage_element: Element,
 ) -> float:
     if shield_element is ShieldElement.GEO:
         return 1.5

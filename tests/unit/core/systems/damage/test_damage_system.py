@@ -32,7 +32,6 @@ from genshin_sim.core.space.runtime import SpaceRuntime
 from genshin_sim.core.systems.damage import (
     AmplifyingReactionInput,
     CritOutcome,
-    DamageElement,
     DamageFormulaContext,
     DamageFormulaRegistry,
     DamageFormulaResolution,
@@ -153,7 +152,7 @@ def _query(
             target_ref=TARGET,
             source_level=90,
             target_level=90,
-            element=DamageElement.HYDRO,
+            element=Element.HYDRO,
             scaling_terms=scaling_terms,
             flat_base_damage=flat_base_damage,
             can_crit=can_crit,
@@ -205,7 +204,7 @@ def _transformative_query(
             target_ref=TARGET,
             source_level=90,
             target_level=90,
-            element=DamageElement.HYDRO,
+            element=Element.HYDRO,
             source_context=CONFIG_SOURCE,
             profile_key="damage_profile.reaction.swirl",
             reaction_capabilities=frozenset({DamageReactionCapability.SECONDARY_AMPLIFYING}),
@@ -229,7 +228,7 @@ def _secondary_amplifying_impact() -> ImpactRequest:
         damage_spec=DamageImpactSpec(
             impact_ref="impact:swirl:target:1",
             main_attack_tag="test.reaction.transformative",
-            element=DamageElement.HYDRO,
+            element=Element.HYDRO,
             can_crit=False,
         ),
     )
@@ -470,7 +469,7 @@ def _damage_impact(damage_payload: dict[str, object]) -> ImpactRequest:
         impact_key="test.damage",
         owner_slot=1,
         target_refs=("target_1",),
-        element=DamageElement.HYDRO.value,
+        element=Element.HYDRO.value,
         params={"damage": damage_payload},
     )
 

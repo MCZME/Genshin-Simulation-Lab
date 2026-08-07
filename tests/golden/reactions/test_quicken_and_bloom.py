@@ -33,7 +33,7 @@ from genshin_sim.core.impacts import (
 )
 from genshin_sim.core.space import Vector3
 from genshin_sim.core.systems.aura import AuraApplicationRequest, AuraDecayMode, AuraStrength
-from genshin_sim.core.systems.damage import DamageElement, DamageScalingTerm, DamageType
+from genshin_sim.core.systems.damage import DamageScalingTerm, DamageType
 from genshin_sim.core.systems.reaction import (
     GeneratedDamageImpactEffect,
     SprawlingShotResolution,
@@ -841,7 +841,7 @@ def _damage_request(
         damage_spec=DamageImpactSpec(
             impact_ref=request_id,
             main_attack_tag=main_attack_tag,
-            element=DamageElement(element.value),
+            element=Element(element.value),
             scaling_terms=(DamageScalingTerm("atk", STAT_ATK_TOTAL, 1.0),),
             can_crit=False,
             elemental_strength=AuraStrength.WEAK,

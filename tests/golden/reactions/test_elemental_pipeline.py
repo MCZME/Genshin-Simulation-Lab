@@ -33,7 +33,7 @@ from genshin_sim.core.systems.aura import (
     AuraStrength,
     FrozenAuraApplicationRequest,
 )
-from genshin_sim.core.systems.damage import DamageElement, DamageScalingTerm, DamageValidationError
+from genshin_sim.core.systems.damage import DamageScalingTerm, DamageValidationError
 from genshin_sim.infrastructure.assets_sqlite import (
     SQLiteAssetRepository,
     write_minimal_static_asset_database,
@@ -159,7 +159,7 @@ def test_damage_preflight_failure_does_not_commit_elemental_domain_state(tmp_pat
         damage_spec=DamageImpactSpec(
             impact_ref="golden:invalid_damage",
             main_attack_tag="missing.damage_profile",
-            element=DamageElement.HYDRO,
+            element=Element.HYDRO,
             scaling_terms=(DamageScalingTerm("atk", STAT_ATK_TOTAL, 1.0),),
             can_crit=False,
             elemental_strength=AuraStrength.WEAK,
@@ -267,7 +267,7 @@ def test_shattered_removes_frozen_aura_and_state(tmp_path: Path):
             damage_spec=DamageImpactSpec(
                 impact_ref="golden:shattered",
                 main_attack_tag="testing.runtime_probe.direct",
-                element=DamageElement.PHYSICAL,
+                element=Element.PHYSICAL,
                 scaling_terms=(DamageScalingTerm("atk", STAT_ATK_TOTAL, 1.0),),
                 can_crit=False,
                 strike_type=StrikeType.BLUNT,
@@ -403,7 +403,7 @@ def test_typed_elemental_request_requires_stable_root_identity():
             damage_spec=DamageImpactSpec(
                 impact_ref="golden:shared_impact_ref",
                 main_attack_tag="testing.runtime_probe.direct",
-                element=DamageElement.HYDRO,
+                element=Element.HYDRO,
                 elemental_strength=AuraStrength.WEAK,
                 elemental_amount=AuraAmount.one(),
             ),
@@ -482,7 +482,7 @@ def test_physical_damage_with_binding_advances_icd_without_elemental_application
             damage_spec=DamageImpactSpec(
                 impact_ref=f"golden:physical_icd:{index}",
                 main_attack_tag="testing.runtime_probe.direct",
-                element=DamageElement.PHYSICAL,
+                element=Element.PHYSICAL,
                 scaling_terms=(DamageScalingTerm("atk", STAT_ATK_TOTAL, 1.0),),
                 can_crit=False,
                 icd_label_key="golden.physical_icd",
@@ -556,7 +556,7 @@ def _damage_request(
         damage_spec=DamageImpactSpec(
             impact_ref=resolved_impact_ref,
             main_attack_tag="testing.runtime_probe.direct",
-            element=DamageElement(element.value),
+            element=Element(element.value),
             scaling_terms=(DamageScalingTerm("atk", STAT_ATK_TOTAL, 1.0),),
             can_crit=False,
             elemental_strength=AuraStrength.WEAK,
@@ -576,7 +576,7 @@ def _blunt_damage_request() -> ImpactRequest:
         damage_spec=DamageImpactSpec(
             impact_ref="golden:shattered:large",
             main_attack_tag="testing.runtime_probe.direct",
-            element=DamageElement.PHYSICAL,
+            element=Element.PHYSICAL,
             scaling_terms=(DamageScalingTerm("atk", STAT_ATK_TOTAL, 1.0),),
             can_crit=False,
             strike_type=StrikeType.BLUNT,

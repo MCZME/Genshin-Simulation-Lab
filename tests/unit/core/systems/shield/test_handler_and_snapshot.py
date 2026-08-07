@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
+from genshin_sim.core.elements import Element
 from genshin_sim.core.impacts import ImpactKind, ImpactRequest
-from genshin_sim.core.systems.damage import DamageElement
 from genshin_sim.core.systems.shield import (
     ShieldAbsorptionRequest,
     ShieldImpactRequestHandler,
@@ -67,7 +67,7 @@ def test_shield_snapshot_keeps_native_capacity_and_stable_refs(
             frame=2,
             target_ref=grant.resolution.creator_ref,
             incoming_amount=250,
-            element=DamageElement.PHYSICAL,
+            element=Element.PHYSICAL,
         )
     )
 

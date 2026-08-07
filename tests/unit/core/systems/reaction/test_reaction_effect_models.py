@@ -5,11 +5,11 @@ from dataclasses import replace
 import pytest
 
 from genshin_sim.core.elements import (
+    Element,
     ElementalSourceRef,
     ElementalSubjectRef,
     TransformativeReactionSourceKind,
 )
-from genshin_sim.core.systems.damage import DamageElement
 from genshin_sim.core.systems.reaction import (
     CapturedTransformativeScalingBasis,
     CurrentSubjectSelection,
@@ -32,7 +32,7 @@ def test_generated_damage_effect_supports_single_target_physical_transformative_
         parent_occurrence_ref="occurrence:shattered",
         main_attack_tag="reaction.shattered",
         damage_profile_key="damage_profile.reaction.shattered",
-        damage_element=DamageElement.PHYSICAL,
+        damage_element=Element.PHYSICAL,
         gate_definition_key="reaction_gate.shattered.damage",
         damage_kind_key="reaction_damage.shattered",
         captured_scaling_basis=CapturedTransformativeScalingBasis(
@@ -64,7 +64,7 @@ def test_generated_damage_effect_supports_single_target_physical_transformative_
     assert isinstance(group.target_selection, CurrentSubjectSelection)
     assert isinstance(group.effects[0], GeneratedDamageImpactEffect)
     assert group.target_selection.subject_ref == subject
-    assert group.effects[0].damage_element is DamageElement.PHYSICAL
+    assert group.effects[0].damage_element is Element.PHYSICAL
     assert group.effects[0].transformative_base_multiplier == 3.0
 
     with pytest.raises(ValueError, match="必须为正数"):

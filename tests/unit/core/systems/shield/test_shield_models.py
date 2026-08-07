@@ -15,7 +15,7 @@ from genshin_sim.core.coordination.character_damage_taken import (
     CharacterDamageTakenValidationError,
     CharacterIncomingDamage,
 )
-from genshin_sim.core.systems.damage import DamageElement
+from genshin_sim.core.elements import Element
 from genshin_sim.core.systems.shield import (
     ShieldCapacityFormula,
     ShieldGrantPolicy,
@@ -77,7 +77,7 @@ def test_incoming_damage_rejects_invalid_amount(value):
             frame=1,
             target_ref=CHARACTER,
             amount=value,
-            element=DamageElement.PYRO,
+            element=Element.PYRO,
         )
 
 
@@ -91,7 +91,7 @@ def test_models_are_immutable_and_serialize_stable_tags(make_grant):
         frame=1,
         target_ref=CHARACTER,
         amount=100,
-        element=DamageElement.PYRO,
+        element=Element.PYRO,
         tags=frozenset({"z", "a"}),
     )
     assert incoming.to_dict()["tags"] == ("a", "z")
@@ -104,5 +104,5 @@ def test_incoming_damage_rejects_non_character_target():
             frame=1,
             target_ref=AttributeSubjectRef.target("target:1"),
             amount=100,
-            element=DamageElement.PYRO,
+            element=Element.PYRO,
         )

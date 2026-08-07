@@ -4,7 +4,7 @@ from genshin_sim.content.characters.testing.runtime_probe.constants import (
     RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
 )
 from genshin_sim.core.attributes import STAT_ATK_TOTAL
-from genshin_sim.core.elements import AuraAmount
+from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.impacts import (
     ActionImpactContext,
     DamageImpactSpec,
@@ -12,7 +12,7 @@ from genshin_sim.core.impacts import (
     ImpactRequest,
 )
 from genshin_sim.core.systems.aura import AuraStrength
-from genshin_sim.core.systems.damage import DamageElement, DamageScalingTerm
+from genshin_sim.core.systems.damage import DamageScalingTerm
 
 
 class RuntimeProbeImpactFactory:
@@ -37,7 +37,7 @@ class RuntimeProbeImpactFactory:
                 damage_spec=DamageImpactSpec(
                     impact_ref=f"{context.impact_point_id}:damage",
                     main_attack_tag="testing.runtime_probe.direct",
-                    element=DamageElement.HYDRO,
+                    element=Element.HYDRO,
                     scaling_terms=(DamageScalingTerm("atk", STAT_ATK_TOTAL, 1.0),),
                     can_crit=False,
                     additional_attack_tags=("direct_damage", "testing.runtime_probe"),

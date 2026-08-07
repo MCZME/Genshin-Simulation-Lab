@@ -19,7 +19,6 @@ from genshin_sim.core.attributes import (
 from genshin_sim.core.elements import Element, TransformativeReactionSourceKind
 from genshin_sim.core.systems.damage.enums import (
     CritOutcome,
-    DamageElement,
     DamageModifierStage,
     DamageReactionCapability,
     DamageType,
@@ -421,7 +420,7 @@ class DamageRequest:
     target_ref: AttributeSubjectRef
     source_level: int
     target_level: int
-    element: DamageElement
+    element: Element
     source_context: RuntimeSourceRef
     scaling_terms: tuple[DamageScalingTerm, ...] = ()
     flat_base_damage: float = 0.0
@@ -457,7 +456,7 @@ class DamageRequest:
         ):
             if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
                 raise DamageValidationError(f"{field_name} 必须是正整数")
-        if not isinstance(self.element, DamageElement):
+        if not isinstance(self.element, Element):
             raise DamageValidationError("element 不受支持")
         if not isinstance(self.source_context, RuntimeSourceRef):
             raise DamageValidationError("source_context 必须是 RuntimeSourceRef")
@@ -1166,7 +1165,7 @@ class DamageResult:
     damage_type: DamageType
     source_ref: AttributeSubjectRef
     target_ref: AttributeSubjectRef
-    element: DamageElement
+    element: Element
     base_damage: float
     base_damage_additions: tuple[BaseDamageAddition, ...]
     damage_bonus_multiplier: float

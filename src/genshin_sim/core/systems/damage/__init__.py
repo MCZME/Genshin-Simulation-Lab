@@ -1,8 +1,8 @@
 """非反应直接伤害的类型化请求、修饰与同步结算处理。"""
 
+from genshin_sim.core.elements import Element
 from genshin_sim.core.systems.damage.enums import (
     CritOutcome,
-    DamageElement,
     DamageModifierStackingPolicy,
     DamageModifierStage,
     DamageReactionCapability,
@@ -115,7 +115,7 @@ __all__ = [
     "DamageBonusZoneResolution",
     "DamageAttributeRead",
     "DamageComponentResult",
-    "DamageElement",
+    "Element",
     "DamageReactionCapability",
     "DamageErrorDetail",
     "DamageFormula",

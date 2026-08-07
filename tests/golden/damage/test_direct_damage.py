@@ -17,8 +17,8 @@ from genshin_sim.core.attributes import (
     RuntimeSourceRef,
     create_public_attribute_registry,
 )
+from genshin_sim.core.elements import Element
 from genshin_sim.core.systems.damage import (
-    DamageElement,
     DamageModifierIndex,
     DamageModifierProviderSpec,
     DamageModifierStage,
@@ -90,7 +90,7 @@ def test_old_project_direct_damage_audit_case():
             target_ref=target,
             source_level=90,
             target_level=90,
-            element=DamageElement.HYDRO,
+            element=Element.HYDRO,
             scaling_terms=(DamageScalingTerm("hp", STAT_HP_MAX, 2.0),),
             can_crit=False,
             source_context=config_source,

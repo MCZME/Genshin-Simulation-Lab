@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from genshin_sim.core.elements import AuraAmount, AuraKind, Element
 from genshin_sim.core.impacts import StrikeType
-from genshin_sim.core.systems.damage import DamageElement
 from genshin_sim.core.systems.reaction.gates import ReactionDamageGateDefinition
 from genshin_sim.core.systems.reaction.models import (
     AreaAroundSubjectSelection,
@@ -134,7 +133,7 @@ def overloaded_definition() -> ReactionDefinition:
                 PYRO_ON_ELECTRO,
                 Element.PYRO,
                 OVERLOADED_DAMAGE_PROFILE_KEY,
-                DamageElement.PYRO,
+                Element.PYRO,
                 2.75,
                 OVERLOADED_GATE_DEFINITION_KEY,
                 OVERLOADED_DAMAGE_KIND_KEY,
@@ -145,7 +144,7 @@ def overloaded_definition() -> ReactionDefinition:
                 ELECTRO_ON_PYRO,
                 Element.ELECTRO,
                 OVERLOADED_DAMAGE_PROFILE_KEY,
-                DamageElement.PYRO,
+                Element.PYRO,
                 2.75,
                 OVERLOADED_GATE_DEFINITION_KEY,
                 OVERLOADED_DAMAGE_KIND_KEY,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from genshin_sim.core.elements import AuraAmount, AuraKind, Element, ElementalStateLinkRef
 from genshin_sim.core.systems.aura import AuraApplicationProfile, AuraDecayProfilePolicy
-from genshin_sim.core.systems.damage import DamageElement, DamageProfile, DamageType
+from genshin_sim.core.systems.damage import DamageProfile, DamageType
 from genshin_sim.core.systems.reaction.gates import ReactionDamageGateDefinition
 from genshin_sim.core.systems.reaction.models import (
     AreaAroundSubjectSelection,
@@ -146,7 +146,7 @@ class BurningRule:
             parent_occurrence_ref=occurrence_ref,
             main_attack_tag=BURNING_REACTION_KEY,
             damage_profile_key=profile.damage_profile_key,
-            damage_element=DamageElement.PYRO,
+            damage_element=Element.PYRO,
             gate_definition_key=profile.gate_definition_key,
             damage_kind_key=profile.damage_kind_key,
             transformative_base_multiplier=profile.base_multiplier,
@@ -234,7 +234,7 @@ def burning_definition() -> ReactionDefinition:
                 PYRO_ON_DENDRO,
                 Element.PYRO,
                 BURNING_DAMAGE_PROFILE_KEY,
-                DamageElement.PYRO,
+                Element.PYRO,
                 BURNING_DAMAGE_BASE_MULTIPLIER,
                 BURNING_GATE_DEFINITION_KEY,
                 BURNING_DAMAGE_KIND_KEY,
@@ -245,7 +245,7 @@ def burning_definition() -> ReactionDefinition:
                 PYRO_ON_QUICKEN,
                 Element.PYRO,
                 BURNING_DAMAGE_PROFILE_KEY,
-                DamageElement.PYRO,
+                Element.PYRO,
                 BURNING_DAMAGE_BASE_MULTIPLIER,
                 BURNING_GATE_DEFINITION_KEY,
                 BURNING_DAMAGE_KIND_KEY,
@@ -256,7 +256,7 @@ def burning_definition() -> ReactionDefinition:
                 DENDRO_ON_PYRO,
                 Element.DENDRO,
                 BURNING_DAMAGE_PROFILE_KEY,
-                DamageElement.PYRO,
+                Element.PYRO,
                 BURNING_DAMAGE_BASE_MULTIPLIER,
                 BURNING_GATE_DEFINITION_KEY,
                 BURNING_DAMAGE_KIND_KEY,

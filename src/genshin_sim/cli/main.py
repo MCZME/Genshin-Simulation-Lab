@@ -21,7 +21,6 @@ from genshin_sim.application.services import (
     ResultsService,
     SimulationTaskService,
 )
-from genshin_sim.content import create_default_registry
 from genshin_sim.infrastructure.assets_project_amber import (
     build_asset_manifest_from_project_amber_cache,
     fetch_project_amber_source_cache,
@@ -419,7 +418,6 @@ def _cmd_config_validate(args: argparse.Namespace) -> int:
 def _cmd_run(args: argparse.Namespace) -> int:
     service = SimulationTaskService.create(
         asset_repository=SQLiteAssetRepository(args.asset_db),
-        handler_registry=create_default_registry(),
         result_writer=SQLiteResultWriter(args.result_db),
     )
     outcome = service.run_file_and_wait(args.config_path)

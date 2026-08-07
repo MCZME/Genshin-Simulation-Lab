@@ -9,7 +9,6 @@ from genshin_sim.application.execution import (
     RecordedEvent,
     SimulationRunSummary,
 )
-from genshin_sim.content import ContentRuntimeContribution, HandlerRegistry
 from genshin_sim.content.characters.testing.runtime_probe.actions import (
     RuntimeProbeActionInterpreter,
     create_runtime_probe_action,
@@ -17,6 +16,14 @@ from genshin_sim.content.characters.testing.runtime_probe.actions import (
 from genshin_sim.content.characters.testing.runtime_probe.constants import (
     RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
     RUNTIME_PROBE_IMPACT_KEY,
+)
+from genshin_sim.content.definitions.content_unit import (
+    ContentUnit,
+    ContentUnitOwnerType,
+)
+from genshin_sim.content.registries import (
+    CharacterContentUnitRequest,
+    ContentUnitRegistry,
 )
 from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.coordination.character_damage_taken import CharacterIncomingDamage
@@ -63,11 +70,12 @@ class TestingShieldImpactFactory:
         )
 
 
-def _testing_shield_content(request) -> ContentRuntimeContribution:
-    return ContentRuntimeContribution(
-        owner_type="character",
+def _testing_shield_content_unit(request: CharacterContentUnitRequest) -> ContentUnit:
+    return ContentUnit(
+        owner_type=ContentUnitOwnerType.CHARACTER,
         owner_key=request.character_key,
         handler_key=request.handler_key,
+        version="dev-test",
         slot=request.slot,
         action_interpreter=RuntimeProbeActionInterpreter(),
         actions=(create_runtime_probe_action(),),
@@ -81,15 +89,15 @@ def test_action_impact_grants_shield_and_incoming_damage_reaches_health_runtime(
 ):
     asset_db = tmp_path / "assets.db"
     write_minimal_static_asset_database(asset_db)
-    registry = HandlerRegistry()
-    registry.register_character_factory(
+    unit_registry = ContentUnitRegistry()
+    unit_registry.register_character_factory(
         RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-        _testing_shield_content,
+        _testing_shield_content_unit,
     )
     config = SimulationConfig.from_mapping(_config_payload())
     assembled = SimulationAssembler(
         SQLiteAssetRepository(asset_db),
-        registry,
+        content_unit_registry=unit_registry,
     ).assemble(config)
     captured = []
     for event_type in (

@@ -6,6 +6,7 @@ from enum import Enum, auto
 from genshin_sim.core.events import EmptyPayload, EventType, GameEvent, SimulationEndedPayload
 from genshin_sim.core.protocols import RuntimeWorld
 from genshin_sim.core.simulation.context import SimulationContext
+from genshin_sim.core.snapshots.runtime import SnapshotExportingWorld
 
 
 class SimulationStopReason(Enum):
@@ -51,11 +52,13 @@ class Simulator:
     def run(self) -> SimulationResult:
         start_frame = self.context.current_frame
         self._publish_simulation_started(start_frame)
+        self._export_snapshot(start_frame)
 
         while self.context.current_frame < self.max_frames:
             frame = self.context.advance_frame()
             self._publish_frame_started(frame)
             self._update_world(frame)
+            self._export_snapshot(frame)
             self._publish_frame_ended(frame)
 
             if self._is_finished():
@@ -78,6 +81,12 @@ class Simulator:
     def _update_world(self, frame: int) -> None:
         if self.runtime_world is not None:
             self.runtime_world.update_frame(self.context, frame)
+
+    def _export_snapshot(self, frame: int) -> None:
+        """在帧 0 与每帧更新后导出快照（若世界支持）。"""
+
+        if isinstance(self.runtime_world, SnapshotExportingWorld):
+            self.runtime_world.snapshot_frame(self.context, frame)
 
     def _publish_simulation_started(self, frame: int) -> None:
         self.context.events.publish(

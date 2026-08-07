@@ -4,7 +4,6 @@ from pathlib import Path
 
 from genshin_sim.application.assembly import SimulationAssembler
 from genshin_sim.application.config import SimulationConfig
-from genshin_sim.content import create_default_registry
 from genshin_sim.core.attributes import STAT_ATK_TOTAL
 from genshin_sim.core.coordination.elemental_reaction.capabilities import (
     ReactionCapabilityEvidence,
@@ -58,7 +57,6 @@ def test_lunar_crystallize_accumulates_and_fires_harmony(tmp_path: Path) -> None
     write_minimal_static_asset_database(asset_db)
     assembled = SimulationAssembler(
         SQLiteAssetRepository(asset_db),
-        create_default_registry(),
     ).assemble(SimulationConfig.from_mapping(_config_payload()))
     assembled.elemental_interaction_coordinator.reaction_eligibility_port = (
         _TemporaryLunarEligibilityPort()
@@ -152,7 +150,6 @@ def test_lunar_crystallize_water_electro_composite_produces_shard_and_cages(
     write_minimal_static_asset_database(asset_db)
     assembled = SimulationAssembler(
         SQLiteAssetRepository(asset_db),
-        create_default_registry(),
     ).assemble(SimulationConfig.from_mapping(_config_payload()))
     assembled.elemental_interaction_coordinator.reaction_eligibility_port = (
         _TemporaryLunarEligibilityPort()

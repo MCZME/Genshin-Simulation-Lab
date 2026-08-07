@@ -24,10 +24,8 @@ from genshin_sim.content.characters.mondstadt.barbara.constants import (
     BARBARA_NORMAL_ATTACK_4_IMPACT_KEY,
 )
 from genshin_sim.content.characters.mondstadt.barbara.content import (
-    create_barbara_content,
-    register,
+    create_barbara_content_unit,
 )
-from genshin_sim.content.characters.mondstadt.barbara.state import BarbaraState
 
 __all__ = [
     "BARBARA_ACTION_TABLE",
@@ -50,8 +48,6 @@ __all__ = [
     "BARBARA_NORMAL_ATTACK_4_IMPACT_KEY",
     "BarbaraActionInterpreter",
     "BarbaraActionSpec",
-    "BarbaraState",
     "create_barbara_actions",
-    "create_barbara_content",
-    "register",
+    "create_barbara_content_unit",
 ]

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, cast
 
 import pytest
 
@@ -23,7 +22,16 @@ from genshin_sim.assets.models import (
     WeaponAsset,
     WeaponLevelStats,
 )
-from genshin_sim.content import ContentRuntimeContribution, create_default_registry
+from genshin_sim.content.bootstrap_content_units import (
+    create_default_content_unit_registry,
+)
+from genshin_sim.content.definitions.content_unit import (
+    ContentUnit,
+    ContentUnitOwnerType,
+)
+from genshin_sim.content.registries import (
+    ContentUnitRegistry,
+)
 from genshin_sim.core.actions import (
     ActionInterpretationResult,
     ActionInterpretationTrigger,
@@ -51,6 +59,11 @@ from genshin_sim.core.attributes import (
     RuntimeSourceKind,
     RuntimeSourceRef,
     StaticModifierProvider,
+)
+from genshin_sim.core.contracts.state_schema import (
+    StateField,
+    StateFieldType,
+    StateSchema,
 )
 from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import ActionImpactContext, ImpactKind, ImpactRequest
@@ -418,7 +431,7 @@ def _skill_input_trace() -> list[dict[str, object]]:
 
 
 def test_assembler_builds_minimal_runtime_graph():
-    assembler = SimulationAssembler(FakeAssetRepository(), create_default_registry())
+    assembler = SimulationAssembler(FakeAssetRepository())
     assembled = assembler.assemble(_minimal_config())
 
     assert assembled.context.space_runtime is assembled.space_runtime
@@ -450,11 +463,12 @@ def test_assembler_builds_minimal_runtime_graph():
         assembled.impact_runtime,
         assembled.energy_runtime,
         assembled.space_runtime,
+        assembled.hook_dispatcher,
     )
 
 
 def test_assembler_matches_energy_profiles_by_slot_not_team_input_order():
-    assembled = SimulationAssembler(SlotAwareAssetRepository(), create_default_registry()).assemble(
+    assembled = SimulationAssembler(SlotAwareAssetRepository()).assemble(
         _reordered_two_slot_config()
     )
 
@@ -491,11 +505,11 @@ def test_assembler_rejects_character_asset_without_burst_energy_cost():
     )
 
     with pytest.raises(InvalidRuntimePayloadError, match="缺少 burst_energy_cost"):
-        SimulationAssembler(repository, create_default_registry()).assemble(_minimal_config())
+        SimulationAssembler(repository).assemble(_minimal_config())
 
 
 def test_assembler_routes_structured_energy_impact_and_settles_pickup():
-    assembler = SimulationAssembler(FakeAssetRepository(), create_default_registry())
+    assembler = SimulationAssembler(FakeAssetRepository())
     assembled = assembler.assemble(_minimal_config())
 
     request = ImpactRequest(
@@ -601,9 +615,7 @@ def test_assembler_routes_structured_energy_impact_and_settles_pickup():
 
 
 def test_assembler_healing_handler_runs_real_single_target_loop():
-    assembled = SimulationAssembler(FakeAssetRepository(), create_default_registry()).assemble(
-        _minimal_config()
-    )
+    assembled = SimulationAssembler(FakeAssetRepository()).assemble(_minimal_config())
     character_ref = AttributeSubjectRef.character("character:slot_1")
     source_context = RuntimeSourceRef(RuntimeSourceKind.CONTENT, "assembler.healing")
 
@@ -661,13 +673,14 @@ def test_assembler_injects_character_runtime_contribution_and_actions():
     interpreter = ContributedActionInterpreter()
     impact_factory = TestImpactFactory()
     created_object_behavior = TestCreatedObjectBehavior()
-    registry = create_default_registry()
+    registry = create_default_content_unit_registry()
     registry.register_character_factory(
         "character.runtime",
-        lambda request: ContentRuntimeContribution(
-            owner_type="character",
+        lambda request: ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
             owner_key=request.character_key,
             handler_key=request.handler_key,
+            version="dev-test",
             slot=request.slot,
             action_interpreter=interpreter,
             actions=(
@@ -677,25 +690,20 @@ def test_assembler_injects_character_runtime_contribution_and_actions():
                     impact_keys=("impact.character_runtime",),
                 ),
             ),
-            state_extension=CharacterContentState(charge=2),
             impact_factories={"impact.character_runtime": impact_factory},
             created_object_behaviors={"created_object.character_runtime": created_object_behavior},
         ),
     )
 
-    assembled = SimulationAssembler(RuntimeRepository(), registry).assemble(
-        _minimal_config(input_trace=_skill_input_trace())
-    )
+    assembled = SimulationAssembler(
+        RuntimeRepository(),
+        content_unit_registry=registry,
+    ).assemble(_minimal_config(input_trace=_skill_input_trace()))
     result = assembled.simulator.run()
 
     assert result.end_frame == 3
     assert assembled.content_bundle.action_interpreters == {1: interpreter}
     assert "character.runtime.skill" in assembled.action_registry.action_keys
-    assert assembled.content_bundle.content_state_store.get_character_state(
-        slot=1,
-        handler_key="character.runtime",
-        expected_type=CharacterContentState,
-    ) == CharacterContentState(charge=2)
     assert assembled.impact_dispatcher.factory_keys == ("impact.character_runtime",)
     assert assembled.space_runtime.created_object_runtime.behavior_keys == (
         "created_object.character_runtime",
@@ -721,19 +729,23 @@ def test_assembler_injects_content_attribute_modifier_as_core_term():
                 handler_key="character.attribute_modifier",
             )
 
-    registry = create_default_registry()
+    registry = create_default_content_unit_registry()
     registry.register_character_factory(
         "character.attribute_modifier",
-        lambda request: ContentRuntimeContribution(
-            owner_type="character",
+        lambda request: ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
             owner_key=request.character_key,
             handler_key=request.handler_key,
+            version="dev-test",
             slot=request.slot,
             modifiers=(TestAttributeModifier(),),
         ),
     )
 
-    assembled = SimulationAssembler(RuntimeRepository(), registry).assemble(_minimal_config())
+    assembled = SimulationAssembler(
+        RuntimeRepository(),
+        content_unit_registry=registry,
+    ).assemble(_minimal_config())
     character_ref = AttributeSubjectRef.character("character:slot_1")
     resolution = assembled.attribute_runtime.resolver.resolve(
         AttributeQuery(character_ref, STAT_CRIT_RATE, frame=0)
@@ -784,19 +796,23 @@ def test_assembler_injects_content_buff_definition_and_attribute_provider():
         ),
         tags=frozenset({"assembler"}),
     )
-    registry = create_default_registry()
+    registry = create_default_content_unit_registry()
     registry.register_character_factory(
         "character.buff",
-        lambda request: ContentRuntimeContribution(
-            owner_type="character",
+        lambda request: ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
             owner_key=request.character_key,
             handler_key=request.handler_key,
+            version="dev-test",
             slot=request.slot,
             buff_definitions=(definition,),
         ),
     )
 
-    assembled = SimulationAssembler(RuntimeRepository(), registry).assemble(_minimal_config())
+    assembled = SimulationAssembler(
+        RuntimeRepository(),
+        content_unit_registry=registry,
+    ).assemble(_minimal_config())
     character_ref = AttributeSubjectRef.character("character:slot_1")
 
     assert assembled.buff_definitions == (definition,)
@@ -894,13 +910,14 @@ def test_assembler_rejects_buff_definition_with_dynamic_hp_dependency_via_provid
         ),
         tags=frozenset({"assembler"}),
     )
-    registry = create_default_registry()
+    registry = create_default_content_unit_registry()
     registry.register_character_factory(
         "character.buff",
-        lambda request: ContentRuntimeContribution(
-            owner_type="character",
+        lambda request: ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
             owner_key=request.character_key,
             handler_key=request.handler_key,
+            version="dev-test",
             slot=request.slot,
             attribute_definitions=(
                 AttributeDefinition(
@@ -916,7 +933,10 @@ def test_assembler_rejects_buff_definition_with_dynamic_hp_dependency_via_provid
         ),
     )
 
-    assembler = SimulationAssembler(RuntimeRepository(), registry)
+    assembler = SimulationAssembler(
+        RuntimeRepository(),
+        content_unit_registry=registry,
+    )
 
     with pytest.raises(
         InvalidRuntimePayloadError,
@@ -959,19 +979,23 @@ def test_assembler_rejects_buff_definition_with_unknown_attribute_target():
         ),
         tags=frozenset({"assembler"}),
     )
-    registry = create_default_registry()
+    registry = create_default_content_unit_registry()
     registry.register_character_factory(
         "character.buff",
-        lambda request: ContentRuntimeContribution(
-            owner_type="character",
+        lambda request: ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
             owner_key=request.character_key,
             handler_key=request.handler_key,
+            version="dev-test",
             slot=request.slot,
             buff_definitions=(definition,),
         ),
     )
 
-    assembler = SimulationAssembler(RuntimeRepository(), registry)
+    assembler = SimulationAssembler(
+        RuntimeRepository(),
+        content_unit_registry=registry,
+    )
 
     with pytest.raises(InvalidRuntimePayloadError, match="写入未知属性"):
         assembler.assemble(_minimal_config())
@@ -992,7 +1016,7 @@ def test_assembler_converts_buff_validation_error_raised_inside_content_factory(
                 handler_key="character.buff",
             )
 
-    def create_invalid_contribution(request) -> ContentRuntimeContribution:
+    def create_invalid_contribution(request) -> ContentUnit:
         definition = BuffDefinition(
             definition_key="buff.assembler.invalid",
             mechanic_key="mechanic.assembler.invalid",
@@ -1004,19 +1028,23 @@ def test_assembler_converts_buff_validation_error_raised_inside_content_factory(
             max_stacks=0,
             marker_only=True,
         )
-        return ContentRuntimeContribution(
-            owner_type="character",
+        return ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
             owner_key=request.character_key,
             handler_key=request.handler_key,
+            version="dev-test",
             slot=request.slot,
             buff_definitions=(definition,),
         )
 
-    registry = create_default_registry()
+    registry = create_default_content_unit_registry()
     registry.register_character_factory("character.buff", create_invalid_contribution)
 
     with pytest.raises(InvalidRuntimePayloadError, match="max_stacks"):
-        SimulationAssembler(RuntimeRepository(), registry).assemble(_minimal_config())
+        SimulationAssembler(
+            RuntimeRepository(),
+            content_unit_registry=registry,
+        ).assemble(_minimal_config())
 
 
 def test_attribute_runtime_isolates_static_asset_modifiers_by_character_slot():
@@ -1056,7 +1084,7 @@ def test_attribute_runtime_isolates_static_asset_modifiers_by_character_slot():
                 ),
             ),
         ),
-        contributions=(),
+        content_units=(),
     )
 
     slot_1 = runtime.resolver.resolve(
@@ -1095,9 +1123,7 @@ def test_assembler_initializes_character_health_from_final_max_hp():
                 ascension_value=0.2,
             )
 
-    assembled = SimulationAssembler(RuntimeRepository(), create_default_registry()).assemble(
-        _minimal_config()
-    )
+    assembled = SimulationAssembler(RuntimeRepository()).assemble(_minimal_config())
     character_ref = AttributeSubjectRef.character("character:slot_1")
 
     assert assembled.health_runtime.get_current_hp(character_ref) == 12000
@@ -1145,13 +1171,14 @@ def test_assembler_registers_content_private_attribute_and_native_provider():
         ),
         subject_ref=subject_ref,
     )
-    registry = create_default_registry()
+    registry = create_default_content_unit_registry()
     registry.register_character_factory(
         "character.attribute_modifier",
-        lambda request: ContentRuntimeContribution(
-            owner_type="character",
+        lambda request: ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
             owner_key=request.character_key,
             handler_key=request.handler_key,
+            version="dev-test",
             slot=request.slot,
             attribute_definitions=(
                 AttributeDefinition(
@@ -1166,7 +1193,10 @@ def test_assembler_registers_content_private_attribute_and_native_provider():
         ),
     )
 
-    assembled = SimulationAssembler(RuntimeRepository(), registry).assemble(_minimal_config())
+    assembled = SimulationAssembler(
+        RuntimeRepository(),
+        content_unit_registry=registry,
+    ).assemble(_minimal_config())
     resolution = assembled.attribute_runtime.resolver.resolve(
         AttributeQuery(subject_ref, private_key, frame=0)
     )
@@ -1187,26 +1217,33 @@ def test_assembler_rejects_action_interpreter_from_weapon():
                 handler_key="weapon.bad_action_interpreter",
             )
 
-    registry = create_default_registry()
+    registry = create_default_content_unit_registry()
     registry.register_weapon_factory(
         "weapon.bad_action_interpreter",
-        lambda request: ContentRuntimeContribution(
-            owner_type="weapon",
+        lambda request: ContentUnit(
+            owner_type=ContentUnitOwnerType.WEAPON,
             owner_key=request.weapon_key,
             handler_key=request.handler_key,
+            version="dev-test",
             slot=request.slot,
             action_interpreter=ContributedActionInterpreter(),
         ),
     )
 
-    assembler = SimulationAssembler(RuntimeRepository(), registry)
+    assembler = SimulationAssembler(
+        RuntimeRepository(),
+        content_unit_registry=registry,
+    )
 
-    with pytest.raises(InvalidRuntimePayloadError, match="只有角色内容可以贡献动作解释器"):
+    with pytest.raises(
+        InvalidRuntimePayloadError,
+        match="只有角色内容单元可以贡献动作解释器",
+    ):
         assembler.assemble(_minimal_config())
 
 
 def test_assembler_rejects_missing_character_interpreter_when_action_input_exists():
-    assembler = SimulationAssembler(FakeAssetRepository(), create_default_registry())
+    assembler = SimulationAssembler(FakeAssetRepository())
 
     with pytest.raises(InvalidRuntimePayloadError, match="动作输入需要队伍槽位提供动作解释器"):
         assembler.assemble(_minimal_config(input_trace=_skill_input_trace()))
@@ -1227,19 +1264,23 @@ def test_assembler_rejects_interpreter_declared_action_without_registered_action
                 handler_key="character.runtime",
             )
 
-    registry = create_default_registry()
+    registry = create_default_content_unit_registry()
     registry.register_character_factory(
         "character.runtime",
-        lambda request: ContentRuntimeContribution(
-            owner_type="character",
+        lambda request: ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
             owner_key=request.character_key,
             handler_key=request.handler_key,
+            version="dev-test",
             slot=request.slot,
             action_interpreter=MissingActionInterpreter(),
         ),
     )
 
-    assembler = SimulationAssembler(RuntimeRepository(), registry)
+    assembler = SimulationAssembler(
+        RuntimeRepository(),
+        content_unit_registry=registry,
+    )
 
     with pytest.raises(InvalidRuntimePayloadError, match="声明了未注册 action"):
         assembler.assemble(_minimal_config(input_trace=_skill_input_trace()))
@@ -1258,23 +1299,27 @@ def test_assembler_rejects_created_object_behavior_from_weapon():
                 handler_key="weapon.bad_created_object",
             )
 
-    registry = create_default_registry()
+    registry = create_default_content_unit_registry()
     registry.register_weapon_factory(
         "weapon.bad_created_object",
-        lambda request: ContentRuntimeContribution(
-            owner_type="weapon",
+        lambda request: ContentUnit(
+            owner_type=ContentUnitOwnerType.WEAPON,
             owner_key=request.weapon_key,
             handler_key=request.handler_key,
+            version="dev-test",
             slot=request.slot,
             created_object_behaviors={"created_object.bad": TestCreatedObjectBehavior()},
         ),
     )
 
-    assembler = SimulationAssembler(RuntimeRepository(), registry)
+    assembler = SimulationAssembler(
+        RuntimeRepository(),
+        content_unit_registry=registry,
+    )
 
     with pytest.raises(
         InvalidRuntimePayloadError,
-        match="只有角色内容可以贡献内容创建对象行为",
+        match="只有角色内容单元可以贡献内容创建对象行为",
     ):
         assembler.assemble(_minimal_config())
 
@@ -1284,14 +1329,66 @@ def test_assembler_raises_for_missing_asset():
         def get_character(self, character_key: str):
             raise LookupError(character_key)
 
-    assembler = SimulationAssembler(BrokenRepository(), create_default_registry())
+    assembler = SimulationAssembler(BrokenRepository())
 
     with pytest.raises(MissingRuntimeAssetError):
         assembler.assemble(_minimal_config())
 
 
 def test_assembler_raises_for_missing_handler():
-    assembler = SimulationAssembler(FakeAssetRepository(), cast(Any, BrokenRegistry()))
+    assembler = SimulationAssembler(
+        FakeAssetRepository(),
+        content_unit_registry=ContentUnitRegistry(),
+    )
 
     with pytest.raises(MissingRuntimeHandlerError):
         assembler.assemble(_minimal_config())
+
+
+def test_assembler_mounts_content_state_under_character_runtime_state():
+    class RuntimeRepository(FakeAssetRepository):
+        def __init__(self) -> None:
+            super().__init__()
+            self.character = CharacterAsset(
+                asset_key="character:75",
+                source_id="75",
+                name="test",
+                element="hydro",
+                weapon_type="sword",
+                rarity=5,
+                burst_energy_cost=60.0,
+                handler_key="character.state_mount",
+            )
+
+    registry = create_default_content_unit_registry()
+    registry.register_character_factory(
+        "character.state_mount",
+        lambda request: ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
+            owner_key=request.character_key,
+            handler_key=request.handler_key,
+            version="dev-test",
+            slot=request.slot,
+            state_schema=StateSchema(
+                owner_ref=f"character:slot_{request.slot}",
+                fields=(
+                    StateField(
+                        name="stacks",
+                        field_type=StateFieldType.INT,
+                        default=0,
+                    ),
+                ),
+            ),
+        ),
+    )
+
+    assembled = SimulationAssembler(
+        RuntimeRepository(),
+        content_unit_registry=registry,
+    ).assemble(_minimal_config())
+    character = assembled.space_runtime.team_state.current_character
+
+    mount = character.content_states["character.state_mount"]
+    assert mount.owner == "character:slot_1"
+    assert mount.values == {"stacks": 0}
+    assert assembled.content_bundle.content_state_mounts == (mount,)

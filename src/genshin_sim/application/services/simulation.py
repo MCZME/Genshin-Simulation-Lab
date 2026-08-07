@@ -14,7 +14,6 @@ from genshin_sim.application.jobs import (
 )
 from genshin_sim.application.services.errors import ApplicationServiceError
 from genshin_sim.assets import AssetRepository
-from genshin_sim.content import HandlerRegistry
 
 _TERMINAL_STATES = {
     SimulationJobState.COMPLETED,
@@ -39,12 +38,10 @@ class SimulationTaskService:
     def create(
         cls,
         asset_repository: AssetRepository,
-        handler_registry: HandlerRegistry,
         result_writer: ResultWriter,
     ) -> SimulationTaskService:
         executor = SynchronousSimulationExecutor.create(
             asset_repository,
-            handler_registry,
             result_writer,
         )
         return cls(

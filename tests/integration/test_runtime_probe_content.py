@@ -8,8 +8,6 @@ from genshin_sim.content import (
     RUNTIME_PROBE_ACTION_KEY,
     RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
     RUNTIME_PROBE_IMPACT_KEY,
-    RuntimeProbeState,
-    create_default_registry,
 )
 from genshin_sim.core.events import EventType
 from genshin_sim.infrastructure.assets_sqlite import (
@@ -24,18 +22,10 @@ def test_runtime_probe_asset_connects_to_content_runtime(tmp_path: Path):
 
     assembled = SimulationAssembler(
         SQLiteAssetRepository(asset_db),
-        create_default_registry(),
     ).assemble(SimulationConfig.from_mapping(_runtime_probe_config_payload()))
 
     assert assembled.assets[0].character.handler_key == RUNTIME_PROBE_CHARACTER_HANDLER_KEY
-    assert (
-        assembled.content_bundle.content_state_store.get_character_state(
-            slot=1,
-            handler_key=RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-            expected_type=RuntimeProbeState,
-        )
-        == RuntimeProbeState()
-    )
+    assert assembled.content_bundle.content_state_mounts == ()
     assert assembled.impact_dispatcher.factory_keys == (RUNTIME_PROBE_IMPACT_KEY,)
     damage_events = []
     assembled.context.events.subscribe(EventType.DAMAGE_RESOLVED, damage_events.append)

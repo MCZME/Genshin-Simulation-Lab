@@ -91,9 +91,9 @@ def test_quicken_enters_burning_and_is_consumed_as_the_only_dendro_like_componen
         reaction_runtime,
     )
     coordinator.normalize(None, 15)
-    assert aura_runtime.view(TARGET).component_for(AuraKind.QUICKEN).current_amount == AuraAmount(
-        Fraction(1, 10)
-    )  # type: ignore[union-attr]
+    quicken_component = aura_runtime.view(TARGET).component_for(AuraKind.QUICKEN)
+    assert quicken_component is not None
+    assert quicken_component.current_amount == AuraAmount(Fraction(1, 10))
     assert reaction_runtime.quicken_state_for(TARGET) is not None
 
     coordinator.normalize(None, 30)

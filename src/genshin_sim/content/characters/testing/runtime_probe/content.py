@@ -5,36 +5,33 @@ from genshin_sim.content.characters.testing.runtime_probe.actions import (
     create_runtime_probe_action,
 )
 from genshin_sim.content.characters.testing.runtime_probe.constants import (
-    RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
     RUNTIME_PROBE_IMPACT_KEY,
 )
 from genshin_sim.content.characters.testing.runtime_probe.impacts import (
     RuntimeProbeImpactFactory,
 )
-from genshin_sim.content.characters.testing.runtime_probe.state import RuntimeProbeState
-from genshin_sim.content.models import ContentRuntimeContribution
-from genshin_sim.content.registry import CharacterRuntimeRequest, HandlerRegistry
+from genshin_sim.content.definitions.content_unit import (
+    ContentUnit,
+    ContentUnitOwnerType,
+)
+from genshin_sim.content.registries import CharacterContentUnitRequest
+
+VERSION = "dev-runtime-probe"
 
 
-def create_runtime_probe_content(
-    request: CharacterRuntimeRequest,
-) -> ContentRuntimeContribution:
-    return ContentRuntimeContribution(
-        owner_type="character",
+def create_runtime_probe_content_unit(
+    request: CharacterContentUnitRequest,
+) -> ContentUnit:
+    """新模型内容单元工厂（运行时探针）。"""
+
+    return ContentUnit(
+        owner_type=ContentUnitOwnerType.CHARACTER,
         owner_key=request.character_key,
         handler_key=request.handler_key,
+        version=VERSION,
         slot=request.slot,
         action_interpreter=RuntimeProbeActionInterpreter(),
         actions=(create_runtime_probe_action(),),
-        state_extension=RuntimeProbeState(),
         impact_factories={RUNTIME_PROBE_IMPACT_KEY: RuntimeProbeImpactFactory()},
         metadata={"purpose": "testing_runtime_probe"},
     )
-
-
-def register(registry: HandlerRegistry) -> HandlerRegistry:
-    registry.register_character_factory(
-        RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-        create_runtime_probe_content,
-    )
-    return registry

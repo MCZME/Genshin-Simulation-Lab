@@ -34,6 +34,7 @@ class SimulationContext:
     clock: FrameClock = field(default_factory=FrameClock)
     events: EventEngine = field(default_factory=EventEngine)
     space_runtime: SpaceRuntime | None = None
+    settlement_round: int = 0
     # TODO: 引入明确系统协议后，将这里收紧为具体运行时系统类型。
     _systems: list[object] = field(default_factory=list, init=False, repr=False)
     # ContextVar.set 返回的恢复令牌，用于退出 with 块时恢复上一个活动上下文。
@@ -65,11 +66,13 @@ class SimulationContext:
         """
 
         self.events.clear_frame_events()
+        self.settlement_round = 0
         return self.clock.advance(frames)
 
     def reset(self) -> None:
         self.clock.reset()
         self.events.clear_frame_events()
+        self.settlement_round = 0
 
     def register_system(self, system: _SystemT) -> _SystemT:
         # TODO: 系统协议收紧后，这里的 initialize 钩子也应改为显式协议调用。

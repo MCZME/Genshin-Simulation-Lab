@@ -7,7 +7,7 @@ from typing import Protocol, cast
 from genshin_sim.application.assembly.errors import InvalidRuntimePayloadError
 from genshin_sim.application.config import SimulationConfig
 from genshin_sim.assets.models import CharacterLevelStats, WeaponLevelStats
-from genshin_sim.content import ContentRuntimeContribution
+from genshin_sim.content.definitions.content_unit import ContentUnit
 from genshin_sim.core.attributes import (
     BONUS_DAMAGE_ANEMO,
     BONUS_DAMAGE_CRYO,
@@ -85,16 +85,16 @@ def build_attribute_runtime(
     *,
     config: SimulationConfig,
     assets: Sequence[AttributeRuntimeAssetBundle],
-    contributions: Sequence[ContentRuntimeContribution],
+    content_units: Sequence[ContentUnit],
     extra_providers: Sequence[ModifierProvider] = (),
 ) -> AttributeRuntimeBundle:
     try:
         definitions = create_public_attribute_registry()
-        _register_content_attribute_definitions(definitions, contributions)
-        _register_content_attribute_stacking_groups(definitions, contributions)
+        _register_content_attribute_definitions(definitions, content_units)
+        _register_content_attribute_stacking_groups(definitions, content_units)
         base_contributions = tuple(_iter_base_contributions(config=config, assets=assets))
         static_providers = tuple(_iter_static_asset_modifier_providers(assets))
-        content_providers = tuple(_iter_content_attribute_providers(contributions, definitions))
+        content_providers = tuple(_iter_content_attribute_providers(content_units, definitions))
         base_attributes = BaseAttributeSet(base_contributions)
         modifier_index = ModifierProviderIndex(
             (*static_providers, *content_providers, *tuple(extra_providers)),
@@ -275,12 +275,12 @@ def _append_asset_stat_modifier(
 
 
 def _iter_content_attribute_providers(
-    contributions: Sequence[ContentRuntimeContribution],
+    content_units: Sequence[ContentUnit],
     definitions: AttributeDefinitionRegistry,
 ) -> Iterable[ModifierProvider]:
-    for contribution in contributions:
-        yield from contribution.attribute_providers
-        for modifier in contribution.modifiers:
+    for unit in content_units:
+        yield from unit.attribute_providers
+        for modifier in unit.modifiers:
             writes = frozenset(
                 attribute_key
                 for target in modifier.targets
@@ -294,7 +294,7 @@ def _iter_content_attribute_providers(
                 provider_spec=ModifierProviderSpec(
                     provider_key=modifier.modifier_key,
                     writes=writes,
-                    private_namespace=contribution.handler_key,
+                    private_namespace=unit.handler_key,
                     owner_ref=_attribute_subject_ref(modifier.owner_ref),
                 ),
                 subject_ref=_attribute_subject_ref(modifier.owner_ref),
@@ -303,13 +303,13 @@ def _iter_content_attribute_providers(
 
 def _register_content_attribute_definitions(
     definitions: AttributeDefinitionRegistry,
-    contributions: Sequence[ContentRuntimeContribution],
+    content_units: Sequence[ContentUnit],
 ) -> None:
-    for contribution in contributions:
-        for definition in contribution.attribute_definitions:
-            if definition.namespace_owner != contribution.handler_key:
+    for unit in content_units:
+        for definition in unit.attribute_definitions:
+            if definition.namespace_owner != unit.handler_key:
                 raise InvalidRuntimePayloadError(
-                    f"content {contribution.handler_key!r} 不能注册命名空间 "
+                    f"content {unit.handler_key!r} 不能注册命名空间 "
                     f"{definition.namespace_owner!r} 的私有属性"
                 )
             definitions.register(definition)
@@ -317,23 +317,21 @@ def _register_content_attribute_definitions(
 
 def _register_content_attribute_stacking_groups(
     definitions: AttributeDefinitionRegistry,
-    contributions: Sequence[ContentRuntimeContribution],
+    content_units: Sequence[ContentUnit],
 ) -> None:
-    for contribution in contributions:
+    for unit in content_units:
         seen: set[str] = set()
-        for group in contribution.attribute_stacking_groups:
+        for group in unit.attribute_stacking_groups:
             if not isinstance(group, ModifierStackingGroupDefinition):
                 raise InvalidRuntimePayloadError("attribute_stacking_groups 必须是属性叠加组定义")
             if group.group_key in seen:
                 raise InvalidRuntimePayloadError(
-                    f"content {contribution.handler_key!r} 重复声明 stacking group："
-                    f"{group.group_key}"
+                    f"content {unit.handler_key!r} 重复声明 stacking group：{group.group_key}"
                 )
             seen.add(group.group_key)
-            if not group.group_key.startswith(f"{contribution.handler_key}."):
+            if not group.group_key.startswith(f"{unit.handler_key}."):
                 raise InvalidRuntimePayloadError(
-                    f"content {contribution.handler_key!r} 不能注册越界 stacking group："
-                    f"{group.group_key}"
+                    f"content {unit.handler_key!r} 不能注册越界 stacking group：{group.group_key}"
                 )
             definitions.register_stacking_group(group)
 

@@ -3,6 +3,7 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 
+from genshin_sim.core.entity_states.content_state import ContentStateMount
 from genshin_sim.core.entity_states.energy import EnergyState
 from genshin_sim.core.entity_states.health import HealthState
 
@@ -22,6 +23,7 @@ class CharacterRuntimeState:
     energy: EnergyState = field(default_factory=EnergyState)
     combat_entity_id: str = ""
     health: HealthState = field(default_factory=lambda: HealthState(0.0))
+    content_states: Mapping[str, ContentStateMount] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if self.slot <= 0:
@@ -58,3 +60,18 @@ class CharacterRuntimeState:
         if not self.combat_entity_id.strip():
             msg = "角色战斗实体 id 必须是非空字符串"
             raise ValueError(msg)
+
+        content_states = dict(self.content_states)
+        for state_key, mount in content_states.items():
+            if not isinstance(mount, ContentStateMount):
+                msg = "content_states 的值必须是 ContentStateMount"
+                raise ValueError(msg)
+            if state_key != mount.state_key:
+                msg = f"content_states 键 {state_key!r} 必须与挂载 state_key 一致"
+                raise ValueError(msg)
+            if mount.owner != self.combat_entity_id:
+                msg = (
+                    f"内容状态挂载 owner {mount.owner!r} 必须等于角色实体 {self.combat_entity_id!r}"
+                )
+                raise ValueError(msg)
+        self.content_states = content_states

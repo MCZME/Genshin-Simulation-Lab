@@ -20,7 +20,6 @@ from genshin_sim.application.jobs import (
     run_simulation_worker,
 )
 from genshin_sim.application.jobs.models import _utc_now
-from genshin_sim.content import create_default_registry
 from genshin_sim.infrastructure.assets_sqlite import SQLiteAssetRepository
 from genshin_sim.infrastructure.results_sqlite import SQLiteResultWriter
 
@@ -233,7 +232,6 @@ def run_sqlite_simulation_worker(payload: SimulationWorkerPayload) -> Simulation
 
     executor = SynchronousSimulationExecutor.create(
         asset_repository=SQLiteAssetRepository(payload.asset_db_path),
-        handler_registry=create_default_registry(),
         result_writer=SQLiteResultWriter(payload.result_db_path),
     )
     return run_simulation_worker(payload, executor)

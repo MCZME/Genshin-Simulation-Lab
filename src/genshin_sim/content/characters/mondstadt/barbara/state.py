@@ -1,14 +1,32 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 from genshin_sim.content.characters.mondstadt.barbara.constants import (
-    BARBARA_CHARACTER_HANDLER_KEY,
+    BARBARA_STATE_LAST_ACTION_KEY,
+    BARBARA_STATE_LAST_START_FRAME,
+)
+from genshin_sim.core.contracts.state_schema import (
+    StateField,
+    StateFieldType,
+    StateSchema,
 )
 
 
-@dataclass(frozen=True, slots=True)
-class BarbaraState:
-    """芭芭拉内容运行态占位。"""
+def barbara_state_schema(owner_ref: str) -> StateSchema:
+    """芭芭拉动作状态机的宿主状态 schema。"""
 
-    handler_key: str = BARBARA_CHARACTER_HANDLER_KEY
+    return StateSchema(
+        owner_ref=owner_ref,
+        fields=(
+            StateField(
+                name=BARBARA_STATE_LAST_ACTION_KEY,
+                field_type=StateFieldType.STRING,
+                default="",
+            ),
+            StateField(
+                name=BARBARA_STATE_LAST_START_FRAME,
+                field_type=StateFieldType.INT,
+                default=0,
+                non_negative=True,
+            ),
+        ),
+    )

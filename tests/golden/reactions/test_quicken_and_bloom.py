@@ -11,7 +11,6 @@ import pytest
 
 from genshin_sim.application.assembly import SimulationAssembler
 from genshin_sim.application.config import SimulationConfig
-from genshin_sim.content import create_default_registry
 from genshin_sim.core.attributes import STAT_ATK_TOTAL
 from genshin_sim.core.coordination.elemental_reaction import (
     BloomCoreTriggerError,
@@ -907,7 +906,6 @@ def _assemble(
     assert cursor.rowcount == 1
     return SimulationAssembler(
         SQLiteAssetRepository(asset_db),
-        create_default_registry(),
     ).assemble(
         SimulationConfig.from_mapping(
             {

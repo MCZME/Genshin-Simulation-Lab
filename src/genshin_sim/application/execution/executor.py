@@ -13,7 +13,6 @@ from genshin_sim.application.execution.models import (
 )
 from genshin_sim.application.execution.protocols import ResultWriter
 from genshin_sim.assets import AssetRepository
-from genshin_sim.content import HandlerRegistry
 from genshin_sim.core.events import EventSubscriber, EventType, GameEvent
 
 logger = logging.getLogger(__name__)
@@ -40,11 +39,10 @@ class SynchronousSimulationExecutor:
     def create(
         cls,
         asset_repository: AssetRepository,
-        handler_registry: HandlerRegistry,
         result_writer: ResultWriter,
     ) -> SynchronousSimulationExecutor:
         return cls(
-            assembler=SimulationAssembler(asset_repository, handler_registry),
+            assembler=SimulationAssembler(asset_repository),
             result_writer=result_writer,
         )
 

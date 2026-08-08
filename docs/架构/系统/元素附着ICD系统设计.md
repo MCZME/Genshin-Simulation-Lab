@@ -50,14 +50,14 @@ core/systems/aura_icd/
 `IcdDefinition` 保存：
 
 ```text
-definition_key
+sequence_key
 reset_interval_frames
 application_sequence: tuple[AuraAmount, ...]
 ```
 
 规则：
 
-- `definition_key` 是稳定代码 key，不使用显示名称绑定行为。
+- `sequence_key` 是稳定代码 key，不使用显示名称绑定行为。
 - `reset_interval_frames` 是正整数帧数。
 - `application_sequence` 非空，元素为精确且非负的 `AuraAmount`。
 - 序列位置可以返回 `0`、`1` 或其他精确系数。
@@ -67,7 +67,7 @@ application_sequence: tuple[AuraAmount, ...]
 
 默认 Definition：
 
-- `icd.standard`：150 帧窗口，有限的 `1, 0, 0` 重复序列；有限序列结束后保持末尾 `0`，直到窗口重置。
+- `icd.standard` / `默认`：同一套 150 帧标准序列，有限 `1, 0, 0` 重复；有限序列结束后保持末尾 `0`，直到窗口重置。内容可按资料“衰减序列”直接使用 `默认` 作为 key。
 - `icd.none`：可显式绑定的无冷却 Definition。
 - 无 Binding：直接返回系数 `1` 和 `NO_COOLDOWN`，不创建 Record。
 
@@ -76,11 +76,11 @@ application_sequence: tuple[AuraAmount, ...]
 `IcdBinding` 保存：
 
 ```text
-label_key
-definition_key
+tag_key
+sequence_key
 ```
 
-`label_key` 表达一组命中是否共享同一游标，`definition_key` 选择窗口与系数序列。具体攻击由 content 绑定稳定 key，运行时不根据技能显示名称推断。
+`tag_key`（资料“衰减标签”）表达一组命中是否共享同一游标，`sequence_key`（资料“衰减序列”）选择窗口与系数序列。具体攻击由 content 绑定稳定 key，运行时不根据技能显示名称推断。
 
 `AuraIcdAttackerRef.scope_key` 表达攻击者共享作用域。content 可以让同一角色的多个命中共享，也可以让创建物或独立实例使用不同作用域。共享规则必须显式声明，不能由 Aura ICD 沿创建者链猜测。
 
@@ -90,8 +90,8 @@ definition_key
 IcdKey
 ├── attacker_ref
 ├── defender_ref
-├── label_key
-└── definition_key
+├── tag_key
+└── sequence_key
 ```
 
 因此以下维度默认隔离：

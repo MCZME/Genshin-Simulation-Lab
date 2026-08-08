@@ -2,6 +2,7 @@
 
 from genshin_sim.core.space.created_objects import (
     CreatedObjectBehavior,
+    CreatedObjectExtensionRecord,
     CreatedObjectRuntime,
     CreatedObjectRuntimeState,
     CreatedObjectSpec,
@@ -29,6 +30,7 @@ __all__ = [
     "CircleArea",
     "CircleSectorArea",
     "CreatedObjectBehavior",
+    "CreatedObjectExtensionRecord",
     "CreatedObjectRuntime",
     "CreatedObjectRuntimeState",
     "CreatedObjectSpec",

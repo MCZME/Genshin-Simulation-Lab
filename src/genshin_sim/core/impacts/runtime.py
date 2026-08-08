@@ -70,6 +70,18 @@ class CreatedObjectRecord:
 
 
 @dataclass(frozen=True, slots=True)
+class CreatedObjectExtensionDispatchRecord:
+    """由 extend_created_entity 请求完成的一次创建物延长记录。"""
+
+    frame: int
+    request: ImpactRequest
+    object_key: str
+    entity_id: str
+    applied_frames: int
+    remaining_cap_frames: int | None
+
+
+@dataclass(frozen=True, slots=True)
 class IgnoredImpactRecord:
     """暂未接入机制处理的影响请求记录。"""
 
@@ -101,11 +113,18 @@ class ImpactRequestDispatcher:
         self.movement_handler = movement_handler
         self.elemental_settlement_coordinator = elemental_settlement_coordinator
         self._created_object_records: list[CreatedObjectRecord] = []
+        self._created_object_extension_records: list[CreatedObjectExtensionDispatchRecord] = []
         self._ignored_requests: list[IgnoredImpactRecord] = []
 
     @property
     def created_object_records(self) -> tuple[CreatedObjectRecord, ...]:
         return tuple(self._created_object_records)
+
+    @property
+    def created_object_extension_records(
+        self,
+    ) -> tuple[CreatedObjectExtensionDispatchRecord, ...]:
+        return tuple(self._created_object_extension_records)
 
     @property
     def ignored_requests(self) -> tuple[IgnoredImpactRecord, ...]:
@@ -172,6 +191,9 @@ class ImpactRequestDispatcher:
                 continue
             if request.kind is ImpactKind.CREATE_ENTITY:
                 self._handle_create_entity_request(context, request)
+                continue
+            if request.kind is ImpactKind.EXTEND_CREATED_ENTITY:
+                self._handle_extend_created_entity_request(context, request)
                 continue
             self._ignored_requests.append(
                 IgnoredImpactRecord(
@@ -397,6 +419,60 @@ class ImpactRequestDispatcher:
             )
         )
         context.space_runtime.sync_entity_to_space(state.entity)
+
+    def _handle_extend_created_entity_request(
+        self,
+        context,
+        request: ImpactRequest,
+    ) -> None:
+        if context.space_runtime is None:
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="缺少 SpaceRuntime，无法延长空间实体",
+                )
+            )
+            return
+
+        params = dict(request.params)
+        object_key = _required_text(params, "object_key")
+        frames = _required_positive_int(params, "frames")
+        max_extra_frames = _optional_positive_int(params, "max_extra_frames")
+        owner_key = _optional_text(params, "owner_key") or _owner_key_from_request(request)
+        runtime = context.space_runtime.created_object_runtime
+        record = runtime.extend_duration(
+            object_key=object_key,
+            owner_key=owner_key,
+            frames=frames,
+            max_extra_frames=max_extra_frames,
+            frame=request.frame,
+        )
+        if record is None:
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="未找到可延长的活动创建对象",
+                )
+            )
+            return
+        self._created_object_extension_records.append(
+            CreatedObjectExtensionDispatchRecord(
+                frame=request.frame,
+                request=request,
+                object_key=record.object_key,
+                entity_id=record.entity_id,
+                applied_frames=record.applied_frames,
+                remaining_cap_frames=record.remaining_cap_frames,
+            )
+        )
+        state = next(
+            (obj for obj in runtime.objects if obj.entity.entity_id == record.entity_id),
+            None,
+        )
+        if state is not None:
+            context.space_runtime.sync_entity_to_space(state.entity)
 
 
 class ImpactRuntime(FrameUpdatable):

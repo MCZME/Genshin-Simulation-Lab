@@ -91,6 +91,30 @@ class CreatedObjectSpec:
         object.__setattr__(self, "params", dict(self.params))
 
 
+@dataclass(frozen=True, slots=True)
+class CreatedObjectExtensionRecord:
+    """一次创建物持续时间延长的提交记录。"""
+
+    frame: int
+    object_key: str
+    entity_id: str
+    requested_frames: int
+    applied_frames: int
+    remaining_cap_frames: int | None = None
+
+    def __post_init__(self) -> None:
+        _validate_frame(self.frame)
+        _validate_non_empty_text(self.object_key, "创建对象 key")
+        _validate_non_empty_text(self.entity_id, "创建对象实体 id")
+        _validate_positive_int(self.requested_frames, "请求延长帧数")
+        _validate_non_negative_int(self.applied_frames, "实际延长帧数")
+        if self.applied_frames > self.requested_frames:
+            msg = "创建物实际延长帧数不能超过请求帧数"
+            raise ValueError(msg)
+        if self.remaining_cap_frames is not None:
+            _validate_non_negative_int(self.remaining_cap_frames, "剩余上限帧数")
+
+
 @dataclass(slots=True)
 class CreatedObjectTickState:
     """创建物上一个 tick 调度的运行态。"""
@@ -111,6 +135,7 @@ class CreatedObjectRuntimeState:
     tick_interval_frames: int | None = None
     tick_schedules: tuple[CreatedObjectTickState, ...] = ()
     follow_entity_id: str | None = None
+    extra_duration_frames: int = 0
     params: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -136,6 +161,7 @@ class CreatedObjectRuntimeState:
         object.__setattr__(self, "tick_schedules", tuple(self.tick_schedules))
         if self.follow_entity_id is not None:
             _validate_non_empty_text(self.follow_entity_id, "内容创建对象跟随实体 id")
+        _validate_non_negative_int(self.extra_duration_frames, "内容创建对象已延长帧数")
         self.params = dict(self.params)
 
     def is_active_at(self, frame: int) -> bool:
@@ -169,6 +195,7 @@ class CreatedObjectRuntime(FrameUpdatable):
         self._objects: list[CreatedObjectRuntimeState] = []
         self._pending_impact_requests: list[ImpactRequest] = []
         self._emitted_impact_requests: list[ImpactRequest] = []
+        self._extension_records: list[CreatedObjectExtensionRecord] = []
         self._current_frame = 0
         self._next_entity_index = 1
 
@@ -196,9 +223,71 @@ class CreatedObjectRuntime(FrameUpdatable):
     def emitted_impact_requests(self) -> tuple[ImpactRequest, ...]:
         return tuple(self._emitted_impact_requests)
 
+    @property
+    def extension_records(self) -> tuple[CreatedObjectExtensionRecord, ...]:
+        return tuple(self._extension_records)
+
     def register(self, behavior_key: str, behavior: CreatedObjectBehavior) -> None:
         _validate_non_empty_text(behavior_key, "内容创建对象行为 key")
         self._behaviors[behavior_key] = behavior
+
+    def extend_duration(
+        self,
+        *,
+        object_key: str,
+        owner_key: str | None,
+        frames: int,
+        max_extra_frames: int | None = None,
+        frame: int,
+    ) -> CreatedObjectExtensionRecord | None:
+        """延长活动创建物的持续时间，并按实例记录已使用延长预算。
+
+        ``max_extra_frames`` 表示该创建物实例通过本入口累计可延长的上限；
+        刷新（重放技能）会重置实例预算。没有活动匹配对象时返回 ``None``。
+        """
+
+        _validate_non_empty_text(object_key, "创建对象 key")
+        if owner_key is not None:
+            _validate_non_empty_text(owner_key, "创建对象归属 key")
+        _validate_positive_int(frames, "请求延长帧数")
+        if max_extra_frames is not None:
+            _validate_positive_int(max_extra_frames, "延长上限帧数")
+        _validate_frame(frame)
+        obj = self._active_object_for(object_key, owner_key, frame)
+        if obj is None:
+            return None
+        remaining = (
+            None
+            if max_extra_frames is None
+            else max(max_extra_frames - obj.extra_duration_frames, 0)
+        )
+        applied = min(frames, remaining) if remaining is not None else frames
+        remaining_after = None if remaining is None else remaining - applied
+        record = CreatedObjectExtensionRecord(
+            frame=frame,
+            object_key=object_key,
+            entity_id=obj.entity.entity_id,
+            requested_frames=frames,
+            applied_frames=applied,
+            remaining_cap_frames=remaining_after,
+        )
+        self._extension_records.append(record)
+        if applied <= 0:
+            return record
+        obj.extra_duration_frames += applied
+        lifecycle = obj.entity.lifecycle
+        obj.entity = replace(
+            obj.entity,
+            lifecycle=replace(
+                lifecycle,
+                expires_at_frame=(
+                    None
+                    if lifecycle.expires_at_frame is None
+                    else lifecycle.expires_at_frame + applied
+                ),
+            ),
+        )
+        return record
 
     def create(self, spec: CreatedObjectSpec, frame: int) -> CreatedObjectRuntimeState:
         return self.create_or_refresh(spec, frame)
@@ -320,6 +409,7 @@ class CreatedObjectRuntime(FrameUpdatable):
         )
         obj.follow_entity_id = spec.follow_entity_id
         obj.params = dict(spec.params)
+        obj.extra_duration_frames = 0
         return obj
 
     def _tick_object(self, obj: CreatedObjectRuntimeState, frame: int) -> None:
@@ -405,6 +495,21 @@ class CreatedObjectRuntime(FrameUpdatable):
             and obj.is_active_at(frame)
         )
 
+    def _active_object_for(
+        self,
+        object_key: str,
+        owner_key: str | None,
+        frame: int,
+    ) -> CreatedObjectRuntimeState | None:
+        for obj in self._objects:
+            if obj.object_key != object_key:
+                continue
+            if owner_key is not None and obj.entity.owner_key != owner_key:
+                continue
+            if obj.is_active_at(frame):
+                return obj
+        return None
+
     def _expire_due_objects(self, frame: int) -> None:
         for obj in self._objects:
             _expire_if_due(obj, frame)
@@ -440,4 +545,16 @@ def _validate_non_empty_text(value: str, field_name: str) -> None:
 def _validate_frame(frame: int) -> None:
     if frame < 0:
         msg = "帧号不能为负数"
+        raise ValueError(msg)
+
+
+def _validate_positive_int(value: int, field_name: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        msg = f"{field_name}必须是正整数"
+        raise ValueError(msg)
+
+
+def _validate_non_negative_int(value: int, field_name: str) -> None:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        msg = f"{field_name}必须是非负整数"
         raise ValueError(msg)

@@ -20,6 +20,7 @@ class ImpactKind(StrEnum):
     APPLY_AURA = "apply_aura"
     APPLY_STATUS = "apply_status"
     CREATE_ENTITY = "create_entity"
+    EXTEND_CREATED_ENTITY = "extend_created_entity"
     ENERGY = "energy"
     MOVEMENT = "movement"
 

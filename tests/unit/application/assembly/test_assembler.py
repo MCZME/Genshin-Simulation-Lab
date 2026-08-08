@@ -459,6 +459,7 @@ def test_assembler_builds_minimal_runtime_graph():
         assembled.buff_runtime,
         assembled.shield_runtime,
         assembled.elemental_settlement_coordinator,
+        assembled.cooldown_frame_adapter,
         assembled.movement_runtime,
         assembled.action_manager,
         assembled.impact_runtime,

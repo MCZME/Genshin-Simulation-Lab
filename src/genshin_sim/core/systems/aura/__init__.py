@@ -7,6 +7,10 @@ from genshin_sim.core.systems.aura.enums import (
     AuraLossPolicy,
     AuraStrength,
 )
+from genshin_sim.core.systems.aura.impact_handler import (
+    CharacterAuraImpactRecord,
+    CharacterAuraImpactRequestHandler,
+)
 from genshin_sim.core.systems.aura.models import (
     AuraApplicationRequest,
     AuraApplicationResult,
@@ -52,6 +56,8 @@ __all__ = [
     "AuraStateLinkMutationRequest",
     "AuraBatchPlanner",
     "AuraCommitReceipt",
+    "CharacterAuraImpactRecord",
+    "CharacterAuraImpactRequestHandler",
     "AuraComponent",
     "AuraContribution",
     "AuraContributionRef",

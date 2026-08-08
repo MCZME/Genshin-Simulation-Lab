@@ -11,6 +11,7 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from genshin_sim.assets.models import TalentScalingEntry
+from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 
 
 class TalentFrameworkError(Exception):
@@ -23,6 +24,30 @@ class TalentValidationError(TalentFrameworkError, ValueError):
 
 class ScalingCompileError(TalentFrameworkError, ValueError):
     """倍率编译失败。"""
+
+
+def index_talent_scalings(
+    character_key: str,
+    talent_scalings: tuple[TalentScalingEntry, ...],
+) -> dict[tuple[str, str, str], TalentScalingEntry]:
+    """索引（角色, 天赋, 具体文本）资产倍率条目。
+
+    归属不符或文本重复都在内容编译期确定性报错；具体文本在该三元组内唯一。
+    """
+
+    entries_by_key: dict[tuple[str, str, str], TalentScalingEntry] = {}
+    for entry in talent_scalings:
+        if entry.character_key != character_key:
+            raise ContentUnitValidationError(
+                f"角色倍率条目归属不符：{entry.entry_key}（{character_key}）"
+            )
+        key = (entry.character_key, entry.talent_key, entry.label)
+        if key in entries_by_key:
+            raise ContentUnitValidationError(
+                f"角色倍率条目标签重复：{entry.label}（{character_key}）"
+            )
+        entries_by_key[key] = entry
+    return entries_by_key
 
 
 @dataclass(frozen=True, slots=True)

@@ -6,7 +6,7 @@ from genshin_sim.application.assembly.errors import MissingRuntimeAssetError
 from genshin_sim.application.assembly.models import RuntimeAssetBundle
 from genshin_sim.application.config import SimulationConfig, TeamSlotConfig
 from genshin_sim.assets import AssetError, AssetRepository
-from genshin_sim.assets.models import ArtifactSetAsset, ArtifactSetBonus
+from genshin_sim.assets.models import ArtifactSetAsset, ArtifactSetBonus, TalentScalingEntry
 
 
 class AssetBundleLoader:
@@ -54,6 +54,12 @@ class AssetBundleLoader:
                 effect_payloads.extend(
                     self.asset_repository.get_effect_payloads(artifact_set.asset_key)
                 )
+
+            talent_scalings: list[TalentScalingEntry] = []
+            for talent_key in slot.character.talents:
+                talent_scalings.extend(
+                    self.asset_repository.get_talent_scalings(character.asset_key, talent_key)
+                )
         except (AssetError, LookupError) as exc:
             raise MissingRuntimeAssetError(f"加载队伍槽位 {slot.slot} 的资产失败：{exc}") from exc
 
@@ -66,4 +72,5 @@ class AssetBundleLoader:
             artifact_sets=tuple(artifact_sets),
             artifact_bonuses=tuple(artifact_bonuses),
             effect_payloads=tuple(effect_payloads),
+            talent_scalings=tuple(talent_scalings),
         )

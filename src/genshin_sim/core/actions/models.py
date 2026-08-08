@@ -18,12 +18,23 @@ from genshin_sim.core.actions.enums import (
     InputSessionPolicy,
     SnapshotPolicy,
 )
+from genshin_sim.core.coordination.character_ability_condition.protocols import (
+    CharacterAbilityConditionPort,
+)
 from genshin_sim.core.space.geometry import Vector3
 
 if TYPE_CHECKING:
     from genshin_sim.core.actions.interpreters import ActionInterpreter
     from genshin_sim.core.actions.protocols import Action
     from genshin_sim.core.simulation import SimulationContext
+
+
+@dataclass(frozen=True, slots=True)
+class ActionInterpretationContext:
+    """传给角色能力解释器的只读上下文（含公共条件端口）。"""
+
+    simulation: SimulationContext
+    ability_condition_port: CharacterAbilityConditionPort | None = None
 
 
 @dataclass(frozen=True, slots=True)

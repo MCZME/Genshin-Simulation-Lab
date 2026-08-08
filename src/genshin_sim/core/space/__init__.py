@@ -5,6 +5,7 @@ from genshin_sim.core.space.created_objects import (
     CreatedObjectRuntime,
     CreatedObjectRuntimeState,
     CreatedObjectSpec,
+    CreatedObjectTickSpec,
 )
 from genshin_sim.core.space.entities import CollisionBox, SpatialEntity, SpatialEntityKind
 from genshin_sim.core.space.errors import SpaceEntityPlanConflictError
@@ -31,6 +32,7 @@ __all__ = [
     "CreatedObjectRuntime",
     "CreatedObjectRuntimeState",
     "CreatedObjectSpec",
+    "CreatedObjectTickSpec",
     "CollisionBox",
     "ImpactAreaSpec",
     "OrientedBoxArea",

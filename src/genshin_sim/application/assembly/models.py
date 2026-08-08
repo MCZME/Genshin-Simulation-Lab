@@ -50,6 +50,7 @@ if TYPE_CHECKING:
         ImpactRequestDispatcher,
         ImpactRuntime,
     )
+    from genshin_sim.core.protocols import FrameUpdatable
     from genshin_sim.core.simulation import (
         FramePipeline,
         IntentQueue,
@@ -61,13 +62,17 @@ if TYPE_CHECKING:
     from genshin_sim.core.space import CreatedObjectBehavior
     from genshin_sim.core.space.runtime import SpaceRuntime
     from genshin_sim.core.systems.aura import AuraRuntime
-    from genshin_sim.core.systems.aura_icd import AuraIcdRuntime
+    from genshin_sim.core.systems.aura_icd import AuraIcdRuntime, IcdDefinition
     from genshin_sim.core.systems.buff import (
         BuffDefinition,
         BuffImpactRequestHandler,
         BuffResolver,
         BuffRuntime,
         BuffStore,
+    )
+    from genshin_sim.core.systems.cooldown import (
+        CooldownDefinition,
+        CooldownRuntime,
     )
     from genshin_sim.core.systems.damage import (
         DamageModifierProvider,
@@ -128,6 +133,8 @@ class RuntimeContentBundle:
     modifiers: tuple[Modifier, ...]
     attribute_stacking_groups: tuple[ModifierStackingGroupDefinition, ...]
     buff_definitions: tuple[BuffDefinition, ...]
+    aura_icd_definitions: tuple[IcdDefinition, ...]
+    cooldown_definitions: tuple[CooldownDefinition, ...]
     damage_modifier_providers: tuple[DamageModifierProvider, ...]
     damage_modifier_stacking_groups: tuple[DamageModifierStackingGroupDefinition, ...]
 
@@ -159,6 +166,8 @@ class AssembledSimulation:
     energy_transit_queue: EnergyTransitQueue
     energy_runtime: EnergyRuntime
     energy_handler: EnergyImpactRequestHandler
+    cooldown_runtime: CooldownRuntime
+    cooldown_frame_adapter: FrameUpdatable
     movement_runtime: MovementRuntime
     buff_definitions: tuple[BuffDefinition, ...]
     buff_store: BuffStore

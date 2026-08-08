@@ -10,6 +10,7 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import Any, cast
 
+from genshin_sim.assets.models import TalentScalingEntry
 from genshin_sim.content.definitions.content_unit import ContentUnit
 
 
@@ -34,6 +35,7 @@ class CharacterContentUnitRequest:
     slot: int
     constellation: int = 0
     talent_levels: Mapping[str, int] = field(default_factory=dict)
+    talent_scalings: tuple[TalentScalingEntry, ...] = ()
     params: Mapping[str, Any] = field(default_factory=dict)
     asset: Any | None = None
 
@@ -47,6 +49,7 @@ class CharacterContentUnitRequest:
             _require_non_empty(talent_key, "talent_levels key")
             _require_positive_int(level, f"talent_levels.{talent_key}")
         object.__setattr__(self, "talent_levels", talent_levels)
+        object.__setattr__(self, "talent_scalings", tuple(self.talent_scalings))
         object.__setattr__(self, "params", dict(self.params))
 
 

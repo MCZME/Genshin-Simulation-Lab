@@ -1,15 +1,18 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from dataclasses import replace
 
 import pytest
 
 from genshin_sim.assets.models import TalentScalingEntry
+from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.generic.talents import (
     ScalingCompileError,
     ScalingCompiler,
     TalentLevelResolver,
     TalentValidationError,
+    index_talent_scalings,
 )
 
 
@@ -113,3 +116,37 @@ def test_scaling_compiler_rejects_non_numeric_value():
 
     with pytest.raises(ScalingCompileError, match="不是数字"):
         ScalingCompiler.compile_entry(entry, level=2)
+
+
+def test_index_talent_scalings_indexes_by_character_talent_label():
+    entry = _scaling_entry()
+
+    index = index_talent_scalings(
+        "character:test",
+        (entry,),
+    )
+
+    assert index == {
+        ("character:test", "normal_attack", "测试倍率"): entry,
+    }
+
+
+def test_index_talent_scalings_rejects_foreign_character_entry():
+    foreign = replace(_scaling_entry(), character_key="character:other")
+
+    with pytest.raises(ContentUnitValidationError, match="归属不符"):
+        index_talent_scalings("character:test", (foreign,))
+
+
+def test_index_talent_scalings_rejects_duplicate_label():
+    first = _scaling_entry()
+    duplicate = replace(
+        first,
+        entry_key="character.test.normal_attack.line_01_param_1_dup",
+    )
+
+    with pytest.raises(ContentUnitValidationError, match="标签重复"):
+        index_talent_scalings(
+            "character:test",
+            (first, duplicate),
+        )

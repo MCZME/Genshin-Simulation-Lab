@@ -19,7 +19,9 @@ from genshin_sim.core.contracts.phases import MountPoint
 from genshin_sim.core.contracts.state_schema import StateSchema
 from genshin_sim.core.impacts import ImpactFactory
 from genshin_sim.core.space import CreatedObjectBehavior
+from genshin_sim.core.systems.aura_icd import IcdDefinition
 from genshin_sim.core.systems.buff import BuffDefinition
+from genshin_sim.core.systems.cooldown import CooldownDefinition
 from genshin_sim.core.systems.damage import (
     DamageModifierProvider,
     DamageModifierStackingGroupDefinition,
@@ -75,7 +77,8 @@ class ContentUnit:
         default_factory=tuple
     )
     buff_definitions: Sequence[BuffDefinition] = field(default_factory=tuple)
-    cooldown_definitions: Sequence[object] = field(default_factory=tuple)
+    aura_icd_definitions: Sequence[IcdDefinition] = field(default_factory=tuple)
+    cooldown_definitions: Sequence[CooldownDefinition] = field(default_factory=tuple)
     reaction_capabilities: Sequence[str] = field(default_factory=tuple)
     mount_points: Sequence[MountPoint] = field(default_factory=tuple)
 
@@ -131,9 +134,24 @@ class ContentUnit:
         object.__setattr__(self, "buff_definitions", tuple(self.buff_definitions))
         object.__setattr__(
             self,
+            "aura_icd_definitions",
+            tuple(self.aura_icd_definitions),
+        )
+        for definition in self.aura_icd_definitions:
+            if not isinstance(definition, IcdDefinition):
+                raise ContentUnitValidationError(
+                    "aura_icd_definitions 成员必须是 IcdDefinition"
+                )
+        object.__setattr__(
+            self,
             "cooldown_definitions",
             tuple(self.cooldown_definitions),
         )
+        for definition in self.cooldown_definitions:
+            if not isinstance(definition, CooldownDefinition):
+                raise ContentUnitValidationError(
+                    "cooldown_definitions 成员必须是 CooldownDefinition"
+                )
         object.__setattr__(
             self,
             "reaction_capabilities",

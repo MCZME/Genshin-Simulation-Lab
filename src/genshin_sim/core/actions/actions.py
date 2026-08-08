@@ -16,6 +16,7 @@ from genshin_sim.core.actions.models import (
     ActionExecutionContext,
     ActionExecutionResult,
     ActionImpactPoint,
+    ActionInterpretationContext,
     ActionInterpretationResult,
     ActionOwnerRef,
     ControlActionRequest,
@@ -24,10 +25,16 @@ from genshin_sim.core.actions.models import (
     TargetingSpec,
 )
 from genshin_sim.core.space.space import ACTIVE_CHARACTER_ENTITY_ID
+from genshin_sim.core.systems.cooldown import (
+    CooldownKey,
+    CooldownRuntime,
+    CooldownSubjectRef,
+    StartCooldownRequest,
+)
 from genshin_sim.core.systems.movement import MovementFact, MovementRuntime
 
 if TYPE_CHECKING:
-    from genshin_sim.core.simulation import SimulationContext
+    pass
 
 
 TEAM_SWITCH_ACTION_KEY = "team.switch"
@@ -42,8 +49,11 @@ class TimedImpactAction:
     duration_frames: int = 1
     impact_keys: tuple[str, ...] = ()
     impact_frame_offsets: Mapping[str, int] = field(default_factory=dict)
+    impact_targeting: Mapping[str, TargetingSpec | None] = field(default_factory=dict)
     create_default_impact_point: bool = False
     targeting: TargetingSpec | None = None
+    cooldown_start_frame: int | None = None
+    cooldown_ability_key: str | None = None
     admission_policy: ActionAdmissionPolicy = field(default_factory=ActionAdmissionPolicy)
 
     def __post_init__(self) -> None:
@@ -53,9 +63,29 @@ class TimedImpactAction:
             raise ValueError(msg)
         object.__setattr__(self, "impact_keys", tuple(self.impact_keys))
         object.__setattr__(self, "impact_frame_offsets", dict(self.impact_frame_offsets))
+        impact_targeting = dict(self.impact_targeting)
+        for impact_key, targeting in impact_targeting.items():
+            if not isinstance(impact_key, str) or not impact_key.strip():
+                msg = "impact_targeting 键必须是非空字符串"
+                raise ValueError(msg)
+            if targeting is not None and not isinstance(targeting, TargetingSpec):
+                msg = "impact_targeting 值必须是 TargetingSpec 或 None"
+                raise ValueError(msg)
+        object.__setattr__(self, "impact_targeting", impact_targeting)
+        if (self.cooldown_start_frame is None) != (self.cooldown_ability_key is None):
+            msg = "cooldown_start_frame 与 cooldown_ability_key 必须同时提供或同时省略"
+            raise ValueError(msg)
+        if self.cooldown_start_frame is not None and self.cooldown_start_frame < 0:
+            msg = "cooldown_start_frame 不能为负数"
+            raise ValueError(msg)
+        if self.cooldown_ability_key is not None:
+            _validate_non_empty_text(self.cooldown_ability_key, "cooldown_ability_key")
 
     def create_initial_state(self, params: Mapping[str, object]) -> Mapping[str, object]:
-        return {"params": dict(params)}
+        state: dict[str, object] = {"params": dict(params)}
+        if self.cooldown_start_frame is not None:
+            state["cooldown_started"] = False
+        return state
 
     def on_start(self, context: ActionExecutionContext) -> ActionExecutionResult:
         impact_keys = self.impact_keys
@@ -72,7 +102,7 @@ class TimedImpactAction:
                     context.start_frame
                     + self.impact_frame_offsets.get(impact_key, 0)
                 ),
-                targeting=self.targeting,
+                targeting=self.impact_targeting.get(impact_key, self.targeting),
                 params=context.params,
             )
             for impact_key in impact_keys
@@ -82,7 +112,41 @@ class TimedImpactAction:
     def on_update(self, context: ActionExecutionContext) -> ActionExecutionResult:
         if context.elapsed_frames >= self.duration_frames:
             return ActionExecutionResult(lifecycle_directive=ActionLifecycleDirective.FINISH)
-        return ActionExecutionResult()
+        if self.cooldown_start_frame is None:
+            return ActionExecutionResult()
+        state = dict(context.action_state)
+        if state.get("cooldown_started") is True:
+            return ActionExecutionResult()
+        if context.elapsed_frames < self.cooldown_start_frame:
+            return ActionExecutionResult()
+        self._start_cooldown(context)
+        state["cooldown_started"] = True
+        return ActionExecutionResult(next_state=state)
+
+    def _start_cooldown(self, context: ActionExecutionContext) -> None:
+        if context.owner.slot is None:
+            msg = f"动作 {self.action_key} 开始冷却需要角色归属槽位"
+            raise RuntimeError(msg)
+        assert self.cooldown_start_frame is not None
+        assert self.cooldown_ability_key is not None
+        runtime = context.simulation_context.get_system(CooldownRuntime)
+        if not isinstance(runtime, CooldownRuntime):
+            msg = f"缺少 CooldownRuntime，无法开始 {self.action_key} 冷却"
+            raise RuntimeError(msg)
+        frame = context.start_frame + self.cooldown_start_frame
+        request = StartCooldownRequest(
+            request_id=(
+                f"cooldown:{context.instance_id}:"
+                f"{self.cooldown_ability_key}:{frame}"
+            ),
+            key=CooldownKey(
+                CooldownSubjectRef.character(f"character:slot_{context.owner.slot}"),
+                self.cooldown_ability_key,
+            ),
+            frame=frame,
+            source_ref=f"action:{self.action_key}",
+        )
+        runtime.start(request)
 
     def on_finish(self, context: ActionExecutionContext) -> ActionExecutionResult:
         del context
@@ -274,7 +338,7 @@ class TeamActionInterpreter:
 
     def interpret(
         self,
-        context: SimulationContext,
+        context: ActionInterpretationContext,
         session: InputSessionView,
     ) -> ActionInterpretationResult:
         del context

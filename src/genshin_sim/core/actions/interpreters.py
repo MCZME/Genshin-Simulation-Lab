@@ -7,6 +7,7 @@ from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from genshin_sim.core.actions.helpers import _validate_non_empty_text
 from genshin_sim.core.actions.models import (
+    ActionInterpretationContext,
     ActionInterpretationResult,
     ActionOwnerRef,
     InputSessionView,
@@ -26,7 +27,7 @@ class ActionInterpreter(Protocol):
 
     def interpret(
         self,
-        context: SimulationContext,
+        context: ActionInterpretationContext,
         session: InputSessionView,
     ) -> ActionInterpretationResult:
         """解释当前输入会话视图。"""

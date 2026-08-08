@@ -33,7 +33,9 @@ from genshin_sim.core.attributes import ModifierStackingGroupDefinition
 from genshin_sim.core.entity_states.content_state import ContentStateMount
 from genshin_sim.core.impacts import ImpactFactory
 from genshin_sim.core.space import CreatedObjectBehavior
+from genshin_sim.core.systems.aura_icd import IcdDefinition
 from genshin_sim.core.systems.buff import BuffDefinition, BuffSystemError
+from genshin_sim.core.systems.cooldown import CooldownDefinition
 from genshin_sim.core.systems.damage import (
     DamageModifierProvider,
     DamageModifierStackingGroupDefinition,
@@ -109,6 +111,7 @@ class ContentCompiler:
             slot=bundle.slot,
             constellation=slot_config.character.constellation,
             talent_levels=slot_config.character.talents,
+            talent_scalings=bundle.talent_scalings,
             asset=bundle.character,
         )
         try:
@@ -242,6 +245,8 @@ class ContentCompiler:
         damage_modifier_stacking_groups: list[DamageModifierStackingGroupDefinition] = []
         attribute_stacking_groups: list[ModifierStackingGroupDefinition] = []
         buff_definitions: list[BuffDefinition] = []
+        aura_icd_definitions: list[IcdDefinition] = []
+        cooldown_definitions: list[CooldownDefinition] = []
 
         for unit in units:
             self._register_state_schema(content_state_mounts, unit)
@@ -256,6 +261,8 @@ class ContentCompiler:
             modifiers.extend(unit.modifiers)
             attribute_stacking_groups.extend(unit.attribute_stacking_groups)
             self._register_buff_definitions(buff_definitions, unit)
+            aura_icd_definitions.extend(unit.aura_icd_definitions)
+            cooldown_definitions.extend(unit.cooldown_definitions)
             damage_modifier_providers.extend(unit.damage_modifier_providers)
             damage_modifier_stacking_groups.extend(unit.damage_modifier_stacking_groups)
 
@@ -270,6 +277,8 @@ class ContentCompiler:
             modifiers=tuple(modifiers),
             attribute_stacking_groups=tuple(attribute_stacking_groups),
             buff_definitions=tuple(buff_definitions),
+            aura_icd_definitions=tuple(aura_icd_definitions),
+            cooldown_definitions=tuple(cooldown_definitions),
             damage_modifier_providers=tuple(damage_modifier_providers),
             damage_modifier_stacking_groups=tuple(damage_modifier_stacking_groups),
         )

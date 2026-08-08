@@ -12,6 +12,7 @@ from genshin_sim.core.actions import (
     ActionAdmissionPolicy,
     ActionDecisionRejectReason,
     ActionExecutionContext,
+    ActionInterpretationContext,
     ActionInterpretationResult,
     ActionInterpretationTrigger,
     ActionInterpreterRegistry,
@@ -40,19 +41,29 @@ from genshin_sim.core.simulation import (
 )
 from genshin_sim.core.space import Space, SpatialEntity, SpatialEntityKind, Vector3
 from genshin_sim.core.space.runtime import SpaceRuntime
+from genshin_sim.core.systems.cooldown import (
+    AbilityKind,
+    CooldownDefinition,
+    CooldownDurationMode,
+    CooldownKey,
+    CooldownRuntime,
+    CooldownStore,
+    CooldownSubjectRef,
+)
 
 
 @dataclass(slots=True)
 class ReleaseStartInterpreter:
     action_by_key: dict[str, str]
     views: list[InputSessionView] = field(default_factory=list)
+    contexts: list[object] = field(default_factory=list)
 
     @property
     def supported_action_keys(self) -> tuple[str, ...]:
         return tuple(self.action_by_key.values())
 
     def interpret(self, context, session: InputSessionView) -> ActionInterpretationResult:
-        del context
+        self.contexts.append(context)
         self.views.append(session)
         if session.trigger is not ActionInterpretationTrigger.RELEASE:
             return ActionInterpretationResult.wait()
@@ -95,6 +106,8 @@ def _manager(
     frames: list[KeyInputFrame],
     interpreter: ReleaseStartInterpreter,
     actions: tuple[TimedImpactAction, ...],
+    *,
+    ability_condition_port=None,
 ) -> ActionManager:
     registry = ActionInterpreterRegistry()
     registry.register("keyboard.e", ActiveCharacterInterpreterSelector({1: interpreter}))
@@ -103,6 +116,7 @@ def _manager(
         input_trace=InputTraceCompiler().compile(frames),
         interpreter_registry=registry,
         action_registry=ActionRegistry(actions),
+        ability_condition_port=ability_condition_port,
     )
 
 
@@ -341,3 +355,83 @@ def _action_context(
         simulation_context=context,
         params=params,
     )
+
+
+class _RecordingAbilityConditionPort:
+    def __init__(self) -> None:
+        self.queries: list[object] = []
+
+    def evaluate(self, query):
+        self.queries.append(query)
+        return type("Result", (), {"shared_conditions_satisfied": True})()
+
+
+def test_action_manager_passes_ability_condition_port_to_interpreter():
+    interpreter = ReleaseStartInterpreter({"keyboard.e": "character.test.skill"})
+    port = _RecordingAbilityConditionPort()
+    manager = _manager(
+        [
+            KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
+            KeyInputFrame(3, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
+        ],
+        interpreter,
+        (TimedImpactAction(action_key="character.test.skill"),),
+        ability_condition_port=port,
+    )
+
+    manager.update_frame(_context(), 1)
+
+    assert interpreter.contexts
+    interpretation_context = cast(
+        ActionInterpretationContext,
+        interpreter.contexts[0],
+    )
+    assert interpretation_context.ability_condition_port is port
+
+
+def test_timed_action_starts_cooldown_at_configured_frame():
+    definition = CooldownDefinition(
+        key=CooldownKey(
+            CooldownSubjectRef.character("character:slot_1"),
+            "elemental_skill",
+        ),
+        ability_kind=AbilityKind.ELEMENTAL_SKILL,
+        base_duration_frames=100,
+        max_charges=1,
+        duration_mode=CooldownDurationMode.FIXED,
+        source_ref="character.barbara.elemental_skill",
+        tags=("elemental_skill",),
+    )
+    cooldown_runtime = CooldownRuntime(CooldownStore((definition,)))
+    interpreter = ReleaseStartInterpreter({"keyboard.e": "character.test.skill"})
+    manager = _manager(
+        [
+            KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
+            KeyInputFrame(3, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
+        ],
+        interpreter,
+        (
+            TimedImpactAction(
+                action_key="character.test.skill",
+                duration_frames=10,
+                cooldown_start_frame=2,
+                cooldown_ability_key="elemental_skill",
+            ),
+        ),
+    )
+    context = _context()
+    context.register_system(cooldown_runtime)
+
+    manager.update_frame(context, 1)
+    manager.update_frame(context, 3)
+    cooldown_runtime.normalize(4)
+    manager.update_frame(context, 4)
+    assert cooldown_runtime.store.get_record(definition.key).available_charges == 1
+
+    cooldown_runtime.normalize(5)
+    manager.update_frame(context, 5)
+
+    record = cooldown_runtime.store.get_record(definition.key)
+    assert record.available_charges == 0
+    assert record.active_recovery is not None
+    assert record.active_recovery.ready_frame == 105

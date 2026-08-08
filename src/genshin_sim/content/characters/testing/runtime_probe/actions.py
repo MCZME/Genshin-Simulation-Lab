@@ -6,6 +6,7 @@ from genshin_sim.content.characters.testing.runtime_probe.constants import (
     RUNTIME_PROBE_IMPACT_KEY,
 )
 from genshin_sim.core.actions import (
+    ActionInterpretationContext,
     ActionInterpretationResult,
     ActionInterpretationTrigger,
     ActionOwnerRef,
@@ -21,7 +22,11 @@ class RuntimeProbeActionInterpreter:
 
     supported_action_keys = (RUNTIME_PROBE_ACTION_KEY,)
 
-    def interpret(self, context, session: InputSessionView) -> ActionInterpretationResult:
+    def interpret(
+        self,
+        context: ActionInterpretationContext,
+        session: InputSessionView,
+    ) -> ActionInterpretationResult:
         del context
         if session.trigger is ActionInterpretationTrigger.PRESS:
             return ActionInterpretationResult.wait()

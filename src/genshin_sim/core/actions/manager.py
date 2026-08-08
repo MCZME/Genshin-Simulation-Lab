@@ -24,6 +24,7 @@ from genshin_sim.core.actions.models import (
     ActionExecutionResult,
     ActionImpactPoint,
     ActionInstance,
+    ActionInterpretationContext,
     ActionInterpretationResult,
     ActionOwnerRef,
     ControlActionRequest,
@@ -32,6 +33,9 @@ from genshin_sim.core.actions.models import (
     RuntimeInputSession,
 )
 from genshin_sim.core.actions.protocols import ActionRegistry
+from genshin_sim.core.coordination.character_ability_condition.protocols import (
+    CharacterAbilityConditionPort,
+)
 from genshin_sim.core.events import (
     EventType,
     GameEvent,
@@ -54,10 +58,12 @@ class ActionManager(FrameUpdatable):
         input_trace: InputSessionTrace,
         interpreter_registry: ActionInterpreterRegistry,
         action_registry: ActionRegistry,
+        ability_condition_port: CharacterAbilityConditionPort | None = None,
     ) -> None:
         self.input_trace = input_trace
         self.interpreter_registry = interpreter_registry
         self.action_registry = action_registry
+        self._ability_condition_port = ability_condition_port
         self._sessions: dict[int, RuntimeInputSession] = {}
         self._instances: list[ActionInstance] = []
         self._decisions: list[ActionDecision] = []
@@ -272,7 +278,13 @@ class ActionManager(FrameUpdatable):
         frame: int,
     ) -> None:
         view = self._session_view(session, trigger, frame)
-        result = session.interpreter_binding.interpreter.interpret(context, view)
+        result = session.interpreter_binding.interpreter.interpret(
+            ActionInterpretationContext(
+                simulation=context,
+                ability_condition_port=self._ability_condition_port,
+            ),
+            view,
+        )
         self._apply_interpretation(context, session, result, frame)
 
     def _session_view(

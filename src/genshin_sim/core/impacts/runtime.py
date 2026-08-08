@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
 from typing import Protocol
 
@@ -16,14 +16,23 @@ from genshin_sim.core.protocols import FrameUpdatable
 from genshin_sim.core.space import (
     CircleArea,
     CreatedObjectSpec,
+    CreatedObjectTickSpec,
     ImpactAreaSpec,
     SpatialEntity,
     SpatialEntityKind,
     Vector3,
 )
+from genshin_sim.core.systems.aura import (
+    CharacterAuraImpactRecord,
+    CharacterAuraImpactRequestHandler,
+)
 from genshin_sim.core.systems.buff import BuffApplicationRecord, BuffImpactRequestHandler
 from genshin_sim.core.systems.damage import DamageRequestHandler, DamageResolutionRecord
 from genshin_sim.core.systems.energy import EnergyImpactRecord, EnergyImpactRequestHandler
+from genshin_sim.core.systems.healing import (
+    HealingImpactRecord,
+    HealingImpactRequestHandler,
+)
 from genshin_sim.core.systems.movement import MovementImpactRequestHandler
 from genshin_sim.core.systems.shield import ShieldGrantRecord, ShieldImpactRequestHandler
 
@@ -77,6 +86,8 @@ class ImpactRequestDispatcher:
         damage_handler: DamageRequestHandler | None = None,
         shield_handler: ShieldImpactRequestHandler | None = None,
         buff_handler: BuffImpactRequestHandler | None = None,
+        healing_handler: HealingImpactRequestHandler | None = None,
+        character_aura_handler: CharacterAuraImpactRequestHandler | None = None,
         energy_handler: EnergyImpactRequestHandler | None = None,
         movement_handler: MovementImpactRequestHandler | None = None,
         elemental_settlement_coordinator: ElementalSettlementPort | None = None,
@@ -84,6 +95,8 @@ class ImpactRequestDispatcher:
         self.damage_handler = damage_handler
         self.shield_handler = shield_handler
         self.buff_handler = buff_handler
+        self.healing_handler = healing_handler
+        self.character_aura_handler = character_aura_handler
         self.energy_handler = energy_handler
         self.movement_handler = movement_handler
         self.elemental_settlement_coordinator = elemental_settlement_coordinator
@@ -117,6 +130,18 @@ class ImpactRequestDispatcher:
         return self.buff_handler.records
 
     @property
+    def healing_records(self) -> tuple[HealingImpactRecord, ...]:
+        if self.healing_handler is None:
+            return ()
+        return self.healing_handler.records
+
+    @property
+    def character_aura_records(self) -> tuple[CharacterAuraImpactRecord, ...]:
+        if self.character_aura_handler is None:
+            return ()
+        return self.character_aura_handler.records
+
+    @property
     def energy_records(self) -> tuple[EnergyImpactRecord, ...]:
         if self.energy_handler is None:
             return ()
@@ -135,6 +160,9 @@ class ImpactRequestDispatcher:
                 continue
             if request.kind is ImpactKind.APPLY_STATUS:
                 self._handle_apply_status_request(context, request)
+                continue
+            if request.kind is ImpactKind.HEAL:
+                self._handle_heal_request(context, request)
                 continue
             if request.kind is ImpactKind.ENERGY:
                 self._handle_energy_request(context, request)
@@ -207,7 +235,10 @@ class ImpactRequestDispatcher:
                 )
             )
             return
-        if not request.target_refs:
+        target_refs = tuple(request.target_refs)
+        if not target_refs and request.anchor_entity_id is not None:
+            target_refs = (request.anchor_entity_id,)
+        if not target_refs:
             self._ignored_requests.append(
                 IgnoredImpactRecord(
                     frame=request.frame,
@@ -216,7 +247,22 @@ class ImpactRequestDispatcher:
                 )
             )
             return
-        if self.elemental_settlement_coordinator is None:
+        character_refs = tuple(
+            ref
+            for ref in target_refs
+            if ref == "player:active" or ref.startswith("character:")
+        )
+        entity_refs = tuple(ref for ref in target_refs if ref not in character_refs)
+        if character_refs and self.character_aura_handler is None:
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="角色附着请求处理器尚未接入",
+                )
+            )
+            return
+        if entity_refs and self.elemental_settlement_coordinator is None:
             self._ignored_requests.append(
                 IgnoredImpactRecord(
                     frame=request.frame,
@@ -225,7 +271,18 @@ class ImpactRequestDispatcher:
                 )
             )
             return
-        self.elemental_settlement_coordinator.settle_aura_impact(context, request)
+        if character_refs:
+            assert self.character_aura_handler is not None
+            self.character_aura_handler.handle_impact_request(
+                context,
+                replace(request, target_refs=character_refs),
+            )
+        if entity_refs:
+            assert self.elemental_settlement_coordinator is not None
+            self.elemental_settlement_coordinator.settle_aura_impact(
+                context,
+                replace(request, target_refs=entity_refs),
+            )
 
     def _handle_shield_request(self, context, request: ImpactRequest) -> None:
         if self.shield_handler is None:
@@ -259,6 +316,27 @@ class ImpactRequestDispatcher:
             )
             return
         self.buff_handler.handle_impact_request(context, request)
+
+    def _handle_heal_request(self, context, request: ImpactRequest) -> None:
+        if self.healing_handler is None:
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="治疗请求处理器尚未接入",
+                )
+            )
+            return
+        if not self.healing_handler.has_heal_contract(request):
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="治疗请求缺少结构化 params.heal 契约",
+                )
+            )
+            return
+        self.healing_handler.handle_impact_request(context, request)
 
     def _handle_energy_request(self, context, request: ImpactRequest) -> None:
         if self.energy_handler is None:
@@ -377,10 +455,11 @@ class ImpactRuntime(FrameUpdatable):
             return
         created_object_runtime = context.space_runtime.created_object_runtime
         created_object_runtime.update_frame(context, frame)
-        self.request_dispatcher.dispatch_requests(
+        requests = self._expand_aura_areas(
             context,
             created_object_runtime.drain_impact_requests(),
         )
+        self.request_dispatcher.dispatch_requests(context, requests)
         context.space_runtime.sync_created_objects_to_space()
 
     def is_idle(self) -> bool:
@@ -414,6 +493,55 @@ class ImpactRuntime(FrameUpdatable):
             )
             self.request_dispatcher.dispatch_requests(context, requests)
             self.action_manager.mark_impact_dispatched(impact_point.impact_point_id)
+
+    def _expand_aura_areas(
+        self,
+        context,
+        requests: tuple[ImpactRequest, ...],
+    ) -> tuple[ImpactRequest, ...]:
+        """按 APPLY_AURA 的 AOE 在锚点处解析实际目标（角色与敌人）。"""
+
+        if context.space_runtime is None:
+            return requests
+        expanded: list[ImpactRequest] = []
+        for request in requests:
+            spec = request.elemental_application_spec
+            if (
+                request.kind is not ImpactKind.APPLY_AURA
+                or spec is None
+                or spec.area is None
+            ):
+                expanded.append(request)
+                continue
+            if request.anchor_entity_id is not None:
+                anchor = context.space_runtime.get_entity(request.anchor_entity_id)
+                anchors: tuple[SpatialEntity, ...] = () if anchor is None else (anchor,)
+            else:
+                anchors = tuple(
+                    anchor
+                    for target_ref in request.target_refs
+                    if (
+                        anchor := _spatial_anchor(context, target_ref)
+                    )
+                    is not None
+                )
+            target_refs: list[str] = []
+            for anchor in anchors:
+                area = _area_from_spec(spec.area, anchor)
+                for entity in context.space_runtime.entities_in_area(
+                    area,
+                    kinds={
+                        SpatialEntityKind.ACTIVE_CHARACTER,
+                        SpatialEntityKind.TARGET,
+                    },
+                ):
+                    ref = _aura_entity_ref(context, entity)
+                    if ref is not None and ref not in target_refs:
+                        target_refs.append(ref)
+            if not target_refs:
+                target_refs.extend(request.target_refs)
+            expanded.append(replace(request, target_refs=tuple(target_refs)))
+        return tuple(expanded)
 
     def _resolve_target_refs(
         self,
@@ -540,6 +668,17 @@ def _spatial_anchor(context, target_ref: str) -> SpatialEntity | None:
     return context.space_runtime.get_entity(target.spatial_entity_id)
 
 
+def _aura_entity_ref(context, entity: SpatialEntity) -> str | None:
+    """把 AOE 命中的空间实体转换为元素施加目标引用。"""
+
+    if entity.kind is not SpatialEntityKind.TARGET:
+        return entity.entity_id
+    target = context.space_runtime.targets.get_by_spatial_entity_id(entity.entity_id)
+    if target is None:
+        return entity.entity_id
+    return target.target_id
+
+
 def _area_from_spec(spec: ImpactAreaSpec, anchor: SpatialEntity) -> CircleArea:
     """把未锚定的 AOE 规格投影到锚点位置（球/圆 -> 同半径 Circle）。"""
 
@@ -566,6 +705,8 @@ def _created_object_spec_from_request(request: ImpactRequest) -> CreatedObjectSp
     source_key = _optional_text(params, "source_key") or request.action_key or request.impact_key
     tick_interval_frames = _optional_positive_int(params, "tick_interval_frames")
     first_tick_frame_offset = _optional_non_negative_int(params, "first_tick_frame_offset")
+    tick_schedules = _optional_tick_schedules(params.get("tick_schedules"))
+    follow_entity_id = _optional_text(params, "follow_entity_id")
     max_instances = _optional_positive_int(params, "max_instances") or 1
     refresh_existing = _optional_bool(params, "refresh_existing", default=True)
     tags = _tuple_of_text(params.get("tags"), "tags")
@@ -582,6 +723,8 @@ def _created_object_spec_from_request(request: ImpactRequest) -> CreatedObjectSp
         entity_id=entity_id,
         tick_interval_frames=tick_interval_frames,
         first_tick_frame_offset=first_tick_frame_offset,
+        tick_schedules=tick_schedules,
+        follow_entity_id=follow_entity_id,
         max_instances=max_instances,
         refresh_existing=refresh_existing,
         tags=tags,
@@ -649,6 +792,53 @@ def _optional_bool(params: Mapping[str, object], field_name: str, *, default: bo
         msg = f"create_entity.params.{field_name} 必须是布尔值"
         raise ValueError(msg)
     return value
+
+
+def _optional_tick_schedules(value: object) -> tuple[CreatedObjectTickSpec, ...]:
+    if value is None:
+        return ()
+    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
+        msg = "create_entity.params.tick_schedules 必须是序列"
+        raise ValueError(msg)
+    schedules: list[CreatedObjectTickSpec] = []
+    for index, raw in enumerate(value):
+        if not isinstance(raw, Mapping):
+            msg = f"create_entity.params.tick_schedules[{index}] 必须是映射"
+            raise ValueError(msg)
+        behavior_key = raw.get("behavior_key")
+        first_tick_frame_offset = raw.get("first_tick_frame_offset", 0)
+        interval_frames = raw.get("interval_frames")
+        if not isinstance(behavior_key, str) or not behavior_key.strip():
+            msg = f"create_entity.params.tick_schedules[{index}].behavior_key 必须是非空字符串"
+            raise ValueError(msg)
+        if (
+            isinstance(first_tick_frame_offset, bool)
+            or not isinstance(first_tick_frame_offset, int)
+            or first_tick_frame_offset < 0
+        ):
+            msg = (
+                f"create_entity.params.tick_schedules[{index}].first_tick_frame_offset "
+                "必须是非负整数"
+            )
+            raise ValueError(msg)
+        if interval_frames is not None and (
+            isinstance(interval_frames, bool)
+            or not isinstance(interval_frames, int)
+            or interval_frames <= 0
+        ):
+            msg = (
+                f"create_entity.params.tick_schedules[{index}].interval_frames "
+                "必须是正整数或 None"
+            )
+            raise ValueError(msg)
+        schedules.append(
+            CreatedObjectTickSpec(
+                behavior_key=behavior_key,
+                first_tick_frame_offset=first_tick_frame_offset,
+                interval_frames=interval_frames,
+            )
+        )
+    return tuple(schedules)
 
 
 def _vector3_from_param(

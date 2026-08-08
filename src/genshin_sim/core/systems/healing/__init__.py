@@ -13,6 +13,11 @@ from genshin_sim.core.systems.healing.handler import (
     HealingRequestHandler,
     healing_result_to_application,
 )
+from genshin_sim.core.systems.healing.impact_handler import (
+    HealingImpactRecord,
+    HealingImpactRequestHandler,
+    resolve_character_ref,
+)
 from genshin_sim.core.systems.healing.models import (
     HealingComponentResult,
     HealingRequest,
@@ -28,6 +33,8 @@ __all__ = [
     "HealingApplicationRecord",
     "HealingComponentResult",
     "HealingErrorDetail",
+    "HealingImpactRecord",
+    "HealingImpactRequestHandler",
     "HealingRequest",
     "HealingRequestHandler",
     "HealingResolver",
@@ -40,6 +47,7 @@ __all__ = [
     "UnsupportedHealingSubjectError",
     "healing_result_to_application",
     "normalize_healing_zero",
+    "resolve_character_ref",
     "validate_healing_float",
     "validate_non_negative_healing_float",
 ]

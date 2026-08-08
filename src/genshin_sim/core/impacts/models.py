@@ -125,6 +125,7 @@ class ElementalApplicationSpec:
     elemental_amount: AuraAmount = field(default_factory=AuraAmount.one)
     icd_label_key: str | None = None
     icd_definition_key: str | None = None
+    area: ImpactAreaSpec | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.impact_ref, str) or not self.impact_ref.strip():
@@ -137,6 +138,8 @@ class ElementalApplicationSpec:
             raise ValueError("ElementalApplicationSpec 的 elemental_amount 必须为正数")
         if (self.icd_label_key is None) != (self.icd_definition_key is None):
             raise ValueError("ICD label 与 definition 必须同时提供或同时省略")
+        if self.area is not None and not isinstance(self.area, ImpactAreaSpec):
+            raise ValueError("area 提供时必须是非空 ImpactAreaSpec")
         for value, name in (
             (self.icd_label_key, "icd_label_key"),
             (self.icd_definition_key, "icd_definition_key"),

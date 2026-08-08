@@ -43,6 +43,9 @@ from genshin_sim.core.attributes import (
 )
 from genshin_sim.core.contracts.intents import IntentKind
 from genshin_sim.core.contracts.phases import FramePhase
+from genshin_sim.core.coordination.character_ability_condition.coordinator import (
+    CharacterAbilityConditionCoordinator,
+)
 from genshin_sim.core.coordination.character_damage_taken import (
     CharacterDamageTakenCoordinator,
 )
@@ -101,14 +104,28 @@ from genshin_sim.core.space import (
     Vector3,
 )
 from genshin_sim.core.space.runtime import SpaceRuntime
-from genshin_sim.core.systems.aura import AuraApplicationProfileRegistry, AuraRuntime
-from genshin_sim.core.systems.aura_icd import AuraIcdRuntime
+from genshin_sim.core.systems.aura import (
+    AuraApplicationProfileRegistry,
+    AuraRuntime,
+    CharacterAuraImpactRequestHandler,
+)
+from genshin_sim.core.systems.aura_icd import (
+    AuraIcdRuntime,
+    IcdDefinitionRegistry,
+    no_cooldown_definition,
+    standard_icd_definition,
+)
 from genshin_sim.core.systems.buff import (
     BuffImpactRequestHandler,
     BuffResolver,
     BuffRuntime,
     BuffStore,
     BuffSystemError,
+)
+from genshin_sim.core.systems.cooldown import (
+    CooldownError,
+    CooldownRuntime,
+    CooldownStore,
 )
 from genshin_sim.core.systems.damage import (
     DamageFormulaRegistry,
@@ -130,6 +147,7 @@ from genshin_sim.core.systems.energy import (
     EnergyTransitQueue,
 )
 from genshin_sim.core.systems.healing import (
+    HealingImpactRequestHandler,
     HealingRequestHandler,
     HealingResolver,
     HealingSystemError,
@@ -171,6 +189,19 @@ from genshin_sim.core.systems.shield import (
     ShieldRuntime,
     ShieldStore,
 )
+
+
+class _CooldownFrameAdapter:
+    """把冷却 Runtime 的逐帧归一化适配为 FrameUpdatable。"""
+
+    def __init__(self, runtime: CooldownRuntime) -> None:
+        self._runtime = runtime
+
+    def update_frame(self, context, frame: int) -> None:
+        self._runtime.update_frame(context, frame)
+
+    def is_idle(self) -> bool:
+        return self._runtime.is_idle()
 
 TEAM_INPUT_KEYS = ("keyboard.1", "keyboard.2", "keyboard.3", "keyboard.4")
 ACTION_BUTTON_KEYS = (
@@ -291,6 +322,18 @@ class RuntimeAssembler:
             raise InvalidRuntimePayloadError(f"元素能量组装失败：{exc}") from exc
         context.register_system(energy_runtime)
         context.register_system(energy_handler)
+        try:
+            cooldown_runtime = CooldownRuntime(
+                CooldownStore(content_bundle.cooldown_definitions)
+            )
+        except CooldownError as exc:
+            raise InvalidRuntimePayloadError(f"冷却组装失败：{exc}") from exc
+        ability_condition_coordinator = CharacterAbilityConditionCoordinator(
+            cooldown_runtime,
+            energy_runtime,
+        )
+        context.register_system(cooldown_runtime)
+        context.register_system(ability_condition_coordinator)
         target_states = TargetRuntimeCollection(
             TargetRuntimeState(
                 target_id=target.target_id,
@@ -359,6 +402,7 @@ class RuntimeAssembler:
             input_trace=input_trace,
             interpreter_registry=action_interpreter_registry,
             action_registry=action_registry,
+            ability_condition_port=ability_condition_coordinator,
         )
         impact_dispatcher = ImpactDispatcher(content_bundle.impact_factories)
         try:
@@ -429,6 +473,7 @@ class RuntimeAssembler:
             )
         except DamageSystemError as exc:
             raise InvalidRuntimePayloadError(str(exc)) from exc
+        context.register_system(damage_handler)
         try:
             healing_handler = HealingRequestHandler(
                 HealingResolver(attribute_runtime.resolver),
@@ -437,6 +482,8 @@ class RuntimeAssembler:
         except HealingSystemError as exc:
             raise InvalidRuntimePayloadError(str(exc)) from exc
         context.register_system(healing_handler)
+        healing_impact_handler = HealingImpactRequestHandler(healing_handler)
+        context.register_system(healing_impact_handler)
         try:
             buff_resolver = BuffResolver()
             buff_runtime = BuffRuntime(
@@ -472,7 +519,21 @@ class RuntimeAssembler:
         movement_handler = MovementImpactRequestHandler(movement_runtime)
         context.register_system(movement_runtime)
         aura_runtime = AuraRuntime()
-        aura_icd_runtime = AuraIcdRuntime()
+        aura_icd_runtime = AuraIcdRuntime(
+            IcdDefinitionRegistry(
+                (
+                    standard_icd_definition(),
+                    no_cooldown_definition(),
+                    *content_bundle.aura_icd_definitions,
+                )
+            )
+        )
+        character_aura_handler = CharacterAuraImpactRequestHandler(
+            aura_runtime,
+            aura_icd_runtime,
+            context.events,
+        )
+        context.register_system(character_aura_handler)
         reaction_bootstrap = create_default_reaction_bootstrap()
         reaction_runtime = reaction_bootstrap.create_runtime()
         reaction_spatial_planning_port = ReactionSpatialPlanningAdapter(space)
@@ -571,12 +632,14 @@ class RuntimeAssembler:
         context.register_system(elemental_interaction_coordinator)
         context.register_system(elemental_settlement_coordinator)
         impact_request_dispatcher = ImpactRequestDispatcher(
-            damage_handler,
-            shield_handler,
-            buff_handler,
-            energy_handler,
-            movement_handler,
-            elemental_settlement_coordinator,
+            damage_handler=damage_handler,
+            shield_handler=shield_handler,
+            buff_handler=buff_handler,
+            healing_handler=healing_impact_handler,
+            character_aura_handler=character_aura_handler,
+            energy_handler=energy_handler,
+            movement_handler=movement_handler,
+            elemental_settlement_coordinator=elemental_settlement_coordinator,
         )
         impact_runtime = ImpactRuntime(
             action_manager,
@@ -624,6 +687,8 @@ class RuntimeAssembler:
             "elemental_settlement",
             elemental_settlement_coordinator,
         )
+        cooldown_frame_adapter = _CooldownFrameAdapter(cooldown_runtime)
+        runtime_world.add(FramePhase.TIME_ADVANCE, "cooldown", cooldown_frame_adapter)
         runtime_world.add(FramePhase.TIME_ADVANCE, "movement", movement_runtime)
         runtime_world.add(FramePhase.ACTION_ADVANCE, "action_manager", action_manager)
         runtime_world.add(FramePhase.SETTLEMENT, "impact", impact_runtime)
@@ -660,6 +725,8 @@ class RuntimeAssembler:
             energy_transit_queue=energy_transit_queue,
             energy_runtime=energy_runtime,
             energy_handler=energy_handler,
+            cooldown_runtime=cooldown_runtime,
+            cooldown_frame_adapter=cooldown_frame_adapter,
             movement_runtime=movement_runtime,
             buff_definitions=content_bundle.buff_definitions,
             buff_store=buff_store,

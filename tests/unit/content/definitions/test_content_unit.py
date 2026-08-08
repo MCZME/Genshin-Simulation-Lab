@@ -17,6 +17,8 @@ from genshin_sim.content.definitions.effects import (
     UnlockSpec,
 )
 from genshin_sim.core.contracts.phases import FramePhase, MountPoint
+from genshin_sim.core.elements import AuraAmount
+from genshin_sim.core.systems.aura_icd import IcdDefinition
 
 
 def _effect(effect_key: str) -> EffectSpec:
@@ -96,6 +98,30 @@ def test_effect_keys_must_be_unique():
             slot=1,
             effects=(_effect("effect.dup"), _effect("effect.dup")),
         )
+
+
+def test_aura_icd_definitions_must_be_icd_definition():
+    with pytest.raises(ContentUnitValidationError, match="aura_icd_definitions"):
+        ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
+            owner_key="character:1",
+            handler_key="character.test",
+            version="dev-m0",
+            slot=1,
+            aura_icd_definitions=(_slice(),),
+        )
+
+    definition = IcdDefinition("icd.test.ring", 90, (AuraAmount.one(),))
+    unit = ContentUnit(
+        owner_type=ContentUnitOwnerType.CHARACTER,
+        owner_key="character:1",
+        handler_key="character.test",
+        version="dev-m0",
+        slot=1,
+        aura_icd_definitions=(definition,),
+    )
+
+    assert unit.aura_icd_definitions == (definition,)
 
 
 def test_mount_points_must_be_unique():

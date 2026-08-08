@@ -15,6 +15,27 @@ if TYPE_CHECKING:
 
 
 @dataclass(frozen=True, slots=True)
+class CreatedObjectTickSpec:
+    """创建物上的一个独立 tick 调度规格。"""
+
+    behavior_key: str
+    first_tick_frame_offset: int = 0
+    interval_frames: int | None = None
+
+    def __post_init__(self) -> None:
+        _validate_non_empty_text(self.behavior_key, "创建物 tick 行为 key")
+        if (
+            isinstance(self.first_tick_frame_offset, bool)
+            or self.first_tick_frame_offset < 0
+        ):
+            msg = "创建物 tick 首次偏移不能为负数"
+            raise ValueError(msg)
+        if self.interval_frames is not None and self.interval_frames <= 0:
+            msg = "创建物 tick 间隔必须是正整数"
+            raise ValueError(msg)
+
+
+@dataclass(frozen=True, slots=True)
 class CreatedObjectSpec:
     """内容创建场上对象的创建与刷新规格。"""
 
@@ -26,8 +47,10 @@ class CreatedObjectSpec:
     source_key: str | None = None
     behavior_key: str | None = None
     entity_id: str | None = None
+    tick_schedules: tuple[CreatedObjectTickSpec, ...] = ()
     tick_interval_frames: int | None = None
     first_tick_frame_offset: int | None = None
+    follow_entity_id: str | None = None
     max_instances: int = 1
     refresh_existing: bool = True
     tags: tuple[str, ...] = field(default_factory=tuple)
@@ -46,12 +69,19 @@ class CreatedObjectSpec:
             _validate_non_empty_text(self.behavior_key, "内容创建对象行为 key")
         if self.entity_id is not None:
             _validate_non_empty_text(self.entity_id, "内容创建对象实体 id")
+        for schedule in self.tick_schedules:
+            if not isinstance(schedule, CreatedObjectTickSpec):
+                msg = "tick_schedules 成员必须是 CreatedObjectTickSpec"
+                raise ValueError(msg)
+        object.__setattr__(self, "tick_schedules", tuple(self.tick_schedules))
         if self.tick_interval_frames is not None and self.tick_interval_frames <= 0:
             msg = "内容创建对象 tick 间隔必须是正整数"
             raise ValueError(msg)
         if self.first_tick_frame_offset is not None and self.first_tick_frame_offset < 0:
             msg = "内容创建对象首次 tick 偏移不能为负数"
             raise ValueError(msg)
+        if self.follow_entity_id is not None:
+            _validate_non_empty_text(self.follow_entity_id, "内容创建对象跟随实体 id")
         if self.max_instances <= 0:
             msg = "内容创建对象数量上限必须是正整数"
             raise ValueError(msg)
@@ -59,6 +89,15 @@ class CreatedObjectSpec:
             _validate_non_empty_text(tag, "内容创建对象标签")
         object.__setattr__(self, "tags", tuple(self.tags))
         object.__setattr__(self, "params", dict(self.params))
+
+
+@dataclass(slots=True)
+class CreatedObjectTickState:
+    """创建物上一个 tick 调度的运行态。"""
+
+    behavior_key: str
+    next_tick_frame: int | None
+    interval_frames: int | None = None
 
 
 @dataclass(slots=True)
@@ -70,6 +109,8 @@ class CreatedObjectRuntimeState:
     behavior_key: str | None = None
     next_tick_frame: int | None = None
     tick_interval_frames: int | None = None
+    tick_schedules: tuple[CreatedObjectTickState, ...] = ()
+    follow_entity_id: str | None = None
     params: Mapping[str, object] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -88,6 +129,13 @@ class CreatedObjectRuntimeState:
         if self.tick_interval_frames is not None and self.tick_interval_frames <= 0:
             msg = "内容创建对象 tick 间隔必须是正整数"
             raise ValueError(msg)
+        for schedule in self.tick_schedules:
+            if not isinstance(schedule, CreatedObjectTickState):
+                msg = "tick_schedules 成员必须是 CreatedObjectTickState"
+                raise ValueError(msg)
+        object.__setattr__(self, "tick_schedules", tuple(self.tick_schedules))
+        if self.follow_entity_id is not None:
+            _validate_non_empty_text(self.follow_entity_id, "内容创建对象跟随实体 id")
         self.params = dict(self.params)
 
     def is_active_at(self, frame: int) -> bool:
@@ -177,10 +225,10 @@ class CreatedObjectRuntime(FrameUpdatable):
         return requests
 
     def update_frame(self, context: SimulationContext, frame: int) -> None:
-        del context
         _validate_frame(frame)
         self._current_frame = frame
         self._pending_impact_requests.clear()
+        self._sync_followers(context)
 
         for obj in self._objects:
             if obj.entity.lifecycle.state is not EntityLifecycleState.ACTIVE:
@@ -212,9 +260,26 @@ class CreatedObjectRuntime(FrameUpdatable):
         obj = CreatedObjectRuntimeState(
             entity=entity,
             object_key=spec.object_key,
-            behavior_key=spec.behavior_key or spec.object_key,
-            next_tick_frame=_initial_tick_frame(spec, frame),
-            tick_interval_frames=spec.tick_interval_frames,
+            behavior_key=(
+                None if spec.tick_schedules else (spec.behavior_key or spec.object_key)
+            ),
+            next_tick_frame=None if spec.tick_schedules else _initial_tick_frame(spec, frame),
+            tick_interval_frames=(
+                None if spec.tick_schedules else spec.tick_interval_frames
+            ),
+            tick_schedules=(
+                tuple(
+                    CreatedObjectTickState(
+                        behavior_key=schedule.behavior_key,
+                        next_tick_frame=frame + schedule.first_tick_frame_offset,
+                        interval_frames=schedule.interval_frames,
+                    )
+                    for schedule in spec.tick_schedules
+                )
+                if spec.tick_schedules
+                else ()
+            ),
+            follow_entity_id=spec.follow_entity_id,
             params=spec.params,
         )
         self._objects.append(obj)
@@ -238,13 +303,30 @@ class CreatedObjectRuntime(FrameUpdatable):
             source_key=spec.source_key,
             tags=spec.tags,
         )
-        obj.behavior_key = spec.behavior_key or spec.object_key
-        obj.next_tick_frame = _initial_tick_frame(spec, frame)
-        obj.tick_interval_frames = spec.tick_interval_frames
+        obj.behavior_key = None if spec.tick_schedules else (spec.behavior_key or spec.object_key)
+        obj.next_tick_frame = None if spec.tick_schedules else _initial_tick_frame(spec, frame)
+        obj.tick_interval_frames = None if spec.tick_schedules else spec.tick_interval_frames
+        obj.tick_schedules = (
+            tuple(
+                CreatedObjectTickState(
+                    behavior_key=schedule.behavior_key,
+                    next_tick_frame=frame + schedule.first_tick_frame_offset,
+                    interval_frames=schedule.interval_frames,
+                )
+                for schedule in spec.tick_schedules
+            )
+            if spec.tick_schedules
+            else ()
+        )
+        obj.follow_entity_id = spec.follow_entity_id
         obj.params = dict(spec.params)
         return obj
 
     def _tick_object(self, obj: CreatedObjectRuntimeState, frame: int) -> None:
+        if obj.tick_schedules:
+            for schedule in obj.tick_schedules:
+                self._tick_schedule(obj, schedule, frame)
+            return
         while obj.next_tick_frame is not None and obj.next_tick_frame <= frame:
             tick_frame = obj.next_tick_frame
             expires_at_frame = obj.entity.lifecycle.expires_at_frame
@@ -261,6 +343,47 @@ class CreatedObjectRuntime(FrameUpdatable):
                 obj.next_tick_frame = None
                 return
             obj.next_tick_frame = tick_frame + obj.tick_interval_frames
+
+    def _tick_schedule(
+        self,
+        obj: CreatedObjectRuntimeState,
+        schedule: CreatedObjectTickState,
+        frame: int,
+    ) -> None:
+        while schedule.next_tick_frame is not None and schedule.next_tick_frame <= frame:
+            tick_frame = schedule.next_tick_frame
+            expires_at_frame = obj.entity.lifecycle.expires_at_frame
+            if expires_at_frame is not None and tick_frame >= expires_at_frame:
+                schedule.next_tick_frame = None
+                return
+
+            behavior = self._behavior_for(schedule.behavior_key)
+            requests = tuple(behavior.create_tick_requests(obj, tick_frame))
+            self._pending_impact_requests.extend(requests)
+            self._emitted_impact_requests.extend(requests)
+
+            if schedule.interval_frames is None:
+                schedule.next_tick_frame = None
+                return
+            schedule.next_tick_frame = tick_frame + schedule.interval_frames
+
+    def _sync_followers(self, context: SimulationContext) -> None:
+        """把声明了跟随实体的活动对象同步到目标实体位置。"""
+
+        space_runtime = getattr(context, "space_runtime", None)
+        if space_runtime is None:
+            return
+        for obj in self._objects:
+            if obj.entity.lifecycle.state is not EntityLifecycleState.ACTIVE:
+                continue
+            if obj.follow_entity_id is None:
+                continue
+            follower = space_runtime.get_entity(obj.follow_entity_id)
+            if follower is None:
+                msg = f"内容创建对象跟随实体不存在：{obj.follow_entity_id}"
+                raise ValueError(msg)
+            if follower.position != obj.entity.position:
+                obj.entity = replace(obj.entity, position=follower.position)
 
     def _behavior_for(self, behavior_key: str) -> CreatedObjectBehavior:
         behavior = self._behaviors.get(behavior_key)

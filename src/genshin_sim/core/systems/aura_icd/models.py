@@ -20,12 +20,12 @@ def _frame(value: int, name: str) -> None:
 
 @dataclass(frozen=True, slots=True)
 class IcdDefinition:
-    definition_key: str
+    sequence_key: str
     reset_interval_frames: int
     application_sequence: tuple[AuraAmount, ...]
 
     def __post_init__(self) -> None:
-        _text(self.definition_key, "definition_key")
+        _text(self.sequence_key, "sequence_key")
         if (
             isinstance(self.reset_interval_frames, bool)
             or not isinstance(self.reset_interval_frames, int)
@@ -47,29 +47,29 @@ class IcdDefinitionRegistry:
             self.register(definition)
 
     def register(self, definition: IcdDefinition) -> None:
-        if definition.definition_key in self._definitions:
-            raise ValueError(f"重复的 ICD Definition：{definition.definition_key}")
-        self._definitions[definition.definition_key] = definition
+        if definition.sequence_key in self._definitions:
+            raise ValueError(f"重复的 ICD Definition：{definition.sequence_key}")
+        self._definitions[definition.sequence_key] = definition
 
-    def require(self, definition_key: str) -> IcdDefinition:
+    def require(self, sequence_key: str) -> IcdDefinition:
         try:
-            return self._definitions[definition_key]
+            return self._definitions[sequence_key]
         except KeyError as exc:
-            raise KeyError(f"未注册的 ICD Definition：{definition_key}") from exc
+            raise KeyError(f"未注册的 ICD Definition：{sequence_key}") from exc
 
     @property
     def definitions(self) -> tuple[IcdDefinition, ...]:
-        return tuple(sorted(self._definitions.values(), key=lambda item: item.definition_key))
+        return tuple(sorted(self._definitions.values(), key=lambda item: item.sequence_key))
 
 
 @dataclass(frozen=True, slots=True)
 class IcdBinding:
-    label_key: str
-    definition_key: str
+    tag_key: str
+    sequence_key: str
 
     def __post_init__(self) -> None:
-        _text(self.label_key, "label_key")
-        _text(self.definition_key, "definition_key")
+        _text(self.tag_key, "tag_key")
+        _text(self.sequence_key, "sequence_key")
 
 
 @dataclass(frozen=True, order=True, slots=True)
@@ -84,12 +84,12 @@ class AuraIcdAttackerRef:
 class IcdKey:
     attacker_ref: AuraIcdAttackerRef
     defender_ref: ElementalSubjectRef
-    label_key: str
-    definition_key: str
+    tag_key: str
+    sequence_key: str
 
     def __post_init__(self) -> None:
-        _text(self.label_key, "label_key")
-        _text(self.definition_key, "definition_key")
+        _text(self.tag_key, "tag_key")
+        _text(self.sequence_key, "sequence_key")
 
 
 @dataclass(frozen=True, slots=True)
@@ -137,8 +137,8 @@ class IcdResolution:
     order: int
     attacker_ref: AuraIcdAttackerRef
     defender_ref: ElementalSubjectRef
-    label_key: str | None
-    definition_key: str | None
+    tag_key: str | None
+    sequence_key: str | None
     outcome: IcdOutcome
     sequence_index: int | None
     coefficient: AuraAmount

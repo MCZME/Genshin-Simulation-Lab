@@ -846,8 +846,8 @@ def _damage_request(
             can_crit=False,
             elemental_strength=AuraStrength.WEAK,
             elemental_amount=AuraAmount.one(),
-            icd_label_key="golden.reactions.damage",
-            icd_definition_key="icd.none",
+            icd_tag_key="golden.reactions.damage",
+            icd_sequence_key="icd.none",
         ),
     )
 

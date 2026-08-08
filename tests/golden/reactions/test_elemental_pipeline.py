@@ -485,8 +485,8 @@ def test_physical_damage_with_binding_advances_icd_without_elemental_application
                 element=Element.PHYSICAL,
                 scaling_terms=(DamageScalingTerm("atk", STAT_ATK_TOTAL, 1.0),),
                 can_crit=False,
-                icd_label_key="golden.physical_icd",
-                icd_definition_key="icd.standard",
+                icd_tag_key="golden.physical_icd",
+                icd_sequence_key="icd.standard",
             ),
         )
         for index in range(2)

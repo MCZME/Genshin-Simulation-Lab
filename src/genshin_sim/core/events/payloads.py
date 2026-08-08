@@ -309,8 +309,8 @@ class AuraIcdResolvedPayload:
             "outcome": self.result.outcome.value,
             "coefficient": self.result.coefficient.to_dict(),
             "allows_application": self.result.allows_application,
-            "label_key": self.result.label_key,
-            "definition_key": self.result.definition_key,
+            "tag_key": self.result.tag_key,
+            "sequence_key": self.result.sequence_key,
         }
 
 

@@ -18,6 +18,7 @@ from genshin_sim.core.systems.aura_icd.runtime import (
     AuraIcdBatchPlanner,
     AuraIcdRuntime,
     IcdStoreConflictError,
+    default_sequence_definition,
     no_cooldown_definition,
     standard_icd_definition,
 )
@@ -38,6 +39,7 @@ __all__ = [
     "IcdResolution",
     "IcdSnapshot",
     "IcdStoreConflictError",
+    "default_sequence_definition",
     "no_cooldown_definition",
     "standard_icd_definition",
 ]

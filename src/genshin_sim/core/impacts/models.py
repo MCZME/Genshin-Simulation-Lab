@@ -46,11 +46,9 @@ class DamageImpactSpec:
     range_type: str | None = None
     elemental_strength: AuraStrength | None = None
     elemental_amount: AuraAmount = field(default_factory=AuraAmount.zero)
-    icd_label_key: str | None = None
-    icd_definition_key: str | None = None
+    icd_tag_key: str | None = None
+    icd_sequence_key: str | None = None
     area: ImpactAreaSpec | None = None
-    attenuation_group_key: str | None = None
-    attenuation_tag_key: str | None = None
 
     def __post_init__(self) -> None:
         for value, name in (
@@ -93,24 +91,16 @@ class DamageImpactSpec:
             raise ValueError("elemental_amount 为正时必须提供 elemental_strength")
         if self.elemental_strength is not None and self.element is Element.PHYSICAL:
             raise ValueError("物理伤害不能携带元素施加")
-        if (self.icd_label_key is None) != (self.icd_definition_key is None):
-            raise ValueError("ICD label 与 definition 必须同时提供或同时省略")
+        if (self.icd_tag_key is None) != (self.icd_sequence_key is None):
+            raise ValueError("ICD 标签与序列必须同时提供或同时省略")
         for value, name in (
-            (self.icd_label_key, "icd_label_key"),
-            (self.icd_definition_key, "icd_definition_key"),
+            (self.icd_tag_key, "icd_tag_key"),
+            (self.icd_sequence_key, "icd_sequence_key"),
         ):
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise ValueError(f"{name} 提供时必须是非空字符串")
         if self.area is not None and not isinstance(self.area, ImpactAreaSpec):
             raise ValueError("area 提供时必须是非空 ImpactAreaSpec")
-        if (self.attenuation_group_key is None) != (self.attenuation_tag_key is None):
-            raise ValueError("attenuation_group_key 与 attenuation_tag_key 必须同时提供或同时省略")
-        for value, name in (
-            (self.attenuation_group_key, "attenuation_group_key"),
-            (self.attenuation_tag_key, "attenuation_tag_key"),
-        ):
-            if value is not None and (not isinstance(value, str) or not value.strip()):
-                raise ValueError(f"{name} 提供时必须是非空字符串")
         object.__setattr__(self, "scaling_terms", terms)
         object.__setattr__(self, "additional_attack_tags", tags)
 
@@ -123,8 +113,8 @@ class ElementalApplicationSpec:
     element: Element
     elemental_strength: AuraStrength
     elemental_amount: AuraAmount = field(default_factory=AuraAmount.one)
-    icd_label_key: str | None = None
-    icd_definition_key: str | None = None
+    icd_tag_key: str | None = None
+    icd_sequence_key: str | None = None
     area: ImpactAreaSpec | None = None
 
     def __post_init__(self) -> None:
@@ -136,13 +126,13 @@ class ElementalApplicationSpec:
             raise ValueError("ElementalApplicationSpec 的 elemental_strength 不受支持")
         if not isinstance(self.elemental_amount, AuraAmount) or self.elemental_amount.is_zero:
             raise ValueError("ElementalApplicationSpec 的 elemental_amount 必须为正数")
-        if (self.icd_label_key is None) != (self.icd_definition_key is None):
-            raise ValueError("ICD label 与 definition 必须同时提供或同时省略")
+        if (self.icd_tag_key is None) != (self.icd_sequence_key is None):
+            raise ValueError("ICD 标签与序列必须同时提供或同时省略")
         if self.area is not None and not isinstance(self.area, ImpactAreaSpec):
             raise ValueError("area 提供时必须是非空 ImpactAreaSpec")
         for value, name in (
-            (self.icd_label_key, "icd_label_key"),
-            (self.icd_definition_key, "icd_definition_key"),
+            (self.icd_tag_key, "icd_tag_key"),
+            (self.icd_sequence_key, "icd_sequence_key"),
         ):
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise ValueError(f"{name} 提供时必须是非空字符串")

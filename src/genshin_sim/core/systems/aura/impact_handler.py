@@ -100,9 +100,7 @@ class CharacterAuraImpactRequestHandler:
                 impact_ref=f"{spec.impact_ref}:target:{target_ref}",
                 frame=frame,
                 order=order,
-                attacker_ref=AuraIcdAttackerRef(
-                    f"character:slot_{request.owner_slot}"
-                ),
+                attacker_ref=AuraIcdAttackerRef(f"character:slot_{request.owner_slot}"),
                 defender_ref=subject_ref,
                 binding=self._binding_for(spec),
             )
@@ -112,9 +110,7 @@ class CharacterAuraImpactRequestHandler:
             aura_planner.apply(
                 AuraApplicationRequest(
                     request_id=f"{root_work_id}:target:{target_ref}:aura",
-                    application_id=(
-                        f"{root_work_id}:target:{target_ref}:application"
-                    ),
+                    application_id=(f"{root_work_id}:target:{target_ref}:application"),
                     impact_ref=f"{spec.impact_ref}:target:{target_ref}",
                     frame=frame,
                     order=order,
@@ -155,9 +151,7 @@ class CharacterAuraImpactRequestHandler:
             impact_request=request,
             subject_refs=tuple(subject_refs),
             icd_request_ids=icd_plan.request_ids,
-            aura_request_ids=tuple(
-                result.request_id for result in aura_plan.application_results
-            ),
+            aura_request_ids=tuple(result.request_id for result in aura_plan.application_results),
         )
         self._records.append(record)
         return record
@@ -174,14 +168,12 @@ class CharacterAuraImpactRequestHandler:
             team_state = getattr(space_runtime, "team_state", None)
             if team_state is None:
                 raise ValueError("角色附着目标解析缺少队伍运行态")
-            return ElementalSubjectRef.character(
-                team_state.current_character.combat_entity_id
-            )
+            return ElementalSubjectRef.character(team_state.current_character.combat_entity_id)
         raise ValueError(f"不支持的字符角色附着目标：{target_ref}")
 
     @staticmethod
     def _binding_for(spec) -> IcdBinding | None:
-        if spec.icd_label_key is None:
+        if spec.icd_tag_key is None:
             return None
-        assert spec.icd_definition_key is not None
-        return IcdBinding(spec.icd_label_key, spec.icd_definition_key)
+        assert spec.icd_sequence_key is not None
+        return IcdBinding(spec.icd_tag_key, spec.icd_sequence_key)

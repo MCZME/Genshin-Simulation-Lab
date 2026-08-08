@@ -74,7 +74,7 @@ def test_icd_uses_exact_non_integer_coefficients_and_keeps_the_final_value():
         (AuraAmount(Fraction(3, 2)), AuraAmount.zero()),
     )
     runtime = AuraIcdRuntime(IcdDefinitionRegistry((definition,)))
-    binding = IcdBinding("attack.test", definition.definition_key)
+    binding = IcdBinding("attack.test", definition.sequence_key)
 
     first = runtime.resolve(_request(0, frame=0, binding=binding))
     second = runtime.resolve(_request(1, frame=0, binding=binding))

@@ -69,7 +69,7 @@ def _aura_request(
     request_id: str,
     target_refs: tuple[str, ...],
     frame: int = 3,
-    icd_definition_key: str | None = "icd.standard",
+    icd_sequence_key: str | None = "icd.standard",
 ) -> ImpactRequest:
     return ImpactRequest(
         frame=frame,
@@ -83,8 +83,8 @@ def _aura_request(
             element=Element.HYDRO,
             elemental_strength=AuraStrength.WEAK,
             elemental_amount=AuraAmount.one(),
-            icd_label_key="元素战技" if icd_definition_key is not None else None,
-            icd_definition_key=icd_definition_key,
+            icd_tag_key="元素战技" if icd_sequence_key is not None else None,
+            icd_sequence_key=icd_sequence_key,
         ),
     )
 
@@ -204,8 +204,8 @@ class _AuraAreaTickBehavior:
                     element=Element.HYDRO,
                     elemental_strength=AuraStrength.WEAK,
                     elemental_amount=AuraAmount.one(),
-                    icd_label_key="元素战技",
-                    icd_definition_key="icd.barbara.ring",
+                    icd_tag_key="元素战技",
+                    icd_sequence_key="icd.barbara.ring",
                     area=ImpactAreaSpec(
                         shape="圆柱",
                         radius=2.0,
@@ -252,9 +252,7 @@ def test_impact_runtime_expands_aura_area_for_created_object_tick():
             ),
         ]
     )
-    created_object_runtime = CreatedObjectRuntime(
-        {"barbara.ring.wet": _AuraAreaTickBehavior()}
-    )
+    created_object_runtime = CreatedObjectRuntime({"barbara.ring.wet": _AuraAreaTickBehavior()})
     created_object_runtime.create_or_refresh(
         CreatedObjectSpec(
             object_key="barbara.ring",

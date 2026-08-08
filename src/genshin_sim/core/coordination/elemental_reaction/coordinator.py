@@ -263,8 +263,8 @@ class _ElementalImpactIntent:
     incoming_element: Element | None
     elemental_strength: AuraStrength | None
     elemental_amount: AuraAmount
-    icd_label_key: str | None
-    icd_definition_key: str | None
+    icd_tag_key: str | None
+    icd_sequence_key: str | None
     causes_damage: bool
     strike_type: StrikeType | None = None
 
@@ -941,7 +941,7 @@ class ElementalInteractionCoordinator:
         if (
             (spec.elemental_strength is None or spec.elemental_amount.is_zero)
             and spec.strike_type is None
-            and spec.icd_label_key is None
+            and spec.icd_tag_key is None
         ):
             raise ElementalInteractionError("Damage Impact 必须携带正元素施加或状态打击证据")
         return self._handle_elemental_impact(
@@ -1044,7 +1044,7 @@ class ElementalInteractionCoordinator:
             incoming_amount = AuraAmount.zero()
             incoming_element = None
             icd_coefficient = AuraAmount.zero()
-            if intent.has_elemental_application or intent.icd_label_key is not None:
+            if intent.has_elemental_application or intent.icd_tag_key is not None:
                 binding = _icd_binding_for(intent)
                 icd_request = IcdImpactRequest(
                     f"{work.work_id}:icd",
@@ -2804,9 +2804,7 @@ class ElementalSettlementCoordinator:
         if isinstance(group.target_selection, ElectroChargedPropagationSelection):
             return self._settle_electro_charged_effect_group(context, root_record, work)
         if self.reaction_runtime is None or self.damage_handler is None:
-            raise ElementalInteractionError(
-                "Reaction Effect group 缺少 Reaction 或 Damage 端口"
-            )
+            raise ElementalInteractionError("Reaction Effect group 缺少 Reaction 或 Damage 端口")
         targets = self._freeze_targets(context, group)
         work_id = work.work_id
         gate_planner = self.reaction_runtime.begin_gate_batch(root_record.frame, work_id)
@@ -4828,8 +4826,8 @@ def _intent_from_damage_spec(spec: DamageImpactSpec) -> _ElementalImpactIntent:
         element,
         spec.elemental_strength,
         spec.elemental_amount,
-        spec.icd_label_key,
-        spec.icd_definition_key,
+        spec.icd_tag_key,
+        spec.icd_sequence_key,
         True,
         spec.strike_type,
     )
@@ -4841,17 +4839,17 @@ def _intent_from_application_spec(spec: ElementalApplicationSpec) -> _ElementalI
         spec.element,
         spec.elemental_strength,
         spec.elemental_amount,
-        spec.icd_label_key,
-        spec.icd_definition_key,
+        spec.icd_tag_key,
+        spec.icd_sequence_key,
         False,
     )
 
 
 def _icd_binding_for(intent: _ElementalImpactIntent) -> IcdBinding | None:
-    if intent.icd_label_key is None:
+    if intent.icd_tag_key is None:
         return None
-    assert intent.icd_definition_key is not None
-    return IcdBinding(intent.icd_label_key, intent.icd_definition_key)
+    assert intent.icd_sequence_key is not None
+    return IcdBinding(intent.icd_tag_key, intent.icd_sequence_key)
 
 
 def _target_for(context, target_ref_value: str):

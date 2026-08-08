@@ -217,7 +217,7 @@ class ImpactRequestDispatcher:
                     and not request.damage_spec.elemental_amount.is_zero
                 )
                 or request.damage_spec.strike_type is not None
-                or request.damage_spec.icd_label_key is not None
+                or request.damage_spec.icd_tag_key is not None
             )
             and self.elemental_settlement_coordinator is not None
         ):
@@ -248,9 +248,7 @@ class ImpactRequestDispatcher:
             )
             return
         character_refs = tuple(
-            ref
-            for ref in target_refs
-            if ref == "player:active" or ref.startswith("character:")
+            ref for ref in target_refs if ref == "player:active" or ref.startswith("character:")
         )
         entity_refs = tuple(ref for ref in target_refs if ref not in character_refs)
         if character_refs and self.character_aura_handler is None:
@@ -506,11 +504,7 @@ class ImpactRuntime(FrameUpdatable):
         expanded: list[ImpactRequest] = []
         for request in requests:
             spec = request.elemental_application_spec
-            if (
-                request.kind is not ImpactKind.APPLY_AURA
-                or spec is None
-                or spec.area is None
-            ):
+            if request.kind is not ImpactKind.APPLY_AURA or spec is None or spec.area is None:
                 expanded.append(request)
                 continue
             if request.anchor_entity_id is not None:
@@ -520,10 +514,7 @@ class ImpactRuntime(FrameUpdatable):
                 anchors = tuple(
                     anchor
                     for target_ref in request.target_refs
-                    if (
-                        anchor := _spatial_anchor(context, target_ref)
-                    )
-                    is not None
+                    if (anchor := _spatial_anchor(context, target_ref)) is not None
                 )
             target_refs: list[str] = []
             for anchor in anchors:
@@ -555,9 +546,7 @@ class ImpactRuntime(FrameUpdatable):
             return context.space_runtime.resolve_candidate_targets(targeting.snapshot_entity_ids)
         kinds = _spatial_entity_kinds(targeting.kinds)
         radius = (
-            targeting.search_area.radius
-            if targeting.search_area is not None
-            else targeting.radius
+            targeting.search_area.radius if targeting.search_area is not None else targeting.radius
         )
         entities = context.space_runtime.entities_in_radius(
             targeting.origin,
@@ -587,17 +576,11 @@ class ImpactRuntime(FrameUpdatable):
             return requests
         targeting = impact_point.targeting
         kinds = _spatial_entity_kinds(targeting.kinds) if targeting is not None else None
-        excluded = (
-            tuple(targeting.exclude_entity_ids) if targeting is not None else ()
-        )
+        excluded = tuple(targeting.exclude_entity_ids) if targeting is not None else ()
         expanded: list[ImpactRequest] = []
         for request in requests:
             spec = request.damage_spec
-            if (
-                request.kind is not ImpactKind.DAMAGE
-                or spec is None
-                or spec.area is None
-            ):
+            if request.kind is not ImpactKind.DAMAGE or spec is None or spec.area is None:
                 expanded.append(request)
                 continue
             target_refs: list[str] = []
@@ -827,8 +810,7 @@ def _optional_tick_schedules(value: object) -> tuple[CreatedObjectTickSpec, ...]
             or interval_frames <= 0
         ):
             msg = (
-                f"create_entity.params.tick_schedules[{index}].interval_frames "
-                "必须是正整数或 None"
+                f"create_entity.params.tick_schedules[{index}].interval_frames 必须是正整数或 None"
             )
             raise ValueError(msg)
         schedules.append(

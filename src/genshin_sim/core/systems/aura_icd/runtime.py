@@ -82,12 +82,12 @@ class AuraIcdBatchPlanner:
                 None,
                 None,
             )
-        definition = self._runtime.definition_registry.require(binding.definition_key)
+        definition = self._runtime.definition_registry.require(binding.sequence_key)
         key = IcdKey(
             request.attacker_ref,
             request.defender_ref,
-            binding.label_key,
-            binding.definition_key,
+            binding.tag_key,
+            binding.sequence_key,
         )
         record = self._records.get(key)
         if record is None:
@@ -120,8 +120,8 @@ class AuraIcdBatchPlanner:
             request.order,
             request.attacker_ref,
             request.defender_ref,
-            binding.label_key,
-            binding.definition_key,
+            binding.tag_key,
+            binding.sequence_key,
             outcome,
             sequence_index,
             coefficient,
@@ -137,7 +137,11 @@ class AuraIcdBatchPlanner:
 class AuraIcdRuntime:
     def __init__(self, definition_registry: IcdDefinitionRegistry | None = None) -> None:
         self.definition_registry = definition_registry or IcdDefinitionRegistry(
-            (standard_icd_definition(), no_cooldown_definition())
+            (
+                standard_icd_definition(),
+                default_sequence_definition(),
+                no_cooldown_definition(),
+            )
         )
         self._records: dict[IcdKey, IcdRecord] = {}
         self._version = 0
@@ -228,10 +232,18 @@ class AuraIcdRuntime:
 def standard_icd_definition() -> IcdDefinition:
     """返回标准 3 命中附着组的有限窗口序列。"""
 
-    sequence = tuple(
-        AuraAmount.one() if index % 3 == 0 else AuraAmount.zero() for index in range(24)
-    )
+    sequence = _standard_sequence()
     return IcdDefinition("icd.standard", 150, sequence)
+
+
+def default_sequence_definition() -> IcdDefinition:
+    """返回资料“衰减序列=默认”对应的标准 ICD 序列。"""
+
+    return IcdDefinition("默认", 150, _standard_sequence())
+
+
+def _standard_sequence() -> tuple[AuraAmount, ...]:
+    return tuple(AuraAmount.one() if index % 3 == 0 else AuraAmount.zero() for index in range(24))
 
 
 def no_cooldown_definition() -> IcdDefinition:
@@ -245,8 +257,8 @@ def _key_sort_key(key: IcdKey) -> tuple[str, str, str, str, str]:
         key.attacker_ref.scope_key,
         key.defender_ref.kind.value,
         key.defender_ref.entity_id,
-        key.label_key,
-        key.definition_key,
+        key.tag_key,
+        key.sequence_key,
     )
 
 

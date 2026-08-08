@@ -112,6 +112,7 @@ from genshin_sim.core.systems.aura import (
 from genshin_sim.core.systems.aura_icd import (
     AuraIcdRuntime,
     IcdDefinitionRegistry,
+    default_sequence_definition,
     no_cooldown_definition,
     standard_icd_definition,
 )
@@ -525,6 +526,7 @@ class RuntimeAssembler:
             IcdDefinitionRegistry(
                 (
                     standard_icd_definition(),
+                    default_sequence_definition(),
                     no_cooldown_definition(),
                     *content_bundle.aura_icd_definitions,
                 )

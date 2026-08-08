@@ -13,11 +13,16 @@ from genshin_sim.content.characters.testing.runtime_probe import (
 from genshin_sim.content.registries import ContentUnitRegistry
 
 BUILTIN_NOOP_CONTENT_HANDLER_KEYS = (
+    "artifact.unimplemented_set_bonus",
+    "character.unimplemented_constellation",
+    "character.unimplemented_passive",
+    "character.unimplemented_special_talent",
     "generic.noop",
     "generic.static_modifiers",
     "generic.test_artifact_set",
     "generic.test_character",
     "generic.test_weapon",
+    "weapon.unimplemented_passive",
 )
 
 

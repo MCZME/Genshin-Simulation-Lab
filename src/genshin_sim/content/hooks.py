@@ -11,6 +11,8 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
+from genshin_sim.content.definitions.content_unit import ContentUnit
+from genshin_sim.content.definitions.effects import UnlockSpec, UnlockValues
 from genshin_sim.content.models import EventHook, HookResult
 from genshin_sim.content.state_container import StatePatchRequest
 from genshin_sim.core.contracts.intents import IntentEnvelope, IntentKind
@@ -33,6 +35,27 @@ class HookSubscriptionError(HookDispatcherError, ValueError):
 
 class UnsupportedHookOutputError(HookDispatcherError, TypeError):
     """hook 产出了尚未接线的结果类型。"""
+
+
+def build_hook_unlock_specs(units: Sequence[ContentUnit]) -> dict[str, UnlockSpec]:
+    """把内容单元声明的效果解锁条件关联到其事件 hook。
+
+    当前约定：一个带事件 hook 的效果单元只声明一个 EffectSpec，该单元的所有
+    hook 都受这个解锁条件约束；没有效果声明的 hook 恒启用。
+    """
+
+    specs: dict[str, UnlockSpec] = {}
+    for unit in units:
+        if not unit.effects:
+            continue
+        if len(unit.effects) != 1:
+            raise HookDispatcherError(
+                f"效果单元 {unit.handler_key!r} 声明了多个 EffectSpec，"
+                "暂不支持与事件 hook 的关联"
+            )
+        for hook in unit.event_hooks:
+            specs[hook.hook_key] = unit.effects[0].unlock
+    return specs
 
 
 @dataclass(frozen=True, slots=True)
@@ -81,11 +104,15 @@ class HookDispatcher:
         intent_queue: IntentQueue,
         *,
         team_state: TeamRuntimeState | None = None,
+        unlock_specs: Mapping[str, UnlockSpec] | None = None,
     ) -> None:
         self._queue = intent_queue
         self._team_state = team_state
+        self._hooks = tuple(hooks)
+        self._unlock_specs = dict(unlock_specs or {})
+        self._enabled_hook_keys: set[str] | None = None
         self._subscriptions: dict[EventType, list[EventHook]] = {}
-        for hook in hooks:
+        for hook in self._hooks:
             for name in hook.subscriptions:
                 try:
                     event_type = EventType[name]
@@ -98,6 +125,41 @@ class HookDispatcher:
             self._subscriptions[event_type].sort(key=lambda hook: (hook.priority, hook.hook_key))
         self._processed_frame = -1
         self._processed_count = 0
+
+    def initialize(self, context: SimulationContext) -> None:
+        """第 0 帧初始化：按效果解锁条件决定哪些 hook 生效。
+
+        无解锁声明的 hook 恒启用；带 `UnlockSpec` 的 hook 用宿主角色的
+        突破阶段、命座与天赋等级求值，不满足的在运行期不响应事件。
+        """
+
+        del context
+        if self._team_state is None:
+            raise HookDispatcherError("效果解锁评估需要队伍运行态")
+        enabled: set[str] = set()
+        for hook in self._hooks:
+            spec = self._unlock_specs.get(hook.hook_key)
+            if spec is None:
+                enabled.add(hook.hook_key)
+                continue
+            character = next(
+                (
+                    candidate
+                    for candidate in self._team_state.characters
+                    if candidate.combat_entity_id == hook.owner_ref
+                ),
+                None,
+            )
+            if character is None:
+                raise HookDispatcherError(f"效果宿主角色不存在：{hook.owner_ref}")
+            values = UnlockValues(
+                constellation=character.constellation,
+                talent_levels=character.talent_levels,
+                ascension_phase=character.ascension_phase,
+            )
+            if spec.evaluate(values):
+                enabled.add(hook.hook_key)
+        self._enabled_hook_keys = enabled
 
     @property
     def subscriptions(self) -> dict[EventType, tuple[str, ...]]:
@@ -124,6 +186,11 @@ class HookDispatcher:
                 states=self._team_state,
             )
             for hook in hooks:
+                if (
+                    self._enabled_hook_keys is not None
+                    and hook.hook_key not in self._enabled_hook_keys
+                ):
+                    continue
                 result = hook.handle(event, hook_context)
                 self._enqueue_result(
                     hook,

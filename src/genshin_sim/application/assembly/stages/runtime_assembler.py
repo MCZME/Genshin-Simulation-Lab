@@ -22,7 +22,7 @@ from genshin_sim.application.assembly.reaction_capabilities import (
     build_static_reaction_eligibility_port,
 )
 from genshin_sim.application.config import SimulationConfig, TeamSlotConfig
-from genshin_sim.content.hooks import HookDispatcher
+from genshin_sim.content.hooks import HookDispatcher, build_hook_unlock_specs
 from genshin_sim.content.state_container import StatePatchIntentHandler
 from genshin_sim.core.actions import (
     ActionInterpreterRegistry,
@@ -203,6 +203,7 @@ class _CooldownFrameAdapter:
     def is_idle(self) -> bool:
         return self._runtime.is_idle()
 
+
 TEAM_INPUT_KEYS = ("keyboard.1", "keyboard.2", "keyboard.3", "keyboard.4")
 ACTION_BUTTON_KEYS = (
     "keyboard.e",
@@ -268,6 +269,9 @@ class RuntimeAssembler:
             (
                 self._build_character_runtime_state(
                     slot,
+                    ascension_phase=(
+                        assets_by_slot[slot.slot].character_level_stats.ascension_phase
+                    ),
                     attribute_runtime=attribute_runtime,
                     content_states=mounts_by_owner.get(f"character:slot_{slot.slot}", {}),
                 )
@@ -323,9 +327,7 @@ class RuntimeAssembler:
         context.register_system(energy_runtime)
         context.register_system(energy_handler)
         try:
-            cooldown_runtime = CooldownRuntime(
-                CooldownStore(content_bundle.cooldown_definitions)
-            )
+            cooldown_runtime = CooldownRuntime(CooldownStore(content_bundle.cooldown_definitions))
         except CooldownError as exc:
             raise InvalidRuntimePayloadError(f"冷却组装失败：{exc}") from exc
         ability_condition_coordinator = CharacterAbilityConditionCoordinator(
@@ -675,7 +677,9 @@ class RuntimeAssembler:
             content_bundle.event_hooks,
             intent_queue,
             team_state=team_state,
+            unlock_specs=build_hook_unlock_specs(content_bundle.content_units),
         )
+        context.register_system(hook_dispatcher)
         runtime_world = FramePipeline(
             settlement_runtime=settlement_runtime,
             snapshot_runtime=snapshot_runtime,
@@ -755,6 +759,7 @@ class RuntimeAssembler:
         self,
         slot: TeamSlotConfig,
         *,
+        ascension_phase: int,
         attribute_runtime: AttributeRuntimeBundle,
         content_states: dict[str, ContentStateMount],
     ) -> CharacterRuntimeState:
@@ -768,6 +773,7 @@ class RuntimeAssembler:
             slot=slot.slot,
             character_key=slot.character.asset_key,
             level=slot.character.level,
+            ascension_phase=ascension_phase,
             constellation=slot.character.constellation,
             talent_levels=slot.character.talents,
             health=HealthState(max_hp),

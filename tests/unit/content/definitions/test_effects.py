@@ -27,6 +27,19 @@ def test_unlock_constellation_threshold():
     assert not spec.evaluate(UnlockValues(constellation=1))
 
 
+def test_unlock_ascension_threshold():
+    spec = UnlockSpec(kind=UnlockKind.ASCENSION, threshold=4)
+
+    assert spec.evaluate(UnlockValues(ascension_phase=4))
+    assert spec.evaluate(UnlockValues(ascension_phase=6))
+    assert not spec.evaluate(UnlockValues(ascension_phase=3))
+
+
+def test_unlock_ascension_requires_positive_threshold():
+    with pytest.raises(EffectDefinitionValidationError, match="正整数"):
+        UnlockSpec(kind=UnlockKind.ASCENSION, threshold=0)
+
+
 def test_unlock_set_pieces_and_refinement():
     pieces = UnlockSpec(kind=UnlockKind.SET_PIECES, threshold=4)
     refinement = UnlockSpec(kind=UnlockKind.REFINEMENT, threshold=2)

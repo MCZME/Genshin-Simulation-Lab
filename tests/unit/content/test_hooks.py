@@ -13,6 +13,7 @@ from genshin_sim.content import (
     StatePatchRequest,
     UnsupportedHookOutputError,
 )
+from genshin_sim.content.definitions.effects import UnlockKind, UnlockSpec
 from genshin_sim.core.contracts.intents import IntentKind
 from genshin_sim.core.contracts.state_schema import (
     StateField,
@@ -245,3 +246,53 @@ def test_hook_context_exposes_read_only_state_view():
     hook_context = hook.calls[0][1]
     assert isinstance(hook_context, HookContext)
     assert hook_context.state("character:slot_1") == {"stacks": 0}
+
+
+def _ascension_character(phase: int) -> CharacterRuntimeState:
+    return CharacterRuntimeState(
+        slot=1,
+        character_key="character:test",
+        level=90,
+        ascension_phase=phase,
+        combat_entity_id="character:slot_1",
+    )
+
+
+def test_hook_dispatcher_skips_hook_when_ascension_unlock_not_met():
+    hook = RecordingHook("hook.ascension", ("FRAME_STARTED",))
+    team_state = TeamRuntimeState((_ascension_character(3),))
+    dispatcher = HookDispatcher(
+        (hook,),
+        IntentQueue(),
+        team_state=team_state,
+        unlock_specs={
+            "hook.ascension": UnlockSpec(kind=UnlockKind.ASCENSION, threshold=4),
+        },
+    )
+    context = SimulationContext()
+
+    dispatcher.initialize(context)
+    context.events.publish(_game_event())
+    dispatcher.update_frame(context, frame=1)
+
+    assert hook.calls == []
+
+
+def test_hook_dispatcher_enables_hook_when_ascension_unlock_met():
+    hook = RecordingHook("hook.ascension", ("FRAME_STARTED",))
+    team_state = TeamRuntimeState((_ascension_character(4),))
+    dispatcher = HookDispatcher(
+        (hook,),
+        IntentQueue(),
+        team_state=team_state,
+        unlock_specs={
+            "hook.ascension": UnlockSpec(kind=UnlockKind.ASCENSION, threshold=4),
+        },
+    )
+    context = SimulationContext()
+
+    dispatcher.initialize(context)
+    context.events.publish(_game_event())
+    dispatcher.update_frame(context, frame=1)
+
+    assert len(hook.calls) == 1

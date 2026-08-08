@@ -18,6 +18,7 @@ class CharacterRuntimeState:
     slot: int
     character_key: str
     level: int
+    ascension_phase: int = 0
     constellation: int = 0
     talent_levels: Mapping[str, int] = field(default_factory=dict)
     energy: EnergyState = field(default_factory=EnergyState)
@@ -34,6 +35,9 @@ class CharacterRuntimeState:
             raise ValueError(msg)
         if self.level <= 0:
             msg = "角色等级必须是正整数"
+            raise ValueError(msg)
+        if not 0 <= self.ascension_phase <= 6:
+            msg = "角色突破阶段必须在 0 到 6 之间"
             raise ValueError(msg)
         if not 0 <= self.constellation <= 6:
             msg = "角色命座必须在 0 到 6 之间"

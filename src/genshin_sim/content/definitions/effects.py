@@ -35,6 +35,7 @@ class UnlockKind(StrEnum):
     """静态解锁条件类别。"""
 
     ALWAYS = "always"
+    ASCENSION = "ascension"
     CONSTELLATION = "constellation"
     SET_PIECES = "set_pieces"
     REFINEMENT = "refinement"
@@ -48,12 +49,14 @@ class UnlockValues:
     constellation: int = 0
     set_pieces: int = 0
     refinement: int = 1
+    ascension_phase: int = 0
     talent_levels: Mapping[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         _require_bounded_int(self.constellation, 0, 6, "constellation")
         _require_non_negative_int(self.set_pieces, "set_pieces")
         _require_positive_int(self.refinement, "refinement")
+        _require_bounded_int(self.ascension_phase, 0, 6, "ascension_phase")
         talent_levels = dict(self.talent_levels)
         for talent_key, level in talent_levels.items():
             if not isinstance(talent_key, str) or not talent_key.strip():
@@ -83,6 +86,7 @@ class UnlockSpec:
             UnlockKind.SET_PIECES,
             UnlockKind.REFINEMENT,
             UnlockKind.TALENT_LEVEL,
+            UnlockKind.ASCENSION,
         }:
             _require_positive_int(self.threshold, "threshold")
             if self.kind is UnlockKind.TALENT_LEVEL and (
@@ -97,6 +101,8 @@ class UnlockSpec:
 
         if self.kind is UnlockKind.ALWAYS:
             return True
+        if self.kind is UnlockKind.ASCENSION:
+            return values.ascension_phase >= self.threshold
         if self.kind is UnlockKind.CONSTELLATION:
             return values.constellation >= self.threshold
         if self.kind is UnlockKind.SET_PIECES:

@@ -17,6 +17,7 @@ if TYPE_CHECKING:
         CharacterAsset,
         CharacterLevelStats,
         EffectPayload,
+        TalentScalingEntry,
         WeaponAsset,
         WeaponLevelStats,
     )
@@ -81,6 +82,7 @@ if TYPE_CHECKING:
     )
     from genshin_sim.core.systems.healing import HealingRequestHandler
     from genshin_sim.core.systems.health import HealthRuntime
+    from genshin_sim.core.systems.movement import MovementRuntime
     from genshin_sim.core.systems.reaction import ReactionRuntime
     from genshin_sim.core.systems.shield import (
         ShieldImpactRequestHandler,
@@ -109,6 +111,7 @@ class RuntimeAssetBundle:
     artifact_sets: tuple[ArtifactSetAsset, ...]
     artifact_bonuses: tuple[ArtifactSetBonus, ...]
     effect_payloads: tuple[EffectPayload, ...]
+    talent_scalings: tuple[TalentScalingEntry, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -156,6 +159,7 @@ class AssembledSimulation:
     energy_transit_queue: EnergyTransitQueue
     energy_runtime: EnergyRuntime
     energy_handler: EnergyImpactRequestHandler
+    movement_runtime: MovementRuntime
     buff_definitions: tuple[BuffDefinition, ...]
     buff_store: BuffStore
     buff_resolver: BuffResolver

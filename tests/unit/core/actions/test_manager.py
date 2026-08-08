@@ -1,20 +1,28 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass, field
+from typing import Any, cast
+
+import pytest
 
 from genshin_sim.core.actions import (
     TEAM_SWITCH_ACTION_KEY,
     TEAM_SWITCH_TARGET_SLOT_PARAM,
     ActionAdmissionPolicy,
     ActionDecisionRejectReason,
+    ActionExecutionContext,
     ActionInterpretationResult,
     ActionInterpretationTrigger,
     ActionInterpreterRegistry,
     ActionManager,
+    ActionOwnerRef,
     ActionRegistry,
     ActiveCharacterInterpreterSelector,
     InputSessionView,
     PreparedAction,
+    SearchAreaSpec,
+    TargetingSpec,
     TeamActionInterpreter,
     TeamInterpreterSelector,
     TeamSwitchAction,
@@ -284,3 +292,52 @@ def test_team_switch_is_regular_action_instance_and_updates_space_runtime():
     assert player is not None
     assert player.active_slot == 2
     assert manager.execution_records[0].payload["type"] == "team_switch"
+
+
+def test_search_area_spec_rejects_negative_radius_or_height():
+    with pytest.raises(ValueError, match="radius 必须为非负数"):
+        SearchAreaSpec(shape="圆柱", radius=-1.0, height=10.0)
+    with pytest.raises(ValueError, match="height 必须为非负数"):
+        SearchAreaSpec(shape="圆柱", radius=15.0, height=-1.0)
+    with pytest.raises(ValueError, match="shape 必须是非空字符串"):
+        SearchAreaSpec(shape="", radius=15.0, height=10.0)
+
+
+def test_targeting_spec_validates_search_area_and_selection_policy():
+    spec = TargetingSpec(
+        search_area=SearchAreaSpec(shape="圆柱", radius=15.0, height=10.0),
+        selection_policy_key="分数",
+    )
+
+    assert spec.search_area is not None
+    assert spec.search_area.radius == 15.0
+    assert spec.search_area.height == 10.0
+    assert spec.selection_policy_key == "分数"
+    with pytest.raises(ValueError, match="search_area 必须是 SearchAreaSpec"):
+        TargetingSpec(search_area=cast(Any, "圆柱"))
+    with pytest.raises(ValueError, match="selection_policy_key"):
+        TargetingSpec(selection_policy_key="")
+
+
+def _action_context(
+    *,
+    start_frame: int,
+    frame: int,
+    state: Mapping[str, object],
+    params: Mapping[str, object],
+    space=None,
+) -> ActionExecutionContext:
+    context = SimulationContext()
+    if space is not None:
+        context.space_runtime = space
+    return ActionExecutionContext(
+        frame=frame,
+        instance_id=1,
+        owner=ActionOwnerRef.character(1),
+        source_session_id=None,
+        start_frame=start_frame,
+        elapsed_frames=frame - start_frame,
+        action_state=state,
+        simulation_context=context,
+        params=params,
+    )

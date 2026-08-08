@@ -86,9 +86,11 @@ def test_event_type_defines_current_events():
         "AURA_DEPLETED",
         "AURA_INTERACTION_RESOLVED",
         "REACTION_STATE_CHANGED",
-        "REACTION_OCCURRED",
-        "ELEMENTAL_INTERACTION_RESOLVED",
-    ]
+            "REACTION_OCCURRED",
+            "ELEMENTAL_INTERACTION_RESOLVED",
+            "MOVEMENT_COLLIDED",
+            "MOVEMENT_LANDED",
+        ]
 
 
 def test_event_category_specs_cover_all_categories():

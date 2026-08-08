@@ -140,6 +140,10 @@ from genshin_sim.core.systems.health import (
     HealthSystemError,
     validate_health_float,
 )
+from genshin_sim.core.systems.movement import (
+    MovementImpactRequestHandler,
+    MovementRuntime,
+)
 from genshin_sim.core.systems.reaction import create_default_reaction_bootstrap
 from genshin_sim.core.systems.reaction.mechanics.bloom import bloom_damage_profiles
 from genshin_sim.core.systems.reaction.mechanics.burning import (
@@ -375,6 +379,20 @@ class RuntimeAssembler:
                 profile_registry=DamageProfileRegistry(
                     (
                         DamageProfile(
+                            "damage_profile.character.barbara",
+                            DamageType.GENERAL,
+                            frozenset(
+                                {
+                                    "普通攻击1",
+                                    "普通攻击2",
+                                    "普通攻击3",
+                                    "普通攻击4",
+                                    "重击",
+                                    "下落攻击",
+                                }
+                            ),
+                        ),
+                        DamageProfile(
                             "damage_profile.testing.runtime_probe",
                             DamageType.GENERAL,
                             frozenset({"testing.runtime_probe.direct"}),
@@ -450,6 +468,9 @@ class RuntimeAssembler:
         context.register_system(shield_runtime)
         context.register_system(shield_handler)
         context.register_system(character_damage_taken_coordinator)
+        movement_runtime = MovementRuntime()
+        movement_handler = MovementImpactRequestHandler(movement_runtime)
+        context.register_system(movement_runtime)
         aura_runtime = AuraRuntime()
         aura_icd_runtime = AuraIcdRuntime()
         reaction_bootstrap = create_default_reaction_bootstrap()
@@ -554,6 +575,7 @@ class RuntimeAssembler:
             shield_handler,
             buff_handler,
             energy_handler,
+            movement_handler,
             elemental_settlement_coordinator,
         )
         impact_runtime = ImpactRuntime(
@@ -602,6 +624,7 @@ class RuntimeAssembler:
             "elemental_settlement",
             elemental_settlement_coordinator,
         )
+        runtime_world.add(FramePhase.TIME_ADVANCE, "movement", movement_runtime)
         runtime_world.add(FramePhase.ACTION_ADVANCE, "action_manager", action_manager)
         runtime_world.add(FramePhase.SETTLEMENT, "impact", impact_runtime)
         runtime_world.add(FramePhase.SETTLEMENT, "energy", energy_runtime)
@@ -637,6 +660,7 @@ class RuntimeAssembler:
             energy_transit_queue=energy_transit_queue,
             energy_runtime=energy_runtime,
             energy_handler=energy_handler,
+            movement_runtime=movement_runtime,
             buff_definitions=content_bundle.buff_definitions,
             buff_store=buff_store,
             buff_resolver=buff_resolver,

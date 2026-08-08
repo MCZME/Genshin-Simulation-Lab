@@ -23,6 +23,8 @@ from genshin_sim.core.events.payloads import (
     HealingResolvedPayload,
     InputKeyReceivedPayload,
     InputSessionBoundaryPayload,
+    MovementCollidedPayload,
+    MovementLandedPayload,
     ReactionOccurredPayload,
     ReactionStateChangedPayload,
     ShieldAbsorptionResolvedPayload,
@@ -194,6 +196,14 @@ EVENT_SPECS: dict[EventType, EventSpec] = {
     EventType.ELEMENTAL_INTERACTION_RESOLVED: EventSpec(
         category=EventCategory.FACT,
         payload_type=ElementalInteractionResolvedPayload,
+    ),
+    EventType.MOVEMENT_COLLIDED: EventSpec(
+        category=EventCategory.FACT,
+        payload_type=MovementCollidedPayload,
+    ),
+    EventType.MOVEMENT_LANDED: EventSpec(
+        category=EventCategory.FACT,
+        payload_type=MovementLandedPayload,
     ),
 }
 

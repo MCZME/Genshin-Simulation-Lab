@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import acos, degrees, hypot
 
 
@@ -92,3 +92,29 @@ class OrientedBoxArea:
         forward = offset_x * forward_x + offset_z * forward_z
         right = offset_x * right_x + offset_z * right_z
         return abs(forward) <= self.length / 2 and abs(right) <= self.width / 2
+
+
+@dataclass(frozen=True, slots=True)
+class ImpactAreaSpec:
+    """未锚定的伤害 AOE 规格。
+
+    ``shape`` 保留资料原始形状文本（如“球”“圆柱”），运行时按当前 X/Z 模型
+    投影：球与圆柱都投影为同半径 Circle（高度忽略）。``local_offset_xz`` 是
+    相对锚点的本地偏移，当前模型忽略 Y 轴分量。
+    """
+
+    shape: str
+    radius: float
+    local_offset_xz: Vector3 = field(default_factory=Vector3)
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.shape, str) or not self.shape.strip():
+            raise ValueError("ImpactAreaSpec.shape 必须是非空字符串")
+        if (
+            isinstance(self.radius, bool)
+            or not isinstance(self.radius, int | float)
+            or self.radius < 0
+        ):
+            raise ValueError("ImpactAreaSpec.radius 必须为非负数")
+        if not isinstance(self.local_offset_xz, Vector3):
+            raise ValueError("ImpactAreaSpec.local_offset_xz 必须是 Vector3")

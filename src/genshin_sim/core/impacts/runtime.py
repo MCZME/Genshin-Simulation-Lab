@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import Protocol
 
 from genshin_sim.core.actions import (
@@ -13,10 +13,18 @@ from genshin_sim.core.actions import (
 from genshin_sim.core.impacts.dispatcher import ImpactDispatcher
 from genshin_sim.core.impacts.models import ActionImpactContext, ImpactKind, ImpactRequest
 from genshin_sim.core.protocols import FrameUpdatable
-from genshin_sim.core.space import CreatedObjectSpec, SpatialEntityKind, Vector3
+from genshin_sim.core.space import (
+    CircleArea,
+    CreatedObjectSpec,
+    ImpactAreaSpec,
+    SpatialEntity,
+    SpatialEntityKind,
+    Vector3,
+)
 from genshin_sim.core.systems.buff import BuffApplicationRecord, BuffImpactRequestHandler
 from genshin_sim.core.systems.damage import DamageRequestHandler, DamageResolutionRecord
 from genshin_sim.core.systems.energy import EnergyImpactRecord, EnergyImpactRequestHandler
+from genshin_sim.core.systems.movement import MovementImpactRequestHandler
 from genshin_sim.core.systems.shield import ShieldGrantRecord, ShieldImpactRequestHandler
 
 
@@ -70,12 +78,14 @@ class ImpactRequestDispatcher:
         shield_handler: ShieldImpactRequestHandler | None = None,
         buff_handler: BuffImpactRequestHandler | None = None,
         energy_handler: EnergyImpactRequestHandler | None = None,
+        movement_handler: MovementImpactRequestHandler | None = None,
         elemental_settlement_coordinator: ElementalSettlementPort | None = None,
     ) -> None:
         self.damage_handler = damage_handler
         self.shield_handler = shield_handler
         self.buff_handler = buff_handler
         self.energy_handler = energy_handler
+        self.movement_handler = movement_handler
         self.elemental_settlement_coordinator = elemental_settlement_coordinator
         self._created_object_records: list[CreatedObjectRecord] = []
         self._ignored_requests: list[IgnoredImpactRecord] = []
@@ -128,6 +138,9 @@ class ImpactRequestDispatcher:
                 continue
             if request.kind is ImpactKind.ENERGY:
                 self._handle_energy_request(context, request)
+                continue
+            if request.kind is ImpactKind.MOVEMENT:
+                self._handle_movement_request(context, request)
                 continue
             if request.kind is ImpactKind.CREATE_ENTITY:
                 self._handle_create_entity_request(context, request)
@@ -262,6 +275,27 @@ class ImpactRequestDispatcher:
             return
         self.energy_handler.handle_impact_request(context, request)
 
+    def _handle_movement_request(self, context, request: ImpactRequest) -> None:
+        if self.movement_handler is None:
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="位移请求处理器尚未接入",
+                )
+            )
+            return
+        if not self.movement_handler.has_movement_contract(request):
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="位移请求缺少结构化 params.movement 契约",
+                )
+            )
+            return
+        self.movement_handler.handle(context, request)
+
     def _handle_create_entity_request(self, context, request: ImpactRequest) -> None:
         if context.space_runtime is None:
             self._ignored_requests.append(
@@ -369,6 +403,7 @@ class ImpactRuntime(FrameUpdatable):
                 params=impact_point.params,
             )
             requests = self.dispatcher.dispatch(impact_context)
+            requests = self._expand_damage_areas(context, impact_point, requests)
             self._dispatch_records.append(
                 ImpactDispatchRecord(
                     frame=frame,
@@ -391,21 +426,132 @@ class ImpactRuntime(FrameUpdatable):
         if targeting.snapshot_policy is SnapshotPolicy.SNAPSHOT_ON_EMIT:
             return context.space_runtime.resolve_candidate_targets(targeting.snapshot_entity_ids)
         kinds = _spatial_entity_kinds(targeting.kinds)
+        radius = (
+            targeting.search_area.radius
+            if targeting.search_area is not None
+            else targeting.radius
+        )
         entities = context.space_runtime.entities_in_radius(
             targeting.origin,
-            targeting.radius,
+            radius,
             kinds=kinds,
             exclude_entity_ids=targeting.exclude_entity_ids,
         )
+        if targeting.selection_policy_key == "分数":
+            entities = _select_score_targets(entities, targeting.origin)
         return context.space_runtime.resolve_candidate_targets(
             tuple(entity.entity_id for entity in entities)
         )
+
+    def _expand_damage_areas(
+        self,
+        context,
+        impact_point: ActionImpactPoint,
+        requests: tuple[ImpactRequest, ...],
+    ) -> tuple[ImpactRequest, ...]:
+        """按 Damage Impact 的 AOE 在选定锚点处解析实际受击目标。
+
+        索敌阶段已经选择瞄准目标；带 ``area`` 的请求以该目标为锚点，用 AOE
+        规格在 Space 中查询实际命中实体，再替换请求的目标集合。
+        """
+
+        if context.space_runtime is None:
+            return requests
+        targeting = impact_point.targeting
+        kinds = _spatial_entity_kinds(targeting.kinds) if targeting is not None else None
+        excluded = (
+            tuple(targeting.exclude_entity_ids) if targeting is not None else ()
+        )
+        expanded: list[ImpactRequest] = []
+        for request in requests:
+            spec = request.damage_spec
+            if (
+                request.kind is not ImpactKind.DAMAGE
+                or spec is None
+                or spec.area is None
+            ):
+                expanded.append(request)
+                continue
+            target_refs: list[str] = []
+            anchors: tuple[SpatialEntity, ...]
+            fallback_refs: tuple[str, ...] = ()
+            if request.anchor_entity_id is not None:
+                anchor = context.space_runtime.get_entity(request.anchor_entity_id)
+                anchors = () if anchor is None else (anchor,)
+            else:
+                anchor_list: list[SpatialEntity] = []
+                fallback: list[str] = []
+                for target_ref in request.target_refs:
+                    anchor = _spatial_anchor(context, target_ref)
+                    if anchor is None:
+                        if target_ref not in fallback:
+                            fallback.append(target_ref)
+                        continue
+                    anchor_list.append(anchor)
+                anchors = tuple(anchor_list)
+                fallback_refs = tuple(fallback)
+            for anchor in anchors:
+                area = _area_from_spec(spec.area, anchor)
+                entities = context.space_runtime.entities_in_area(
+                    area,
+                    kinds=kinds,
+                    exclude_entity_ids=excluded,
+                )
+                candidates = context.space_runtime.resolve_candidate_targets(
+                    tuple(entity.entity_id for entity in entities)
+                )
+                for candidate in candidates:
+                    if candidate.target_id not in target_refs:
+                        target_refs.append(candidate.target_id)
+            if not target_refs:
+                target_refs.extend(fallback_refs)
+            expanded.append(replace(request, target_refs=tuple(target_refs)))
+        return tuple(expanded)
 
 
 def _spatial_entity_kinds(kinds: tuple[str, ...]) -> set[SpatialEntityKind] | None:
     if not kinds:
         return None
     return {SpatialEntityKind(kind) for kind in kinds}
+
+
+def _select_score_targets(
+    entities: tuple[SpatialEntity, ...],
+    origin: Vector3,
+) -> tuple[SpatialEntity, ...]:
+    """“分数”选择：按距锚点 X/Z 距离就近选择，并列取稳定实体 id 较小者。"""
+
+    if not entities:
+        return ()
+    best = min(
+        entities,
+        key=lambda entity: (entity.position.distance_xz_to(origin), entity.entity_id),
+    )
+    return (best,)
+
+
+def _spatial_anchor(context, target_ref: str) -> SpatialEntity | None:
+    """把请求目标引用解析为空间实体（锚点）。"""
+
+    targets = context.space_runtime.targets
+    target = targets.get(target_ref) or targets.get_by_spatial_entity_id(target_ref)
+    if target is None:
+        return None
+    return context.space_runtime.get_entity(target.spatial_entity_id)
+
+
+def _area_from_spec(spec: ImpactAreaSpec, anchor: SpatialEntity) -> CircleArea:
+    """把未锚定的 AOE 规格投影到锚点位置（球/圆 -> 同半径 Circle）。"""
+
+    offset = spec.local_offset_xz
+    center = Vector3(
+        anchor.position.x + offset.x,
+        anchor.position.y + offset.y,
+        anchor.position.z + offset.z,
+    )
+    if spec.shape not in {"球", "圆", "圆柱"}:
+        raise ValueError(f"未支持的伤害 AOE 形状：{spec.shape}")
+    return CircleArea(center=center, radius=spec.radius)
 
 
 def _created_object_spec_from_request(request: ImpactRequest) -> CreatedObjectSpec:

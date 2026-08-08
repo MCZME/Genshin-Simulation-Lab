@@ -34,3 +34,5 @@ class EventType(Enum):
     REACTION_STATE_CHANGED = auto()
     REACTION_OCCURRED = auto()
     ELEMENTAL_INTERACTION_RESOLVED = auto()
+    MOVEMENT_COLLIDED = auto()
+    MOVEMENT_LANDED = auto()

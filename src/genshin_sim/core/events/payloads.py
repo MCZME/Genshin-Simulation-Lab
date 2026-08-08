@@ -334,6 +334,38 @@ class AuraAppliedPayload:
 
 
 @dataclass(frozen=True, slots=True)
+class MovementCollidedPayload:
+    """下坠碰撞事实载荷。"""
+
+    entity_id: str
+    frame: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "entity_id": self.entity_id,
+            "frame": self.frame,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MovementLandedPayload:
+    """落地事实载荷。"""
+
+    entity_id: str
+    frame: int
+    fall_start_frame: int
+    fall_height: float
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "entity_id": self.entity_id,
+            "frame": self.frame,
+            "fall_start_frame": self.fall_start_frame,
+            "fall_height": self.fall_height,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class AuraInteractionResolvedPayload:
     """Reaction 驱动的 Aura 元素量变化已提交的事实载荷。"""
 

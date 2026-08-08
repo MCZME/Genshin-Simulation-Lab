@@ -6,6 +6,7 @@ from enum import StrEnum
 
 from genshin_sim.core.actions import ActionOwnerRef, CandidateTargetRef
 from genshin_sim.core.elements import AuraAmount, Element
+from genshin_sim.core.space.geometry import ImpactAreaSpec
 from genshin_sim.core.systems.aura import AuraStrength
 from genshin_sim.core.systems.damage import DamageScalingTerm
 
@@ -26,7 +27,8 @@ class ImpactKind(StrEnum):
 class StrikeType(StrEnum):
     """Damage Impact 提供给状态型 Reaction 的稳定打击证据。"""
 
-    BLUNT = "blunt"
+    DEFAULT = "默认"
+    BLUNT = "钝击"
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +48,9 @@ class DamageImpactSpec:
     elemental_amount: AuraAmount = field(default_factory=AuraAmount.zero)
     icd_label_key: str | None = None
     icd_definition_key: str | None = None
+    area: ImpactAreaSpec | None = None
+    attenuation_group_key: str | None = None
+    attenuation_tag_key: str | None = None
 
     def __post_init__(self) -> None:
         for value, name in (
@@ -93,6 +98,16 @@ class DamageImpactSpec:
         for value, name in (
             (self.icd_label_key, "icd_label_key"),
             (self.icd_definition_key, "icd_definition_key"),
+        ):
+            if value is not None and (not isinstance(value, str) or not value.strip()):
+                raise ValueError(f"{name} 提供时必须是非空字符串")
+        if self.area is not None and not isinstance(self.area, ImpactAreaSpec):
+            raise ValueError("area 提供时必须是非空 ImpactAreaSpec")
+        if (self.attenuation_group_key is None) != (self.attenuation_tag_key is None):
+            raise ValueError("attenuation_group_key 与 attenuation_tag_key 必须同时提供或同时省略")
+        for value, name in (
+            (self.attenuation_group_key, "attenuation_group_key"),
+            (self.attenuation_tag_key, "attenuation_tag_key"),
         ):
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise ValueError(f"{name} 提供时必须是非空字符串")
@@ -145,6 +160,7 @@ class ImpactRequest:
     request_id: str | None = None
     source_impact_point_id: str | None = None
     target_refs: tuple[str, ...] = ()
+    anchor_entity_id: str | None = None
     scaling_ref: str | None = None
     element: str | None = None
     tags: tuple[str, ...] = ()
@@ -175,6 +191,7 @@ class ImpactRequest:
         for value, name in (
             (self.request_id, "request_id"),
             (self.source_impact_point_id, "source_impact_point_id"),
+            (self.anchor_entity_id, "anchor_entity_id"),
         ):
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise ValueError(f"{name} 提供时必须是非空字符串")

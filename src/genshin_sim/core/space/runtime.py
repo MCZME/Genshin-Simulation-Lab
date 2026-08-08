@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+from dataclasses import replace
 
 from genshin_sim.core.actions import CandidateTargetRef
 from genshin_sim.core.entity_states import TargetRuntimeCollection
@@ -38,6 +39,24 @@ class SpaceRuntime(FrameUpdatable):
 
     def update_entity(self, entity: SpatialEntity) -> SpatialEntity:
         return self.space.update_entity(entity)
+
+    def apply_displacement(
+        self,
+        entity_id: str,
+        position: Vector3,
+    ) -> SpatialEntity | None:
+        """动作系统独占的位移写入口：更新指定空间实体的位置。
+
+        只有动作产生的位移可以通过本入口写入位置；其他领域来源不得直接修改
+        Space 实体位置，需要位移时先形成动作意图。
+        """
+
+        if not isinstance(position, Vector3):
+            raise TypeError("apply_displacement position 必须是 Vector3")
+        entity = self.space.get_entity(entity_id)
+        if entity is None:
+            return None
+        return self.space.update_entity(replace(entity, position=position))
 
     def get_entity(self, entity_id: str) -> SpatialEntity | None:
         return self.space.get_entity(entity_id)

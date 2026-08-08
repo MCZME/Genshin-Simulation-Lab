@@ -1,46 +1,53 @@
 """输入会话、动作解释、动作实例与影响点管理。"""
 
-from genshin_sim.core.actions.manager import (
+from genshin_sim.core.actions.actions import (
     TEAM_SWITCH_ACTION_KEY,
     TEAM_SWITCH_TARGET_SLOT_PARAM,
-    Action,
+    FallPlungeAction,
+    TeamActionInterpreter,
+    TeamSwitchAction,
+    TimedImpactAction,
+)
+from genshin_sim.core.actions.enums import (
+    ActionDecisionRejectReason,
+    ActionInterpretationKind,
+    ActionInterpretationTrigger,
+    ActionLifecycle,
+    ActionLifecycleDirective,
+    ActionOwnerKind,
+    InputControlState,
+    InputPhysicalState,
+    InputSessionPolicy,
+    SnapshotPolicy,
+)
+from genshin_sim.core.actions.interpreters import (
+    ActionInterpreter,
+    ActionInterpreterRegistry,
+    ActiveCharacterInterpreterSelector,
+    TeamInterpreterSelector,
+)
+from genshin_sim.core.actions.manager import ActionManager
+from genshin_sim.core.actions.models import (
     ActionAdmissionPolicy,
     ActionDecision,
-    ActionDecisionRejectReason,
     ActionExecutionContext,
     ActionExecutionRecord,
     ActionExecutionResult,
     ActionImpactPoint,
     ActionInstance,
-    ActionInterpretationKind,
     ActionInterpretationResult,
-    ActionInterpretationTrigger,
-    ActionInterpreter,
-    ActionInterpreterRegistry,
     ActionInterruptPolicy,
-    ActionLifecycle,
-    ActionLifecycleDirective,
-    ActionManager,
-    ActionOwnerKind,
     ActionOwnerRef,
-    ActionRegistry,
-    ActiveCharacterInterpreterSelector,
     CandidateTargetRef,
     ControlActionRequest,
-    InputControlState,
-    InputPhysicalState,
-    InputSessionPolicy,
     InputSessionView,
     InterpreterBinding,
     PreparedAction,
     RuntimeInputSession,
-    SnapshotPolicy,
+    SearchAreaSpec,
     TargetingSpec,
-    TeamActionInterpreter,
-    TeamInterpreterSelector,
-    TeamSwitchAction,
-    TimedImpactAction,
 )
+from genshin_sim.core.actions.protocols import Action, ActionRegistry
 
 __all__ = [
     "TEAM_SWITCH_ACTION_KEY",
@@ -69,6 +76,7 @@ __all__ = [
     "ActiveCharacterInterpreterSelector",
     "CandidateTargetRef",
     "ControlActionRequest",
+    "FallPlungeAction",
     "InputControlState",
     "InputPhysicalState",
     "InputSessionPolicy",
@@ -76,6 +84,7 @@ __all__ = [
     "InterpreterBinding",
     "PreparedAction",
     "RuntimeInputSession",
+    "SearchAreaSpec",
     "SnapshotPolicy",
     "TargetingSpec",
     "TeamActionInterpreter",

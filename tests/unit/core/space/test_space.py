@@ -1,11 +1,15 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from genshin_sim.core.entity_states import CharacterRuntimeState, EntityLifecycle
 from genshin_sim.core.simulation import BasicRuntimeWorld, SimulationContext, TeamRuntimeState
 from genshin_sim.core.space import (
     CircleArea,
+    CollisionBox,
+    ImpactAreaSpec,
     Space,
     SpaceEntityMutationPlan,
     SpaceEntityPlanConflictError,
@@ -43,6 +47,38 @@ def test_circle_area_contains_positions_on_xz_plane_and_ignores_y():
 def test_circle_area_rejects_negative_radius():
     with pytest.raises(ValueError, match="radius 必须为非负数"):
         CircleArea(center=Vector3(), radius=-1)
+
+
+def test_impact_area_spec_keeps_raw_shape_and_radius():
+    spec = ImpactAreaSpec(shape="球", radius=2.0, local_offset_xz=Vector3(0, 0, 0))
+
+    assert spec.shape == "球"
+    assert spec.radius == 2.0
+    assert spec.local_offset_xz == Vector3(0, 0, 0)
+
+
+def test_impact_area_spec_rejects_invalid_shape_or_radius():
+    with pytest.raises(ValueError, match="shape 必须是非空字符串"):
+        ImpactAreaSpec(shape="", radius=1.0)
+    with pytest.raises(ValueError, match="radius 必须为非负数"):
+        ImpactAreaSpec(shape="球", radius=-1.0)
+
+
+def test_collision_box_defaults_to_cylinder_radius_half_height_one():
+    box = CollisionBox()
+
+    assert box.shape == "圆柱"
+    assert box.radius == 0.5
+    assert box.height == 1.0
+
+
+def test_collision_box_rejects_negative_radius_or_height():
+    with pytest.raises(ValueError, match="radius 必须为非负数"):
+        CollisionBox(radius=-0.1)
+    with pytest.raises(ValueError, match="height 必须为非负数"):
+        CollisionBox(height=-1.0)
+    with pytest.raises(ValueError, match="shape 必须是非空字符串"):
+        CollisionBox(shape="")
 
 
 def test_space_queries_entities_in_radius_using_xz_plane():
@@ -268,3 +304,28 @@ def test_space_runtime_updates_active_character_slot_through_controlled_interfac
     player = runtime.get_entity("player:active")
     assert player is not None
     assert player.active_slot == 2
+
+
+def test_space_runtime_apply_displacement_updates_position_only():
+    runtime = SpaceRuntime(
+        space=Space(
+            [
+                SpatialEntity(
+                    "target:target_1",
+                    SpatialEntityKind.TARGET,
+                    position=Vector3(1, 2, 3),
+                )
+            ]
+        ),
+        team_state=_team_state(),
+    )
+
+    updated = runtime.apply_displacement("target:target_1", Vector3(4, 5, 6))
+
+    assert updated is not None
+    entity = runtime.get_entity("target:target_1")
+    assert entity is not None
+    assert entity.position == Vector3(4, 5, 6)
+    assert runtime.apply_displacement("missing", Vector3(0, 0, 0)) is None
+    with pytest.raises(TypeError, match="Vector3"):
+        runtime.apply_displacement("target:target_1", cast(Any, (4, 5, 6)))

@@ -7,6 +7,35 @@ from genshin_sim.core.entity_states.lifecycle import EntityLifecycle
 from genshin_sim.core.space.geometry import Vector3
 
 
+@dataclass(frozen=True, slots=True)
+class CollisionBox:
+    """空间实体碰撞箱。
+
+    当前只支持圆柱：``position.y`` 视为实体基座高度，碰撞箱从基座向上延伸
+    ``height``。默认圆柱底半径 ``0.5``、高 ``1.0``。
+    """
+
+    shape: str = "圆柱"
+    radius: float = 0.5
+    height: float = 1.0
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.shape, str) or not self.shape.strip():
+            raise ValueError("CollisionBox.shape 必须是非空字符串")
+        if (
+            isinstance(self.radius, bool)
+            or not isinstance(self.radius, int | float)
+            or self.radius < 0
+        ):
+            raise ValueError("CollisionBox.radius 必须为非负数")
+        if (
+            isinstance(self.height, bool)
+            or not isinstance(self.height, int | float)
+            or self.height < 0
+        ):
+            raise ValueError("CollisionBox.height 必须为非负数")
+
+
 class SpatialEntityKind(StrEnum):
     """空间实体类型。"""
 
@@ -28,6 +57,7 @@ class SpatialEntity:
     kind: SpatialEntityKind
     position: Vector3
     lifecycle: EntityLifecycle = field(default_factory=EntityLifecycle)
+    collision_box: CollisionBox = field(default_factory=CollisionBox)
     facing: Vector3 = Vector3(0.0, 0.0, 1.0)
     active_slot: int | None = None
     owner_key: str | None = None
@@ -43,6 +73,9 @@ class SpatialEntity:
             raise TypeError(msg)
         if not isinstance(self.lifecycle, EntityLifecycle):
             msg = "空间实体生命周期必须是 EntityLifecycle"
+            raise TypeError(msg)
+        if not isinstance(self.collision_box, CollisionBox):
+            msg = "空间实体碰撞箱必须是 CollisionBox"
             raise TypeError(msg)
         if self.active_slot is not None and self.active_slot <= 0:
             msg = "active_slot 必须是正整数"

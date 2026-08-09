@@ -93,6 +93,30 @@ def test_hook_dispatcher_converts_impact_request_to_next_round_intent():
     assert intent.payload is request
 
 
+def test_hook_dispatcher_synthesizes_frame_started_tick_once_per_frame():
+    hook = RecordingHook("hook.tick", ("FRAME_STARTED",))
+    dispatcher, queue = _impact_patch_queue(hook)
+    context = SimulationContext()
+
+    dispatcher.update_frame(context, frame=1)
+    dispatcher.update_frame(context, frame=1)
+    dispatcher.update_frame(context, frame=2)
+
+    assert [getattr(event, "frame", None) for event, _ in hook.calls] == [1, 2]
+    assert queue.pending_count == 0
+
+
+def test_hook_dispatcher_skips_synthetic_tick_when_frame_started_recorded():
+    hook = RecordingHook("hook.tick", ("FRAME_STARTED",))
+    dispatcher, _ = _impact_patch_queue(hook)
+    context = SimulationContext()
+    context.events.publish(_game_event(frame=1))
+
+    dispatcher.update_frame(context, frame=1)
+
+    assert len(hook.calls) == 1
+
+
 def test_hook_dispatcher_converts_state_patch_to_next_round_intent():
     patch = StatePatchRequest(
         owner_ref="character:slot_1",

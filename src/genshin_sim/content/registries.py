@@ -13,6 +13,10 @@ from typing import Any, cast
 
 from genshin_sim.assets.models import TalentScalingEntry
 from genshin_sim.content.definitions.content_unit import ContentUnit
+from genshin_sim.core.systems.cooldown import (
+    CooldownDurationTerm,
+    CooldownKey,
+)
 
 
 class ContentUnitRegistryError(Exception):
@@ -64,6 +68,11 @@ class CharacterContentUnitRequest:
     constellation: int = 0
     talent_levels: Mapping[str, int] = field(default_factory=dict)
     talent_scalings: tuple[TalentScalingEntry, ...] = ()
+    talent_boosts: Mapping[str, int] = field(default_factory=dict)
+    cooldown_duration_terms: Mapping[
+        CooldownKey,
+        tuple[CooldownDurationTerm, ...],
+    ] = field(default_factory=dict)
     params: Mapping[str, Any] = field(default_factory=dict)
     asset: Any | None = None
 
@@ -78,6 +87,22 @@ class CharacterContentUnitRequest:
             _require_positive_int(level, f"talent_levels.{talent_key}")
         object.__setattr__(self, "talent_levels", talent_levels)
         object.__setattr__(self, "talent_scalings", tuple(self.talent_scalings))
+        talent_boosts = dict(self.talent_boosts)
+        for talent_key, boost in talent_boosts.items():
+            _require_non_empty(talent_key, "talent_boosts key")
+            _require_positive_int(boost, f"talent_boosts.{talent_key}")
+        object.__setattr__(self, "talent_boosts", talent_boosts)
+        cooldown_duration_terms = {
+            key: tuple(terms) for key, terms in self.cooldown_duration_terms.items()
+        }
+        for key, terms in cooldown_duration_terms.items():
+            if not isinstance(key, CooldownKey):
+                raise ContentUnitRegistryError("cooldown_duration_terms 键必须是 CooldownKey")
+            if any(not isinstance(term, CooldownDurationTerm) for term in terms):
+                raise ContentUnitRegistryError(
+                    "cooldown_duration_terms 成员必须是 CooldownDurationTerm"
+                )
+        object.__setattr__(self, "cooldown_duration_terms", cooldown_duration_terms)
         object.__setattr__(self, "params", dict(self.params))
 
 

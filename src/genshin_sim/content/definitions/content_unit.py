@@ -21,7 +21,11 @@ from genshin_sim.core.impacts import ImpactFactory
 from genshin_sim.core.space import CreatedObjectBehavior
 from genshin_sim.core.systems.aura_icd import IcdDefinition
 from genshin_sim.core.systems.buff import BuffDefinition
-from genshin_sim.core.systems.cooldown import CooldownDefinition
+from genshin_sim.core.systems.cooldown import (
+    CooldownDefinition,
+    CooldownDurationTerm,
+    CooldownKey,
+)
 from genshin_sim.core.systems.damage import (
     DamageModifierProvider,
     DamageModifierStackingGroupDefinition,
@@ -79,6 +83,11 @@ class ContentUnit:
     buff_definitions: Sequence[BuffDefinition] = field(default_factory=tuple)
     aura_icd_definitions: Sequence[IcdDefinition] = field(default_factory=tuple)
     cooldown_definitions: Sequence[CooldownDefinition] = field(default_factory=tuple)
+    talent_level_boosts: Mapping[str, int] = field(default_factory=dict)
+    cooldown_duration_terms: Mapping[
+        CooldownKey,
+        tuple[CooldownDurationTerm, ...],
+    ] = field(default_factory=dict)
     reaction_capabilities: Sequence[str] = field(default_factory=tuple)
     mount_points: Sequence[MountPoint] = field(default_factory=tuple)
 
@@ -139,9 +148,7 @@ class ContentUnit:
         )
         for definition in self.aura_icd_definitions:
             if not isinstance(definition, IcdDefinition):
-                raise ContentUnitValidationError(
-                    "aura_icd_definitions 成员必须是 IcdDefinition"
-                )
+                raise ContentUnitValidationError("aura_icd_definitions 成员必须是 IcdDefinition")
         object.__setattr__(
             self,
             "cooldown_definitions",
@@ -152,6 +159,25 @@ class ContentUnit:
                 raise ContentUnitValidationError(
                     "cooldown_definitions 成员必须是 CooldownDefinition"
                 )
+        object.__setattr__(self, "talent_level_boosts", dict(self.talent_level_boosts))
+        for talent_key, boost in self.talent_level_boosts.items():
+            if not isinstance(talent_key, str) or not talent_key.strip():
+                raise ContentUnitValidationError("talent_level_boosts 天赋键必须是非空字符串")
+            if isinstance(boost, bool) or not isinstance(boost, int) or boost <= 0:
+                raise ContentUnitValidationError("talent_level_boosts 等级提升必须是正整数")
+        object.__setattr__(
+            self,
+            "cooldown_duration_terms",
+            {key: tuple(terms) for key, terms in self.cooldown_duration_terms.items()},
+        )
+        for key, terms in self.cooldown_duration_terms.items():
+            if not isinstance(key, CooldownKey):
+                raise ContentUnitValidationError("cooldown_duration_terms 键必须是 CooldownKey")
+            for term in terms:
+                if not isinstance(term, CooldownDurationTerm):
+                    raise ContentUnitValidationError(
+                        "cooldown_duration_terms 成员必须是 CooldownDurationTerm"
+                    )
         object.__setattr__(
             self,
             "reaction_capabilities",

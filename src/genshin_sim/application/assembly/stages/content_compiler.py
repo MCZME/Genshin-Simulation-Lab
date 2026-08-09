@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
+from dataclasses import replace
 from typing import Any, cast
 
 from genshin_sim.application.assembly.errors import (
@@ -19,6 +21,7 @@ from genshin_sim.content.definitions.content_unit import (
     ContentUnitOwnerType,
     ContentUnitValidationError,
 )
+from genshin_sim.content.definitions.effects import UnlockValues
 from genshin_sim.content.models import EventHook, Modifier
 from genshin_sim.content.registries import (
     ArtifactContentUnitRequest,
@@ -35,7 +38,11 @@ from genshin_sim.core.impacts import ImpactFactory
 from genshin_sim.core.space import CreatedObjectBehavior
 from genshin_sim.core.systems.aura_icd import IcdDefinition
 from genshin_sim.core.systems.buff import BuffDefinition, BuffSystemError
-from genshin_sim.core.systems.cooldown import CooldownDefinition
+from genshin_sim.core.systems.cooldown import (
+    CooldownDefinition,
+    CooldownDurationTerm,
+    CooldownKey,
+)
 from genshin_sim.core.systems.damage import (
     DamageModifierProvider,
     DamageModifierStackingGroupDefinition,
@@ -67,18 +74,37 @@ class ContentCompiler:
     ) -> tuple[ContentUnit, ...]:
         units: list[ContentUnit] = []
         for bundle in bundles:
-            unit = self._prepare_character(bundle, slot_configs[bundle.slot])
+            slot_config = slot_configs[bundle.slot]
+            raw_effect_units = [
+                self._prepare_effect(payload, slot=bundle.slot)
+                for payload in bundle.effect_payloads
+            ]
+            effect_units = tuple(unit for unit in raw_effect_units if unit is not None)
+            effect_units = tuple(
+                self._gate_static_slices(unit, bundle, slot_config) for unit in effect_units
+            )
+            talent_boosts = self._collect_talent_boosts(effect_units)
+            cooldown_duration_terms = self._collect_cooldown_duration_terms(
+                effect_units,
+                slot=bundle.slot,
+            )
+            unit = self._prepare_character(
+                bundle,
+                slot_config,
+                talent_boosts=talent_boosts,
+                cooldown_duration_terms=cooldown_duration_terms,
+            )
             if unit is not None:
                 units.append(unit)
             if bundle.weapon is not None:
-                unit = self._prepare_weapon(bundle, slot_configs[bundle.slot])
+                unit = self._prepare_weapon(bundle, slot_config)
                 if unit is not None:
                     units.append(unit)
             for artifact_set in bundle.artifact_sets:
                 unit = self._prepare_artifact_set(
                     artifact_set,
                     bundle.slot,
-                    slot_configs[bundle.slot],
+                    slot_config,
                 )
                 if unit is not None:
                     units.append(unit)
@@ -89,16 +115,19 @@ class ContentCompiler:
                 )
                 if unit is not None:
                     units.append(unit)
-            for payload in bundle.effect_payloads:
-                unit = self._prepare_effect(payload, slot=bundle.slot)
-                if unit is not None:
-                    units.append(unit)
+            units.extend(effect_units)
         return tuple(units)
 
     def _prepare_character(
         self,
         bundle: RuntimeAssetBundle,
         slot_config: TeamSlotConfig,
+        *,
+        talent_boosts: Mapping[str, int],
+        cooldown_duration_terms: Mapping[
+            CooldownKey,
+            tuple[CooldownDurationTerm, ...],
+        ],
     ) -> ContentUnit | None:
         handler_key = bundle.character.handler_key
         if handler_key is None:
@@ -111,6 +140,8 @@ class ContentCompiler:
             slot=bundle.slot,
             constellation=slot_config.character.constellation,
             talent_levels=slot_config.character.talents,
+            talent_boosts=dict(talent_boosts),
+            cooldown_duration_terms=cooldown_duration_terms,
             talent_scalings=bundle.talent_scalings,
             asset=bundle.character,
         )
@@ -120,6 +151,76 @@ class ContentCompiler:
             raise MissingRuntimeHandlerError(f"组装阶段缺少角色 handler：{handler_key}") from exc
         except ContentUnitValidationError as exc:
             raise InvalidRuntimePayloadError(str(exc)) from exc
+
+    @staticmethod
+    def _gate_static_slices(
+        unit: ContentUnit,
+        bundle: RuntimeAssetBundle,
+        slot_config: TeamSlotConfig,
+    ) -> ContentUnit:
+        """按静态解锁条件过滤效果单元的静态贡献切片。
+
+        事件 hook 保留在单元内，仍由 HookDispatcher 在第 0 帧按解锁求值；
+        ``talent_level_boosts`` / ``cooldown_duration_terms`` / 属性 provider
+        在编译期按配置命座过滤，避免锁定效果影响倍率、冷却或属性解析。
+        """
+
+        if len(unit.effects) != 1:
+            return unit
+        unlock = unit.effects[0].unlock
+        values = UnlockValues(
+            constellation=slot_config.character.constellation,
+            ascension_phase=bundle.character_level_stats.ascension_phase,
+            talent_levels=slot_config.character.talents,
+        )
+        if unlock.evaluate(values):
+            return unit
+        if not (
+            unit.talent_level_boosts or unit.cooldown_duration_terms or unit.attribute_providers
+        ):
+            return unit
+        return replace(
+            unit,
+            talent_level_boosts={},
+            cooldown_duration_terms={},
+            attribute_providers=(),
+        )
+
+    @staticmethod
+    def _collect_talent_boosts(
+        units: tuple[ContentUnit, ...],
+    ) -> dict[str, int]:
+        boosts: dict[str, int] = {}
+        for unit in units:
+            for talent_key, boost in unit.talent_level_boosts.items():
+                if talent_key in boosts:
+                    raise InvalidRuntimePayloadError(f"天赋 {talent_key} 存在多个等级提升来源")
+                boosts[talent_key] = boost
+        return boosts
+
+    @staticmethod
+    def _collect_cooldown_duration_terms(
+        units: tuple[ContentUnit, ...],
+        *,
+        slot: int,
+    ) -> dict[CooldownKey, tuple[CooldownDurationTerm, ...]]:
+        owner_ref = f"character:slot_{slot}"
+        collected: dict[CooldownKey, dict[tuple[str, str], CooldownDurationTerm]] = {}
+        for unit in units:
+            for key, terms in unit.cooldown_duration_terms.items():
+                if key.subject.subject_id != owner_ref:
+                    raise InvalidRuntimePayloadError(
+                        f"冷却时长 term 归属不符：{key.subject.subject_id}"
+                    )
+                bucket = collected.setdefault(key, {})
+                for term in terms:
+                    marker = (term.term_key, term.source_ref)
+                    if marker in bucket:
+                        raise InvalidRuntimePayloadError(
+                            f"冷却 {key.ability_key} 重复 duration term：{marker}"
+                        )
+                    bucket[marker] = term
+        return {key: tuple(bucket.values()) for key, bucket in collected.items()}
 
     def _prepare_weapon(
         self,

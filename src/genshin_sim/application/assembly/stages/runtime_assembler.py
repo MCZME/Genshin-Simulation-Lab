@@ -378,6 +378,11 @@ class RuntimeAssembler:
         )
         input_trace = InputTraceCompiler().compile(config.to_core_input_frames())
         created_object_runtime = CreatedObjectRuntime(content_bundle.created_object_behaviors)
+        self._bind_attribute_provider_ports(
+            content_bundle,
+            team_state=team_state,
+            created_object_runtime=created_object_runtime,
+        )
         space_runtime = SpaceRuntime(
             space=space,
             team_state=team_state,
@@ -435,6 +440,7 @@ class RuntimeAssembler:
                                     "普通攻击3",
                                     "普通攻击4",
                                     "重击",
+                                    "元素战技",
                                     "下落攻击",
                                 }
                             ),
@@ -756,6 +762,34 @@ class RuntimeAssembler:
             runtime_world=runtime_world,
             assets=assets,
         )
+
+    @staticmethod
+    def _bind_attribute_provider_ports(
+        content_bundle: RuntimeContentBundle,
+        *,
+        team_state: TeamRuntimeState,
+        created_object_runtime: CreatedObjectRuntime,
+    ) -> None:
+        """为声明了 ``bind_runtime_ports`` 的属性 provider 注入只读运行端口。
+
+        绑定只发生在装配期；未绑定时 provider 的 ``contribute`` 必须返回空，
+        因此初始最大生命解析（早于绑定）不受条件 provider 影响。
+        """
+
+        for unit in content_bundle.content_units:
+            for provider in unit.attribute_providers:
+                binder = getattr(provider, "bind_runtime_ports", None)
+                if binder is None:
+                    continue
+                try:
+                    binder(
+                        created_object_runtime=created_object_runtime,
+                        team_state=team_state,
+                    )
+                except Exception as exc:
+                    raise InvalidRuntimePayloadError(
+                        f"属性 provider 运行时端口绑定失败：{exc}"
+                    ) from exc
 
     def _build_character_runtime_state(
         self,

@@ -1,53 +1,52 @@
-from genshin_sim.content.characters.mondstadt.barbara.actions import (
-    BARBARA_ACTION_TABLE,
-    BarbaraActionInterpreter,
-    BarbaraActionSpec,
-    create_barbara_actions,
-)
-from genshin_sim.content.characters.mondstadt.barbara.constants import (
-    BARBARA_CHARACTER_HANDLER_KEY,
-    BARBARA_CHARGED_ATTACK_ACTION_KEY,
-    BARBARA_CHARGED_ATTACK_IMPACT_KEY,
-    BARBARA_ELEMENTAL_BURST_ACTION_KEY,
-    BARBARA_ELEMENTAL_SKILL_ACTION_KEY,
-    BARBARA_ELEMENTAL_SKILL_IMPACT_KEY,
-    BARBARA_HIT_IMPACT_KEYS,
-    BARBARA_JUMP_ACTION_KEY,
-    BARBARA_JUMP_IMPACT_KEY,
-    BARBARA_NORMAL_ATTACK_1_ACTION_KEY,
-    BARBARA_NORMAL_ATTACK_1_IMPACT_KEY,
-    BARBARA_NORMAL_ATTACK_2_ACTION_KEY,
-    BARBARA_NORMAL_ATTACK_2_IMPACT_KEY,
-    BARBARA_NORMAL_ATTACK_3_ACTION_KEY,
-    BARBARA_NORMAL_ATTACK_3_IMPACT_KEY,
-    BARBARA_NORMAL_ATTACK_4_ACTION_KEY,
-    BARBARA_NORMAL_ATTACK_4_IMPACT_KEY,
-)
+"""芭芭拉内容包公共导出（窄导出）。
+
+包根只暴露稳定入口：角色/效果 handler key、资产身份键与效果工厂。
+内部实现符号按需从 ``data`` / ``actions`` / ``impacts`` / ``ring`` /
+``hooks`` / ``modifiers`` / ``effects`` 子模块导入。
+"""
+
 from genshin_sim.content.characters.mondstadt.barbara.content import (
     create_barbara_content_unit,
 )
+from genshin_sim.content.characters.mondstadt.barbara.data import (
+    BARBARA_ASSET_KEY,
+    BARBARA_CHARACTER_HANDLER_KEY,
+    BARBARA_CONSTELLATION_C1_HANDLER_KEY,
+    BARBARA_CONSTELLATION_C2_HANDLER_KEY,
+    BARBARA_CONSTELLATION_C3_HANDLER_KEY,
+    BARBARA_CONSTELLATION_C4_HANDLER_KEY,
+    BARBARA_CONSTELLATION_C5_HANDLER_KEY,
+    BARBARA_CONSTELLATION_C6_HANDLER_KEY,
+    BARBARA_ENCORE_EFFECT_HANDLER_KEY,
+    BARBARA_PASSIVE_EXPLORATION_COOKING_HANDLER_KEY,
+    BARBARA_PASSIVE_SEASON_HANDLER_KEY,
+)
+from genshin_sim.content.characters.mondstadt.barbara.effects import (
+    create_barbara_constellation_c1,
+    create_barbara_constellation_c2,
+    create_barbara_constellation_c3,
+    create_barbara_constellation_c4,
+    create_barbara_constellation_c5,
+    create_barbara_encore_effect,
+)
 
 __all__ = [
-    "BARBARA_ACTION_TABLE",
+    "BARBARA_ASSET_KEY",
     "BARBARA_CHARACTER_HANDLER_KEY",
-    "BARBARA_CHARGED_ATTACK_ACTION_KEY",
-    "BARBARA_CHARGED_ATTACK_IMPACT_KEY",
-    "BARBARA_ELEMENTAL_BURST_ACTION_KEY",
-    "BARBARA_ELEMENTAL_SKILL_ACTION_KEY",
-    "BARBARA_ELEMENTAL_SKILL_IMPACT_KEY",
-    "BARBARA_HIT_IMPACT_KEYS",
-    "BARBARA_JUMP_ACTION_KEY",
-    "BARBARA_JUMP_IMPACT_KEY",
-    "BARBARA_NORMAL_ATTACK_1_ACTION_KEY",
-    "BARBARA_NORMAL_ATTACK_1_IMPACT_KEY",
-    "BARBARA_NORMAL_ATTACK_2_ACTION_KEY",
-    "BARBARA_NORMAL_ATTACK_2_IMPACT_KEY",
-    "BARBARA_NORMAL_ATTACK_3_ACTION_KEY",
-    "BARBARA_NORMAL_ATTACK_3_IMPACT_KEY",
-    "BARBARA_NORMAL_ATTACK_4_ACTION_KEY",
-    "BARBARA_NORMAL_ATTACK_4_IMPACT_KEY",
-    "BarbaraActionInterpreter",
-    "BarbaraActionSpec",
-    "create_barbara_actions",
+    "BARBARA_CONSTELLATION_C1_HANDLER_KEY",
+    "BARBARA_CONSTELLATION_C2_HANDLER_KEY",
+    "BARBARA_CONSTELLATION_C3_HANDLER_KEY",
+    "BARBARA_CONSTELLATION_C4_HANDLER_KEY",
+    "BARBARA_CONSTELLATION_C5_HANDLER_KEY",
+    "BARBARA_CONSTELLATION_C6_HANDLER_KEY",
+    "BARBARA_PASSIVE_EXPLORATION_COOKING_HANDLER_KEY",
+    "BARBARA_PASSIVE_SEASON_HANDLER_KEY",
+    "BARBARA_ENCORE_EFFECT_HANDLER_KEY",
+    "create_barbara_constellation_c1",
+    "create_barbara_constellation_c2",
+    "create_barbara_constellation_c3",
+    "create_barbara_constellation_c4",
+    "create_barbara_constellation_c5",
     "create_barbara_content_unit",
+    "create_barbara_encore_effect",
 ]

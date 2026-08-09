@@ -11,6 +11,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 
 from genshin_sim.core.actions import TargetingSpec, TimedImpactAction
+from genshin_sim.core.systems.cooldown import CooldownDurationTerm
 
 
 class TimedActionSpecError(Exception):
@@ -50,6 +51,7 @@ class TimedActionSpec:
     targeting: TargetingSpec | None = None
     cooldown_start_frame: int | None = None
     cooldown_ability_key: str | None = None
+    cooldown_duration_terms: tuple[CooldownDurationTerm, ...] = ()
     transitions: Mapping[str, int] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
@@ -95,12 +97,15 @@ class TimedActionSpec:
                 f"{self.action_key} 的 cooldown_start_frame 不能为负数"
             )
         if self.cooldown_ability_key is not None and (
-            not isinstance(self.cooldown_ability_key, str)
-            or not self.cooldown_ability_key.strip()
+            not isinstance(self.cooldown_ability_key, str) or not self.cooldown_ability_key.strip()
         ):
+            raise TimedActionSpecValidationError("cooldown_ability_key 必须是非空字符串")
+        terms = tuple(self.cooldown_duration_terms)
+        if any(not isinstance(term, CooldownDurationTerm) for term in terms):
             raise TimedActionSpecValidationError(
-                "cooldown_ability_key 必须是非空字符串"
+                "cooldown_duration_terms 成员必须是 CooldownDurationTerm"
             )
+        object.__setattr__(self, "cooldown_duration_terms", terms)
         if self.targeting is not None and not isinstance(self.targeting, TargetingSpec):
             raise TimedActionSpecValidationError("targeting 必须是 TargetingSpec 或 None")
         transitions = dict(self.transitions)
@@ -122,12 +127,8 @@ def build_timed_actions(specs: Sequence[TimedActionSpec]) -> tuple[TimedImpactAc
         impact_targeting: dict[str, TargetingSpec | None] = {}
         if spec.impact_points:
             impact_keys = tuple(point.impact_key for point in spec.impact_points)
-            impact_frame_offsets = {
-                point.impact_key: point.frame for point in spec.impact_points
-            }
-            impact_targeting = {
-                point.impact_key: point.targeting for point in spec.impact_points
-            }
+            impact_frame_offsets = {point.impact_key: point.frame for point in spec.impact_points}
+            impact_targeting = {point.impact_key: point.targeting for point in spec.impact_points}
         elif spec.impact_key is not None and spec.hit_frame is not None:
             impact_keys = (spec.impact_key,)
             impact_frame_offsets[spec.impact_key] = spec.hit_frame
@@ -141,6 +142,7 @@ def build_timed_actions(specs: Sequence[TimedActionSpec]) -> tuple[TimedImpactAc
                 targeting=spec.targeting,
                 cooldown_start_frame=spec.cooldown_start_frame,
                 cooldown_ability_key=spec.cooldown_ability_key,
+                cooldown_duration_terms=spec.cooldown_duration_terms,
             )
         )
     return tuple(actions)

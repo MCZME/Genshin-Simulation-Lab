@@ -26,6 +26,7 @@ from genshin_sim.core.actions.models import (
 )
 from genshin_sim.core.space.space import ACTIVE_CHARACTER_ENTITY_ID
 from genshin_sim.core.systems.cooldown import (
+    CooldownDurationTerm,
     CooldownKey,
     CooldownRuntime,
     CooldownSubjectRef,
@@ -54,6 +55,7 @@ class TimedImpactAction:
     targeting: TargetingSpec | None = None
     cooldown_start_frame: int | None = None
     cooldown_ability_key: str | None = None
+    cooldown_duration_terms: tuple[CooldownDurationTerm, ...] = ()
     admission_policy: ActionAdmissionPolicy = field(default_factory=ActionAdmissionPolicy)
 
     def __post_init__(self) -> None:
@@ -80,6 +82,11 @@ class TimedImpactAction:
             raise ValueError(msg)
         if self.cooldown_ability_key is not None:
             _validate_non_empty_text(self.cooldown_ability_key, "cooldown_ability_key")
+        terms = tuple(self.cooldown_duration_terms)
+        if any(not isinstance(term, CooldownDurationTerm) for term in terms):
+            msg = "cooldown_duration_terms 成员必须是 CooldownDurationTerm"
+            raise ValueError(msg)
+        object.__setattr__(self, "cooldown_duration_terms", terms)
 
     def create_initial_state(self, params: Mapping[str, object]) -> Mapping[str, object]:
         state: dict[str, object] = {"params": dict(params)}
@@ -99,8 +106,7 @@ class TimedImpactAction:
                 action_key=self.action_key,
                 impact_key=impact_key,
                 scheduled_frame=(
-                    context.start_frame
-                    + self.impact_frame_offsets.get(impact_key, 0)
+                    context.start_frame + self.impact_frame_offsets.get(impact_key, 0)
                 ),
                 targeting=self.impact_targeting.get(impact_key, self.targeting),
                 params=context.params,
@@ -135,16 +141,14 @@ class TimedImpactAction:
             raise RuntimeError(msg)
         frame = context.start_frame + self.cooldown_start_frame
         request = StartCooldownRequest(
-            request_id=(
-                f"cooldown:{context.instance_id}:"
-                f"{self.cooldown_ability_key}:{frame}"
-            ),
+            request_id=(f"cooldown:{context.instance_id}:{self.cooldown_ability_key}:{frame}"),
             key=CooldownKey(
                 CooldownSubjectRef.character(f"character:slot_{context.owner.slot}"),
                 self.cooldown_ability_key,
             ),
             frame=frame,
             source_ref=f"action:{self.action_key}",
+            duration_terms=self.cooldown_duration_terms,
         )
         runtime.start(request)
 

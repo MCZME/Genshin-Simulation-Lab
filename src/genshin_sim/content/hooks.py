@@ -18,7 +18,7 @@ from genshin_sim.content.state_container import StatePatchRequest
 from genshin_sim.core.contracts.intents import IntentEnvelope, IntentKind
 from genshin_sim.core.contracts.json import JSONValue
 from genshin_sim.core.contracts.phases import FramePhase
-from genshin_sim.core.events import EventType
+from genshin_sim.core.events import EmptyPayload, EventType, GameEvent
 from genshin_sim.core.impacts.models import ImpactRequest
 from genshin_sim.core.simulation.context import SimulationContext
 from genshin_sim.core.simulation.intent_queue import IntentQueue
@@ -50,8 +50,7 @@ def build_hook_unlock_specs(units: Sequence[ContentUnit]) -> dict[str, UnlockSpe
             continue
         if len(unit.effects) != 1:
             raise HookDispatcherError(
-                f"效果单元 {unit.handler_key!r} 声明了多个 EffectSpec，"
-                "暂不支持与事件 hook 的关联"
+                f"效果单元 {unit.handler_key!r} 声明了多个 EffectSpec，暂不支持与事件 hook 的关联"
             )
         for hook in unit.event_hooks:
             specs[hook.hook_key] = unit.effects[0].unlock
@@ -125,6 +124,7 @@ class HookDispatcher:
             self._subscriptions[event_type].sort(key=lambda hook: (hook.priority, hook.hook_key))
         self._processed_frame = -1
         self._processed_count = 0
+        self._tick_processed_frame = -1
 
     def initialize(self, context: SimulationContext) -> None:
         """第 0 帧初始化：按效果解锁条件决定哪些 hook 生效。
@@ -179,6 +179,8 @@ class HookDispatcher:
             hooks = self._subscriptions.get(event.event_type, ())
             if not hooks:
                 continue
+            if event.event_type is EventType.FRAME_STARTED:
+                self._tick_processed_frame = frame
             hook_context = HookContext(
                 frame=frame,
                 round=context.settlement_round,
@@ -200,6 +202,47 @@ class HookDispatcher:
                     event_type=event.event_type,
                     event_index=event_index,
                 )
+        self._dispatch_frame_started_tick(context, frame)
+
+    def _dispatch_frame_started_tick(
+        self,
+        context: SimulationContext,
+        frame: int,
+    ) -> None:
+        """为订阅 ``FRAME_STARTED`` 的 hook 提供每帧一次的合成 tick。
+
+        ``FRAME_STARTED`` 是边界事件，按事件记录契约不进 ``frame_events``，
+        因此 hook 通道在事实分发后单独合成一次空 tick；hook 自身仍保持
+        只读并只产出下一轮意图。
+        """
+
+        hooks = self._subscriptions.get(EventType.FRAME_STARTED, ())
+        if not hooks or frame <= 0 or self._tick_processed_frame == frame:
+            return
+        self._tick_processed_frame = frame
+        event = GameEvent(
+            EventType.FRAME_STARTED,
+            frame=frame,
+            payload=EmptyPayload(),
+        )
+        hook_context = HookContext(
+            frame=frame,
+            round=context.settlement_round,
+            simulation=context,
+            states=self._team_state,
+        )
+        for hook in hooks:
+            if self._enabled_hook_keys is not None and hook.hook_key not in self._enabled_hook_keys:
+                continue
+            result = hook.handle(event, hook_context)
+            self._enqueue_result(
+                hook,
+                result,
+                frame=frame,
+                round=context.settlement_round,
+                event_type=EventType.FRAME_STARTED,
+                event_index=0,
+            )
 
     def is_idle(self) -> bool:
         return True

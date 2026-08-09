@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Any
+from decimal import Decimal
+from typing import Any, cast
 
 import pytest
 
@@ -19,6 +20,13 @@ from genshin_sim.content.definitions.effects import (
 from genshin_sim.core.contracts.phases import FramePhase, MountPoint
 from genshin_sim.core.elements import AuraAmount
 from genshin_sim.core.systems.aura_icd import IcdDefinition
+from genshin_sim.core.systems.cooldown import (
+    CooldownDurationOperation,
+    CooldownDurationStage,
+    CooldownDurationTerm,
+    CooldownKey,
+    CooldownSubjectRef,
+)
 
 
 def _effect(effect_key: str) -> EffectSpec:
@@ -246,4 +254,100 @@ def test_impact_factory_keys_must_be_non_empty():
             version="dev-m3",
             slot=1,
             impact_factories={"": _slice()},
+        )
+
+
+def _cooldown_key() -> CooldownKey:
+    return CooldownKey(
+        CooldownSubjectRef.character("character:slot_1"),
+        "elemental_skill",
+    )
+
+
+def _cooldown_term() -> CooldownDurationTerm:
+    return CooldownDurationTerm(
+        term_key="test.cooldown_reduction",
+        source_ref="character.test",
+        stage=CooldownDurationStage.OWNER_ADJUSTMENT,
+        operation=CooldownDurationOperation.MULTIPLY_CURRENT,
+        value=Decimal("0.85"),
+    )
+
+
+def test_talent_level_boosts_accepts_positive_int_mapping():
+    unit = ContentUnit(
+        owner_type=ContentUnitOwnerType.CHARACTER,
+        owner_key="character:1",
+        handler_key="character.test",
+        version="dev-m3",
+        slot=1,
+        talent_level_boosts={"elemental_skill": 3},
+    )
+
+    assert unit.talent_level_boosts == {"elemental_skill": 3}
+
+
+def test_talent_level_boosts_rejects_invalid_values():
+    with pytest.raises(ContentUnitValidationError, match="等级提升"):
+        ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
+            owner_key="character:1",
+            handler_key="character.test",
+            version="dev-m3",
+            slot=1,
+            talent_level_boosts={"elemental_skill": 0},
+        )
+    with pytest.raises(ContentUnitValidationError, match="等级提升"):
+        ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
+            owner_key="character:1",
+            handler_key="character.test",
+            version="dev-m3",
+            slot=1,
+            talent_level_boosts={"elemental_skill": True},
+        )
+    with pytest.raises(ContentUnitValidationError, match="天赋键"):
+        ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
+            owner_key="character:1",
+            handler_key="character.test",
+            version="dev-m3",
+            slot=1,
+            talent_level_boosts={"": 3},
+        )
+
+
+def test_cooldown_duration_terms_accepts_key_term_mapping():
+    key = _cooldown_key()
+    term = _cooldown_term()
+    unit = ContentUnit(
+        owner_type=ContentUnitOwnerType.CHARACTER,
+        owner_key="character:1",
+        handler_key="character.test",
+        version="dev-m3",
+        slot=1,
+        cooldown_duration_terms={key: (term,)},
+    )
+
+    assert unit.cooldown_duration_terms == {key: (term,)}
+
+
+def test_cooldown_duration_terms_rejects_invalid_members():
+    with pytest.raises(ContentUnitValidationError, match="键必须是 CooldownKey"):
+        ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
+            owner_key="character:1",
+            handler_key="character.test",
+            version="dev-m3",
+            slot=1,
+            cooldown_duration_terms=cast(Any, {"not-a-key": ()}),
+        )
+    with pytest.raises(ContentUnitValidationError, match="成员必须是"):
+        ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
+            owner_key="character:1",
+            handler_key="character.test",
+            version="dev-m3",
+            slot=1,
+            cooldown_duration_terms=cast(Any, {_cooldown_key(): (object(),)}),
         )

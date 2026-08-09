@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, field
+from decimal import Decimal
 from typing import Any, cast
 
 import pytest
@@ -45,6 +46,9 @@ from genshin_sim.core.systems.cooldown import (
     AbilityKind,
     CooldownDefinition,
     CooldownDurationMode,
+    CooldownDurationOperation,
+    CooldownDurationStage,
+    CooldownDurationTerm,
     CooldownKey,
     CooldownRuntime,
     CooldownStore,
@@ -435,3 +439,58 @@ def test_timed_action_starts_cooldown_at_configured_frame():
     assert record.available_charges == 0
     assert record.active_recovery is not None
     assert record.active_recovery.ready_frame == 105
+
+
+def test_timed_action_passes_cooldown_duration_terms_to_start():
+    definition = CooldownDefinition(
+        key=CooldownKey(
+            CooldownSubjectRef.character("character:slot_1"),
+            "elemental_skill",
+        ),
+        ability_kind=AbilityKind.ELEMENTAL_SKILL,
+        base_duration_frames=100,
+        max_charges=1,
+        duration_mode=CooldownDurationMode.FIXED,
+        source_ref="character.barbara.elemental_skill",
+        tags=("elemental_skill",),
+    )
+    cooldown_runtime = CooldownRuntime(CooldownStore((definition,)))
+    interpreter = ReleaseStartInterpreter({"keyboard.e": "character.test.skill"})
+    manager = _manager(
+        [
+            KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
+            KeyInputFrame(3, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
+        ],
+        interpreter,
+        (
+            TimedImpactAction(
+                action_key="character.test.skill",
+                duration_frames=10,
+                cooldown_start_frame=2,
+                cooldown_ability_key="elemental_skill",
+                cooldown_duration_terms=(
+                    CooldownDurationTerm(
+                        term_key="test.cooldown_reduction",
+                        source_ref="character.test",
+                        stage=CooldownDurationStage.OWNER_ADJUSTMENT,
+                        operation=CooldownDurationOperation.MULTIPLY_CURRENT,
+                        value=Decimal("0.85"),
+                    ),
+                ),
+            ),
+        ),
+    )
+    context = _context()
+    context.register_system(cooldown_runtime)
+
+    manager.update_frame(context, 1)
+    manager.update_frame(context, 3)
+    cooldown_runtime.normalize(4)
+    manager.update_frame(context, 4)
+    cooldown_runtime.normalize(5)
+    manager.update_frame(context, 5)
+
+    record = cooldown_runtime.store.get_record(definition.key)
+    assert record.available_charges == 0
+    assert record.active_recovery is not None
+    assert record.active_recovery.ready_frame == 90

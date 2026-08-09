@@ -4,7 +4,22 @@ from __future__ import annotations
 
 from genshin_sim.content.characters.mondstadt.barbara import (
     BARBARA_CHARACTER_HANDLER_KEY,
+    BARBARA_CONSTELLATION_C1_HANDLER_KEY,
+    BARBARA_CONSTELLATION_C2_HANDLER_KEY,
+    BARBARA_CONSTELLATION_C3_HANDLER_KEY,
+    BARBARA_CONSTELLATION_C4_HANDLER_KEY,
+    BARBARA_CONSTELLATION_C5_HANDLER_KEY,
+    BARBARA_CONSTELLATION_C6_HANDLER_KEY,
+    BARBARA_ENCORE_EFFECT_HANDLER_KEY,
+    BARBARA_PASSIVE_EXPLORATION_COOKING_HANDLER_KEY,
+    BARBARA_PASSIVE_SEASON_HANDLER_KEY,
+    create_barbara_constellation_c1,
+    create_barbara_constellation_c2,
+    create_barbara_constellation_c3,
+    create_barbara_constellation_c4,
+    create_barbara_constellation_c5,
     create_barbara_content_unit,
+    create_barbara_encore_effect,
 )
 from genshin_sim.content.characters.testing.runtime_probe import (
     RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
@@ -42,6 +57,33 @@ def create_default_content_unit_registry() -> ContentUnitRegistry:
         RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
         create_runtime_probe_content_unit,
     )
+    registry.register_effect_factory(
+        BARBARA_ENCORE_EFFECT_HANDLER_KEY,
+        create_barbara_encore_effect,
+    )
+    registry.register_effect_factory(
+        BARBARA_CONSTELLATION_C1_HANDLER_KEY,
+        create_barbara_constellation_c1,
+    )
+    registry.register_effect_factory(
+        BARBARA_CONSTELLATION_C2_HANDLER_KEY,
+        create_barbara_constellation_c2,
+    )
+    registry.register_effect_factory(
+        BARBARA_CONSTELLATION_C3_HANDLER_KEY,
+        create_barbara_constellation_c3,
+    )
+    registry.register_effect_factory(
+        BARBARA_CONSTELLATION_C4_HANDLER_KEY,
+        create_barbara_constellation_c4,
+    )
+    registry.register_effect_factory(
+        BARBARA_CONSTELLATION_C5_HANDLER_KEY,
+        create_barbara_constellation_c5,
+    )
+    registry.register_empty_effect_handler(BARBARA_CONSTELLATION_C6_HANDLER_KEY)
+    registry.register_empty_effect_handler(BARBARA_PASSIVE_SEASON_HANDLER_KEY)
+    registry.register_empty_effect_handler(BARBARA_PASSIVE_EXPLORATION_COOKING_HANDLER_KEY)
     for handler_key in BUILTIN_NOOP_CONTENT_HANDLER_KEYS:
         registry.register_noop_handler(handler_key)
     return registry

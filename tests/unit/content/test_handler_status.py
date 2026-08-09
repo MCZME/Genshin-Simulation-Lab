@@ -7,6 +7,12 @@ from genshin_sim.content import (
     DuplicateContentUnitFactoryError,
     EffectContentUnitRequest,
     HandlerImplementationStatus,
+    create_default_content_unit_registry,
+)
+from genshin_sim.content.characters.mondstadt.barbara import (
+    BARBARA_CONSTELLATION_C6_HANDLER_KEY,
+    BARBARA_PASSIVE_EXPLORATION_COOKING_HANDLER_KEY,
+    BARBARA_PASSIVE_SEASON_HANDLER_KEY,
 )
 
 
@@ -49,10 +55,7 @@ def test_registered_factory_is_implemented():
     registry = ContentUnitRegistry()
     registry.register_effect_factory("character.test.real", lambda request: None)
 
-    assert (
-        registry.handler_status("character.test.real")
-        is HandlerImplementationStatus.IMPLEMENTED
-    )
+    assert registry.handler_status("character.test.real") is HandlerImplementationStatus.IMPLEMENTED
     assert registry.empty_handler_keys == ()
     assert registry.unimplemented_handler_keys == ()
 
@@ -79,3 +82,14 @@ def test_unknown_handler_status_is_none():
     registry = ContentUnitRegistry()
 
     assert registry.handler_status("character.test.missing") is None
+
+
+def test_default_registry_marks_barbara_empty_handlers():
+    registry = create_default_content_unit_registry()
+
+    for handler_key in (
+        BARBARA_CONSTELLATION_C6_HANDLER_KEY,
+        BARBARA_PASSIVE_SEASON_HANDLER_KEY,
+        BARBARA_PASSIVE_EXPLORATION_COOKING_HANDLER_KEY,
+    ):
+        assert registry.handler_status(handler_key) is HandlerImplementationStatus.EMPTY

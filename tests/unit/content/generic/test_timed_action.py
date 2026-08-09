@@ -93,9 +93,7 @@ def test_timed_action_spec_validates_impact_points():
             duration_frames=10,
             hit_frame=5,
             impact_key="a.hit",
-            impact_points=(
-                TimedImpactPointSpec("a.hit", 5),
-            ),
+            impact_points=(TimedImpactPointSpec("a.hit", 5),),
         )
     with pytest.raises(TimedActionSpecValidationError, match="重复"):
         TimedActionSpec(

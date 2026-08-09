@@ -329,7 +329,6 @@ class TransformativeReactionDamageFormula:
         )
 
 
-
 @dataclass(frozen=True, slots=True)
 class CatalyzeReactionDamageFormula:
     """激化完整公式：普通直伤流水线 + 可选基础伤害增加区。"""
@@ -572,23 +571,17 @@ class LunarReactionDamageFormula:
             component.base_damage_after_reaction * component.weight
             for component in weighted_components
         )
-        official_damage = math.fsum(
-            component.weighted_damage for component in weighted_components
-        )
+        official_damage = math.fsum(component.weighted_damage for component in weighted_components)
         debug_multiplier = self.debug_adjustment.multiplier
         final_damage = official_damage * debug_multiplier
         if not math.isfinite(final_damage) or final_damage < 0:
             raise DamageResolutionError("月曜最终伤害必须是有限非负数")
 
         source_trace = [
-            trace
-            for component in weighted_components
-            for trace in component.source_attribute_trace
+            trace for component in weighted_components for trace in component.source_attribute_trace
         ]
         target_trace = [
-            trace
-            for component in weighted_components
-            for trace in component.target_attribute_trace
+            trace for component in weighted_components for trace in component.target_attribute_trace
         ]
         return LunarReactionDamageResolution(
             reaction=reaction,
@@ -638,8 +631,10 @@ class LunarReactionDamageFormula:
         )
         if elemental_mastery < 0:
             raise DamageResolutionError("月曜元素精通不能为负数")
-        mastery_bonus = self.mastery_numerator * elemental_mastery / (
-            elemental_mastery + self.mastery_denominator
+        mastery_bonus = (
+            self.mastery_numerator
+            * elemental_mastery
+            / (elemental_mastery + self.mastery_denominator)
         )
         reaction_uplift_multiplier = 1 + mastery_bonus + reaction.reaction_bonus
         if reaction_uplift_multiplier <= 0:

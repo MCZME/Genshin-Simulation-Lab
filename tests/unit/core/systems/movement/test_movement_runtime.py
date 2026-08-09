@@ -117,9 +117,7 @@ def test_movement_impact_request_sets_vertical_velocity():
 
     dispatcher.dispatch_requests(ctx, (request,))
 
-    motion = next(
-        item for item in movement.motions if item.entity_id == ACTIVE_CHARACTER_ENTITY_ID
-    )
+    motion = next(item for item in movement.motions if item.entity_id == ACTIVE_CHARACTER_ENTITY_ID)
     assert motion.velocity_y == -5.0
 
 
@@ -127,9 +125,7 @@ def test_movement_impact_request_without_contract_is_ignored():
     ctx = _context(height=2.0)
     movement = MovementRuntime()
     movement.update_frame(ctx, frame=1)
-    dispatcher = ImpactRequestDispatcher(
-        movement_handler=MovementImpactRequestHandler(movement)
-    )
+    dispatcher = ImpactRequestDispatcher(movement_handler=MovementImpactRequestHandler(movement))
     request = ImpactRequest(
         frame=2,
         kind=ImpactKind.MOVEMENT,

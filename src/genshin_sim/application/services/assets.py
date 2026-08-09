@@ -202,9 +202,7 @@ class AssetHandlerBindingService:
             return "artifact.unimplemented_set_bonus"
         placeholder = _EFFECT_PLACEHOLDER_BY_EFFECT_KIND.get(binding.effect_kind or "")
         if placeholder is None:
-            raise ApplicationServiceError(
-                f"不支持重置效果种类：{binding.effect_kind}"
-            )
+            raise ApplicationServiceError(f"不支持重置效果种类：{binding.effect_kind}")
         return placeholder
 
 

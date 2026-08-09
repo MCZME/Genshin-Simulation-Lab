@@ -52,9 +52,7 @@ class ElementalStateLinkBatchCoordinator:
         self,
         aura_runtime: AuraInteractionPort,
         reaction_runtime: ReactionStateInteractionPort,
-        link_validator: Callable[
-            [Iterable[AuraTargetRecord], Iterable[ReactionStateRecord]], None
-        ],
+        link_validator: Callable[[Iterable[AuraTargetRecord], Iterable[ReactionStateRecord]], None],
     ) -> None:
         self.aura_runtime = aura_runtime
         self.reaction_runtime = reaction_runtime
@@ -183,19 +181,14 @@ def validate_burning_state_links(
             raise BurningStateLinkConflictError("燃元素 Aura Link 与 BurningState 不一致")
         linked_refs = tuple(
             sorted(
-                {
-                    link_ref
-                    for component in dendro_like
-                    for link_ref in component.state_link_refs
-                },
+                {link_ref for component in dendro_like for link_ref in component.state_link_refs},
                 key=lambda item: item.link_key,
             )
         )
         if state.dendro_like_link_refs != linked_refs:
             raise BurningStateLinkConflictError("BurningState 的类草 Link 与 Aura 不一致")
         if any(
-            component.decay_mode is not AuraDecayMode.REACTION_MANAGED
-            for component in dendro_like
+            component.decay_mode is not AuraDecayMode.REACTION_MANAGED for component in dendro_like
         ):
             raise BurningStateLinkConflictError("类草 Aura 必须由 BurningState 管理消耗")
 

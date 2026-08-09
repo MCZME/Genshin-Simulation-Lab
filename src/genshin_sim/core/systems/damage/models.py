@@ -365,9 +365,7 @@ class LunarReactionDamageInput:
             raise DamageValidationError("月曜伤害 participants 不能重复角色")
         if self.mode is LunarReactionDamageMode.CHARACTER_DIRECT and len(participants) != 1:
             raise DamageValidationError("角色直接月曜伤害必须只有一个参与者")
-        participants = tuple(
-            sorted(participants, key=lambda item: item.participant_ref.entity_id)
-        )
+        participants = tuple(sorted(participants, key=lambda item: item.participant_ref.entity_id))
         reaction_multiplier = validate_damage_float(
             self.reaction_multiplier,
             "lunar reaction_multiplier",

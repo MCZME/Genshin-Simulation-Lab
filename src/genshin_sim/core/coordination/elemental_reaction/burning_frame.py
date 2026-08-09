@@ -126,10 +126,7 @@ class BurningStateFrameAdapter:
                         next_dendro_like_depletion_frame=(
                             frame
                             + self._depletion_frames(
-                                min(
-                                    component.current_amount
-                                    for component in remaining_dendro_like
-                                )
+                                min(component.current_amount for component in remaining_dendro_like)
                             )
                         ),
                         revision=state.revision + 1,
@@ -151,9 +148,7 @@ class BurningStateFrameAdapter:
                 state_instance_ref=state.instance_ref,
                 subject_ref=state.subject_ref,
                 damage_tick_index=(state.next_damage_tick_index if damage_due else None),
-                pyro_application_index=(
-                    state.next_pyro_application_index if pyro_due else None
-                ),
+                pyro_application_index=(state.next_pyro_application_index if pyro_due else None),
             )
             roots.append(root)
             state_planner.replace_burning(
@@ -206,8 +201,7 @@ class BurningStateFrameAdapter:
             burning is None
             or burning.state_link_refs != (state.burning_aura_link_ref,)
             or not dendro_like
-            or BurningStateFrameAdapter._link_refs_for(dendro_like)
-            != state.dendro_like_link_refs
+            or BurningStateFrameAdapter._link_refs_for(dendro_like) != state.dendro_like_link_refs
         ):
             raise BurningStateLinkConflictError("燃烧帧缺少完整的燃元素、类草 Aura 与 Link 投影")
         return burning, dendro_like
@@ -226,11 +220,7 @@ class BurningStateFrameAdapter:
     def _link_refs_for(components):
         return tuple(
             sorted(
-                {
-                    link_ref
-                    for component in components
-                    for link_ref in component.state_link_refs
-                },
+                {link_ref for component in components for link_ref in component.state_link_refs},
                 key=lambda item: item.link_key,
             )
         )

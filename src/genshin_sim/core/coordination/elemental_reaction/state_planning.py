@@ -490,11 +490,7 @@ def _dendro_like_components(view, burning_link_ref):
 def _dendro_like_link_refs(components) -> tuple:
     return tuple(
         sorted(
-            {
-                link_ref
-                for component in components
-                for link_ref in component.state_link_refs
-            },
+            {link_ref for component in components for link_ref in component.state_link_refs},
             key=lambda item: item.link_key,
         )
     )

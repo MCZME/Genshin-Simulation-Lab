@@ -124,13 +124,16 @@ class AuraBatchPlanner:
         return result
 
     def apply_quicken(self, request: QuickenAuraApplicationRequest) -> AuraApplicationResult:
-        """由 Reaction 的强类型计划创建或取大覆盖派生激元素。
+        (
+            """由 Reaction 的强类型计划创建或取大覆盖派生激元素。
 
         激元素不复用普通同元素 Aura 的贡献叠加和衰减率升级规则：
         它在一个连续实例中恰好保留一条派生贡献，只有新量严格更大时才
         替换该贡献的来源、数量与精确衰减档案。覆盖始终保留实例、贡献与
         Quicken Link 身份。
-        """""
+        """
+            ""
+        )
 
         self._assert_open()
         self._assert_request_identity(request.request_id, request.order, request.frame, "激元素")
@@ -287,17 +290,18 @@ class AuraBatchPlanner:
         self._assert_open()
         self._assert_request_identity(request.request_id, request.order, request.frame, "燃元素")
         record = self._records.get(request.target_ref)
-        dendro_like = () if record is None else tuple(
-            component
-            for component in record.components
-            if component.aura_kind in {AuraKind.DENDRO, AuraKind.QUICKEN}
-            and request.state_link_ref in component.state_link_refs
-            and component.decay_mode is AuraDecayMode.REACTION_MANAGED
+        dendro_like = (
+            ()
+            if record is None
+            else tuple(
+                component
+                for component in record.components
+                if component.aura_kind in {AuraKind.DENDRO, AuraKind.QUICKEN}
+                and request.state_link_ref in component.state_link_refs
+                and component.decay_mode is AuraDecayMode.REACTION_MANAGED
+            )
         )
-        if (
-            record is None
-            or not dendro_like
-        ):
+        if record is None or not dendro_like:
             raise ValueError("燃元素必须与受 Reaction 管理且携带同一 Link 的类草 Aura 同时存在")
         before = record.component_for(AuraKind.BURNING)
         if before is not None and before.state_link_refs != (request.state_link_ref,):
@@ -390,10 +394,14 @@ class AuraBatchPlanner:
             AuraKind.DENDRO if incoming_request.element is Element.PYRO else AuraKind.PYRO
         )
         existing = None if record is None else record.component_for(existing_kind)
-        existing_dendro_like = () if record is None else tuple(
-            component
-            for component in record.components
-            if component.aura_kind in {AuraKind.DENDRO, AuraKind.QUICKEN}
+        existing_dendro_like = (
+            ()
+            if record is None
+            else tuple(
+                component
+                for component in record.components
+                if component.aura_kind in {AuraKind.DENDRO, AuraKind.QUICKEN}
+            )
         )
         if incoming_request.element is Element.PYRO:
             has_opponent = bool(existing_dendro_like)

@@ -85,9 +85,7 @@ class MovementRuntime(FrameUpdatable):
             motion = self._motions[entity_id]
             self._motions[entity_id] = replace(motion, velocity_y=float(velocity_y))
             return
-        raise MovementRuntimeError(
-            f"实体 {entity_id} 尚未进入下落状态，无法设置垂直速度"
-        )
+        raise MovementRuntimeError(f"实体 {entity_id} 尚未进入下落状态，无法设置垂直速度")
 
     def is_idle(self) -> bool:
         return not self._motions

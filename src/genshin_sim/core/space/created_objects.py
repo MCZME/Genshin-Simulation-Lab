@@ -24,10 +24,7 @@ class CreatedObjectTickSpec:
 
     def __post_init__(self) -> None:
         _validate_non_empty_text(self.behavior_key, "创建物 tick 行为 key")
-        if (
-            isinstance(self.first_tick_frame_offset, bool)
-            or self.first_tick_frame_offset < 0
-        ):
+        if isinstance(self.first_tick_frame_offset, bool) or self.first_tick_frame_offset < 0:
             msg = "创建物 tick 首次偏移不能为负数"
             raise ValueError(msg)
         if self.interval_frames is not None and self.interval_frames <= 0:
@@ -349,13 +346,9 @@ class CreatedObjectRuntime(FrameUpdatable):
         obj = CreatedObjectRuntimeState(
             entity=entity,
             object_key=spec.object_key,
-            behavior_key=(
-                None if spec.tick_schedules else (spec.behavior_key or spec.object_key)
-            ),
+            behavior_key=(None if spec.tick_schedules else (spec.behavior_key or spec.object_key)),
             next_tick_frame=None if spec.tick_schedules else _initial_tick_frame(spec, frame),
-            tick_interval_frames=(
-                None if spec.tick_schedules else spec.tick_interval_frames
-            ),
+            tick_interval_frames=(None if spec.tick_schedules else spec.tick_interval_frames),
             tick_schedules=(
                 tuple(
                     CreatedObjectTickState(

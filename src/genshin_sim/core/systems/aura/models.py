@@ -200,14 +200,20 @@ class AuraTargetRecord:
                     frozenset({AuraKind.BURNING, AuraKind.DENDRO, AuraKind.PYRO, AuraKind.QUICKEN}),
                 }
                 or (dendro is None and quicken is None)
-                or (dendro is not None and (
-                    burning.state_link_refs[0] not in dendro.state_link_refs
-                    or dendro.decay_mode is not AuraDecayMode.REACTION_MANAGED
-                ))
-                or (quicken is not None and (
-                    burning.state_link_refs[0] not in quicken.state_link_refs
-                    or quicken.decay_mode is not AuraDecayMode.REACTION_MANAGED
-                ))
+                or (
+                    dendro is not None
+                    and (
+                        burning.state_link_refs[0] not in dendro.state_link_refs
+                        or dendro.decay_mode is not AuraDecayMode.REACTION_MANAGED
+                    )
+                )
+                or (
+                    quicken is not None
+                    and (
+                        burning.state_link_refs[0] not in quicken.state_link_refs
+                        or quicken.decay_mode is not AuraDecayMode.REACTION_MANAGED
+                    )
+                )
             ):
                 raise ValueError("燃元素只能与受 Reaction 管理的关联类草及可选普通火共存")
         elif ordinary_kinds not in {

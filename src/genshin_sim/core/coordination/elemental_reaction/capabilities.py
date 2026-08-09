@@ -15,9 +15,7 @@ def validate_reaction_capability_key(value: str, name: str = "capability_key") -
         or not value.startswith(REACTION_CAPABILITY_PREFIX)
         or not value[len(REACTION_CAPABILITY_PREFIX) :].strip()
     ):
-        raise ValueError(
-            f"{name} 必须是以 {REACTION_CAPABILITY_PREFIX!r} 开头的非空字符串"
-        )
+        raise ValueError(f"{name} 必须是以 {REACTION_CAPABILITY_PREFIX!r} 开头的非空字符串")
 
 
 def _text(value: str, name: str) -> None:
@@ -70,9 +68,7 @@ class ReactionEligibilityView:
                 key=lambda item: (item.capability_key, item.provider_ref.entity_id),
             )
         )
-        identities = tuple(
-            (item.capability_key, item.provider_ref) for item in ordered
-        )
+        identities = tuple((item.capability_key, item.provider_ref) for item in ordered)
         if len(set(identities)) != len(identities):
             raise ValueError("同一 capability 不能由同一角色重复提供")
         object.__setattr__(self, "evidence", ordered)
@@ -84,9 +80,7 @@ class ReactionEligibilityView:
     def providers_for(self, capability_key: str) -> tuple[ElementalSubjectRef, ...]:
         validate_reaction_capability_key(capability_key)
         return tuple(
-            item.provider_ref
-            for item in self.evidence
-            if item.capability_key == capability_key
+            item.provider_ref for item in self.evidence if item.capability_key == capability_key
         )
 
     def to_dict(self) -> dict[str, object]:

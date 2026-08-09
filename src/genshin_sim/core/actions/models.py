@@ -112,8 +112,7 @@ class TargetingSpec:
         if self.search_area is not None and not isinstance(self.search_area, SearchAreaSpec):
             raise ValueError("search_area 必须是 SearchAreaSpec 或 None")
         if self.selection_policy_key is not None and (
-            not isinstance(self.selection_policy_key, str)
-            or not self.selection_policy_key.strip()
+            not isinstance(self.selection_policy_key, str) or not self.selection_policy_key.strip()
         ):
             raise ValueError("selection_policy_key 提供时必须是非空字符串")
         object.__setattr__(self, "kinds", tuple(self.kinds))

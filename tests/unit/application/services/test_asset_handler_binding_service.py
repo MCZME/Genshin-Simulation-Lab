@@ -116,9 +116,7 @@ def test_set_handler_updates_binding_and_requires_registration():
     )
 
     assert binding.handler_key == "character.test.real"
-    assert repository.set_calls == [
-        ("character", "character:test", "character.test.real", None)
-    ]
+    assert repository.set_calls == [("character", "character:test", "character.test.real", None)]
 
 
 def test_set_handler_same_value_is_idempotent():

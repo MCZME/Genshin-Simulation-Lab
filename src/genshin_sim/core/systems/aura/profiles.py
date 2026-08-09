@@ -142,7 +142,8 @@ def profile_for(strength: AuraStrength) -> AuraDecayProfile:
 
 
 def quicken_decay_profile(amount: AuraAmount) -> AuraDecayProfile:
-    """精确激元素衰减档案。
+    (
+        """精确激元素衰减档案。
 
     设新激元素量为 ``Q`` GU：
 
@@ -151,7 +152,9 @@ def quicken_decay_profile(amount: AuraAmount) -> AuraDecayProfile:
     decay_per_frame  = Q / (360 + 300 * Q)
 
     激元素不应用普通附着损耗；当前量、衰减率与持续时间均使用精确有理数保存。
-    """""
+    """
+        ""
+    )
 
     if amount.is_zero:
         raise ValueError("激元素量必须为正数")

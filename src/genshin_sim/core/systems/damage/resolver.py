@@ -272,7 +272,6 @@ def _build_damage_result(
             trace_metadata={"defense_policy": resolution.reaction.defense_policy},
         )
 
-
     if isinstance(resolution, CatalyzeReactionDamageResolution):
         applied_terms = () if trace_level is TraceLevel.NONE else modifiers.applied_terms
         rejected_terms = modifiers.rejected_terms if trace_level is TraceLevel.FULL else ()

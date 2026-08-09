@@ -266,9 +266,7 @@ def test_case_a_overflow_damage_passes_to_health_on_fourth_hit(shield_rig, make_
 def test_case_b_same_element_shield_uses_2_5_multiplier(shield_rig, make_grant):
     grant = shield_rig.runtime.grant(make_grant(flat_absorption=1_000, element=ShieldElement.PYRO))
 
-    result = shield_rig.coordinator.apply(
-        _incoming(2_000, element=Element.PYRO)
-    ).shield_result
+    result = shield_rig.coordinator.apply(_incoming(2_000, element=Element.PYRO)).shield_result
 
     assert result.shield_hits[0].element_multiplier == 2.5
     assert result.shield_hits[0].native_cost == 800

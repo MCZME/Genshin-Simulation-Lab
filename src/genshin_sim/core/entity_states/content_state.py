@@ -76,9 +76,7 @@ class ContentStateMount:
             try:
                 staged[name] = self._prepare_value(name, value)
             except StateSchemaValidationError as exc:
-                raise ContentStateMountError(
-                    f"宿主 {self.owner} 状态写入失败：{exc}"
-                ) from exc
+                raise ContentStateMountError(f"宿主 {self.owner} 状态写入失败：{exc}") from exc
         self._values.update(staged)
 
     def snapshot(self, frame: int) -> dict[str, object]:

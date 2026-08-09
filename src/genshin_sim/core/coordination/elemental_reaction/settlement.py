@@ -54,9 +54,7 @@ class ElementalSettlementWorkQueue:
     @property
     def pending_work_ids(self) -> tuple[str, ...]:
         return tuple(
-            work.work_id
-            for round_ in sorted(self._pending)
-            for work in self._pending[round_]
+            work.work_id for round_ in sorted(self._pending) for work in self._pending[round_]
         )
 
     @property

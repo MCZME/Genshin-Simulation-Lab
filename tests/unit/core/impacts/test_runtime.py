@@ -276,9 +276,7 @@ def _area_runtime(
     )
     impact_runtime = ImpactRuntime(
         action_manager,
-        ImpactDispatcher(
-            {"furina.skill.hit": AreaDamageImpactFactory(aoe_radius)}
-        ),
+        ImpactDispatcher({"furina.skill.hit": AreaDamageImpactFactory(aoe_radius)}),
     )
     return ctx, action_manager, impact_runtime
 

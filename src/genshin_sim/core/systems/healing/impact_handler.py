@@ -76,10 +76,7 @@ class HealingImpactRequestHandler:
         return tuple(self._records)
 
     def has_heal_contract(self, request: ImpactRequest) -> bool:
-        return (
-            request.kind.value == "heal"
-            and isinstance(request.params.get("heal"), Mapping)
-        )
+        return request.kind.value == "heal" and isinstance(request.params.get("heal"), Mapping)
 
     def handle_impact_request(
         self,
@@ -171,9 +168,7 @@ class HealingImpactRequestHandler:
             raw_attribute_key = raw.get("attribute_key")
             coefficient = raw.get("coefficient")
             if isinstance(coefficient, bool) or not isinstance(coefficient, int | float):
-                raise HealingValidationError(
-                    f"HEAL scaling_terms[{index}] coefficient 必须是数字"
-                )
+                raise HealingValidationError(f"HEAL scaling_terms[{index}] coefficient 必须是数字")
             if not isinstance(component_key, str) or not component_key.strip():
                 raise HealingValidationError(f"HEAL scaling_terms[{index}] component_key 非法")
             if not isinstance(raw_attribute_key, str) or not raw_attribute_key.strip():

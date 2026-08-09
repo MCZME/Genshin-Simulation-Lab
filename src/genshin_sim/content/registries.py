@@ -8,6 +8,7 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
+from enum import StrEnum
 from typing import Any, cast
 
 from genshin_sim.assets.models import TalentScalingEntry
@@ -24,6 +25,33 @@ class DuplicateContentUnitFactoryError(ContentUnitRegistryError, ValueError):
 
 class ContentUnitFactoryNotFoundError(ContentUnitRegistryError, LookupError):
     """请求的 handler_key 未在对应内容类型中注册。"""
+
+
+class HandlerImplementationStatus(StrEnum):
+    """handler 条目的实现状态标记。
+
+    - ``IMPLEMENTED``：行为已实现；
+    - ``EMPTY``：空实现，效果可能不需要实现；
+    - ``UNIMPLEMENTED``：需要实现但尚未实现；
+    - ``NOT_ADDED``：占位键，代码中尚未添加该效果。
+    """
+
+    IMPLEMENTED = "implemented"
+    EMPTY = "empty"
+    UNIMPLEMENTED = "unimplemented"
+    NOT_ADDED = "not_added"
+
+
+@dataclass(frozen=True, slots=True)
+class EmptyContentHandler:
+    """带状态标记的空实现：编译通过但不贡献任何行为切片。"""
+
+    handler_key: str
+    status: HandlerImplementationStatus
+
+    def __call__(self, request: object) -> None:
+        del request
+        return None
 
 
 @dataclass(frozen=True, slots=True)
@@ -263,15 +291,99 @@ class ContentUnitRegistry:
         *,
         replace: bool = False,
     ) -> None:
-        """注册四类内容均为空贡献的占位 handler_key。"""
+        """注册四类内容均为空贡献的占位 handler_key（状态 NOT_ADDED）。"""
 
         _require_non_empty(handler_key, "handler_key")
         if not replace:
             for registry in self._factory_maps():
                 if handler_key in registry:
                     raise DuplicateContentUnitFactoryError(f"重复 handler_key：{handler_key}")
+        handler = EmptyContentHandler(
+            handler_key=handler_key,
+            status=HandlerImplementationStatus.NOT_ADDED,
+        )
         for registry in self._factory_maps():
-            cast(dict[str, Any], registry)[handler_key] = _noop_factory
+            cast(dict[str, Any], registry)[handler_key] = handler
+
+    def register_empty_effect_handler(
+        self,
+        handler_key: str,
+        *,
+        replace: bool = False,
+    ) -> None:
+        """注册效果空实现（EMPTY）：效果可能不需要实现。"""
+
+        self._register_empty_effect_handler(
+            handler_key,
+            HandlerImplementationStatus.EMPTY,
+            replace=replace,
+        )
+
+    def register_unimplemented_effect_handler(
+        self,
+        handler_key: str,
+        *,
+        replace: bool = False,
+    ) -> None:
+        """注册效果空实现（UNIMPLEMENTED）：需要实现但尚未实现。"""
+
+        self._register_empty_effect_handler(
+            handler_key,
+            HandlerImplementationStatus.UNIMPLEMENTED,
+            replace=replace,
+        )
+
+    def _register_empty_effect_handler(
+        self,
+        handler_key: str,
+        status: HandlerImplementationStatus,
+        *,
+        replace: bool,
+    ) -> None:
+        _require_non_empty(handler_key, "handler_key")
+        if not replace:
+            for registry in self._factory_maps():
+                if handler_key in registry:
+                    raise DuplicateContentUnitFactoryError(f"重复 handler_key：{handler_key}")
+        self._effect_factories[handler_key] = cast(
+            EffectContentUnitFactory,
+            EmptyContentHandler(handler_key=handler_key, status=status),
+        )
+
+    def handler_status(self, handler_key: str) -> HandlerImplementationStatus | None:
+        """返回已注册 handler 的实现状态；未注册返回 None。"""
+
+        for registry in self._factory_maps():
+            factory = registry.get(handler_key)
+            if factory is not None:
+                if isinstance(factory, EmptyContentHandler):
+                    return factory.status
+                return HandlerImplementationStatus.IMPLEMENTED
+        return None
+
+    @property
+    def empty_handler_keys(self) -> tuple[str, ...]:
+        """所有状态为 EMPTY 的 handler key（空实现）。"""
+
+        return tuple(
+            sorted(
+                key
+                for key in self.handler_keys
+                if self.handler_status(key) is HandlerImplementationStatus.EMPTY
+            )
+        )
+
+    @property
+    def unimplemented_handler_keys(self) -> tuple[str, ...]:
+        """所有状态为 UNIMPLEMENTED 的 handler key（未实现）。"""
+
+        return tuple(
+            sorted(
+                key
+                for key in self.handler_keys
+                if self.handler_status(key) is HandlerImplementationStatus.UNIMPLEMENTED
+            )
+        )
 
     def has_character_handler(self, handler_key: str | None) -> bool:
         return handler_key is not None and handler_key in self._character_factories
@@ -339,11 +451,6 @@ class ContentUnitRegistry:
             self._artifact_factories,
             self._effect_factories,
         )
-
-
-def _noop_factory(request: object) -> None:
-    del request
-    return None
 
 
 def _register_factory[RequestT](

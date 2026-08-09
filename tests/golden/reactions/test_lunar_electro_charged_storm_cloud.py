@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from genshin_sim.application.assembly import SimulationAssembler
-from genshin_sim.application.config import SimulationConfig
 from genshin_sim.core.attributes import STAT_ATK_TOTAL
 from genshin_sim.core.coordination.elemental_reaction.capabilities import (
     ReactionCapabilityEvidence,
@@ -21,17 +17,13 @@ from genshin_sim.core.impacts import DamageImpactSpec, ImpactKind, ImpactRequest
 from genshin_sim.core.systems.aura import AuraApplicationRequest, AuraStrength
 from genshin_sim.core.systems.damage import (
     DamageScalingTerm,
-    DamageType,
 )
 from genshin_sim.core.systems.reaction.mechanics.lunar_electro_charged.keys import (
     LUNAR_ELECTRO_CHARGED_CAPABILITY_KEY,
     LUNAR_ELECTRO_CHARGED_GATE_DEFINITION_KEY,
     LUNAR_ELECTRO_CHARGED_REACTION_KEY,
 )
-from genshin_sim.infrastructure.assets_sqlite import (
-    SQLiteAssetRepository,
-    write_minimal_static_asset_database,
-)
+from tests.helpers.reactions import lunar_damage_record_count, reaction_occurred_count
 
 
 class _TemporaryLunarEligibilityPort:
@@ -48,12 +40,8 @@ class _TemporaryLunarEligibilityPort:
         )
 
 
-def test_lunar_electro_charged_storm_cloud_attack_loop(tmp_path: Path) -> None:
-    asset_db = tmp_path / "assets.db"
-    write_minimal_static_asset_database(asset_db)
-    assembled = SimulationAssembler(
-        SQLiteAssetRepository(asset_db),
-    ).assemble(SimulationConfig.from_mapping(_config_payload()))
+def test_lunar_electro_charged_storm_cloud_attack_loop(golden_assembled) -> None:
+    assembled = golden_assembled(meta_name="lunar electro charged storm cloud", max_frames=400)
     assembled.elemental_interaction_coordinator.reaction_eligibility_port = (
         _TemporaryLunarEligibilityPort()
     )
@@ -93,7 +81,7 @@ def test_lunar_electro_charged_storm_cloud_attack_loop(tmp_path: Path) -> None:
         _hydro_impact(frame=0, request_id="golden:lunar:electro-charged:create"),
     )
 
-    assert _reaction_occurred_count(assembled, LUNAR_ELECTRO_CHARGED_REACTION_KEY) == 1
+    assert reaction_occurred_count(assembled, LUNAR_ELECTRO_CHARGED_REACTION_KEY) == 1
     clouds = assembled.reaction_runtime.active_lunar_storm_clouds()
     assert len(clouds) == 1
     cloud = clouds[0]
@@ -113,17 +101,17 @@ def test_lunar_electro_charged_storm_cloud_attack_loop(tmp_path: Path) -> None:
     assert refreshed[0].next_attack_frame == 15
 
     assembled.elemental_settlement_coordinator.update_frame(assembled.context, 15)
-    assert _lunar_damage_record_count(assembled) == 1
+    assert lunar_damage_record_count(assembled) == 1
     assert _gate_accepted_count(assembled) == 1
     assert _gate_window_started(assembled) == 15
     assert len(_attack_consumption_events(assembled)) == 2
 
     assembled.elemental_settlement_coordinator.update_frame(assembled.context, 30)
-    assert _lunar_damage_record_count(assembled) == 1
+    assert lunar_damage_record_count(assembled) == 1
 
     for frame in range(45, 136, 15):
         assembled.elemental_settlement_coordinator.update_frame(assembled.context, frame)
-    assert _lunar_damage_record_count(assembled) == 2
+    assert lunar_damage_record_count(assembled) == 2
     assert _gate_accepted_count(assembled) == 1
     assert _gate_window_started(assembled) == 135
 
@@ -155,23 +143,6 @@ def _hydro_impact(*, frame: int, request_id: str) -> ImpactRequest:
     )
 
 
-def _reaction_occurred_count(assembled, reaction_key: str) -> int:
-    return sum(
-        1
-        for event in assembled.context.events.frame_events
-        if event.event_type is EventType.REACTION_OCCURRED
-        and event.payload.occurrence.reaction_key == reaction_key
-    )
-
-
-def _lunar_damage_record_count(assembled) -> int:
-    return sum(
-        1
-        for record in assembled.damage_handler.records
-        if record.result.damage_type is DamageType.LUNAR_REACTION and record.result.final_damage > 0
-    )
-
-
 def _gate_accepted_count(assembled) -> int:
     return _lunar_gate_record(assembled).accepted_count
 
@@ -196,36 +167,3 @@ def _attack_consumption_events(assembled) -> tuple:
         and event.payload.result.aura_kind in {AuraKind.HYDRO, AuraKind.ELECTRO}
         and event.payload.result.amount_consumed == AuraAmount("2/5")
     )
-
-
-def _config_payload() -> dict[str, object]:
-    return {
-        "schema_version": 1,
-        "kind": "simulation_config",
-        "meta": {"name": "lunar electro charged storm cloud", "description": ""},
-        "team": [
-            {
-                "slot": 1,
-                "character": {
-                    "asset_key": "character:test_character",
-                    "level": 90,
-                    "constellation": 0,
-                    "talents": {"normal_attack": 1},
-                },
-                "artifacts": {"sets": [], "stats": {}},
-            },
-        ],
-        "scene": {
-            "targets": [
-                {
-                    "id": "target_1",
-                    "level": 90,
-                    "position": {"x": 0, "y": 0, "z": 0},
-                    "resistance": {},
-                }
-            ]
-        },
-        "input_trace": [],
-        "rules": {"enabled": []},
-        "run_options": {"max_frames": 400},
-    }

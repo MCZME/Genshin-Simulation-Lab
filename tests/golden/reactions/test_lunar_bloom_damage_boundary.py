@@ -1,9 +1,5 @@
 from __future__ import annotations
 
-from pathlib import Path
-
-from genshin_sim.application.assembly import SimulationAssembler
-from genshin_sim.application.config import SimulationConfig
 from genshin_sim.core.attributes import STAT_ATK_TOTAL
 from genshin_sim.core.coordination.elemental_reaction.capabilities import (
     ReactionCapabilityEvidence,
@@ -25,10 +21,6 @@ from genshin_sim.core.systems.reaction.mechanics.dendro_core import (
 from genshin_sim.core.systems.reaction.mechanics.lunar_bloom.keys import (
     LUNAR_BLOOM_CAPABILITY_KEY,
 )
-from genshin_sim.infrastructure.assets_sqlite import (
-    SQLiteAssetRepository,
-    write_minimal_static_asset_database,
-)
 
 
 class _TemporaryLunarEligibilityPort:
@@ -45,12 +37,8 @@ class _TemporaryLunarEligibilityPort:
         )
 
 
-def test_lunar_bloom_reaction_produces_no_reaction_damage(tmp_path: Path) -> None:
-    asset_db = tmp_path / "assets.db"
-    write_minimal_static_asset_database(asset_db)
-    assembled = SimulationAssembler(
-        SQLiteAssetRepository(asset_db),
-    ).assemble(SimulationConfig.from_mapping(_config_payload()))
+def test_lunar_bloom_reaction_produces_no_reaction_damage(golden_assembled) -> None:
+    assembled = golden_assembled(meta_name="lunar bloom no reaction damage", max_frames=1)
     assembled.elemental_interaction_coordinator.reaction_eligibility_port = (
         _TemporaryLunarEligibilityPort()
     )
@@ -108,36 +96,3 @@ def test_lunar_bloom_reaction_produces_no_reaction_damage(tmp_path: Path) -> Non
         )
         is not None
     )
-
-
-def _config_payload() -> dict[str, object]:
-    return {
-        "schema_version": 1,
-        "kind": "simulation_config",
-        "meta": {"name": "lunar bloom no reaction damage", "description": ""},
-        "team": [
-            {
-                "slot": 1,
-                "character": {
-                    "asset_key": "character:test_character",
-                    "level": 90,
-                    "constellation": 0,
-                    "talents": {"normal_attack": 1},
-                },
-                "artifacts": {"sets": [], "stats": {}},
-            }
-        ],
-        "scene": {
-            "targets": [
-                {
-                    "id": "target_1",
-                    "level": 90,
-                    "position": {"x": 0, "y": 0, "z": 0},
-                    "resistance": {},
-                }
-            ]
-        },
-        "input_trace": [],
-        "rules": {"enabled": []},
-        "run_options": {"max_frames": 1},
-    }

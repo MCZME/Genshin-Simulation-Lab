@@ -1,12 +1,10 @@
+# 超 500 行说明：单一关注点（生成 Impact 与扩散 golden 机制族）的密集契约测试，暂不拆分。
 from __future__ import annotations
 
-from pathlib import Path
 from typing import cast
 
 import pytest
 
-from genshin_sim.application.assembly import SimulationAssembler
-from genshin_sim.application.config import SimulationConfig
 from genshin_sim.core.coordination.elemental_reaction import (
     DefaultReactionTargetEligibilityPort,
     ElementalInteractionBatchRecord,
@@ -74,10 +72,6 @@ from genshin_sim.core.systems.reaction.mechanics.swirl import (
     swirl_aura_application_profile,
     swirl_definition,
 )
-from genshin_sim.infrastructure.assets_sqlite import (
-    SQLiteAssetRepository,
-    write_minimal_static_asset_database,
-)
 
 ROOT_WORK_ID = "root:test-generated-impact"
 SOURCE = ElementalSourceRef("character:slot_1", ROOT_WORK_ID)
@@ -86,9 +80,11 @@ TARGET = ElementalSubjectRef.target("target:target_2")
 
 
 def test_generated_electro_hydro_batch_freezes_targets_and_commits_common_aura_plan(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(
+        meta_name="generated reaction impacts", max_frames=120, target_positions=(0.0, 6.0, 6.01)
+    )
     coordinator = assembled.elemental_settlement_coordinator
     coordinator.aura_application_profile_registry = _profile_registry()
 
@@ -146,9 +142,11 @@ def test_generated_electro_hydro_batch_freezes_targets_and_commits_common_aura_p
 
 
 def test_unsupported_generated_batch_preserves_the_entire_uncommitted_aura_plan(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(
+        meta_name="generated reaction impacts", max_frames=120, target_positions=(0.0, 6.0, 6.01)
+    )
     coordinator = assembled.elemental_settlement_coordinator
     coordinator.aura_application_profile_registry = _profile_registry()
     assembled.aura_runtime.apply(
@@ -179,9 +177,11 @@ def test_unsupported_generated_batch_preserves_the_entire_uncommitted_aura_plan(
 
 
 def test_generated_single_element_uses_existing_reaction_planner_and_preserves_source(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(
+        meta_name="generated reaction impacts", max_frames=120, target_positions=(0.0, 6.0, 6.01)
+    )
     coordinator = assembled.elemental_settlement_coordinator
     coordinator.aura_application_profile_registry = _profile_registry()
     assembled.aura_runtime.apply(
@@ -227,9 +227,11 @@ def test_generated_single_element_uses_existing_reaction_planner_and_preserves_s
 
 
 def test_generated_single_element_enqueues_new_effect_group_in_later_round(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(
+        meta_name="generated reaction impacts", max_frames=120, target_positions=(0.0, 6.0, 6.01)
+    )
     coordinator = assembled.elemental_settlement_coordinator
     coordinator.aura_application_profile_registry = _profile_registry()
     assembled.aura_runtime.apply(
@@ -262,9 +264,11 @@ def test_generated_single_element_enqueues_new_effect_group_in_later_round(
 
 
 def test_generated_damage_component_is_gated_without_blocking_element_application(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(
+        meta_name="generated reaction impacts", max_frames=120, target_positions=(0.0, 6.0, 6.01)
+    )
     coordinator = assembled.elemental_settlement_coordinator
     coordinator.aura_application_profile_registry = _profile_registry()
     coordinator.generated_impact_damage_input_adapter = _TestDamageInputAdapter(2.0)
@@ -302,9 +306,11 @@ def test_generated_damage_component_is_gated_without_blocking_element_applicatio
 
 
 def test_generated_damage_component_passes_captured_secondary_amplification_input(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(
+        meta_name="generated reaction impacts", max_frames=120, target_positions=(0.0, 6.0, 6.01)
+    )
     coordinator = assembled.elemental_settlement_coordinator
     coordinator.aura_application_profile_registry = _profile_registry()
     coordinator.generated_impact_damage_input_adapter = _TestDamageInputAdapter(0.6)
@@ -355,12 +361,14 @@ def test_generated_damage_component_passes_captured_secondary_amplification_inpu
     ),
 )
 def test_swirl_non_hydro_emission_applies_damage_and_regular_aura_to_six_meter_targets(
-    tmp_path: Path,
+    golden_assembled,
     aura_kind: AuraKind,
     output_element: Element,
     damage_element: Element,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(
+        meta_name="generated reaction impacts", max_frames=120, target_positions=(0.0, 6.0, 6.01)
+    )
     coordinator, handler = _swirl_settlement_coordinator(assembled)
     root_work_id = f"root:swirl-range:{aura_kind.value}"
     batch = _swirl_batch(root_work_id, aura_kind)
@@ -396,8 +404,10 @@ def test_swirl_non_hydro_emission_applies_damage_and_regular_aura_to_six_meter_t
     assert outcome.damage_outcome == "applied"
 
 
-def test_swirl_hydro_emission_applies_aura_without_range_damage(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_swirl_hydro_emission_applies_aura_without_range_damage(golden_assembled):
+    assembled = golden_assembled(
+        meta_name="generated reaction impacts", max_frames=120, target_positions=(0.0, 6.0, 6.01)
+    )
     coordinator, handler = _swirl_settlement_coordinator(assembled)
     root_work_id = "root:swirl-range:hydro"
 
@@ -420,9 +430,11 @@ def test_swirl_hydro_emission_applies_aura_without_range_damage(tmp_path: Path):
 
 
 def test_swirl_center_and_range_damage_use_the_mechanism_declared_multiplier(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(
+        meta_name="generated reaction impacts", max_frames=120, target_positions=(0.0, 6.0, 6.01)
+    )
     coordinator, handler = _swirl_settlement_coordinator(assembled)
     root_work_id = "root:swirl-center-and-range"
     resolution = _swirl_resolution(root_work_id, AuraKind.PYRO)
@@ -453,9 +465,11 @@ def test_swirl_center_and_range_damage_use_the_mechanism_declared_multiplier(
 
 
 def test_swirl_test_runtime_settles_the_real_anemo_root_through_center_and_range(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(
+        meta_name="generated reaction impacts", max_frames=120, target_positions=(0.0, 6.0, 6.01)
+    )
     coordinator = assembled.elemental_settlement_coordinator
     handler = assembled.damage_handler
     assembled.aura_runtime.apply(
@@ -508,9 +522,11 @@ def test_swirl_test_runtime_settles_the_real_anemo_root_through_center_and_range
 
 
 def test_production_swirl_electro_hydro_uses_shared_emission_and_simultaneous_coexistence(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(
+        meta_name="generated reaction impacts", max_frames=120, target_positions=(0.0, 6.0, 6.01)
+    )
     coordinator = assembled.elemental_settlement_coordinator
     _apply_lossless_aura(
         assembled,
@@ -554,8 +570,10 @@ def test_production_swirl_electro_hydro_uses_shared_emission_and_simultaneous_co
     assert len(assembled.damage_handler.records) == 3
 
 
-def test_double_swirl_damage_does_not_require_aura_capability(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_double_swirl_damage_does_not_require_aura_capability(golden_assembled):
+    assembled = golden_assembled(
+        meta_name="generated reaction impacts", max_frames=120, target_positions=(0.0, 6.0, 6.01)
+    )
     coordinator = assembled.elemental_settlement_coordinator
     coordinator.target_eligibility_port = _DamageOnlyTargetEligibilityPort(TARGET)
     _apply_lossless_aura(
@@ -597,9 +615,11 @@ def test_double_swirl_damage_does_not_require_aura_capability(tmp_path: Path):
 
 
 def test_production_swirl_frozen_hydro_creates_frozen_range_targets_atomically(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(
+        meta_name="generated reaction impacts", max_frames=120, target_positions=(0.0, 6.0, 6.01)
+    )
     coordinator = assembled.elemental_settlement_coordinator
     coordinator.settle_aura_impact(
         assembled.context,
@@ -639,9 +659,11 @@ def test_production_swirl_frozen_hydro_creates_frozen_range_targets_atomically(
 
 
 def test_production_swirl_hidden_cryo_consumes_frozen_link_with_one_cryo_emission(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(
+        meta_name="generated reaction impacts", max_frames=120, target_positions=(0.0, 6.0, 6.01)
+    )
     coordinator = assembled.elemental_settlement_coordinator
     coordinator.settle_aura_impact(
         assembled.context,
@@ -1100,51 +1122,5 @@ def _profile_registry() -> AuraApplicationProfileRegistry:
                 profile_key="aura_application_profile.test.generated",
                 decay_profile_policy=AuraDecayProfilePolicy.REGULAR_FROM_RAW_AMOUNT,
             ),
-        )
-    )
-
-
-def _assemble(tmp_path: Path):
-    asset_db = tmp_path / "assets.db"
-    write_minimal_static_asset_database(asset_db)
-    return SimulationAssembler(
-        SQLiteAssetRepository(asset_db),
-    ).assemble(
-        SimulationConfig.from_mapping(
-            {
-                "schema_version": 1,
-                "kind": "simulation_config",
-                "meta": {"name": "generated reaction impacts", "description": ""},
-                "team": [
-                    {
-                        "slot": 1,
-                        "character": {
-                            "asset_key": "character:test_character",
-                            "level": 90,
-                            "constellation": 0,
-                            "talents": {"normal_attack": 1},
-                        },
-                        "artifacts": {"sets": [], "stats": {}},
-                    }
-                ],
-                "scene": {
-                    "targets": [
-                        {
-                            "id": target_id,
-                            "level": 90,
-                            "position": {"x": position, "y": 0, "z": 0},
-                            "resistance": {},
-                        }
-                        for target_id, position in (
-                            ("target_1", 0.0),
-                            ("target_2", 6.0),
-                            ("target_3", 6.01),
-                        )
-                    ]
-                },
-                "input_trace": [],
-                "rules": {"enabled": []},
-                "run_options": {"max_frames": 120},
-            }
         )
     )

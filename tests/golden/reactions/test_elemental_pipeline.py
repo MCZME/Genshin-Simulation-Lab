@@ -1,12 +1,10 @@
+# 超 500 行说明：单一关注点（元素反应流水线 golden），暂不拆分。
 from __future__ import annotations
 
 from fractions import Fraction
-from pathlib import Path
 
 import pytest
 
-from genshin_sim.application.assembly import SimulationAssembler
-from genshin_sim.application.config import SimulationConfig
 from genshin_sim.core.attributes import STAT_ATK_TOTAL
 from genshin_sim.core.coordination.elemental_reaction import (
     FrozenStateLinkBatchCoordinator,
@@ -34,10 +32,6 @@ from genshin_sim.core.systems.aura import (
     FrozenAuraApplicationRequest,
 )
 from genshin_sim.core.systems.damage import DamageScalingTerm, DamageValidationError
-from genshin_sim.infrastructure.assets_sqlite import (
-    SQLiteAssetRepository,
-    write_minimal_static_asset_database,
-)
 
 
 @pytest.mark.parametrize(
@@ -71,7 +65,7 @@ from genshin_sim.infrastructure.assets_sqlite import (
     ],
 )
 def test_vaporize_and_melt_damage_golden_cases(
-    tmp_path: Path,
+    golden_assembled,
     aura_element: Element,
     incoming_element: Element,
     expected_multiplier: float,
@@ -79,7 +73,7 @@ def test_vaporize_and_melt_damage_golden_cases(
     remaining_amount: AuraAmount | None,
     reaction_key: str,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(meta_name="elemental golden", max_frames=1)
     target_ref = ElementalSubjectRef.target("target:target_1")
     assembled.aura_runtime.apply(
         AuraApplicationRequest(
@@ -147,8 +141,8 @@ def test_vaporize_and_melt_damage_golden_cases(
         assert component.current_amount == remaining_amount
 
 
-def test_damage_preflight_failure_does_not_commit_elemental_domain_state(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_damage_preflight_failure_does_not_commit_elemental_domain_state(golden_assembled):
+    assembled = golden_assembled(meta_name="elemental golden", max_frames=1)
     bad_request = ImpactRequest(
         frame=0,
         kind=ImpactKind.DAMAGE,
@@ -179,8 +173,8 @@ def test_damage_preflight_failure_does_not_commit_elemental_domain_state(tmp_pat
     assert not assembled.damage_handler.records
 
 
-def test_nonstandard_elemental_amount_is_preserved_when_forming_aura(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_nonstandard_elemental_amount_is_preserved_when_forming_aura(golden_assembled):
+    assembled = golden_assembled(meta_name="elemental golden", max_frames=1)
     request = _damage_request(
         Element.HYDRO,
         request_id="golden:two_units",
@@ -197,8 +191,8 @@ def test_nonstandard_elemental_amount_is_preserved_when_forming_aura(tmp_path: P
     assert component.current_amount == AuraAmount(Fraction(8, 5))
 
 
-def test_freeze_creates_linked_frozen_aura_and_state(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_freeze_creates_linked_frozen_aura_and_state(golden_assembled):
+    assembled = golden_assembled(meta_name="elemental golden", max_frames=1)
     target_ref = ElementalSubjectRef.target("target:target_1")
     assembled.aura_runtime.apply(
         AuraApplicationRequest(
@@ -232,8 +226,8 @@ def test_freeze_creates_linked_frozen_aura_and_state(tmp_path: Path):
     assert state.next_required_frame is not None
 
 
-def test_shattered_removes_frozen_aura_and_state(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_shattered_removes_frozen_aura_and_state(golden_assembled):
+    assembled = golden_assembled(meta_name="elemental golden", max_frames=1)
     target_ref = ElementalSubjectRef.target("target:target_1")
     assembled.aura_runtime.apply(
         AuraApplicationRequest(
@@ -281,8 +275,8 @@ def test_shattered_removes_frozen_aura_and_state(tmp_path: Path):
     assert assembled.reaction_runtime.freeze_recovery_state_for(target_ref) is None
 
 
-def test_refreeze_uses_cross_frame_remaining_frozen_amount(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_refreeze_uses_cross_frame_remaining_frozen_amount(golden_assembled):
+    assembled = golden_assembled(meta_name="elemental golden", max_frames=1)
     target_ref = ElementalSubjectRef.target("target:target_1")
     assembled.aura_runtime.apply(
         AuraApplicationRequest(
@@ -324,9 +318,9 @@ def test_refreeze_uses_cross_frame_remaining_frozen_amount(tmp_path: Path):
 
 
 def test_shattered_completely_removes_frozen_amount_above_eight_gu(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(meta_name="elemental golden", max_frames=1)
     target_ref = ElementalSubjectRef.target("target:target_1")
     link = ElementalStateLinkRef("elemental-state-link:golden:large")
     state_planner = assembled.reaction_runtime.begin_state_batch(0, "golden:large-frozen")
@@ -363,8 +357,8 @@ def test_shattered_completely_removes_frozen_amount_above_eight_gu(
     assert assembled.reaction_runtime.frozen_state_for(target_ref) is None
 
 
-def test_same_frame_requests_with_shared_impact_ref_use_distinct_batches(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_same_frame_requests_with_shared_impact_ref_use_distinct_batches(golden_assembled):
+    assembled = golden_assembled(meta_name="elemental golden", max_frames=1)
     first = _damage_request(
         Element.HYDRO,
         request_id="golden:shared:first",
@@ -411,9 +405,9 @@ def test_typed_elemental_request_requires_stable_root_identity():
 
 
 def test_non_damage_elemental_application_reacts_without_creating_damage(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(meta_name="elemental golden", max_frames=1)
     target_ref = ElementalSubjectRef.target("target:target_1")
     assembled.aura_runtime.apply(
         AuraApplicationRequest(
@@ -465,9 +459,9 @@ def test_non_damage_elemental_application_reacts_without_creating_damage(
 
 
 def test_physical_damage_with_binding_advances_icd_without_elemental_application(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(meta_name="elemental golden", max_frames=1)
     icd_events = []
     assembled.context.events.subscribe(EventType.AURA_ICD_RESOLVED, icd_events.append)
 
@@ -504,8 +498,8 @@ def test_physical_damage_with_binding_advances_icd_without_elemental_application
     assert record.next_sequence_index == 2
 
 
-def test_elemental_fact_callback_cannot_mutate_aura_state(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_elemental_fact_callback_cannot_mutate_aura_state(golden_assembled):
+    assembled = golden_assembled(meta_name="elemental golden", max_frames=1)
     target_ref = ElementalSubjectRef.target("target:target_1")
 
     def apply_aura_during_fact(_: object) -> None:
@@ -582,44 +576,3 @@ def _blunt_damage_request() -> ImpactRequest:
             strike_type=StrikeType.BLUNT,
         ),
     )
-
-
-def _assemble(tmp_path: Path):
-    asset_db = tmp_path / "assets.db"
-    write_minimal_static_asset_database(asset_db)
-    return SimulationAssembler(
-        SQLiteAssetRepository(asset_db),
-    ).assemble(SimulationConfig.from_mapping(_config_payload()))
-
-
-def _config_payload() -> dict[str, object]:
-    return {
-        "schema_version": 1,
-        "kind": "simulation_config",
-        "meta": {"name": "elemental golden", "description": ""},
-        "team": [
-            {
-                "slot": 1,
-                "character": {
-                    "asset_key": "character:test_character",
-                    "level": 90,
-                    "constellation": 0,
-                    "talents": {"normal_attack": 1},
-                },
-                "artifacts": {"sets": [], "stats": {}},
-            }
-        ],
-        "scene": {
-            "targets": [
-                {
-                    "id": "target_1",
-                    "level": 90,
-                    "position": {"x": 0, "y": 0, "z": 0},
-                    "resistance": {},
-                }
-            ]
-        },
-        "input_trace": [],
-        "rules": {"enabled": []},
-        "run_options": {"max_frames": 1},
-    }

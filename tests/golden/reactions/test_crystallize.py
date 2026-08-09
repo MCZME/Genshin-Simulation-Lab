@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
-from genshin_sim.application.assembly import SimulationAssembler
-from genshin_sim.application.config import SimulationConfig
 from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.coordination.character_damage_taken import CharacterIncomingDamage
 from genshin_sim.core.coordination.elemental_reaction import CrystallizeShardPickupRequest
@@ -13,20 +9,15 @@ from genshin_sim.core.elements import (
     AuraAmount,
     AuraKind,
     Element,
-    ElementalSourceRef,
-    ElementalSubjectRef,
 )
 from genshin_sim.core.impacts import ElementalApplicationSpec, ImpactKind, ImpactRequest
-from genshin_sim.core.systems.aura import AuraApplicationRequest, AuraStrength
+from genshin_sim.core.systems.aura import AuraStrength
 from genshin_sim.core.systems.reaction import (
     CrystallizeShardLifecycleState,
     ReactionStateInstanceRef,
 )
 from genshin_sim.core.systems.shield import ShieldProtectionRef
-from genshin_sim.infrastructure.assets_sqlite import (
-    SQLiteAssetRepository,
-    write_minimal_static_asset_database,
-)
+from tests.helpers.reactions import apply_aura, target_subject
 
 
 @pytest.mark.parametrize(
@@ -39,13 +30,13 @@ from genshin_sim.infrastructure.assets_sqlite import (
     ),
 )
 def test_production_assembly_creates_a_bound_crystallize_shard(
-    tmp_path: Path,
+    golden_assembled,
     aura_element: Element,
     expected_aura: AuraKind,
     expected_shard_element: Element,
 ):
-    assembled = _assemble(tmp_path)
-    _apply_aura(assembled, aura_element, "golden:initial")
+    assembled = golden_assembled(meta_name="crystallize golden", max_frames=900)
+    apply_aura(assembled, aura_element, "golden:initial", strength=AuraStrength.WEAK)
 
     record = assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
@@ -59,7 +50,7 @@ def test_production_assembly_creates_a_bound_crystallize_shard(
     shard_ref = ReactionStateInstanceRef(record.reaction_state_binding_refs[0])
     shard = assembled.reaction_runtime.crystallize_shard_state_for(shard_ref)
     entity = assembled.space_runtime.get_entity(record.spatial_entity_refs[0])
-    aura = assembled.aura_runtime.view(_target_subject()).component_for(expected_aura)
+    aura = assembled.aura_runtime.view(target_subject()).component_for(expected_aura)
 
     assert shard is not None
     assert entity is not None
@@ -71,10 +62,10 @@ def test_production_assembly_creates_a_bound_crystallize_shard(
 
 
 def test_production_pickup_grants_and_consumes_crystallize_shield(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
-    _apply_aura(assembled, Element.PYRO, "golden:pickup:initial")
+    assembled = golden_assembled(meta_name="crystallize golden", max_frames=900)
+    apply_aura(assembled, Element.PYRO, "golden:pickup:initial", strength=AuraStrength.WEAK)
     record = assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
         _geo_request("golden:pickup:crystallize"),
@@ -116,9 +107,9 @@ def test_production_pickup_grants_and_consumes_crystallize_shield(
     assert damage.health_result.effective_amount == 0.0
 
 
-def test_gate_blocks_then_expiry_removes_the_production_shard(tmp_path: Path):
-    assembled = _assemble(tmp_path)
-    _apply_aura(assembled, Element.PYRO, "golden:initial")
+def test_gate_blocks_then_expiry_removes_the_production_shard(golden_assembled):
+    assembled = golden_assembled(meta_name="crystallize golden", max_frames=900)
+    apply_aura(assembled, Element.PYRO, "golden:initial", strength=AuraStrength.WEAK)
     first = assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
         _geo_request("golden:crystallize:first"),
@@ -158,11 +149,16 @@ def test_gate_blocks_then_expiry_removes_the_production_shard(tmp_path: Path):
 
 
 def test_water_electro_uses_gate_to_block_second_crystallize(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
-    _apply_aura(assembled, Element.HYDRO, "golden:water-electro:hydro")
-    _apply_aura(assembled, Element.ELECTRO, "golden:water-electro:electro")
+    assembled = golden_assembled(meta_name="crystallize golden", max_frames=900)
+    apply_aura(assembled, Element.HYDRO, "golden:water-electro:hydro", strength=AuraStrength.WEAK)
+    apply_aura(
+        assembled,
+        Element.ELECTRO,
+        "golden:water-electro:electro",
+        strength=AuraStrength.WEAK,
+    )
 
     record = assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
@@ -178,7 +174,7 @@ def test_water_electro_uses_gate_to_block_second_crystallize(
     shard = assembled.reaction_runtime.crystallize_shard_state_for(
         ReactionStateInstanceRef(record.reaction_state_binding_refs[0])
     )
-    aura = assembled.aura_runtime.view(_target_subject())
+    aura = assembled.aura_runtime.view(target_subject())
     assert shard is not None
     assert shard.element is Element.ELECTRO
     assert aura.component_for(AuraKind.ELECTRO) is None
@@ -186,22 +182,6 @@ def test_water_electro_uses_gate_to_block_second_crystallize(
     assert (
         assembled.reaction_runtime.establishment_gate_records[0].last_occurrence_ref
         == record.reaction_occurrence_refs[0]
-    )
-
-
-def _apply_aura(assembled, element: Element, request_id: str) -> None:
-    assembled.aura_runtime.apply(
-        AuraApplicationRequest(
-            request_id,
-            f"{request_id}:application",
-            f"{request_id}:impact",
-            0,
-            0,
-            ElementalSourceRef("golden:initial"),
-            _target_subject(),
-            element,
-            AuraStrength.WEAK,
-        )
     )
 
 
@@ -223,49 +203,4 @@ def _geo_request(
             elemental_strength=AuraStrength.WEAK,
             elemental_amount=(AuraAmount.one() if elemental_amount is None else elemental_amount),
         ),
-    )
-
-
-def _target_subject() -> ElementalSubjectRef:
-    return ElementalSubjectRef.target("target:target_1")
-
-
-def _assemble(tmp_path: Path):
-    asset_db = tmp_path / "assets.db"
-    write_minimal_static_asset_database(asset_db)
-    return SimulationAssembler(
-        SQLiteAssetRepository(asset_db),
-    ).assemble(
-        SimulationConfig.from_mapping(
-            {
-                "schema_version": 1,
-                "kind": "simulation_config",
-                "meta": {"name": "crystallize golden", "description": ""},
-                "team": [
-                    {
-                        "slot": 1,
-                        "character": {
-                            "asset_key": "character:test_character",
-                            "level": 90,
-                            "constellation": 0,
-                            "talents": {"normal_attack": 1},
-                        },
-                        "artifacts": {"sets": [], "stats": {}},
-                    }
-                ],
-                "scene": {
-                    "targets": [
-                        {
-                            "id": "target_1",
-                            "level": 90,
-                            "position": {"x": 0, "y": 0, "z": 0},
-                            "resistance": {},
-                        }
-                    ]
-                },
-                "input_trace": [],
-                "rules": {"enabled": []},
-                "run_options": {"max_frames": 900},
-            }
-        )
     )

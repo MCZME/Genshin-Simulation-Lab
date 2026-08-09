@@ -1,21 +1,16 @@
 from __future__ import annotations
 
 from fractions import Fraction
-from pathlib import Path
 
 import pytest
 
-from genshin_sim.application.assembly import SimulationAssembler
-from genshin_sim.application.config import SimulationConfig
 from genshin_sim.core.elements import (
     AuraAmount,
     AuraKind,
     Element,
     ElementalSourceRef,
-    ElementalSubjectRef,
 )
-from genshin_sim.core.impacts import ElementalApplicationSpec, ImpactKind, ImpactRequest
-from genshin_sim.core.systems.aura import AuraApplicationRequest, AuraStrength
+from genshin_sim.core.systems.aura import AuraStrength
 from genshin_sim.core.systems.damage import DamageType
 from genshin_sim.core.systems.reaction import (
     create_default_reaction_bootstrap,
@@ -30,10 +25,7 @@ from genshin_sim.core.systems.reaction.mechanics.burning import (
     burning_pyro_aura_application_profile,
 )
 from genshin_sim.core.systems.reaction.states import ScheduledStateTickCause
-from genshin_sim.infrastructure.assets_sqlite import (
-    SQLiteAssetRepository,
-    write_minimal_static_asset_database,
-)
+from tests.helpers.reactions import advance_to, apply_aura, aura_request, target_subject
 
 BURNING_DAMAGE = 361.71325
 ESTABLISH_SOURCE = ElementalSourceRef("character:slot_1", "golden:burning:establish")
@@ -64,17 +56,22 @@ def test_reaction_registry_registers_burning_with_prior_mechanics() -> None:
     ),
 )
 def test_production_assembly_establishes_burning_and_first_damage(
-    tmp_path: Path,
+    golden_assembled,
     first: Element,
     incoming: Element,
 ) -> None:
-    assembled = _assemble(tmp_path)
-    target_ref = _target_subject()
-    _apply_aura(assembled, first, "golden:initial")
+    assembled = golden_assembled(meta_name="burning golden")
+    target_ref = target_subject()
+    apply_aura(assembled, first, "golden:initial")
 
     record = assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(incoming, "golden:burning:establish"),
+        aura_request(
+            incoming,
+            "golden:burning:establish",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.burning.application",
+        ),
     )
 
     state = assembled.reaction_runtime.burning_state_for(target_ref)
@@ -104,14 +101,19 @@ def test_production_assembly_establishes_burning_and_first_damage(
 
 
 def test_timeline_covers_ticks_source_replacement_gate_and_extinguish(
-    tmp_path: Path,
+    golden_assembled,
 ) -> None:
-    assembled = _assemble(tmp_path, max_frames=240)
-    target_ref = _target_subject()
-    _apply_aura(assembled, Element.DENDRO, "golden:initial")
+    assembled = golden_assembled(meta_name="burning golden", max_frames=240)
+    target_ref = target_subject()
+    apply_aura(assembled, Element.DENDRO, "golden:initial")
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.PYRO, "golden:burning:establish"),
+        aura_request(
+            Element.PYRO,
+            "golden:burning:establish",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.burning.application",
+        ),
     )
     established = assembled.reaction_runtime.burning_state_for(target_ref)
     assert established is not None
@@ -123,7 +125,7 @@ def test_timeline_covers_ticks_source_replacement_gate_and_extinguish(
         ]
     )
 
-    _advance_to(assembled, 15)
+    advance_to(assembled, 15)
 
     after_first_cycle = assembled.reaction_runtime.burning_state_for(target_ref)
     assert after_first_cycle is not None
@@ -148,7 +150,13 @@ def test_timeline_covers_ticks_source_replacement_gate_and_extinguish(
 
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.PYRO, "golden:burning:maintenance", frame=16),
+        aura_request(
+            Element.PYRO,
+            "golden:burning:maintenance",
+            frame=16,
+            strength=AuraStrength.STRONG,
+            impact_key="golden.burning.application",
+        ),
     )
     maintained = assembled.reaction_runtime.burning_state_for(target_ref)
     assert maintained is not None
@@ -172,7 +180,7 @@ def test_timeline_covers_ticks_source_replacement_gate_and_extinguish(
     )
 
     for frame in (30, 45, 60, 75, 90, 105):
-        _advance_to(assembled, frame)
+        advance_to(assembled, frame)
 
     assert assembled.reaction_runtime.burning_state_for(target_ref) is not None
     first_window = assembled.reaction_runtime.gate_records[0]
@@ -183,7 +191,7 @@ def test_timeline_covers_ticks_source_replacement_gate_and_extinguish(
     assert first_window.accepted_count == 8
     assert len(_burning_results(assembled)) == 8
 
-    _advance_to(assembled, 120)
+    advance_to(assembled, 120)
     assert assembled.reaction_runtime.burning_state_for(target_ref) is not None
     assert len(_burning_results(assembled)) == 9
     refreshed_window = assembled.reaction_runtime.gate_records[0]
@@ -195,7 +203,7 @@ def test_timeline_covers_ticks_source_replacement_gate_and_extinguish(
     while assembled.reaction_runtime.burning_state_for(target_ref) is not None:
         next_frame = assembled.reaction_runtime.next_required_frame()
         assert next_frame is not None
-        _advance_to(assembled, next_frame)
+        advance_to(assembled, next_frame)
 
     assert assembled.reaction_runtime.burning_state_for(target_ref) is None
     assert assembled.aura_runtime.view(target_ref).component_for(AuraKind.BURNING) is None
@@ -208,14 +216,19 @@ def test_timeline_covers_ticks_source_replacement_gate_and_extinguish(
 
 
 def test_parallel_cryo_and_reestablishment_on_production_path(
-    tmp_path: Path,
+    golden_assembled,
 ) -> None:
-    assembled = _assemble(tmp_path)
-    target_ref = _target_subject()
-    _apply_aura(assembled, Element.DENDRO, "golden:initial", strength=AuraStrength.WEAK)
+    assembled = golden_assembled(meta_name="burning golden")
+    target_ref = target_subject()
+    apply_aura(assembled, Element.DENDRO, "golden:initial", strength=AuraStrength.WEAK)
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.PYRO, "golden:burning:establish", strength=AuraStrength.WEAK),
+        aura_request(
+            Element.PYRO,
+            "golden:burning:establish",
+            strength=AuraStrength.WEAK,
+            impact_key="golden.burning.application",
+        ),
     )
     adjust = assembled.aura_runtime.begin_batch(0, "golden:burning:parallel-adjust")
     adjust.consume(
@@ -233,7 +246,12 @@ def test_parallel_cryo_and_reestablishment_on_production_path(
     assembled.aura_runtime.commit_prevalidated(adjust.seal())
     cryo_record = assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.CRYO, "golden:burning:cryo-parallel", strength=AuraStrength.WEAK),
+        aura_request(
+            Element.CRYO,
+            "golden:burning:cryo-parallel",
+            strength=AuraStrength.WEAK,
+            impact_key="golden.burning.application",
+        ),
     )
 
     assert len(cryo_record.reaction_occurrence_refs) == 1
@@ -245,10 +263,11 @@ def test_parallel_cryo_and_reestablishment_on_production_path(
 
     reestablish = assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(
+        aura_request(
             Element.PYRO,
             "golden:burning:reestablish",
             strength=AuraStrength.WEAK,
+            impact_key="golden.burning.application",
         ),
     )
     state = assembled.reaction_runtime.burning_state_for(target_ref)
@@ -267,14 +286,19 @@ def test_parallel_cryo_and_reestablishment_on_production_path(
 
 
 def test_burning_extinguish_residual_hydro_creates_bloom_core(
-    tmp_path: Path,
+    golden_assembled,
 ) -> None:
-    assembled = _assemble(tmp_path)
-    target_ref = _target_subject()
-    _apply_aura(assembled, Element.DENDRO, "golden:burning-bloom:initial")
+    assembled = golden_assembled(meta_name="burning golden")
+    target_ref = target_subject()
+    apply_aura(assembled, Element.DENDRO, "golden:burning-bloom:initial")
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.PYRO, "golden:burning-bloom:establish"),
+        aura_request(
+            Element.PYRO,
+            "golden:burning-bloom:establish",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.burning.application",
+        ),
     )
     adjust = assembled.aura_runtime.begin_batch(0, "golden:burning-bloom:adjust")
     adjust.consume(
@@ -293,24 +317,18 @@ def test_burning_extinguish_residual_hydro_creates_bloom_core(
 
     record = assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.HYDRO, "golden:burning-bloom:hydro"),
+        aura_request(
+            Element.HYDRO,
+            "golden:burning-bloom:hydro",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.burning.application",
+        ),
     )
 
     assert len(record.reaction_occurrence_refs) == 2
     assert len(assembled.reaction_runtime.active_dendro_cores()) == 1
     assert assembled.reaction_runtime.burning_state_for(target_ref) is None
     assert assembled.aura_runtime.view(target_ref).component_for(AuraKind.BURNING) is None
-
-
-def _advance_to(assembled, frame: int) -> None:
-    current = assembled.reaction_runtime.normalized_through_frame
-    while current < frame:
-        next_required = assembled.reaction_runtime.next_required_frame()
-        if next_required is None or next_required > frame:
-            assembled.elemental_settlement_coordinator.update_frame(assembled.context, frame)
-            return
-        assembled.elemental_settlement_coordinator.update_frame(assembled.context, next_required)
-        current = assembled.reaction_runtime.normalized_through_frame
 
 
 def _burning_records(assembled):
@@ -330,102 +348,4 @@ def _scheduled_roots(assembled):
         record
         for record in assembled.elemental_settlement_coordinator.records
         if record.batch_kind.value == "scheduled_reaction_root"
-    )
-
-
-def _apply_aura(
-    assembled,
-    element: Element,
-    request_id: str,
-    *,
-    strength: AuraStrength = AuraStrength.STRONG,
-) -> None:
-    assembled.aura_runtime.apply(
-        AuraApplicationRequest(
-            request_id,
-            f"{request_id}:application",
-            f"{request_id}:impact",
-            0,
-            0,
-            ElementalSourceRef("golden:initial"),
-            _target_subject(),
-            element,
-            strength,
-        )
-    )
-
-
-def _aura_request(
-    element: Element,
-    request_id: str,
-    *,
-    frame: int = 0,
-    strength: AuraStrength = AuraStrength.STRONG,
-    elemental_amount: AuraAmount | None = None,
-) -> ImpactRequest:
-    amount = elemental_amount
-    if amount is None:
-        amount = AuraAmount(2) if strength is AuraStrength.STRONG else AuraAmount.one()
-    return ImpactRequest(
-        frame=frame,
-        kind=ImpactKind.APPLY_AURA,
-        impact_key="golden.burning.application",
-        owner_slot=1,
-        request_id=request_id,
-        target_refs=("target_1",),
-        elemental_application_spec=ElementalApplicationSpec(
-            impact_ref=request_id,
-            element=element,
-            elemental_strength=strength,
-            elemental_amount=amount,
-        ),
-    )
-
-
-def _target_subject() -> ElementalSubjectRef:
-    return ElementalSubjectRef.target("target:target_1")
-
-
-def _assemble(
-    tmp_path: Path,
-    *,
-    max_frames: int = 240,
-):
-    asset_db = tmp_path / "assets.db"
-    write_minimal_static_asset_database(asset_db)
-    return SimulationAssembler(
-        SQLiteAssetRepository(asset_db),
-    ).assemble(
-        SimulationConfig.from_mapping(
-            {
-                "schema_version": 1,
-                "kind": "simulation_config",
-                "meta": {"name": "burning golden", "description": ""},
-                "team": [
-                    {
-                        "slot": 1,
-                        "character": {
-                            "asset_key": "character:test_character",
-                            "level": 90,
-                            "constellation": 0,
-                            "talents": {"normal_attack": 1},
-                        },
-                        "artifacts": {"sets": [], "stats": {}},
-                    }
-                ],
-                "scene": {
-                    "targets": [
-                        {
-                            "id": "target_1",
-                            "level": 90,
-                            "position": {"x": 0, "y": 0, "z": 0},
-                            "resistance": {},
-                        }
-                    ]
-                },
-                "input_trace": [],
-                "rules": {"enabled": []},
-                "run_options": {"max_frames": max_frames},
-            }
-        )
     )

@@ -1,13 +1,11 @@
+# 本文件超过 500 行软上限：单一关注点（感电机制 golden）的密集契约测试，按断言密度组织，暂不拆分。
 from __future__ import annotations
 
 from dataclasses import replace
-from pathlib import Path
 from typing import cast
 
 import pytest
 
-from genshin_sim.application.assembly import SimulationAssembler
-from genshin_sim.application.config import SimulationConfig
 from genshin_sim.core.coordination.elemental_reaction import (
     DefaultReactionTargetEligibilityPort,
 )
@@ -15,7 +13,6 @@ from genshin_sim.core.elements import (
     AuraAmount,
     AuraKind,
     Element,
-    ElementalSourceRef,
     ElementalSubjectRef,
 )
 from genshin_sim.core.events import (
@@ -23,23 +20,30 @@ from genshin_sim.core.events import (
     EventType,
     ReactionOccurredPayload,
 )
-from genshin_sim.core.impacts import ElementalApplicationSpec, ImpactKind, ImpactRequest
-from genshin_sim.core.systems.aura import AuraApplicationRequest, AuraStrength
+from genshin_sim.core.systems.aura import AuraStrength
 from genshin_sim.core.systems.damage import DamageType
-from genshin_sim.infrastructure.assets_sqlite import (
-    SQLiteAssetRepository,
-    write_minimal_static_asset_database,
-)
+from tests.helpers.reactions import apply_aura, aura_request
 
 
-def test_electro_charged_establishes_dual_aura_state_and_current_frame_pulse(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_electro_charged_establishes_dual_aura_state_and_current_frame_pulse(golden_assembled):
+    assembled = golden_assembled(meta_name="electro charged golden", max_frames=120)
     target_ref = ElementalSubjectRef.target("target:target_1")
-    _apply_aura(assembled, target_ref, Element.ELECTRO, "initial:electro")
+    apply_aura(
+        assembled,
+        Element.ELECTRO,
+        "initial:electro",
+        target_ref=target_ref,
+        source_ref="initial",
+    )
 
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.HYDRO, "electro-charged:hydro"),
+        aura_request(
+            Element.HYDRO,
+            "electro-charged:hydro",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
+        ),
     )
 
     state = assembled.reaction_runtime.electro_charged_state_for(target_ref)
@@ -61,14 +65,25 @@ def test_electro_charged_establishes_dual_aura_state_and_current_frame_pulse(tmp
     assert results[0].crit_outcome.value == "not_applicable"
 
 
-def test_electro_charged_establishes_from_electro_on_hydro(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_electro_charged_establishes_from_electro_on_hydro(golden_assembled):
+    assembled = golden_assembled(meta_name="electro charged golden", max_frames=120)
     target_ref = ElementalSubjectRef.target("target:target_1")
-    _apply_aura(assembled, target_ref, Element.HYDRO, "initial:hydro")
+    apply_aura(
+        assembled,
+        Element.HYDRO,
+        "initial:hydro",
+        target_ref=target_ref,
+        source_ref="initial",
+    )
 
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.ELECTRO, "electro-charged:electro"),
+        aura_request(
+            Element.ELECTRO,
+            "electro-charged:electro",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
+        ),
     )
 
     state = assembled.reaction_runtime.electro_charged_state_for(target_ref)
@@ -86,20 +101,37 @@ def test_electro_charged_establishes_from_electro_on_hydro(tmp_path: Path):
     assert results[0].reaction_details.base_multiplier == 2.0
 
 
-def test_electro_charged_reattachment_refreshes_owner_without_extra_pulse(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_electro_charged_reattachment_refreshes_owner_without_extra_pulse(golden_assembled):
+    assembled = golden_assembled(meta_name="electro charged golden", max_frames=120)
     target_ref = ElementalSubjectRef.target("target:target_1")
-    _apply_aura(assembled, target_ref, Element.ELECTRO, "initial:electro")
+    apply_aura(
+        assembled,
+        Element.ELECTRO,
+        "initial:electro",
+        target_ref=target_ref,
+        source_ref="initial",
+    )
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.HYDRO, "electro-charged:first"),
+        aura_request(
+            Element.HYDRO,
+            "electro-charged:first",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
+        ),
     )
     before = assembled.reaction_runtime.electro_charged_state_for(target_ref)
     assert before is not None
 
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.HYDRO, "electro-charged:refresh", frame=1),
+        aura_request(
+            Element.HYDRO,
+            "electro-charged:refresh",
+            frame=1,
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
+        ),
     )
 
     after = assembled.reaction_runtime.electro_charged_state_for(target_ref)
@@ -111,13 +143,24 @@ def test_electro_charged_reattachment_refreshes_owner_without_extra_pulse(tmp_pa
     assert len(_reaction_results(assembled)) == 1
 
 
-def test_electro_charged_scheduled_root_runs_before_frame_impacts(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_electro_charged_scheduled_root_runs_before_frame_impacts(golden_assembled):
+    assembled = golden_assembled(meta_name="electro charged golden", max_frames=120)
     target_ref = ElementalSubjectRef.target("target:target_1")
-    _apply_aura(assembled, target_ref, Element.ELECTRO, "initial:electro")
+    apply_aura(
+        assembled,
+        Element.ELECTRO,
+        "initial:electro",
+        target_ref=target_ref,
+        source_ref="initial",
+    )
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.HYDRO, "electro-charged:first"),
+        aura_request(
+            Element.HYDRO,
+            "electro-charged:first",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
+        ),
     )
 
     assembled.elemental_settlement_coordinator.update_frame(assembled.context, 60)
@@ -161,18 +204,35 @@ def test_electro_charged_scheduled_root_runs_before_frame_impacts(tmp_path: Path
     assert scheduled_payload["scheduled_root_outcome"] == "prepared"
 
 
-def test_electro_charged_due_root_is_settled_before_a_same_frame_raw_impact(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_electro_charged_due_root_is_settled_before_a_same_frame_raw_impact(golden_assembled):
+    assembled = golden_assembled(meta_name="electro charged golden", max_frames=120)
     target_ref = ElementalSubjectRef.target("target:target_1")
-    _apply_aura(assembled, target_ref, Element.ELECTRO, "initial:electro")
+    apply_aura(
+        assembled,
+        Element.ELECTRO,
+        "initial:electro",
+        target_ref=target_ref,
+        source_ref="initial",
+    )
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.HYDRO, "electro-charged:first"),
+        aura_request(
+            Element.HYDRO,
+            "electro-charged:first",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
+        ),
     )
 
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.HYDRO, "electro-charged:same-frame", frame=60),
+        aura_request(
+            Element.HYDRO,
+            "electro-charged:same-frame",
+            frame=60,
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
+        ),
     )
 
     records = assembled.elemental_settlement_coordinator.records
@@ -191,23 +251,44 @@ def test_electro_charged_due_root_is_settled_before_a_same_frame_raw_impact(tmp_
 
 
 def test_electro_charged_gate_blocked_due_root_keeps_the_advanced_tick_cursor(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path, target_positions=(("target_1", 0.0), ("target_2", 13.0)))
+    assembled = golden_assembled(
+        meta_name="electro charged golden", max_frames=120, target_positions=(0.0, 13.0)
+    )
     first = ElementalSubjectRef.target("target:target_1")
     second = ElementalSubjectRef.target("target:target_2")
-    _apply_aura(assembled, first, Element.ELECTRO, "initial:first:electro")
-    _apply_aura(assembled, second, Element.ELECTRO, "initial:second:electro")
-    assembled.elemental_settlement_coordinator.settle_aura_impact(
-        assembled.context,
-        _aura_request(Element.HYDRO, "electro-charged:first"),
+    apply_aura(
+        assembled,
+        Element.ELECTRO,
+        "initial:first:electro",
+        target_ref=first,
+        source_ref="initial",
+    )
+    apply_aura(
+        assembled,
+        Element.ELECTRO,
+        "initial:second:electro",
+        target_ref=second,
+        source_ref="initial",
     )
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(
+        aura_request(
+            Element.HYDRO,
+            "electro-charged:first",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
+        ),
+    )
+    assembled.elemental_settlement_coordinator.settle_aura_impact(
+        assembled.context,
+        aura_request(
             Element.HYDRO,
             "electro-charged:second",
-            target_ref="target_2",
+            target_refs=("target_2",),
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
         ),
     )
 
@@ -241,17 +322,36 @@ def test_electro_charged_gate_blocked_due_root_keeps_the_advanced_tick_cursor(
 
 
 def test_electro_charged_propagates_to_hydro_only_targets_without_creating_state(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path, target_positions=(("target_1", 0.0), ("target_2", 13.0)))
+    assembled = golden_assembled(
+        meta_name="electro charged golden", max_frames=120, target_positions=(0.0, 13.0)
+    )
     first = ElementalSubjectRef.target("target:target_1")
     second = ElementalSubjectRef.target("target:target_2")
-    _apply_aura(assembled, first, Element.ELECTRO, "initial:first:electro")
-    _apply_aura(assembled, second, Element.HYDRO, "initial:second:hydro")
+    apply_aura(
+        assembled,
+        Element.ELECTRO,
+        "initial:first:electro",
+        target_ref=first,
+        source_ref="initial",
+    )
+    apply_aura(
+        assembled,
+        Element.HYDRO,
+        "initial:second:hydro",
+        target_ref=second,
+        source_ref="initial",
+    )
 
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.HYDRO, "electro-charged:propagation"),
+        aura_request(
+            Element.HYDRO,
+            "electro-charged:propagation",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
+        ),
     )
 
     assert tuple(record.result.target_ref.entity_id for record in _reaction_records(assembled)) == (
@@ -265,16 +365,35 @@ def test_electro_charged_propagates_to_hydro_only_targets_without_creating_state
 
 
 def test_electro_charged_propagation_blocked_by_gate_does_not_consume_or_update_state(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path, target_positions=(("target_1", 0.0), ("target_2", 13.0)))
+    assembled = golden_assembled(
+        meta_name="electro charged golden", max_frames=120, target_positions=(0.0, 13.0)
+    )
     first = ElementalSubjectRef.target("target:target_1")
     second = ElementalSubjectRef.target("target:target_2")
-    _apply_aura(assembled, first, Element.ELECTRO, "initial:first:electro")
-    _apply_aura(assembled, second, Element.ELECTRO, "initial:second:electro")
+    apply_aura(
+        assembled,
+        Element.ELECTRO,
+        "initial:first:electro",
+        target_ref=first,
+        source_ref="initial",
+    )
+    apply_aura(
+        assembled,
+        Element.ELECTRO,
+        "initial:second:electro",
+        target_ref=second,
+        source_ref="initial",
+    )
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.HYDRO, "electro-charged:first"),
+        aura_request(
+            Element.HYDRO,
+            "electro-charged:first",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
+        ),
     )
     assembled.elemental_settlement_coordinator.update_frame(assembled.context, 1)
 
@@ -288,11 +407,13 @@ def test_electro_charged_propagation_blocked_by_gate_does_not_consume_or_update_
 
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(
+        aura_request(
             Element.HYDRO,
             "electro-charged:second",
             frame=1,
-            target_ref="target_2",
+            target_refs=("target_2",),
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
         ),
     )
 
@@ -310,19 +431,37 @@ def test_electro_charged_propagation_blocked_by_gate_does_not_consume_or_update_
 
 
 def test_electro_charged_propagation_takes_over_another_state_and_syncs_its_tick(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(
-        tmp_path,
-        target_positions=(("target_1", 0.0), ("target_2", 13.0)),
+    assembled = golden_assembled(
+        meta_name="electro charged golden",
+        max_frames=120,
+        target_positions=(0.0, 13.0),
     )
     first = ElementalSubjectRef.target("target:target_1")
     second = ElementalSubjectRef.target("target:target_2")
-    _apply_aura(assembled, first, Element.ELECTRO, "initial:first:electro")
-    _apply_aura(assembled, second, Element.ELECTRO, "initial:second:electro")
+    apply_aura(
+        assembled,
+        Element.ELECTRO,
+        "initial:first:electro",
+        target_ref=first,
+        source_ref="initial",
+    )
+    apply_aura(
+        assembled,
+        Element.ELECTRO,
+        "initial:second:electro",
+        target_ref=second,
+        source_ref="initial",
+    )
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.HYDRO, "electro-charged:first"),
+        aura_request(
+            Element.HYDRO,
+            "electro-charged:first",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
+        ),
     )
     assembled.elemental_settlement_coordinator.update_frame(assembled.context, 31)
 
@@ -336,11 +475,13 @@ def test_electro_charged_propagation_takes_over_another_state_and_syncs_its_tick
 
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(
+        aura_request(
             Element.HYDRO,
             "electro-charged:second",
             frame=31,
-            target_ref="target_2",
+            target_refs=("target_2",),
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
         ),
     )
 
@@ -366,19 +507,35 @@ def test_electro_charged_propagation_takes_over_another_state_and_syncs_its_tick
 
 
 def test_electro_charged_pyro_combination_resolves_overloaded_then_vaporize(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(meta_name="electro charged golden", max_frames=120)
     target_ref = ElementalSubjectRef.target("target:target_1")
-    _apply_aura(assembled, target_ref, Element.ELECTRO, "initial:electro")
+    apply_aura(
+        assembled,
+        Element.ELECTRO,
+        "initial:electro",
+        target_ref=target_ref,
+        source_ref="initial",
+    )
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.HYDRO, "electro-charged:first"),
+        aura_request(
+            Element.HYDRO,
+            "electro-charged:first",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
+        ),
     )
 
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.PYRO, "electro-charged:pyro"),
+        aura_request(
+            Element.PYRO,
+            "electro-charged:pyro",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
+        ),
     )
 
     aura = assembled.aura_runtime.view(target_ref)
@@ -396,23 +553,35 @@ def test_electro_charged_pyro_combination_resolves_overloaded_then_vaporize(
 
 
 def test_electro_charged_cryo_combination_suppresses_superconduct_damage_but_freezes(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(meta_name="electro charged golden", max_frames=120)
     target_ref = ElementalSubjectRef.target("target:target_1")
-    _apply_aura(assembled, target_ref, Element.ELECTRO, "initial:electro")
+    apply_aura(
+        assembled,
+        Element.ELECTRO,
+        "initial:electro",
+        target_ref=target_ref,
+        source_ref="initial",
+    )
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.HYDRO, "electro-charged:first"),
+        aura_request(
+            Element.HYDRO,
+            "electro-charged:first",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
+        ),
     )
 
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(
+        aura_request(
             Element.CRYO,
             "electro-charged:cryo",
             elemental_amount=AuraAmount(3),
-            elemental_strength=AuraStrength.SUPER_STRONG,
+            strength=AuraStrength.SUPER_STRONG,
+            impact_key="golden.electro_charged.application",
         ),
     )
 
@@ -434,13 +603,24 @@ def test_electro_charged_cryo_combination_suppresses_superconduct_damage_but_fre
     assert effect_groups[0]["suppressed_effect_refs"]
 
 
-def test_electro_charged_lifecycle_notification_removes_future_periodic_work(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_electro_charged_lifecycle_notification_removes_future_periodic_work(golden_assembled):
+    assembled = golden_assembled(meta_name="electro charged golden", max_frames=120)
     target_ref = ElementalSubjectRef.target("target:target_1")
-    _apply_aura(assembled, target_ref, Element.ELECTRO, "initial:electro")
+    apply_aura(
+        assembled,
+        Element.ELECTRO,
+        "initial:electro",
+        target_ref=target_ref,
+        source_ref="initial",
+    )
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.HYDRO, "electro-charged:first"),
+        aura_request(
+            Element.HYDRO,
+            "electro-charged:first",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
+        ),
     )
 
     assert assembled.elemental_settlement_coordinator.end_reaction_subject_lifecycle(
@@ -460,14 +640,25 @@ def test_electro_charged_lifecycle_notification_removes_future_periodic_work(tmp
 
 
 def test_electro_charged_due_root_removes_state_when_primary_loses_damage_capability(
-    tmp_path: Path,
+    golden_assembled,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(meta_name="electro charged golden", max_frames=120)
     target_ref = ElementalSubjectRef.target("target:target_1")
-    _apply_aura(assembled, target_ref, Element.ELECTRO, "initial:electro")
+    apply_aura(
+        assembled,
+        Element.ELECTRO,
+        "initial:electro",
+        target_ref=target_ref,
+        source_ref="initial",
+    )
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.HYDRO, "electro-charged:first"),
+        aura_request(
+            Element.HYDRO,
+            "electro-charged:first",
+            strength=AuraStrength.STRONG,
+            impact_key="golden.electro_charged.application",
+        ),
     )
     assembled.elemental_settlement_coordinator.target_eligibility_port = _NoDamageCapabilityPort()
 
@@ -497,95 +688,3 @@ class _NoDamageCapabilityPort:
             distance_xz=distance_xz,
         )
         return replace(result, capabilities=frozenset())
-
-
-def _apply_aura(
-    assembled,
-    target_ref: ElementalSubjectRef,
-    element: Element,
-    request_id: str,
-) -> None:
-    assembled.aura_runtime.apply(
-        AuraApplicationRequest(
-            request_id,
-            f"{request_id}:application",
-            f"{request_id}:impact",
-            0,
-            0,
-            ElementalSourceRef("initial"),
-            target_ref,
-            element,
-            AuraStrength.STRONG,
-        )
-    )
-
-
-def _aura_request(
-    element: Element,
-    request_id: str,
-    *,
-    frame: int = 0,
-    elemental_amount: AuraAmount | None = None,
-    elemental_strength: AuraStrength = AuraStrength.STRONG,
-    target_ref: str = "target_1",
-) -> ImpactRequest:
-    return ImpactRequest(
-        frame=frame,
-        kind=ImpactKind.APPLY_AURA,
-        impact_key="golden.electro_charged.application",
-        owner_slot=1,
-        request_id=request_id,
-        target_refs=(target_ref,),
-        elemental_application_spec=ElementalApplicationSpec(
-            impact_ref=request_id,
-            element=element,
-            elemental_strength=elemental_strength,
-            elemental_amount=AuraAmount(2) if elemental_amount is None else elemental_amount,
-        ),
-    )
-
-
-def _assemble(
-    tmp_path: Path,
-    *,
-    target_positions: tuple[tuple[str, float], ...] = (("target_1", 0.0),),
-):
-    asset_db = tmp_path / "assets.db"
-    write_minimal_static_asset_database(asset_db)
-    return SimulationAssembler(
-        SQLiteAssetRepository(asset_db),
-    ).assemble(
-        SimulationConfig.from_mapping(
-            {
-                "schema_version": 1,
-                "kind": "simulation_config",
-                "meta": {"name": "electro charged golden", "description": ""},
-                "team": [
-                    {
-                        "slot": 1,
-                        "character": {
-                            "asset_key": "character:test_character",
-                            "level": 90,
-                            "constellation": 0,
-                            "talents": {"normal_attack": 1},
-                        },
-                        "artifacts": {"sets": [], "stats": {}},
-                    }
-                ],
-                "scene": {
-                    "targets": [
-                        {
-                            "id": target_id,
-                            "level": 90,
-                            "position": {"x": position, "y": 0, "z": 0},
-                            "resistance": {},
-                        }
-                        for target_id, position in target_positions
-                    ]
-                },
-                "input_trace": [],
-                "rules": {"enabled": []},
-                "run_options": {"max_frames": 120},
-            }
-        )
-    )

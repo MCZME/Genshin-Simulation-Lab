@@ -1,11 +1,8 @@
+# 超 500 行说明：单一关注点（剧变反应结算 golden），暂不拆分。
 from __future__ import annotations
-
-from pathlib import Path
 
 import pytest
 
-from genshin_sim.application.assembly import SimulationAssembler
-from genshin_sim.application.config import SimulationConfig
 from genshin_sim.core.attributes import (
     RESISTANCE_PHYSICAL,
     AttributeQuery,
@@ -14,18 +11,12 @@ from genshin_sim.core.attributes import (
     RuntimeSourceRef,
 )
 from genshin_sim.core.elements import (
-    AuraAmount,
     AuraKind,
     Element,
     ElementalSourceRef,
     ElementalSubjectRef,
 )
 from genshin_sim.core.events import EventType
-from genshin_sim.core.impacts import (
-    ElementalApplicationSpec,
-    ImpactKind,
-    ImpactRequest,
-)
 from genshin_sim.core.systems.aura import AuraApplicationRequest, AuraStrength
 from genshin_sim.core.systems.buff import (
     ApplyBuffRequest,
@@ -34,10 +25,7 @@ from genshin_sim.core.systems.buff import (
 )
 from genshin_sim.core.systems.damage import DamageType, DamageValidationError
 from genshin_sim.core.systems.reaction import ReactionStoreConflictError
-from genshin_sim.infrastructure.assets_sqlite import (
-    SQLiteAssetRepository,
-    write_minimal_static_asset_database,
-)
+from tests.helpers.reactions import aura_request
 
 
 @pytest.mark.parametrize(
@@ -50,13 +38,13 @@ from genshin_sim.infrastructure.assets_sqlite import (
     ),
 )
 def test_transformative_reactions_use_confirmed_damage_and_exact_consumption(
-    tmp_path: Path,
+    golden_assembled,
     aura_element: Element,
     incoming_element: Element,
     reaction_key: str,
     expected_damage: float,
 ):
-    assembled = _assemble(tmp_path)
+    assembled = golden_assembled(meta_name="transformative reaction settlement", max_frames=1)
     target_ref = ElementalSubjectRef.target("target:target_1")
     assembled.aura_runtime.apply(
         AuraApplicationRequest(
@@ -74,7 +62,11 @@ def test_transformative_reactions_use_confirmed_damage_and_exact_consumption(
 
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(incoming_element, request_id="transformative:input"),
+        aura_request(
+            incoming_element,
+            request_id="transformative:input",
+            impact_key="golden.transformative.application",
+        ),
     )
 
     reaction_records = tuple(
@@ -97,8 +89,8 @@ def test_transformative_reactions_use_confirmed_damage_and_exact_consumption(
     assert reaction_key.removeprefix("reaction.") in result.reaction_details.reaction_profile_key
 
 
-def test_overloaded_gate_blocks_second_damage_but_not_occurrence(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_overloaded_gate_blocks_second_damage_but_not_occurrence(golden_assembled):
+    assembled = golden_assembled(meta_name="transformative reaction settlement", max_frames=1)
     target_ref = ElementalSubjectRef.target("target:target_1")
     for index in range(2):
         assembled.aura_runtime.apply(
@@ -116,7 +108,11 @@ def test_overloaded_gate_blocks_second_damage_but_not_occurrence(tmp_path: Path)
         )
         assembled.elemental_settlement_coordinator.settle_aura_impact(
             assembled.context,
-            _aura_request(Element.PYRO, request_id=f"overloaded:input:{index}"),
+            aura_request(
+                Element.PYRO,
+                request_id=f"overloaded:input:{index}",
+                impact_key="golden.transformative.application",
+            ),
         )
 
     reaction_records = tuple(
@@ -138,8 +134,8 @@ def test_overloaded_gate_blocks_second_damage_but_not_occurrence(tmp_path: Path)
     )
 
 
-def test_superconduct_applies_and_replaces_physical_resistance_reduction(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_superconduct_applies_and_replaces_physical_resistance_reduction(golden_assembled):
+    assembled = golden_assembled(meta_name="transformative reaction settlement", max_frames=1)
     target_ref = ElementalSubjectRef.target("target:target_1")
     for index in range(2):
         assembled.aura_runtime.apply(
@@ -157,7 +153,11 @@ def test_superconduct_applies_and_replaces_physical_resistance_reduction(tmp_pat
         )
         assembled.elemental_settlement_coordinator.settle_aura_impact(
             assembled.context,
-            _aura_request(Element.CRYO, request_id=f"superconduct:input:{index}"),
+            aura_request(
+                Element.CRYO,
+                request_id=f"superconduct:input:{index}",
+                impact_key="golden.transformative.application",
+            ),
         )
 
     active = assembled.buff_store.active(
@@ -178,10 +178,11 @@ def test_superconduct_applies_and_replaces_physical_resistance_reduction(tmp_pat
     assert assembled.reaction_runtime.gate_records[0].accepted_count == 2
 
 
-def test_reaction_effect_group_includes_five_meter_boundary_with_stable_targets(tmp_path: Path):
-    assembled = _assemble(
-        tmp_path,
-        target_positions=(("target_1", 0.0), ("target_2", 5.0), ("target_3", 5.01)),
+def test_reaction_effect_group_includes_five_meter_boundary_with_stable_targets(golden_assembled):
+    assembled = golden_assembled(
+        meta_name="transformative reaction settlement",
+        max_frames=1,
+        target_positions=(0.0, 5.0, 5.01),
     )
     target_ref = ElementalSubjectRef.target("target:target_1")
     assembled.aura_runtime.apply(
@@ -200,7 +201,11 @@ def test_reaction_effect_group_includes_five_meter_boundary_with_stable_targets(
 
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.PYRO, request_id="overloaded:range"),
+        aura_request(
+            Element.PYRO,
+            request_id="overloaded:range",
+            impact_key="golden.transformative.application",
+        ),
     )
 
     targets = tuple(
@@ -211,10 +216,11 @@ def test_reaction_effect_group_includes_five_meter_boundary_with_stable_targets(
     assert targets == ("target:target_1", "target:target_2")
 
 
-def test_overloaded_blunt_shatters_when_overloaded_damage_gate_blocks(tmp_path: Path):
-    assembled = _assemble(
-        tmp_path,
-        target_positions=(("target_1", 0.0), ("target_2", 1.0)),
+def test_overloaded_blunt_shatters_when_overloaded_damage_gate_blocks(golden_assembled):
+    assembled = golden_assembled(
+        meta_name="transformative reaction settlement",
+        max_frames=1,
+        target_positions=(0.0, 1.0),
     )
     overloaded_target = ElementalSubjectRef.target("target:target_1")
     frozen_target = ElementalSubjectRef.target("target:target_2")
@@ -233,7 +239,11 @@ def test_overloaded_blunt_shatters_when_overloaded_damage_gate_blocks(tmp_path: 
     )
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.PYRO, request_id="overloaded:blunt:prime-gate"),
+        aura_request(
+            Element.PYRO,
+            request_id="overloaded:blunt:prime-gate",
+            impact_key="golden.transformative.application",
+        ),
     )
     assembled.aura_runtime.apply(
         AuraApplicationRequest(
@@ -250,10 +260,11 @@ def test_overloaded_blunt_shatters_when_overloaded_damage_gate_blocks(tmp_path: 
     )
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(
+        aura_request(
             Element.HYDRO,
             request_id="overloaded:blunt:freeze",
             target_refs=("target_2",),
+            impact_key="golden.transformative.application",
         ),
     )
     assert assembled.reaction_runtime.frozen_state_for(frozen_target) is not None
@@ -273,7 +284,11 @@ def test_overloaded_blunt_shatters_when_overloaded_damage_gate_blocks(tmp_path: 
     )
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.PYRO, request_id="overloaded:blunt:trigger"),
+        aura_request(
+            Element.PYRO,
+            request_id="overloaded:blunt:trigger",
+            impact_key="golden.transformative.application",
+        ),
     )
 
     assert assembled.reaction_runtime.frozen_state_for(frozen_target) is None
@@ -302,8 +317,8 @@ def test_overloaded_blunt_shatters_when_overloaded_damage_gate_blocks(tmp_path: 
     assert shattered_damage[0].result.element.value == "physical"
 
 
-def test_round_one_buff_fact_blocks_reentrant_buff_write_without_inserting_events(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_round_one_buff_fact_blocks_reentrant_buff_write_without_inserting_events(golden_assembled):
+    assembled = golden_assembled(meta_name="transformative reaction settlement", max_frames=1)
     target_ref = ElementalSubjectRef.target("target:target_1")
     reentrancy_errors: list[Exception] = []
 
@@ -349,7 +364,11 @@ def test_round_one_buff_fact_blocks_reentrant_buff_write_without_inserting_event
 
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.CRYO, request_id="superconduct:reentrant"),
+        aura_request(
+            Element.CRYO,
+            request_id="superconduct:reentrant",
+            impact_key="golden.transformative.application",
+        ),
     )
 
     assert len(reentrancy_errors) == 3
@@ -364,8 +383,8 @@ def test_round_one_buff_fact_blocks_reentrant_buff_write_without_inserting_event
     ]
 
 
-def test_effect_group_records_self_candidate_as_blocked_relation(tmp_path: Path):
-    assembled = _assemble(tmp_path)
+def test_effect_group_records_self_candidate_as_blocked_relation(golden_assembled):
+    assembled = golden_assembled(meta_name="transformative reaction settlement", max_frames=1)
     target_ref = ElementalSubjectRef.target("target:target_1")
     assembled.aura_runtime.apply(
         AuraApplicationRequest(
@@ -383,7 +402,11 @@ def test_effect_group_records_self_candidate_as_blocked_relation(tmp_path: Path)
 
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(Element.PYRO, request_id="overloaded:self-audit"),
+        aura_request(
+            Element.PYRO,
+            request_id="overloaded:self-audit",
+            impact_key="golden.transformative.application",
+        ),
     )
 
     self_outcome = next(
@@ -394,10 +417,11 @@ def test_effect_group_records_self_candidate_as_blocked_relation(tmp_path: Path)
     assert self_outcome.damage_outcome == "blocked_relation"
 
 
-def test_multi_target_root_uses_unique_round_one_work_ids(tmp_path: Path):
-    assembled = _assemble(
-        tmp_path,
-        target_positions=(("target_1", 0.0), ("target_2", 10.0)),
+def test_multi_target_root_uses_unique_round_one_work_ids(golden_assembled):
+    assembled = golden_assembled(
+        meta_name="transformative reaction settlement",
+        max_frames=1,
+        target_positions=(0.0, 10.0),
     )
     for target_id in ("target_1", "target_2"):
         assembled.aura_runtime.apply(
@@ -416,10 +440,11 @@ def test_multi_target_root_uses_unique_round_one_work_ids(tmp_path: Path):
 
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(
+        aura_request(
             Element.PYRO,
             request_id="overloaded:multi-target-root",
             target_refs=("target_1", "target_2"),
+            impact_key="golden.transformative.application",
         ),
     )
 
@@ -438,10 +463,14 @@ def test_multi_target_root_uses_unique_round_one_work_ids(tmp_path: Path):
     )
 
 
-def test_single_round_does_not_limit_effect_groups_to_sixty_four(tmp_path: Path):
-    target_positions = tuple((f"target_{index}", float(index * 10)) for index in range(65))
-    assembled = _assemble(tmp_path, target_positions=target_positions)
-    target_refs = tuple(target_id for target_id, _ in target_positions)
+def test_single_round_does_not_limit_effect_groups_to_sixty_four(golden_assembled):
+    target_positions = tuple(float(index * 10) for index in range(65))
+    assembled = golden_assembled(
+        meta_name="transformative reaction settlement",
+        max_frames=1,
+        target_positions=target_positions,
+    )
+    target_refs = tuple(f"target_{index}" for index in range(1, len(target_positions) + 1))
     for target_id in target_refs:
         assembled.aura_runtime.apply(
             AuraApplicationRequest(
@@ -459,10 +488,11 @@ def test_single_round_does_not_limit_effect_groups_to_sixty_four(tmp_path: Path)
 
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
-        _aura_request(
+        aura_request(
             Element.PYRO,
             request_id="overloaded:many-groups",
             target_refs=target_refs,
+            impact_key="golden.transformative.application",
         ),
     )
 
@@ -470,72 +500,4 @@ def test_single_round_does_not_limit_effect_groups_to_sixty_four(tmp_path: Path)
     assert all(
         record.settlement_round == 1
         for record in assembled.elemental_settlement_coordinator.records[1:]
-    )
-
-
-def _aura_request(
-    element: Element,
-    *,
-    request_id: str,
-    target_refs: tuple[str, ...] = ("target_1",),
-) -> ImpactRequest:
-    return ImpactRequest(
-        frame=0,
-        kind=ImpactKind.APPLY_AURA,
-        impact_key="golden.transformative.application",
-        owner_slot=1,
-        request_id=request_id,
-        target_refs=target_refs,
-        elemental_application_spec=ElementalApplicationSpec(
-            impact_ref=request_id,
-            element=element,
-            elemental_strength=AuraStrength.WEAK,
-            elemental_amount=AuraAmount.one(),
-        ),
-    )
-
-
-def _assemble(
-    tmp_path: Path,
-    *,
-    target_positions: tuple[tuple[str, float], ...] = (("target_1", 0.0),),
-):
-    asset_db = tmp_path / "assets.db"
-    write_minimal_static_asset_database(asset_db)
-    return SimulationAssembler(
-        SQLiteAssetRepository(asset_db),
-    ).assemble(
-        SimulationConfig.from_mapping(
-            {
-                "schema_version": 1,
-                "kind": "simulation_config",
-                "meta": {"name": "transformative reaction settlement", "description": ""},
-                "team": [
-                    {
-                        "slot": 1,
-                        "character": {
-                            "asset_key": "character:test_character",
-                            "level": 90,
-                            "constellation": 0,
-                            "talents": {"normal_attack": 1},
-                        },
-                        "artifacts": {"sets": [], "stats": {}},
-                    }
-                ],
-                "scene": {
-                    "targets": [
-                        {
-                            "id": target_id,
-                            "level": 90,
-                            "position": {"x": position, "y": 0, "z": 0},
-                            "resistance": {},
-                        }
-                        for target_id, position in target_positions
-                    ]
-                },
-                "input_trace": [],
-                "rules": {"enabled": []},
-                "run_options": {"max_frames": 1},
-            }
-        )
     )

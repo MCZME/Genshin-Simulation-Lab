@@ -13,8 +13,8 @@ from genshin_sim.content.characters.mondstadt.barbara.data import (
 from genshin_sim.content.characters.testing.runtime_probe.constants import (
     RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
 )
-from genshin_sim.content.characters.testing.runtime_probe.content import (
-    VERSION as RUNTIME_PROBE_VERSION,
+from genshin_sim.content.characters.testing.runtime_probe.constants import (
+    RUNTIME_PROBE_CONTENT_VERSION as RUNTIME_PROBE_VERSION,
 )
 from genshin_sim.content.characters.testing.runtime_probe.content import (
     create_runtime_probe_content_unit,

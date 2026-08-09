@@ -5,6 +5,7 @@ from genshin_sim.content.characters.testing.runtime_probe.actions import (
     create_runtime_probe_action,
 )
 from genshin_sim.content.characters.testing.runtime_probe.constants import (
+    RUNTIME_PROBE_CONTENT_VERSION,
     RUNTIME_PROBE_IMPACT_KEY,
 )
 from genshin_sim.content.characters.testing.runtime_probe.impacts import (
@@ -16,8 +17,6 @@ from genshin_sim.content.definitions.content_unit import (
 )
 from genshin_sim.content.registries import CharacterContentUnitRequest
 
-VERSION = "dev-runtime-probe"
-
 
 def create_runtime_probe_content_unit(
     request: CharacterContentUnitRequest,
@@ -28,7 +27,7 @@ def create_runtime_probe_content_unit(
         owner_type=ContentUnitOwnerType.CHARACTER,
         owner_key=request.character_key,
         handler_key=request.handler_key,
-        version=VERSION,
+        version=RUNTIME_PROBE_CONTENT_VERSION,
         slot=request.slot,
         action_interpreter=RuntimeProbeActionInterpreter(),
         actions=(create_runtime_probe_action(),),

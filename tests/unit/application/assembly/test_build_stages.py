@@ -12,12 +12,9 @@ from genshin_sim.application.assembly.stages import (
     ContentCompiler,
 )
 from genshin_sim.application.config import SimulationConfig
-from genshin_sim.assets import AssetDbInfo
 from genshin_sim.assets.models import (
-    ArtifactSetAsset,
     CharacterAsset,
     CharacterLevelStats,
-    WeaponAsset,
     WeaponLevelStats,
 )
 from genshin_sim.content.bootstrap_content_units import (
@@ -36,6 +33,7 @@ from genshin_sim.core.contracts.state_schema import (
     StateFieldType,
     StateSchema,
 )
+from tests.helpers.asset_repository import FakeAssetRepository
 
 
 def _minimal_config_payload(*, team: list[dict[str, object]]) -> dict[str, object]:
@@ -65,8 +63,18 @@ def _single_character_team(asset_key: str) -> list[dict[str, object]]:
     ]
 
 
-class StageAssetRepository:
+class StageAssetRepository(FakeAssetRepository):
     def __init__(self, *, raise_on_character: bool = False) -> None:
+        super().__init__(
+            meta={},
+            characters=(),
+            weapons=(),
+            artifact_sets=(),
+            artifact_set_bonuses=(),
+            effect_payloads=(),
+            character_level_stats_factory=_stage_level_stats,
+            weapon_level_stats_factory=_stage_missing_weapon_stats,
+        )
         self.raise_on_character = raise_on_character
 
     def get_character(self, character_key: str) -> CharacterAsset:
@@ -82,74 +90,30 @@ class StageAssetRepository:
             burst_energy_cost=60.0,
         )
 
-    def get_meta(self) -> dict[str, str]:
-        return {}
 
-    def get_info(self) -> AssetDbInfo:
-        return AssetDbInfo(meta={})
+def _stage_level_stats(
+    character_key: str,
+    level: int,
+    ascended: bool,
+) -> CharacterLevelStats:
+    del ascended
+    return CharacterLevelStats(
+        character_key=character_key,
+        level=level,
+        ascension_phase=0,
+        base_hp=1000,
+        base_atk=100,
+        base_def=50,
+    )
 
-    def list_characters(self) -> tuple[CharacterAsset, ...]:
-        return ()
 
-    def get_character_level_stats(
-        self,
-        character_key: str,
-        level: int,
-        *,
-        ascended: bool = True,
-    ) -> CharacterLevelStats:
-        del ascended
-        return CharacterLevelStats(
-            character_key=character_key,
-            level=level,
-            ascension_phase=0,
-            base_hp=1000,
-            base_atk=100,
-            base_def=50,
-        )
-
-    def list_weapons(self, weapon_type: str | None = None) -> tuple[()]:
-        del weapon_type
-        return ()
-
-    def get_weapon(self, weapon_key: str) -> WeaponAsset:
-        raise LookupError(f"missing weapon {weapon_key}")
-
-    def get_weapon_level_stats(
-        self,
-        weapon_key: str,
-        level: int,
-        *,
-        ascended: bool = True,
-    ) -> WeaponLevelStats:
-        del ascended
-        raise LookupError(f"missing weapon stats {weapon_key}")
-
-    def list_artifact_sets(self) -> tuple[()]:
-        return ()
-
-    def get_artifact_set(self, artifact_set_key: str) -> ArtifactSetAsset:
-        raise LookupError(f"missing artifact set {artifact_set_key}")
-
-    def get_artifact_set_bonuses(
-        self,
-        artifact_set_key: str,
-        piece_count: int | None = None,
-    ) -> tuple[()]:
-        del artifact_set_key, piece_count
-        return ()
-
-    def get_talent_scalings(self, character_key: str, talent_key: str) -> tuple[()]:
-        del character_key, talent_key
-        return ()
-
-    def get_effect_payloads(
-        self,
-        owner_key: str,
-        effect_kind: str | None = None,
-    ) -> tuple[()]:
-        del owner_key, effect_kind
-        return ()
+def _stage_missing_weapon_stats(
+    weapon_key: str,
+    level: int,
+    ascended: bool,
+) -> WeaponLevelStats:
+    del level, ascended
+    raise LookupError(f"missing weapon stats {weapon_key}")
 
 
 class StageAssetRepositoryWithHandler(StageAssetRepository):

@@ -3,83 +3,37 @@ from __future__ import annotations
 import pytest
 
 from genshin_sim.application.services import AssetDatabaseService, AssetsService
-from genshin_sim.assets import AssetDbInfo, CharacterAsset, WeaponAsset
+from genshin_sim.assets import CharacterAsset, WeaponAsset
+from tests.helpers.asset_repository import FakeAssetRepository
 
 
-class MemoryAssetRepository:
-    def get_meta(self) -> dict[str, str]:
-        return {"schema_version": "1"}
-
-    def get_info(self) -> AssetDbInfo:
-        return AssetDbInfo(meta={"schema_version": "1"}, character_count=1, weapon_count=1)
-
-    def list_characters(self):
-        return (
-            CharacterAsset(
-                asset_key="character:test",
-                source_id="test",
-                name="Test Character",
-                element="anemo",
-                weapon_type="sword",
-                rarity=5,
+class MemoryAssetRepository(FakeAssetRepository):
+    def __init__(self) -> None:
+        super().__init__(
+            meta={"schema_version": "1"},
+            artifact_sets=(),
+            artifact_set_bonuses=(),
+            effect_payloads=(),
+            characters=(
+                CharacterAsset(
+                    asset_key="character:test",
+                    source_id="test",
+                    name="Test Character",
+                    element="anemo",
+                    weapon_type="sword",
+                    rarity=5,
+                ),
+            ),
+            weapons=(
+                WeaponAsset(
+                    asset_key="weapon:test",
+                    source_id="test",
+                    name="Test Weapon",
+                    weapon_type="sword",
+                    rarity=4,
+                ),
             ),
         )
-
-    def get_character(self, character_key: str):
-        assert character_key == "character:test"
-        return self.list_characters()[0]
-
-    def get_character_level_stats(
-        self,
-        character_key: str,
-        level: int,
-        *,
-        ascended: bool = True,
-    ):
-        raise LookupError((character_key, level, ascended))
-
-    def list_weapons(self, weapon_type: str | None = None):
-        return (
-            WeaponAsset(
-                asset_key="weapon:test",
-                source_id="test",
-                name="Test Weapon",
-                weapon_type=weapon_type or "sword",
-                rarity=4,
-            ),
-        )
-
-    def get_weapon(self, weapon_key: str):
-        assert weapon_key == "weapon:test"
-        return self.list_weapons()[0]
-
-    def get_weapon_level_stats(
-        self,
-        weapon_key: str,
-        level: int,
-        *,
-        ascended: bool = True,
-    ):
-        raise LookupError((weapon_key, level, ascended))
-
-    def list_artifact_sets(self):
-        return ()
-
-    def get_artifact_set(self, artifact_set_key: str):
-        raise LookupError(artifact_set_key)
-
-    def get_artifact_set_bonuses(
-        self,
-        artifact_set_key: str,
-        piece_count: int | None = None,
-    ):
-        return ()
-
-    def get_talent_scalings(self, character_key: str, talent_key: str):
-        return ()
-
-    def get_effect_payloads(self, owner_key: str, effect_kind: str | None = None):
-        return ()
 
 
 def test_assets_service_lists_asset_summaries():

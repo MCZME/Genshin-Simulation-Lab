@@ -1,3 +1,4 @@
+# 超 500 行说明：单一关注点（Project Amber 转换器），暂不拆分。
 from __future__ import annotations
 
 import json

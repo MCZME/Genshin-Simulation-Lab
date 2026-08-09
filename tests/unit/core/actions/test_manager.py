@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, cast
@@ -12,13 +11,11 @@ from genshin_sim.core.actions import (
     TEAM_SWITCH_TARGET_SLOT_PARAM,
     ActionAdmissionPolicy,
     ActionDecisionRejectReason,
-    ActionExecutionContext,
     ActionInterpretationContext,
     ActionInterpretationResult,
     ActionInterpretationTrigger,
     ActionInterpreterRegistry,
     ActionManager,
-    ActionOwnerRef,
     ActionRegistry,
     ActiveCharacterInterpreterSelector,
     InputSessionView,
@@ -335,30 +332,6 @@ def test_targeting_spec_validates_search_area_and_selection_policy():
         TargetingSpec(search_area=cast(Any, "圆柱"))
     with pytest.raises(ValueError, match="selection_policy_key"):
         TargetingSpec(selection_policy_key="")
-
-
-def _action_context(
-    *,
-    start_frame: int,
-    frame: int,
-    state: Mapping[str, object],
-    params: Mapping[str, object],
-    space=None,
-) -> ActionExecutionContext:
-    context = SimulationContext()
-    if space is not None:
-        context.space_runtime = space
-    return ActionExecutionContext(
-        frame=frame,
-        instance_id=1,
-        owner=ActionOwnerRef.character(1),
-        source_session_id=None,
-        start_frame=start_frame,
-        elapsed_frames=frame - start_frame,
-        action_state=state,
-        simulation_context=context,
-        params=params,
-    )
 
 
 class _RecordingAbilityConditionPort:

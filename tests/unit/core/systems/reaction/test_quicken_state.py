@@ -8,7 +8,6 @@ from typing import cast
 import pytest
 
 from genshin_sim.core.elements import (
-    ElementalSourceRef,
     ElementalStateLinkRef,
     ElementalSubjectRef,
 )
@@ -28,7 +27,6 @@ from genshin_sim.core.systems.reaction import (
     create_default_reaction_bootstrap,
 )
 
-SOURCE = ElementalSourceRef("character:slot_1")
 TARGET = ElementalSubjectRef.target("target:target_1")
 LINK = ElementalStateLinkRef("elemental-state-link:quicken")
 _OCCURRENCE = "interaction:quicken:occurrence:0"

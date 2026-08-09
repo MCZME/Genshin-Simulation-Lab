@@ -15,13 +15,18 @@ from genshin_sim.assets.models import (
     split_asset_key,
     validate_asset_key,
 )
-from genshin_sim.assets.repository import AssetRepository
+from genshin_sim.assets.repository import (
+    AssetHandlerBindingRepository,
+    AssetRepository,
+    HandlerBinding,
+)
 
 __all__ = [
     "ArtifactSetAsset",
     "ArtifactSetBonus",
     "AssetDbInfo",
     "AssetError",
+    "AssetHandlerBindingRepository",
     "AssetKeyParts",
     "AssetNotFoundError",
     "AssetRepository",
@@ -29,6 +34,7 @@ __all__ = [
     "CharacterAsset",
     "CharacterLevelStats",
     "EffectPayload",
+    "HandlerBinding",
     "TalentScalingEntry",
     "WeaponAsset",
     "WeaponLevelStats",

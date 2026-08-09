@@ -15,6 +15,7 @@ from genshin_sim.assets import (
     CharacterAsset,
     CharacterLevelStats,
     EffectPayload,
+    HandlerBinding,
     TalentScalingEntry,
     WeaponAsset,
     WeaponLevelStats,
@@ -287,14 +288,210 @@ class SQLiteAssetRepository:
             for row in rows
         )
 
-    def _connect(self) -> sqlite3.Connection:
+    def get_handler_binding(
+        self,
+        kind: str,
+        key: str,
+        pieces: int | None = None,
+    ) -> HandlerBinding:
+        with closing(self._connect()) as connection:
+            if kind == "character":
+                row = connection.execute(
+                    "SELECT handler_key FROM characters WHERE asset_key = ?",
+                    (key,),
+                ).fetchone()
+                if row is None:
+                    raise AssetNotFoundError(f"character not found: {key}")
+                return HandlerBinding(
+                    kind=kind,
+                    key=key,
+                    handler_key=_optional_str(row["handler_key"]),
+                )
+            if kind == "weapon":
+                row = connection.execute(
+                    "SELECT handler_key FROM weapons WHERE asset_key = ?",
+                    (key,),
+                ).fetchone()
+                if row is None:
+                    raise AssetNotFoundError(f"weapon not found: {key}")
+                return HandlerBinding(
+                    kind=kind,
+                    key=key,
+                    handler_key=_optional_str(row["handler_key"]),
+                )
+            if kind == "artifact-set":
+                row = connection.execute(
+                    "SELECT handler_key FROM artifact_sets WHERE asset_key = ?",
+                    (key,),
+                ).fetchone()
+                if row is None:
+                    raise AssetNotFoundError(f"artifact set not found: {key}")
+                return HandlerBinding(
+                    kind=kind,
+                    key=key,
+                    handler_key=_optional_str(row["handler_key"]),
+                )
+            if kind == "artifact-bonus":
+                if pieces is None:
+                    raise AssetValidationError("artifact-bonus 需要 --pieces")
+                row = connection.execute(
+                    """
+                    SELECT handler_key FROM artifact_set_bonuses
+                    WHERE artifact_set_key = ? AND piece_count = ?
+                    """,
+                    (key, pieces),
+                ).fetchone()
+                if row is None:
+                    raise AssetNotFoundError(f"artifact set bonus not found: {key}@{pieces}")
+                return HandlerBinding(
+                    kind=kind,
+                    key=key,
+                    pieces=pieces,
+                    handler_key=str(row["handler_key"]),
+                )
+            if kind == "effect":
+                row = connection.execute(
+                    """
+                    SELECT effect_kind, handler_key FROM effect_payloads
+                    WHERE effect_key = ?
+                    """,
+                    (key,),
+                ).fetchone()
+                if row is None:
+                    raise AssetNotFoundError(f"effect payload not found: {key}")
+                return HandlerBinding(
+                    kind=kind,
+                    key=key,
+                    effect_kind=str(row["effect_kind"]),
+                    handler_key=str(row["handler_key"]),
+                )
+        raise AssetValidationError(f"不支持的 handler 绑定类别：{kind}")
+
+    def set_handler_binding(
+        self,
+        kind: str,
+        key: str,
+        handler_key: str | None,
+        pieces: int | None = None,
+    ) -> None:
+        binding = self.get_handler_binding(kind, key, pieces)
+        del binding
+        if kind == "character":
+            sql = "UPDATE characters SET handler_key = ? WHERE asset_key = ?"
+            params: tuple[object, ...] = (handler_key, key)
+        elif kind == "weapon":
+            sql = "UPDATE weapons SET handler_key = ? WHERE asset_key = ?"
+            params = (handler_key, key)
+        elif kind == "artifact-set":
+            sql = "UPDATE artifact_sets SET handler_key = ? WHERE asset_key = ?"
+            params = (handler_key, key)
+        elif kind == "artifact-bonus":
+            if pieces is None:
+                raise AssetValidationError("artifact-bonus 需要 --pieces")
+            sql = """
+                UPDATE artifact_set_bonuses SET handler_key = ?
+                WHERE artifact_set_key = ? AND piece_count = ?
+            """
+            params = (handler_key, key, pieces)
+        elif kind == "effect":
+            sql = "UPDATE effect_payloads SET handler_key = ? WHERE effect_key = ?"
+            params = (handler_key, key)
+        else:
+            raise AssetValidationError(f"不支持的 handler 绑定类别：{kind}")
+        with closing(self._connect(readonly=False)) as connection:
+            connection.execute(sql, params)
+            connection.commit()
+
+    def list_handler_bindings(
+        self,
+        kind: str,
+        owner_key: str | None = None,
+    ) -> tuple[HandlerBinding, ...]:
+        with closing(self._connect()) as connection:
+            if kind == "character":
+                rows = connection.execute(
+                    "SELECT asset_key, handler_key FROM characters ORDER BY asset_key"
+                ).fetchall()
+                return tuple(
+                    HandlerBinding(
+                        kind=kind,
+                        key=str(row["asset_key"]),
+                        handler_key=_optional_str(row["handler_key"]),
+                    )
+                    for row in rows
+                )
+            if kind == "weapon":
+                rows = connection.execute(
+                    "SELECT asset_key, handler_key FROM weapons ORDER BY asset_key"
+                ).fetchall()
+                return tuple(
+                    HandlerBinding(
+                        kind=kind,
+                        key=str(row["asset_key"]),
+                        handler_key=_optional_str(row["handler_key"]),
+                    )
+                    for row in rows
+                )
+            if kind == "artifact-set":
+                rows = connection.execute(
+                    "SELECT asset_key, handler_key FROM artifact_sets ORDER BY asset_key"
+                ).fetchall()
+                return tuple(
+                    HandlerBinding(
+                        kind=kind,
+                        key=str(row["asset_key"]),
+                        handler_key=_optional_str(row["handler_key"]),
+                    )
+                    for row in rows
+                )
+            if kind == "artifact-bonus":
+                rows = connection.execute(
+                    """
+                    SELECT artifact_set_key, piece_count, handler_key
+                    FROM artifact_set_bonuses
+                    ORDER BY artifact_set_key, piece_count
+                    """
+                ).fetchall()
+                return tuple(
+                    HandlerBinding(
+                        kind=kind,
+                        key=str(row["artifact_set_key"]),
+                        pieces=int(row["piece_count"]),
+                        handler_key=str(row["handler_key"]),
+                    )
+                    for row in rows
+                )
+            if kind == "effect":
+                sql = """
+                    SELECT effect_key, effect_kind, handler_key
+                    FROM effect_payloads
+                """
+                params: tuple[object, ...] = ()
+                if owner_key is not None:
+                    sql += " WHERE owner_key = ?"
+                    params = (owner_key,)
+                sql += " ORDER BY effect_key"
+                rows = connection.execute(sql, params).fetchall()
+                return tuple(
+                    HandlerBinding(
+                        kind=kind,
+                        key=str(row["effect_key"]),
+                        effect_kind=str(row["effect_kind"]),
+                        handler_key=str(row["handler_key"]),
+                    )
+                    for row in rows
+                )
+        raise AssetValidationError(f"不支持的 handler 绑定类别：{kind}")
+
+    def _connect(self, *, readonly: bool = True) -> sqlite3.Connection:
         if not self.db_path.exists():
             raise AssetValidationError(f"asset database does not exist: {self.db_path}")
         try:
             connection = sqlite3.connect(self.db_path)
             connection.row_factory = sqlite3.Row
             connection.execute("PRAGMA foreign_keys = ON")
-            connection.execute("PRAGMA query_only = ON")
+            if readonly:
+                connection.execute("PRAGMA query_only = ON")
         except sqlite3.Error as exc:
             raise AssetValidationError(f"cannot open asset database: {self.db_path}") from exc
         return connection

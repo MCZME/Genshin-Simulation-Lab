@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Protocol, runtime_checkable
 
 from genshin_sim.assets.models import (
@@ -68,3 +69,39 @@ class AssetRepository(Protocol):
         owner_key: str,
         effect_kind: str | None = None,
     ) -> tuple[EffectPayload, ...]: ...
+
+
+@dataclass(frozen=True, slots=True)
+class HandlerBinding:
+    """资产 handler_key 绑定的维护视图。"""
+
+    kind: str
+    key: str
+    handler_key: str | None
+    pieces: int | None = None
+    effect_kind: str | None = None
+
+
+class AssetHandlerBindingRepository(Protocol):
+    """维护命令专用的资产 handler_key 写访问。"""
+
+    def get_handler_binding(
+        self,
+        kind: str,
+        key: str,
+        pieces: int | None = None,
+    ) -> HandlerBinding: ...
+
+    def set_handler_binding(
+        self,
+        kind: str,
+        key: str,
+        handler_key: str | None,
+        pieces: int | None = None,
+    ) -> None: ...
+
+    def list_handler_bindings(
+        self,
+        kind: str,
+        owner_key: str | None = None,
+    ) -> tuple[HandlerBinding, ...]: ...

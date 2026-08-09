@@ -2,12 +2,14 @@
 
 from genshin_sim.application.services.assets import (
     AssetDatabaseService,
+    AssetHandlerBindingService,
     AssetListItem,
     AssetListKind,
     AssetManifestAuditService,
     AssetManifestBuildService,
     AssetSourceCacheService,
     AssetsService,
+    HandlerBindingKind,
 )
 from genshin_sim.application.services.config_validation import ConfigValidationService
 from genshin_sim.application.services.errors import ApplicationServiceError
@@ -25,6 +27,7 @@ from genshin_sim.application.services.simulation import SimulationTaskService
 __all__ = [
     "ApplicationServiceError",
     "AssetDatabaseService",
+    "AssetHandlerBindingService",
     "AssetListItem",
     "AssetListKind",
     "AssetManifestAuditService",
@@ -33,6 +36,7 @@ __all__ = [
     "AssetsService",
     "ConfigValidationService",
     "ConfigValidator",
+    "HandlerBindingKind",
     "ResultRepository",
     "ResultDatabaseService",
     "ResultsService",

@@ -12,6 +12,7 @@ from typing import Any, cast
 
 from genshin_sim.application.services import (
     AssetDatabaseService,
+    AssetHandlerBindingService,
     AssetManifestAuditService,
     AssetManifestBuildService,
     AssetSourceCacheService,
@@ -21,6 +22,7 @@ from genshin_sim.application.services import (
     ResultsService,
     SimulationTaskService,
 )
+from genshin_sim.content import create_default_content_unit_registry
 from genshin_sim.infrastructure.assets_project_amber import (
     build_asset_manifest_from_project_amber_cache,
     fetch_project_amber_source_cache,
@@ -234,6 +236,48 @@ def _add_assets_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     inspect_parser.add_argument("asset_key")
     inspect_parser.set_defaults(handler=_cmd_assets_inspect)
 
+    set_handler_parser = assets_subparsers.add_parser(
+        "set-handler",
+        help="设置资产 handler_key（主动修改临时资产数据库）。",
+    )
+    _add_asset_db_argument(set_handler_parser)
+    set_handler_parser.add_argument(
+        "--kind",
+        required=True,
+        choices=("character", "weapon", "artifact-set", "artifact-bonus", "effect"),
+    )
+    set_handler_parser.add_argument("--key", required=True)
+    set_handler_parser.add_argument("--handler-key", required=True)
+    set_handler_parser.add_argument("--pieces", type=int)
+    set_handler_parser.set_defaults(handler=_cmd_assets_set_handler)
+
+    reset_handler_parser = assets_subparsers.add_parser(
+        "reset-handler",
+        help="重置资产 handler_key（可空类别清空，效果回到占位键）。",
+    )
+    _add_asset_db_argument(reset_handler_parser)
+    reset_handler_parser.add_argument(
+        "--kind",
+        required=True,
+        choices=("character", "weapon", "artifact-set", "artifact-bonus", "effect"),
+    )
+    reset_handler_parser.add_argument("--key", required=True)
+    reset_handler_parser.add_argument("--pieces", type=int)
+    reset_handler_parser.set_defaults(handler=_cmd_assets_reset_handler)
+
+    show_handlers_parser = assets_subparsers.add_parser(
+        "show-handlers",
+        help="查看资产 handler_key 绑定。",
+    )
+    _add_asset_db_argument(show_handlers_parser)
+    show_handlers_parser.add_argument(
+        "--kind",
+        required=True,
+        choices=("character", "weapon", "artifact-set", "artifact-bonus", "effect"),
+    )
+    show_handlers_parser.add_argument("--owner")
+    show_handlers_parser.set_defaults(handler=_cmd_assets_show_handlers)
+
 
 def _add_config_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
     config_parser = subparsers.add_parser("config", help="Work with SimulationConfig files.")
@@ -409,6 +453,39 @@ def _cmd_assets_inspect(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_assets_set_handler(args: argparse.Namespace) -> int:
+    binding = _asset_handler_binding_service(args.asset_db).set_handler(
+        args.kind,
+        args.key,
+        args.handler_key,
+        pieces=args.pieces,
+    )
+    print(f"set {binding.kind} handler: {binding.key} -> {binding.handler_key}")
+    return 0
+
+
+def _cmd_assets_reset_handler(args: argparse.Namespace) -> int:
+    binding = _asset_handler_binding_service(args.asset_db).reset_handler(
+        args.kind,
+        args.key,
+        pieces=args.pieces,
+    )
+    print(f"reset {binding.kind} handler: {binding.key} -> {binding.handler_key}")
+    return 0
+
+
+def _cmd_assets_show_handlers(args: argparse.Namespace) -> int:
+    bindings = _asset_handler_binding_service(args.asset_db).show_handlers(
+        args.kind,
+        owner_key=args.owner,
+    )
+    for binding in bindings:
+        pieces = "" if binding.pieces is None else str(binding.pieces)
+        handler_key = "" if binding.handler_key is None else binding.handler_key
+        print(f"{binding.key}\t{pieces}\t{handler_key}")
+    return 0
+
+
 def _cmd_config_validate(args: argparse.Namespace) -> int:
     config = ConfigValidationService().validate_file(args.config_path)
     print(f"config OK: {config.meta.name}")
@@ -479,6 +556,13 @@ def _asset_database_service(manifest_path: Path | None = None) -> AssetDatabaseS
         init_database=init_asset_database,
         build_database=build_database,
         validate_database=validate_asset_database,
+    )
+
+
+def _asset_handler_binding_service(asset_db: Path) -> AssetHandlerBindingService:
+    return AssetHandlerBindingService(
+        repository=SQLiteAssetRepository(asset_db),
+        content_unit_registry=create_default_content_unit_registry(),
     )
 
 

@@ -2,19 +2,33 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from genshin_sim.application.services.errors import ApplicationServiceError
 from genshin_sim.assets import (
     ArtifactSetAsset,
+    AssetHandlerBindingRepository,
     AssetRepository,
     CharacterAsset,
+    HandlerBinding,
     WeaponAsset,
 )
+from genshin_sim.content.registries import ContentUnitRegistry
 
 logger = logging.getLogger(__name__)
+
+
+class HandlerBindingKind(StrEnum):
+    """资产 handler_key 绑定类别。"""
+
+    CHARACTER = "character"
+    WEAPON = "weapon"
+    ARTIFACT_SET = "artifact-set"
+    ARTIFACT_BONUS = "artifact-bonus"
+    EFFECT = "effect"
 
 
 class AssetListKind(StrEnum):
@@ -94,6 +108,104 @@ class AssetDatabaseService:
     def validate_database(self, db_path: str | Path) -> None:
         self._validate_database(db_path)
         logger.info("资产数据库校验通过", extra={"asset_db": str(db_path)})
+
+
+_EFFECT_PLACEHOLDER_BY_EFFECT_KIND: dict[str, str] = {
+    "passive": "character.unimplemented_passive",
+    "passive_exploration": "character.unimplemented_passive",
+    "constellation": "character.unimplemented_constellation",
+    "alternate_sprint": "character.unimplemented_special_talent",
+    "special_movement": "character.unimplemented_special_talent",
+    "special_talent": "character.unimplemented_special_talent",
+}
+
+
+class AssetHandlerBindingService:
+    """维护资产 handler_key 绑定（设置、重置、查看）。"""
+
+    def __init__(
+        self,
+        *,
+        repository: AssetHandlerBindingRepository,
+        content_unit_registry: ContentUnitRegistry,
+    ) -> None:
+        self.repository = repository
+        self.content_unit_registry = content_unit_registry
+
+    def set_handler(
+        self,
+        kind: HandlerBindingKind | str,
+        key: str,
+        handler_key: str,
+        pieces: int | None = None,
+    ) -> HandlerBinding:
+        resolved_kind = HandlerBindingKind(kind)
+        normalized = handler_key.strip()
+        if not normalized:
+            raise ApplicationServiceError("handler_key 不能为空")
+        binding = self.repository.get_handler_binding(resolved_kind.value, key, pieces)
+        self._require_registered(resolved_kind, normalized)
+        if binding.handler_key != normalized:
+            self.repository.set_handler_binding(
+                resolved_kind.value,
+                key,
+                normalized,
+                pieces,
+            )
+            binding = replace(binding, handler_key=normalized)
+        return binding
+
+    def reset_handler(
+        self,
+        kind: HandlerBindingKind | str,
+        key: str,
+        pieces: int | None = None,
+    ) -> HandlerBinding:
+        resolved_kind = HandlerBindingKind(kind)
+        binding = self.repository.get_handler_binding(resolved_kind.value, key, pieces)
+        target = self._reset_target(resolved_kind, binding)
+        self.repository.set_handler_binding(resolved_kind.value, key, target, pieces)
+        return replace(binding, handler_key=target)
+
+    def show_handlers(
+        self,
+        kind: HandlerBindingKind | str,
+        owner_key: str | None = None,
+    ) -> tuple[HandlerBinding, ...]:
+        resolved_kind = HandlerBindingKind(kind)
+        return self.repository.list_handler_bindings(resolved_kind.value, owner_key)
+
+    def _require_registered(self, kind: HandlerBindingKind, handler_key: str) -> None:
+        if kind is HandlerBindingKind.CHARACTER:
+            registered = self.content_unit_registry.has_character_handler(handler_key)
+        elif kind is HandlerBindingKind.WEAPON:
+            registered = self.content_unit_registry.has_weapon_handler(handler_key)
+        elif kind in (HandlerBindingKind.ARTIFACT_SET, HandlerBindingKind.ARTIFACT_BONUS):
+            registered = self.content_unit_registry.has_artifact_handler(handler_key)
+        else:
+            registered = self.content_unit_registry.has_effect_handler(handler_key)
+        if not registered:
+            raise ApplicationServiceError(f"handler 未注册：{handler_key}")
+
+    @staticmethod
+    def _reset_target(
+        kind: HandlerBindingKind,
+        binding: HandlerBinding,
+    ) -> str | None:
+        if kind in (
+            HandlerBindingKind.CHARACTER,
+            HandlerBindingKind.WEAPON,
+            HandlerBindingKind.ARTIFACT_SET,
+        ):
+            return None
+        if kind is HandlerBindingKind.ARTIFACT_BONUS:
+            return "artifact.unimplemented_set_bonus"
+        placeholder = _EFFECT_PLACEHOLDER_BY_EFFECT_KIND.get(binding.effect_kind or "")
+        if placeholder is None:
+            raise ApplicationServiceError(
+                f"不支持重置效果种类：{binding.effect_kind}"
+            )
+        return placeholder
 
 
 class AssetSourceCacheService:

@@ -174,6 +174,15 @@ from genshin_sim.core.systems.health import (
     HealthSystemError,
     validate_health_float,
 )
+from genshin_sim.core.systems.infusion import (
+    InfusionDamageElementAdapter,
+    InfusionDefinitionRegistry,
+    InfusionImpactRequestHandler,
+    InfusionResolver,
+    InfusionRuntime,
+    InfusionStore,
+    InfusionSystemError,
+)
 from genshin_sim.core.systems.movement import (
     MovementImpactRequestHandler,
     MovementRuntime,
@@ -548,6 +557,19 @@ class RuntimeAssembler:
             buff_handler = BuffImpactRequestHandler(buff_runtime)
         except BuffSystemError as exc:
             raise InvalidRuntimePayloadError(str(exc)) from exc
+        try:
+            infusion_registry = InfusionDefinitionRegistry(content_bundle.infusion_definitions)
+            infusion_store = InfusionStore()
+            infusion_runtime = InfusionRuntime(
+                definition_registry=infusion_registry,
+                resolver=InfusionResolver(),
+                infusion_store=infusion_store,
+                event_engine=context.events,
+            )
+            infusion_handler = InfusionImpactRequestHandler(infusion_runtime)
+            infusion_element_adapter = InfusionDamageElementAdapter(infusion_runtime)
+        except InfusionSystemError as exc:
+            raise InvalidRuntimePayloadError(f"附魔组装失败：{exc}") from exc
         shield_store = ShieldStore()
         shield_resolver = ShieldResolver(attribute_runtime.resolver)
         shield_runtime = ShieldRuntime(
@@ -565,6 +587,8 @@ class RuntimeAssembler:
         )
         context.register_system(buff_runtime)
         context.register_system(buff_handler)
+        context.register_system(infusion_runtime)
+        context.register_system(infusion_handler)
         context.register_system(shield_runtime)
         context.register_system(shield_handler)
         context.register_system(character_damage_taken_coordinator)
@@ -701,6 +725,8 @@ class RuntimeAssembler:
             character_aura_handler=character_aura_handler,
             energy_handler=energy_handler,
             movement_handler=movement_handler,
+            infusion_handler=infusion_handler,
+            infusion_element_adapter=infusion_element_adapter,
             elemental_settlement_coordinator=elemental_settlement_coordinator,
         )
         impact_runtime = ImpactRuntime(
@@ -744,6 +770,10 @@ class RuntimeAssembler:
             lambda frame: buff_runtime.snapshot(frame).to_dict(),
         )
         snapshot_runtime.register(
+            "infusion",
+            lambda frame: infusion_runtime.snapshot(frame).to_dict(),
+        )
+        snapshot_runtime.register(
             "content_state",
             lambda frame: _content_state_snapshots(team_state, frame),
         )
@@ -767,6 +797,7 @@ class RuntimeAssembler:
             snapshot_runtime=snapshot_runtime,
         )
         runtime_world.add(FramePhase.TIME_ADVANCE, "buff", buff_runtime)
+        runtime_world.add(FramePhase.TIME_ADVANCE, "infusion", infusion_runtime)
         runtime_world.add(FramePhase.TIME_ADVANCE, "shield", shield_runtime)
         runtime_world.add(
             FramePhase.TIME_ADVANCE,
@@ -826,6 +857,11 @@ class RuntimeAssembler:
             buff_resolver=buff_resolver,
             buff_runtime=buff_runtime,
             buff_handler=buff_handler,
+            infusion_definitions=content_bundle.infusion_definitions,
+            infusion_store=infusion_store,
+            infusion_runtime=infusion_runtime,
+            infusion_handler=infusion_handler,
+            infusion_element_adapter=infusion_element_adapter,
             shield_store=shield_store,
             shield_resolver=shield_resolver,
             shield_runtime=shield_runtime,

@@ -47,6 +47,7 @@ from genshin_sim.core.systems.damage import (
     DamageModifierProvider,
     DamageModifierStackingGroupDefinition,
 )
+from genshin_sim.core.systems.infusion import InfusionDefinition
 
 
 class ContentCompiler:
@@ -346,6 +347,7 @@ class ContentCompiler:
         damage_modifier_stacking_groups: list[DamageModifierStackingGroupDefinition] = []
         attribute_stacking_groups: list[ModifierStackingGroupDefinition] = []
         buff_definitions: list[BuffDefinition] = []
+        infusion_definitions: list[InfusionDefinition] = []
         aura_icd_definitions: list[IcdDefinition] = []
         cooldown_definitions: list[CooldownDefinition] = []
 
@@ -362,6 +364,7 @@ class ContentCompiler:
             modifiers.extend(unit.modifiers)
             attribute_stacking_groups.extend(unit.attribute_stacking_groups)
             self._register_buff_definitions(buff_definitions, unit)
+            self._register_infusion_definitions(infusion_definitions, unit)
             aura_icd_definitions.extend(unit.aura_icd_definitions)
             cooldown_definitions.extend(unit.cooldown_definitions)
             damage_modifier_providers.extend(unit.damage_modifier_providers)
@@ -378,6 +381,7 @@ class ContentCompiler:
             modifiers=tuple(modifiers),
             attribute_stacking_groups=tuple(attribute_stacking_groups),
             buff_definitions=tuple(buff_definitions),
+            infusion_definitions=tuple(infusion_definitions),
             aura_icd_definitions=tuple(aura_icd_definitions),
             cooldown_definitions=tuple(cooldown_definitions),
             damage_modifier_providers=tuple(damage_modifier_providers),
@@ -456,6 +460,19 @@ class ContentCompiler:
                     f"{definition.handler_key!r} 的 BuffDefinition"
                 )
             buff_definitions.append(definition)
+
+    def _register_infusion_definitions(
+        self,
+        infusion_definitions: list[InfusionDefinition],
+        unit: ContentUnit,
+    ) -> None:
+        for definition in unit.infusion_definitions:
+            if definition.handler_key != unit.handler_key:
+                raise InvalidRuntimePayloadError(
+                    f"content {unit.handler_key!r} 不能贡献 handler_key "
+                    f"{definition.handler_key!r} 的 InfusionDefinition"
+                )
+            infusion_definitions.append(definition)
 
     @staticmethod
     def _validate_payload_params(handler_key: str, params: dict[str, Any]) -> None:

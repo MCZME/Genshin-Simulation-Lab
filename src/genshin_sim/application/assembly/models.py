@@ -88,6 +88,13 @@ if TYPE_CHECKING:
     )
     from genshin_sim.core.systems.healing import HealingRequestHandler
     from genshin_sim.core.systems.health import HealthRuntime
+    from genshin_sim.core.systems.infusion import (
+        InfusionDamageElementAdapter,
+        InfusionDefinition,
+        InfusionImpactRequestHandler,
+        InfusionRuntime,
+        InfusionStore,
+    )
     from genshin_sim.core.systems.moonsign import MoonsignRuntime, MoonsignStore
     from genshin_sim.core.systems.movement import MovementRuntime
     from genshin_sim.core.systems.reaction import ReactionRuntime
@@ -136,6 +143,7 @@ class RuntimeContentBundle:
     modifiers: tuple[Modifier, ...]
     attribute_stacking_groups: tuple[ModifierStackingGroupDefinition, ...]
     buff_definitions: tuple[BuffDefinition, ...]
+    infusion_definitions: tuple[InfusionDefinition, ...]
     aura_icd_definitions: tuple[IcdDefinition, ...]
     cooldown_definitions: tuple[CooldownDefinition, ...]
     damage_modifier_providers: tuple[DamageModifierProvider, ...]
@@ -177,6 +185,11 @@ class AssembledSimulation:
     buff_resolver: BuffResolver
     buff_runtime: BuffRuntime
     buff_handler: BuffImpactRequestHandler
+    infusion_definitions: tuple[InfusionDefinition, ...]
+    infusion_store: InfusionStore
+    infusion_runtime: InfusionRuntime
+    infusion_handler: InfusionImpactRequestHandler
+    infusion_element_adapter: InfusionDamageElementAdapter
     shield_store: ShieldStore
     shield_resolver: ShieldResolver
     shield_runtime: ShieldRuntime

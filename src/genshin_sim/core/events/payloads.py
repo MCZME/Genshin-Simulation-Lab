@@ -30,6 +30,10 @@ if TYPE_CHECKING:
         CharacterHealthChangeResult,
         CharacterMaxHpReconcileResult,
     )
+    from genshin_sim.core.systems.infusion.models import (
+        InfusionApplicationResult,
+        InfusionRemovalResult,
+    )
     from genshin_sim.core.systems.reaction.models import (
         CapturedCrystallizeShieldBasis,
         CapturedTransformativeScalingBasis,
@@ -290,6 +294,26 @@ class BuffRemovedPayload:
     """Buff 实例已经离开活动状态的状态载荷。"""
 
     result: BuffRemovalResult
+
+    def to_dict(self) -> dict[str, object]:
+        return {"result": self.result.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class InfusionAppliedPayload:
+    """附魔/转化来源已创建、替换或刷新的状态载荷。"""
+
+    result: InfusionApplicationResult
+
+    def to_dict(self) -> dict[str, object]:
+        return {"result": self.result.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class InfusionRemovedPayload:
+    """附魔/转化来源已离开活动状态的状态载荷。"""
+
+    result: InfusionRemovalResult
 
     def to_dict(self) -> dict[str, object]:
         return {"result": self.result.to_dict()}

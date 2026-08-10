@@ -22,6 +22,8 @@ from genshin_sim.core.events.payloads import (
     EnergyPickupSettledPayload,
     EnergyPickupSpawnedPayload,
     HealingResolvedPayload,
+    InfusionAppliedPayload,
+    InfusionRemovedPayload,
     InputKeyReceivedPayload,
     InputSessionBoundaryPayload,
     MoonsignBonusAppliedPayload,
@@ -157,6 +159,14 @@ EVENT_SPECS: dict[EventType, EventSpec] = {
     EventType.BUFF_REMOVED: EventSpec(
         category=EventCategory.STATE_CHANGE,
         payload_type=BuffRemovedPayload,
+    ),
+    EventType.INFUSION_APPLIED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=InfusionAppliedPayload,
+    ),
+    EventType.INFUSION_REMOVED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=InfusionRemovedPayload,
     ),
     EventType.ENERGY_PICKUP_SPAWNED: EventSpec(
         category=EventCategory.STATE_CHANGE,

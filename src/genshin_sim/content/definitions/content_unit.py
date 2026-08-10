@@ -30,6 +30,7 @@ from genshin_sim.core.systems.damage import (
     DamageModifierProvider,
     DamageModifierStackingGroupDefinition,
 )
+from genshin_sim.core.systems.infusion import InfusionDefinition
 
 
 class ContentUnitError(Exception):
@@ -81,6 +82,7 @@ class ContentUnit:
         default_factory=tuple
     )
     buff_definitions: Sequence[BuffDefinition] = field(default_factory=tuple)
+    infusion_definitions: Sequence[InfusionDefinition] = field(default_factory=tuple)
     aura_icd_definitions: Sequence[IcdDefinition] = field(default_factory=tuple)
     cooldown_definitions: Sequence[CooldownDefinition] = field(default_factory=tuple)
     talent_level_boosts: Mapping[str, int] = field(default_factory=dict)
@@ -141,6 +143,18 @@ class ContentUnit:
             tuple(self.damage_modifier_stacking_groups),
         )
         object.__setattr__(self, "buff_definitions", tuple(self.buff_definitions))
+        object.__setattr__(
+            self,
+            "infusion_definitions",
+            tuple(self.infusion_definitions),
+        )
+        for definition in self.infusion_definitions:
+            if not isinstance(definition, InfusionDefinition):
+                raise ContentUnitValidationError(
+                    "infusion_definitions 成员必须是 InfusionDefinition"
+                )
+        if self.infusion_definitions and self.owner_type is not ContentUnitOwnerType.CHARACTER:
+            raise ContentUnitValidationError("只有角色内容单元可以贡献附魔定义")
         object.__setattr__(
             self,
             "aura_icd_definitions",

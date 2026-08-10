@@ -93,6 +93,7 @@ def test_assembler_builds_minimal_runtime_graph():
     assert assembled.space_runtime.created_object_runtime.behavior_keys == ()
     assert assembled.runtime_world.updatables == (
         assembled.buff_runtime,
+        assembled.infusion_runtime,
         assembled.shield_runtime,
         assembled.elemental_settlement_coordinator,
         assembled.cooldown_frame_adapter,

@@ -25,6 +25,8 @@ from genshin_sim.core.events import (
     EventType,
     GameEvent,
     HealingResolvedPayload,
+    InfusionAppliedPayload,
+    InfusionRemovedPayload,
     InputKeyReceivedPayload,
     InputSessionBoundaryPayload,
     MoonsignBonusAppliedPayload,
@@ -82,6 +84,8 @@ def test_event_type_defines_current_events():
         "DAMAGE_APPLIED",
         "BUFF_APPLIED",
         "BUFF_REMOVED",
+        "INFUSION_APPLIED",
+        "INFUSION_REMOVED",
         "ENERGY_PICKUP_SPAWNED",
         "ENERGY_PICKUP_SETTLED",
         "DIRECT_ENERGY_CHANGE_RESOLVED",
@@ -226,6 +230,8 @@ def test_event_specs_define_current_default_rules():
     assert damage_applied.payload_type is DamageAppliedPayload
     assert get_event_spec(EventType.BUFF_APPLIED).payload_type is BuffAppliedPayload
     assert get_event_spec(EventType.BUFF_REMOVED).payload_type is BuffRemovedPayload
+    assert get_event_spec(EventType.INFUSION_APPLIED).payload_type is InfusionAppliedPayload
+    assert get_event_spec(EventType.INFUSION_REMOVED).payload_type is InfusionRemovedPayload
     assert (
         get_event_spec(EventType.ENERGY_PICKUP_SPAWNED).payload_type is EnergyPickupSpawnedPayload
     )

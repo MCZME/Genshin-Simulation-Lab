@@ -10,6 +10,7 @@ from genshin_sim.core.actions import (
     CandidateTargetRef,
     SnapshotPolicy,
 )
+from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.impacts.dispatcher import ImpactDispatcher
 from genshin_sim.core.impacts.models import ActionImpactContext, ImpactKind, ImpactRequest
 from genshin_sim.core.protocols import FrameUpdatable
@@ -32,6 +33,12 @@ from genshin_sim.core.systems.energy import EnergyImpactRecord, EnergyImpactRequ
 from genshin_sim.core.systems.healing import (
     HealingImpactRecord,
     HealingImpactRequestHandler,
+)
+from genshin_sim.core.systems.infusion.handler import (
+    InfusionDamageElementAdapter,
+    InfusionElementResolutionRecord,
+    InfusionImpactRecord,
+    InfusionImpactRequestHandler,
 )
 from genshin_sim.core.systems.movement import MovementImpactRequestHandler
 from genshin_sim.core.systems.shield import ShieldGrantRecord, ShieldImpactRequestHandler
@@ -102,6 +109,8 @@ class ImpactRequestDispatcher:
         character_aura_handler: CharacterAuraImpactRequestHandler | None = None,
         energy_handler: EnergyImpactRequestHandler | None = None,
         movement_handler: MovementImpactRequestHandler | None = None,
+        infusion_handler: InfusionImpactRequestHandler | None = None,
+        infusion_element_adapter: InfusionDamageElementAdapter | None = None,
         elemental_settlement_coordinator: ElementalSettlementPort | None = None,
     ) -> None:
         self.damage_handler = damage_handler
@@ -111,6 +120,8 @@ class ImpactRequestDispatcher:
         self.character_aura_handler = character_aura_handler
         self.energy_handler = energy_handler
         self.movement_handler = movement_handler
+        self.infusion_handler = infusion_handler
+        self.infusion_element_adapter = infusion_element_adapter
         self.elemental_settlement_coordinator = elemental_settlement_coordinator
         self._created_object_records: list[CreatedObjectRecord] = []
         self._created_object_extension_records: list[CreatedObjectExtensionDispatchRecord] = []
@@ -166,10 +177,25 @@ class ImpactRequestDispatcher:
             return ()
         return self.energy_handler.records
 
+    @property
+    def infusion_records(self) -> tuple[InfusionImpactRecord, ...]:
+        if self.infusion_handler is None:
+            return ()
+        return self.infusion_handler.records
+
+    @property
+    def infusion_element_resolutions(self) -> tuple[InfusionElementResolutionRecord, ...]:
+        if self.infusion_element_adapter is None:
+            return ()
+        return self.infusion_element_adapter.records
+
     def dispatch_requests(self, context, requests: tuple[ImpactRequest, ...]) -> None:
         for request in requests:
             if request.kind is ImpactKind.DAMAGE:
                 self._handle_damage_request(context, request)
+                continue
+            if request.kind is ImpactKind.APPLY_INFUSION:
+                self._handle_apply_infusion_request(context, request)
                 continue
             if request.kind is ImpactKind.APPLY_AURA:
                 self._handle_apply_aura_request(context, request)
@@ -222,6 +248,23 @@ class ImpactRequestDispatcher:
                 )
             )
             return
+        if (
+            self.infusion_element_adapter is not None
+            and request.damage_spec is not None
+            and request.owner_slot is not None
+            and context.space_runtime is not None
+        ):
+            source = context.space_runtime.team_state.get_character(request.owner_slot)
+            if source is not None:
+                character_ref = AttributeSubjectRef.character(source.combat_entity_id)
+                resolved_spec, _ = self.infusion_element_adapter.apply(
+                    request.frame,
+                    character_ref,
+                    request.damage_spec,
+                    impact_key=request.impact_key,
+                    request_id=request.request_id,
+                )
+                request = replace(request, damage_spec=resolved_spec)
         if not request.target_refs:
             self._ignored_requests.append(
                 IgnoredImpactRecord(
@@ -246,6 +289,27 @@ class ImpactRequestDispatcher:
             self.elemental_settlement_coordinator.settle_damage_impact(context, request)
             return
         self.damage_handler.handle_impact_request(context, request)
+
+    def _handle_apply_infusion_request(self, context, request: ImpactRequest) -> None:
+        if self.infusion_handler is None:
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="附魔请求处理器尚未接入",
+                )
+            )
+            return
+        if not self.infusion_handler.has_infusion_contract(request):
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="附魔请求缺少结构化 params.infusion 契约",
+                )
+            )
+            return
+        self.infusion_handler.handle_impact_request(context, request)
 
     def _handle_apply_aura_request(self, context, request: ImpactRequest) -> None:
         if request.elemental_application_spec is None:
@@ -517,6 +581,14 @@ class ImpactRuntime(FrameUpdatable):
     @property
     def energy_records(self) -> tuple[EnergyImpactRecord, ...]:
         return self.request_dispatcher.energy_records
+
+    @property
+    def infusion_records(self) -> tuple[InfusionImpactRecord, ...]:
+        return self.request_dispatcher.infusion_records
+
+    @property
+    def infusion_element_resolutions(self) -> tuple[InfusionElementResolutionRecord, ...]:
+        return self.request_dispatcher.infusion_element_resolutions
 
     def update_frame(self, context, frame: int) -> None:
         if frame < 0:

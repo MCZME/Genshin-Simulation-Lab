@@ -5,7 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
-from genshin_sim.core.elements import ElementalSourceRef, ElementalSubjectRef
+from genshin_sim.core.elements import (
+    ElementalSourceRef,
+    ElementalSubjectKind,
+    ElementalSubjectRef,
+    aura_kind_for_element,
+)
 from genshin_sim.core.events import (
     AuraAppliedPayload,
     AuraIcdResolvedPayload,
@@ -13,7 +18,8 @@ from genshin_sim.core.events import (
     EventType,
     GameEvent,
 )
-from genshin_sim.core.systems.aura.models import AuraApplicationRequest
+from genshin_sim.core.systems.aura.models import AuraApplicationRequest, AuraDurationTerm
+from genshin_sim.core.systems.aura.ports import CharacterAuraDurationTermPort
 from genshin_sim.core.systems.aura.runtime import AuraRuntime
 from genshin_sim.core.systems.aura_icd import (
     AuraIcdAttackerRef,
@@ -45,10 +51,12 @@ class CharacterAuraImpactRequestHandler:
         aura_runtime: AuraRuntime,
         icd_runtime: AuraIcdRuntime,
         event_engine: EventEngine | None = None,
+        duration_term_port: CharacterAuraDurationTermPort | None = None,
     ) -> None:
         self.aura_runtime = aura_runtime
         self.icd_runtime = icd_runtime
         self.event_engine = event_engine
+        self.duration_term_port = duration_term_port
         self._records: list[CharacterAuraImpactRecord] = []
 
     @property
@@ -120,6 +128,7 @@ class CharacterAuraImpactRequestHandler:
                     base_strength=spec.elemental_strength,
                     application_coefficient=icd.coefficient,
                     effective_raw_amount=spec.elemental_amount,
+                    duration_terms=self._duration_terms(subject_ref, spec),
                 )
             )
         icd_plan = icd_planner.seal()
@@ -177,3 +186,17 @@ class CharacterAuraImpactRequestHandler:
             return None
         assert spec.icd_sequence_key is not None
         return IcdBinding(spec.icd_tag_key, spec.icd_sequence_key)
+
+    def _duration_terms(
+        self,
+        subject_ref: ElementalSubjectRef,
+        spec,
+    ) -> tuple[AuraDurationTerm, ...]:
+        if self.duration_term_port is None:
+            return ()
+        if subject_ref.kind is not ElementalSubjectKind.CHARACTER:
+            return ()
+        aura_kind = aura_kind_for_element(spec.element)
+        if aura_kind is None:
+            return ()
+        return tuple(self.duration_term_port.duration_terms_for(subject_ref, aura_kind))

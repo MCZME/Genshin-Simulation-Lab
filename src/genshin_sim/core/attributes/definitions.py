@@ -200,7 +200,6 @@ class AttributeDefinitionRegistry:
 def create_public_attribute_registry() -> AttributeDefinitionRegistry:
     owner_both = frozenset({AttributeSubjectKind.CHARACTER, AttributeSubjectKind.TARGET})
     character_only = frozenset({AttributeSubjectKind.CHARACTER})
-    target_only = frozenset({AttributeSubjectKind.TARGET})
     definitions: list[AttributeDefinition] = [
         AttributeDefinition(STAT_HP_BASE, owner_both, "base_sum"),
         AttributeDefinition(STAT_ATK_BASE, character_only, "base_sum"),
@@ -233,10 +232,8 @@ def create_public_attribute_registry() -> AttributeDefinitionRegistry:
         }
     )
     for key in additive_keys:
-        if key == RESISTANCE_DENDRO:
+        if str(key).startswith("resistance."):
             owners = owner_both
-        elif str(key).startswith("resistance."):
-            owners = target_only
         elif key == BONUS_SHIELD_STRENGTH:
             owners = character_only
         else:

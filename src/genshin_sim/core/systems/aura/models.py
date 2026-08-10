@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from fractions import Fraction
 
 from genshin_sim.core.elements import (
     AuraAmount,
@@ -18,7 +19,11 @@ from genshin_sim.core.systems.aura.enums import (
     AuraLossPolicy,
     AuraStrength,
 )
-from genshin_sim.core.systems.aura.profiles import AuraDecayProfile, profile_for
+from genshin_sim.core.systems.aura.profiles import (
+    AuraDecayProfile,
+    apply_aura_duration_terms,
+    profile_for,
+)
 
 
 def _text(value: str, name: str) -> None:
@@ -37,6 +42,21 @@ class AuraInstanceRef:
 
     def __post_init__(self) -> None:
         _text(self.value, "AuraInstanceRef")
+
+
+@dataclass(frozen=True, order=True, slots=True)
+class AuraDurationTerm:
+    """附着时长修正 term：对自然衰减档案的持续时间乘一个正倍率。"""
+
+    term_key: str
+    source_ref: str
+    multiplier: Fraction
+
+    def __post_init__(self) -> None:
+        _text(self.term_key, "term_key")
+        _text(self.source_ref, "source_ref")
+        if not isinstance(self.multiplier, Fraction) or self.multiplier <= 0:
+            raise ValueError("AuraDurationTerm multiplier 必须是正有理数")
 
 
 @dataclass(frozen=True, order=True, slots=True)
@@ -277,6 +297,7 @@ class AuraApplicationRequest:
     loss_policy: AuraLossPolicy = AuraLossPolicy.STANDARD_20_PERCENT
     effective_raw_amount: AuraAmount | None = None
     decay_profile: AuraDecayProfile | None = None
+    duration_terms: tuple[AuraDurationTerm, ...] = ()
 
     def __post_init__(self) -> None:
         _text(self.request_id, "request_id")
@@ -298,10 +319,17 @@ class AuraApplicationRequest:
                 raise ValueError("decay_profile 必须是 AuraDecayProfile 或 None")
             if self.effective_raw_amount != self.decay_profile.raw_amount:
                 raise ValueError("decay_profile 必须与 effective_raw_amount 使用同一原始元素量")
+        terms = tuple(self.duration_terms)
+        if any(not isinstance(term, AuraDurationTerm) for term in terms):
+            raise ValueError("duration_terms 必须是 AuraDurationTerm 序列")
+        object.__setattr__(self, "duration_terms", terms)
 
     @property
     def resolved_decay_profile(self) -> AuraDecayProfile:
-        return self.decay_profile or profile_for(self.base_strength)
+        profile = self.decay_profile or profile_for(self.base_strength)
+        if not self.duration_terms:
+            return profile
+        return apply_aura_duration_terms(profile, self.duration_terms)
 
 
 @dataclass(frozen=True, slots=True)

@@ -647,7 +647,7 @@ class AuraBatchPlanner:
                 request.frame,
                 request.frame,
                 request.frame,
-                decay_profile=request.decay_profile,
+                decay_profile=_stored_decay_profile(request),
             )
             return (
                 AuraApplicationResult(
@@ -687,7 +687,9 @@ class AuraBatchPlanner:
             component,
             contributions=tuple(contributions),
             decay_strength=(request.base_strength if profile_changed else component.decay_strength),
-            decay_profile=(request.decay_profile if profile_changed else component.decay_profile),
+            decay_profile=(
+                _stored_decay_profile(request) if profile_changed else component.decay_profile
+            ),
             decay_origin=request.source_ref if profile_changed else component.decay_origin,
             last_applied_frame=request.frame,
             last_changed_frame=(
@@ -950,3 +952,15 @@ def _can_add_ordinary_aura(record: AuraTargetRecord, aura_kind: AuraKind) -> boo
         frozenset({AuraKind.DENDRO, AuraKind.QUICKEN, AuraKind.PYRO}),
         frozenset({AuraKind.BURNING, AuraKind.DENDRO, AuraKind.PYRO}),
     }
+
+
+def _stored_decay_profile(request: AuraApplicationRequest):
+    """返回应写入 Component 的衰减档案。
+
+    携带时长修正 term 时，缩放后的档案必须显式保存，否则标准强度
+    Component 会通过 ``resolved_decay_profile`` 回退到未缩放档案。
+    """
+
+    if request.duration_terms:
+        return request.resolved_decay_profile
+    return request.decay_profile

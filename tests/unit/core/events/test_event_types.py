@@ -4,6 +4,7 @@ from genshin_sim.core.attributes import STAT_HP_MAX, AttributeSubjectRef
 from genshin_sim.core.events import (
     EVENT_CATEGORY_SPECS,
     EVENT_SPECS,
+    ActionStartedPayload,
     AuraAppliedPayload,
     AuraIcdResolvedPayload,
     AuraInteractionResolvedPayload,
@@ -26,8 +27,12 @@ from genshin_sim.core.events import (
     HealingResolvedPayload,
     InputKeyReceivedPayload,
     InputSessionBoundaryPayload,
+    MoonsignBonusAppliedPayload,
+    MoonsignBonusExpiredPayload,
+    MoonsignLevelSetPayload,
     ReactionOccurredPayload,
     ReactionStateChangedPayload,
+    ResonanceActivatedPayload,
     ShieldAbsorptionResolvedPayload,
     ShieldCapacityChangedPayload,
     ShieldGrantedPayload,
@@ -90,6 +95,11 @@ def test_event_type_defines_current_events():
         "ELEMENTAL_INTERACTION_RESOLVED",
         "MOVEMENT_COLLIDED",
         "MOVEMENT_LANDED",
+        "RESONANCE_ACTIVATED",
+        "ACTION_STARTED",
+        "MOONSIGN_LEVEL_SET",
+        "MOONSIGN_BONUS_APPLIED",
+        "MOONSIGN_BONUS_EXPIRED",
     ]
 
 
@@ -244,10 +254,49 @@ def test_event_specs_define_current_default_rules():
         get_event_spec(EventType.ELEMENTAL_INTERACTION_RESOLVED).payload_type
         is ElementalInteractionResolvedPayload
     )
+    assert get_event_spec(EventType.RESONANCE_ACTIVATED).payload_type is (ResonanceActivatedPayload)
+    assert get_event_spec(EventType.ACTION_STARTED).payload_type is ActionStartedPayload
+    assert get_event_spec(EventType.MOONSIGN_LEVEL_SET).payload_type is MoonsignLevelSetPayload
+    assert (
+        get_event_spec(EventType.MOONSIGN_BONUS_APPLIED).payload_type is MoonsignBonusAppliedPayload
+    )
+    assert (
+        get_event_spec(EventType.MOONSIGN_BONUS_EXPIRED).payload_type is MoonsignBonusExpiredPayload
+    )
 
 
 def test_event_payloads_convert_to_serializable_dicts():
     assert EmptyPayload().to_dict() == {}
+    assert ResonanceActivatedPayload(
+        active_keys=("resonance.pyro",),
+        team_size=4,
+        established_frame=0,
+    ).to_dict() == {
+        "active_keys": ("resonance.pyro",),
+        "team_size": 4,
+        "established_frame": 0,
+    }
+    assert ActionStartedPayload(
+        instance_id=1,
+        frame=5,
+        action_key="character.test.skill",
+        owner_slot=1,
+        ability_key="elemental_skill",
+    ).to_dict() == {
+        "instance_id": 1,
+        "frame": 5,
+        "action_key": "character.test.skill",
+        "owner_slot": 1,
+        "ability_key": "elemental_skill",
+    }
+    assert MoonsignLevelSetPayload(
+        level="ascendant",
+        moonsign_character_refs=("character:slot_1",),
+    ).to_dict() == {
+        "level": "ascendant",
+        "moonsign_character_refs": ("character:slot_1",),
+        "established_frame": 0,
+    }
     assert SimulationEndedPayload(
         stop_reason="COMPLETED",
         end_frame=12,

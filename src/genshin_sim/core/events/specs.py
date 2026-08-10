@@ -4,6 +4,7 @@ from dataclasses import dataclass
 
 from genshin_sim.core.events.categories import EventCategory, get_event_category_spec
 from genshin_sim.core.events.payloads import (
+    ActionStartedPayload,
     AuraAppliedPayload,
     AuraDepletedPayload,
     AuraIcdResolvedPayload,
@@ -23,10 +24,14 @@ from genshin_sim.core.events.payloads import (
     HealingResolvedPayload,
     InputKeyReceivedPayload,
     InputSessionBoundaryPayload,
+    MoonsignBonusAppliedPayload,
+    MoonsignBonusExpiredPayload,
+    MoonsignLevelSetPayload,
     MovementCollidedPayload,
     MovementLandedPayload,
     ReactionOccurredPayload,
     ReactionStateChangedPayload,
+    ResonanceActivatedPayload,
     ShieldAbsorptionResolvedPayload,
     ShieldCapacityChangedPayload,
     ShieldGrantedPayload,
@@ -204,6 +209,26 @@ EVENT_SPECS: dict[EventType, EventSpec] = {
     EventType.MOVEMENT_LANDED: EventSpec(
         category=EventCategory.FACT,
         payload_type=MovementLandedPayload,
+    ),
+    EventType.RESONANCE_ACTIVATED: EventSpec(
+        category=EventCategory.FACT,
+        payload_type=ResonanceActivatedPayload,
+    ),
+    EventType.ACTION_STARTED: EventSpec(
+        category=EventCategory.FACT,
+        payload_type=ActionStartedPayload,
+    ),
+    EventType.MOONSIGN_LEVEL_SET: EventSpec(
+        category=EventCategory.FACT,
+        payload_type=MoonsignLevelSetPayload,
+    ),
+    EventType.MOONSIGN_BONUS_APPLIED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=MoonsignBonusAppliedPayload,
+    ),
+    EventType.MOONSIGN_BONUS_EXPIRED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=MoonsignBonusExpiredPayload,
     ),
 }
 

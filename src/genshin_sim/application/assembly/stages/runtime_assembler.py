@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from genshin_sim.application.assembly.attributes import (
     AttributeRuntimeBundle,
     build_attribute_runtime,
@@ -18,10 +20,21 @@ from genshin_sim.application.assembly.models import (
     RuntimeContentBundle,
     energy_element_from_asset,
 )
+from genshin_sim.application.assembly.moonsign import build_moonsign_bundle
 from genshin_sim.application.assembly.reaction_capabilities import (
     build_static_reaction_eligibility_port,
 )
+from genshin_sim.application.assembly.resonance import build_resonance_bundle
 from genshin_sim.application.config import SimulationConfig, TeamSlotConfig
+from genshin_sim.content import (
+    DENDRO_EM_20_TRIGGER_KEYS,
+    DENDRO_EM_30_TRIGGER_KEYS,
+    ELECTRO_PARTICLE_TRIGGER_KEYS,
+    RESONANCE_DENDRO_EM_20_BUFF_KEY,
+    RESONANCE_DENDRO_EM_30_BUFF_KEY,
+    RESONANCE_GEO_RES_SHRED_BUFF_KEY,
+    create_resonance_buff_definitions,
+)
 from genshin_sim.content.hooks import HookDispatcher, build_hook_unlock_specs
 from genshin_sim.content.state_container import StatePatchIntentHandler
 from genshin_sim.core.actions import (
@@ -32,6 +45,7 @@ from genshin_sim.core.actions import (
     TeamActionInterpreter,
     TeamInterpreterSelector,
     TeamSwitchAction,
+    TimedImpactAction,
 )
 from genshin_sim.core.attributes import (
     STAT_HP_MAX,
@@ -69,6 +83,7 @@ from genshin_sim.core.coordination.elemental_reaction.status import (
     ReactionStatusBuffAdapter,
     superconduct_buff_definition,
 )
+from genshin_sim.core.coordination.resonance_reaction import ResonanceReactionStage
 from genshin_sim.core.entity_states import (
     CharacterRuntimeState,
     ContentStateMount,
@@ -184,6 +199,7 @@ from genshin_sim.core.systems.reaction.mechanics.swirl import (
     swirl_aura_application_profile,
     swirl_damage_profile,
 )
+from genshin_sim.core.systems.resonance import ResonanceRuntime
 from genshin_sim.core.systems.shield import (
     ShieldImpactRequestHandler,
     ShieldResolver,
@@ -236,12 +252,18 @@ class RuntimeAssembler:
             content_bundle.content_units
         )
         buff_registry = build_buff_definition_registry(
-            (*content_bundle.buff_definitions, superconduct_buff_definition())
+            (
+                *content_bundle.buff_definitions,
+                superconduct_buff_definition(),
+                *create_resonance_buff_definitions(),
+            )
         )
+        resonance_bundle = build_resonance_bundle(assets)
         attribute_runtime_without_buffs = build_attribute_runtime(
             config=config,
             assets=assets,
             content_units=content_bundle.content_units,
+            extra_providers=resonance_bundle.static_providers,
         )
         buff_store = BuffStore()
         validate_buff_definitions_for_assembly(
@@ -255,7 +277,10 @@ class RuntimeAssembler:
                 config=config,
                 assets=assets,
                 content_units=content_bundle.content_units,
-                extra_providers=buff_attribute_providers,
+                extra_providers=(
+                    *resonance_bundle.static_providers,
+                    *buff_attribute_providers,
+                ),
             )
             if buff_attribute_providers
             else attribute_runtime_without_buffs
@@ -263,6 +288,15 @@ class RuntimeAssembler:
 
         context = SimulationContext()
         context.register_system(attribute_runtime.resolver)
+        resonance_runtime = ResonanceRuntime(resonance_bundle.store, context.events)
+        context.register_system(resonance_runtime)
+        moonsign_bundle = build_moonsign_bundle(
+            content_units=content_bundle.content_units,
+            assets=assets,
+            attribute_resolver=attribute_runtime.resolver,
+            event_engine=context.events,
+        )
+        context.register_system(moonsign_bundle.runtime)
         mounts_by_owner: dict[str, dict[str, ContentStateMount]] = {}
         for mount in content_bundle.content_state_mounts:
             mounts_by_owner.setdefault(mount.owner, {})[mount.state_key] = mount
@@ -401,7 +435,17 @@ class RuntimeAssembler:
         self._validate_input_interpreters(input_trace, config.team, content_bundle)
 
         try:
-            action_registry = ActionRegistry((TeamSwitchAction(), *content_bundle.actions))
+            resonance_actions = tuple(
+                replace(
+                    action,
+                    cooldown_duration_term_port=(resonance_bundle.cooldown_duration_term_provider),
+                )
+                if isinstance(action, TimedImpactAction)
+                and resonance_bundle.cooldown_duration_term_provider is not None
+                else action
+                for action in content_bundle.actions
+            )
+            action_registry = ActionRegistry((TeamSwitchAction(), *resonance_actions))
         except ValueError as exc:
             raise InvalidRuntimePayloadError(str(exc)) from exc
         self._validate_action_bindings(content_bundle, action_registry)
@@ -415,7 +459,7 @@ class RuntimeAssembler:
         impact_dispatcher = ImpactDispatcher(content_bundle.impact_factories)
         try:
             damage_modifier_index = DamageModifierIndex(
-                content_bundle.damage_modifier_providers,
+                (*content_bundle.damage_modifier_providers, *resonance_bundle.damage_providers),
                 content_bundle.damage_modifier_stacking_groups,
             )
             damage_handler = DamageRequestHandler(
@@ -542,10 +586,17 @@ class RuntimeAssembler:
             aura_runtime,
             aura_icd_runtime,
             context.events,
+            duration_term_port=resonance_bundle.aura_duration_term_provider,
         )
         context.register_system(character_aura_handler)
         reaction_bootstrap = create_default_reaction_bootstrap()
         reaction_runtime = reaction_bootstrap.create_runtime()
+        resonance_shield_port, resonance_lunar_cage_port = resonance_bundle.bind_runtime_ports(
+            aura_runtime=aura_runtime,
+            reaction_runtime=reaction_runtime,
+            shield_runtime=shield_runtime,
+            team_state=team_state,
+        )
         reaction_spatial_planning_port = ReactionSpatialPlanningAdapter(space)
         crystallize_shard_pickup_coordinator = CrystallizeShardPickupCoordinator(
             reaction_state_port=reaction_runtime,
@@ -607,6 +658,7 @@ class RuntimeAssembler:
             ),
             bloom_core_trigger_coordinator=bloom_core_trigger_coordinator,
             character_damage_taken_coordinator=character_damage_taken_coordinator,
+            lunar_damage_bonus_port=moonsign_bundle.runtime,
             aura_application_profile_registry=AuraApplicationProfileRegistry(
                 (
                     swirl_aura_application_profile(),
@@ -668,6 +720,20 @@ class RuntimeAssembler:
             IntentKind.STATE_PATCH,
             StatePatchIntentHandler(team_state),
         )
+        resonance_reaction_stage = ResonanceReactionStage(
+            resonance_runtime=resonance_runtime,
+            intent_queue=intent_queue,
+            team_slots=tuple(character.slot for character in team_state.characters),
+            electro_particle_triggers=ELECTRO_PARTICLE_TRIGGER_KEYS,
+            dendro_em_30_triggers=DENDRO_EM_30_TRIGGER_KEYS,
+            dendro_em_20_triggers=DENDRO_EM_20_TRIGGER_KEYS,
+            dendro_em_30_definition_key=RESONANCE_DENDRO_EM_30_BUFF_KEY,
+            dendro_em_20_definition_key=RESONANCE_DENDRO_EM_20_BUFF_KEY,
+            geo_res_shred_definition_key=RESONANCE_GEO_RES_SHRED_BUFF_KEY,
+            shield_presence_port=resonance_shield_port,
+            lunar_cage_presence_port=resonance_lunar_cage_port,
+        )
+        context.register_system(resonance_reaction_stage)
         snapshot_runtime = SnapshotRuntime()
         snapshot_runtime.register(
             "energy",
@@ -680,6 +746,14 @@ class RuntimeAssembler:
         snapshot_runtime.register(
             "content_state",
             lambda frame: _content_state_snapshots(team_state, frame),
+        )
+        snapshot_runtime.register(
+            "resonance",
+            lambda frame: resonance_runtime.snapshot(frame).to_dict(),
+        )
+        snapshot_runtime.register(
+            "moonsign",
+            lambda frame: moonsign_bundle.runtime.snapshot(frame).to_dict(),
         )
         hook_dispatcher = HookDispatcher(
             content_bundle.event_hooks,
@@ -702,10 +776,17 @@ class RuntimeAssembler:
         cooldown_frame_adapter = _CooldownFrameAdapter(cooldown_runtime)
         runtime_world.add(FramePhase.TIME_ADVANCE, "cooldown", cooldown_frame_adapter)
         runtime_world.add(FramePhase.TIME_ADVANCE, "movement", movement_runtime)
+        runtime_world.add(FramePhase.TIME_ADVANCE, "resonance", resonance_runtime)
         runtime_world.add(FramePhase.ACTION_ADVANCE, "action_manager", action_manager)
         runtime_world.add(FramePhase.SETTLEMENT, "impact", impact_runtime)
         runtime_world.add(FramePhase.SETTLEMENT, "energy", energy_runtime)
         runtime_world.add(FramePhase.SETTLEMENT, "space", space_runtime)
+        runtime_world.add(FramePhase.FACT_RESPONSE, "moonsign", moonsign_bundle.runtime)
+        runtime_world.add(
+            FramePhase.FACT_RESPONSE,
+            "resonance_reactions",
+            resonance_reaction_stage,
+        )
         runtime_world.add(FramePhase.FACT_RESPONSE, "content_hooks", hook_dispatcher)
         simulator = Simulator(
             context,
@@ -756,6 +837,11 @@ class RuntimeAssembler:
             hook_dispatcher=hook_dispatcher,
             reaction_eligibility_port=reaction_eligibility_port,
             attribute_runtime=attribute_runtime,
+            resonance_store=resonance_bundle.store,
+            resonance_runtime=resonance_runtime,
+            resonance_reaction_stage=resonance_reaction_stage,
+            moonsign_store=moonsign_bundle.store,
+            moonsign_runtime=moonsign_bundle.runtime,
             intent_queue=intent_queue,
             settlement_runtime=settlement_runtime,
             snapshot_runtime=snapshot_runtime,

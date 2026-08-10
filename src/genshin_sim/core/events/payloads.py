@@ -366,6 +366,92 @@ class MovementLandedPayload:
 
 
 @dataclass(frozen=True, slots=True)
+class ResonanceActivatedPayload:
+    """元素共鸣激活集合已确定的一次性事实载荷。"""
+
+    active_keys: tuple[str, ...]
+    team_size: int
+    established_frame: int = 0
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "active_keys": tuple(self.active_keys),
+            "team_size": self.team_size,
+            "established_frame": self.established_frame,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ActionStartedPayload:
+    """一次动作实例已经开始运行的事实载荷。"""
+
+    instance_id: int
+    frame: int
+    action_key: str
+    owner_slot: int | None = None
+    ability_key: str | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "instance_id": self.instance_id,
+            "frame": self.frame,
+            "action_key": self.action_key,
+            "owner_slot": self.owner_slot,
+            "ability_key": self.ability_key,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MoonsignLevelSetPayload:
+    """月兆等级与月兆角色集合已确定的事实载荷。"""
+
+    level: str
+    moonsign_character_refs: tuple[str, ...]
+    established_frame: int = 0
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "level": self.level,
+            "moonsign_character_refs": tuple(self.moonsign_character_refs),
+            "established_frame": self.established_frame,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MoonsignBonusAppliedPayload:
+    """非月兆角色施放 E/Q 后覆盖式应用的月曜增伤事实载荷。"""
+
+    frame: int
+    source_ref: str
+    value: float
+    expires_at_frame: int
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "frame": self.frame,
+            "source_ref": self.source_ref,
+            "value": self.value,
+            "expires_at_frame": self.expires_at_frame,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MoonsignBonusExpiredPayload:
+    """非月兆月曜增伤到期清除的事实载荷。"""
+
+    frame: int
+    source_ref: str | None
+    value: float
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "frame": self.frame,
+            "source_ref": self.source_ref,
+            "value": self.value,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class AuraInteractionResolvedPayload:
     """Reaction 驱动的 Aura 元素量变化已提交的事实载荷。"""
 

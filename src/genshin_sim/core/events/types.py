@@ -36,3 +36,8 @@ class EventType(Enum):
     ELEMENTAL_INTERACTION_RESOLVED = auto()
     MOVEMENT_COLLIDED = auto()
     MOVEMENT_LANDED = auto()
+    RESONANCE_ACTIVATED = auto()
+    ACTION_STARTED = auto()
+    MOONSIGN_LEVEL_SET = auto()
+    MOONSIGN_BONUS_APPLIED = auto()
+    MOONSIGN_BONUS_EXPIRED = auto()

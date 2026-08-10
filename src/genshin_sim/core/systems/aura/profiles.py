@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from fractions import Fraction
+from typing import TYPE_CHECKING
 
 from genshin_sim.core.elements import AuraAmount
 from genshin_sim.core.systems.aura.enums import (
@@ -11,6 +12,9 @@ from genshin_sim.core.systems.aura.enums import (
     AuraLossPolicy,
     AuraStrength,
 )
+
+if TYPE_CHECKING:
+    from genshin_sim.core.systems.aura.models import AuraDurationTerm
 
 FRAMES_PER_SECOND = 60
 
@@ -117,6 +121,30 @@ def regular_application_decay_profile(
         raw_amount=raw_amount,
         attached_amount=attached,
         decay_per_second=attached / regular_application_duration(raw_amount),
+    )
+
+
+def apply_aura_duration_terms(
+    profile: AuraDecayProfile,
+    terms: tuple[AuraDurationTerm, ...],
+) -> AuraDecayProfile:
+    """按正倍率缩放自然衰减档案的持续时间。
+
+    附着量不变，持续时间按各 term 倍率的乘积缩放，衰减率相应提高，
+    保证 ``decay_for_frames(duration * multiplier)`` 恰好衰减到零。
+    """
+
+    if not terms:
+        return profile
+    multiplier = Fraction(1)
+    for term in terms:
+        multiplier *= term.multiplier
+    base_duration = profile.attached_amount / profile.decay_per_second
+    return AuraDecayProfile(
+        strength=profile.strength,
+        raw_amount=profile.raw_amount,
+        attached_amount=profile.attached_amount,
+        decay_per_second=profile.attached_amount / (base_duration * multiplier),
     )
 
 

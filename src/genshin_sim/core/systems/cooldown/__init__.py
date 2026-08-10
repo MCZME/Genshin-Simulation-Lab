@@ -3,6 +3,7 @@
 from genshin_sim.core.systems.cooldown.enums import *  # noqa: F403
 from genshin_sim.core.systems.cooldown.errors import *  # noqa: F403
 from genshin_sim.core.systems.cooldown.models import *  # noqa: F403
+from genshin_sim.core.systems.cooldown.ports import CooldownDurationTermPort
 from genshin_sim.core.systems.cooldown.resolver import CooldownDurationResolver
 from genshin_sim.core.systems.cooldown.runtime import CooldownConditionReadPort, CooldownRuntime
 from genshin_sim.core.systems.cooldown.snapshots import CooldownRecordSnapshot, CooldownSnapshot
@@ -10,6 +11,7 @@ from genshin_sim.core.systems.cooldown.store import CooldownDefinitionRegistry, 
 
 __all__ = [
     "CooldownConditionReadPort",
+    "CooldownDurationTermPort",
     "CooldownDefinitionRegistry",
     "CooldownDurationResolver",
     "CooldownRecordSnapshot",

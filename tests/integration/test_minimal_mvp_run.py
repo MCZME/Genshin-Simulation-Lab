@@ -42,10 +42,13 @@ def test_cli_run_persists_minimal_config_to_result_database(
     assert detail.summary.end_frame == 3
     assert event_types == [
         "SIMULATION_STARTED",
+        "RESONANCE_ACTIVATED",
         "INPUT_KEY_RECEIVED",
         "INPUT_SESSION_BOUNDARY_REACHED",
+        "MOONSIGN_LEVEL_SET",
         "INPUT_KEY_RECEIVED",
         "INPUT_SESSION_BOUNDARY_REACHED",
+        "ACTION_STARTED",
         "AURA_ICD_RESOLVED",
         "AURA_APPLIED",
         "DAMAGE_RESOLVED",
@@ -53,21 +56,27 @@ def test_cli_run_persists_minimal_config_to_result_database(
         "SIMULATION_ENDED",
     ]
     assert detail.events[1].data == {
+        "active_keys": [],
+        "team_size": 1,
+        "established_frame": 0,
+    }
+    assert detail.events[2].data == {
         "key": "keyboard.e",
         "phase": "press",
         "order": 0,
         "session_id": 1,
     }
-    assert detail.events[2].data["will_interpret"] is True
-    assert detail.events[3].data == {
+    assert detail.events[3].data["will_interpret"] is True
+    assert detail.events[5].data == {
         "key": "keyboard.e",
         "phase": "release",
         "order": 0,
         "session_id": 1,
     }
-    assert detail.events[4].data["held_frames"] == 1
-    assert detail.events[7].data["result"]["final_damage"] > 0
-    assert detail.events[9].data == {
+    assert detail.events[6].data["held_frames"] == 1
+    assert detail.events[7].data["action_key"] == "character.testing.runtime_probe.action"
+    assert detail.events[10].data["result"]["final_damage"] > 0
+    assert detail.events[12].data == {
         "stop_reason": "COMPLETED",
         "end_frame": 3,
         "frames_run": 3,

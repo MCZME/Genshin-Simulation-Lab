@@ -37,6 +37,7 @@ from genshin_sim.core.coordination.character_ability_condition.protocols import 
     CharacterAbilityConditionPort,
 )
 from genshin_sim.core.events import (
+    ActionStartedPayload,
     EventType,
     GameEvent,
     InputKeyReceivedPayload,
@@ -467,8 +468,29 @@ class ActionManager(FrameUpdatable):
     ) -> None:
         instance.lifecycle = ActionLifecycle.RUNNING
         self._started_this_frame.add(instance.instance_id)
+        context.events.publish(
+            GameEvent(
+                EventType.ACTION_STARTED,
+                frame,
+                ActionStartedPayload(
+                    instance_id=instance.instance_id,
+                    frame=frame,
+                    action_key=instance.action_key,
+                    owner_slot=instance.owner.slot,
+                    ability_key=self._ability_key(instance.action),
+                ),
+                self,
+            )
+        )
         result = instance.action.on_start(self._execution_context(context, instance, frame))
         self._apply_execution_result(context, instance, result, frame)
+
+    @staticmethod
+    def _ability_key(action) -> str | None:
+        key = getattr(action, "cooldown_ability_key", None)
+        if key in {"elemental_skill", "elemental_burst"}:
+            return key
+        return None
 
     def _update_running_instances(self, context: SimulationContext, frame: int) -> None:
         for instance in tuple(self._instances):

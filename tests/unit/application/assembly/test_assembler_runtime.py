@@ -97,12 +97,19 @@ def test_assembler_builds_minimal_runtime_graph():
         assembled.elemental_settlement_coordinator,
         assembled.cooldown_frame_adapter,
         assembled.movement_runtime,
+        assembled.resonance_runtime,
         assembled.action_manager,
         assembled.impact_runtime,
         assembled.energy_runtime,
         assembled.space_runtime,
+        assembled.moonsign_runtime,
+        assembled.resonance_reaction_stage,
         assembled.hook_dispatcher,
     )
+    assert assembled.resonance_store.active_keys == ()
+    assert assembled.resonance_runtime.store is assembled.resonance_store
+    assert assembled.moonsign_runtime.store is assembled.moonsign_store
+    assert assembled.moonsign_runtime.level.value == "none"
 
 
 def test_assembler_matches_energy_profiles_by_slot_not_team_input_order():

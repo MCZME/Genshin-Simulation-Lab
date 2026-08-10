@@ -27,6 +27,7 @@ from genshin_sim.core.actions.models import (
 from genshin_sim.core.space.space import ACTIVE_CHARACTER_ENTITY_ID
 from genshin_sim.core.systems.cooldown import (
     CooldownDurationTerm,
+    CooldownDurationTermPort,
     CooldownKey,
     CooldownRuntime,
     CooldownSubjectRef,
@@ -56,6 +57,7 @@ class TimedImpactAction:
     cooldown_start_frame: int | None = None
     cooldown_ability_key: str | None = None
     cooldown_duration_terms: tuple[CooldownDurationTerm, ...] = ()
+    cooldown_duration_term_port: CooldownDurationTermPort | None = None
     admission_policy: ActionAdmissionPolicy = field(default_factory=ActionAdmissionPolicy)
 
     def __post_init__(self) -> None:
@@ -140,15 +142,19 @@ class TimedImpactAction:
             msg = f"缺少 CooldownRuntime，无法开始 {self.action_key} 冷却"
             raise RuntimeError(msg)
         frame = context.start_frame + self.cooldown_start_frame
+        key = CooldownKey(
+            CooldownSubjectRef.character(f"character:slot_{context.owner.slot}"),
+            self.cooldown_ability_key,
+        )
+        duration_terms = self.cooldown_duration_terms
+        if self.cooldown_duration_term_port is not None:
+            duration_terms = (*duration_terms, *self.cooldown_duration_term_port.terms_for(key))
         request = StartCooldownRequest(
             request_id=(f"cooldown:{context.instance_id}:{self.cooldown_ability_key}:{frame}"),
-            key=CooldownKey(
-                CooldownSubjectRef.character(f"character:slot_{context.owner.slot}"),
-                self.cooldown_ability_key,
-            ),
+            key=key,
             frame=frame,
             source_ref=f"action:{self.action_key}",
-            duration_terms=self.cooldown_duration_terms,
+            duration_terms=duration_terms,
         )
         runtime.start(request)
 

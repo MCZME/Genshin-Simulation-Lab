@@ -43,6 +43,7 @@ if TYPE_CHECKING:
         ElementalStateFrameCoordinator,
         ReactionEligibilityReadPort,
     )
+    from genshin_sim.core.coordination.resonance_reaction import ResonanceReactionStage
     from genshin_sim.core.entity_states.content_state import ContentStateMount
     from genshin_sim.core.impacts import (
         ImpactDispatcher,
@@ -87,8 +88,10 @@ if TYPE_CHECKING:
     )
     from genshin_sim.core.systems.healing import HealingRequestHandler
     from genshin_sim.core.systems.health import HealthRuntime
+    from genshin_sim.core.systems.moonsign import MoonsignRuntime, MoonsignStore
     from genshin_sim.core.systems.movement import MovementRuntime
     from genshin_sim.core.systems.reaction import ReactionRuntime
+    from genshin_sim.core.systems.resonance import ResonanceRuntime, ResonanceStore
     from genshin_sim.core.systems.shield import (
         ShieldImpactRequestHandler,
         ShieldResolver,
@@ -185,6 +188,11 @@ class AssembledSimulation:
     hook_dispatcher: HookDispatcher
     reaction_eligibility_port: ReactionEligibilityReadPort
     attribute_runtime: AttributeRuntimeBundle
+    resonance_store: ResonanceStore
+    resonance_runtime: ResonanceRuntime
+    resonance_reaction_stage: ResonanceReactionStage
+    moonsign_store: MoonsignStore
+    moonsign_runtime: MoonsignRuntime
     intent_queue: IntentQueue
     settlement_runtime: IntentSettlementRuntime
     snapshot_runtime: SnapshotRuntime

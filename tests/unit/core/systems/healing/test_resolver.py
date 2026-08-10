@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from genshin_sim.core.attributes import (
     BONUS_HEALING_INCOMING,
     BONUS_HEALING_OUTGOING,
-    RESISTANCE_HYDRO,
     STAT_ATK_BASE,
     STAT_ATK_TOTAL,
     STAT_HP_BASE,
@@ -17,6 +18,7 @@ from genshin_sim.core.attributes import (
     ModifierProviderIndex,
     RuntimeSourceKind,
     RuntimeSourceRef,
+    UnsupportedOwnerError,
     create_public_attribute_registry,
 )
 from genshin_sim.core.systems.healing import (
@@ -211,9 +213,17 @@ def test_resolver_does_not_round_formula_result():
 
 
 def test_resolver_wraps_attribute_owner_errors_as_healing_attribute_errors():
-    resolver = HealingResolver(_attribute_resolver())
+    # 属性契约已允许角色查询 resistance.*，原来的 owner 错误场景不复存在；
+    # 用受控失败的 resolver 继续锁定“属性系统错误转换为治疗属性错误”的包装行为。
+    class _FailingResolver:
+        def new_session(self) -> object:
+            return object()
 
-    with pytest.raises(InvalidHealingAttributeError):
-        resolver.resolve(
-            _request(scaling_terms=(HealingScalingTerm("bad_resistance", RESISTANCE_HYDRO, 1),))
-        )
+        def resolve(self, query: object, *, options: object, session: object) -> object:
+            del options, session
+            raise UnsupportedOwnerError(f"owner error for {query}")
+
+    resolver = HealingResolver(cast(Any, _FailingResolver()))
+
+    with pytest.raises(InvalidHealingAttributeError, match="无法解析治疗属性"):
+        resolver.resolve(_request())

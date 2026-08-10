@@ -29,10 +29,13 @@ from genshin_sim.infrastructure.assets_project_amber import (
 )
 from genshin_sim.infrastructure.assets_sqlite import (
     SQLiteAssetRepository,
+    apply_handler_binding_to_manifest,
     audit_asset_manifest,
     build_asset_database_from_manifest,
     init_asset_database,
+    sync_asset_manifest_handler_bindings,
     validate_asset_database,
+    validate_handler_binding_in_manifest,
     write_minimal_static_asset_database,
 )
 from genshin_sim.infrastructure.logging import (
@@ -249,6 +252,13 @@ def _add_assets_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     set_handler_parser.add_argument("--key", required=True)
     set_handler_parser.add_argument("--handler-key", required=True)
     set_handler_parser.add_argument("--pieces", type=int)
+    set_handler_parser.add_argument(
+        "--manifest",
+        action="append",
+        type=Path,
+        default=[],
+        help="同时写回指定资产 manifest，可重复传入。",
+    )
     set_handler_parser.set_defaults(handler=_cmd_assets_set_handler)
 
     reset_handler_parser = assets_subparsers.add_parser(
@@ -263,6 +273,13 @@ def _add_assets_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     )
     reset_handler_parser.add_argument("--key", required=True)
     reset_handler_parser.add_argument("--pieces", type=int)
+    reset_handler_parser.add_argument(
+        "--manifest",
+        action="append",
+        type=Path,
+        default=[],
+        help="同时写回指定资产 manifest，可重复传入。",
+    )
     reset_handler_parser.set_defaults(handler=_cmd_assets_reset_handler)
 
     show_handlers_parser = assets_subparsers.add_parser(
@@ -277,6 +294,25 @@ def _add_assets_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     )
     show_handlers_parser.add_argument("--owner")
     show_handlers_parser.set_defaults(handler=_cmd_assets_show_handlers)
+
+    sync_handlers_parser = assets_subparsers.add_parser(
+        "sync-handlers",
+        help="把资产数据库中的 handler_key 绑定写回指定资产 manifest。",
+    )
+    _add_asset_db_argument(sync_handlers_parser)
+    sync_handlers_parser.add_argument(
+        "--manifest",
+        action="append",
+        type=Path,
+        required=True,
+        help="要同步的资产 manifest，可重复传入。",
+    )
+    sync_handlers_parser.add_argument(
+        "--kind",
+        choices=("character", "weapon", "artifact-set", "artifact-bonus", "effect"),
+        help="只同步指定类别；缺省同步全部类别。",
+    )
+    sync_handlers_parser.set_defaults(handler=_cmd_assets_sync_handlers)
 
 
 def _add_config_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
@@ -459,6 +495,7 @@ def _cmd_assets_set_handler(args: argparse.Namespace) -> int:
         args.key,
         args.handler_key,
         pieces=args.pieces,
+        manifest_paths=tuple(args.manifest),
     )
     print(f"set {binding.kind} handler: {binding.key} -> {binding.handler_key}")
     return 0
@@ -469,6 +506,7 @@ def _cmd_assets_reset_handler(args: argparse.Namespace) -> int:
         args.kind,
         args.key,
         pieces=args.pieces,
+        manifest_paths=tuple(args.manifest),
     )
     print(f"reset {binding.kind} handler: {binding.key} -> {binding.handler_key}")
     return 0
@@ -483,6 +521,16 @@ def _cmd_assets_show_handlers(args: argparse.Namespace) -> int:
         pieces = "" if binding.pieces is None else str(binding.pieces)
         handler_key = "" if binding.handler_key is None else binding.handler_key
         print(f"{binding.key}\t{pieces}\t{handler_key}")
+    return 0
+
+
+def _cmd_assets_sync_handlers(args: argparse.Namespace) -> int:
+    result = _asset_handler_binding_service(args.asset_db).sync_handlers_to_manifests(
+        tuple(args.manifest),
+        kind=args.kind,
+    )
+    for manifest_path, count in sorted(result.items()):
+        print(f"synced {count} handler bindings to {manifest_path}")
     return 0
 
 
@@ -563,6 +611,9 @@ def _asset_handler_binding_service(asset_db: Path) -> AssetHandlerBindingService
     return AssetHandlerBindingService(
         repository=SQLiteAssetRepository(asset_db),
         content_unit_registry=create_default_content_unit_registry(),
+        manifest_validator=validate_handler_binding_in_manifest,
+        manifest_updater=apply_handler_binding_to_manifest,
+        manifest_syncer=sync_asset_manifest_handler_bindings,
     )
 
 

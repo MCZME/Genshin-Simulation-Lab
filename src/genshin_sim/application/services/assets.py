@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, replace
 from enum import StrEnum
 from pathlib import Path
@@ -119,6 +119,10 @@ _EFFECT_PLACEHOLDER_BY_EFFECT_KIND: dict[str, str] = {
     "special_talent": "character.unimplemented_special_talent",
 }
 
+ManifestHandlerValidator = Callable[[str | Path, HandlerBinding], None]
+ManifestHandlerUpdater = Callable[[str | Path, HandlerBinding], Path]
+ManifestHandlerSyncer = Callable[[str | Path, Sequence[HandlerBinding]], Path]
+
 
 class AssetHandlerBindingService:
     """维护资产 handler_key 绑定（设置、重置、查看）。"""
@@ -128,9 +132,15 @@ class AssetHandlerBindingService:
         *,
         repository: AssetHandlerBindingRepository,
         content_unit_registry: ContentUnitRegistry,
+        manifest_validator: ManifestHandlerValidator | None = None,
+        manifest_updater: ManifestHandlerUpdater | None = None,
+        manifest_syncer: ManifestHandlerSyncer | None = None,
     ) -> None:
         self.repository = repository
         self.content_unit_registry = content_unit_registry
+        self.manifest_validator = manifest_validator
+        self.manifest_updater = manifest_updater
+        self.manifest_syncer = manifest_syncer
 
     def set_handler(
         self,
@@ -138,6 +148,8 @@ class AssetHandlerBindingService:
         key: str,
         handler_key: str,
         pieces: int | None = None,
+        *,
+        manifest_paths: Sequence[str | Path] = (),
     ) -> HandlerBinding:
         resolved_kind = HandlerBindingKind(kind)
         normalized = handler_key.strip()
@@ -145,6 +157,8 @@ class AssetHandlerBindingService:
             raise ApplicationServiceError("handler_key 不能为空")
         binding = self.repository.get_handler_binding(resolved_kind.value, key, pieces)
         self._require_registered(resolved_kind, normalized)
+        final_binding = replace(binding, handler_key=normalized)
+        self._validate_manifest_bindings(manifest_paths, final_binding)
         if binding.handler_key != normalized:
             self.repository.set_handler_binding(
                 resolved_kind.value,
@@ -152,20 +166,25 @@ class AssetHandlerBindingService:
                 normalized,
                 pieces,
             )
-            binding = replace(binding, handler_key=normalized)
-        return binding
+        self._apply_manifest_bindings(manifest_paths, final_binding)
+        return final_binding
 
     def reset_handler(
         self,
         kind: HandlerBindingKind | str,
         key: str,
         pieces: int | None = None,
+        *,
+        manifest_paths: Sequence[str | Path] = (),
     ) -> HandlerBinding:
         resolved_kind = HandlerBindingKind(kind)
         binding = self.repository.get_handler_binding(resolved_kind.value, key, pieces)
         target = self._reset_target(resolved_kind, binding)
+        final_binding = replace(binding, handler_key=target)
+        self._validate_manifest_bindings(manifest_paths, final_binding)
         self.repository.set_handler_binding(resolved_kind.value, key, target, pieces)
-        return replace(binding, handler_key=target)
+        self._apply_manifest_bindings(manifest_paths, final_binding)
+        return final_binding
 
     def show_handlers(
         self,
@@ -174,6 +193,25 @@ class AssetHandlerBindingService:
     ) -> tuple[HandlerBinding, ...]:
         resolved_kind = HandlerBindingKind(kind)
         return self.repository.list_handler_bindings(resolved_kind.value, owner_key)
+
+    def sync_handlers_to_manifests(
+        self,
+        manifest_paths: Sequence[str | Path],
+        kind: HandlerBindingKind | str | None = None,
+    ) -> dict[str, int]:
+        if self.manifest_syncer is None:
+            raise ApplicationServiceError("未配置 manifest 同步器")
+        kinds = (HandlerBindingKind(kind),) if kind is not None else tuple(HandlerBindingKind)
+        bindings = tuple(
+            binding
+            for resolved_kind in kinds
+            for binding in self.repository.list_handler_bindings(resolved_kind.value)
+        )
+        result: dict[str, int] = {}
+        for manifest_path in manifest_paths:
+            self.manifest_syncer(manifest_path, bindings)
+            result[str(manifest_path)] = len(bindings)
+        return result
 
     def _require_registered(self, kind: HandlerBindingKind, handler_key: str) -> None:
         if kind is HandlerBindingKind.CHARACTER:
@@ -204,6 +242,30 @@ class AssetHandlerBindingService:
         if placeholder is None:
             raise ApplicationServiceError(f"不支持重置效果种类：{binding.effect_kind}")
         return placeholder
+
+    def _validate_manifest_bindings(
+        self,
+        manifest_paths: Sequence[str | Path],
+        binding: HandlerBinding,
+    ) -> None:
+        if not manifest_paths:
+            return
+        if self.manifest_validator is None or self.manifest_updater is None:
+            raise ApplicationServiceError("未配置 manifest 写回器")
+        for manifest_path in manifest_paths:
+            self.manifest_validator(manifest_path, binding)
+
+    def _apply_manifest_bindings(
+        self,
+        manifest_paths: Sequence[str | Path],
+        binding: HandlerBinding,
+    ) -> None:
+        if not manifest_paths:
+            return
+        if self.manifest_updater is None:
+            raise ApplicationServiceError("未配置 manifest 写回器")
+        for manifest_path in manifest_paths:
+            self.manifest_updater(manifest_path, binding)
 
 
 class AssetSourceCacheService:

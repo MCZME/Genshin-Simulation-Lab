@@ -3,7 +3,8 @@ from __future__ import annotations
 import hashlib
 import json
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass, replace
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,7 @@ from genshin_sim.assets import (
     CharacterAsset,
     CharacterLevelStats,
     EffectPayload,
+    HandlerBinding,
     TalentScalingEntry,
     WeaponAsset,
     WeaponLevelStats,
@@ -26,6 +28,7 @@ from genshin_sim.infrastructure.assets_sqlite.writer import SQLiteAssetDataWrite
 
 ASSET_MANIFEST_KIND = "asset_manifest"
 ASSET_MANIFEST_SCHEMA_VERSION = 1
+HANDLER_OVERLAY_UPDATED_AT = "handler_overlay_updated_at"
 
 _TOP_LEVEL_FIELDS = {
     "schema_version",
@@ -138,6 +141,192 @@ def load_asset_manifest(manifest_path: str | Path) -> AssetManifest:
             for index, item in enumerate(_optional_sequence(payload, "effect_payloads"))
         ),
     )
+
+
+def validate_handler_binding_in_manifest(
+    manifest_path: str | Path,
+    binding: HandlerBinding,
+) -> None:
+    """确认 manifest 中存在该 handler 绑定目标，不写文件。"""
+
+    manifest = load_asset_manifest(manifest_path)
+    _require_handler_binding_target(manifest, binding)
+
+
+def apply_handler_binding_to_manifest(
+    manifest_path: str | Path,
+    binding: HandlerBinding,
+) -> Path:
+    """把单条 handler 绑定写回 manifest，返回 manifest 路径。"""
+
+    manifest = load_asset_manifest(manifest_path)
+    updated, changed = _apply_handler_bindings(manifest, (binding,))
+    if not changed:
+        return Path(manifest_path)
+    return _dump_asset_manifest(updated, manifest_path)
+
+
+def sync_asset_manifest_handler_bindings(
+    manifest_path: str | Path,
+    bindings: Sequence[HandlerBinding],
+) -> Path:
+    """把一批 handler 绑定批量写回 manifest，返回 manifest 路径。"""
+
+    manifest = load_asset_manifest(manifest_path)
+    updated, changed = _apply_handler_bindings(manifest, bindings)
+    if not changed:
+        return Path(manifest_path)
+    return _dump_asset_manifest(updated, manifest_path)
+
+
+def _apply_handler_bindings(
+    manifest: AssetManifest,
+    bindings: Sequence[HandlerBinding],
+) -> tuple[AssetManifest, bool]:
+    characters = manifest.characters
+    weapons = manifest.weapons
+    artifact_sets = manifest.artifact_sets
+    artifact_set_bonuses = manifest.artifact_set_bonuses
+    effect_payloads = manifest.effect_payloads
+    changed = False
+
+    for binding in bindings:
+        if binding.kind == "character":
+            characters, found, field_changed = _replace_handler_field(
+                characters,
+                lambda item, binding=binding: item.asset_key == binding.key,
+                binding.handler_key,
+            )
+        elif binding.kind == "weapon":
+            weapons, found, field_changed = _replace_handler_field(
+                weapons,
+                lambda item, binding=binding: item.asset_key == binding.key,
+                binding.handler_key,
+            )
+        elif binding.kind == "artifact-set":
+            artifact_sets, found, field_changed = _replace_handler_field(
+                artifact_sets,
+                lambda item, binding=binding: item.asset_key == binding.key,
+                binding.handler_key,
+            )
+        elif binding.kind == "artifact-bonus":
+            artifact_set_bonuses, found, field_changed = _replace_handler_field(
+                artifact_set_bonuses,
+                lambda item, binding=binding: (
+                    item.artifact_set_key == binding.key and item.piece_count == binding.pieces
+                ),
+                binding.handler_key,
+            )
+        elif binding.kind == "effect":
+            effect_payloads, found, field_changed = _replace_handler_field(
+                effect_payloads,
+                lambda item, binding=binding: item.effect_key == binding.key,
+                binding.handler_key,
+            )
+        else:
+            raise AssetValidationError(f"不支持的 handler 绑定类别：{binding.kind}")
+
+        if not found:
+            raise AssetValidationError(
+                f"manifest 中不存在 {binding.kind} handler 绑定目标：{binding.key}"
+            )
+        if field_changed:
+            changed = True
+
+    meta = dict(manifest.meta)
+    if changed:
+        meta[HANDLER_OVERLAY_UPDATED_AT] = datetime.now(UTC).isoformat(timespec="seconds")
+
+    return (
+        replace(
+            manifest,
+            meta=meta,
+            characters=characters,
+            weapons=weapons,
+            artifact_sets=artifact_sets,
+            artifact_set_bonuses=artifact_set_bonuses,
+            effect_payloads=effect_payloads,
+        ),
+        changed,
+    )
+
+
+def _require_handler_binding_target(
+    manifest: AssetManifest,
+    binding: HandlerBinding,
+) -> None:
+    if binding.kind == "character":
+        found = any(item.asset_key == binding.key for item in manifest.characters)
+    elif binding.kind == "weapon":
+        found = any(item.asset_key == binding.key for item in manifest.weapons)
+    elif binding.kind == "artifact-set":
+        found = any(item.asset_key == binding.key for item in manifest.artifact_sets)
+    elif binding.kind == "artifact-bonus":
+        found = any(
+            item.artifact_set_key == binding.key and item.piece_count == binding.pieces
+            for item in manifest.artifact_set_bonuses
+        )
+    elif binding.kind == "effect":
+        found = any(item.effect_key == binding.key for item in manifest.effect_payloads)
+    else:
+        raise AssetValidationError(f"不支持的 handler 绑定类别：{binding.kind}")
+
+    if not found:
+        raise AssetValidationError(
+            f"manifest 中不存在 {binding.kind} handler 绑定目标：{binding.key}"
+        )
+
+
+def _replace_handler_field(
+    items: tuple[Any, ...],
+    predicate: Any,
+    handler_key: str | None,
+) -> tuple[tuple[Any, ...], bool, bool]:
+    for index, item in enumerate(items):
+        if not predicate(item):
+            continue
+        updated = replace(item, handler_key=handler_key)
+        if updated == item:
+            return items, True, False
+        return items[:index] + (updated,) + items[index + 1 :], True, True
+    return items, False, False
+
+
+def _dump_asset_manifest(manifest: AssetManifest, manifest_path: str | Path) -> Path:
+    payload = {
+        "schema_version": ASSET_MANIFEST_SCHEMA_VERSION,
+        "kind": ASSET_MANIFEST_KIND,
+        "meta": dict(manifest.meta),
+        "characters": [asdict(item) for item in manifest.characters],
+        "character_level_stats": [asdict(item) for item in manifest.character_level_stats],
+        "weapons": [asdict(item) for item in manifest.weapons],
+        "weapon_level_stats": [asdict(item) for item in manifest.weapon_level_stats],
+        "artifact_sets": [asdict(item) for item in manifest.artifact_sets],
+        "artifact_set_bonuses": [asdict(item) for item in manifest.artifact_set_bonuses],
+        "talent_scalings": [
+            _talent_scaling_manifest_item(item) for item in manifest.talent_scalings
+        ],
+        "effect_payloads": [asdict(item) for item in manifest.effect_payloads],
+    }
+    target_path = Path(manifest_path)
+    target_path.parent.mkdir(parents=True, exist_ok=True)
+    text = json.dumps(payload, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
+    temp_path = target_path.with_name(f"{target_path.name}.tmp")
+    if temp_path.exists():
+        temp_path.unlink()
+    try:
+        temp_path.write_text(text, encoding="utf-8")
+        temp_path.replace(target_path)
+    finally:
+        if temp_path.exists():
+            temp_path.unlink()
+    return target_path
+
+
+def _talent_scaling_manifest_item(item: TalentScalingEntry) -> dict[str, Any]:
+    row = asdict(item)
+    row.pop("entry_id", None)
+    return row
 
 
 def _validate_manifest_header(payload: Mapping[str, Any]) -> None:

@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from genshin_sim.application.assembly import AssembledSimulation, SimulationAssembler
-from genshin_sim.application.config import SimulationConfig
+from genshin_sim.application.input import SimulationInput
 from genshin_sim.infrastructure.assets_sqlite import (
     SQLiteAssetRepository,
     write_minimal_static_asset_database,
@@ -40,8 +40,8 @@ def golden_assembled(tmp_path: Path) -> Callable[..., AssembledSimulation]:
                 )
             assert cursor.rowcount == 1
         return SimulationAssembler(SQLiteAssetRepository(asset_db)).assemble(
-            SimulationConfig.from_mapping(
-                _config_payload(
+            SimulationInput.from_mapping(
+                _input_payload(
                     meta_name=meta_name,
                     max_frames=max_frames,
                     target_positions=target_positions,
@@ -53,7 +53,7 @@ def golden_assembled(tmp_path: Path) -> Callable[..., AssembledSimulation]:
     return _build
 
 
-def _config_payload(
+def _input_payload(
     *,
     meta_name: str,
     max_frames: int,
@@ -61,8 +61,8 @@ def _config_payload(
     target_resistances: Mapping[str, float] | None,
 ) -> dict[str, object]:
     return {
-        "schema_version": 1,
-        "kind": "simulation_config",
+        "schema_version": 2,
+        "kind": "simulation_input",
         "meta": {"name": meta_name, "description": ""},
         "team": [
             {

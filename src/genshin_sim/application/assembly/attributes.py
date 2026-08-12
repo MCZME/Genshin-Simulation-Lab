@@ -5,7 +5,7 @@ from dataclasses import dataclass
 from typing import Protocol, cast
 
 from genshin_sim.application.assembly.errors import InvalidRuntimePayloadError
-from genshin_sim.application.config import SimulationConfig
+from genshin_sim.application.input import SimulationInput
 from genshin_sim.assets.models import CharacterLevelStats, WeaponLevelStats
 from genshin_sim.content.definitions.content_unit import ContentUnit
 from genshin_sim.core.attributes import (
@@ -83,7 +83,7 @@ class AttributeRuntimeBundle:
 
 def build_attribute_runtime(
     *,
-    config: SimulationConfig,
+    config: SimulationInput,
     assets: Sequence[AttributeRuntimeAssetBundle],
     content_units: Sequence[ContentUnit],
     extra_providers: Sequence[ModifierProvider] = (),
@@ -117,7 +117,7 @@ def build_attribute_runtime(
 
 def _iter_base_contributions(
     *,
-    config: SimulationConfig,
+    config: SimulationInput,
     assets: Sequence[AttributeRuntimeAssetBundle],
 ) -> Iterable[tuple[AttributeSubjectRef, BaseAttributeContribution]]:
     for bundle in assets:

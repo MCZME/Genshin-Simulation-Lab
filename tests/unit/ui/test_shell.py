@@ -4,7 +4,7 @@ from pathlib import Path
 
 import flet as ft
 
-from genshin_sim.application.services import ConfigValidationService
+from genshin_sim.application.services import InputValidationService
 from genshin_sim.ui import UIServices, build_shell, create_default_ui_services
 
 
@@ -20,7 +20,7 @@ class FakePage:
 def test_create_default_ui_services_only_builds_application_service_shell():
     services = create_default_ui_services()
 
-    assert isinstance(services.config_validator, ConfigValidationService)
+    assert isinstance(services.config_validator, InputValidationService)
     assert services.results is None
     assert services.simulation_tasks is None
 
@@ -30,7 +30,7 @@ def test_build_shell_renders_minimal_flet_surface():
 
     build_shell(
         page,
-        UIServices(config_validator=ConfigValidationService()),
+        UIServices(config_validator=InputValidationService()),
     )
 
     assert page.title == "Genshin Simulation Lab"

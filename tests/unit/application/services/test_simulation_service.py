@@ -4,8 +4,8 @@ from pathlib import Path
 
 import pytest
 
-from genshin_sim.application.config import SimulationConfig
 from genshin_sim.application.execution import SimulationRunSummary
+from genshin_sim.application.input import SimulationInput
 from genshin_sim.application.jobs import (
     SimulationJobResult,
     SimulationJobState,
@@ -19,7 +19,7 @@ class FakeRunner:
         self.result = result
         self.submitted: list[tuple[str, str]] = []
 
-    def submit_config(self, config: SimulationConfig) -> str:
+    def submit_input(self, config: SimulationInput) -> str:
         self.submitted.append(("config", config.meta.name))
         return self.result.job_id
 

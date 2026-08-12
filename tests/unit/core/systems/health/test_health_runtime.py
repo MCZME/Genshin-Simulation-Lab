@@ -243,7 +243,9 @@ def test_health_runtime_reconciles_dynamic_max_hp_by_ratio_without_health_change
     assert result.hp_before == 500
     assert result.hp_after == 1000
     assert [event.event_type for event in received] == [EventType.CHARACTER_MAX_HP_CHANGED]
-    assert events.frame_events == ()
+    assert [event.event_type for event in events.frame_events] == [
+        EventType.CHARACTER_MAX_HP_CHANGED
+    ]
 
 
 def test_health_application_requests_reject_target_subjects():

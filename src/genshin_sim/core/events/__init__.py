@@ -17,6 +17,7 @@ from genshin_sim.core.events.handlers import EventHandler
 from genshin_sim.core.events.models import GameEvent
 from genshin_sim.core.events.payloads import (
     ActionStartedPayload,
+    AttributePanelChangedPayload,
     AuraAppliedPayload,
     AuraDepletedPayload,
     AuraIcdResolvedPayload,
@@ -26,6 +27,8 @@ from genshin_sim.core.events.payloads import (
     CharacterEnergyChangedPayload,
     CharacterHealthChangedPayload,
     CharacterMaxHpChangedPayload,
+    ContentStateChangedPayload,
+    CooldownChangedPayload,
     DamageAppliedPayload,
     DamageResolvedPayload,
     DirectEnergyChangeResolvedPayload,
@@ -52,6 +55,9 @@ from genshin_sim.core.events.payloads import (
     ShieldGrantedPayload,
     ShieldRemovedPayload,
     SimulationEndedPayload,
+    SpaceEntityCreatedPayload,
+    SpaceEntityRemovedPayload,
+    TeamSwitchedPayload,
 )
 from genshin_sim.core.events.specs import (
     EVENT_SPECS,
@@ -76,6 +82,7 @@ __all__ = [
     "EventSubscriber",
     "EventType",
     "ActionStartedPayload",
+    "AttributePanelChangedPayload",
     "BuffAppliedPayload",
     "BuffRemovedPayload",
     "AuraAppliedPayload",
@@ -85,6 +92,8 @@ __all__ = [
     "CharacterHealthChangedPayload",
     "CharacterEnergyChangedPayload",
     "CharacterMaxHpChangedPayload",
+    "CooldownChangedPayload",
+    "ContentStateChangedPayload",
     "DamageAppliedPayload",
     "DamageResolvedPayload",
     "DirectEnergyChangeResolvedPayload",
@@ -110,6 +119,9 @@ __all__ = [
     "ReactionStateChangedPayload",
     "ResonanceActivatedPayload",
     "SimulationEndedPayload",
+    "SpaceEntityCreatedPayload",
+    "SpaceEntityRemovedPayload",
+    "TeamSwitchedPayload",
     "get_event_category_spec",
     "get_event_spec",
 ]

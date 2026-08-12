@@ -61,6 +61,7 @@ from genshin_sim.core.systems.shield.models import (
     normalize_capacity_after,
 )
 from genshin_sim.core.systems.shield.resolver import ShieldResolver
+from genshin_sim.core.systems.shield.snapshots import ShieldInstanceSnapshot
 from genshin_sim.core.systems.shield.store import ShieldStore
 
 
@@ -322,6 +323,7 @@ class ShieldRuntime:
     ) -> tuple[GameEvent, ...]:
         plan = receipt.plan
         if isinstance(plan, ShieldGrantPlan):
+            grant_result = _with_instance_after(self, plan.result)
             events = [
                 GameEvent(
                     event_type=EventType.SHIELD_REMOVED,
@@ -344,7 +346,7 @@ class ShieldRuntime:
                 GameEvent(
                     event_type=EventType.SHIELD_GRANTED,
                     frame=plan.frame,
-                    payload=ShieldGrantedPayload(plan.result),
+                    payload=ShieldGrantedPayload(grant_result),
                     source=self,
                 )
             )
@@ -782,3 +784,19 @@ def elemental_absorption_multiplier(
     if shield_element is not ShieldElement.NONE and shield_element.value == damage_element.value:
         return 2.5
     return 1.0
+
+
+def _with_instance_after(
+    runtime: ShieldRuntime,
+    result: ShieldGrantResult,
+) -> ShieldGrantResult:
+    """把已提交护盾实例的完整快照附加到授予结果，供事件载荷精确折叠。"""
+
+    if result.instance_after is not None:
+        return result
+    record = next(
+        item
+        for item in runtime.shield_store.records
+        if item.instance_ref == result.instance_ref
+    )
+    return replace(result, instance_after=ShieldInstanceSnapshot.from_record(record))

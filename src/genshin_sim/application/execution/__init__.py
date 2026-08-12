@@ -6,6 +6,7 @@ from genshin_sim.application.execution.executor import (
 )
 from genshin_sim.application.execution.models import (
     CompletedSimulationRun,
+    FailedSimulationRun,
     RecordedEvent,
     RunState,
     SimulationRunSummary,
@@ -14,6 +15,7 @@ from genshin_sim.application.execution.protocols import ResultWriter, Simulation
 
 __all__ = [
     "CompletedSimulationRun",
+    "FailedSimulationRun",
     "RecordedEvent",
     "ResultWriter",
     "RunState",

@@ -10,6 +10,7 @@ from genshin_sim.core.simulation.team import TeamRuntimeState
 from genshin_sim.core.space.created_objects import CreatedObjectRuntime
 from genshin_sim.core.space.entities import SpatialEntity, SpatialEntityKind
 from genshin_sim.core.space.geometry import CircleArea, CircleSectorArea, OrientedBoxArea, Vector3
+from genshin_sim.core.space.snapshots import SpaceSnapshot
 from genshin_sim.core.space.space import Space
 
 
@@ -122,6 +123,9 @@ class SpaceRuntime(FrameUpdatable):
         self._current_frame = frame
         self.space.update_frame(context, frame)
         self.sync_created_objects_to_space()
+
+    def snapshot(self, frame: int) -> SpaceSnapshot:
+        return self.space.snapshot(frame)
 
     def is_idle(self) -> bool:
         return self.created_object_runtime.is_idle()

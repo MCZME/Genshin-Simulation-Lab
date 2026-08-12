@@ -12,6 +12,7 @@ from genshin_sim.core.systems.infusion.enums import (
 )
 from genshin_sim.core.systems.infusion.models import (
     InfusionInstanceRef,
+    InfusionRecord,
     runtime_source_ref_to_dict,
     subject_ref_to_dict,
     validate_frame,
@@ -41,6 +42,30 @@ class InfusionInstanceSnapshot:
     expires_at_frame: int
     next_refresh_frame: int | None
     lifecycle_state: InfusionLifecycleState
+
+    @classmethod
+    def from_record(cls, record: InfusionRecord) -> InfusionInstanceSnapshot:
+        definition = record.definition
+        return cls(
+            instance_ref=record.instance_ref,
+            definition_key=definition.definition_key,
+            mechanic_key=definition.mechanic_key,
+            handler_key=definition.handler_key,
+            mode=record.mode,
+            element=record.element,
+            weapon_gauge=definition.weapon_gauge,
+            remaining_gauge=record.remaining_gauge,
+            frozen=record.frozen,
+            character_ref=record.character_ref,
+            applier_ref=record.applier_ref,
+            source_context=record.source_context,
+            refresh_policy=record.refresh_policy,
+            created_frame=record.created_frame,
+            last_applied_frame=record.last_applied_frame,
+            expires_at_frame=record.expires_at_frame,
+            next_refresh_frame=record.next_refresh_frame,
+            lifecycle_state=record.lifecycle_state,
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -87,29 +112,7 @@ class InfusionSnapshot:
         for record in runtime.infusion_store.records:
             if not record.is_active_at(frame):
                 continue
-            definition = record.definition
-            snapshots.append(
-                InfusionInstanceSnapshot(
-                    instance_ref=record.instance_ref,
-                    definition_key=definition.definition_key,
-                    mechanic_key=definition.mechanic_key,
-                    handler_key=definition.handler_key,
-                    mode=record.mode,
-                    element=record.element,
-                    weapon_gauge=definition.weapon_gauge,
-                    remaining_gauge=record.remaining_gauge,
-                    frozen=record.frozen,
-                    character_ref=record.character_ref,
-                    applier_ref=record.applier_ref,
-                    source_context=record.source_context,
-                    refresh_policy=record.refresh_policy,
-                    created_frame=record.created_frame,
-                    last_applied_frame=record.last_applied_frame,
-                    expires_at_frame=record.expires_at_frame,
-                    next_refresh_frame=record.next_refresh_frame,
-                    lifecycle_state=record.lifecycle_state,
-                )
-            )
+            snapshots.append(InfusionInstanceSnapshot.from_record(record))
         return cls(frame=frame, instances=tuple(snapshots))
 
     def to_dict(self) -> dict[str, object]:

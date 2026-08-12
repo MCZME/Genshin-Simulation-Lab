@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Any, Protocol, runtime_checkable
+
+from genshin_sim.core.events import GameEvent
 
 if TYPE_CHECKING:
     from genshin_sim.core.simulation.context import SimulationContext
@@ -18,6 +20,30 @@ class SnapshotError(Exception):
 
 class DuplicateSnapshotProviderError(SnapshotError, ValueError):
     """重复注册快照 provider。"""
+
+
+@dataclass(frozen=True, slots=True)
+class EventSnapshot:
+    """一次事件的持久化快照形态。"""
+
+    event_type: str
+    frame: int
+    data: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_event(cls, event: GameEvent) -> EventSnapshot:
+        return cls(
+            event_type=event.event_type.name,
+            frame=event.frame,
+            data=event.payload.to_dict(),
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "event_type": self.event_type,
+            "frame": self.frame,
+            "data": dict(self.data),
+        }
 
 
 @runtime_checkable
@@ -76,7 +102,6 @@ class SnapshotRuntime:
     def snapshot_frame(self, context: SimulationContext, frame: int) -> FrameSnapshot:
         if isinstance(frame, bool) or not isinstance(frame, int) or frame < 0:
             raise ValueError("frame 必须是非负整数")
-        from genshin_sim.core.snapshots.models import EventSnapshot
 
         events = tuple(
             EventSnapshot.from_event(event).to_dict() for event in context.events.frame_events

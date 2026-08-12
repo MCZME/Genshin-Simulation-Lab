@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from genshin_sim.application.assembly import AssembledSimulation, SimulationAssembler
-from genshin_sim.application.config import SimulationConfig
+from genshin_sim.application.input import SimulationInput
 from genshin_sim.infrastructure.assets_sqlite import SQLiteAssetRepository
 from tests.helpers import barbara as barbara_helpers
 from tests.helpers.barbara_assets import write_barbara_asset_database
@@ -32,14 +32,14 @@ def barbara_assembled(
         payload: dict[str, object] | None = None,
     ) -> AssembledSimulation:
         if payload is None:
-            payload = barbara_helpers.barbara_config_payload(
+            payload = barbara_helpers.barbara_input_payload(
                 input_key=input_key,
                 max_frames=max_frames,
                 constellation=constellation,
                 targets=targets,
             )
         return SimulationAssembler(SQLiteAssetRepository(barbara_asset_db)).assemble(
-            SimulationConfig.from_mapping(payload)
+            SimulationInput.from_mapping(payload)
         )
 
     return _build

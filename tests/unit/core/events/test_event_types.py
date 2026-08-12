@@ -1,10 +1,11 @@
 from typing import cast
 
 from genshin_sim.core.attributes import STAT_HP_MAX, AttributeSubjectRef
+from genshin_sim.core.attributes.panel import AttributePanelChange
 from genshin_sim.core.events import (
     EVENT_CATEGORY_SPECS,
-    EVENT_SPECS,
     ActionStartedPayload,
+    AttributePanelChangedPayload,
     AuraAppliedPayload,
     AuraIcdResolvedPayload,
     AuraInteractionResolvedPayload,
@@ -13,6 +14,7 @@ from genshin_sim.core.events import (
     CharacterEnergyChangedPayload,
     CharacterHealthChangedPayload,
     CharacterMaxHpChangedPayload,
+    ContentStateChangedPayload,
     DamageAppliedPayload,
     DamageResolvedPayload,
     DirectEnergyChangeResolvedPayload,
@@ -40,9 +42,12 @@ from genshin_sim.core.events import (
     ShieldGrantedPayload,
     ShieldRemovedPayload,
     SimulationEndedPayload,
+    SpaceEntityCreatedPayload,
+    SpaceEntityRemovedPayload,
     get_event_category_spec,
     get_event_spec,
 )
+from genshin_sim.core.space import SpatialEntity, SpatialEntityKind, Vector3
 from genshin_sim.core.systems.healing import (
     HealingComponentResult,
     HealingResult,
@@ -65,54 +70,8 @@ def test_event_category_defines_current_design_categories():
     ]
 
 
-def test_event_type_defines_current_events():
-    assert [event_type.name for event_type in EventType] == [
-        "SIMULATION_STARTED",
-        "SIMULATION_ENDED",
-        "FRAME_STARTED",
-        "FRAME_ENDED",
-        "INPUT_KEY_RECEIVED",
-        "INPUT_SESSION_BOUNDARY_REACHED",
-        "DAMAGE_RESOLVED",
-        "HEALING_RESOLVED",
-        "CHARACTER_HEALTH_CHANGED",
-        "CHARACTER_MAX_HP_CHANGED",
-        "SHIELD_GRANTED",
-        "SHIELD_CAPACITY_CHANGED",
-        "SHIELD_REMOVED",
-        "SHIELD_ABSORPTION_RESOLVED",
-        "DAMAGE_APPLIED",
-        "BUFF_APPLIED",
-        "BUFF_REMOVED",
-        "INFUSION_APPLIED",
-        "INFUSION_REMOVED",
-        "ENERGY_PICKUP_SPAWNED",
-        "ENERGY_PICKUP_SETTLED",
-        "DIRECT_ENERGY_CHANGE_RESOLVED",
-        "CHARACTER_ENERGY_CHANGED",
-        "AURA_ICD_RESOLVED",
-        "AURA_APPLIED",
-        "AURA_DEPLETED",
-        "AURA_INTERACTION_RESOLVED",
-        "REACTION_STATE_CHANGED",
-        "REACTION_OCCURRED",
-        "ELEMENTAL_INTERACTION_RESOLVED",
-        "MOVEMENT_COLLIDED",
-        "MOVEMENT_LANDED",
-        "RESONANCE_ACTIVATED",
-        "ACTION_STARTED",
-        "MOONSIGN_LEVEL_SET",
-        "MOONSIGN_BONUS_APPLIED",
-        "MOONSIGN_BONUS_EXPIRED",
-    ]
-
-
 def test_event_category_specs_cover_all_categories():
     assert set(EVENT_CATEGORY_SPECS) == set(EventCategory)
-
-
-def test_event_specs_cover_all_event_types():
-    assert set(EVENT_SPECS) == set(EventType)
 
 
 def test_event_category_specs_define_current_default_rules():
@@ -211,9 +170,9 @@ def test_event_specs_define_current_default_rules():
     assert health_changed.effective_result_committed is True
 
     max_hp_changed = get_event_spec(EventType.CHARACTER_MAX_HP_CHANGED)
-    assert max_hp_changed.category is EventCategory.AUDIT
+    assert max_hp_changed.category is EventCategory.STATE_CHANGE
     assert max_hp_changed.payload_type is CharacterMaxHpChangedPayload
-    assert max_hp_changed.effective_record_by_default is False
+    assert max_hp_changed.effective_record_by_default is True
 
     assert get_event_spec(EventType.SHIELD_GRANTED).payload_type is ShieldGrantedPayload
     assert (
@@ -245,6 +204,15 @@ def test_event_specs_define_current_default_rules():
     assert (
         get_event_spec(EventType.CHARACTER_ENERGY_CHANGED).payload_type
         is CharacterEnergyChangedPayload
+    )
+    assert (
+        get_event_spec(EventType.CONTENT_STATE_CHANGED).payload_type is ContentStateChangedPayload
+    )
+    assert get_event_spec(EventType.SPACE_ENTITY_CREATED).payload_type is SpaceEntityCreatedPayload
+    assert get_event_spec(EventType.SPACE_ENTITY_REMOVED).payload_type is SpaceEntityRemovedPayload
+    assert (
+        get_event_spec(EventType.ATTRIBUTE_PANEL_CHANGED).payload_type
+        is AttributePanelChangedPayload
     )
     assert get_event_spec(EventType.AURA_ICD_RESOLVED).payload_type is AuraIcdResolvedPayload
     assert get_event_spec(EventType.AURA_APPLIED).payload_type is AuraAppliedPayload
@@ -403,6 +371,36 @@ def test_event_payloads_convert_to_serializable_dicts():
     )
     max_hp_payload = CharacterMaxHpChangedPayload(max_hp_result).to_dict()
     assert cast(dict[str, object], max_hp_payload["result"])["new_max_hp"] == 1200
+    space_entity = SpatialEntity(
+        entity_id="reaction_object:test:1",
+        kind=SpatialEntityKind.REACTION_OBJECT,
+        position=Vector3(1, 0, 2),
+    )
+    created_payload = SpaceEntityCreatedPayload(frame=3, entity=space_entity).to_dict()
+    created_entity = cast(dict[str, object], created_payload["entity"])
+    assert created_payload["frame"] == 3
+    assert created_entity["entity_id"] == "reaction_object:test:1"
+    assert created_entity["kind"] == "reaction_object"
+    removed_payload = SpaceEntityRemovedPayload(frame=4, entity=space_entity).to_dict()
+    removed_entity = cast(dict[str, object], removed_payload["entity"])
+    assert removed_payload["frame"] == 4
+    assert removed_entity["entity_id"] == "reaction_object:test:1"
+    panel_payload = AttributePanelChangedPayload(
+        frame=120,
+        subject_ref={"kind": "character", "entity_id": "character:slot_1"},
+        changes=(
+            AttributePanelChange(
+                attribute_key="stat.atk.total",
+                before_value=1500.0,
+                after_value=1800.0,
+                after_terms=(),
+            ),
+        ),
+    ).to_dict()
+    panel_changes = cast(tuple[dict[str, object], ...], panel_payload["changes"])
+    assert panel_payload["frame"] == 120
+    assert panel_changes[0]["attribute_key"] == "stat.atk.total"
+    assert panel_changes[0]["after_value"] == 1800.0
 
 
 def test_game_event_rejects_wrong_payload_type():

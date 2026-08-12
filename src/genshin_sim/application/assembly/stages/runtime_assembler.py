@@ -25,7 +25,7 @@ from genshin_sim.application.assembly.reaction_capabilities import (
     build_static_reaction_eligibility_port,
 )
 from genshin_sim.application.assembly.resonance import build_resonance_bundle
-from genshin_sim.application.config import SimulationConfig, TeamSlotConfig
+from genshin_sim.application.input import SimulationInput, TeamSlotConfig
 from genshin_sim.content import (
     DENDRO_EM_20_TRIGGER_KEYS,
     DENDRO_EM_30_TRIGGER_KEYS,
@@ -54,6 +54,10 @@ from genshin_sim.core.attributes import (
     AttributeSubjectRef,
     AttributeSystemError,
     TraceLevel,
+)
+from genshin_sim.core.attributes.panel import (
+    AttributePanelSynchronizer,
+    attributes_provider_dict,
 )
 from genshin_sim.core.contracts.intents import IntentKind
 from genshin_sim.core.contracts.phases import FramePhase
@@ -252,7 +256,7 @@ class RuntimeAssembler:
 
     def assemble(
         self,
-        config: SimulationConfig,
+        config: SimulationInput,
         assets: tuple[RuntimeAssetBundle, ...],
         content_bundle: RuntimeContentBundle,
     ) -> AssembledSimulation:
@@ -323,6 +327,15 @@ class RuntimeAssembler:
             ),
             active_slot=1,
         )
+        attribute_subject_refs = tuple(
+            AttributeSubjectRef.character(character.combat_entity_id)
+            for character in team_state.characters
+        )
+        attribute_panel_synchronizer = AttributePanelSynchronizer(
+            attribute_runtime.resolver,
+            attribute_subject_refs,
+        )
+        attribute_panel_synchronizer.capture_baseline(0)
         health_store = CharacterHealthStore(
             (
                 AttributeSubjectRef.character(character.combat_entity_id),
@@ -371,7 +384,10 @@ class RuntimeAssembler:
         context.register_system(energy_runtime)
         context.register_system(energy_handler)
         try:
-            cooldown_runtime = CooldownRuntime(CooldownStore(content_bundle.cooldown_definitions))
+            cooldown_runtime = CooldownRuntime(
+                CooldownStore(content_bundle.cooldown_definitions),
+                event_engine=context.events,
+            )
         except CooldownError as exc:
             raise InvalidRuntimePayloadError(f"冷却组装失败：{exc}") from exc
         ability_condition_coordinator = CharacterAbilityConditionCoordinator(
@@ -785,6 +801,46 @@ class RuntimeAssembler:
             "moonsign",
             lambda frame: moonsign_bundle.runtime.snapshot(frame).to_dict(),
         )
+        snapshot_runtime.register(
+            "cooldown",
+            lambda frame: cooldown_runtime.snapshot(frame).to_dict(),
+        )
+        snapshot_runtime.register(
+            "shield",
+            lambda frame: shield_runtime.snapshot(frame).to_dict(),
+        )
+        snapshot_runtime.register(
+            "reaction",
+            lambda frame: reaction_runtime.snapshot(frame).to_dict(),
+        )
+        snapshot_runtime.register(
+            "space",
+            lambda frame: space_runtime.snapshot(frame).to_dict(),
+        )
+        snapshot_runtime.register(
+            "aura",
+            lambda frame: aura_runtime.snapshot().to_dict(),
+        )
+        snapshot_runtime.register(
+            "aura_icd",
+            lambda frame: aura_icd_runtime.snapshot().to_dict(),
+        )
+        snapshot_runtime.register(
+            "team",
+            lambda frame: {
+                "frame": frame,
+                "active_slot": team_state.active_slot,
+                "characters": [character.to_dict() for character in team_state.characters],
+            },
+        )
+        snapshot_runtime.register(
+            "attributes",
+            lambda frame: attributes_provider_dict(
+                attribute_runtime.resolver,
+                attribute_subject_refs,
+                frame,
+            ),
+        )
         hook_dispatcher = HookDispatcher(
             content_bundle.event_hooks,
             intent_queue,
@@ -819,6 +875,11 @@ class RuntimeAssembler:
             resonance_reaction_stage,
         )
         runtime_world.add(FramePhase.FACT_RESPONSE, "content_hooks", hook_dispatcher)
+        runtime_world.add(
+            FramePhase.SNAPSHOT,
+            "attributes_panel",
+            attribute_panel_synchronizer,
+        )
         simulator = Simulator(
             context,
             runtime_world=runtime_world,
@@ -873,6 +934,7 @@ class RuntimeAssembler:
             hook_dispatcher=hook_dispatcher,
             reaction_eligibility_port=reaction_eligibility_port,
             attribute_runtime=attribute_runtime,
+            attribute_panel_synchronizer=attribute_panel_synchronizer,
             resonance_store=resonance_bundle.store,
             resonance_runtime=resonance_runtime,
             resonance_reaction_stage=resonance_reaction_stage,

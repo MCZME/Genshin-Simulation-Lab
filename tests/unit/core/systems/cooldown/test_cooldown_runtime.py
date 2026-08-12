@@ -2,6 +2,7 @@ from decimal import Decimal
 
 import pytest
 
+from genshin_sim.core.events import CooldownChangedPayload, EventEngine, EventType
 from genshin_sim.core.systems.cooldown import (
     AbilityKind,
     CooldownDefinition,
@@ -32,11 +33,12 @@ def _runtime(
     duration: int = 600,
     charges: int = 1,
     mode: CooldownDurationMode = CooldownDurationMode.FIXED,
+    event_engine: EventEngine | None = None,
 ) -> CooldownRuntime:
     definition = CooldownDefinition(
         _key(), AbilityKind.ELEMENTAL_SKILL, duration, charges, mode, "test:definition"
     )
-    return CooldownRuntime(CooldownStore((definition,)))
+    return CooldownRuntime(CooldownStore((definition,)), event_engine=event_engine)
 
 
 def _start(
@@ -64,6 +66,46 @@ def test_fixed_cooldown_requires_explicit_normalization_and_recovers_at_ready_fr
     normalized = runtime.normalize(2020)
     assert runtime.query_condition(runtime_query(_key(), 2020)).satisfied is True
     assert [fact.frame for fact in normalized.facts] == [2020, 2020]
+
+
+def test_cooldown_start_and_recovery_publish_state_change_events():
+    engine = EventEngine()
+    runtime = _runtime(duration=600, event_engine=engine)
+    runtime.normalize(100)
+
+    result = _start(runtime, "start:1", 100)
+    assert result is not None and result.applied
+
+    start_events = [
+        event for event in engine.frame_events if event.event_type is EventType.COOLDOWN_CHANGED
+    ]
+    assert len(start_events) == 1
+    payload = start_events[0].payload
+    assert isinstance(payload, CooldownChangedPayload)
+    assert payload.fact_kind == "started"
+    assert payload.before_available_charges == 1
+    assert payload.after_available_charges == 0
+    assert payload.active_ready_frame == 700
+    assert payload.before_record is not None
+    assert payload.after_record is not None
+    assert payload.before_record["available_charges"] == 1
+    assert payload.after_record["available_charges"] == 0
+    assert payload.after_record["active_ready_frame"] == 700
+    assert payload.after_record["active_started_frame"] == 100
+    assert payload.after_record["interval_frames"] == 600
+    assert payload.after_record["revision"] == 1
+
+    engine.clear_frame_events()
+    runtime.normalize(700)
+
+    recovery_events = [
+        event for event in engine.frame_events if event.event_type is EventType.COOLDOWN_CHANGED
+    ]
+    assert any(
+        isinstance(event.payload, CooldownChangedPayload)
+        and event.payload.fact_kind == "charge_recovered"
+        for event in recovery_events
+    )
 
 
 def test_multi_charge_uses_serial_recovery_and_snapshots_first_duration_resolution():

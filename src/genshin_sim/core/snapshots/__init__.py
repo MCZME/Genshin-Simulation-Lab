@@ -1,8 +1,8 @@
-"""由仿真核心生成的快照模型和导出器。"""
+"""由仿真核心生成的帧快照模型和导出运行时。"""
 
-from genshin_sim.core.snapshots.models import EventSnapshot, SimulationSnapshot, export_snapshot
 from genshin_sim.core.snapshots.runtime import (
     DuplicateSnapshotProviderError,
+    EventSnapshot,
     FrameSnapshot,
     SnapshotError,
     SnapshotExportingWorld,
@@ -18,6 +18,4 @@ __all__ = [
     "SnapshotExportingWorld",
     "SnapshotProvider",
     "SnapshotRuntime",
-    "SimulationSnapshot",
-    "export_snapshot",
 ]

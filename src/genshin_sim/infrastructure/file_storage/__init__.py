@@ -1,1 +1,5 @@
-"""配置、模板和导出文件的存储适配。"""
+"""文件存储基础设施。"""
+
+from genshin_sim.infrastructure.file_storage.project_config import ProjectConfigFileStore
+
+__all__ = ["ProjectConfigFileStore"]

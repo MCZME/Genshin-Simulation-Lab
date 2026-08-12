@@ -6,6 +6,11 @@ from contextlib import AbstractContextManager
 from dataclasses import dataclass
 
 from genshin_sim.core.entity_states import EntityLifecycle
+from genshin_sim.core.events import EventType, GameEvent
+from genshin_sim.core.events.payloads import (
+    SpaceEntityCreatedPayload,
+    SpaceEntityRemovedPayload,
+)
 from genshin_sim.core.space import (
     Space,
     SpaceEntityCommitReceipt,
@@ -457,3 +462,27 @@ def validate_reaction_state_space_terminalizations(
             or entity.lifecycle.expires_at_frame != state.expires_at_frame
         ):
             raise ReactionStateBindingConflictError("晶片终态与空间实体删除 binding 不一致")
+
+
+def publish_space_entity_facts(context: object, space_plan: SpaceEntityMutationPlan) -> None:
+    """提交后按事实顺序发布 Space 实体创建/移除事件。"""
+
+    events = getattr(context, "events", None)
+    if events is None:
+        return
+    for entity in space_plan.creations:
+        events.publish(
+            GameEvent(
+                EventType.SPACE_ENTITY_CREATED,
+                space_plan.frame,
+                SpaceEntityCreatedPayload(space_plan.frame, entity),
+            )
+        )
+    for entity in space_plan.removals:
+        events.publish(
+            GameEvent(
+                EventType.SPACE_ENTITY_REMOVED,
+                space_plan.frame,
+                SpaceEntityRemovedPayload(space_plan.frame, entity),
+            )
+        )

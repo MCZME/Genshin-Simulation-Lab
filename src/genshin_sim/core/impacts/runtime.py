@@ -11,6 +11,8 @@ from genshin_sim.core.actions import (
     SnapshotPolicy,
 )
 from genshin_sim.core.attributes import AttributeSubjectRef
+from genshin_sim.core.events import EventType, GameEvent
+from genshin_sim.core.events.payloads import SpaceEntityCreatedPayload
 from genshin_sim.core.impacts.dispatcher import ImpactDispatcher
 from genshin_sim.core.impacts.models import ActionImpactContext, ImpactKind, ImpactRequest
 from genshin_sim.core.protocols import FrameUpdatable
@@ -482,7 +484,17 @@ class ImpactRequestDispatcher:
                 entity_id=state.entity.entity_id,
             )
         )
+        created = context.space_runtime.get_entity(state.entity.entity_id) is None
         context.space_runtime.sync_entity_to_space(state.entity)
+        if created:
+            with context.space_runtime.space.event_publication_guard():
+                context.events.publish(
+                    GameEvent(
+                        EventType.SPACE_ENTITY_CREATED,
+                        request.frame,
+                        SpaceEntityCreatedPayload(request.frame, state.entity),
+                    )
+                )
 
     def _handle_extend_created_entity_request(
         self,

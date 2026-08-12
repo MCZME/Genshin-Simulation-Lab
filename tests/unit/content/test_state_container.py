@@ -20,6 +20,7 @@ from genshin_sim.core.contracts.state_schema import (
     StateSchema,
 )
 from genshin_sim.core.entity_states import CharacterRuntimeState, ContentStateMount
+from genshin_sim.core.events import EventType
 from genshin_sim.core.simulation.context import SimulationContext
 from genshin_sim.core.simulation.team import TeamRuntimeState
 
@@ -113,6 +114,104 @@ def test_state_patch_intent_handler_forwards_to_team_mount():
 
     assert mount.get("stacks") == 2
     assert mount.get("active") is True
+
+
+def test_state_patch_intent_handler_publishes_content_state_changed():
+    team_state, mount = _team_state_with_mount()
+    handler = StatePatchIntentHandler(team_state)
+    context = SimulationContext()
+    context.advance_frame(3)
+    intent = IntentEnvelope(
+        intent_id="patch:1",
+        kind=IntentKind.STATE_PATCH,
+        frame=3,
+        phase=FramePhase.SETTLEMENT,
+        payload=StatePatchRequest(
+            owner_ref="character:slot_1",
+            state_key="character.test",
+            fields={"stacks": 2, "active": True},
+        ),
+    )
+
+    handler.handle(context, intent)
+
+    changed = [
+        event
+        for event in context.events.frame_events
+        if event.event_type is EventType.CONTENT_STATE_CHANGED
+    ]
+    assert len(changed) == 1
+    payload = changed[0].payload.to_dict()
+    assert payload["frame"] == 3
+    assert payload["owner_ref"] == "character:slot_1"
+    assert payload["state_key"] == "character.test"
+    assert payload["fields"] == ("active", "stacks")
+    assert payload["before"] == {"stacks": 0, "active": False}
+    assert payload["after"] == {"stacks": 2, "active": True}
+
+
+def test_state_patch_intent_handler_skips_publish_when_patch_unchanged():
+    team_state, _mount = _team_state_with_mount()
+    handler = StatePatchIntentHandler(team_state)
+    context = SimulationContext()
+    context.advance_frame(1)
+    intent = IntentEnvelope(
+        intent_id="patch:noop",
+        kind=IntentKind.STATE_PATCH,
+        frame=1,
+        phase=FramePhase.SETTLEMENT,
+        payload=StatePatchRequest(
+            owner_ref="character:slot_1",
+            state_key="character.test",
+            fields={"stacks": 0},
+        ),
+    )
+
+    handler.handle(context, intent)
+
+    assert not any(
+        event.event_type is EventType.CONTENT_STATE_CHANGED
+        for event in context.events.frame_events
+    )
+
+
+def test_state_patch_intent_handler_rejects_reentrant_write_during_publish():
+    team_state, _mount = _team_state_with_mount()
+    handler = StatePatchIntentHandler(team_state)
+    context = SimulationContext()
+    context.advance_frame(2)
+
+    def reentrant_subscriber(_event: object) -> None:
+        handler.handle(
+            context,
+            IntentEnvelope(
+                intent_id="patch:nested",
+                kind=IntentKind.STATE_PATCH,
+                frame=2,
+                phase=FramePhase.SETTLEMENT,
+                payload=StatePatchRequest(
+                    owner_ref="character:slot_1",
+                    state_key="character.test",
+                    fields={"stacks": 1},
+                ),
+            ),
+        )
+
+    context.events.subscribe(EventType.CONTENT_STATE_CHANGED, reentrant_subscriber)
+    intent = IntentEnvelope(
+        intent_id="patch:outer",
+        kind=IntentKind.STATE_PATCH,
+        frame=2,
+        phase=FramePhase.SETTLEMENT,
+        payload=StatePatchRequest(
+            owner_ref="character:slot_1",
+            state_key="character.test",
+            fields={"stacks": 2},
+        ),
+    )
+
+    with pytest.raises(StatePatchError, match="发布期间"):
+        handler.handle(context, intent)
 
 
 def test_state_patch_intent_handler_wraps_validation_error():

@@ -1,9 +1,11 @@
+"""应用层配置与输入模型的通用校验助手。"""
+
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from typing import Any
 
-from genshin_sim.application.config.errors import ConfigError
+from genshin_sim.application.errors import ConfigError
 
 
 def _require_mapping(value: Any, path: str) -> Mapping[str, Any]:

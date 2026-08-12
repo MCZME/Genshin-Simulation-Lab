@@ -5,6 +5,7 @@ from contextlib import contextmanager
 from dataclasses import replace
 from typing import Protocol
 
+from genshin_sim.core.events import EventEngine, EventType, GameEvent
 from genshin_sim.core.systems.cooldown.enums import (
     CooldownConditionReason,
     CooldownFactKind,
@@ -52,10 +53,14 @@ class CooldownRuntime:
     """冷却领域唯一写入口；不会发布跨系统事件或调用外部回调。"""
 
     def __init__(
-        self, store: CooldownStore, resolver: CooldownDurationResolver | None = None
+        self,
+        store: CooldownStore,
+        resolver: CooldownDurationResolver | None = None,
+        event_engine: EventEngine | None = None,
     ) -> None:
         self.store = store
         self.resolver = resolver or CooldownDurationResolver()
+        self.event_engine = event_engine
         self.normalized_through_frame = 0
         self._mutation_active = False
         self._batch_preparing = False
@@ -85,7 +90,9 @@ class CooldownRuntime:
                 self.store.commit_prevalidated(None, changed)
             self.normalized_through_frame = frame
             facts.sort(key=lambda item: item.sort_key)
-            return NormalizeCooldownsResult(frame, tuple(changed.values()), tuple(facts))
+            result = NormalizeCooldownsResult(frame, tuple(changed.values()), tuple(facts))
+        self._publish_facts(result.facts)
+        return result
 
     def query_condition(self, query: CooldownQuery) -> CooldownConditionResult:
         self._require_normalized(query.frame)
@@ -211,7 +218,9 @@ class CooldownRuntime:
             )
             records = {} if plan.after == plan.before else {plan.key: plan.after}
             self.store.commit_prevalidated(plan.request_id, records)
-            return self._result(plan)
+            result = self._result(plan)
+        self._publish_facts(plan.facts)
+        return result
 
     def prepare_batch(self, request: CooldownMutationBatchRequest) -> CooldownMutationBatchPlan:
         with self._mutation_scope():
@@ -260,7 +269,9 @@ class CooldownRuntime:
             }
             self.store.commit_prevalidated(plan.batch_id, records, request_ids)
             results = tuple(self._result(item) for item in plan.item_plans)
-            return CooldownMutationBatchResult(plan.batch_id, plan.frame, results, plan.facts)
+            result = CooldownMutationBatchResult(plan.batch_id, plan.frame, results, plan.facts)
+        self._publish_facts(plan.facts)
+        return result
 
     def mutate_batch(self, request: CooldownMutationBatchRequest) -> CooldownMutationBatchResult:
         return self.commit_batch(self.prepare_batch(request))
@@ -273,6 +284,49 @@ class CooldownRuntime:
             normalized_through_frame=self.normalized_through_frame,
             records=tuple(CooldownRecordSnapshot.from_record(item) for item in self.store.records),
         )
+
+    def _publish_facts(self, facts: tuple[CooldownFact, ...]) -> None:
+        if self.event_engine is None or not facts:
+            return
+        from genshin_sim.core.events.payloads import CooldownChangedPayload
+
+        for fact in facts:
+            before_record = (
+                None
+                if fact.before_record is None
+                else CooldownRecordSnapshot.from_record(fact.before_record).to_dict()
+            )
+            after_record = (
+                None
+                if fact.after_record is None
+                else CooldownRecordSnapshot.from_record(fact.after_record).to_dict()
+            )
+            self.event_engine.publish(
+                GameEvent(
+                    EventType.COOLDOWN_CHANGED,
+                    frame=fact.frame,
+                    source=self,
+                    payload=CooldownChangedPayload(
+                        fact_id=fact.fact_id,
+                        fact_kind=fact.fact_kind.value,
+                        frame=fact.frame,
+                        subject_ref={
+                            "subject_type": fact.key.subject.subject_type.value,
+                            "subject_id": fact.key.subject.subject_id,
+                        },
+                        ability_key=fact.key.ability_key,
+                        operation_id=fact.operation_id,
+                        chain_id=fact.chain_id,
+                        before_available_charges=fact.before_available_charges,
+                        after_available_charges=fact.after_available_charges,
+                        active_ready_frame=fact.active_ready_frame,
+                        queued_recoveries=fact.queued_recoveries,
+                        source_ref=fact.source_ref,
+                        before_record=before_record,
+                        after_record=after_record,
+                    ),
+                )
+            )
 
     def _prepare_item(self, request: CooldownMutationRequest) -> CooldownMutationPlan:
         if isinstance(request, StartCooldownRequest):
@@ -436,6 +490,8 @@ class CooldownRuntime:
                 queued_recoveries=after.queued_recoveries,
                 source_ref=source_ref,
                 duration_audit=active.duration_audit,
+                before_record=before,
+                after_record=after,
             ),
         ]
 
@@ -459,6 +515,8 @@ class CooldownRuntime:
             queued_recoveries=after.queued_recoveries,
             source_ref=source_ref,
             duration_audit=resolution,
+            before_record=before,
+            after_record=after,
         )
 
     @staticmethod

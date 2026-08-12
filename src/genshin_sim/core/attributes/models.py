@@ -78,6 +78,9 @@ class AttributeSubjectRef:
     def target(cls, entity_id: str) -> AttributeSubjectRef:
         return cls(AttributeSubjectKind.TARGET, entity_id)
 
+    def to_dict(self) -> dict[str, str]:
+        return {"kind": self.kind.value, "entity_id": self.entity_id}
+
 
 @dataclass(frozen=True, slots=True)
 class RuntimeSourceRef:
@@ -92,6 +95,13 @@ class RuntimeSourceRef:
             raise AttributeValidationError("属性来源 source_key 必须是非空字符串")
         if self.instance_id is not None and not self.instance_id.strip():
             raise AttributeValidationError("属性来源 instance_id 提供时必须是非空字符串")
+
+    def to_dict(self) -> dict[str, str | None]:
+        return {
+            "kind": self.kind.value,
+            "source_key": self.source_key,
+            "instance_id": self.instance_id,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -161,6 +171,17 @@ class ModifierTerm:
             if not isinstance(tag, str) or not tag.strip():
                 raise AttributeValidationError("audit_tags 必须是非空字符串")
         object.__setattr__(self, "audit_tags", tuple(self.audit_tags))
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "target_key": self.target_key.value,
+            "stage": self.stage.value,
+            "value": self.value,
+            "provider_key": self.provider_key,
+            "source_ref": self.source_ref.to_dict(),
+            "stacking_group": self.stacking_group,
+            "audit_tags": tuple(self.audit_tags),
+        }
 
 
 @dataclass(frozen=True, slots=True)

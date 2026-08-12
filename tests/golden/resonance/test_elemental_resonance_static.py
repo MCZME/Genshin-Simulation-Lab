@@ -27,7 +27,7 @@ from genshin_sim.core.attributes import (
     AttributeQuery,
     AttributeSubjectRef,
 )
-from tests.helpers.assembly import minimal_config
+from tests.helpers.assembly import minimal_input
 from tests.helpers.team_assets import make_team_asset_bundles
 
 
@@ -87,7 +87,7 @@ def test_elemental_resonance_static_golden(
     assets = make_team_asset_bundles(elements)
     bundle = build_resonance_bundle(assets)
     runtime = build_attribute_runtime(
-        config=minimal_config(),
+        config=minimal_input(),
         assets=assets,
         content_units=(),
         extra_providers=bundle.static_providers,

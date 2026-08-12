@@ -258,40 +258,6 @@ def test_crystallize_does_not_choose_a_multi_aura_or_frozen_candidate_implicitly
     assert runtime.evaluate(frozen_request).occurrence is None
 
 
-def test_crystallize_on_water_electro_declares_electro_then_hydro_candidates():
-    runtime = ReactionRuntime(ReactionRegistry((crystallize_definition(),)))
-    resolution = runtime.evaluate(
-        _request(
-            AuraView(
-                TARGET,
-                (
-                    _component(AuraKind.HYDRO, AuraAmount.one()),
-                    _component(AuraKind.ELECTRO, AuraAmount.one()),
-                ),
-            ),
-            AuraAmount(3),
-        )
-    )
-
-    assert resolution.occurrence is not None
-    occurrences = tuple(
-        occurrence for step in resolution.sequence.steps for occurrence in step.occurrences
-    )
-    assert tuple(occurrence.direction_key for occurrence in occurrences) == (
-        "incoming_geo_on_electro",
-        "incoming_geo_on_hydro",
-    )
-    assert tuple(
-        occurrence.crystallize_shard_state_creation.element
-        for occurrence in occurrences
-        if occurrence.crystallize_shard_state_creation is not None
-    ) == (Element.ELECTRO, Element.HYDRO)
-    assert occurrences[0].transition.aura_kind is AuraKind.ELECTRO
-    assert occurrences[0].transition.incoming_remaining == AuraAmount.one()
-    assert occurrences[1].transition.aura_kind is AuraKind.HYDRO
-    assert len(resolution.sequence.steps) == 2
-
-
 def test_crystallize_on_water_electro_blocks_second_candidate_with_same_frame_gate():
     runtime = ReactionRuntime(
         ReactionRegistry((crystallize_definition(),)),

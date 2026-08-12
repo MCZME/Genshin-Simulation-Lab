@@ -1,8 +1,8 @@
-"""配置加载与校验错误。"""
+"""应用层配置与输入模型通用错误。"""
 
 
 class ConfigError(ValueError):
-    """无效仿真配置的基础错误。"""
+    """无效配置或输入的基础错误。"""
 
 
 class ConfigFileError(ConfigError):

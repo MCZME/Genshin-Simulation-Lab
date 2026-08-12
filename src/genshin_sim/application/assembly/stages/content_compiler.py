@@ -14,7 +14,7 @@ from genshin_sim.application.assembly.models import (
     RuntimeAssetBundle,
     RuntimeContentBundle,
 )
-from genshin_sim.application.config import SimulationConfig, TeamSlotConfig
+from genshin_sim.application.input import SimulationInput, TeamSlotConfig
 from genshin_sim.assets.models import ArtifactSetAsset, ArtifactSetBonus
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
@@ -58,7 +58,7 @@ class ContentCompiler:
 
     def compile(
         self,
-        config: SimulationConfig,
+        config: SimulationInput,
         assets: tuple[RuntimeAssetBundle, ...],
     ) -> RuntimeContentBundle:
         slot_configs = {slot.slot: slot for slot in config.team}

@@ -9,7 +9,7 @@ import pytest
 from genshin_sim.application.assembly import SimulationAssembler
 from genshin_sim.application.assembly.errors import InvalidRuntimePayloadError
 from genshin_sim.application.assembly.resonance import build_resonance_bundle
-from genshin_sim.application.config import SimulationConfig
+from genshin_sim.application.input import SimulationInput
 from genshin_sim.core.attributes import (
     STAT_ATK_TOTAL,
     AttributeQuery,
@@ -28,7 +28,7 @@ from genshin_sim.core.impacts import (
     ImpactRequest,
 )
 from genshin_sim.core.systems.aura import AuraStrength
-from tests.helpers.assembly import minimal_config
+from tests.helpers.assembly import minimal_input
 from tests.helpers.asset_repository import FakeAssetRepository
 from tests.helpers.team_assets import make_character_asset, make_team_asset_bundles
 
@@ -58,7 +58,7 @@ class _PyroHydroRepository(FakeAssetRepository):
 
 def test_assembler_wires_resonance_runtime_and_publishes_activation_fact():
     assembled = SimulationAssembler(_PyroHydroRepository()).assemble(
-        SimulationConfig.from_mapping(_four_slot_config_payload())
+        SimulationInput.from_mapping(_four_slot_input_payload())
     )
 
     assert assembled.resonance_store.active_keys == (
@@ -87,7 +87,7 @@ def test_assembler_wires_resonance_runtime_and_publishes_activation_fact():
 
 def test_assembler_applies_pyro_resonance_cryo_aura_duration_reduction():
     assembled = SimulationAssembler(_PyroHydroRepository()).assemble(
-        SimulationConfig.from_mapping(_four_slot_config_payload())
+        SimulationInput.from_mapping(_four_slot_input_payload())
     )
     assert assembled.resonance_reaction_stage is not None
 
@@ -138,8 +138,8 @@ def test_assembler_applies_pyro_resonance_cryo_aura_duration_reduction():
     assert hydro.decay_profile is None
 
 
-def _four_slot_config_payload() -> dict[str, object]:
-    payload = minimal_config().to_dict()
+def _four_slot_input_payload() -> dict[str, object]:
+    payload = minimal_input().to_dict()
     payload["team"] = [
         {
             "slot": slot,

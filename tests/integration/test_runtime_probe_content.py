@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 
 from genshin_sim.application.assembly import SimulationAssembler
-from genshin_sim.application.config import SimulationConfig
+from genshin_sim.application.input import SimulationInput
 from genshin_sim.content import (
     RUNTIME_PROBE_ACTION_KEY,
     RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
@@ -22,7 +22,7 @@ def test_runtime_probe_asset_connects_to_content_runtime(tmp_path: Path):
 
     assembled = SimulationAssembler(
         SQLiteAssetRepository(asset_db),
-    ).assemble(SimulationConfig.from_mapping(_runtime_probe_config_payload()))
+    ).assemble(SimulationInput.from_mapping(_runtime_probe_input_payload()))
 
     assert assembled.assets[0].character.handler_key == RUNTIME_PROBE_CHARACTER_HANDLER_KEY
     assert assembled.content_bundle.content_state_mounts == ()
@@ -51,10 +51,10 @@ def test_runtime_probe_asset_connects_to_content_runtime(tmp_path: Path):
     assert [event.event_type for event in damage_events] == [EventType.DAMAGE_RESOLVED]
 
 
-def _runtime_probe_config_payload() -> dict[str, object]:
+def _runtime_probe_input_payload() -> dict[str, object]:
     return {
-        "schema_version": 1,
-        "kind": "simulation_config",
+        "schema_version": 2,
+        "kind": "simulation_input",
         "meta": {"name": "runtime probe integration", "description": ""},
         "team": [
             {

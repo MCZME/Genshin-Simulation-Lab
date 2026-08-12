@@ -43,6 +43,9 @@ class AuraInstanceRef:
     def __post_init__(self) -> None:
         _text(self.value, "AuraInstanceRef")
 
+    def to_dict(self) -> dict[str, str]:
+        return {"value": self.value}
+
 
 @dataclass(frozen=True, order=True, slots=True)
 class AuraDurationTerm:
@@ -66,6 +69,9 @@ class AuraContributionRef:
     def __post_init__(self) -> None:
         _text(self.value, "AuraContributionRef")
 
+    def to_dict(self) -> dict[str, str]:
+        return {"value": self.value}
+
 
 @dataclass(frozen=True, slots=True)
 class AuraContribution:
@@ -81,6 +87,17 @@ class AuraContribution:
         _frame(self.created_frame, "created_frame")
         _frame(self.last_effective_application_frame, "last_effective_application_frame")
         _frame(self.last_changed_frame, "last_changed_frame")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "contribution_ref": self.contribution_ref.to_dict(),
+            "contributor_ref": self.contributor_ref.to_dict(),
+            "remaining_amount": self.remaining_amount.to_dict(),
+            "amount_origin": self.amount_origin.to_dict(),
+            "created_frame": self.created_frame,
+            "last_effective_application_frame": self.last_effective_application_frame,
+            "last_changed_frame": self.last_changed_frame,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -176,6 +193,21 @@ class AuraComponent:
 
         return self.state_link_refs[0] if len(self.state_link_refs) == 1 else None
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "instance_ref": self.instance_ref.to_dict(),
+            "aura_kind": self.aura_kind.value,
+            "contributions": [contribution.to_dict() for contribution in self.contributions],
+            "decay_strength": self.decay_strength.value,
+            "decay_origin": self.decay_origin.to_dict(),
+            "created_frame": self.created_frame,
+            "last_applied_frame": self.last_applied_frame,
+            "last_changed_frame": self.last_changed_frame,
+            "state_link_refs": [link.to_dict() for link in self.state_link_refs],
+            "decay_mode": self.decay_mode.value,
+            "decay_profile": (None if self.decay_profile is None else self.decay_profile.to_dict()),
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class AuraTargetRecord:
@@ -260,6 +292,13 @@ class AuraTargetRecord:
         }:
             raise ValueError("当前 Aura 不支持该普通元素 Component 组合")
         object.__setattr__(self, "components", components)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "subject_ref": self.subject_ref.to_dict(),
+            "revision": self.revision,
+            "components": [component.to_dict() for component in self.components],
+        }
 
     def component_for(self, aura_kind: AuraKind) -> AuraComponent | None:
         return next((item for item in self.components if item.aura_kind is aura_kind), None)
@@ -549,3 +588,10 @@ class AuraSnapshot:
     frame: int
     normalized_through_frame: int
     targets: tuple[AuraTargetRecord, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "frame": self.frame,
+            "normalized_through_frame": self.normalized_through_frame,
+            "targets": [target.to_dict() for target in self.targets],
+        }

@@ -15,7 +15,7 @@ from genshin_sim.core.systems.energy import (
 from tests.helpers.barbara_assets import BARBARA_CHARACTER_KEY
 
 
-def barbara_config_payload(
+def barbara_input_payload(
     *,
     input_key: str = "mouse.left",
     max_frames: int = 20,
@@ -25,8 +25,8 @@ def barbara_config_payload(
     """芭芭拉单人集成测试配置。"""
 
     return {
-        "schema_version": 1,
-        "kind": "simulation_config",
+        "schema_version": 2,
+        "kind": "simulation_input",
         "meta": {"name": "barbara damage integration", "description": ""},
         "team": [
             {
@@ -64,7 +64,7 @@ def barbara_config_payload(
     }
 
 
-def barbara_probe_config_payload(
+def barbara_probe_input_payload(
     *,
     constellation: int = 0,
     max_frames: int = 140,
@@ -73,8 +73,8 @@ def barbara_probe_config_payload(
     """芭芭拉（槽位 1）+ runtime probe（槽位 2）的双人队伍配置。"""
 
     return {
-        "schema_version": 1,
-        "kind": "simulation_config",
+        "schema_version": 2,
+        "kind": "simulation_input",
         "meta": {"name": "barbara probe switch integration", "description": ""},
         "team": [
             {

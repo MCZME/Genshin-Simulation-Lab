@@ -9,7 +9,7 @@ from genshin_sim.core.entity_states import (
     TargetRuntimeCollection,
     TargetRuntimeState,
 )
-from genshin_sim.core.events import EventEngine, EventType
+from genshin_sim.core.events import AuraAppliedPayload, EventEngine, EventType
 from genshin_sim.core.impacts import (
     ElementalApplicationSpec,
     ImpactDispatcher,
@@ -124,6 +124,16 @@ def test_character_aura_handler_applies_hydro_to_character_subject():
         EventType.AURA_ICD_RESOLVED,
         EventType.AURA_APPLIED,
     ]
+    applied = next(
+        event for event in events.frame_events if event.event_type is EventType.AURA_APPLIED
+    )
+    payload = applied.payload
+    assert isinstance(payload, AuraAppliedPayload)
+    payload_dict = payload.to_dict()
+    assert payload_dict["before"] is None
+    after = payload_dict["after"]
+    assert isinstance(after, dict)
+    assert after["aura_kind"] == "hydro"
 
 
 def test_character_aura_handler_respects_icd_window():

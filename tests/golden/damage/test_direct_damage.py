@@ -33,7 +33,21 @@ from genshin_sim.core.systems.damage import (
 
 
 def test_old_project_direct_damage_audit_case():
-    """迁移基线：旧项目 test_damage_audit_trail 的纯数值行为。"""
+    """旧项目直接伤害审计案例的纯数值基线。
+
+    验证能力：基础属性、伤害加成、防御、抗性与最终伤害的纯解析数值。
+    资料来源及适用版本：旧项目测试夹具（`test_damage_audit_trail`），
+    不绑定具体游戏版本；迁移时按旧项目行为线索复核。
+    旧项目参考：`E:/project/Genshin Damage calculation` 的
+    `test_damage_audit_trail` 输入与预期。
+    完整输入条件：角色 slot_1 `base_hp=40000`、水伤加成 `0.2`；
+    目标 target_1 水抗 `0.1`；额外伤害加成 term `+0.3`；双方等级 90；
+    `hp` 倍率 `2.0`；不暴击。
+    预期输出与允许误差：`base_damage=80000`、`damage_bonus_multiplier=1.5`、
+    `defense.multiplier=0.5`、`resistance.multiplier=0.9`、
+    `official/final_damage=54000`（浮点使用 pytest.approx）。
+    不覆盖的行为：暴击、元素反应、真实内容装配链路（本用例只锁定纯解析器数值）。
+    """
 
     source = AttributeSubjectRef.character("character:slot_1")
     target = AttributeSubjectRef.target("target:target_1")
@@ -109,3 +123,5 @@ def test_old_project_direct_damage_audit_case():
     assert result.official_damage == pytest.approx(54000.0)
     assert result.debug_multiplier == 1.0
     assert result.final_damage == pytest.approx(54000.0)
+    assert result.applied_terms[0].provider_key == provider_key
+    assert result.component_results[0].attribute_value == 40000.0

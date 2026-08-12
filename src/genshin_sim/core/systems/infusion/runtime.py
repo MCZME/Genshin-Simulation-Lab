@@ -42,6 +42,7 @@ from genshin_sim.core.systems.infusion.resolver import (
     InfusionResolver,
     converge_application,
 )
+from genshin_sim.core.systems.infusion.snapshots import InfusionInstanceSnapshot
 from genshin_sim.core.systems.infusion.store import InfusionStore
 
 
@@ -144,7 +145,7 @@ class InfusionRuntime:
                 GameEvent(
                     EventType.INFUSION_APPLIED,
                     result.frame,
-                    InfusionAppliedPayload(result),
+                    InfusionAppliedPayload(_with_instance_after(self, result)),
                     source=self,
                 )
             )
@@ -491,3 +492,19 @@ def _frame_operation_id(
 
 def _length_prefixed(values: tuple[str, ...]) -> str:
     return "".join(f":{len(value)}:{value}" for value in values)
+
+
+def _with_instance_after(
+    runtime: InfusionRuntime,
+    result: InfusionApplicationResult,
+) -> InfusionApplicationResult:
+    """把已提交附魔实例的完整快照附加到应用结果，供事件载荷精确折叠。"""
+
+    if result.instance_after is not None:
+        return result
+    record = next(
+        item
+        for item in runtime.infusion_store.records
+        if item.instance_ref == result.instance_ref
+    )
+    return replace(result, instance_after=InfusionInstanceSnapshot.from_record(record))

@@ -11,7 +11,7 @@ from genshin_sim.application.assembly.stages import (
     ConfigTranslator,
     ContentCompiler,
 )
-from genshin_sim.application.config import SimulationConfig
+from genshin_sim.application.input import SimulationInput
 from genshin_sim.assets.models import (
     CharacterAsset,
     CharacterLevelStats,
@@ -36,10 +36,10 @@ from genshin_sim.core.contracts.state_schema import (
 from tests.helpers.asset_repository import FakeAssetRepository
 
 
-def _minimal_config_payload(*, team: list[dict[str, object]]) -> dict[str, object]:
+def _minimal_input_payload(*, team: list[dict[str, object]]) -> dict[str, object]:
     return {
-        "schema_version": 1,
-        "kind": "simulation_config",
+        "schema_version": 2,
+        "kind": "simulation_input",
         "meta": {"name": "stage test", "description": ""},
         "team": team,
         "scene": {"targets": []},
@@ -130,16 +130,16 @@ class StageAssetRepositoryWithHandler(StageAssetRepository):
         )
 
 
-def _single_character_config() -> SimulationConfig:
+def _single_character_config() -> SimulationInput:
     return ConfigTranslator().translate_mapping(
-        _minimal_config_payload(team=_single_character_team("character:stage_test"))
+        _minimal_input_payload(team=_single_character_team("character:stage_test"))
     )
 
 
 def test_config_translator_translates_mapping_and_keeps_identity():
     translator = ConfigTranslator()
     config = translator.translate_mapping(
-        _minimal_config_payload(team=_single_character_team("character:stage_test"))
+        _minimal_input_payload(team=_single_character_team("character:stage_test"))
     )
 
     assert translator.translate(config) is config
@@ -150,7 +150,7 @@ def test_config_translator_rejects_empty_team():
     translator = ConfigTranslator()
 
     with pytest.raises(MissingRuntimeAssetError, match="队伍槽位"):
-        translator.translate_mapping(_minimal_config_payload(team=[]))
+        translator.translate_mapping(_minimal_input_payload(team=[]))
 
 
 def test_asset_loader_loads_single_character_bundle():

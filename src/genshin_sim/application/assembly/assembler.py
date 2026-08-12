@@ -11,7 +11,7 @@ from genshin_sim.application.assembly.stages import (
     ContentCompiler,
     RuntimeAssembler,
 )
-from genshin_sim.application.config import SimulationConfig
+from genshin_sim.application.input import SimulationInput
 from genshin_sim.assets import AssetRepository
 from genshin_sim.content.bootstrap_content_units import (
     create_default_content_unit_registry,
@@ -43,7 +43,7 @@ class SimulationAssembler:
             damage_formula_registry=damage_formula_registry,
         )
 
-    def assemble(self, config: SimulationConfig) -> AssembledSimulation:
+    def assemble(self, config: SimulationInput) -> AssembledSimulation:
         config = self.config_translator.translate(config)
         assets = self.asset_loader.load(config)
         content_bundle = self.content_compiler.compile(config, assets)

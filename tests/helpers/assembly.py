@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from genshin_sim.application.config import SimulationConfig
+from genshin_sim.application.input import SimulationInput
 from genshin_sim.core.actions import (
     ActionInterpretationResult,
     ActionInterpretationTrigger,
@@ -87,11 +87,11 @@ class TestAttributeModifier:
         )
 
 
-def minimal_config(*, input_trace: list[dict[str, object]] | None = None) -> SimulationConfig:
-    return SimulationConfig.from_mapping(
+def minimal_input(*, input_trace: list[dict[str, object]] | None = None) -> SimulationInput:
+    return SimulationInput.from_mapping(
         {
-            "schema_version": 1,
-            "kind": "simulation_config",
+            "schema_version": 2,
+            "kind": "simulation_input",
             "meta": {"name": "demo", "description": ""},
             "team": [
                 {
@@ -136,8 +136,8 @@ def minimal_config(*, input_trace: list[dict[str, object]] | None = None) -> Sim
     )
 
 
-def reordered_two_slot_config() -> SimulationConfig:
-    payload = minimal_config().to_dict()
+def reordered_two_slot_config() -> SimulationInput:
+    payload = minimal_input().to_dict()
     payload["team"] = [
         {
             "slot": 2,
@@ -158,7 +158,7 @@ def reordered_two_slot_config() -> SimulationConfig:
             },
         },
     ]
-    return SimulationConfig.from_mapping(payload)
+    return SimulationInput.from_mapping(payload)
 
 
 def skill_input_trace() -> list[dict[str, object]]:

@@ -87,6 +87,14 @@ from genshin_sim.core.attributes.models import (
     normalize_zero,
     validate_finite_float,
 )
+from genshin_sim.core.attributes.panel import (
+    AttributePanelChange,
+    AttributePanelError,
+    AttributePanelSynchronizer,
+    attributes_provider_dict,
+    panel_entries_to_dict,
+    resolve_panel,
+)
 from genshin_sim.core.attributes.protocols import (
     AttributeReader,
     ModifierProvider,
@@ -101,6 +109,9 @@ __all__ = [
     "AttributeDefinitionRegistry",
     "AttributeErrorDetail",
     "AttributeKey",
+    "AttributePanelChange",
+    "AttributePanelError",
+    "AttributePanelSynchronizer",
     "AttributeQuery",
     "AttributeQueryContext",
     "AttributeReader",
@@ -177,8 +188,11 @@ __all__ = [
     "UnknownAttributeError",
     "UnsupportedOwnerError",
     "attribute_key",
+    "attributes_provider_dict",
     "create_public_attribute_registry",
     "is_public_attribute_key",
     "normalize_zero",
+    "panel_entries_to_dict",
+    "resolve_panel",
     "validate_finite_float",
 ]

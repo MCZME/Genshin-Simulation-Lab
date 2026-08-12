@@ -31,22 +31,21 @@ TARGET = ElementalSubjectRef.target("target:target_1")
         "aura_element",
         "incoming",
         "expected_reaction",
-        "expected_multiplier",
         "incoming_used",
         "aura_used",
     ),
     [
-        (Element.HYDRO, Element.PYRO, "reaction.vaporize", 1.5, Fraction(1, 1), Fraction(1, 2)),
-        (Element.PYRO, Element.HYDRO, "reaction.vaporize", 2.0, Fraction(2, 5), Fraction(4, 5)),
-        (Element.CRYO, Element.PYRO, "reaction.melt", 2.0, Fraction(2, 5), Fraction(4, 5)),
-        (Element.PYRO, Element.CRYO, "reaction.melt", 1.5, Fraction(1, 1), Fraction(1, 2)),
+        (Element.HYDRO, Element.PYRO, "reaction.vaporize", Fraction(1, 1), Fraction(1, 2)),
+        (Element.PYRO, Element.HYDRO, "reaction.vaporize", Fraction(2, 5), Fraction(4, 5)),
+        (Element.CRYO, Element.PYRO, "reaction.melt", Fraction(2, 5), Fraction(4, 5)),
+        (Element.PYRO, Element.CRYO, "reaction.melt", Fraction(1, 1), Fraction(1, 2)),
     ],
 )
+# golden 已锁定倍率、剩余附着与事件流；此处只锁定精确消耗份额。
 def test_vaporize_and_melt_use_confirmed_exact_consumption(
     aura_element: Element,
     incoming: Element,
     expected_reaction: str,
-    expected_multiplier: float,
     incoming_used: Fraction,
     aura_used: Fraction,
 ):
@@ -84,9 +83,6 @@ def test_vaporize_and_melt_use_confirmed_exact_consumption(
     assert result.occurrence.transition.incoming_consumed == AuraAmount(incoming_used)
     assert result.occurrence.transition.aura_consumed == AuraAmount(aura_used)
     assert isinstance(result.damage_adjustment, CurrentImpactDamageAdjustment)
-    assert result.damage_adjustment.base_multiplier == expected_multiplier
-    assert result.decision_sequence is not None
-    assert result.decision_sequence.steps[0].selected_candidate_keys == (expected_reaction,)
 
 
 def test_reaction_batch_rejects_duplicate_order():
@@ -114,21 +110,20 @@ def test_reaction_batch_rejects_duplicate_order():
         "aura_element",
         "incoming",
         "expected_reaction",
-        "expected_multiplier",
         "expected_strike_type",
     ),
     (
-        (Element.ELECTRO, Element.PYRO, "reaction.overloaded", 2.75, StrikeType.BLUNT),
-        (Element.PYRO, Element.ELECTRO, "reaction.overloaded", 2.75, StrikeType.BLUNT),
-        (Element.ELECTRO, Element.CRYO, "reaction.superconduct", 1.5, None),
-        (Element.CRYO, Element.ELECTRO, "reaction.superconduct", 1.5, None),
+        (Element.ELECTRO, Element.PYRO, "reaction.overloaded", StrikeType.BLUNT),
+        (Element.PYRO, Element.ELECTRO, "reaction.overloaded", StrikeType.BLUNT),
+        (Element.ELECTRO, Element.CRYO, "reaction.superconduct", None),
+        (Element.CRYO, Element.ELECTRO, "reaction.superconduct", None),
     ),
 )
-def test_transformative_reaction_effect_carries_profile_multiplier(
+# golden 已锁定最终伤害与消耗；此处只锁定 Effect 结构与打击类型。
+def test_transformative_reaction_effect_carries_strike_type_and_captured_basis(
     aura_element: Element,
     incoming: Element,
     expected_reaction: str,
-    expected_multiplier: float,
     expected_strike_type: StrikeType | None,
 ):
     aura_runtime = AuraRuntime()
@@ -180,5 +175,4 @@ def test_transformative_reaction_effect_carries_profile_multiplier(
     effect = result.occurrence.effect_groups[0].effects[0]
     assert isinstance(effect, GeneratedDamageImpactEffect)
     assert effect.captured_scaling_basis.source_ref == SOURCE
-    assert effect.transformative_base_multiplier == expected_multiplier
     assert effect.strike_type is expected_strike_type

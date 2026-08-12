@@ -8,8 +8,8 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from types import TracebackType
 
-from genshin_sim.application.config import SimulationConfig
 from genshin_sim.application.execution import SynchronousSimulationExecutor
+from genshin_sim.application.input import SimulationInput
 from genshin_sim.application.jobs import (
     SimulationJobNotFoundError,
     SimulationJobPayloadError,
@@ -53,18 +53,18 @@ class ProcessSimulationJobRunner:
         self._jobs: dict[str, _ProcessJobRecord] = {}
         self._closed = False
 
-    def submit_config(self, config: SimulationConfig) -> str:
+    def submit_input(self, config: SimulationInput) -> str:
         status = self._create_status()
-        payload = SimulationWorkerPayload.from_config(
+        payload = SimulationWorkerPayload.from_input(
             job_id=status.job_id,
-            config=config,
+            simulation_input=config,
             asset_db_path=str(self.asset_db_path),
             result_db_path=str(self.result_db_path),
             created_at=status.created_at,
         )
         logger.info(
-            "提交进程仿真配置任务",
-            extra={"job_id": status.job_id, "config_name": config.meta.name},
+            "提交进程模拟输入任务",
+            extra={"job_id": status.job_id, "input_name": config.meta.name},
         )
         return self._submit_payload(status, payload)
 
@@ -72,14 +72,14 @@ class ProcessSimulationJobRunner:
         status = self._create_status()
         payload = SimulationWorkerPayload.from_file(
             job_id=status.job_id,
-            config_path=str(path),
+            input_path=str(path),
             asset_db_path=str(self.asset_db_path),
             result_db_path=str(self.result_db_path),
             created_at=status.created_at,
         )
         logger.info(
-            "提交进程仿真配置文件任务",
-            extra={"job_id": status.job_id, "config_path": str(path)},
+            "提交进程模拟输入文件任务",
+            extra={"job_id": status.job_id, "input_path": str(path)},
         )
         return self._submit_payload(status, payload)
 

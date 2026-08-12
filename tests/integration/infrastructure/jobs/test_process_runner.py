@@ -14,10 +14,10 @@ from genshin_sim.infrastructure.results_sqlite import SQLiteResultRepository
 def test_process_runner_runs_file_and_persists_result(tmp_path: Path):
     asset_db = tmp_path / "assets.db"
     result_db = tmp_path / "results.db"
-    config_path = tmp_path / "config.json"
+    input_path = tmp_path / "config.json"
     write_minimal_static_asset_database(asset_db)
-    config_path.write_text(
-        json.dumps(_minimal_config_payload(), ensure_ascii=False),
+    input_path.write_text(
+        json.dumps(_minimal_input_payload(), ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -30,7 +30,7 @@ def test_process_runner_runs_file_and_persists_result(tmp_path: Path):
         service = SimulationTaskService(runner)
 
         result = service.run_file_and_wait(
-            config_path,
+            input_path,
             poll_interval_seconds=0.01,
             timeout_seconds=10,
         )
@@ -41,15 +41,16 @@ def test_process_runner_runs_file_and_persists_result(tmp_path: Path):
     assert result.summary.frames_run == 3
 
     detail = SQLiteResultRepository(result_db).get_run(result.session_id)
+    assert detail.summary is not None
     assert detail.summary.stop_reason == "COMPLETED"
-    assert detail.config_snapshot["meta"]["name"] == "process runner integration run"
+    assert detail.input_snapshot["meta"]["name"] == "process runner integration run"
 
 
 def test_process_runner_records_missing_asset_database_failure(tmp_path: Path):
     result_db = tmp_path / "results.db"
-    config_path = tmp_path / "config.json"
-    config_path.write_text(
-        json.dumps(_minimal_config_payload(), ensure_ascii=False),
+    input_path = tmp_path / "config.json"
+    input_path.write_text(
+        json.dumps(_minimal_input_payload(), ensure_ascii=False),
         encoding="utf-8",
     )
 
@@ -60,7 +61,7 @@ def test_process_runner_records_missing_asset_database_failure(tmp_path: Path):
         job_id_factory=lambda: "job-2",
     ) as runner:
         service = SimulationTaskService(runner)
-        job_id = service.submit_file(config_path)
+        job_id = service.submit_file(input_path)
         result = service.get_result(job_id)
         if result.state not in {
             SimulationJobState.COMPLETED,
@@ -92,10 +93,10 @@ def _wait_for_terminal_result(
         sleep(0.01)
 
 
-def _minimal_config_payload() -> dict[str, object]:
+def _minimal_input_payload() -> dict[str, object]:
     return {
-        "schema_version": 1,
-        "kind": "simulation_config",
+        "schema_version": 2,
+        "kind": "simulation_input",
         "meta": {"name": "process runner integration run", "description": ""},
         "team": [
             {

@@ -11,15 +11,17 @@ from genshin_sim.application.services.assets import (
     AssetsService,
     HandlerBindingKind,
 )
-from genshin_sim.application.services.config_validation import ConfigValidationService
 from genshin_sim.application.services.errors import ApplicationServiceError
+from genshin_sim.application.services.input_validation import InputValidationService
+from genshin_sim.application.services.inputs import InputDiscoveryService
 from genshin_sim.application.services.models import (
     RunDetail,
     RunListItem,
 )
+from genshin_sim.application.services.project import ProjectService
 from genshin_sim.application.services.protocols import (
-    ConfigValidator,
     ResultRepository,
+    SimulationInputValidator,
 )
 from genshin_sim.application.services.results import ResultDatabaseService, ResultsService
 from genshin_sim.application.services.simulation import SimulationTaskService
@@ -34,8 +36,10 @@ __all__ = [
     "AssetManifestBuildService",
     "AssetSourceCacheService",
     "AssetsService",
-    "ConfigValidationService",
-    "ConfigValidator",
+    "InputValidationService",
+    "InputDiscoveryService",
+    "ProjectService",
+    "SimulationInputValidator",
     "HandlerBindingKind",
     "ResultRepository",
     "ResultDatabaseService",

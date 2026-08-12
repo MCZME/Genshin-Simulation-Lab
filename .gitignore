@@ -13,11 +13,8 @@ htmlcov/
 # Virtual environments
 .venv
 
-# Generated asset source caches
-data/assets/*
-!data/assets/.gitkeep
-data/assets/sources/
-data/assets/manifests/
+# Generated local data
+data/
 
-# Local run examples
-examples/*
+# Local project configuration
+config.toml

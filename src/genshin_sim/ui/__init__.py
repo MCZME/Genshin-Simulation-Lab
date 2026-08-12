@@ -8,9 +8,9 @@ from typing import Protocol
 import flet as ft
 
 from genshin_sim.application.services import (
-    ConfigValidationService,
-    ConfigValidator,
+    InputValidationService,
     ResultsService,
+    SimulationInputValidator,
     SimulationTaskService,
 )
 
@@ -27,7 +27,7 @@ class PageLike(Protocol):
 class UIServices:
     """Application services injected into the UI layer."""
 
-    config_validator: ConfigValidator
+    config_validator: SimulationInputValidator
     results: ResultsService | None = None
     simulation_tasks: SimulationTaskService | None = None
 
@@ -35,7 +35,7 @@ class UIServices:
 def create_default_ui_services() -> UIServices:
     """Create only services that do not require infrastructure adapters."""
 
-    return UIServices(config_validator=ConfigValidationService())
+    return UIServices(config_validator=InputValidationService())
 
 
 def build_shell(page: PageLike, services: UIServices) -> None:

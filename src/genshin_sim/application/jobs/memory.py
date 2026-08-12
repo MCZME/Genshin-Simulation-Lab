@@ -6,8 +6,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
-from genshin_sim.application.config import SimulationConfig
 from genshin_sim.application.execution import SimulationExecutionOutcome, SimulationExecutor
+from genshin_sim.application.input import SimulationInput
 from genshin_sim.application.jobs.errors import SimulationJobNotFoundError
 from genshin_sim.application.jobs.models import (
     SimulationJobResult,
@@ -40,15 +40,15 @@ class InMemorySimulationJobRunner:
         self._job_id_factory = job_id_factory or (lambda: uuid.uuid4().hex)
         self._jobs: dict[str, _MemoryJobRecord] = {}
 
-    def submit_config(self, config: SimulationConfig) -> str:
+    def submit_input(self, config: SimulationInput) -> str:
         job_id = self._create_job()
-        logger.info("提交仿真配置任务", extra={"job_id": job_id, "config_name": config.meta.name})
-        self._execute_job(job_id, lambda: self.executor.execute_config(config))
+        logger.info("提交模拟输入任务", extra={"job_id": job_id, "input_name": config.meta.name})
+        self._execute_job(job_id, lambda: self.executor.execute_input(config))
         return job_id
 
     def submit_file(self, path: str | Path) -> str:
         job_id = self._create_job()
-        logger.info("提交仿真配置文件任务", extra={"job_id": job_id, "config_path": str(path)})
+        logger.info("提交模拟输入文件任务", extra={"job_id": job_id, "input_path": str(path)})
         self._execute_job(job_id, lambda: self.executor.execute_file(path))
         return job_id
 

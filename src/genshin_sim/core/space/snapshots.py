@@ -28,3 +28,10 @@ class SpaceSnapshot:
         if len({entity.entity_id for entity in entities}) != len(entities):
             raise ValueError("Space snapshot entities 包含重复 entity_id")
         object.__setattr__(self, "entities", entities)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "frame": self.frame,
+            "entity_version": self.entity_version,
+            "entities": [entity.to_dict() for entity in self.entities],
+        }

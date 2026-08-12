@@ -8,6 +8,7 @@ from genshin_sim.core.systems.shield.enums import ShieldElement
 from genshin_sim.core.systems.shield.models import (
     ShieldInstanceRef,
     ShieldProtectionRef,
+    ShieldRecord,
     validate_frame,
 )
 
@@ -29,6 +30,24 @@ class ShieldInstanceSnapshot:
     created_frame: int
     expires_at_frame: int
     tags: frozenset[str]
+
+    @classmethod
+    def from_record(cls, record: ShieldRecord) -> ShieldInstanceSnapshot:
+        state = record.state
+        return cls(
+            instance_ref=record.instance_ref,
+            mechanic_key=record.mechanic_key,
+            handler_key=record.handler_key,
+            protection_ref=state.protection_ref,
+            creator_ref=state.creator_ref,
+            source_context=state.source_context,
+            element=state.element,
+            maximum_native_absorption=state.maximum_native_absorption,
+            remaining_native_absorption=state.remaining_native_absorption,
+            created_frame=record.created_frame,
+            expires_at_frame=record.expires_at_frame,
+            tags=state.tags,
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -65,23 +84,7 @@ class ShieldSnapshot:
         for record in runtime.shield_store.records:
             if not record.is_active_at(frame):
                 continue
-            state = record.state
-            snapshots.append(
-                ShieldInstanceSnapshot(
-                    instance_ref=record.instance_ref,
-                    mechanic_key=record.mechanic_key,
-                    handler_key=record.handler_key,
-                    protection_ref=state.protection_ref,
-                    creator_ref=state.creator_ref,
-                    source_context=state.source_context,
-                    element=state.element,
-                    maximum_native_absorption=state.maximum_native_absorption,
-                    remaining_native_absorption=state.remaining_native_absorption,
-                    created_frame=record.created_frame,
-                    expires_at_frame=record.expires_at_frame,
-                    tags=state.tags,
-                )
-            )
+            snapshots.append(ShieldInstanceSnapshot.from_record(record))
         return cls(frame=frame, instances=tuple(snapshots))
 
     def to_dict(self) -> dict[str, object]:

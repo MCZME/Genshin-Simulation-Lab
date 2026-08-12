@@ -3,8 +3,8 @@ from __future__ import annotations
 from pathlib import Path
 from time import monotonic, sleep
 
-from genshin_sim.application.config import SimulationConfig
 from genshin_sim.application.execution import ResultWriter, SynchronousSimulationExecutor
+from genshin_sim.application.input import SimulationInput
 from genshin_sim.application.jobs import (
     InMemorySimulationJobRunner,
     SimulationJobResult,
@@ -51,8 +51,8 @@ class SimulationTaskService:
     def submit_file(self, path: str | Path) -> str:
         return self.runner.submit_file(path)
 
-    def submit_config(self, config: SimulationConfig) -> str:
-        return self.runner.submit_config(config)
+    def submit_input(self, config: SimulationInput) -> str:
+        return self.runner.submit_input(config)
 
     def get_status(self, job_id: str) -> SimulationJobStatus:
         return self.runner.get_status(job_id)
@@ -79,12 +79,12 @@ class SimulationTaskService:
 
     def run_config_and_wait(
         self,
-        config: SimulationConfig,
+        config: SimulationInput,
         *,
         poll_interval_seconds: float = 0.05,
         timeout_seconds: float | None = None,
     ) -> SimulationJobResult:
-        job_id = self.submit_config(config)
+        job_id = self.submit_input(config)
         return self.wait_for_result(
             job_id,
             poll_interval_seconds=poll_interval_seconds,

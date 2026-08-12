@@ -5,19 +5,19 @@ from pathlib import Path
 
 import pytest
 
-from genshin_sim.application.config import (
+from genshin_sim.application.input import (
     ConfigError,
     InputFrameConfig,
     KeyEventConfig,
-    SimulationConfig,
-    load_simulation_config,
+    SimulationInput,
+    load_simulation_input,
 )
 
 
-def _minimal_config_payload() -> dict[str, object]:
+def _minimal_input_payload() -> dict[str, object]:
     return {
-        "schema_version": 1,
-        "kind": "simulation_config",
+        "schema_version": 2,
+        "kind": "simulation_input",
         "meta": {"name": "demo", "description": ""},
         "team": [
             {
@@ -77,11 +77,11 @@ def _minimal_config_payload() -> dict[str, object]:
     }
 
 
-def test_simulation_config_round_trips_to_dict():
-    config = SimulationConfig.from_mapping(_minimal_config_payload())
+def test_simulation_input_round_trips_to_dict():
+    config = SimulationInput.from_mapping(_minimal_input_payload())
 
-    assert config.schema_version == 1
-    assert config.kind == "simulation_config"
+    assert config.schema_version == 2
+    assert config.kind == "simulation_input"
     assert config.team[0].character.asset_key == "character:75"
     assert config.scene.player.position.x == 0
     assert config.scene.player.facing.z == 1
@@ -91,8 +91,8 @@ def test_simulation_config_round_trips_to_dict():
     assert config.to_dict()["scene"]["player"]["facing"]["z"] == 1
 
 
-def test_simulation_config_accepts_scene_player_start():
-    payload = _minimal_config_payload()
+def test_simulation_input_accepts_scene_player_start():
+    payload = _minimal_input_payload()
     payload["scene"] = {
         "player": {
             "position": {"x": 1, "y": 2, "z": 3},
@@ -108,7 +108,7 @@ def test_simulation_config_accepts_scene_player_start():
         ],
     }
 
-    config = SimulationConfig.from_mapping(payload)
+    config = SimulationInput.from_mapping(payload)
 
     assert config.scene.player.position.x == 1
     assert config.scene.player.position.y == 2
@@ -116,19 +116,19 @@ def test_simulation_config_accepts_scene_player_start():
     assert config.scene.player.facing.x == 1
 
 
-def test_simulation_config_rejects_zero_xz_player_facing():
-    payload = _minimal_config_payload()
+def test_simulation_input_rejects_zero_xz_player_facing():
+    payload = _minimal_input_payload()
     payload["scene"] = {
         "player": {"facing": {"x": 0, "y": 1, "z": 0}},
         "targets": [],
     }
 
     with pytest.raises(ConfigError, match="scene\\.player\\.facing"):
-        SimulationConfig.from_mapping(payload)
+        SimulationInput.from_mapping(payload)
 
 
-def test_simulation_config_rejects_invalid_team_key():
-    payload = _minimal_config_payload()
+def test_simulation_input_rejects_invalid_team_key():
+    payload = _minimal_input_payload()
     payload["team"] = [
         {
             "slot": 1,
@@ -140,39 +140,39 @@ def test_simulation_config_rejects_invalid_team_key():
     ]
 
     with pytest.raises(ConfigError, match="team\\[0\\]\\.character\\.asset_key"):
-        SimulationConfig.from_mapping(payload)
+        SimulationInput.from_mapping(payload)
 
 
-def test_simulation_config_rejects_invalid_scene_target_id():
-    payload = _minimal_config_payload()
+def test_simulation_input_rejects_invalid_scene_target_id():
+    payload = _minimal_input_payload()
     payload["scene"] = {"targets": [{"id": "", "position": {}, "resistance": {}}]}
 
     with pytest.raises(ConfigError, match="scene\\.targets\\[0\\]\\.id"):
-        SimulationConfig.from_mapping(payload)
+        SimulationInput.from_mapping(payload)
 
 
-def test_simulation_config_rejects_unbalanced_input_trace():
-    payload = _minimal_config_payload()
+def test_simulation_input_rejects_unbalanced_input_trace():
+    payload = _minimal_input_payload()
     payload["input_trace"] = [{"frame": 1, "events": [{"key": "keyboard.e", "phase": "press"}]}]
 
     with pytest.raises(ConfigError, match="输入轨迹结束时仍有按键未释放"):
-        SimulationConfig.from_mapping(payload)
+        SimulationInput.from_mapping(payload)
 
 
-def test_simulation_config_rejects_empty_input_frame():
-    payload = _minimal_config_payload()
+def test_simulation_input_rejects_empty_input_frame():
+    payload = _minimal_input_payload()
     payload["input_trace"] = [{"frame": 1, "events": []}]
 
     with pytest.raises(ConfigError, match="第 1 帧必须至少包含一个输入事件"):
-        SimulationConfig.from_mapping(payload)
+        SimulationInput.from_mapping(payload)
 
 
-def test_simulation_config_json_file_round_trip(tmp_path: Path):
-    payload = _minimal_config_payload()
+def test_simulation_input_json_file_round_trip(tmp_path: Path):
+    payload = _minimal_input_payload()
     path = tmp_path / "config.json"
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
 
-    config = load_simulation_config(path)
+    config = load_simulation_input(path)
 
     assert config.to_dict()["scene"]["targets"][0]["id"] == "target_1"
 

@@ -3,12 +3,12 @@ from __future__ import annotations
 from pathlib import Path
 
 from genshin_sim.application.assembly import SimulationAssembler
-from genshin_sim.application.config import SimulationConfig
 from genshin_sim.application.execution import (
     CompletedSimulationRun,
     RecordedEvent,
     SimulationRunSummary,
 )
+from genshin_sim.application.input import SimulationInput
 from genshin_sim.content.characters.testing.runtime_probe.actions import (
     RuntimeProbeActionInterpreter,
     create_runtime_probe_action,
@@ -94,7 +94,7 @@ def test_action_impact_grants_shield_and_incoming_damage_reaches_health_runtime(
         RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
         _testing_shield_content_unit,
     )
-    config = SimulationConfig.from_mapping(_config_payload())
+    config = SimulationInput.from_mapping(_input_payload())
     assembled = SimulationAssembler(
         SQLiteAssetRepository(asset_db),
         content_unit_registry=unit_registry,
@@ -169,17 +169,16 @@ def _assert_result_database_round_trip(
         RecordedEvent(
             frame=event.frame,
             event_type=event.event_type.name,
-            source_type=None if event.source is None else event.source.__class__.__name__,
             data=event.payload.to_dict(),
         )
         for event in captured
     )
     session_id = writer.save_run(
         CompletedSimulationRun(
-            config_schema_version=1,
-            config_kind="simulation_config",
-            config_meta={"name": "shield integration"},
-            config_snapshot={"schema_version": 1, "kind": "simulation_config"},
+            input_schema_version=2,
+            input_kind="simulation_input",
+            input_meta={"name": "shield integration"},
+            input_snapshot={"schema_version": 2, "kind": "simulation_input"},
             summary=SimulationRunSummary(
                 stop_reason="COMPLETED",
                 end_frame=end_frame,
@@ -192,7 +191,7 @@ def _assert_result_database_round_trip(
 
     detail = SQLiteResultRepository(result_db).get_run(session_id)
 
-    assert RESULTS_SCHEMA_VERSION == "1"
+    assert RESULTS_SCHEMA_VERSION == "2"
     assert [event.event_type for event in detail.events] == [
         event.event_type for event in recorded_events
     ]
@@ -200,10 +199,10 @@ def _assert_result_database_round_trip(
     assert detail.events[-1].data["record"]["health_result"]["hp_after"] == 9_500
 
 
-def _config_payload() -> dict[str, object]:
+def _input_payload() -> dict[str, object]:
     return {
-        "schema_version": 1,
-        "kind": "simulation_config",
+        "schema_version": 2,
+        "kind": "simulation_input",
         "meta": {"name": "shield integration", "description": ""},
         "team": [
             {

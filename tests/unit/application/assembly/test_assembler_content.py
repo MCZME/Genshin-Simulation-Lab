@@ -52,7 +52,7 @@ from tests.helpers.assembly import (
     TestAttributeModifier,
     TestCreatedObjectBehavior,
     TestImpactFactory,
-    minimal_config,
+    minimal_input,
     skill_input_trace,
 )
 from tests.helpers.asset_repository import FakeAssetRepository
@@ -104,7 +104,7 @@ def test_assembler_injects_character_runtime_contribution_and_actions():
     assembled = SimulationAssembler(
         RuntimeRepository(),
         content_unit_registry=registry,
-    ).assemble(minimal_config(input_trace=skill_input_trace()))
+    ).assemble(minimal_input(input_trace=skill_input_trace()))
     result = assembled.simulator.run()
 
     assert result.end_frame == 3
@@ -154,7 +154,7 @@ def test_assembler_injects_content_attribute_modifier_as_core_term():
     assembled = SimulationAssembler(
         RuntimeRepository(),
         content_unit_registry=registry,
-    ).assemble(minimal_config())
+    ).assemble(minimal_input())
     character_ref = AttributeSubjectRef.character("character:slot_1")
     resolution = assembled.attribute_runtime.resolver.resolve(
         AttributeQuery(character_ref, STAT_CRIT_RATE, frame=0)
@@ -224,7 +224,7 @@ def test_assembler_injects_content_buff_definition_and_attribute_provider():
     assembled = SimulationAssembler(
         RuntimeRepository(),
         content_unit_registry=registry,
-    ).assemble(minimal_config())
+    ).assemble(minimal_input())
     character_ref = AttributeSubjectRef.character("character:slot_1")
 
     assert assembled.buff_definitions == (definition,)
@@ -334,7 +334,7 @@ def test_assembler_registers_content_private_attribute_and_native_provider():
     assembled = SimulationAssembler(
         RuntimeRepository(),
         content_unit_registry=registry,
-    ).assemble(minimal_config())
+    ).assemble(minimal_input())
     resolution = assembled.attribute_runtime.resolver.resolve(
         AttributeQuery(subject_ref, private_key, frame=0)
     )
@@ -385,7 +385,7 @@ def test_assembler_mounts_content_state_under_character_runtime_state():
     assembled = SimulationAssembler(
         RuntimeRepository(),
         content_unit_registry=registry,
-    ).assemble(minimal_config())
+    ).assemble(minimal_input())
     character = assembled.space_runtime.team_state.current_character
 
     mount = character.content_states["character.state_mount"]

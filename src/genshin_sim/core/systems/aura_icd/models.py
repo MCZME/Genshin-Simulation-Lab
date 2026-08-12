@@ -79,6 +79,9 @@ class AuraIcdAttackerRef:
     def __post_init__(self) -> None:
         _text(self.scope_key, "scope_key")
 
+    def to_dict(self) -> dict[str, str]:
+        return {"scope_key": self.scope_key}
+
 
 @dataclass(frozen=True, order=True, slots=True)
 class IcdKey:
@@ -90,6 +93,14 @@ class IcdKey:
     def __post_init__(self) -> None:
         _text(self.tag_key, "tag_key")
         _text(self.sequence_key, "sequence_key")
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "attacker_ref": self.attacker_ref.to_dict(),
+            "defender_ref": self.defender_ref.to_dict(),
+            "tag_key": self.tag_key,
+            "sequence_key": self.sequence_key,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,6 +139,16 @@ class IcdRecord:
         if self.next_sequence_index < 0 or self.revision < 0:
             raise ValueError("ICD Record 游标和 revision 不能为负数")
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "key": self.key.to_dict(),
+            "window_started_frame": self.window_started_frame,
+            "resets_at_frame": self.resets_at_frame,
+            "next_sequence_index": self.next_sequence_index,
+            "last_hit_frame": self.last_hit_frame,
+            "revision": self.revision,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class IcdResolution:
@@ -144,6 +165,8 @@ class IcdResolution:
     coefficient: AuraAmount
     window_started_frame: int | None
     resets_at_frame: int | None
+    before: IcdRecord | None
+    after: IcdRecord | None
 
     @property
     def allows_application(self) -> bool:
@@ -172,3 +195,10 @@ class IcdSnapshot:
     frame: int
     normalized_through_frame: int
     records: tuple[IcdRecord, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "frame": self.frame,
+            "normalized_through_frame": self.normalized_through_frame,
+            "records": [record.to_dict() for record in self.records],
+        }

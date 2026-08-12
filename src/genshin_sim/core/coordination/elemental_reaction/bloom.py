@@ -18,6 +18,7 @@ from genshin_sim.core.coordination.elemental_reaction.protocols import (
     ReactionTargetEligibilityPort,
 )
 from genshin_sim.core.coordination.elemental_reaction.spatial import (
+    publish_space_entity_facts,
     validate_dendro_core_space_terminalizations,
 )
 from genshin_sim.core.elements import AuraAmount, Element, ElementalSourceRef, ElementalSubjectRef
@@ -293,6 +294,7 @@ class BloomCoreTriggerCoordinator:
         if context is not None:
             with self.spatial_planning_port.event_publication_guard():
                 self.reaction_state_port.publish_committed_state_facts(context, state_receipt)
+                publish_space_entity_facts(context, space_plan)
         effect_groups = () if terminal.effect_group is None else (terminal.effect_group,)
         result = SprawlingShotResolutionResult(request, effect_groups, (terminal.occurrence,))
         self._shot_resolution_results[request.operation_id] = result
@@ -388,6 +390,7 @@ class BloomCoreTriggerCoordinator:
         if context is not None:
             with self.spatial_planning_port.event_publication_guard():
                 self.reaction_state_port.publish_committed_state_facts(context, state_receipt)
+                publish_space_entity_facts(context, space_plan)
 
 
 def _sprawling_shot_for(

@@ -40,6 +40,13 @@ class EntityLifecycle:
             return False
         return self.expires_at_frame is None or frame < self.expires_at_frame
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "created_frame": self.created_frame,
+            "expires_at_frame": self.expires_at_frame,
+            "state": self.state.value,
+        }
+
     def expired(self) -> EntityLifecycle:
         """返回终结后的生命周期值，不修改已共享的原值。"""
 

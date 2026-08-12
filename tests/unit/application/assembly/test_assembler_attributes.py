@@ -15,7 +15,7 @@ from genshin_sim.core.attributes import (
     AttributeSubjectRef,
 )
 from tests.helpers.assembly import (
-    minimal_config,
+    minimal_input,
 )
 
 
@@ -27,7 +27,7 @@ def test_attribute_runtime_isolates_static_asset_modifiers_by_character_slot():
         weapon_level_stats: WeaponLevelStats | None = None
 
     runtime = build_attribute_runtime(
-        config=minimal_config(),
+        config=minimal_input(),
         assets=(
             AttributeAssetBundle(
                 slot=1,

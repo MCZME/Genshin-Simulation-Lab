@@ -284,6 +284,8 @@ class CooldownFact:
     queued_recoveries: int
     source_ref: str
     duration_audit: CooldownDurationResolution | None = None
+    before_record: CooldownRecord | None = None
+    after_record: CooldownRecord | None = None
 
     @property
     def sort_key(self) -> tuple[int, tuple[str, str, str], str, str]:

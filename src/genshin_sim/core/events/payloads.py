@@ -1,15 +1,18 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, cast
 
 if TYPE_CHECKING:
+    from genshin_sim.core.attributes.panel import AttributePanelChange
     from genshin_sim.core.coordination.character_damage_taken.models import (
         CharacterDamageTakenRecord,
     )
     from genshin_sim.core.coordination.elemental_reaction.models import (
         ElementalInteractionBatchRecord,
     )
+    from genshin_sim.core.space.entities import SpatialEntity
     from genshin_sim.core.systems.aura.models import (
         AuraApplicationResult,
         AuraTransitionResult,
@@ -335,6 +338,10 @@ class AuraIcdResolvedPayload:
             "allows_application": self.result.allows_application,
             "tag_key": self.result.tag_key,
             "sequence_key": self.result.sequence_key,
+            "attacker_ref": self.result.attacker_ref.to_dict(),
+            "defender_ref": self.result.defender_ref.to_dict(),
+            "before": None if self.result.before is None else self.result.before.to_dict(),
+            "after": None if self.result.after is None else self.result.after.to_dict(),
         }
 
 
@@ -351,6 +358,8 @@ class AuraAppliedPayload:
             "subject_ref": self.result.subject_ref.entity_id,
             "aura_kind": self.result.aura_kind.value,
             "outcome": self.result.outcome.value,
+            "before": None if self.result.before is None else self.result.before.to_dict(),
+            "after": None if self.result.after is None else self.result.after.to_dict(),
             "amount_after": None
             if self.result.after is None
             else self.result.after.current_amount.to_dict(),
@@ -865,4 +874,122 @@ class ElementalInteractionResolvedPayload:
                 _scheduled_state_tick_cause_to_dict(cause)
                 for cause in self.record.scheduled_state_tick_causes
             ],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class TeamSwitchedPayload:
+    """队伍当前场上角色切换请求已经处理的事实载荷。"""
+
+    requested_slot: int
+    previous_slot: int | None
+    active_slot: int
+    accepted: bool
+    status: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "requested_slot": self.requested_slot,
+            "previous_slot": self.previous_slot,
+            "active_slot": self.active_slot,
+            "accepted": self.accepted,
+            "status": self.status,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class CooldownChangedPayload:
+    """冷却充能或就绪帧已经变化的状态变化载荷。"""
+
+    fact_id: str
+    fact_kind: str
+    frame: int
+    subject_ref: dict[str, str]
+    ability_key: str
+    operation_id: str
+    chain_id: str | None
+    before_available_charges: int
+    after_available_charges: int
+    active_ready_frame: int | None
+    queued_recoveries: int
+    source_ref: str
+    before_record: dict[str, object] | None = None
+    after_record: dict[str, object] | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "fact_id": self.fact_id,
+            "fact_kind": self.fact_kind,
+            "frame": self.frame,
+            "subject_ref": dict(self.subject_ref),
+            "ability_key": self.ability_key,
+            "operation_id": self.operation_id,
+            "chain_id": self.chain_id,
+            "before_available_charges": self.before_available_charges,
+            "after_available_charges": self.after_available_charges,
+            "active_ready_frame": self.active_ready_frame,
+            "queued_recoveries": self.queued_recoveries,
+            "source_ref": self.source_ref,
+            "before_record": self.before_record,
+            "after_record": self.after_record,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class ContentStateChangedPayload:
+    """宿主内容状态挂载已经提交补丁的状态变化载荷。"""
+
+    frame: int
+    owner_ref: str
+    state_key: str
+    fields: tuple[str, ...]
+    before: Mapping[str, object]
+    after: Mapping[str, object]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "frame": self.frame,
+            "owner_ref": self.owner_ref,
+            "state_key": self.state_key,
+            "fields": tuple(sorted(self.fields)),
+            "before": dict(self.before),
+            "after": dict(self.after),
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class SpaceEntityCreatedPayload:
+    """空间实体已经登记到 Space 的状态变化载荷。"""
+
+    frame: int
+    entity: SpatialEntity
+
+    def to_dict(self) -> dict[str, object]:
+        return {"frame": self.frame, "entity": self.entity.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class SpaceEntityRemovedPayload:
+    """空间实体已经从 Space 移除的状态变化载荷。"""
+
+    frame: int
+    entity: SpatialEntity
+
+    def to_dict(self) -> dict[str, object]:
+        return {"frame": self.frame, "entity": self.entity.to_dict()}
+
+
+@dataclass(frozen=True, slots=True)
+class AttributePanelChangedPayload:
+    """属性面板发生有效变化的状态变化载荷。"""
+
+    frame: int
+    subject_ref: dict[str, str]
+    changes: tuple[AttributePanelChange, ...]
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "frame": self.frame,
+            "subject_ref": dict(self.subject_ref),
+            "changes": tuple(change.to_dict() for change in self.changes),
         }

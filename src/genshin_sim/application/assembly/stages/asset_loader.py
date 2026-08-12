@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from genshin_sim.application.assembly.errors import MissingRuntimeAssetError
 from genshin_sim.application.assembly.models import RuntimeAssetBundle
-from genshin_sim.application.config import SimulationConfig, TeamSlotConfig
+from genshin_sim.application.input import SimulationInput, TeamSlotConfig
 from genshin_sim.assets import AssetError, AssetRepository
 from genshin_sim.assets.models import ArtifactSetAsset, ArtifactSetBonus, TalentScalingEntry
 
@@ -15,7 +15,7 @@ class AssetBundleLoader:
     def __init__(self, asset_repository: AssetRepository) -> None:
         self.asset_repository = asset_repository
 
-    def load(self, config: SimulationConfig) -> tuple[RuntimeAssetBundle, ...]:
+    def load(self, config: SimulationInput) -> tuple[RuntimeAssetBundle, ...]:
         return tuple(self._load_slot_assets(slot) for slot in config.team)
 
     def _load_slot_assets(self, slot: TeamSlotConfig) -> RuntimeAssetBundle:

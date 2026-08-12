@@ -18,6 +18,9 @@ class Vector3:
     def distance_xz_to(self, other: Vector3) -> float:
         return hypot(self.x - other.x, self.z - other.z)
 
+    def to_dict(self) -> dict[str, float]:
+        return {"x": self.x, "y": self.y, "z": self.z}
+
 
 @dataclass(frozen=True, slots=True)
 class CircleArea:

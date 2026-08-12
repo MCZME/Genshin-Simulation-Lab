@@ -34,6 +34,7 @@ from genshin_sim.core.systems.buff.models import (
     validate_frame,
 )
 from genshin_sim.core.systems.buff.resolver import BuffResolver
+from genshin_sim.core.systems.buff.snapshots import BuffInstanceSnapshot
 from genshin_sim.core.systems.buff.store import BuffStore
 
 
@@ -114,7 +115,7 @@ class BuffRuntime:
                     GameEvent(
                         EventType.BUFF_APPLIED,
                         result.frame,
-                        BuffAppliedPayload(result),
+                        BuffAppliedPayload(_with_instance_after(self, result)),
                         source=self,
                     )
                 )
@@ -358,3 +359,19 @@ def _expire_operation_id(frame: int, records: tuple[BuffRecord, ...]) -> str:
 
 def _length_prefixed(values: tuple[str, ...]) -> str:
     return "".join(f":{len(value)}:{value}" for value in values)
+
+
+def _with_instance_after(
+    runtime: BuffRuntime,
+    result: BuffApplicationResult,
+) -> BuffApplicationResult:
+    """把已提交 Buff 实例的完整快照附加到应用结果，供事件载荷精确折叠。"""
+
+    if result.instance_after is not None:
+        return result
+    record = next(
+        item
+        for item in runtime.buff_store.records
+        if item.instance_ref == result.instance_ref
+    )
+    return replace(result, instance_after=BuffInstanceSnapshot.from_record(record))

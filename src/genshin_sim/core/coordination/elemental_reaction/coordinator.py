@@ -85,6 +85,7 @@ from genshin_sim.core.coordination.elemental_reaction.simultaneous import (
 )
 from genshin_sim.core.coordination.elemental_reaction.spatial import (
     ReactionSpatialPlanningAdapter,
+    publish_space_entity_facts,
     validate_dendro_core_space_bindings,
     validate_dendro_core_space_terminalizations,
     validate_lunar_cage_space_bindings,
@@ -1479,6 +1480,7 @@ class ElementalInteractionCoordinator:
                 aura_plan,
                 reaction_plan,
                 additional_occurrences=tuple(additional_occurrences),
+                space_plan=space_plan,
             )
             self.reaction_runtime.publish_committed_state_facts(
                 context,
@@ -1504,6 +1506,7 @@ class ElementalInteractionCoordinator:
         reaction_plan,
         *,
         additional_occurrences: tuple[ReactionOccurrence, ...] = (),
+        space_plan=None,
     ) -> None:
         for resolution in icd_plan.resolutions:
             context.events.publish(
@@ -1547,6 +1550,8 @@ class ElementalInteractionCoordinator:
                     ReactionOccurredPayload(occurrence),
                 )
             )
+        if space_plan is not None:
+            publish_space_entity_facts(context, space_plan)
 
     @staticmethod
     def _works_for(

@@ -41,6 +41,14 @@ class AuraDecayProfile:
             raise ValueError("frames 不能为负数")
         return self.decay_per_second * Fraction(frames, FRAMES_PER_SECOND)
 
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "strength": None if self.strength is None else self.strength.value,
+            "raw_amount": self.raw_amount.to_dict(),
+            "attached_amount": self.attached_amount.to_dict(),
+            "decay_per_second": self.decay_per_second.to_dict(),
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class AuraApplicationProfile:

@@ -18,7 +18,7 @@ from genshin_sim.core.events import (
     GameEvent,
 )
 from genshin_sim.core.systems.moonsign import MoonsignLevel
-from tests.helpers.assembly import minimal_config
+from tests.helpers.assembly import minimal_input
 from tests.helpers.team_assets import (
     TeamAssetBundle,
     make_attribute_bundles,
@@ -39,7 +39,7 @@ def _moonsign_unit(slot: int) -> ContentUnit:
 
 def _attribute_resolver(assets: tuple[TeamAssetBundle, ...]):
     return build_attribute_runtime(
-        config=minimal_config(),
+        config=minimal_input(),
         assets=make_attribute_bundles(assets),
         content_units=(),
     ).resolver

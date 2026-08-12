@@ -44,7 +44,7 @@ def test_barbara_elemental_skill_cast_resolves_damage_self_wet_and_ring(
 def test_barbara_elemental_skill_second_cast_blocked_until_cooldown_ready(
     barbara_assembled,
 ):
-    payload = barbara_helpers.barbara_config_payload(
+    payload = barbara_helpers.barbara_input_payload(
         input_key="keyboard.e",
         max_frames=20,
     )
@@ -75,7 +75,7 @@ def test_barbara_elemental_skill_second_cast_blocked_until_cooldown_ready(
 def test_barbara_ring_on_hit_heal_heals_team_on_normal_attack(
     barbara_assembled,
 ):
-    payload = barbara_helpers.barbara_config_payload(max_frames=80)
+    payload = barbara_helpers.barbara_input_payload(max_frames=80)
     payload["input_trace"] = _ring_attack_trace("mouse.left")
     assembled = barbara_assembled(payload=payload)
 
@@ -87,7 +87,7 @@ def test_barbara_ring_on_hit_heal_heals_team_on_normal_attack(
 def test_barbara_ring_on_hit_heal_triggered_once_per_normal_attack(
     barbara_assembled,
 ):
-    payload = barbara_helpers.barbara_config_payload(
+    payload = barbara_helpers.barbara_input_payload(
         max_frames=80,
         targets=(
             {

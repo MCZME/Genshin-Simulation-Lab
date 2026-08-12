@@ -22,6 +22,7 @@ from genshin_sim.core.entity_states import (
     TargetRuntimeCollection,
     TargetRuntimeState,
 )
+from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import (
     ActionImpactContext,
     DamageImpactSpec,
@@ -361,6 +362,15 @@ def test_impact_runtime_dispatches_action_impact_and_creates_space_entity():
     assert created.entity.position == Vector3(1, 0, 2)
     assert created.params == {"member": "chevalmarin"}
     assert ctx.space_runtime.get_entity("created:salon_member:1") is created.entity
+    created_events = [
+        event
+        for event in ctx.events.frame_events
+        if event.event_type is EventType.SPACE_ENTITY_CREATED
+    ]
+    assert len(created_events) == 1
+    created_payload = cast(dict[str, object], created_events[0].payload.to_dict())
+    created_entity = cast(dict[str, object], created_payload["entity"])
+    assert created_entity["entity_id"] == "created:salon_member:1"
 
 
 def test_impact_runtime_syncs_expired_created_object_to_space():

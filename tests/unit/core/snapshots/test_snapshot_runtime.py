@@ -2,9 +2,11 @@ from __future__ import annotations
 
 import pytest
 
+from genshin_sim.core.events import EventType, GameEvent, InputKeyReceivedPayload
 from genshin_sim.core.simulation import SimulationContext
-from genshin_sim.core.snapshots.runtime import (
+from genshin_sim.core.snapshots import (
     DuplicateSnapshotProviderError,
+    EventSnapshot,
     FrameSnapshot,
     SnapshotRuntime,
 )
@@ -48,3 +50,28 @@ def test_snapshot_runtime_sorts_providers_by_key():
 def test_frame_snapshot_rejects_negative_frame():
     with pytest.raises(ValueError, match="frame"):
         FrameSnapshot(frame=-1)
+
+
+def test_event_snapshot_from_event():
+    event = GameEvent(
+        EventType.INPUT_KEY_RECEIVED,
+        frame=2,
+        payload=InputKeyReceivedPayload(
+            key="keyboard.e",
+            phase="press",
+            order=0,
+            session_id=1,
+        ),
+    )
+
+    snapshot = EventSnapshot.from_event(event)
+
+    assert snapshot.event_type == "INPUT_KEY_RECEIVED"
+    assert snapshot.frame == 2
+    assert snapshot.data == {
+        "key": "keyboard.e",
+        "phase": "press",
+        "order": 0,
+        "session_id": 1,
+    }
+    assert "source_type" not in snapshot.to_dict()

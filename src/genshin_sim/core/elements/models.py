@@ -46,6 +46,9 @@ class ElementalSubjectRef:
     def created_object(cls, entity_id: str) -> ElementalSubjectRef:
         return cls(ElementalSubjectKind.CREATED_OBJECT, entity_id)
 
+    def to_dict(self) -> dict[str, str]:
+        return {"kind": self.kind.value, "entity_id": self.entity_id}
+
 
 @dataclass(frozen=True, order=True, slots=True)
 class ElementalSourceRef:
@@ -71,3 +74,6 @@ class ElementalStateLinkRef:
 
     def __post_init__(self) -> None:
         _text(self.link_key, "link_key")
+
+    def to_dict(self) -> dict[str, str]:
+        return {"link_key": self.link_key}

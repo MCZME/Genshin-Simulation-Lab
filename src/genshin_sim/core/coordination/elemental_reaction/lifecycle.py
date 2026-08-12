@@ -16,6 +16,7 @@ from genshin_sim.core.coordination.elemental_reaction.protocols import (
     ReactionStateInteractionPort,
 )
 from genshin_sim.core.coordination.elemental_reaction.spatial import (
+    publish_space_entity_facts,
     validate_dendro_core_space_terminalizations,
     validate_lunar_cage_space_terminalizations,
     validate_lunar_storm_cloud_space_terminalizations,
@@ -166,6 +167,7 @@ class DendroCoreExpiryCoordinator:
         if context is not None:
             with self.spatial_planning_port.event_publication_guard():
                 self.reaction_state_port.publish_committed_state_facts(context, state_receipt)
+                publish_space_entity_facts(context, space_plan)
         return DendroCoreExpiryResult(tuple(works), tuple(effect_groups), tuple(occurrences))
 
     def _active_states_for_expiry(
@@ -534,6 +536,7 @@ def _commit_bound_entity_terminalization(
     if context is not None:
         with spatial_planning_port.event_publication_guard():
             reaction_state_port.publish_committed_state_facts(context, state_receipt)
+            publish_space_entity_facts(context, space_plan)
 
 
 def _commit_lunar_storm_cloud_expiry(
@@ -553,6 +556,7 @@ def _commit_lunar_storm_cloud_expiry(
     if context is not None:
         with spatial_planning_port.event_publication_guard():
             reaction_state_port.publish_committed_state_facts(context, state_receipt)
+            publish_space_entity_facts(context, space_plan)
 
 
 def _commit_lunar_cage_expiry(
@@ -572,6 +576,7 @@ def _commit_lunar_cage_expiry(
     if context is not None:
         with spatial_planning_port.event_publication_guard():
             reaction_state_port.publish_committed_state_facts(context, state_receipt)
+            publish_space_entity_facts(context, space_plan)
 
 
 def _shield_grant_request_for_crystallize_pickup(
@@ -639,6 +644,7 @@ def _commit_crystallize_pickup_with_shield(
                 shield_grant_port.event_publication_guard(),
             ):
                 reaction_state_port.publish_committed_state_facts(context, state_receipt)
+                publish_space_entity_facts(context, space_plan)
                 for event in shield_grant_port.events_for(shield_receipt):
                     cast(Any, context).events.publish(event)
         finally:

@@ -35,6 +35,9 @@ class CollisionBox:
         ):
             raise ValueError("CollisionBox.height 必须为非负数")
 
+    def to_dict(self) -> dict[str, object]:
+        return {"shape": self.shape, "radius": self.radius, "height": self.height}
+
 
 class SpatialEntityKind(StrEnum):
     """空间实体类型。"""
@@ -94,3 +97,17 @@ class SpatialEntity:
 
     def is_active_at(self, frame: int) -> bool:
         return self.lifecycle.is_active_at(frame)
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "entity_id": self.entity_id,
+            "kind": self.kind.value,
+            "position": self.position.to_dict(),
+            "lifecycle": self.lifecycle.to_dict(),
+            "collision_box": self.collision_box.to_dict(),
+            "facing": self.facing.to_dict(),
+            "active_slot": self.active_slot,
+            "owner_key": self.owner_key,
+            "source_key": self.source_key,
+            "tags": list(self.tags),
+        }

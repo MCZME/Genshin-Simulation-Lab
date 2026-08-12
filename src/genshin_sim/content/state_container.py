@@ -17,6 +17,8 @@ from genshin_sim.core.entity_states.content_state import (
     ContentStateMount,
     ContentStateMountError,
 )
+from genshin_sim.core.events import EventType, GameEvent
+from genshin_sim.core.events.payloads import ContentStateChangedPayload
 from genshin_sim.core.simulation.context import SimulationContext
 from genshin_sim.core.simulation.team import TeamRuntimeState
 
@@ -82,19 +84,24 @@ class StatePatchIntentHandler:
 
     def __init__(self, team_state: TeamRuntimeState) -> None:
         self.team_state = team_state
+        self._publishing_facts = False
 
     def handle(self, context: object, intent: IntentEnvelope) -> None:
-        del context
         request = intent.payload
         if not isinstance(request, StatePatchRequest):
             raise TypeError(
                 f"STATE_PATCH 意图载荷必须是 StatePatchRequest，实际 {type(request).__name__}"
             )
+        if self._publishing_facts:
+            raise StatePatchError("内容状态事实发布期间不允许再次写入内容状态")
         mount = self._find_mount(request.owner_ref, request.state_key)
+        before = dict(mount.values)
         try:
             mount.apply_patch(request.fields)
         except ContentStateMountError as exc:
             raise StatePatchError(str(exc)) from exc
+        if dict(mount.values) != before:
+            self._publish_changed(context, request, mount, before)
 
     def _find_mount(self, owner_ref: str, state_key: str) -> ContentStateMount:
         for character in self.team_state.characters:
@@ -106,3 +113,33 @@ class StatePatchIntentHandler:
                     )
                 return mount
         raise StateContainerNotFoundError(f"缺少宿主状态容器：{owner_ref}")
+
+    def _publish_changed(
+        self,
+        context: object,
+        request: StatePatchRequest,
+        mount: ContentStateMount,
+        before: Mapping[str, object],
+    ) -> None:
+        events = getattr(context, "events", None)
+        if events is None:
+            return
+        frame = getattr(context, "current_frame", 0)
+        self._publishing_facts = True
+        try:
+            events.publish(
+                GameEvent(
+                    EventType.CONTENT_STATE_CHANGED,
+                    frame,
+                    ContentStateChangedPayload(
+                        frame=frame,
+                        owner_ref=request.owner_ref,
+                        state_key=request.state_key,
+                        fields=tuple(request.fields),
+                        before=before,
+                        after=dict(mount.values),
+                    ),
+                )
+            )
+        finally:
+            self._publishing_facts = False

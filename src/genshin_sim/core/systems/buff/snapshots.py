@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING
 from genshin_sim.core.attributes import AttributeSubjectRef, RuntimeSourceRef
 from genshin_sim.core.systems.buff.models import (
     BuffInstanceRef,
+    BuffRecord,
     BuffResolvedAttributeModifier,
     validate_frame,
 )
@@ -31,6 +32,28 @@ class BuffInstanceSnapshot:
     last_applied_frame: int
     expires_at_frame: int
     tags: frozenset[str]
+
+    @classmethod
+    def from_record(cls, record: BuffRecord) -> BuffInstanceSnapshot:
+        state = record.state
+        definition = record.definition
+        return cls(
+            instance_ref=record.instance_ref,
+            definition_key=definition.definition_key,
+            mechanic_key=definition.mechanic_key,
+            handler_key=definition.handler_key,
+            conflict_key=definition.conflict_key,
+            target_ref=state.target_ref,
+            applier_ref=state.applier_ref,
+            source_context=state.source_context,
+            stack_count=state.stack_count,
+            max_stacks=state.max_stacks,
+            resolved_modifiers=state.resolved_modifiers,
+            created_frame=record.created_frame,
+            last_applied_frame=record.last_applied_frame,
+            expires_at_frame=record.expires_at_frame,
+            tags=state.tags,
+        )
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -74,27 +97,7 @@ class BuffSnapshot:
         for record in runtime.buff_store.records:
             if not record.is_active_at(frame):
                 continue
-            state = record.state
-            definition = record.definition
-            snapshots.append(
-                BuffInstanceSnapshot(
-                    instance_ref=record.instance_ref,
-                    definition_key=definition.definition_key,
-                    mechanic_key=definition.mechanic_key,
-                    handler_key=definition.handler_key,
-                    conflict_key=definition.conflict_key,
-                    target_ref=state.target_ref,
-                    applier_ref=state.applier_ref,
-                    source_context=state.source_context,
-                    stack_count=state.stack_count,
-                    max_stacks=state.max_stacks,
-                    resolved_modifiers=state.resolved_modifiers,
-                    created_frame=record.created_frame,
-                    last_applied_frame=record.last_applied_frame,
-                    expires_at_frame=record.expires_at_frame,
-                    tags=state.tags,
-                )
-            )
+            snapshots.append(BuffInstanceSnapshot.from_record(record))
         return cls(frame=frame, instances=tuple(snapshots))
 
     def to_dict(self) -> dict[str, object]:

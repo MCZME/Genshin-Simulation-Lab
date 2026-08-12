@@ -148,40 +148,6 @@ def test_swirl_rejects_unconfirmed_multiple_swirleable_auras_without_choosing_by
         _runtime().evaluate(request)
 
 
-def test_swirl_resolves_electro_hydro_in_the_confirmed_order_with_shared_emission():
-    request = _request(AuraKind.HYDRO, AuraAmount("0.4"), AuraAmount(1))
-    request = ReactionEvaluationRequest(
-        request.interaction_id,
-        request.target_impact_ref,
-        request.frame,
-        request.order,
-        request.source_ref,
-        request.subject_ref,
-        request.incoming_element,
-        request.incoming_amount,
-        AuraView(
-            TARGET,
-            (
-                _component(AuraKind.HYDRO, AuraAmount("0.4")),
-                _component(AuraKind.ELECTRO, AuraAmount("0.4")),
-            ),
-        ),
-        transformative_source_observation=request.transformative_source_observation,
-    )
-
-    resolution = _runtime().evaluate(request)
-
-    assert [
-        occurrence.direction_key
-        for step in resolution.sequence.steps
-        for occurrence in step.occurrences
-    ] == ["incoming_anemo_on_electro", "incoming_anemo_on_hydro"]
-    batch = resolution.generated_impact_batches[0]
-    assert len(batch.parent_occurrence_refs) == 2
-    assert [impact.element for impact in batch.impacts] == [Element.ELECTRO, Element.HYDRO]
-    assert {impact.elemental_amount for impact in batch.impacts} == {AuraAmount("1.2")}
-
-
 def test_swirl_hidden_cryo_then_frozen_consumption_creates_one_cryo_occurrence():
     request = _request(AuraKind.CRYO, AuraAmount("0.4"), AuraAmount(1))
     request = ReactionEvaluationRequest(

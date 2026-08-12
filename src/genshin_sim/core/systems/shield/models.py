@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from genshin_sim.core.attributes import (
     AttributeResolution,
@@ -19,6 +20,9 @@ from genshin_sim.core.systems.shield.enums import (
     ShieldProtectionKind,
     ShieldRemovalReason,
 )
+
+if TYPE_CHECKING:
+    from genshin_sim.core.systems.shield.snapshots import ShieldInstanceSnapshot
 from genshin_sim.core.systems.shield.errors import (
     ShieldCapacityError,
     ShieldPolicyError,
@@ -299,6 +303,7 @@ class ShieldGrantResult:
     maximum_after: float
     expires_at_before: int | None
     expires_at_after: int
+    instance_after: ShieldInstanceSnapshot | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.instance_ref, ShieldInstanceRef):
@@ -336,6 +341,9 @@ class ShieldGrantResult:
             "maximum_after": self.maximum_after,
             "expires_at_before": self.expires_at_before,
             "expires_at_after": self.expires_at_after,
+            "instance_after": (
+                None if self.instance_after is None else self.instance_after.to_dict()
+            ),
         }
 
 

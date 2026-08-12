@@ -3,6 +3,8 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
+import pytest
+
 from genshin_sim.assets import (
     CharacterAsset,
     EffectPayload,
@@ -14,6 +16,15 @@ from genshin_sim.infrastructure.assets_sqlite import (
     SQLiteAssetRepository,
     load_asset_manifest,
 )
+
+
+@pytest.fixture(autouse=True)
+def _project_config(tmp_path, monkeypatch):
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "config.toml").write_text(
+        'schema_version = 1\n\n[workspace]\ndata_dir = "data"\n',
+        encoding="utf-8",
+    )
 
 
 def _build_db(tmp_path: Path) -> str:

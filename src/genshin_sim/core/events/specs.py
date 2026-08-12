@@ -5,6 +5,7 @@ from dataclasses import dataclass
 from genshin_sim.core.events.categories import EventCategory, get_event_category_spec
 from genshin_sim.core.events.payloads import (
     ActionStartedPayload,
+    AttributePanelChangedPayload,
     AuraAppliedPayload,
     AuraDepletedPayload,
     AuraIcdResolvedPayload,
@@ -14,6 +15,8 @@ from genshin_sim.core.events.payloads import (
     CharacterEnergyChangedPayload,
     CharacterHealthChangedPayload,
     CharacterMaxHpChangedPayload,
+    ContentStateChangedPayload,
+    CooldownChangedPayload,
     DamageAppliedPayload,
     DamageResolvedPayload,
     DirectEnergyChangeResolvedPayload,
@@ -39,6 +42,9 @@ from genshin_sim.core.events.payloads import (
     ShieldGrantedPayload,
     ShieldRemovedPayload,
     SimulationEndedPayload,
+    SpaceEntityCreatedPayload,
+    SpaceEntityRemovedPayload,
+    TeamSwitchedPayload,
 )
 from genshin_sim.core.events.types import EventType
 
@@ -129,7 +135,7 @@ EVENT_SPECS: dict[EventType, EventSpec] = {
         payload_type=CharacterHealthChangedPayload,
     ),
     EventType.CHARACTER_MAX_HP_CHANGED: EventSpec(
-        category=EventCategory.AUDIT,
+        category=EventCategory.STATE_CHANGE,
         payload_type=CharacterMaxHpChangedPayload,
     ),
     EventType.SHIELD_GRANTED: EventSpec(
@@ -239,6 +245,30 @@ EVENT_SPECS: dict[EventType, EventSpec] = {
     EventType.MOONSIGN_BONUS_EXPIRED: EventSpec(
         category=EventCategory.STATE_CHANGE,
         payload_type=MoonsignBonusExpiredPayload,
+    ),
+    EventType.TEAM_SWITCHED: EventSpec(
+        category=EventCategory.FACT,
+        payload_type=TeamSwitchedPayload,
+    ),
+    EventType.COOLDOWN_CHANGED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=CooldownChangedPayload,
+    ),
+    EventType.CONTENT_STATE_CHANGED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=ContentStateChangedPayload,
+    ),
+    EventType.SPACE_ENTITY_CREATED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=SpaceEntityCreatedPayload,
+    ),
+    EventType.SPACE_ENTITY_REMOVED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=SpaceEntityRemovedPayload,
+    ),
+    EventType.ATTRIBUTE_PANEL_CHANGED: EventSpec(
+        category=EventCategory.STATE_CHANGE,
+        payload_type=AttributePanelChangedPayload,
     ),
 }
 

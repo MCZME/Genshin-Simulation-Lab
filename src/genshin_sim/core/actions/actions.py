@@ -24,6 +24,7 @@ from genshin_sim.core.actions.models import (
     PreparedAction,
     TargetingSpec,
 )
+from genshin_sim.core.events import EventType, GameEvent, TeamSwitchedPayload
 from genshin_sim.core.space.space import ACTIVE_CHARACTER_ENTITY_ID
 from genshin_sim.core.systems.cooldown import (
     CooldownDurationTerm,
@@ -306,6 +307,20 @@ class TeamSwitchAction:
         result = space_runtime.team_state.switch_to(target_slot, context.frame)
         if result.accepted and space_runtime.get_entity("player:active") is not None:
             space_runtime.update_active_character_slot(result.active_slot)
+        context.simulation_context.events.publish(
+            GameEvent(
+                EventType.TEAM_SWITCHED,
+                frame=context.frame,
+                source=self,
+                payload=TeamSwitchedPayload(
+                    requested_slot=result.requested_slot,
+                    previous_slot=result.previous_slot,
+                    active_slot=result.active_slot,
+                    accepted=result.accepted,
+                    status=result.status.value,
+                ),
+            )
+        )
         return ActionExecutionResult(
             records=(
                 {

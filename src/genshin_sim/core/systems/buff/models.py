@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from genshin_sim.core.attributes import (
     AttributeSubjectKind,
@@ -21,6 +22,9 @@ from genshin_sim.core.systems.buff.enums import (
     BuffLifecycleState,
     BuffRemovalReason,
 )
+
+if TYPE_CHECKING:
+    from genshin_sim.core.systems.buff.snapshots import BuffInstanceSnapshot
 from genshin_sim.core.systems.buff.errors import BuffValidationError
 
 
@@ -264,6 +268,7 @@ class BuffApplicationResult:
     expires_at_after: int
     replaced_instance_refs: tuple[BuffInstanceRef, ...] = ()
     resolved_modifiers_after: tuple[BuffResolvedAttributeModifier, ...] = ()
+    instance_after: BuffInstanceSnapshot | None = None
 
     def __post_init__(self) -> None:
         validate_non_empty_text(self.request_id, "request_id")
@@ -319,6 +324,9 @@ class BuffApplicationResult:
             "replaced_instance_refs": tuple(ref.to_dict() for ref in self.replaced_instance_refs),
             "resolved_modifiers_after": tuple(
                 item.to_dict() for item in self.resolved_modifiers_after
+            ),
+            "instance_after": (
+                None if self.instance_after is None else self.instance_after.to_dict()
             ),
         }
 

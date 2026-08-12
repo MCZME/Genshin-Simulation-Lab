@@ -28,7 +28,7 @@ from genshin_sim.core.actions import (
     TimedImpactAction,
 )
 from genshin_sim.core.entity_states import CharacterRuntimeState
-from genshin_sim.core.events import EventType
+from genshin_sim.core.events import EventType, TeamSwitchedPayload
 from genshin_sim.core.simulation import (
     InputTraceCompiler,
     KeyEvent,
@@ -308,6 +308,18 @@ def test_team_switch_is_regular_action_instance_and_updates_space_runtime():
     assert player is not None
     assert player.active_slot == 2
     assert manager.execution_records[0].payload["type"] == "team_switch"
+    switched_events = [
+        event
+        for event in context.events.frame_events
+        if event.event_type is EventType.TEAM_SWITCHED
+    ]
+    assert len(switched_events) == 1
+    payload = switched_events[0].payload
+    assert isinstance(payload, TeamSwitchedPayload)
+    assert payload.requested_slot == 2
+    assert payload.previous_slot == 1
+    assert payload.active_slot == 2
+    assert payload.accepted is True
 
 
 def test_search_area_spec_rejects_negative_radius_or_height():

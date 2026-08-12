@@ -79,3 +79,16 @@ class CharacterRuntimeState:
                 )
                 raise ValueError(msg)
         self.content_states = content_states
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "slot": self.slot,
+            "character_key": self.character_key,
+            "level": self.level,
+            "ascension_phase": self.ascension_phase,
+            "constellation": self.constellation,
+            "talent_levels": dict(self.talent_levels),
+            "combat_entity_id": self.combat_entity_id,
+            "current_hp": self.health.current_hp,
+            "current_energy": self.energy.current_energy,
+        }

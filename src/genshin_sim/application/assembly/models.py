@@ -10,7 +10,7 @@ from genshin_sim.core.systems.energy import EnergyElement
 
 if TYPE_CHECKING:
     from genshin_sim.application.assembly.attributes import AttributeRuntimeBundle
-    from genshin_sim.application.config import SimulationConfig
+    from genshin_sim.application.input import SimulationInput
     from genshin_sim.assets.models import (
         ArtifactSetAsset,
         ArtifactSetBonus,
@@ -32,6 +32,7 @@ if TYPE_CHECKING:
         ActionRegistry,
     )
     from genshin_sim.core.attributes import ModifierStackingGroupDefinition
+    from genshin_sim.core.attributes.panel import AttributePanelSynchronizer
     from genshin_sim.core.coordination.character_damage_taken import (
         CharacterDamageTakenCoordinator,
     )
@@ -154,7 +155,7 @@ class RuntimeContentBundle:
 class AssembledSimulation:
     """运行时装配阶段产出的可运行世界。"""
 
-    config: SimulationConfig
+    config: SimulationInput
     context: SimulationContext
     simulator: Simulator
     action_manager: ActionManager
@@ -201,6 +202,7 @@ class AssembledSimulation:
     hook_dispatcher: HookDispatcher
     reaction_eligibility_port: ReactionEligibilityReadPort
     attribute_runtime: AttributeRuntimeBundle
+    attribute_panel_synchronizer: AttributePanelSynchronizer
     resonance_store: ResonanceStore
     resonance_runtime: ResonanceRuntime
     resonance_reaction_stage: ResonanceReactionStage

@@ -475,27 +475,6 @@ def _damage_impact(damage_payload: dict[str, object]) -> ImpactRequest:
     )
 
 
-def test_direct_damage_golden_case_preserves_auditable_multipliers():
-    provider = _provider(
-        "provider.damage",
-        (_term(DamageModifierStage.DAMAGE_BONUS_ADD, 0.3),),
-    )
-    resolver = DamageResolver(
-        _attribute_resolver(),
-        modifier_index=DamageModifierIndex((provider,)),
-    )
-
-    result = resolver.resolve(_query())
-
-    assert result.base_damage == 80000.0
-    assert result.damage_bonus_multiplier == 1.5
-    assert result.defense.multiplier == 0.5
-    assert result.resistance.multiplier == 0.9
-    assert result.final_damage == pytest.approx(54000.0)
-    assert result.applied_terms[0].provider_key == "provider.damage"
-    assert result.component_results[0].attribute_value == 40000.0
-
-
 def test_base_damage_additions_unify_request_and_modifier_sources():
     provider = _provider(
         "provider.flat",

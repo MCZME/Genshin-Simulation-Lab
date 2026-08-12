@@ -81,6 +81,8 @@ class AuraIcdBatchPlanner:
                 AuraAmount.one(),
                 None,
                 None,
+                None,
+                None,
             )
         definition = self._runtime.definition_registry.require(binding.sequence_key)
         key = IcdKey(
@@ -105,7 +107,7 @@ class AuraIcdBatchPlanner:
             resets_at_frame = record.resets_at_frame
         coefficient = definition.application_sequence[sequence_index]
         next_index = min(sequence_index + 1, len(definition.application_sequence))
-        self._records[key] = IcdRecord(
+        after = IcdRecord(
             key,
             window_started_frame,
             resets_at_frame,
@@ -113,6 +115,7 @@ class AuraIcdBatchPlanner:
             request.frame,
             0 if record is None else record.revision + 1,
         )
+        self._records[key] = after
         return IcdResolution(
             request.request_id,
             request.impact_ref,
@@ -127,6 +130,8 @@ class AuraIcdBatchPlanner:
             coefficient,
             window_started_frame,
             resets_at_frame,
+            record,
+            after,
         )
 
     def _assert_open(self) -> None:

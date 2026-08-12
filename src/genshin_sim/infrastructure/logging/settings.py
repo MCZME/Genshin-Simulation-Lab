@@ -24,9 +24,12 @@ class LoggingSettings:
     console_enabled: bool = True
     console_level: LogLevel = logging.WARNING
     file_path: Path | None = None
+    file_dir: Path | None = None
     file_level: LogLevel = logging.INFO
     max_bytes: int = 5 * 1024 * 1024
     backup_count: int = 5
+    max_log_age_days: int = 30
+    max_log_file_count: int = 200
     message_format: str = DEFAULT_LOG_FORMAT
     date_format: str = DEFAULT_DATE_FORMAT
     propagate: bool = False

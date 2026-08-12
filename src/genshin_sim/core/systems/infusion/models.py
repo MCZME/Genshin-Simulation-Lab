@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from genshin_sim.core.attributes import (
     AttributeSubjectKind,
@@ -18,6 +19,9 @@ from genshin_sim.core.systems.infusion.enums import (
     RefreshPolicy,
 )
 from genshin_sim.core.systems.infusion.errors import InfusionValidationError
+
+if TYPE_CHECKING:
+    from genshin_sim.core.systems.infusion.snapshots import InfusionInstanceSnapshot
 
 
 def validate_non_empty_text(value: str, field_name: str) -> None:
@@ -248,6 +252,7 @@ class InfusionApplicationResult:
     expires_at_after: int
     next_refresh_frame_after: int | None
     replaced_instance_refs: tuple[InfusionInstanceRef, ...] = ()
+    instance_after: InfusionInstanceSnapshot | None = None
 
     def __post_init__(self) -> None:
         validate_non_empty_text(self.request_id, "request_id")
@@ -303,6 +308,9 @@ class InfusionApplicationResult:
             "expires_at_after": self.expires_at_after,
             "next_refresh_frame_after": self.next_refresh_frame_after,
             "replaced_instance_refs": tuple(ref.to_dict() for ref in self.replaced_instance_refs),
+            "instance_after": (
+                None if self.instance_after is None else self.instance_after.to_dict()
+            ),
         }
 
 

@@ -7,7 +7,7 @@ from pathlib import Path
 import pytest
 
 from genshin_sim.application.assembly import SimulationAssembler
-from genshin_sim.application.config import SimulationConfig
+from genshin_sim.application.input import SimulationInput
 from genshin_sim.core.attributes import (
     BONUS_DAMAGE_HYDRO,
     AttributeQuery,
@@ -32,7 +32,7 @@ def test_barbara_c1_restores_one_energy_every_600_frames(
     constellation: int,
     expected_energy: float,
 ):
-    payload = barbara_helpers.barbara_config_payload(
+    payload = barbara_helpers.barbara_input_payload(
         constellation=constellation,
         max_frames=700,
     )
@@ -70,7 +70,7 @@ def test_barbara_c2_reduces_elemental_skill_cooldown(barbara_assembled):
 
 def test_barbara_c2_hydro_bonus_follows_active_character_on_switch(tmp_path: Path):
     asset_db = write_barbara_probe_asset_database(tmp_path / "assets.db")
-    payload = barbara_helpers.barbara_probe_config_payload(
+    payload = barbara_helpers.barbara_probe_input_payload(
         constellation=2,
         max_frames=140,
         input_trace=[
@@ -83,7 +83,7 @@ def test_barbara_c2_hydro_bonus_follows_active_character_on_switch(tmp_path: Pat
         ],
     )
     assembled = SimulationAssembler(SQLiteAssetRepository(asset_db)).assemble(
-        SimulationConfig.from_mapping(payload)
+        SimulationInput.from_mapping(payload)
     )
 
     resolver = assembled.attribute_runtime.resolver

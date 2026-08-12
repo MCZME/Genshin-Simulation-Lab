@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from genshin_sim.application.assembly import (
@@ -22,7 +24,6 @@ from genshin_sim.core.attributes import (
 )
 from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import ImpactKind, ImpactRequest
-from genshin_sim.core.snapshots import export_snapshot
 from genshin_sim.core.space import SpatialEntityKind
 from genshin_sim.core.systems.healing import HealingRequest, HealingRequestHandler
 from genshin_sim.core.systems.health import (
@@ -31,7 +32,7 @@ from genshin_sim.core.systems.health import (
     UnsupportedHealthSubjectError,
 )
 from tests.helpers.assembly import (
-    minimal_config,
+    minimal_input,
     reordered_two_slot_config,
 )
 from tests.helpers.asset_repository import FakeAssetRepository
@@ -68,7 +69,7 @@ class SlotAwareAssetRepository(FakeAssetRepository):
 
 def test_assembler_builds_minimal_runtime_graph():
     assembler = SimulationAssembler(FakeAssetRepository())
-    assembled = assembler.assemble(minimal_config())
+    assembled = assembler.assemble(minimal_input())
 
     assert assembled.context.space_runtime is assembled.space_runtime
     player = assembled.space_runtime.get_entity("player:active")
@@ -106,6 +107,7 @@ def test_assembler_builds_minimal_runtime_graph():
         assembled.moonsign_runtime,
         assembled.resonance_reaction_stage,
         assembled.hook_dispatcher,
+        assembled.attribute_panel_synchronizer,
     )
     assert assembled.resonance_store.active_keys == ()
     assert assembled.resonance_runtime.store is assembled.resonance_store
@@ -140,7 +142,7 @@ def test_assembler_matches_energy_profiles_by_slot_not_team_input_order():
 
 def test_assembler_routes_structured_energy_impact_and_settles_pickup():
     assembler = SimulationAssembler(FakeAssetRepository())
-    assembled = assembler.assemble(minimal_config())
+    assembled = assembler.assemble(minimal_input())
 
     request = ImpactRequest(
         frame=3,
@@ -182,7 +184,8 @@ def test_assembler_routes_structured_energy_impact_and_settles_pickup():
     ref = AttributeSubjectRef.character("character:slot_1")
     assert assembled.energy_runtime.get_current_energy(ref) == 7.0
     assert assembled.energy_transit_queue.is_empty()
-    assert export_snapshot(assembled.context).to_dict()["energy"] == {
+    snapshot = assembled.snapshot_runtime.snapshot_frame(assembled.context, 0)
+    assert snapshot.providers["energy"] == {
         "frame": 0,
         "characters": (
             {
@@ -203,6 +206,7 @@ def test_assembler_routes_structured_energy_impact_and_settles_pickup():
         EventType.DIRECT_ENERGY_CHANGE_RESOLVED,
         EventType.CHARACTER_ENERGY_CHANGED,
     ]
+
     assert assembled.buff_definitions == ()
     assert assembled.buff_runtime.buff_store is assembled.buff_store
     assert assembled.buff_handler.runtime is assembled.buff_runtime
@@ -244,8 +248,38 @@ def test_assembler_routes_structured_energy_impact_and_settles_pickup():
     assert assembled.context.get_system("AttributeResolver") is assembled.attribute_runtime.resolver
 
 
+def test_assembler_registers_snapshot_providers():
+    assembler = SimulationAssembler(FakeAssetRepository())
+    assembled = assembler.assemble(minimal_input())
+
+    assert {
+        "energy",
+        "buff",
+        "infusion",
+        "content_state",
+        "resonance",
+        "moonsign",
+        "cooldown",
+        "shield",
+        "reaction",
+        "space",
+        "aura",
+        "aura_icd",
+        "team",
+    } <= set(assembled.snapshot_runtime.provider_keys)
+
+
+def test_assembler_snapshot_payloads_are_json_serializable():
+    assembler = SimulationAssembler(FakeAssetRepository())
+    assembled = assembler.assemble(minimal_input())
+
+    payload = assembled.snapshot_runtime.snapshot_frame(assembled.context, 0).to_dict()
+
+    json.dumps(payload, ensure_ascii=False)
+
+
 def test_assembler_healing_handler_runs_real_single_target_loop():
-    assembled = SimulationAssembler(FakeAssetRepository()).assemble(minimal_config())
+    assembled = SimulationAssembler(FakeAssetRepository()).assemble(minimal_input())
     character_ref = AttributeSubjectRef.character("character:slot_1")
     source_context = RuntimeSourceRef(RuntimeSourceKind.CONTENT, "assembler.healing")
 
@@ -310,7 +344,7 @@ def test_assembler_initializes_character_health_from_final_max_hp():
                 ascension_value=0.2,
             )
 
-    assembled = SimulationAssembler(RuntimeRepository()).assemble(minimal_config())
+    assembled = SimulationAssembler(RuntimeRepository()).assemble(minimal_input())
     character_ref = AttributeSubjectRef.character("character:slot_1")
 
     assert assembled.health_runtime.get_current_hp(character_ref) == 12000

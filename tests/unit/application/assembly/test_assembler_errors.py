@@ -49,7 +49,7 @@ from tests.helpers.assembly import (
     ContributedActionInterpreter,
     MissingActionInterpreter,
     TestCreatedObjectBehavior,
-    minimal_config,
+    minimal_input,
     skill_input_trace,
 )
 from tests.helpers.asset_repository import FakeAssetRepository
@@ -71,7 +71,7 @@ def test_assembler_rejects_character_asset_without_burst_energy_cost():
     )
 
     with pytest.raises(InvalidRuntimePayloadError, match="缺少 burst_energy_cost"):
-        SimulationAssembler(repository).assemble(minimal_config())
+        SimulationAssembler(repository).assemble(minimal_input())
 
 
 def test_assembler_rejects_buff_definition_with_dynamic_hp_dependency_via_provider_reads():
@@ -165,7 +165,7 @@ def test_assembler_rejects_buff_definition_with_dynamic_hp_dependency_via_provid
         InvalidRuntimePayloadError,
         match="第一版不能动态影响 stat.hp.max",
     ):
-        assembler.assemble(minimal_config())
+        assembler.assemble(minimal_input())
 
 
 def test_assembler_rejects_buff_definition_with_unknown_attribute_target():
@@ -224,7 +224,7 @@ def test_assembler_rejects_buff_definition_with_unknown_attribute_target():
     )
 
     with pytest.raises(InvalidRuntimePayloadError, match="写入未知属性"):
-        assembler.assemble(minimal_config())
+        assembler.assemble(minimal_input())
 
 
 def test_assembler_converts_buff_validation_error_raised_inside_content_factory():
@@ -273,7 +273,7 @@ def test_assembler_converts_buff_validation_error_raised_inside_content_factory(
         SimulationAssembler(
             RuntimeRepository(),
             content_unit_registry=registry,
-        ).assemble(minimal_config())
+        ).assemble(minimal_input())
 
 
 def test_assembler_rejects_action_interpreter_from_weapon():
@@ -314,14 +314,14 @@ def test_assembler_rejects_action_interpreter_from_weapon():
         InvalidRuntimePayloadError,
         match="只有角色内容单元可以贡献动作解释器",
     ):
-        assembler.assemble(minimal_config())
+        assembler.assemble(minimal_input())
 
 
 def test_assembler_rejects_missing_character_interpreter_when_action_input_exists():
     assembler = SimulationAssembler(FakeAssetRepository())
 
     with pytest.raises(InvalidRuntimePayloadError, match="动作输入需要队伍槽位提供动作解释器"):
-        assembler.assemble(minimal_config(input_trace=skill_input_trace()))
+        assembler.assemble(minimal_input(input_trace=skill_input_trace()))
 
 
 def test_assembler_rejects_interpreter_declared_action_without_registered_action():
@@ -361,7 +361,7 @@ def test_assembler_rejects_interpreter_declared_action_without_registered_action
     )
 
     with pytest.raises(InvalidRuntimePayloadError, match="声明了未注册 action"):
-        assembler.assemble(minimal_config(input_trace=skill_input_trace()))
+        assembler.assemble(minimal_input(input_trace=skill_input_trace()))
 
 
 def test_assembler_rejects_created_object_behavior_from_weapon():
@@ -402,7 +402,7 @@ def test_assembler_rejects_created_object_behavior_from_weapon():
         InvalidRuntimePayloadError,
         match="只有角色内容单元可以贡献内容创建对象行为",
     ):
-        assembler.assemble(minimal_config())
+        assembler.assemble(minimal_input())
 
 
 def test_assembler_raises_for_missing_asset():
@@ -413,7 +413,7 @@ def test_assembler_raises_for_missing_asset():
     assembler = SimulationAssembler(BrokenRepository())
 
     with pytest.raises(MissingRuntimeAssetError):
-        assembler.assemble(minimal_config())
+        assembler.assemble(minimal_input())
 
 
 def test_assembler_raises_for_missing_handler():
@@ -423,4 +423,4 @@ def test_assembler_raises_for_missing_handler():
     )
 
     with pytest.raises(MissingRuntimeHandlerError):
-        assembler.assemble(minimal_config())
+        assembler.assemble(minimal_input())

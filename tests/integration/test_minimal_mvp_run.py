@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 from pathlib import Path
 
 from genshin_sim.cli.main import main
@@ -8,36 +9,58 @@ from genshin_sim.infrastructure.assets_sqlite import write_minimal_static_asset_
 from genshin_sim.infrastructure.results_sqlite import SQLiteResultRepository
 
 
-def test_cli_run_persists_minimal_config_to_result_database(
+def test_cli_run_persists_minimal_input_to_result_database(
     tmp_path: Path,
     capsys,
+    monkeypatch,
 ):
     asset_db = tmp_path / "assets.db"
     result_db = tmp_path / "results.db"
-    config_path = tmp_path / "config.json"
+    input_path = tmp_path / "config.json"
+    (tmp_path / "config.toml").write_text(
+        'schema_version = 1\n\n[workspace]\ndata_dir = "data"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
     write_minimal_static_asset_database(asset_db)
-    config_path.write_text(
-        json.dumps(_minimal_config_payload(), ensure_ascii=False),
+    input_path.write_text(
+        json.dumps(_minimal_input_payload(), ensure_ascii=False),
         encoding="utf-8",
     )
 
-    exit_code = main(
-        [
-            "run",
-            str(config_path),
-            "--db",
-            str(asset_db),
-            "--results-db",
-            str(result_db),
-        ]
-    )
+    executor_logger = logging.getLogger("genshin_sim.application.execution.executor")
+    previous_level = executor_logger.level
+    recorder = _RecordHandler()
+    executor_logger.setLevel(logging.INFO)
+    executor_logger.addHandler(recorder)
+    try:
+        exit_code = main(
+            [
+                "run",
+                str(input_path),
+                "--db",
+                str(asset_db),
+                "--results-db",
+                str(result_db),
+            ]
+        )
+    finally:
+        executor_logger.setLevel(previous_level)
+        executor_logger.removeHandler(recorder)
 
     assert exit_code == 0
     output = capsys.readouterr().out
     session_id = _extract_session_id(output)
+    key_messages = {"仿真组装开始", "仿真运行开始", "仿真运行完成", "仿真结果已保存"}
+    key_records = [record for record in recorder.records if record.getMessage() in key_messages]
+    assert {getattr(record, "session_id", "") for record in key_records} == {session_id}
     detail = SQLiteResultRepository(result_db).get_run(session_id)
+    assert detail.state == "completed"
+    assert detail.initial_snapshot is not None
+    assert {"space", "aura", "aura_icd", "team"} <= set(detail.initial_snapshot["providers"])
     event_types = [event.event_type for event in detail.events]
 
+    assert detail.summary is not None
     assert detail.summary.stop_reason == "COMPLETED"
     assert detail.summary.end_frame == 3
     assert event_types == [
@@ -81,7 +104,7 @@ def test_cli_run_persists_minimal_config_to_result_database(
         "end_frame": 3,
         "frames_run": 3,
     }
-    assert detail.config_snapshot["team"][0]["character"]["asset_key"] == (
+    assert detail.input_snapshot["team"][0]["character"]["asset_key"] == (
         "character:test_character"
     )
 
@@ -93,10 +116,10 @@ def _extract_session_id(output: str) -> str:
     raise AssertionError(f"session id not found in output: {output}")
 
 
-def _minimal_config_payload() -> dict[str, object]:
+def _minimal_input_payload() -> dict[str, object]:
     return {
-        "schema_version": 1,
-        "kind": "simulation_config",
+        "schema_version": 2,
+        "kind": "simulation_input",
         "meta": {"name": "minimal integration run", "description": ""},
         "team": [
             {
@@ -140,3 +163,12 @@ def _minimal_config_payload() -> dict[str, object]:
         "rules": {"enabled": []},
         "run_options": {"max_frames": 10},
     }
+
+
+class _RecordHandler(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)

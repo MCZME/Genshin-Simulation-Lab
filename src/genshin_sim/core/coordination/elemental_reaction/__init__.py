@@ -14,15 +14,14 @@ from genshin_sim.core.coordination.elemental_reaction.capabilities import (
     ReactionEligibilityView,
     validate_reaction_capability_key,
 )
-from genshin_sim.core.coordination.elemental_reaction.coordinator import (
-    ElementalInteractionCoordinator,
-    ElementalInteractionError,
-    ElementalSettlementCoordinator,
-    ElementalStateFrameCoordinator,
-    ElementalStateFrameRecord,
-)
 from genshin_sim.core.coordination.elemental_reaction.eligibility import (
     DefaultReactionTargetEligibilityPort,
+)
+from genshin_sim.core.coordination.elemental_reaction.errors import (
+    ElementalInteractionError,
+)
+from genshin_sim.core.coordination.elemental_reaction.interaction import (
+    ElementalInteractionCoordinator,
 )
 from genshin_sim.core.coordination.elemental_reaction.lifecycle import (
     CrystallizeShardAlreadyPickedError,
@@ -87,6 +86,9 @@ from genshin_sim.core.coordination.elemental_reaction.settlement import (
     ElementalSettlementRoundLimitError,
     ElementalSettlementWorkQueue,
 )
+from genshin_sim.core.coordination.elemental_reaction.settlement_coordinator import (
+    ElementalSettlementCoordinator,
+)
 from genshin_sim.core.coordination.elemental_reaction.simultaneous import (
     NoAuraElectroHydroCoexistencePolicy,
 )
@@ -95,6 +97,10 @@ from genshin_sim.core.coordination.elemental_reaction.spatial import (
     ReactionStateBindingConflictError,
     validate_reaction_state_space_bindings,
     validate_reaction_state_space_terminalizations,
+)
+from genshin_sim.core.coordination.elemental_reaction.state_frame import (
+    ElementalStateFrameCoordinator,
+    ElementalStateFrameRecord,
 )
 from genshin_sim.core.coordination.elemental_reaction.state_planning import (
     BurningStateEstablishmentAdapter,

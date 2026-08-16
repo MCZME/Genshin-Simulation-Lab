@@ -2,6 +2,13 @@
 
 本文档是仓库级 Codex/AI 协作入口。处理本项目任务时，先阅读本文件，再按任务范围阅读 `docs/` 中的正式文档。详细设计、契约、迁移清单和 Git 工作流不在本文件展开。
 
+## 仓库结构
+
+- `backend/`：Python 后端。包含 `src/genshin_sim/` 包、`tests/`、`pyproject.toml`、`uv.lock`、`.python-version`、配置模板与本地数据目录。
+- `frontend/`：Web 前端工程（计划中）。只通过 HTTP API 调用后端能力，不 import 任何 Python 代码；具体规范见 `docs/工程/前端工程规范.md`。
+- `docs/`：正式文档，按 `架构/`、`契约/`、`决策/`、`工程/` 分区。
+- `prototypes/`：本地 UI 原型，不提交，计划删除。
+
 ## 项目定位
 
 - 本项目是旧项目的移植与重建，不是简单复制旧代码。
@@ -38,7 +45,8 @@ Git、分支、Issue、PR 与合并规则统一使用仓库 skill：`.codex/skil
 
 ## 架构硬规则
 
-- 顶层模块：`core/`、`content/`、`assets/`、`infrastructure/`、`application/`、`analysis/`、`ui/`、`cli/`。
+- Python 顶层模块（位于 `backend/src/genshin_sim/`）：`core/`、`content/`、`assets/`、`infrastructure/`、`application/`、`analysis/`、`cli/`。
+- `frontend/` 是独立的前端工程，不属于 Python 顶层模块，不参与 Python 模块依赖规则。
 - `core/` 是纯仿真运行时核心，不依赖数据库、UI、应用层或具体内容实现。
 - `core/` 不能 import `assets`、`infrastructure`、`application`、`ui`、`content`。
 - `assets/` 保存资产数据对象、仓库协议与相关错误；不实现 SQLite 访问。
@@ -46,7 +54,9 @@ Git、分支、Issue、PR 与合并规则统一使用仓库 skill：`.codex/skil
 - `application/` 负责编排用例与组装，不直接编写具体 SQLite 查询。
 - `infrastructure/` 保存 SQLite、文件存储、日志、任务执行等具体技术实现。
 - `analysis/` 只做结果加工、聚合、对比和报告模型，不写库、不画 UI。
-- `ui/` 和 `cli/` 通过 `application/` 调用能力，不直接访问 SQLite 或组装仿真核心对象。
+- `cli/` 通过 `application/` 调用能力，不直接访问 SQLite 或组装仿真核心对象。
+- `frontend/` 只通过 `infrastructure/http_api/` 暴露的 HTTP API 调用应用能力，不直接访问 SQLite，不组装仿真核心对象。
+- 旧 Flet 壳已移除（2026-08-17）；启动能力将收进 `cli/` 的 `genshin-sim ui` 命令。
 - `core/systems/<domain>/` 实行系统自治：每个系统只拥有本领域的状态、公式、计划、写入口和领域事实。
 - 一个领域系统不能 import 另一个领域系统的具体 Runtime 或 Store，也不能直接修改另一个系统的状态；只读依赖必须通过中立共享模型或窄协议表达。
 - 跨系统仿真流程统一放在 `core/coordination/`；写协调器负责编排准备、校验、无回调提交和事实顺序，只读条件协调器只组合领域条件证据且不得推进时间、修改状态、发布事实或提供预留。
@@ -95,7 +105,7 @@ Git、分支、Issue、PR 与合并规则统一使用仓库 skill：`.codex/skil
 
 当前项目使用 `pytest`、`ruff`、`pyright` 作为第一批质量工具。
 
-常用命令：
+常用命令（在 `backend/` 目录下执行）：
 
 ```powershell
 uv run pytest
@@ -103,6 +113,14 @@ uv run pytest --cov=genshin_sim
 uv run ruff check
 uv run ruff format
 uv run pyright
+```
+
+前端质量工具进入实现阶段后启用（在 `frontend/` 目录下执行）：
+
+```powershell
+pnpm lint
+pnpm typecheck
+pnpm test
 ```
 
 按改动范围选择更窄的测试路径，例如：

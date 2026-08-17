@@ -6,10 +6,7 @@ from typing import Protocol
 from genshin_sim.application.config import ProjectConfig
 from genshin_sim.application.execution.models import RecordedEvent
 from genshin_sim.application.input import SimulationInput
-from genshin_sim.application.services.models import (
-    RunDetail,
-    RunListItem,
-)
+from genshin_sim.application.models import RunDetail, RunListItem
 
 
 class ResultRepository(Protocol):

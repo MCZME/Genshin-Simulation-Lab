@@ -13,7 +13,7 @@ from genshin_sim.application.execution import (
     RunState,
     SimulationRunSummary,
 )
-from genshin_sim.application.services.models import RunDetail, RunListItem
+from genshin_sim.application.models import RunDetail, RunListItem
 from genshin_sim.infrastructure.results_sqlite.schema import init_result_database
 
 

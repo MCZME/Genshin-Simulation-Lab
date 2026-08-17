@@ -5,7 +5,7 @@ from pathlib import Path
 
 from genshin_sim.application.errors import ConfigError
 from genshin_sim.application.input import SimulationInput
-from genshin_sim.application.services.models import SimulationInputFile
+from genshin_sim.application.models import SimulationInputFile
 from genshin_sim.application.services.protocols import ProjectConfigStore
 
 logger = logging.getLogger(__name__)

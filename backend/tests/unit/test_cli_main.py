@@ -121,7 +121,10 @@ def test_cli_assets_fetch_source_uses_project_amber_service(tmp_path, capsys, mo
         del kwargs
         return _FakeSourceSummary(output_dir=Path(output_dir))
 
-    monkeypatch.setattr("genshin_sim.cli.main.fetch_project_amber_source_cache", fake_fetch_source)
+    monkeypatch.setattr(
+        "genshin_sim.application.bootstrap.fetch_project_amber_source_cache",
+        fake_fetch_source,
+    )
 
     assert main(["assets", "fetch-source", "--out", str(cache_dir)]) == 0
 
@@ -147,7 +150,7 @@ def test_cli_assets_build_manifest_uses_project_amber_converter(tmp_path, capsys
         )
 
     monkeypatch.setattr(
-        "genshin_sim.cli.main.build_asset_manifest_from_project_amber_cache",
+        "genshin_sim.application.bootstrap.build_asset_manifest_from_project_amber_cache",
         fake_build_manifest,
     )
 
@@ -192,7 +195,10 @@ def test_cli_assets_audit_manifest_prints_report(tmp_path, capsys, monkeypatch):
             ),
         )
 
-    monkeypatch.setattr("genshin_sim.cli.main.audit_asset_manifest", fake_audit_manifest)
+    monkeypatch.setattr(
+        "genshin_sim.application.bootstrap.audit_asset_manifest",
+        fake_audit_manifest,
+    )
 
     assert (
         main(
@@ -425,9 +431,12 @@ def test_cli_project_init_fetch_assets_rebuilds_from_source(tmp_path, capsys, mo
             source_cache_dir=Path(source_cache_dir),
         )
 
-    monkeypatch.setattr("genshin_sim.cli.main.fetch_project_amber_source_cache", fake_fetch)
     monkeypatch.setattr(
-        "genshin_sim.cli.main.build_asset_manifest_from_project_amber_cache",
+        "genshin_sim.application.bootstrap.fetch_project_amber_source_cache",
+        fake_fetch,
+    )
+    monkeypatch.setattr(
+        "genshin_sim.application.bootstrap.build_asset_manifest_from_project_amber_cache",
         fake_build_manifest,
     )
 

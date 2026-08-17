@@ -6,23 +6,44 @@ repository 或 infrastructure。
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Callable, Sequence
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
-from genshin_sim.application.services.assets import AssetsService
+from genshin_sim.application.config import ProjectConfig
+from genshin_sim.application.context import ApplicationContext
+from genshin_sim.application.errors import ApplicationError
+from genshin_sim.application.input import SimulationInput
+from genshin_sim.application.models import (
+    AssetListItem,
+    AssetListKind,
+    RecordedEvent,
+    RunDetail,
+    RunListItem,
+    SimulationInputFile,
+    SimulationJobResult,
+    SimulationJobStatus,
+    WorkspaceInfo,
+)
+from genshin_sim.application.services.assets import (
+    AssetDatabaseService,
+    AssetHandlerBindingService,
+    AssetManifestAuditService,
+    AssetManifestBuildService,
+    AssetsService,
+    HandlerBindingKind,
+)
+from genshin_sim.application.services.input_validation import InputValidationService
+from genshin_sim.application.services.inputs import InputDiscoveryService
 from genshin_sim.application.services.project import ProjectService
-from genshin_sim.application.services.protocols import ProjectConfigStore
-from genshin_sim.assets import AssetRepository
-
-
-@dataclass(frozen=True, slots=True)
-class WorkspaceInfo:
-    """工作区公开视图。"""
-
-    data_dir: str
-    asset_db_version: str
-    initialized: bool
+from genshin_sim.application.services.project_initialization import (
+    AssetInitializationSelector,
+    ProjectInitializationResult,
+    ProjectInitializationService,
+)
+from genshin_sim.application.services.results import ResultDatabaseService, ResultsService
+from genshin_sim.application.services.simulation import SimulationTaskService
+from genshin_sim.assets import AssetDbInfo, HandlerBinding
 
 
 class ApplicationFacade(Protocol):
@@ -30,44 +51,436 @@ class ApplicationFacade(Protocol):
 
     def get_workspace(self) -> WorkspaceInfo: ...
 
+    def get_asset_db_info(self) -> AssetDbInfo: ...
+
+    def list_assets(self, kind: AssetListKind | str) -> tuple[AssetListItem, ...]: ...
+
+    def inspect_asset(self, asset_key: str) -> dict[str, Any]: ...
+
+    def init_asset_database(self, path: str | Path) -> Path: ...
+
+    def build_asset_database(
+        self,
+        path: str | Path,
+        manifest_path: str | Path | None = None,
+    ) -> Path: ...
+
+    def validate_asset_database(self, path: str | Path) -> None: ...
+
+    def fetch_asset_source(
+        self,
+        output_dir: str | Path,
+        *,
+        source: str = "project-amber-yatta",
+        character_ids: Sequence[str] = (),
+        weapon_ids: Sequence[str] = (),
+        artifact_set_ids: Sequence[str] = (),
+        include_all_details: bool = False,
+    ) -> Any: ...
+
+    def build_asset_manifest(
+        self,
+        source_cache_dir: str | Path,
+        output_path: str | Path,
+    ) -> Any: ...
+
+    def audit_asset_manifest(self, path: str | Path) -> Any: ...
+
+    def set_asset_handler(
+        self,
+        kind: HandlerBindingKind | str,
+        key: str,
+        handler_key: str,
+        pieces: int | None = None,
+        *,
+        manifest_paths: Sequence[str | Path] = (),
+    ) -> HandlerBinding: ...
+
+    def reset_asset_handler(
+        self,
+        kind: HandlerBindingKind | str,
+        key: str,
+        pieces: int | None = None,
+        *,
+        manifest_paths: Sequence[str | Path] = (),
+    ) -> HandlerBinding: ...
+
+    def list_asset_handlers(
+        self,
+        kind: str,
+        owner_key: str | None = None,
+    ) -> tuple[HandlerBinding, ...]: ...
+
+    def sync_asset_handlers(
+        self,
+        manifest_paths: Sequence[str | Path],
+        kind: str | None = None,
+    ) -> dict[str, int]: ...
+
+    def list_inputs(self) -> tuple[SimulationInputFile, ...]: ...
+
+    def validate_input_file(self, path: str | Path) -> SimulationInput: ...
+
+    def initialize_project(
+        self,
+        project_root: str | Path,
+        *,
+        asset_db_path: str | Path,
+        selector: AssetInitializationSelector,
+    ) -> ProjectInitializationResult: ...
+
+    def load_project(self, project_root: str | Path) -> ProjectConfig: ...
+
+    def workspace_paths(self, project_root: str | Path) -> dict[str, Path]: ...
+
+    def submit_run_file(self, path: str | Path) -> str: ...
+
+    def submit_run_input(self, config: SimulationInput) -> str: ...
+
+    def get_run_status(self, job_id: str) -> SimulationJobStatus: ...
+
+    def get_run_result(self, job_id: str) -> SimulationJobResult: ...
+
+    def cancel_run(self, job_id: str) -> SimulationJobStatus: ...
+
+    def run_file_and_wait(
+        self,
+        path: str | Path,
+        *,
+        poll_interval_seconds: float = 0.05,
+        timeout_seconds: float | None = None,
+    ) -> SimulationJobResult: ...
+
+    def run_input_and_wait(
+        self,
+        config: SimulationInput,
+        *,
+        poll_interval_seconds: float = 0.05,
+        timeout_seconds: float | None = None,
+    ) -> SimulationJobResult: ...
+
+    def init_result_database(self, path: str | Path) -> Path: ...
+
+    def list_results(
+        self,
+        limit: int = 50,
+        state: str | None = None,
+    ) -> tuple[RunListItem, ...]: ...
+
+    def get_run(self, session_id: str) -> RunDetail: ...
+
+    def get_run_events(
+        self,
+        session_id: str,
+        *,
+        frame_min: int | None = None,
+        frame_max: int | None = None,
+        event_type: str | None = None,
+        offset: int | None = None,
+        limit: int | None = None,
+    ) -> tuple[RecordedEvent, ...]: ...
+
 
 class DefaultApplicationFacade:
     """基于现有应用服务的默认 facade 实现。"""
 
-    def __init__(
-        self,
-        *,
-        project_root: str | Path,
-        config_store: ProjectConfigStore,
-        asset_repository: AssetRepository,
-        asset_db_path: str | Path,
-    ) -> None:
-        self._project_root = Path(project_root)
-        self._config_store = config_store
-        self._asset_repository = asset_repository
-        self._asset_db_path = Path(asset_db_path)
+    def __init__(self, context: ApplicationContext) -> None:
+        self._context = context
+        self._project_service = ProjectService(context.config_store)
+        self._assets_service = AssetsService(context.asset_repository)
+        self._inputs_service = InputDiscoveryService(context.config_store)
+        self._input_validation_service = InputValidationService()
+        self._results_service = ResultsService(context.result_repository)
+        self._simulation_service = SimulationTaskService(context.job_runner)
 
     def get_workspace(self) -> WorkspaceInfo:
-        config_path = self._config_store.config_path(self._project_root)
+        config_path = self._context.config_store.config_path(self._context.project_root)
         if not config_path.is_file():
             return WorkspaceInfo(
-                data_dir=str(self._project_root / "data"),
+                data_dir=str(self._context.project_root / "data"),
                 asset_db_version="",
                 initialized=False,
             )
 
-        config = ProjectService(self._config_store).load_project(self._project_root)
-        data_dir = str(config.data_dir(self._project_root))
-        if not self._asset_db_path.is_file():
+        config = self._project_service.load_project(self._context.project_root)
+        data_dir = str(config.data_dir(self._context.project_root))
+        if not self._context.asset_db_path.is_file():
             return WorkspaceInfo(
                 data_dir=data_dir,
                 asset_db_version="",
                 initialized=False,
             )
 
-        info = AssetsService(self._asset_repository).get_info()
+        info = self._assets_service.get_info()
         return WorkspaceInfo(
             data_dir=data_dir,
             asset_db_version=info.meta.get("data_version", ""),
             initialized=True,
+        )
+
+    def get_asset_db_info(self) -> AssetDbInfo:
+        return self._assets_service.get_info()
+
+    def list_assets(self, kind: AssetListKind | str) -> tuple[AssetListItem, ...]:
+        return self._assets_service.list_assets(kind)
+
+    def inspect_asset(self, asset_key: str) -> dict[str, Any]:
+        return self._assets_service.inspect_asset_dict(asset_key)
+
+    def init_asset_database(self, path: str | Path) -> Path:
+        return self._asset_database_service().init_database(path)
+
+    def build_asset_database(
+        self,
+        path: str | Path,
+        manifest_path: str | Path | None = None,
+    ) -> Path:
+        return self._asset_database_service(manifest_path=manifest_path).build_database(path)
+
+    def validate_asset_database(self, path: str | Path) -> None:
+        self._asset_database_service().validate_database(path)
+
+    def fetch_asset_source(
+        self,
+        output_dir: str | Path,
+        *,
+        source: str = "project-amber-yatta",
+        character_ids: Sequence[str] = (),
+        weapon_ids: Sequence[str] = (),
+        artifact_set_ids: Sequence[str] = (),
+        include_all_details: bool = False,
+    ) -> Any:
+        callback = self._context.fetch_asset_source_cache
+        if callback is None:
+            raise ApplicationError("admin_service_unavailable", "资产源抓取能力未配置")
+        if source != "project-amber-yatta":
+            raise ValueError(f"不支持的资产源：{source}")
+        return callback(
+            output_dir,
+            character_ids=tuple(character_ids),
+            weapon_ids=tuple(weapon_ids),
+            artifact_set_ids=tuple(artifact_set_ids),
+            include_all_details=include_all_details,
+        )
+
+    def build_asset_manifest(
+        self,
+        source_cache_dir: str | Path,
+        output_path: str | Path,
+    ) -> Any:
+        callback = self._context.build_asset_manifest
+        if callback is None:
+            raise ApplicationError("admin_service_unavailable", "资产 manifest 构建能力未配置")
+        return AssetManifestBuildService(build_manifest=callback).build_manifest(
+            source_cache_dir,
+            output_path,
+        )
+
+    def audit_asset_manifest(self, path: str | Path) -> Any:
+        callback = self._context.audit_asset_manifest
+        if callback is None:
+            raise ApplicationError("admin_service_unavailable", "资产 manifest 验收能力未配置")
+        return AssetManifestAuditService(audit_manifest=callback).audit_manifest(path)
+
+    def set_asset_handler(
+        self,
+        kind: HandlerBindingKind | str,
+        key: str,
+        handler_key: str,
+        pieces: int | None = None,
+        *,
+        manifest_paths: Sequence[str | Path] = (),
+    ) -> HandlerBinding:
+        return self._asset_handler_service().set_handler(
+            kind,
+            key,
+            handler_key,
+            pieces,
+            manifest_paths=manifest_paths,
+        )
+
+    def reset_asset_handler(
+        self,
+        kind: HandlerBindingKind | str,
+        key: str,
+        pieces: int | None = None,
+        *,
+        manifest_paths: Sequence[str | Path] = (),
+    ) -> HandlerBinding:
+        return self._asset_handler_service().reset_handler(
+            kind,
+            key,
+            pieces,
+            manifest_paths=manifest_paths,
+        )
+
+    def list_asset_handlers(
+        self,
+        kind: str,
+        owner_key: str | None = None,
+    ) -> tuple[HandlerBinding, ...]:
+        return self._asset_handler_service().show_handlers(kind, owner_key)
+
+    def sync_asset_handlers(
+        self,
+        manifest_paths: Sequence[str | Path],
+        kind: str | None = None,
+    ) -> dict[str, int]:
+        return self._asset_handler_service().sync_handlers_to_manifests(
+            manifest_paths,
+            kind=kind,
+        )
+
+    def list_inputs(self) -> tuple[SimulationInputFile, ...]:
+        return self._inputs_service.list_inputs(self._context.project_root)
+
+    def validate_input_file(self, path: str | Path) -> SimulationInput:
+        return self._input_validation_service.validate_file(path)
+
+    def initialize_project(
+        self,
+        project_root: str | Path,
+        *,
+        asset_db_path: str | Path,
+        selector: AssetInitializationSelector,
+    ) -> ProjectInitializationResult:
+        if (
+            self._context.init_result_database is None
+            or self._context.build_asset_database_from_manifest is None
+            or self._context.rebuild_asset_database_from_source is None
+        ):
+            raise ApplicationError("admin_service_unavailable", "项目初始化能力未配置")
+        service = ProjectInitializationService(
+            config_store=self._context.config_store,
+            init_result_database=self._context.init_result_database,
+            build_from_manifest=self._context.build_asset_database_from_manifest,
+            rebuild_from_source=self._context.rebuild_asset_database_from_source,
+            asset_selector=selector,
+        )
+        return service.initialize(project_root, asset_db_path=asset_db_path)
+
+    def load_project(self, project_root: str | Path) -> ProjectConfig:
+        return self._project_service.load_project(project_root)
+
+    def workspace_paths(self, project_root: str | Path) -> dict[str, Path]:
+        return self._project_service.workspace_paths(project_root)
+
+    def submit_run_file(self, path: str | Path) -> str:
+        return self._simulation_service.submit_file(path)
+
+    def submit_run_input(self, config: SimulationInput) -> str:
+        return self._simulation_service.submit_input(config)
+
+    def get_run_status(self, job_id: str) -> SimulationJobStatus:
+        return self._simulation_service.get_status(job_id)
+
+    def get_run_result(self, job_id: str) -> SimulationJobResult:
+        return self._simulation_service.get_result(job_id)
+
+    def cancel_run(self, job_id: str) -> SimulationJobStatus:
+        return self._simulation_service.cancel(job_id)
+
+    def run_file_and_wait(
+        self,
+        path: str | Path,
+        *,
+        poll_interval_seconds: float = 0.05,
+        timeout_seconds: float | None = None,
+    ) -> SimulationJobResult:
+        return self._simulation_service.run_file_and_wait(
+            path,
+            poll_interval_seconds=poll_interval_seconds,
+            timeout_seconds=timeout_seconds,
+        )
+
+    def run_input_and_wait(
+        self,
+        config: SimulationInput,
+        *,
+        poll_interval_seconds: float = 0.05,
+        timeout_seconds: float | None = None,
+    ) -> SimulationJobResult:
+        return self._simulation_service.run_config_and_wait(
+            config,
+            poll_interval_seconds=poll_interval_seconds,
+            timeout_seconds=timeout_seconds,
+        )
+
+    def init_result_database(self, path: str | Path) -> Path:
+        callback = self._context.init_result_database
+        if callback is None:
+            raise ApplicationError("admin_service_unavailable", "结果库初始化能力未配置")
+        return ResultDatabaseService(callback).init_database(path)
+
+    def list_results(
+        self,
+        limit: int = 50,
+        state: str | None = None,
+    ) -> tuple[RunListItem, ...]:
+        return self._results_service.list_runs(limit=limit, state=state)
+
+    def get_run(self, session_id: str) -> RunDetail:
+        return self._results_service.inspect_run(session_id)
+
+    def get_run_events(
+        self,
+        session_id: str,
+        *,
+        frame_min: int | None = None,
+        frame_max: int | None = None,
+        event_type: str | None = None,
+        offset: int | None = None,
+        limit: int | None = None,
+    ) -> tuple[RecordedEvent, ...]:
+        return self._results_service.get_events(
+            session_id,
+            frame_min=frame_min,
+            frame_max=frame_max,
+            event_type=event_type,
+            offset=offset,
+            limit=limit,
+        )
+
+    def _asset_database_service(
+        self,
+        *,
+        manifest_path: str | Path | None = None,
+    ) -> AssetDatabaseService:
+        init_database = self._context.init_asset_database
+        validate_database = self._context.validate_asset_database
+        build_database: Callable[[str | Path], Path]
+        if manifest_path is None:
+            minimal_writer = self._context.write_minimal_static_asset_database
+            if minimal_writer is None:
+                raise ApplicationError("admin_service_unavailable", "资产库构建能力未配置")
+            build_database = minimal_writer
+        else:
+            build_from_manifest = self._context.build_asset_database_from_manifest
+            if build_from_manifest is None:
+                raise ApplicationError("admin_service_unavailable", "资产库构建能力未配置")
+
+            def build_database_from_manifest(db_path: str | Path) -> Path:
+                return build_from_manifest(db_path, manifest_path)
+
+            build_database = build_database_from_manifest
+
+        if init_database is None or validate_database is None:
+            raise ApplicationError("admin_service_unavailable", "资产库维护能力未配置")
+        return AssetDatabaseService(
+            init_database=init_database,
+            build_database=build_database,
+            validate_database=validate_database,
+        )
+
+    def _asset_handler_service(self) -> AssetHandlerBindingService:
+        repository = self._context.asset_handler_repository
+        registry = self._context.content_unit_registry
+        if repository is None or registry is None:
+            raise ApplicationError("admin_service_unavailable", "资产 handler 维护能力未配置")
+        return AssetHandlerBindingService(
+            repository=repository,
+            content_unit_registry=registry,
+            manifest_validator=self._context.manifest_validator,
+            manifest_updater=self._context.manifest_updater,
+            manifest_syncer=self._context.manifest_syncer,
         )

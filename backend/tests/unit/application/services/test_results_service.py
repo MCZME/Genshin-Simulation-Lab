@@ -5,11 +5,11 @@ from typing import cast
 from genshin_sim.analysis.processors.comparison import ComparisonQuery
 from genshin_sim.analysis.processors.query import EventQuery, StateQuery
 from genshin_sim.application.execution.models import RecordedEvent, SimulationRunSummary
+from genshin_sim.application.models import RunDetail
 from genshin_sim.application.services import (
     ResultDatabaseService,
     ResultsService,
 )
-from genshin_sim.application.services.models import RunDetail
 from genshin_sim.application.services.protocols import ResultRepository
 
 

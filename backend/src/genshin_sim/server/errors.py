@@ -7,7 +7,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 
-from genshin_sim.application.errors import ApplicationError
+from genshin_sim.application import ApplicationError
 
 logger = logging.getLogger(__name__)
 

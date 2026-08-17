@@ -2,11 +2,12 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable, Sequence
-from dataclasses import dataclass, replace
+from dataclasses import replace
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from genshin_sim.application.models import AssetListItem, AssetListKind
 from genshin_sim.application.services.errors import ApplicationServiceError
 from genshin_sim.assets import (
     ArtifactSetAsset,
@@ -29,20 +30,6 @@ class HandlerBindingKind(StrEnum):
     ARTIFACT_SET = "artifact-set"
     ARTIFACT_BONUS = "artifact-bonus"
     EFFECT = "effect"
-
-
-class AssetListKind(StrEnum):
-    """应用服务对外暴露的资产类别。"""
-
-    CHARACTERS = "characters"
-    WEAPONS = "weapons"
-    ARTIFACT_SETS = "artifact-sets"
-
-
-@dataclass(frozen=True, slots=True)
-class AssetListItem:
-    asset_key: str
-    name: str
 
 
 class AssetsService:

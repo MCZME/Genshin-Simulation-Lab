@@ -28,7 +28,7 @@ from genshin_sim.analysis.processors.sequences import (
 )
 from genshin_sim.analysis.processors.state_fold import FrameStateView, fold_state
 from genshin_sim.application.execution.models import RecordedEvent
-from genshin_sim.application.services.models import RunDetail, RunListItem
+from genshin_sim.application.models import RunDetail, RunListItem
 from genshin_sim.application.services.protocols import ResultRepository
 
 logger = logging.getLogger(__name__)

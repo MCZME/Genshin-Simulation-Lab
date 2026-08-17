@@ -1,3 +1,9 @@
+"""命令行入口。
+
+CLI 只负责参数解析、调用 application facade 和格式化输出，
+不直接访问基础设施、service 或仿真核心。
+"""
+
 from __future__ import annotations
 
 import argparse
@@ -10,59 +16,26 @@ from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, cast
 
-from genshin_sim.application.config import ProjectConfig
-from genshin_sim.application.services import (
-    AssetDatabaseService,
-    AssetHandlerBindingService,
-    AssetManifestAuditService,
-    AssetManifestBuildService,
-    AssetSourceCacheService,
-    AssetsService,
-    InputDiscoveryService,
-    InputValidationService,
-    ProjectService,
-    ResultDatabaseService,
-    ResultsService,
-    SimulationTaskService,
-)
-from genshin_sim.application.services.project_initialization import (
+from genshin_sim.application import (
+    ApplicationFacade,
     AssetInitializationPlan,
     AssetInitializationSelector,
     AssetInitializationStrategy,
-    ProjectInitializationService,
+    ProjectConfig,
+    create_cli_application,
 )
-from genshin_sim.content import create_default_content_unit_registry
-from genshin_sim.infrastructure.assets_project_amber import (
-    build_asset_manifest_from_project_amber_cache,
-    fetch_project_amber_source_cache,
-)
-from genshin_sim.infrastructure.assets_sqlite import (
-    SQLiteAssetRepository,
-    apply_handler_binding_to_manifest,
-    audit_asset_manifest,
-    build_asset_database_from_manifest,
-    init_asset_database,
-    sync_asset_manifest_handler_bindings,
-    validate_asset_database,
-    validate_handler_binding_in_manifest,
-    write_minimal_static_asset_database,
-)
-from genshin_sim.infrastructure.file_storage import ProjectConfigFileStore
 from genshin_sim.infrastructure.logging import (
     LoggingSettings,
     coerce_log_level,
     configure_logging,
     logging_context,
 )
-from genshin_sim.infrastructure.results_sqlite import (
-    SQLiteResultRepository,
-    SQLiteResultWriter,
-    init_result_database,
-)
 
-DEFAULT_ASSET_DB = Path("data/assets/assets.db")
-DEFAULT_ASSET_MANIFEST = Path("data/assets/manifests/project_amber_yatta.json")
-DEFAULT_ASSET_SOURCE_CACHE = Path("data/assets/sources/project_amber_yatta/default")
+DEFAULT_ASSET_DB = Path("data") / "assets" / "assets.db"
+DEFAULT_ASSET_MANIFEST = Path("data") / "assets" / "manifests" / "project_amber_yatta.json"
+DEFAULT_ASSET_SOURCE_CACHE = (
+    Path("data") / "assets" / "sources" / "project_amber_yatta" / "default"
+)
 ENV_LOG_FILE = "GENSHIN_SIM_LOG_FILE"
 ENV_LOG_LEVEL = "GENSHIN_SIM_LOG_LEVEL"
 LOG_LEVEL_CHOICES = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")
@@ -133,10 +106,7 @@ def _add_assets_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
     _add_asset_db_argument(init_parser)
     init_parser.set_defaults(handler=_cmd_assets_init)
 
-    build_parser = assets_subparsers.add_parser(
-        "build",
-        help="构建资产数据库。",
-    )
+    build_parser = assets_subparsers.add_parser("build", help="构建资产数据库。")
     _add_asset_db_argument(build_parser)
     build_parser.add_argument(
         "--manifest",
@@ -329,17 +299,11 @@ def _add_input_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentPa
     input_parser = subparsers.add_parser("input", help="操作模拟输入文件。")
     input_subparsers = input_parser.add_subparsers(dest="input_command")
 
-    validate_parser = input_subparsers.add_parser(
-        "validate",
-        help="校验模拟输入文件。",
-    )
+    validate_parser = input_subparsers.add_parser("validate", help="校验模拟输入文件。")
     validate_parser.add_argument("input_path")
     validate_parser.set_defaults(handler=_cmd_input_validate)
 
-    list_parser = input_subparsers.add_parser(
-        "list",
-        help="列出项目 inputs 目录中的模拟输入。",
-    )
+    list_parser = input_subparsers.add_parser("list", help="列出项目 inputs 目录中的模拟输入。")
     _add_project_root_argument(list_parser)
     list_parser.set_defaults(handler=_cmd_input_list)
 
@@ -348,10 +312,7 @@ def _add_project_parser(subparsers: argparse._SubParsersAction[argparse.Argument
     project_parser = subparsers.add_parser("project", help="管理项目配置。")
     project_subparsers = project_parser.add_subparsers(dest="project_command")
 
-    init_parser = project_subparsers.add_parser(
-        "init",
-        help="初始化默认 config.toml。",
-    )
+    init_parser = project_subparsers.add_parser("init", help="初始化默认 config.toml。")
     _add_project_root_argument(init_parser)
     init_parser.add_argument(
         "--asset-manifest",
@@ -371,10 +332,7 @@ def _add_project_parser(subparsers: argparse._SubParsersAction[argparse.Argument
     )
     init_parser.set_defaults(handler=_cmd_project_init)
 
-    show_parser = project_subparsers.add_parser(
-        "show",
-        help="显示项目配置与工作区路径。",
-    )
+    show_parser = project_subparsers.add_parser("show", help="显示项目配置与工作区路径。")
     _add_project_root_argument(show_parser)
     show_parser.set_defaults(handler=_cmd_project_show)
 
@@ -389,10 +347,7 @@ def _add_project_root_argument(parser: argparse.ArgumentParser) -> None:
 
 
 def _add_run_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentParser]) -> None:
-    run_parser = subparsers.add_parser(
-        "run",
-        help="通过应用服务运行模拟输入。",
-    )
+    run_parser = subparsers.add_parser("run", help="通过应用服务运行模拟输入。")
     run_parser.add_argument("input_path")
     _add_project_root_argument(run_parser)
     _add_asset_db_argument(run_parser)
@@ -464,15 +419,14 @@ def _resolve_result_db(args: argparse.Namespace) -> Path:
 
 
 def _cmd_assets_init(args: argparse.Namespace) -> int:
-    path = _asset_database_service().init_database(args.asset_db)
+    path = _application(args).init_asset_database(args.asset_db)
     print(f"initialized asset database: {path}")
     return 0
 
 
 def _cmd_assets_build(args: argparse.Namespace) -> int:
     manifest_path = getattr(args, "manifest", None)
-    service = _asset_database_service(manifest_path=manifest_path)
-    path = service.build_database(args.asset_db)
+    path = _application(args).build_asset_database(args.asset_db, manifest_path=manifest_path)
     if manifest_path is None:
         print(f"built local static asset database: {path}")
     else:
@@ -481,21 +435,14 @@ def _cmd_assets_build(args: argparse.Namespace) -> int:
 
 
 def _cmd_assets_fetch_source(args: argparse.Namespace) -> int:
-    if args.source != "project-amber-yatta":
-        raise ValueError(f"不支持的资产源：{args.source}")
-
-    def fetch_source_cache(output_dir: str | Path):
-        return fetch_project_amber_source_cache(
-            output_dir,
-            character_ids=args.character_id,
-            weapon_ids=args.weapon_id,
-            artifact_set_ids=args.artifact_set_id,
-            include_all_details=bool(args.all_details),
-        )
-
-    summary = AssetSourceCacheService(
-        fetch_source_cache=fetch_source_cache,
-    ).fetch_source_cache(args.out)
+    summary = _application(args).fetch_asset_source(
+        args.out,
+        source=args.source,
+        character_ids=args.character_id,
+        weapon_ids=args.weapon_id,
+        artifact_set_ids=args.artifact_set_id,
+        include_all_details=bool(args.all_details),
+    )
     print(f"fetched asset source cache: {summary.output_dir}")
     print(f"source_name: {summary.source_name}")
     print(f"source_version: {summary.source_version}")
@@ -511,11 +458,7 @@ def _cmd_assets_fetch_source(args: argparse.Namespace) -> int:
 
 
 def _cmd_assets_build_manifest(args: argparse.Namespace) -> int:
-    if args.source != "project-amber-yatta":
-        raise ValueError(f"不支持的资产源：{args.source}")
-    summary = AssetManifestBuildService(
-        build_manifest=build_asset_manifest_from_project_amber_cache,
-    ).build_manifest(args.source_cache, args.out)
+    summary = _application(args).build_asset_manifest(args.source_cache, args.out)
     print(f"built asset manifest: {summary.output_path}")
     print(f"source_cache: {summary.source_cache_dir}")
     print(f"characters: {summary.character_count}")
@@ -531,9 +474,7 @@ def _cmd_assets_build_manifest(args: argparse.Namespace) -> int:
 
 
 def _cmd_assets_audit_manifest(args: argparse.Namespace) -> int:
-    report = AssetManifestAuditService(audit_manifest=audit_asset_manifest).audit_manifest(
-        args.manifest
-    )
+    report = _application(args).audit_asset_manifest(args.manifest)
     max_issues = max(0, int(args.max_issues))
 
     print(f"资产 manifest: {report.manifest_path}")
@@ -565,13 +506,13 @@ def _cmd_assets_audit_manifest(args: argparse.Namespace) -> int:
 
 
 def _cmd_assets_validate(args: argparse.Namespace) -> int:
-    _asset_database_service().validate_database(args.asset_db)
+    _application(args).validate_asset_database(args.asset_db)
     print(f"asset database OK: {args.asset_db}")
     return 0
 
 
 def _cmd_assets_info(args: argparse.Namespace) -> int:
-    info = AssetsService(SQLiteAssetRepository(args.asset_db)).get_info()
+    info = _application(args).get_asset_db_info()
     print(f"schema_version: {info.meta.get('schema_version', '')}")
     print(f"data_version: {info.meta.get('data_version', '')}")
     print(f"characters: {info.character_count}")
@@ -581,20 +522,19 @@ def _cmd_assets_info(args: argparse.Namespace) -> int:
 
 
 def _cmd_assets_list(args: argparse.Namespace) -> int:
-    service = AssetsService(SQLiteAssetRepository(args.asset_db))
-    for item in service.list_assets(args.asset_type):
-        print(f"{item.asset_key}\t{item.name}")
+    for item in _application(args).list_assets(args.asset_type):
+        print(f"{item.asset_key}	{item.name}")
     return 0
 
 
 def _cmd_assets_inspect(args: argparse.Namespace) -> int:
-    item = AssetsService(SQLiteAssetRepository(args.asset_db)).inspect_asset(args.asset_key)
+    item = _application(args).inspect_asset(args.asset_key)
     print(_to_json(item))
     return 0
 
 
 def _cmd_assets_set_handler(args: argparse.Namespace) -> int:
-    binding = _asset_handler_binding_service(args.asset_db).set_handler(
+    binding = _application(args).set_asset_handler(
         args.kind,
         args.key,
         args.handler_key,
@@ -606,7 +546,7 @@ def _cmd_assets_set_handler(args: argparse.Namespace) -> int:
 
 
 def _cmd_assets_reset_handler(args: argparse.Namespace) -> int:
-    binding = _asset_handler_binding_service(args.asset_db).reset_handler(
+    binding = _application(args).reset_asset_handler(
         args.kind,
         args.key,
         pieces=args.pieces,
@@ -617,39 +557,32 @@ def _cmd_assets_reset_handler(args: argparse.Namespace) -> int:
 
 
 def _cmd_assets_show_handlers(args: argparse.Namespace) -> int:
-    bindings = _asset_handler_binding_service(args.asset_db).show_handlers(
-        args.kind,
-        owner_key=args.owner,
-    )
+    bindings = _application(args).list_asset_handlers(args.kind, owner_key=args.owner)
     for binding in bindings:
         pieces = "" if binding.pieces is None else str(binding.pieces)
         handler_key = "" if binding.handler_key is None else binding.handler_key
-        print(f"{binding.key}\t{pieces}\t{handler_key}")
+        print(f"{binding.key}	{pieces}	{handler_key}")
     return 0
 
 
 def _cmd_assets_sync_handlers(args: argparse.Namespace) -> int:
-    result = _asset_handler_binding_service(args.asset_db).sync_handlers_to_manifests(
-        tuple(args.manifest),
-        kind=args.kind,
-    )
+    result = _application(args).sync_asset_handlers(tuple(args.manifest), kind=args.kind)
     for manifest_path, count in sorted(result.items()):
         print(f"synced {count} handler bindings to {manifest_path}")
     return 0
 
 
 def _cmd_input_validate(args: argparse.Namespace) -> int:
-    config = InputValidationService().validate_file(args.input_path)
+    config = _application(args).validate_input_file(args.input_path)
     print(f"input OK: {config.meta.name}")
     return 0
 
 
 def _cmd_input_list(args: argparse.Namespace) -> int:
-    service = InputDiscoveryService(ProjectConfigFileStore())
-    for item in service.list_inputs(args.root):
+    for item in _application(args).list_inputs():
         status = "error" if item.error else "ok"
         name = item.name or "-"
-        print(f"{item.input_key}\t{status}\t{name}\t{item.path}")
+        print(f"{item.input_key}	{status}	{name}	{item.path}")
     return 0
 
 
@@ -659,24 +592,16 @@ def _cmd_project_init(args: argparse.Namespace) -> int:
 
     root = Path(args.root)
     asset_db_path = args.asset_db or (root / DEFAULT_ASSET_DB)
-    source_cache_dir = root / DEFAULT_ASSET_SOURCE_CACHE
-    manifest_path = root / DEFAULT_ASSET_MANIFEST
 
-    service = ProjectInitializationService(
-        config_store=ProjectConfigFileStore(),
-        init_result_database=init_result_database,
-        build_from_manifest=build_asset_database_from_manifest,
-        rebuild_from_source=lambda db_path: _rebuild_asset_database_from_source(
-            db_path,
-            source_cache_dir=source_cache_dir,
-            manifest_path=manifest_path,
-        ),
-        asset_selector=_CliAssetInitializationSelector(
-            manifest_path=args.asset_manifest,
-            fetch_source=args.fetch_assets,
-        ),
+    selector = _CliAssetInitializationSelector(
+        manifest_path=args.asset_manifest,
+        fetch_source=args.fetch_assets,
     )
-    result = service.initialize(root, asset_db_path=asset_db_path)
+    result = _application(args).initialize_project(
+        root,
+        asset_db_path=asset_db_path,
+        selector=selector,
+    )
 
     print(f"initialized project config: {result.config_path}")
     print(f"data_dir: {result.data_dir}")
@@ -729,35 +654,19 @@ class _CliAssetInitializationSelector(AssetInitializationSelector):
         raise ValueError(f"不支持的选项：{choice}")
 
 
-def _rebuild_asset_database_from_source(
-    db_path: str | Path,
-    *,
-    source_cache_dir: Path,
-    manifest_path: Path,
-) -> Path:
-    """完整重建资产库：抓取 raw cache -> 构建 manifest -> 构建数据库。"""
-
-    fetch_project_amber_source_cache(source_cache_dir)
-    summary = build_asset_manifest_from_project_amber_cache(source_cache_dir, manifest_path)
-    return build_asset_database_from_manifest(db_path, summary.output_path)
-
-
 def _cmd_project_show(args: argparse.Namespace) -> int:
-    service = ProjectService(ProjectConfigFileStore())
-    config = service.load_project(args.root)
+    root = Path(args.root)
+    application = _application(args)
+    config = application.load_project(root)
     print(f"schema_version: {config.schema_version}")
     print(f"data_dir: {config.workspace.data_dir}")
-    for key, path in sorted(service.workspace_paths(args.root).items()):
+    for key, path in sorted(application.workspace_paths(root).items()):
         print(f"{key}: {path}")
     return 0
 
 
 def _cmd_run(args: argparse.Namespace) -> int:
-    service = SimulationTaskService.create(
-        asset_repository=SQLiteAssetRepository(args.asset_db),
-        result_writer=SQLiteResultWriter(_resolve_result_db(args)),
-    )
-    outcome = service.run_file_and_wait(args.input_path)
+    outcome = _application(args).run_file_and_wait(args.input_path)
     print(f"session_id: {outcome.session_id}")
     if outcome.summary is None:
         raise RuntimeError("仿真任务完成但缺少摘要")
@@ -767,25 +676,23 @@ def _cmd_run(args: argparse.Namespace) -> int:
 
 
 def _cmd_results_init(args: argparse.Namespace) -> int:
-    path = ResultDatabaseService(init_result_database).init_database(_resolve_result_db(args))
+    path = _application(args).init_result_database(_resolve_result_db(args))
     print(f"initialized result database: {path}")
     return 0
 
 
 def _cmd_results_list(args: argparse.Namespace) -> int:
-    service = ResultsService(SQLiteResultRepository(_resolve_result_db(args)))
-    for item in service.list_runs(limit=args.limit, state=args.state):
+    application = _application(args)
+    for item in application.list_results(limit=args.limit, state=args.state):
         print(
-            f"{item.session_id}\t{item.created_at}\t{item.state}\t{item.name}\t"
-            f"{item.stop_reason}\t{item.frames_run}\t{item.event_count}"
+            f"{item.session_id}	{item.created_at}	{item.state}	{item.name}	"
+            f"{item.stop_reason}	{item.frames_run}	{item.event_count}"
         )
     return 0
 
 
 def _cmd_results_inspect(args: argparse.Namespace) -> int:
-    detail = ResultsService(SQLiteResultRepository(_resolve_result_db(args))).inspect_run(
-        args.session_id
-    )
+    detail = _application(args).get_run(args.session_id)
     print(
         _to_json(
             {
@@ -806,8 +713,8 @@ def _cmd_results_inspect(args: argparse.Namespace) -> int:
 
 
 def _cmd_results_events(args: argparse.Namespace) -> int:
-    service = ResultsService(SQLiteResultRepository(_resolve_result_db(args)))
-    events = service.get_events(
+    application = _application(args)
+    events = application.get_run_events(
         args.session_id,
         frame_min=args.frame_min,
         frame_max=args.frame_max,
@@ -817,7 +724,7 @@ def _cmd_results_events(args: argparse.Namespace) -> int:
     )
     for event in events:
         print(
-            f"{event.frame}\t{event.event_type}\t"
+            f"{event.frame}	{event.event_type}	"
             f"{json.dumps(event.data, ensure_ascii=False, sort_keys=True)}"
         )
     return 0
@@ -829,27 +736,11 @@ def _to_json(value: Any) -> str:
     return json.dumps(value, ensure_ascii=True, indent=2, sort_keys=True)
 
 
-def _asset_database_service(manifest_path: Path | None = None) -> AssetDatabaseService:
-    build_database = write_minimal_static_asset_database
-    if manifest_path is not None:
-
-        def build_database(db_path: str | Path) -> Path:
-            return build_asset_database_from_manifest(db_path, manifest_path)
-
-    return AssetDatabaseService(
-        init_database=init_asset_database,
-        build_database=build_database,
-        validate_database=validate_asset_database,
-    )
-
-
-def _asset_handler_binding_service(asset_db: Path) -> AssetHandlerBindingService:
-    return AssetHandlerBindingService(
-        repository=SQLiteAssetRepository(asset_db),
-        content_unit_registry=create_default_content_unit_registry(),
-        manifest_validator=validate_handler_binding_in_manifest,
-        manifest_updater=apply_handler_binding_to_manifest,
-        manifest_syncer=sync_asset_manifest_handler_bindings,
+def _application(args: argparse.Namespace) -> ApplicationFacade:
+    return create_cli_application(
+        project_root=_project_root(args),
+        asset_db_path=getattr(args, "asset_db", None),
+        result_db_path=getattr(args, "result_db", None),
     )
 
 
@@ -919,7 +810,7 @@ def _should_resolve_project_config(args: argparse.Namespace) -> bool:
 
 
 def _load_project_config(args: argparse.Namespace) -> ProjectConfig:
-    return ProjectService(ProjectConfigFileStore()).load_project(_project_root(args))
+    return _application(args).load_project(_project_root(args))
 
 
 def _project_root(args: argparse.Namespace) -> Path:

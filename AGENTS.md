@@ -45,17 +45,18 @@ Git、分支、Issue、PR 与合并规则统一使用仓库 skill：`.codex/skil
 
 ## 架构硬规则
 
-- Python 顶层模块（位于 `backend/src/genshin_sim/`）：`core/`、`content/`、`assets/`、`infrastructure/`、`application/`、`analysis/`、`cli/`。
+- Python 顶层模块（位于 `backend/src/genshin_sim/`）：`core/`、`content/`、`assets/`、`infrastructure/`、`application/`、`analysis/`、`cli/`、`server/`。
 - `frontend/` 是独立的前端工程，不属于 Python 顶层模块，不参与 Python 模块依赖规则。
 - `core/` 是纯仿真运行时核心，不依赖数据库、UI、应用层或具体内容实现。
 - `core/` 不能 import `assets`、`infrastructure`、`application`、`ui`、`content`。
 - `assets/` 保存资产数据对象、仓库协议与相关错误；不实现 SQLite 访问。
 - `content/` 保存具体角色、武器、圣遗物和 handler 实现，可以依赖 `core/` 与 `assets/` 数据对象。
-- `application/` 负责编排用例与组装，不直接编写具体 SQLite 查询。
+- `application/` 是 Python 后端唯一公开能力出口，负责编排用例与组装，不直接编写具体 SQLite 查询；`cli/` 与 `server/` 只能通过其公开接口调用能力。
 - `infrastructure/` 保存 SQLite、文件存储、日志、任务执行等具体技术实现。
 - `analysis/` 只做结果加工、聚合、对比和报告模型，不写库、不画 UI。
 - `cli/` 通过 `application/` 调用能力，不直接访问 SQLite 或组装仿真核心对象。
-- `frontend/` 只通过 `infrastructure/http_api/` 暴露的 HTTP API 调用应用能力，不直接访问 SQLite，不组装仿真核心对象。
+- `server/` 是与 `cli/` 同级的网页服务入口，通过 `application/` 调用能力；不直接访问 SQLite 或组装仿真核心对象。
+- `frontend/` 只通过 `server/` 暴露的 HTTP API 调用应用能力，不直接访问 SQLite，不组装仿真核心对象。
 - 旧 Flet 壳已移除（2026-08-17）；启动能力将收进 `cli/` 的 `genshin-sim ui` 命令。
 - `core/systems/<domain>/` 实行系统自治：每个系统只拥有本领域的状态、公式、计划、写入口和领域事实。
 - 一个领域系统不能 import 另一个领域系统的具体 Runtime 或 Store，也不能直接修改另一个系统的状态；只读依赖必须通过中立共享模型或窄协议表达。

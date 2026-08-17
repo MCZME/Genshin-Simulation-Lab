@@ -5,9 +5,9 @@
 
 ## 1. 总则
 
-- 前端与后端同源：`infrastructure/http_api/` 托管 `frontend/` 构建产物并提供 API，生产环境不出现跨域。
+- 前端与后端同源：`server/` 托管 `frontend/` 构建产物并提供 API，生产环境不出现跨域。
 - API 前缀 `/api/v1`；契约变更走版本升级，不静默破坏旧版本。
-- 请求/响应使用 JSON；DTO 用 pydantic 定义在 `infrastructure/http_api/`，领域层保持 dataclass。
+- 请求/响应使用 JSON；DTO 用 pydantic 定义在 `server/`，领域层保持 dataclass。
 - OpenAPI 文档作为契约来源，前端通过 `openapi-typescript` 生成 TypeScript 类型。
 - 错误响应统一为 `{ "code": "...", "message": "...", "details": [...] }`；`details` 使用[工作流定义契约](./工作流定义契约.md)的结构化诊断数组。
 

@@ -10,7 +10,7 @@
 
 ## 1. 定位与边界
 
-- `frontend/` 是独立 Web 前端工程，通过 HTTP API 调用 `application/services/` 能力。
+- `frontend/` 是独立 Web 前端工程，通过 `server/` 的 HTTP API 调用 application 公开能力。
 - 前端不直接访问 SQLite、不组装仿真核心对象、不实现分析算法、不调用 CLI。
 - UI 与 CLI 共享同一批应用服务；`application/` 不依赖 Flet 控件；`core/` 不感知 UI 状态。
 - 产品以“批”为一等公民，单次模拟输入是批的特例；主界面为单一无限画布，配置 → 模拟 → 分析整条链在画布上承载。
@@ -83,8 +83,8 @@ backend/src/genshin_sim/
 ├── infrastructure/
 │   ├── file_storage/
 │   │   └── workflow_store.py  # <data_dir>/workflows/ JSON 读写
-│   └── http_api/          # HTTP API 适配层（计划中）
-└── cli/                   # genshin-sim ui 启动本地服务与桌面壳
+├── cli/                   # 命令行入口；genshin-sim ui 启动本地服务
+└── server/                # 网页服务端入口（计划中）
 
 frontend/
 ├── src/
@@ -119,7 +119,7 @@ frontend/
 
 ### 7.1 分工
 
-- 语义注册表在 `application/workflow/`：节点类型、片段形状、端口模型、参数 schema、区域约束与节点级校验。
+- 语义注册表在 `application/workflow/`：节点类型、片段形状、端口模型、参数 schema、区域约束与节点级校验；前端通过 server API 读取 application 暴露的语义数据。
 - UI 注册表在 `ui/components/nodes/registry.py`：`node_kind → 编辑器组件` 映射与展示元数据（图标、默认尺寸、面板排序）。
 - 画布对象面板读语义注册表决定“当前区域有哪些对象”，再经 UI 注册表取编辑器组件；两侧以稳定 `node_kind` 为公共 key，互不 import。
 

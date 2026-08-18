@@ -24,6 +24,7 @@ from genshin_sim.application.input import SimulationInput
 from genshin_sim.application.models import (
     AssetListItem,
     AssetListKind,
+    DamageMetrics,
     RecordedEvent,
     RunDetail,
     RunListItem,
@@ -65,6 +66,7 @@ __all__ = [
     "BatchRunStatus",
     "BatchValidationError",
     "BatchValidationResult",
+    "DamageMetrics",
     "AssetInitializationPlan",
     "AssetInitializationSelector",
     "AssetInitializationStrategy",

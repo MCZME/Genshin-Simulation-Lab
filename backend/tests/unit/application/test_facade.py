@@ -7,6 +7,7 @@ from typing import Any, cast
 import pytest
 
 from genshin_sim.application import (
+    ApplicationError,
     ApplicationFacade,
     AssetListKind,
     BatchMember,
@@ -14,7 +15,11 @@ from genshin_sim.application import (
     BatchRunState,
     create_application,
 )
-from genshin_sim.application.execution.models import CompletedSimulationRun, FailedSimulationRun
+from genshin_sim.application.execution.models import (
+    CompletedSimulationRun,
+    FailedSimulationRun,
+    SimulationRunSummary,
+)
 from genshin_sim.application.jobs import InMemorySimulationJobRunner, SimulationJobRunner
 from genshin_sim.application.models import RecordedEvent, RunDetail, RunListItem
 from genshin_sim.application.services.workflows import (
@@ -29,14 +34,43 @@ from tests.helpers.project import FakeProjectConfigStore
 
 
 class _FakeResultRepository:
-    def __init__(self, runs: tuple[RunListItem, ...] = ()) -> None:
+    def __init__(
+        self,
+        runs: tuple[RunListItem, ...] = (),
+        *,
+        details: dict[str, RunDetail] | None = None,
+    ) -> None:
         self.runs = runs
+        self.details = details or {}
 
-    def list_runs(self, limit: int = 50, state: str | None = None) -> tuple[RunListItem, ...]:
-        return self.runs
+    def list_runs(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        state: str | None = None,
+    ) -> tuple[RunListItem, ...]:
+        return self.runs[offset : offset + limit]
 
-    def get_run(self, session_id: str) -> RunDetail:
-        raise LookupError(session_id)
+    def get_run(self, session_id: str, *, include_events: bool = True) -> RunDetail:
+        try:
+            detail = self.details[session_id]
+        except KeyError as exc:
+            raise LookupError(session_id) from exc
+        if include_events:
+            return detail
+        return RunDetail(
+            session_id=detail.session_id,
+            state=detail.state,
+            input_snapshot=detail.input_snapshot,
+            initial_snapshot=None,
+            summary=detail.summary,
+            events=(),
+            error_code=detail.error_code,
+            error_message=detail.error_message,
+            created_at=detail.created_at,
+            started_at=detail.started_at,
+            finished_at=detail.finished_at,
+        )
 
     def get_events(
         self,
@@ -47,7 +81,35 @@ class _FakeResultRepository:
         offset: int | None = None,
         limit: int | None = None,
     ) -> tuple[RecordedEvent, ...]:
-        return ()
+        run = self.details[session_id]
+        events = run.events
+        if frame_min is not None:
+            events = tuple(event for event in events if event.frame >= frame_min)
+        if frame_max is not None:
+            events = tuple(event for event in events if event.frame <= frame_max)
+        if event_type is not None:
+            events = tuple(event for event in events if event.event_type == event_type)
+        start = offset or 0
+        end = None if limit is None else start + limit
+        return events[start:end]
+
+    def count_events(
+        self,
+        session_id: str,
+        *,
+        frame_min: int | None = None,
+        frame_max: int | None = None,
+        event_type: str | None = None,
+    ) -> int:
+        run = self.details[session_id]
+        events = run.events
+        if frame_min is not None:
+            events = tuple(event for event in events if event.frame >= frame_min)
+        if frame_max is not None:
+            events = tuple(event for event in events if event.frame <= frame_max)
+        if event_type is not None:
+            events = tuple(event for event in events if event.event_type == event_type)
+        return len(events)
 
 
 class _FakeResultWriter:
@@ -167,6 +229,21 @@ def test_facade_lists_assets() -> None:
     assert assets[0].name == "test"
 
 
+def test_facade_asset_search_detail_and_display_fields() -> None:
+    facade = _make_facade(asset_repository=FakeAssetRepository(meta={"data_version": "test-1"}))
+
+    items = facade.list_assets(AssetListKind.CHARACTERS, q="test", limit=1, offset=0)
+    detail = facade.get_asset("characters", "75")
+
+    assert items[0].source_id == "75"
+    assert items[0].usable is True
+    assert items[0].element == "hydro"
+    assert items[0].weapon_type == "sword"
+    assert items[0].rarity == 5
+    assert detail.asset_key == "character:75"
+    assert detail.status is None
+
+
 def test_facade_lists_results() -> None:
     run = RunListItem(
         session_id="session-1",
@@ -183,6 +260,126 @@ def test_facade_lists_results() -> None:
     result = facade.list_results()
 
     assert result == (run,)
+
+
+def test_facade_lists_results_with_offset() -> None:
+    runs = tuple(
+        RunListItem(
+            session_id=f"session-{index}",
+            state="completed",
+            name=f"run-{index}",
+            stop_reason="end",
+            end_frame=10,
+            frames_run=10,
+            created_at=f"2026-01-0{index + 1}T00:00:00+00:00",
+            event_count=0,
+        )
+        for index in range(2)
+    )
+    facade = _make_facade(result_repository=_FakeResultRepository(runs))
+
+    result = facade.list_results(limit=1, offset=1)
+
+    assert [item.session_id for item in result] == ["session-1"]
+
+
+def test_facade_get_run_can_skip_events() -> None:
+    detail = RunDetail(
+        session_id="session-1",
+        state="completed",
+        input_snapshot={"meta": {"name": "demo"}},
+        initial_snapshot={"frame": 0},
+        summary=SimulationRunSummary(
+            stop_reason="INPUT_EXHAUSTED",
+            end_frame=600,
+            frames_run=600,
+        ),
+        events=(RecordedEvent(frame=1, event_type="INPUT", data={"key": "keyboard.e"}),),
+        error_code=None,
+        error_message=None,
+        created_at="2026-01-01T00:00:00+00:00",
+        started_at=None,
+        finished_at=None,
+    )
+    facade = _make_facade(result_repository=_FakeResultRepository(details={"session-1": detail}))
+
+    metadata = facade.get_run("session-1", include_events=False)
+
+    assert metadata.events == ()
+    assert metadata.initial_snapshot is None
+    assert metadata.summary is not None
+    assert metadata.summary.frames_run == 600
+
+
+def test_facade_damage_metrics_and_event_count() -> None:
+    detail = RunDetail(
+        session_id="session-1",
+        state="completed",
+        input_snapshot={"meta": {"name": "demo"}},
+        initial_snapshot=None,
+        summary=SimulationRunSummary(
+            stop_reason="INPUT_EXHAUSTED",
+            end_frame=600,
+            frames_run=600,
+        ),
+        events=(
+            RecordedEvent(
+                frame=10,
+                event_type="DAMAGE_RESOLVED",
+                data={
+                    "result": {
+                        "request_id": "damage:1",
+                        "source_ref": "character:slot_1",
+                        "target_ref": "target:target_1",
+                        "final_damage": 300.0,
+                        "damage_type": "skill",
+                    }
+                },
+            ),
+            RecordedEvent(frame=20, event_type="INPUT", data={"key": "keyboard.e"}),
+        ),
+        error_code=None,
+        error_message=None,
+        created_at="2026-01-01T00:00:00+00:00",
+        started_at=None,
+        finished_at=None,
+    )
+    facade = _make_facade(result_repository=_FakeResultRepository(details={"session-1": detail}))
+
+    metrics = facade.damage_metrics("session-1")
+    count = facade.count_run_events(
+        "session-1",
+        frame_min=10,
+        frame_max=10,
+        event_type="DAMAGE_RESOLVED",
+    )
+
+    assert metrics.total_damage.value == 300.0
+    assert count == 1
+
+
+def test_facade_damage_metrics_unavailable_for_failed_run() -> None:
+    detail = RunDetail(
+        session_id="session-failed",
+        state="failed",
+        input_snapshot={"meta": {"name": "demo"}},
+        initial_snapshot=None,
+        summary=None,
+        events=(),
+        error_code="RuntimeError",
+        error_message="boom",
+        created_at="2026-01-01T00:00:00+00:00",
+        started_at=None,
+        finished_at=None,
+    )
+    facade = _make_facade(
+        result_repository=_FakeResultRepository(details={"session-failed": detail})
+    )
+
+    with pytest.raises(ApplicationError) as exc_info:
+        facade.damage_metrics("session-failed")
+
+    assert exc_info.value.code == "metrics_unavailable"
 
 
 def test_facade_exposes_batch_validation_and_lifecycle() -> None:

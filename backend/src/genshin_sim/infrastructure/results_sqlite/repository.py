@@ -130,10 +130,13 @@ class SQLiteResultRepository:
     def list_runs(
         self,
         limit: int = 50,
+        offset: int = 0,
         state: str | None = None,
     ) -> tuple[RunListItem, ...]:
         if limit <= 0:
             return ()
+        if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+            raise ValueError("offset 必须是非负整数")
         if not self.db_path.exists():
             return ()
 
@@ -146,8 +149,9 @@ class SQLiteResultRepository:
             if state is not None:
                 sql += " WHERE state = ?"
                 params.append(state)
-            sql += " ORDER BY created_at DESC, session_id DESC LIMIT ?"
+            sql += " ORDER BY created_at DESC, session_id DESC LIMIT ? OFFSET ?"
             params.append(limit)
+            params.append(offset)
             rows = connection.execute(sql, tuple(params)).fetchall()
         return tuple(
             RunListItem(
@@ -163,16 +167,65 @@ class SQLiteResultRepository:
             for row in rows
         )
 
-    def get_run(self, session_id: str) -> RunDetail:
+    def count_events(
+        self,
+        session_id: str,
+        *,
+        frame_min: int | None = None,
+        frame_max: int | None = None,
+        event_type: str | None = None,
+    ) -> int:
+        if not self.db_path.exists():
+            raise ResultNotFoundError(f"simulation run not found: {session_id}")
+
+        conditions = ["session_id = ?"]
+        params: list[Any] = [session_id]
+        if frame_min is not None:
+            conditions.append("frame >= ?")
+            params.append(frame_min)
+        if frame_max is not None:
+            conditions.append("frame <= ?")
+            params.append(frame_max)
+        if event_type is not None:
+            conditions.append("event_type = ?")
+            params.append(event_type)
+
+        with closing(_connect(self.db_path)) as connection:
+            run_row = connection.execute(
+                "SELECT 1 FROM simulation_runs WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if run_row is None:
+                raise ResultNotFoundError(f"simulation run not found: {session_id}")
+            row = connection.execute(
+                f"SELECT COUNT(*) FROM simulation_events WHERE {' AND '.join(conditions)}",
+                tuple(params),
+            ).fetchone()
+        return int(row[0])
+
+    def get_run(self, session_id: str, *, include_events: bool = True) -> RunDetail:
         if not self.db_path.exists():
             raise ResultNotFoundError(f"simulation run not found: {session_id}")
 
         with closing(_connect(self.db_path)) as connection:
+            columns = [
+                "session_id",
+                "state",
+                "input_snapshot_json",
+                "stop_reason",
+                "end_frame",
+                "frames_run",
+                "error_code",
+                "error_message",
+                "created_at",
+                "started_at",
+                "finished_at",
+            ]
+            if include_events:
+                columns.insert(2, "initial_snapshot_json")
             run_row = connection.execute(
-                """
-                SELECT session_id, state, input_snapshot_json, initial_snapshot_json,
-                       stop_reason, end_frame, frames_run, error_code, error_message,
-                       created_at, started_at, finished_at
+                f"""
+                SELECT {", ".join(columns)}
                 FROM simulation_runs
                 WHERE session_id = ?
                 """,
@@ -181,15 +234,17 @@ class SQLiteResultRepository:
             if run_row is None:
                 raise ResultNotFoundError(f"simulation run not found: {session_id}")
 
-            event_rows = connection.execute(
-                """
-                SELECT frame, event_type, data_json
-                FROM simulation_events
-                WHERE session_id = ?
-                ORDER BY ordinal
-                """,
-                (session_id,),
-            ).fetchall()
+            event_rows: list[Any] = []
+            if include_events:
+                event_rows = connection.execute(
+                    """
+                    SELECT frame, event_type, data_json
+                    FROM simulation_events
+                    WHERE session_id = ?
+                    ORDER BY ordinal
+                    """,
+                    (session_id,),
+                ).fetchall()
 
         summary = None
         if run_row["stop_reason"] is not None:
@@ -198,7 +253,7 @@ class SQLiteResultRepository:
                 end_frame=int(run_row["end_frame"]),
                 frames_run=int(run_row["frames_run"]),
             )
-        initial_snapshot = run_row["initial_snapshot_json"]
+        initial_snapshot = run_row["initial_snapshot_json"] if include_events else None
         return RunDetail(
             session_id=str(run_row["session_id"]),
             state=str(run_row["state"]),

@@ -15,10 +15,11 @@ class ResultRepository(Protocol):
     def list_runs(
         self,
         limit: int = 50,
+        offset: int = 0,
         state: str | None = None,
     ) -> tuple[RunListItem, ...]: ...
 
-    def get_run(self, session_id: str) -> RunDetail: ...
+    def get_run(self, session_id: str, *, include_events: bool = True) -> RunDetail: ...
 
     def get_events(
         self,
@@ -29,6 +30,15 @@ class ResultRepository(Protocol):
         offset: int | None = None,
         limit: int | None = None,
     ) -> tuple[RecordedEvent, ...]: ...
+
+    def count_events(
+        self,
+        session_id: str,
+        *,
+        frame_min: int | None = None,
+        frame_max: int | None = None,
+        event_type: str | None = None,
+    ) -> int: ...
 
 
 class SimulationInputValidator(Protocol):

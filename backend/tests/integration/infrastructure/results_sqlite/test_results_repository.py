@@ -212,9 +212,50 @@ def test_get_events_filters_and_paginates(tmp_path):
     ]
     assert [event.frame for event in repository.get_events(session_id, offset=2)] == [3, 4]
     assert repository.get_events(session_id, event_type="NO_SUCH_EVENT") == ()
+    assert repository.count_events(session_id) == 4
+    assert repository.count_events(session_id, frame_min=2, frame_max=3) == 2
+    assert repository.count_events(session_id, event_type="DAMAGE_RESOLVED") == 2
 
     with pytest.raises(ResultNotFoundError):
         repository.get_events("missing-session")
+    with pytest.raises(ResultNotFoundError):
+        repository.count_events("missing-session")
+
+
+def test_get_run_metadata_skips_events_and_initial_snapshot(tmp_path):
+    db_path = tmp_path / "results.db"
+    writer = SQLiteResultWriter(db_path)
+    run = CompletedSimulationRun(
+        input_schema_version=2,
+        input_kind="simulation_input",
+        input_meta={"name": "Metadata Run"},
+        input_snapshot={
+            "schema_version": 2,
+            "kind": "simulation_input",
+            "meta": {"name": "Metadata Run"},
+        },
+        initial_snapshot={"frame": 0, "state": {"heavy": "snapshot"}},
+        summary=SimulationRunSummary(
+            stop_reason="MAX_FRAMES",
+            end_frame=4,
+            frames_run=4,
+        ),
+        events=(RecordedEvent(frame=1, event_type="SIMULATION_STARTED", data={}),),
+    )
+    session_id = writer.save_run(run)
+    repository = SQLiteResultRepository(db_path)
+
+    metadata = repository.get_run(session_id, include_events=False)
+
+    assert metadata.events == ()
+    assert metadata.initial_snapshot is None
+    assert metadata.summary is not None
+    assert metadata.summary.frames_run == 4
+    assert metadata.input_snapshot["meta"]["name"] == "Metadata Run"
+
+    full = repository.get_run(session_id)
+    assert [event.frame for event in full.events] == [1]
+    assert full.initial_snapshot == {"frame": 0, "state": {"heavy": "snapshot"}}
 
 
 def test_list_runs_filters_by_state(tmp_path):
@@ -253,6 +294,33 @@ def test_list_runs_filters_by_state(tmp_path):
     assert {item.state for item in all_items} == {"failed", "completed"}
 
 
+def test_list_runs_supports_offset(tmp_path):
+    db_path = tmp_path / "results.db"
+    writer = SQLiteResultWriter(db_path)
+    for index in range(3):
+        writer.save_run(
+            CompletedSimulationRun(
+                input_schema_version=2,
+                input_kind="simulation_input",
+                input_meta={"name": f"Run {index}"},
+                input_snapshot={"schema_version": 2, "kind": "simulation_input"},
+                summary=SimulationRunSummary(
+                    stop_reason="MAX_FRAMES",
+                    end_frame=1,
+                    frames_run=1,
+                ),
+                events=(),
+                created_at=f"2026-01-0{index + 1}T00:00:00+00:00",
+            )
+        )
+    repository = SQLiteResultRepository(db_path)
+
+    page = repository.list_runs(limit=2, offset=1)
+
+    assert len(page) == 2
+    assert [item.name for item in page] == ["Run 1", "Run 0"]
+
+
 def test_init_result_database_rejects_incompatible_existing_schema(tmp_path):
     db_path = tmp_path / "results.db"
     connection = sqlite3.connect(db_path)
@@ -269,9 +337,7 @@ def test_init_result_database_rejects_incompatible_existing_schema(tmp_path):
         init_result_database(db_path)
 
     stored = dict(
-        sqlite3.connect(db_path)
-        .execute("SELECT key, value FROM result_db_meta")
-        .fetchall()
+        sqlite3.connect(db_path).execute("SELECT key, value FROM result_db_meta").fetchall()
     )
     assert stored["schema_version"] == "1"
 
@@ -283,8 +349,6 @@ def test_init_result_database_allows_same_version_reinit(tmp_path):
     init_result_database(db_path)
 
     stored = dict(
-        sqlite3.connect(db_path)
-        .execute("SELECT key, value FROM result_db_meta")
-        .fetchall()
+        sqlite3.connect(db_path).execute("SELECT key, value FROM result_db_meta").fetchall()
     )
     assert stored["schema_version"] == RESULTS_SCHEMA_VERSION

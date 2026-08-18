@@ -11,6 +11,7 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from genshin_sim.analysis.processors.metrics import DamageMetrics
 from genshin_sim.application.batch.models import (
     BatchDiagnostic,
     BatchInput,
@@ -45,7 +46,13 @@ class AssetListKind(StrEnum):
 @dataclass(frozen=True, slots=True)
 class AssetListItem:
     asset_key: str
+    source_id: str
     name: str
+    usable: bool
+    status: str | None = None
+    rarity: int | None = None
+    element: str | None = None
+    weapon_type: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -103,6 +110,7 @@ __all__ = [
     "BatchRunState",
     "BatchRunStatus",
     "BatchValidationResult",
+    "DamageMetrics",
     "RecordedEvent",
     "RunDetail",
     "RunListItem",

@@ -31,22 +31,43 @@ class _FakeResultRepository:
     def __init__(self, run: RunDetail) -> None:
         self._run = run
 
-    def get_run(self, session_id: str) -> RunDetail:
+    def get_run(self, session_id: str, *, include_events: bool = True) -> RunDetail:
         assert session_id == "run:1"
         return self._run
 
-    def list_runs(self, limit: int = 50, state: str | None = None) -> tuple[object, ...]:
+    def list_runs(
+        self,
+        limit: int = 50,
+        offset: int = 0,
+        state: str | None = None,
+    ) -> tuple[object, ...]:
         return ()
 
     def get_events(self, session_id: str, **kwargs: object) -> tuple[RecordedEvent, ...]:
-        return self._run.events
+        events = self._run.events
+        frame_min = cast(int | None, kwargs.get("frame_min"))
+        frame_max = cast(int | None, kwargs.get("frame_max"))
+        event_type = cast(str | None, kwargs.get("event_type"))
+        if frame_min is not None:
+            events = tuple(event for event in events if event.frame >= frame_min)
+        if frame_max is not None:
+            events = tuple(event for event in events if event.frame <= frame_max)
+        if event_type is not None:
+            events = tuple(event for event in events if event.event_type == event_type)
+        offset = cast(int, kwargs.get("offset") or 0)
+        limit = cast(int | None, kwargs.get("limit"))
+        end = None if limit is None else offset + limit
+        return events[offset:end]
+
+    def count_events(self, session_id: str, **kwargs: object) -> int:
+        return len(self.get_events(session_id, **kwargs))
 
 
 class _FakeMultiRunRepository(_FakeResultRepository):
     def __init__(self, runs: dict[str, RunDetail]) -> None:
         self._runs = runs
 
-    def get_run(self, session_id: str) -> RunDetail:
+    def get_run(self, session_id: str, *, include_events: bool = True) -> RunDetail:
         return self._runs[session_id]
 
     def get_events(self, session_id: str, **kwargs: object) -> tuple[RecordedEvent, ...]:
@@ -197,6 +218,30 @@ def test_results_service_computes_damage_metrics():
     assert metrics.total_damage.value == 300.0
     assert metrics.dps.value == 300.0
     assert metrics.damage_share_by_source[0].group == "character:slot_1"
+
+
+def test_results_service_counts_filtered_events():
+    run = RunDetail(
+        session_id="run:1",
+        state="completed",
+        input_snapshot={},
+        initial_snapshot=None,
+        summary=None,
+        events=(
+            RecordedEvent(frame=1, event_type="INPUT", data={}),
+            RecordedEvent(frame=2, event_type="DAMAGE_RESOLVED", data={}),
+        ),
+        error_code=None,
+        error_message=None,
+        created_at="2026-08-11T00:00:00+00:00",
+        started_at=None,
+        finished_at=None,
+    )
+    service = ResultsService(cast(ResultRepository, _FakeResultRepository(run)))
+
+    count = service.count_events("run:1", frame_min=2, event_type="DAMAGE_RESOLVED")
+
+    assert count == 1
 
 
 def test_results_service_compares_queries():

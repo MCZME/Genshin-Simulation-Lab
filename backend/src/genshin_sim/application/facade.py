@@ -10,6 +10,7 @@ from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
+from genshin_sim.analysis.processors.metrics import DamageMetrics, MetricsError
 from genshin_sim.application.batch import (
     BatchMember,
     BatchRunService,
@@ -69,7 +70,16 @@ class ApplicationFacade(Protocol):
 
     def get_asset_db_info(self) -> AssetDbInfo: ...
 
-    def list_assets(self, kind: AssetListKind | str) -> tuple[AssetListItem, ...]: ...
+    def list_assets(
+        self,
+        kind: AssetListKind | str,
+        *,
+        q: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[AssetListItem, ...]: ...
+
+    def get_asset(self, kind: AssetListKind | str, source_id: str) -> AssetListItem: ...
 
     def inspect_asset(self, asset_key: str) -> dict[str, Any]: ...
 
@@ -197,10 +207,20 @@ class ApplicationFacade(Protocol):
     def list_results(
         self,
         limit: int = 50,
+        offset: int = 0,
         state: str | None = None,
     ) -> tuple[RunListItem, ...]: ...
 
-    def get_run(self, session_id: str) -> RunDetail: ...
+    def get_run(self, session_id: str, *, include_events: bool = True) -> RunDetail: ...
+
+    def count_run_events(
+        self,
+        session_id: str,
+        *,
+        frame_min: int | None = None,
+        frame_max: int | None = None,
+        event_type: str | None = None,
+    ) -> int: ...
 
     def get_run_events(
         self,
@@ -212,6 +232,8 @@ class ApplicationFacade(Protocol):
         offset: int | None = None,
         limit: int | None = None,
     ) -> tuple[RecordedEvent, ...]: ...
+
+    def damage_metrics(self, session_id: str) -> DamageMetrics: ...
 
     def create_workflow(self, name: str = DEFAULT_WORKFLOW_NAME) -> WorkflowDetail: ...
 
@@ -233,15 +255,18 @@ class DefaultApplicationFacade:
 
     def __init__(self, context: ApplicationContext) -> None:
         self._context = context
+        content_unit_registry = (
+            context.content_unit_registry or create_default_content_unit_registry()
+        )
         self._project_service = ProjectService(context.config_store)
-        self._assets_service = AssetsService(context.asset_repository)
+        self._assets_service = AssetsService(
+            context.asset_repository,
+            content_unit_registry=content_unit_registry,
+        )
         self._inputs_service = InputDiscoveryService(context.config_store)
         self._input_validation_service = InputValidationService()
         self._results_service = ResultsService(context.result_repository)
         self._simulation_service = SimulationTaskService(context.job_runner)
-        content_unit_registry = (
-            context.content_unit_registry or create_default_content_unit_registry()
-        )
         self._batch_service = BatchRunService(
             context.job_runner,
             validator=BatchInputValidationService(
@@ -281,8 +306,32 @@ class DefaultApplicationFacade:
     def get_asset_db_info(self) -> AssetDbInfo:
         return self._assets_service.get_info()
 
-    def list_assets(self, kind: AssetListKind | str) -> tuple[AssetListItem, ...]:
-        return self._assets_service.list_assets(kind)
+    def list_assets(
+        self,
+        kind: AssetListKind | str,
+        *,
+        q: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[AssetListItem, ...]:
+        try:
+            return self._assets_service.list_assets(
+                kind,
+                q=q,
+                limit=limit,
+                offset=offset,
+            )
+        except ValueError as exc:
+            raise ApplicationError("not_found", f"未知资产类型：{kind}") from exc
+
+    def get_asset(self, kind: AssetListKind | str, source_id: str) -> AssetListItem:
+        try:
+            return self._assets_service.get_asset(kind, source_id)
+        except (KeyError, LookupError, ValueError) as exc:
+            raise ApplicationError(
+                "not_found",
+                f"资产不存在：{kind}/{source_id}",
+            ) from exc
 
     def inspect_asset(self, asset_key: str) -> dict[str, Any]:
         return self._assets_service.inspect_asset_dict(asset_key)
@@ -500,12 +549,37 @@ class DefaultApplicationFacade:
     def list_results(
         self,
         limit: int = 50,
+        offset: int = 0,
         state: str | None = None,
     ) -> tuple[RunListItem, ...]:
-        return self._results_service.list_runs(limit=limit, state=state)
+        return self._results_service.list_runs(limit=limit, offset=offset, state=state)
 
-    def get_run(self, session_id: str) -> RunDetail:
-        return self._results_service.inspect_run(session_id)
+    def get_run(self, session_id: str, *, include_events: bool = True) -> RunDetail:
+        try:
+            return self._results_service.inspect_run(
+                session_id,
+                include_events=include_events,
+            )
+        except LookupError as exc:
+            raise _result_not_found(session_id) from exc
+
+    def count_run_events(
+        self,
+        session_id: str,
+        *,
+        frame_min: int | None = None,
+        frame_max: int | None = None,
+        event_type: str | None = None,
+    ) -> int:
+        try:
+            return self._results_service.count_events(
+                session_id,
+                frame_min=frame_min,
+                frame_max=frame_max,
+                event_type=event_type,
+            )
+        except LookupError as exc:
+            raise _result_not_found(session_id) from exc
 
     def get_run_events(
         self,
@@ -517,14 +591,30 @@ class DefaultApplicationFacade:
         offset: int | None = None,
         limit: int | None = None,
     ) -> tuple[RecordedEvent, ...]:
-        return self._results_service.get_events(
-            session_id,
-            frame_min=frame_min,
-            frame_max=frame_max,
-            event_type=event_type,
-            offset=offset,
-            limit=limit,
-        )
+        try:
+            return self._results_service.get_events(
+                session_id,
+                frame_min=frame_min,
+                frame_max=frame_max,
+                event_type=event_type,
+                offset=offset,
+                limit=limit,
+            )
+        except LookupError as exc:
+            raise _result_not_found(session_id) from exc
+
+    def damage_metrics(self, session_id: str) -> DamageMetrics:
+        try:
+            return self._results_service.damage_metrics(session_id)
+        except KeyError:
+            raise
+        except LookupError as exc:
+            raise _result_not_found(session_id) from exc
+        except MetricsError as exc:
+            raise ApplicationError(
+                "metrics_unavailable",
+                "运行结果尚无法计算摘要指标",
+            ) from exc
 
     def create_workflow(self, name: str = DEFAULT_WORKFLOW_NAME) -> WorkflowDetail:
         return self._require_workflow_service().create(name)
@@ -593,3 +683,7 @@ class DefaultApplicationFacade:
         if self._workflow_service is None:
             raise ApplicationError("workflow_store_unavailable", "工作流存档能力未配置")
         return self._workflow_service
+
+
+def _result_not_found(session_id: str) -> ApplicationError:
+    return ApplicationError("not_found", f"运行结果不存在：{session_id}")

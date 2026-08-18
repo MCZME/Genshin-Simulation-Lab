@@ -43,14 +43,18 @@ class ResultsService:
     def list_runs(
         self,
         limit: int = 50,
+        offset: int = 0,
         state: str | None = None,
     ) -> tuple[RunListItem, ...]:
-        logger.debug("列出仿真结果", extra={"limit": limit, "state": state})
-        return self.repository.list_runs(limit=limit, state=state)
+        logger.debug("列出仿真结果", extra={"limit": limit, "offset": offset, "state": state})
+        return self.repository.list_runs(limit=limit, offset=offset, state=state)
 
-    def inspect_run(self, session_id: str) -> RunDetail:
-        logger.debug("查看仿真结果", extra={"session_id": session_id})
-        return self.repository.get_run(session_id)
+    def inspect_run(self, session_id: str, *, include_events: bool = True) -> RunDetail:
+        logger.debug(
+            "查看仿真结果",
+            extra={"session_id": session_id, "include_events": include_events},
+        )
+        return self.repository.get_run(session_id, include_events=include_events)
 
     def get_events(
         self,
@@ -80,6 +84,32 @@ class ResultsService:
             event_type=event_type,
             offset=offset,
             limit=limit,
+        )
+
+    def count_events(
+        self,
+        session_id: str,
+        *,
+        frame_min: int | None = None,
+        frame_max: int | None = None,
+        event_type: str | None = None,
+    ) -> int:
+        """返回匹配查询条件的事件总数，供分页响应使用。"""
+
+        logger.debug(
+            "统计仿真事件",
+            extra={
+                "session_id": session_id,
+                "frame_min": frame_min,
+                "frame_max": frame_max,
+                "event_type": event_type,
+            },
+        )
+        return self.repository.count_events(
+            session_id,
+            frame_min=frame_min,
+            frame_max=frame_max,
+            event_type=event_type,
         )
 
     def fold_state(self, session_id: str, frame: int) -> FrameStateView:

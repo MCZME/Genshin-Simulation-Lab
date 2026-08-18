@@ -35,14 +35,27 @@ class HandlerBindingKind(StrEnum):
 class AssetsService:
     """通过应用层读取资产数据。"""
 
-    def __init__(self, repository: AssetRepository) -> None:
+    def __init__(
+        self,
+        repository: AssetRepository,
+        *,
+        content_unit_registry: ContentUnitRegistry | None = None,
+    ) -> None:
         self.repository = repository
+        self.content_unit_registry = content_unit_registry
 
     def get_info(self):
         logger.debug("读取资产数据库信息")
         return self.repository.get_info()
 
-    def list_assets(self, kind: AssetListKind | str) -> tuple[AssetListItem, ...]:
+    def list_assets(
+        self,
+        kind: AssetListKind | str,
+        *,
+        q: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> tuple[AssetListItem, ...]:
         resolved_kind = AssetListKind(kind)
         logger.debug("列出资产", extra={"asset_kind": resolved_kind.value})
         if resolved_kind is AssetListKind.CHARACTERS:
@@ -51,7 +64,38 @@ class AssetsService:
             items = self.repository.list_weapons()
         else:
             items = self.repository.list_artifact_sets()
-        return tuple(AssetListItem(asset_key=item.asset_key, name=item.name) for item in items)
+        query = (q or "").strip().casefold()
+        if query:
+            items = tuple(
+                item
+                for item in items
+                if query in item.name.casefold() or query in item.source_id.casefold()
+            )
+        if offset or limit is not None:
+            if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
+                raise ValueError("offset 必须是非负整数")
+            if limit is not None and (
+                isinstance(limit, bool) or not isinstance(limit, int) or limit < 0
+            ):
+                raise ValueError("limit 必须是非负整数")
+            start = offset
+            end = None if limit is None else start + limit
+            items = items[start:end]
+        return tuple(self._to_list_item(item, resolved_kind) for item in items)
+
+    def get_asset(self, kind: AssetListKind | str, source_id: str) -> AssetListItem:
+        """按资产类型与 source_id 返回单个展示项。"""
+
+        resolved_kind = AssetListKind(kind)
+        if not isinstance(source_id, str) or not source_id:
+            raise ValueError("source_id 不能为空")
+        prefix = {
+            AssetListKind.CHARACTERS: "character",
+            AssetListKind.WEAPONS: "weapon",
+            AssetListKind.ARTIFACT_SETS: "artifact_set",
+        }[resolved_kind]
+        asset = self._get_asset(resolved_kind, f"{prefix}:{source_id}")
+        return self._to_list_item(asset, resolved_kind)
 
     def inspect_asset(self, asset_key: str) -> CharacterAsset | WeaponAsset | ArtifactSetAsset:
         logger.debug("查看资产", extra={"asset_key": asset_key})
@@ -66,6 +110,91 @@ class AssetsService:
     def inspect_asset_dict(self, asset_key: str) -> dict[str, Any]:
         item = self.inspect_asset(asset_key)
         return {field: getattr(item, field) for field in item.__dataclass_fields__}
+
+    def _get_asset(
+        self,
+        kind: AssetListKind,
+        asset_key: str,
+    ) -> CharacterAsset | WeaponAsset | ArtifactSetAsset:
+        if kind is AssetListKind.CHARACTERS:
+            return self.repository.get_character(asset_key)
+        if kind is AssetListKind.WEAPONS:
+            return self.repository.get_weapon(asset_key)
+        return self.repository.get_artifact_set(asset_key)
+
+    def _to_list_item(
+        self,
+        asset: CharacterAsset | WeaponAsset | ArtifactSetAsset,
+        kind: AssetListKind,
+    ) -> AssetListItem:
+        usable, status = self._availability(asset, kind)
+        if isinstance(asset, CharacterAsset):
+            rarity: int | None = asset.rarity
+            element: str | None = asset.element
+            weapon_type: str | None = asset.weapon_type
+        elif isinstance(asset, WeaponAsset):
+            rarity = asset.rarity
+            element = None
+            weapon_type = asset.weapon_type
+        else:
+            rarity = None
+            element = None
+            weapon_type = None
+        return AssetListItem(
+            asset_key=asset.asset_key,
+            source_id=asset.source_id,
+            name=asset.name,
+            usable=usable,
+            status=status,
+            rarity=rarity,
+            element=element,
+            weapon_type=weapon_type,
+        )
+
+    def _availability(
+        self,
+        asset: CharacterAsset | WeaponAsset | ArtifactSetAsset,
+        kind: AssetListKind,
+    ) -> tuple[bool, str | None]:
+        registry = self.content_unit_registry
+
+        if kind is AssetListKind.CHARACTERS:
+            if asset.handler_key is None:
+                return False, "角色实现未接入"
+            if registry is None:
+                return False, "缺少内容注册表，无法确认可运行性"
+            if not registry.has_character_handler(asset.handler_key):
+                return False, "角色实现不可用"
+        elif kind is AssetListKind.WEAPONS:
+            if registry is None:
+                return False, "缺少内容注册表，无法确认可运行性"
+            if asset.handler_key is not None and not registry.has_weapon_handler(asset.handler_key):
+                return False, "武器实现不可用"
+        else:
+            if registry is None:
+                return False, "缺少内容注册表，无法确认可运行性"
+            if asset.handler_key is not None and not registry.has_artifact_handler(
+                asset.handler_key
+            ):
+                return False, "套装实现不可用"
+
+        if not self._effects_available(asset.asset_key, registry):
+            return False, "效果实现不可用"
+        if kind is AssetListKind.ARTIFACT_SETS:
+            try:
+                bonuses = self.repository.get_artifact_set_bonuses(asset.asset_key)
+            except Exception:
+                return False, "套装效果数据不可用"
+            if not all(registry.has_artifact_handler(bonus.handler_key) for bonus in bonuses):
+                return False, "套装效果实现不可用"
+        return True, None
+
+    def _effects_available(self, owner_key: str, registry: ContentUnitRegistry) -> bool:
+        try:
+            effects = self.repository.get_effect_payloads(owner_key)
+        except Exception:
+            return False
+        return all(registry.has_effect_handler(effect.handler_key) for effect in effects)
 
 
 class AssetDatabaseService:

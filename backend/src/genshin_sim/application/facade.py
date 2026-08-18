@@ -6,7 +6,7 @@ repository 或 infrastructure。
 
 from __future__ import annotations
 
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -52,6 +52,12 @@ from genshin_sim.application.services.project_initialization import (
 )
 from genshin_sim.application.services.results import ResultDatabaseService, ResultsService
 from genshin_sim.application.services.simulation import SimulationTaskService
+from genshin_sim.application.services.workflows import (
+    DEFAULT_WORKFLOW_NAME,
+    WorkflowDetail,
+    WorkflowService,
+    WorkflowSummary,
+)
 from genshin_sim.assets import AssetDbInfo, HandlerBinding
 from genshin_sim.content import create_default_content_unit_registry
 
@@ -207,6 +213,20 @@ class ApplicationFacade(Protocol):
         limit: int | None = None,
     ) -> tuple[RecordedEvent, ...]: ...
 
+    def create_workflow(self, name: str = DEFAULT_WORKFLOW_NAME) -> WorkflowDetail: ...
+
+    def list_workflows(self) -> tuple[WorkflowSummary, ...]: ...
+
+    def get_workflow(self, workflow_id: str) -> WorkflowDetail: ...
+
+    def save_workflow(
+        self,
+        workflow_id: str,
+        definition: Mapping[str, Any],
+    ) -> WorkflowDetail: ...
+
+    def delete_workflow(self, workflow_id: str) -> None: ...
+
 
 class DefaultApplicationFacade:
     """基于现有应用服务的默认 facade 实现。"""
@@ -228,6 +248,9 @@ class DefaultApplicationFacade:
                 context.asset_repository,
                 content_unit_registry=content_unit_registry,
             ),
+        )
+        self._workflow_service = (
+            WorkflowService(context.workflow_store) if context.workflow_store is not None else None
         )
 
     def get_workspace(self) -> WorkspaceInfo:
@@ -503,6 +526,25 @@ class DefaultApplicationFacade:
             limit=limit,
         )
 
+    def create_workflow(self, name: str = DEFAULT_WORKFLOW_NAME) -> WorkflowDetail:
+        return self._require_workflow_service().create(name)
+
+    def list_workflows(self) -> tuple[WorkflowSummary, ...]:
+        return self._require_workflow_service().list()
+
+    def get_workflow(self, workflow_id: str) -> WorkflowDetail:
+        return self._require_workflow_service().get(workflow_id)
+
+    def save_workflow(
+        self,
+        workflow_id: str,
+        definition: Mapping[str, Any],
+    ) -> WorkflowDetail:
+        return self._require_workflow_service().save(workflow_id, definition)
+
+    def delete_workflow(self, workflow_id: str) -> None:
+        self._require_workflow_service().delete(workflow_id)
+
     def _asset_database_service(
         self,
         *,
@@ -546,3 +588,8 @@ class DefaultApplicationFacade:
             manifest_updater=self._context.manifest_updater,
             manifest_syncer=self._context.manifest_syncer,
         )
+
+    def _require_workflow_service(self) -> WorkflowService:
+        if self._workflow_service is None:
+            raise ApplicationError("workflow_store_unavailable", "工作流存档能力未配置")
+        return self._workflow_service

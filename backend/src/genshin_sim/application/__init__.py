@@ -40,6 +40,13 @@ from genshin_sim.application.services.project_initialization import (
     AssetInitializationStrategy,
     ProjectInitializationResult,
 )
+from genshin_sim.application.services.workflows import (
+    WorkflowDetail,
+    WorkflowError,
+    WorkflowNotFoundError,
+    WorkflowService,
+    WorkflowSummary,
+)
 from genshin_sim.assets import HandlerBinding
 
 __all__ = [
@@ -77,6 +84,11 @@ __all__ = [
     "SimulationJobStatus",
     "SimulationRunSummary",
     "WorkspaceInfo",
+    "WorkflowDetail",
+    "WorkflowError",
+    "WorkflowNotFoundError",
+    "WorkflowService",
+    "WorkflowSummary",
     "create_application",
     "create_cli_application",
 ]

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -16,8 +17,10 @@ from genshin_sim.application.services.assets import (
     ManifestHandlerValidator,
 )
 from genshin_sim.application.services.protocols import ProjectConfigStore, ResultRepository
+from genshin_sim.application.services.workflows import WorkflowStore
 from genshin_sim.assets import AssetHandlerBindingRepository, AssetRepository
 from genshin_sim.content.registries import ContentUnitRegistry
+from genshin_sim.infrastructure.file_storage import WorkflowFileStore
 
 if TYPE_CHECKING:
     from genshin_sim.application.facade import ApplicationFacade
@@ -48,6 +51,18 @@ class ApplicationContext:
     manifest_validator: ManifestHandlerValidator | None = None
     manifest_updater: ManifestHandlerUpdater | None = None
     manifest_syncer: ManifestHandlerSyncer | None = None
+    workflow_store: WorkflowStore | None = None
+
+
+def resolve_workspace_data_dir(
+    config_store: ProjectConfigStore,
+    project_root: str | Path,
+) -> Path:
+    """解析当前生效的工作区数据目录；配置缺失时回落 root/data。"""
+
+    config_path = config_store.config_path(project_root)
+    config = config_store.load(project_root) if config_path.is_file() else None
+    return config.data_dir(project_root) if config is not None else Path(project_root) / "data"
 
 
 def create_application(
@@ -60,6 +75,7 @@ def create_application(
     result_writer: ResultWriter,
     job_runner: SimulationJobRunner | None = None,
     content_unit_registry: ContentUnitRegistry | None = None,
+    workflow_store: WorkflowStore | None = None,
 ) -> ApplicationFacade:
     """组装产品版 ApplicationContext 并返回公开 facade。"""
     from genshin_sim.application.facade import DefaultApplicationFacade
@@ -69,8 +85,11 @@ def create_application(
         executor = SynchronousSimulationExecutor.create(asset_repository, result_writer)
         runner = InMemorySimulationJobRunner(executor)
 
+    root = Path(project_root)
+    # 配置是工作流存档路径的前置条件：组装时先解析一次，之后每次操作再按当前配置解析。
+    resolve_workspace_data_dir(config_store, root)
     context = ApplicationContext(
-        project_root=Path(project_root),
+        project_root=root,
         config_store=config_store,
         asset_repository=asset_repository,
         asset_db_path=Path(asset_db_path),
@@ -78,5 +97,9 @@ def create_application(
         result_writer=result_writer,
         job_runner=runner,
         content_unit_registry=content_unit_registry,
+        workflow_store=(
+            workflow_store
+            or WorkflowFileStore(partial(resolve_workspace_data_dir, config_store, root))
+        ),
     )
     return DefaultApplicationFacade(context)

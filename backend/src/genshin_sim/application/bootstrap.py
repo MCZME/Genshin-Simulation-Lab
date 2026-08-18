@@ -5,10 +5,11 @@
 
 from __future__ import annotations
 
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from genshin_sim.application.context import ApplicationContext
+from genshin_sim.application.context import ApplicationContext, resolve_workspace_data_dir
 from genshin_sim.application.execution import SynchronousSimulationExecutor
 from genshin_sim.application.jobs import InMemorySimulationJobRunner
 from genshin_sim.content import create_default_content_unit_registry
@@ -27,7 +28,7 @@ from genshin_sim.infrastructure.assets_sqlite import (
     validate_handler_binding_in_manifest,
     write_minimal_static_asset_database,
 )
-from genshin_sim.infrastructure.file_storage import ProjectConfigFileStore
+from genshin_sim.infrastructure.file_storage import ProjectConfigFileStore, WorkflowFileStore
 from genshin_sim.infrastructure.results_sqlite import (
     SQLiteResultRepository,
     SQLiteResultWriter,
@@ -39,9 +40,7 @@ if TYPE_CHECKING:
 
 DEFAULT_ASSET_DB = Path("data") / "assets" / "assets.db"
 DEFAULT_ASSET_MANIFEST = Path("data") / "assets" / "manifests" / "project_amber_yatta.json"
-DEFAULT_ASSET_SOURCE_CACHE = (
-    Path("data") / "assets" / "sources" / "project_amber_yatta" / "default"
-)
+DEFAULT_ASSET_SOURCE_CACHE = Path("data") / "assets" / "sources" / "project_amber_yatta" / "default"
 
 
 def create_cli_application(
@@ -58,10 +57,10 @@ def create_cli_application(
     root = Path(project_root)
     config_store = ProjectConfigFileStore()
     asset_db = Path(asset_db_path) if asset_db_path is not None else root / DEFAULT_ASSET_DB
+    config_path = config_store.config_path(root)
+    config = config_store.load(root) if config_path.is_file() else None
     if result_db_path is None:
-        config_path = config_store.config_path(root)
-        if config_path.is_file():
-            config = config_store.load(root)
+        if config is not None:
             result_db = config.results_db(root)
         else:
             result_db = root / "data" / "results" / "results.db"
@@ -112,5 +111,6 @@ def create_cli_application(
         manifest_validator=validate_handler_binding_in_manifest,
         manifest_updater=apply_handler_binding_to_manifest,
         manifest_syncer=sync_asset_manifest_handler_bindings,
+        workflow_store=WorkflowFileStore(partial(resolve_workspace_data_dir, config_store, root)),
     )
     return DefaultApplicationFacade(context)

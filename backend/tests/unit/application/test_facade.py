@@ -1,7 +1,8 @@
 """application facade 单元测试。"""
 
+from collections.abc import Mapping
 from pathlib import Path
-from typing import cast
+from typing import Any, cast
 
 import pytest
 
@@ -16,6 +17,11 @@ from genshin_sim.application import (
 from genshin_sim.application.execution.models import CompletedSimulationRun, FailedSimulationRun
 from genshin_sim.application.jobs import InMemorySimulationJobRunner, SimulationJobRunner
 from genshin_sim.application.models import RecordedEvent, RunDetail, RunListItem
+from genshin_sim.application.services.workflows import (
+    StoredWorkflow,
+    WorkflowAlreadyExistsError,
+    WorkflowNotFoundError,
+)
 from tests.helpers.assembly import minimal_input
 from tests.helpers.asset_repository import FakeAssetRepository
 from tests.helpers.jobs import FakeExecutor
@@ -52,25 +58,63 @@ class _FakeResultWriter:
         return run.session_id
 
 
+class _FakeWorkflowStore:
+    """工作流存储的内存假实现。"""
+
+    def __init__(self) -> None:
+        self.stored: dict[str, StoredWorkflow] = {}
+
+    def list(self) -> tuple[StoredWorkflow, ...]:
+        return tuple(self.stored.values())
+
+    def get(self, workflow_id: str) -> StoredWorkflow:
+        try:
+            return self.stored[workflow_id]
+        except KeyError as exc:
+            raise WorkflowNotFoundError(workflow_id) from exc
+
+    def create(self, workflow_id: str, definition: Mapping[str, Any]) -> StoredWorkflow:
+        if workflow_id in self.stored:
+            raise WorkflowAlreadyExistsError(workflow_id)
+        stored = StoredWorkflow(workflow_id, dict(definition), "2026-08-18T00:00:00+00:00")
+        self.stored[workflow_id] = stored
+        return stored
+
+    def replace(self, workflow_id: str, definition: Mapping[str, Any]) -> StoredWorkflow:
+        if workflow_id not in self.stored:
+            raise WorkflowNotFoundError(workflow_id)
+        stored = StoredWorkflow(workflow_id, dict(definition), "2026-08-18T01:00:00+00:00")
+        self.stored[workflow_id] = stored
+        return stored
+
+    def delete(self, workflow_id: str) -> None:
+        if workflow_id not in self.stored:
+            raise WorkflowNotFoundError(workflow_id)
+        del self.stored[workflow_id]
+
+
 def _make_facade(
     *,
     project_root: Path = Path("project"),
+    config_store: FakeProjectConfigStore | None = None,
     asset_repository: FakeAssetRepository | None = None,
     asset_db_path: Path = Path("assets.db"),
     result_repository: _FakeResultRepository | None = None,
     job_runner: SimulationJobRunner | None = None,
+    workflow_store: _FakeWorkflowStore | None = None,
 ) -> ApplicationFacade:
     return cast(
         ApplicationFacade,
         create_application(
             project_root=project_root,
-            config_store=FakeProjectConfigStore(),
+            config_store=config_store or FakeProjectConfigStore(),
             asset_repository=asset_repository
             or FakeAssetRepository(meta={"data_version": "test-1"}),
             asset_db_path=asset_db_path,
             result_repository=result_repository or _FakeResultRepository(),
             result_writer=_FakeResultWriter(),
             job_runner=job_runner,
+            workflow_store=workflow_store,
         ),
     )
 
@@ -177,3 +221,47 @@ def test_facade_batch_validation_returns_asset_diagnostic_for_member() -> None:
     assert result.members[0].item_id == "bad-item"
     assert result.members[0].details[0].code == "ASSET_NOT_FOUND"
     assert result.members[0].details[0].item_id == "bad-item"
+
+
+def test_facade_workflow_lifecycle() -> None:
+    store = _FakeWorkflowStore()
+    facade = _make_facade(workflow_store=store)
+
+    created = facade.create_workflow(name="主配队")
+
+    assert created.id.startswith("wf_")
+    assert created.name == "主配队"
+    assert [item.id for item in facade.list_workflows()] == [created.id]
+    assert facade.get_workflow(created.id).definition == created.definition
+
+    renamed = facade.save_workflow(
+        created.id,
+        {**created.definition, "meta": {"name": "新名字"}},
+    )
+
+    assert renamed.name == "新名字"
+    assert facade.get_workflow(created.id).name == "新名字"
+
+    facade.delete_workflow(created.id)
+
+    assert facade.list_workflows() == ()
+    with pytest.raises(WorkflowNotFoundError):
+        facade.get_workflow(created.id)
+
+
+def test_facade_default_workflow_store_follows_config_data_dir_changes(tmp_path) -> None:
+    project_root = tmp_path / "project"
+    project_root.mkdir()
+    (project_root / "config.toml").write_text("", encoding="utf-8")
+    config_store = FakeProjectConfigStore(data_dir="data")
+    facade = _make_facade(project_root=project_root, config_store=config_store)
+
+    first = facade.create_workflow(name="甲")
+
+    assert (project_root / "data" / "workflows" / f"{first.id}.json").is_file()
+
+    config_store.data_dir = "lab"
+    second = facade.create_workflow(name="乙")
+
+    assert (project_root / "lab" / "workflows" / f"{second.id}.json").is_file()
+    assert not (project_root / "data" / "workflows" / f"{second.id}.json").exists()

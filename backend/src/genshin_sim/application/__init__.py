@@ -1,5 +1,20 @@
 """应用用例和编排服务。"""
 
+from genshin_sim.application.batch import (
+    BatchDiagnostic,
+    BatchError,
+    BatchInput,
+    BatchMember,
+    BatchMemberState,
+    BatchMemberStatus,
+    BatchMemberValidation,
+    BatchRunNotFoundError,
+    BatchRunService,
+    BatchRunState,
+    BatchRunStatus,
+    BatchValidationError,
+    BatchValidationResult,
+)
 from genshin_sim.application.bootstrap import create_cli_application
 from genshin_sim.application.config import ProjectConfig
 from genshin_sim.application.context import create_application
@@ -30,6 +45,19 @@ from genshin_sim.assets import HandlerBinding
 __all__ = [
     "ApplicationError",
     "ApplicationFacade",
+    "BatchDiagnostic",
+    "BatchError",
+    "BatchInput",
+    "BatchMember",
+    "BatchMemberState",
+    "BatchMemberStatus",
+    "BatchMemberValidation",
+    "BatchRunNotFoundError",
+    "BatchRunService",
+    "BatchRunState",
+    "BatchRunStatus",
+    "BatchValidationError",
+    "BatchValidationResult",
     "AssetInitializationPlan",
     "AssetInitializationSelector",
     "AssetInitializationStrategy",

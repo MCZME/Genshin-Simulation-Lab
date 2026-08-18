@@ -13,7 +13,10 @@ from genshin_sim.application.services.assets import (
     HandlerBindingKind,
 )
 from genshin_sim.application.services.errors import ApplicationServiceError
-from genshin_sim.application.services.input_validation import InputValidationService
+from genshin_sim.application.services.input_validation import (
+    BatchInputValidationService,
+    InputValidationService,
+)
 from genshin_sim.application.services.inputs import InputDiscoveryService
 from genshin_sim.application.services.project import ProjectService
 from genshin_sim.application.services.protocols import (
@@ -33,6 +36,7 @@ __all__ = [
     "AssetManifestBuildService",
     "AssetSourceCacheService",
     "AssetsService",
+    "BatchInputValidationService",
     "InputValidationService",
     "InputDiscoveryService",
     "ProjectService",

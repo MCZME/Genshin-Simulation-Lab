@@ -39,9 +39,7 @@ class ApplicationContext:
     init_result_database: Callable[[str | Path], Path] | None = None
     init_asset_database: Callable[[str | Path], Path] | None = None
     write_minimal_static_asset_database: Callable[[str | Path], Path] | None = None
-    build_asset_database_from_manifest: (
-        Callable[[str | Path, str | Path], Path] | None
-    ) = None
+    build_asset_database_from_manifest: Callable[[str | Path, str | Path], Path] | None = None
     validate_asset_database: Callable[[str | Path], None] | None = None
     fetch_asset_source_cache: Callable[..., Any] | None = None
     build_asset_manifest: Callable[[str | Path, str | Path], Any] | None = None
@@ -61,6 +59,7 @@ def create_application(
     result_repository: ResultRepository,
     result_writer: ResultWriter,
     job_runner: SimulationJobRunner | None = None,
+    content_unit_registry: ContentUnitRegistry | None = None,
 ) -> ApplicationFacade:
     """组装产品版 ApplicationContext 并返回公开 facade。"""
     from genshin_sim.application.facade import DefaultApplicationFacade
@@ -78,5 +77,6 @@ def create_application(
         result_repository=result_repository,
         result_writer=result_writer,
         job_runner=runner,
+        content_unit_registry=content_unit_registry,
     )
     return DefaultApplicationFacade(context)

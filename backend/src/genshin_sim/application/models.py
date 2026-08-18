@@ -11,6 +11,17 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
+from genshin_sim.application.batch.models import (
+    BatchDiagnostic,
+    BatchInput,
+    BatchMember,
+    BatchMemberState,
+    BatchMemberStatus,
+    BatchMemberValidation,
+    BatchRunState,
+    BatchRunStatus,
+    BatchValidationResult,
+)
 from genshin_sim.application.execution.models import (
     RecordedEvent,
     RunState,
@@ -83,6 +94,15 @@ class SimulationInputFile:
 __all__ = [
     "AssetListItem",
     "AssetListKind",
+    "BatchDiagnostic",
+    "BatchInput",
+    "BatchMember",
+    "BatchMemberState",
+    "BatchMemberStatus",
+    "BatchMemberValidation",
+    "BatchRunState",
+    "BatchRunStatus",
+    "BatchValidationResult",
     "RecordedEvent",
     "RunDetail",
     "RunListItem",

@@ -5,10 +5,20 @@ from typing import cast
 
 import pytest
 
-from genshin_sim.application import ApplicationFacade, AssetListKind, create_application
+from genshin_sim.application import (
+    ApplicationFacade,
+    AssetListKind,
+    BatchMember,
+    BatchMemberState,
+    BatchRunState,
+    create_application,
+)
 from genshin_sim.application.execution.models import CompletedSimulationRun, FailedSimulationRun
+from genshin_sim.application.jobs import InMemorySimulationJobRunner, SimulationJobRunner
 from genshin_sim.application.models import RecordedEvent, RunDetail, RunListItem
+from tests.helpers.assembly import minimal_input
 from tests.helpers.asset_repository import FakeAssetRepository
+from tests.helpers.jobs import FakeExecutor
 from tests.helpers.project import FakeProjectConfigStore
 
 
@@ -48,6 +58,7 @@ def _make_facade(
     asset_repository: FakeAssetRepository | None = None,
     asset_db_path: Path = Path("assets.db"),
     result_repository: _FakeResultRepository | None = None,
+    job_runner: SimulationJobRunner | None = None,
 ) -> ApplicationFacade:
     return cast(
         ApplicationFacade,
@@ -59,6 +70,7 @@ def _make_facade(
             asset_db_path=asset_db_path,
             result_repository=result_repository or _FakeResultRepository(),
             result_writer=_FakeResultWriter(),
+            job_runner=job_runner,
         ),
     )
 
@@ -127,3 +139,41 @@ def test_facade_lists_results() -> None:
     result = facade.list_results()
 
     assert result == (run,)
+
+
+def test_facade_exposes_batch_validation_and_lifecycle() -> None:
+    job_ids = iter(("job-1", "job-2"))
+    runner = InMemorySimulationJobRunner(
+        FakeExecutor(),
+        job_id_factory=lambda: next(job_ids),
+    )
+    facade = _make_facade(job_runner=runner)
+    members = tuple(
+        BatchMember(item_id=f"item-{index}", input=minimal_input().to_dict()) for index in range(2)
+    )
+
+    validation = facade.validate_batch_inputs(members)
+
+    assert validation.ok is True
+    assert [member.item_id for member in validation.members] == ["item-0", "item-1"]
+
+    submitted = facade.submit_batch(members, name="facade batch", concurrency=1)
+
+    assert submitted.state is BatchRunState.COMPLETED
+    assert [member.item_id for member in submitted.members] == ["item-0", "item-1"]
+    assert all(member.state is BatchMemberState.COMPLETED for member in submitted.members)
+    assert facade.get_batch(submitted.run_id) == submitted
+    assert facade.cancel_batch(submitted.run_id).state is BatchRunState.COMPLETED
+
+
+def test_facade_batch_validation_returns_asset_diagnostic_for_member() -> None:
+    payload = minimal_input().to_dict()
+    payload["team"][0]["character"]["asset_key"] = "character:missing"
+    facade = _make_facade()
+
+    result = facade.validate_batch_inputs((BatchMember("bad-item", payload),))
+
+    assert result.ok is False
+    assert result.members[0].item_id == "bad-item"
+    assert result.members[0].details[0].code == "ASSET_NOT_FOUND"
+    assert result.members[0].details[0].item_id == "bad-item"

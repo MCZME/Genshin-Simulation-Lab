@@ -10,6 +10,12 @@ from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any, Protocol
 
+from genshin_sim.application.batch import (
+    BatchMember,
+    BatchRunService,
+    BatchRunStatus,
+    BatchValidationResult,
+)
 from genshin_sim.application.config import ProjectConfig
 from genshin_sim.application.context import ApplicationContext
 from genshin_sim.application.errors import ApplicationError
@@ -33,7 +39,10 @@ from genshin_sim.application.services.assets import (
     AssetsService,
     HandlerBindingKind,
 )
-from genshin_sim.application.services.input_validation import InputValidationService
+from genshin_sim.application.services.input_validation import (
+    BatchInputValidationService,
+    InputValidationService,
+)
 from genshin_sim.application.services.inputs import InputDiscoveryService
 from genshin_sim.application.services.project import ProjectService
 from genshin_sim.application.services.project_initialization import (
@@ -44,6 +53,7 @@ from genshin_sim.application.services.project_initialization import (
 from genshin_sim.application.services.results import ResultDatabaseService, ResultsService
 from genshin_sim.application.services.simulation import SimulationTaskService
 from genshin_sim.assets import AssetDbInfo, HandlerBinding
+from genshin_sim.content import create_default_content_unit_registry
 
 
 class ApplicationFacade(Protocol):
@@ -143,6 +153,23 @@ class ApplicationFacade(Protocol):
 
     def cancel_run(self, job_id: str) -> SimulationJobStatus: ...
 
+    def validate_batch_inputs(
+        self,
+        members: Sequence[BatchMember],
+    ) -> BatchValidationResult: ...
+
+    def submit_batch(
+        self,
+        members: Sequence[BatchMember],
+        *,
+        name: str = "",
+        concurrency: int | None = None,
+    ) -> BatchRunStatus: ...
+
+    def get_batch(self, run_id: str) -> BatchRunStatus: ...
+
+    def cancel_batch(self, run_id: str) -> BatchRunStatus: ...
+
     def run_file_and_wait(
         self,
         path: str | Path,
@@ -192,6 +219,16 @@ class DefaultApplicationFacade:
         self._input_validation_service = InputValidationService()
         self._results_service = ResultsService(context.result_repository)
         self._simulation_service = SimulationTaskService(context.job_runner)
+        content_unit_registry = (
+            context.content_unit_registry or create_default_content_unit_registry()
+        )
+        self._batch_service = BatchRunService(
+            context.job_runner,
+            validator=BatchInputValidationService(
+                context.asset_repository,
+                content_unit_registry=content_unit_registry,
+            ),
+        )
 
     def get_workspace(self) -> WorkspaceInfo:
         config_path = self._context.config_store.config_path(self._context.project_root)
@@ -379,6 +416,31 @@ class DefaultApplicationFacade:
 
     def cancel_run(self, job_id: str) -> SimulationJobStatus:
         return self._simulation_service.cancel(job_id)
+
+    def validate_batch_inputs(
+        self,
+        members: Sequence[BatchMember],
+    ) -> BatchValidationResult:
+        return self._batch_service.validate_members(members)
+
+    def submit_batch(
+        self,
+        members: Sequence[BatchMember],
+        *,
+        name: str = "",
+        concurrency: int | None = None,
+    ) -> BatchRunStatus:
+        return self._batch_service.submit(
+            members,
+            name=name,
+            concurrency=concurrency,
+        )
+
+    def get_batch(self, run_id: str) -> BatchRunStatus:
+        return self._batch_service.get(run_id)
+
+    def cancel_batch(self, run_id: str) -> BatchRunStatus:
+        return self._batch_service.cancel(run_id)
 
     def run_file_and_wait(
         self,

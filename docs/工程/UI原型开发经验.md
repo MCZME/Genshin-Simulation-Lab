@@ -213,7 +213,7 @@
 | 职责 | 落位 | 拥有内容 | 不应拥有 |
 | --- | --- | --- | --- |
 | `WorkflowDefinition` | `frontend/` 模型；后端只做不透明 JSON 存档 | 节点、端口、连线、参数、区域与持久化布局 | 当前选择、悬停、运行进度 |
-| `WorkflowEditorState` | `frontend/src/state/` | 视口、选择、拖拽、草稿连线、撤销历史 | 仿真结果、数据库访问 |
+| `WorkflowEditorState` | `frontend/src/state/` | 选择、已提交节点位置与连线、区域归属、撤销历史 | 视口、拖拽与草稿连线瞬态、仿真结果、数据库访问 |
 | `WorkflowValidator` | `frontend/src/workflow/` | 诊断项、严重级别、定位、运行阻断结论 | 控件状态修改、执行任务 |
 | `WorkflowRuntime` | `frontend/src/workflow/` | 展开、向批次 API 提交已展开成员、跟踪成员与节点执行状态 | 画布布局、编辑手势、进程调度 |
 

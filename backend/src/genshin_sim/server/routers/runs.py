@@ -68,6 +68,7 @@ def _member_to_dto(member: BatchMemberStatus) -> RunMemberStatus:
         item_id=member.item_id,
         state=member.state,
         session_id=member.session_id,
+        error_code=member.error_code,
         error_message=member.error_message,
         created_at=member.created_at,
         started_at=member.started_at,

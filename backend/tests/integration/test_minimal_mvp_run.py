@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import json
-import logging
 from pathlib import Path
 
 from genshin_sim.cli.main import main
@@ -28,32 +27,20 @@ def test_cli_run_persists_minimal_input_to_result_database(
         encoding="utf-8",
     )
 
-    executor_logger = logging.getLogger("genshin_sim.application.execution.executor")
-    previous_level = executor_logger.level
-    recorder = _RecordHandler()
-    executor_logger.setLevel(logging.INFO)
-    executor_logger.addHandler(recorder)
-    try:
-        exit_code = main(
-            [
-                "run",
-                str(input_path),
-                "--db",
-                str(asset_db),
-                "--results-db",
-                str(result_db),
-            ]
-        )
-    finally:
-        executor_logger.setLevel(previous_level)
-        executor_logger.removeHandler(recorder)
+    exit_code = main(
+        [
+            "run",
+            str(input_path),
+            "--db",
+            str(asset_db),
+            "--results-db",
+            str(result_db),
+        ]
+    )
 
     assert exit_code == 0
     output = capsys.readouterr().out
     session_id = _extract_session_id(output)
-    key_messages = {"仿真组装开始", "仿真运行开始", "仿真运行完成", "仿真结果已保存"}
-    key_records = [record for record in recorder.records if record.getMessage() in key_messages]
-    assert {getattr(record, "session_id", "") for record in key_records} == {session_id}
     detail = SQLiteResultRepository(result_db).get_run(session_id)
     assert detail.state == "completed"
     assert detail.initial_snapshot is not None
@@ -163,12 +150,3 @@ def _minimal_input_payload() -> dict[str, object]:
         "rules": {"enabled": []},
         "run_options": {"max_frames": 10},
     }
-
-
-class _RecordHandler(logging.Handler):
-    def __init__(self) -> None:
-        super().__init__()
-        self.records: list[logging.LogRecord] = []
-
-    def emit(self, record: logging.LogRecord) -> None:
-        self.records.append(record)

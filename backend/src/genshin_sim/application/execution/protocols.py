@@ -21,6 +21,8 @@ class SimulationExecutor(Protocol):
 class ResultWriter(Protocol):
     """持久化已完成的仿真运行。"""
 
+    db_path: Path
+
     def save_run(self, run: CompletedSimulationRun) -> str: ...
 
     def save_failed_run(self, run: FailedSimulationRun) -> str: ...

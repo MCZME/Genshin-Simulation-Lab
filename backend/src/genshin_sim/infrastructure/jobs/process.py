@@ -8,6 +8,7 @@ from dataclasses import dataclass, replace
 from pathlib import Path
 from types import TracebackType
 
+from genshin_sim.application.errors_kinds import execution_error_code
 from genshin_sim.application.execution import SynchronousSimulationExecutor
 from genshin_sim.application.input import SimulationInput
 from genshin_sim.application.jobs import (
@@ -199,6 +200,7 @@ class ProcessSimulationJobRunner:
             return SimulationJobResult(
                 job_id=record.status.job_id,
                 state=SimulationJobState.FAILED,
+                error_code=execution_error_code(exc),
                 error_message=str(exc) or exc.__class__.__name__,
                 created_at=record.status.created_at,
                 started_at=record.status.started_at or _utc_now(),
@@ -242,6 +244,7 @@ def _status_from_result(result: SimulationJobResult) -> SimulationJobStatus:
         job_id=result.job_id,
         state=result.state,
         session_id=result.session_id,
+        error_code=result.error_code,
         error_message=result.error_message,
         created_at=result.created_at,
         started_at=result.started_at,

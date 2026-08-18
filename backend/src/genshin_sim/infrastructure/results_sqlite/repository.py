@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import json
 import sqlite3
+from collections.abc import Callable
 from contextlib import closing
 from pathlib import Path
+from time import sleep
 from typing import Any
 
 from genshin_sim.application.execution import (
@@ -14,7 +16,11 @@ from genshin_sim.application.execution import (
     SimulationRunSummary,
 )
 from genshin_sim.application.models import RunDetail, RunListItem
+from genshin_sim.infrastructure.errors import ResultWriteError, SqliteBusyError
 from genshin_sim.infrastructure.results_sqlite.schema import init_result_database
+
+DEFAULT_BUSY_TIMEOUT_SECONDS = 5.0
+DEFAULT_WRITE_RETRIES = 3
 
 
 class ResultNotFoundError(LookupError):
@@ -24,101 +30,146 @@ class ResultNotFoundError(LookupError):
 class SQLiteResultWriter:
     """Persist completed simulation runs into SQLite."""
 
-    def __init__(self, db_path: str | Path) -> None:
+    def __init__(
+        self,
+        db_path: str | Path,
+        *,
+        busy_timeout_seconds: float = DEFAULT_BUSY_TIMEOUT_SECONDS,
+        write_retries: int = DEFAULT_WRITE_RETRIES,
+    ) -> None:
         self.db_path = Path(db_path)
+        self.busy_timeout_seconds = busy_timeout_seconds
+        self.write_retries = write_retries
         init_result_database(self.db_path)
 
     def save_run(self, run: CompletedSimulationRun) -> str:
-        with closing(_connect(self.db_path)) as connection:
-            _require_missing_run(connection, run.session_id)
-            connection.execute(
-                """
-                INSERT INTO simulation_runs(
-                    session_id, state, input_schema_version, name, input_snapshot_json,
-                    initial_snapshot_json, stop_reason, end_frame, frames_run, event_count,
-                    error_code, error_message, asset_version, content_version, seed,
-                    created_at, started_at, finished_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    run.session_id,
-                    RunState.COMPLETED.value,
-                    run.input_schema_version,
-                    str(run.input_meta.get("name") or "Untitled Simulation"),
-                    _dump_json(run.input_snapshot),
-                    None if run.initial_snapshot is None else _dump_json(run.initial_snapshot),
-                    run.summary.stop_reason,
-                    run.summary.end_frame,
-                    run.summary.frames_run,
-                    len(run.events),
-                    None,
-                    None,
-                    run.asset_version,
-                    run.content_version,
-                    run.seed,
-                    run.created_at,
-                    run.started_at,
-                    run.finished_at,
-                ),
-            )
-            connection.executemany(
-                """
-                INSERT INTO simulation_events(
-                    session_id, ordinal, frame, event_type, data_json
-                )
-                VALUES (?, ?, ?, ?, ?)
-                """,
-                (
-                    (
-                        run.session_id,
-                        ordinal,
-                        event.frame,
-                        event.event_type,
-                        _dump_json(event.data),
-                    )
-                    for ordinal, event in enumerate(run.events)
-                ),
-            )
-            connection.commit()
-        return run.session_id
+        return self._save(_write_completed_run, run)
 
     def save_failed_run(self, run: FailedSimulationRun) -> str:
-        with closing(_connect(self.db_path)) as connection:
-            _require_missing_run(connection, run.session_id)
-            connection.execute(
-                """
-                INSERT INTO simulation_runs(
-                    session_id, state, input_schema_version, name, input_snapshot_json,
-                    initial_snapshot_json, stop_reason, end_frame, frames_run, event_count,
-                    error_code, error_message, asset_version, content_version, seed,
-                    created_at, started_at, finished_at
-                )
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    run.session_id,
-                    run.state.value,
-                    run.input_schema_version,
-                    str(run.input_meta.get("name") or "Untitled Simulation"),
-                    _dump_json(run.input_snapshot),
-                    None,
-                    None,
-                    None,
-                    None,
-                    0,
-                    run.error_code,
-                    run.error_message,
-                    None,
-                    None,
-                    None,
-                    run.created_at,
-                    run.started_at,
-                    run.finished_at,
-                ),
+        return self._save(_write_failed_run, run)
+
+    def _save(
+        self,
+        write: Callable[[sqlite3.Connection, Any], None],
+        run: Any,
+    ) -> str:
+        self._validate_write_settings()
+        last_error: Exception | None = None
+        for attempt in range(self.write_retries):
+            try:
+                with closing(_connect(self.db_path, self.busy_timeout_seconds)) as connection:
+                    write(connection, run)
+                    connection.commit()
+                return run.session_id
+            except sqlite3.OperationalError as exc:
+                if _is_lock_contention(exc):
+                    last_error = exc
+                    if attempt < self.write_retries - 1:
+                        sleep(0.05 * (attempt + 1))
+                        continue
+                    raise SqliteBusyError() from exc
+                raise ResultWriteError(f"结果写入失败：{exc}") from exc
+            except ValueError:
+                # session_id 重复等业务性拒绝不包装为基础设施错误，
+                # 保持写入方能够按结果库身份冲突直接处理。
+                raise
+            except Exception as exc:
+                raise ResultWriteError(f"结果写入失败：{exc}") from exc
+        raise ResultWriteError("结果写入重试次数已用尽") from last_error
+
+    def _validate_write_settings(self) -> None:
+        if self.busy_timeout_seconds < 0:
+            raise ValueError("busy_timeout_seconds 不能为负数")
+        if self.write_retries <= 0:
+            raise ValueError("write_retries 必须是正整数")
+
+
+def _write_completed_run(connection: sqlite3.Connection, run: CompletedSimulationRun) -> None:
+    _require_missing_run(connection, run.session_id)
+    connection.execute(
+        """
+        INSERT INTO simulation_runs(
+            session_id, state, input_schema_version, name, input_snapshot_json,
+            initial_snapshot_json, stop_reason, end_frame, frames_run, event_count,
+            error_code, error_message, asset_version, content_version, seed,
+            created_at, started_at, finished_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            run.session_id,
+            RunState.COMPLETED.value,
+            run.input_schema_version,
+            str(run.input_meta.get("name") or "Untitled Simulation"),
+            _dump_json(run.input_snapshot),
+            None if run.initial_snapshot is None else _dump_json(run.initial_snapshot),
+            run.summary.stop_reason,
+            run.summary.end_frame,
+            run.summary.frames_run,
+            len(run.events),
+            None,
+            None,
+            run.asset_version,
+            run.content_version,
+            run.seed,
+            run.created_at,
+            run.started_at,
+            run.finished_at,
+        ),
+    )
+    connection.executemany(
+        """
+        INSERT INTO simulation_events(
+            session_id, ordinal, frame, event_type, data_json
+        )
+        VALUES (?, ?, ?, ?, ?)
+        """,
+        (
+            (
+                run.session_id,
+                ordinal,
+                event.frame,
+                event.event_type,
+                _dump_json(event.data),
             )
-            connection.commit()
-        return run.session_id
+            for ordinal, event in enumerate(run.events)
+        ),
+    )
+
+
+def _write_failed_run(connection: sqlite3.Connection, run: FailedSimulationRun) -> None:
+    _require_missing_run(connection, run.session_id)
+    connection.execute(
+        """
+        INSERT INTO simulation_runs(
+            session_id, state, input_schema_version, name, input_snapshot_json,
+            initial_snapshot_json, stop_reason, end_frame, frames_run, event_count,
+            error_code, error_message, asset_version, content_version, seed,
+            created_at, started_at, finished_at
+        )
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """,
+        (
+            run.session_id,
+            run.state.value,
+            run.input_schema_version,
+            str(run.input_meta.get("name") or "Untitled Simulation"),
+            _dump_json(run.input_snapshot),
+            None,
+            None,
+            None,
+            None,
+            0,
+            run.error_code,
+            run.error_message,
+            None,
+            None,
+            None,
+            run.created_at,
+            run.started_at,
+            run.finished_at,
+        ),
+    )
 
 
 class SQLiteResultRepository:
@@ -339,11 +390,20 @@ class SQLiteResultRepository:
         )
 
 
-def _connect(db_path: Path) -> sqlite3.Connection:
-    connection = sqlite3.connect(db_path)
+def _connect(
+    db_path: Path,
+    busy_timeout_seconds: float = DEFAULT_BUSY_TIMEOUT_SECONDS,
+) -> sqlite3.Connection:
+    connection = sqlite3.connect(db_path, timeout=busy_timeout_seconds)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
+    connection.execute(f"PRAGMA busy_timeout = {int(busy_timeout_seconds * 1000)}")
     return connection
+
+
+def _is_lock_contention(exc: sqlite3.OperationalError) -> bool:
+    message = str(exc).lower()
+    return "locked" in message or "busy" in message
 
 
 def _require_missing_run(connection: sqlite3.Connection, session_id: str) -> None:

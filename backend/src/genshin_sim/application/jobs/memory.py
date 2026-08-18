@@ -6,6 +6,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, replace
 from pathlib import Path
 
+from genshin_sim.application.errors_kinds import execution_error_code
 from genshin_sim.application.execution import SimulationExecutionOutcome, SimulationExecutor
 from genshin_sim.application.input import SimulationInput
 from genshin_sim.application.jobs.errors import SimulationJobNotFoundError
@@ -64,6 +65,7 @@ class InMemorySimulationJobRunner:
             job_id=status.job_id,
             state=status.state,
             session_id=status.session_id,
+            error_code=status.error_code,
             error_message=status.error_message,
             created_at=status.created_at,
             started_at=status.started_at,
@@ -121,12 +123,14 @@ class InMemorySimulationJobRunner:
             record.status = replace(
                 record.status,
                 state=SimulationJobState.FAILED,
+                error_code=execution_error_code(exc),
                 error_message=message,
                 finished_at=finished_at,
             )
             record.result = SimulationJobResult(
                 job_id=job_id,
                 state=SimulationJobState.FAILED,
+                error_code=execution_error_code(exc),
                 error_message=message,
                 created_at=record.status.created_at,
                 started_at=record.status.started_at,

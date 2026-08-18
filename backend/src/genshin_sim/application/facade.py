@@ -16,6 +16,7 @@ from genshin_sim.application.batch import (
     BatchRunService,
     BatchRunStatus,
     BatchValidationResult,
+    SingleBatchResult,
 )
 from genshin_sim.application.config import ProjectConfig
 from genshin_sim.application.context import ApplicationContext
@@ -28,8 +29,6 @@ from genshin_sim.application.models import (
     RunDetail,
     RunListItem,
     SimulationInputFile,
-    SimulationJobResult,
-    SimulationJobStatus,
     WorkspaceInfo,
 )
 from genshin_sim.application.services.assets import (
@@ -52,7 +51,6 @@ from genshin_sim.application.services.project_initialization import (
     ProjectInitializationService,
 )
 from genshin_sim.application.services.results import ResultDatabaseService, ResultsService
-from genshin_sim.application.services.simulation import SimulationTaskService
 from genshin_sim.application.services.workflows import (
     DEFAULT_WORKFLOW_NAME,
     WorkflowDetail,
@@ -159,16 +157,6 @@ class ApplicationFacade(Protocol):
 
     def workspace_paths(self, project_root: str | Path) -> dict[str, Path]: ...
 
-    def submit_run_file(self, path: str | Path) -> str: ...
-
-    def submit_run_input(self, config: SimulationInput) -> str: ...
-
-    def get_run_status(self, job_id: str) -> SimulationJobStatus: ...
-
-    def get_run_result(self, job_id: str) -> SimulationJobResult: ...
-
-    def cancel_run(self, job_id: str) -> SimulationJobStatus: ...
-
     def validate_batch_inputs(
         self,
         members: Sequence[BatchMember],
@@ -192,7 +180,7 @@ class ApplicationFacade(Protocol):
         *,
         poll_interval_seconds: float = 0.05,
         timeout_seconds: float | None = None,
-    ) -> SimulationJobResult: ...
+    ) -> SingleBatchResult: ...
 
     def run_input_and_wait(
         self,
@@ -200,7 +188,7 @@ class ApplicationFacade(Protocol):
         *,
         poll_interval_seconds: float = 0.05,
         timeout_seconds: float | None = None,
-    ) -> SimulationJobResult: ...
+    ) -> SingleBatchResult: ...
 
     def init_result_database(self, path: str | Path) -> Path: ...
 
@@ -266,7 +254,6 @@ class DefaultApplicationFacade:
         self._inputs_service = InputDiscoveryService(context.config_store)
         self._input_validation_service = InputValidationService()
         self._results_service = ResultsService(context.result_repository)
-        self._simulation_service = SimulationTaskService(context.job_runner)
         self._batch_service = BatchRunService(
             context.job_runner,
             validator=BatchInputValidationService(
@@ -474,21 +461,6 @@ class DefaultApplicationFacade:
     def workspace_paths(self, project_root: str | Path) -> dict[str, Path]:
         return self._project_service.workspace_paths(project_root)
 
-    def submit_run_file(self, path: str | Path) -> str:
-        return self._simulation_service.submit_file(path)
-
-    def submit_run_input(self, config: SimulationInput) -> str:
-        return self._simulation_service.submit_input(config)
-
-    def get_run_status(self, job_id: str) -> SimulationJobStatus:
-        return self._simulation_service.get_status(job_id)
-
-    def get_run_result(self, job_id: str) -> SimulationJobResult:
-        return self._simulation_service.get_result(job_id)
-
-    def cancel_run(self, job_id: str) -> SimulationJobStatus:
-        return self._simulation_service.cancel(job_id)
-
     def validate_batch_inputs(
         self,
         members: Sequence[BatchMember],
@@ -520,9 +492,10 @@ class DefaultApplicationFacade:
         *,
         poll_interval_seconds: float = 0.05,
         timeout_seconds: float | None = None,
-    ) -> SimulationJobResult:
-        return self._simulation_service.run_file_and_wait(
-            path,
+    ) -> SingleBatchResult:
+        config = self.validate_input_file(path)
+        return self._batch_service.run_single_and_wait(
+            BatchMember(item_id="single", input=config),
             poll_interval_seconds=poll_interval_seconds,
             timeout_seconds=timeout_seconds,
         )
@@ -533,9 +506,9 @@ class DefaultApplicationFacade:
         *,
         poll_interval_seconds: float = 0.05,
         timeout_seconds: float | None = None,
-    ) -> SimulationJobResult:
-        return self._simulation_service.run_config_and_wait(
-            config,
+    ) -> SingleBatchResult:
+        return self._batch_service.run_single_and_wait(
+            BatchMember(item_id="single", input=config),
             poll_interval_seconds=poll_interval_seconds,
             timeout_seconds=timeout_seconds,
         )

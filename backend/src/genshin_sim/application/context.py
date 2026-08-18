@@ -8,9 +8,8 @@ from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-from genshin_sim.application.execution import SynchronousSimulationExecutor
 from genshin_sim.application.execution.protocols import ResultWriter
-from genshin_sim.application.jobs import InMemorySimulationJobRunner, SimulationJobRunner
+from genshin_sim.application.jobs import SimulationJobRunner
 from genshin_sim.application.services.assets import (
     ManifestHandlerSyncer,
     ManifestHandlerUpdater,
@@ -82,8 +81,13 @@ def create_application(
 
     runner = job_runner
     if runner is None:
-        executor = SynchronousSimulationExecutor.create(asset_repository, result_writer)
-        runner = InMemorySimulationJobRunner(executor)
+        from genshin_sim.infrastructure.jobs import ProcessSimulationJobRunner
+
+        runner = ProcessSimulationJobRunner(
+            asset_db_path=asset_db_path,
+            result_db_path=result_writer.db_path,
+            max_workers=1,
+        )
 
     root = Path(project_root)
     # 配置是工作流存档路径的前置条件：组装时先解析一次，之后每次操作再按当前配置解析。

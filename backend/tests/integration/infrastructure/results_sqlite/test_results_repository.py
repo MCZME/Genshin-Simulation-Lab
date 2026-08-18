@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import sqlite3
+import threading
 
 import pytest
 
@@ -319,6 +320,48 @@ def test_list_runs_supports_offset(tmp_path):
 
     assert len(page) == 2
     assert [item.name for item in page] == ["Run 1", "Run 0"]
+
+
+def test_concurrent_writers_serialize_with_busy_timeout_and_retry(tmp_path):
+    db_path = tmp_path / "results.db"
+    writer = SQLiteResultWriter(db_path, busy_timeout_seconds=0.2, write_retries=2)
+    runs = [_completed_run(f"concurrent-{index}") for index in range(4)]
+    errors: list[BaseException] = []
+
+    def write_run(run):
+        try:
+            writer.save_run(run)
+        except BaseException as exc:
+            errors.append(exc)
+
+    threads = [threading.Thread(target=write_run, args=(run,)) for run in runs]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join(timeout=10)
+
+    assert errors == []
+    repository = SQLiteResultRepository(db_path)
+    assert [item.session_id for item in repository.list_runs(limit=10)] == [
+        run.session_id for run in reversed(runs)
+    ]
+
+
+def _completed_run(session_id: str) -> CompletedSimulationRun:
+    return CompletedSimulationRun(
+        session_id=session_id,
+        input_schema_version=2,
+        input_kind="simulation_input",
+        input_meta={"name": session_id},
+        input_snapshot={"schema_version": 2, "kind": "simulation_input"},
+        summary=SimulationRunSummary(
+            stop_reason="MAX_FRAMES",
+            end_frame=1,
+            frames_run=1,
+        ),
+        events=(),
+        created_at="2026-08-19T00:00:00+00:00",
+    )
 
 
 def test_init_result_database_rejects_incompatible_existing_schema(tmp_path):

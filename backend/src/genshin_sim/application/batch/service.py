@@ -7,6 +7,7 @@ import uuid
 from collections.abc import Callable, Sequence
 from dataclasses import dataclass
 from threading import RLock
+from time import monotonic, sleep
 from typing import Protocol, cast
 
 from genshin_sim.application.batch.errors import BatchRunNotFoundError, BatchValidationError
@@ -17,7 +18,9 @@ from genshin_sim.application.batch.models import (
     BatchRunState,
     BatchRunStatus,
     BatchValidationResult,
+    SingleBatchResult,
 )
+from genshin_sim.application.errors_kinds import scheduling_error_code
 from genshin_sim.application.input import SimulationInput
 from genshin_sim.application.jobs import (
     SimulationJobRunner,
@@ -30,6 +33,7 @@ MAX_BATCH_MEMBERS = 200
 MIN_BATCH_CONCURRENCY = 1
 MAX_BATCH_CONCURRENCY = 16
 DEFAULT_BATCH_CONCURRENCY = min(4, os.cpu_count() or 1)
+TERMINAL_BATCH_RETENTION_SECONDS = 60.0
 
 _TERMINAL_MEMBER_STATES = {
     BatchMemberState.COMPLETED,
@@ -55,6 +59,7 @@ class _BatchMemberRecord:
     state: BatchMemberState = BatchMemberState.QUEUED
     job_id: str | None = None
     session_id: str | None = None
+    error_code: str | None = None
     error_message: str | None = None
     started_at: str | None = None
     finished_at: str | None = None
@@ -68,6 +73,7 @@ class _BatchRecord:
     concurrency: int
     members: list[_BatchMemberRecord]
     cancel_requested: bool = False
+    terminal_at: float | None = None
 
 
 class BatchRunService:
@@ -97,13 +103,19 @@ class BatchRunService:
         self.default_concurrency = self._validate_concurrency(default_concurrency)
         self._run_id_factory = run_id_factory or (lambda: uuid.uuid4().hex)
         self._now_factory = now_factory or _utc_now
+        self._monotonic_factory = monotonic
         self._runs: dict[str, _BatchRecord] = {}
         self._lock = RLock()
+
+        limit_setter = getattr(self.runner, "set_concurrency_limit", None)
+        if limit_setter is not None:
+            limit_setter(self.default_concurrency)
 
     def validate_members(self, members: Sequence[BatchMember]) -> BatchValidationResult:
         """校验已展开成员，不创建任务。"""
 
         with self._lock:
+            self._expire_terminal_runs()
             normalized_members = self._normalize_request_members(members)
             return self.validator.validate_members(normalized_members)
 
@@ -117,6 +129,7 @@ class BatchRunService:
         """校验并提交一个批次。"""
 
         with self._lock:
+            self._expire_terminal_runs()
             request_members = self._normalize_request_members(members)
             report = self.validator.validate_members(request_members)
             if not report.ok:
@@ -148,6 +161,7 @@ class BatchRunService:
         """查询批次并推进可见状态。"""
 
         with self._lock:
+            self._expire_terminal_runs()
             record = self._require_run(run_id)
             self._pump(record)
             return self._view(record)
@@ -156,6 +170,7 @@ class BatchRunService:
         """请求整批取消；运行中的单任务由 runner 自己完成收尾。"""
 
         with self._lock:
+            self._expire_terminal_runs()
             record = self._require_run(run_id)
             self._refresh_members(record)
             if self._view(record).terminal:
@@ -167,6 +182,7 @@ class BatchRunService:
                     continue
                 if member.job_id is None:
                     member.state = BatchMemberState.CANCELLED
+                    member.error_code = None
                     member.finished_at = self._now_factory()
                     continue
 
@@ -175,12 +191,43 @@ class BatchRunService:
                     status = self.runner.cancel(member.job_id)
                 except Exception as exc:
                     member.state = BatchMemberState.STOPPING
+                    member.error_code = scheduling_error_code(exc)
                     member.error_message = str(exc) or exc.__class__.__name__
                     continue
                 self._apply_job_status(member, status)
 
             self._refresh_members(record)
+            self._mark_terminal_if_done(record)
             return self._view(record)
+
+    def run_single_and_wait(
+        self,
+        member: BatchMember,
+        *,
+        poll_interval_seconds: float = 0.05,
+        timeout_seconds: float | None = None,
+    ) -> SingleBatchResult:
+        """提交单成员批并同步等待终态；这是 CLI 的单任务入口。"""
+
+        if poll_interval_seconds < 0:
+            raise ValueError("poll_interval_seconds 不能为负数")
+        if timeout_seconds is not None and timeout_seconds < 0:
+            raise ValueError("timeout_seconds 不能为负数")
+        status = self.submit((member,), concurrency=1)
+        deadline = None if timeout_seconds is None else monotonic() + timeout_seconds
+        while True:
+            status = self.get(status.run_id)
+            if status.terminal:
+                break
+            if deadline is not None and monotonic() >= deadline:
+                raise BatchValidationError("timeout", "等待批次结果超时")
+            sleep(poll_interval_seconds)
+        member_status = status.members[0]
+        return SingleBatchResult(
+            session_id=member_status.session_id,
+            error_code=member_status.error_code,
+            error_message=member_status.error_message,
+        )
 
     # 命名别名方便应用适配层调用，同时保持服务核心词汇简短。
     submit_batch = submit
@@ -255,6 +302,7 @@ class BatchRunService:
 
     def _pump(self, record: _BatchRecord) -> None:
         self._refresh_members(record)
+        self._mark_terminal_if_done(record)
         if record.cancel_requested:
             return
 
@@ -278,13 +326,14 @@ class BatchRunService:
             self._submit_member(next_member)
 
         self._refresh_members(record)
+        self._mark_terminal_if_done(record)
 
     def _submit_member(self, member: _BatchMemberRecord) -> None:
         config = cast(SimulationInput, member.member.input)
         try:
             member.job_id = self.runner.submit_input(config)
         except Exception as exc:
-            self._mark_failed(member, str(exc) or exc.__class__.__name__)
+            self._mark_failed(member, exc)
 
     def _refresh_members(self, record: _BatchRecord) -> None:
         for member in record.members:
@@ -296,7 +345,7 @@ class BatchRunService:
                 if member.cancel_after_completion:
                     self._mark_cancelled(member)
                 else:
-                    self._mark_failed(member, str(exc) or exc.__class__.__name__)
+                    self._mark_failed(member, exc)
                 continue
             self._apply_job_status(member, status)
 
@@ -320,11 +369,13 @@ class BatchRunService:
 
         member.state = BatchMemberState(status.state.value)
         member.session_id = status.session_id
+        member.error_code = status.error_code
         member.error_message = status.error_message
 
-    def _mark_failed(self, member: _BatchMemberRecord, message: str) -> None:
+    def _mark_failed(self, member: _BatchMemberRecord, exc: BaseException) -> None:
         member.state = BatchMemberState.FAILED
-        member.error_message = message
+        member.error_code = scheduling_error_code(exc)
+        member.error_message = str(exc) or exc.__class__.__name__
         member.session_id = None
         member.finished_at = member.finished_at or self._now_factory()
 
@@ -336,6 +387,7 @@ class BatchRunService:
     ) -> None:
         member.state = BatchMemberState.CANCELLED
         member.session_id = None
+        member.error_code = None
         member.error_message = None
         member.finished_at = finished_at or member.finished_at or self._now_factory()
 
@@ -345,6 +397,7 @@ class BatchRunService:
                 item_id=member.member.item_id,
                 state=member.state,
                 session_id=member.session_id,
+                error_code=member.error_code,
                 error_message=member.error_message,
                 created_at=member.created_at,
                 started_at=member.started_at,
@@ -361,6 +414,22 @@ class BatchRunService:
             member_count=len(members),
             members=members,
         )
+
+    def _mark_terminal_if_done(self, record: _BatchRecord) -> None:
+        if record.terminal_at is not None:
+            return
+        if self._view(record).terminal:
+            record.terminal_at = self._monotonic_factory() + TERMINAL_BATCH_RETENTION_SECONDS
+
+    def _expire_terminal_runs(self) -> None:
+        now = self._monotonic_factory()
+        expired = [
+            run_id
+            for run_id, record in self._runs.items()
+            if record.terminal_at is not None and record.terminal_at <= now
+        ]
+        for run_id in expired:
+            del self._runs[run_id]
 
     @staticmethod
     def _derive_state(

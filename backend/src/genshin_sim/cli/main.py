@@ -667,11 +667,14 @@ def _cmd_project_show(args: argparse.Namespace) -> int:
 
 def _cmd_run(args: argparse.Namespace) -> int:
     outcome = _application(args).run_file_and_wait(args.input_path)
+    if outcome.session_id is None:
+        message = outcome.error_message or outcome.error_code or "仿真任务未完成"
+        raise RuntimeError(message)
     print(f"session_id: {outcome.session_id}")
-    if outcome.summary is None:
-        raise RuntimeError("仿真任务完成但缺少摘要")
-    print(f"stop_reason: {outcome.summary.stop_reason}")
-    print(f"frames_run: {outcome.summary.frames_run}")
+    detail = _application(args).get_run(outcome.session_id)
+    if detail.summary is not None:
+        print(f"stop_reason: {detail.summary.stop_reason}")
+        print(f"frames_run: {detail.summary.frames_run}")
     return 0
 
 

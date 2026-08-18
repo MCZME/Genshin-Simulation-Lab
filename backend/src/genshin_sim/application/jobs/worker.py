@@ -3,6 +3,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
+from genshin_sim.application.errors_kinds import execution_error_code
 from genshin_sim.application.execution import SimulationExecutor
 from genshin_sim.application.input import SimulationInput
 from genshin_sim.application.jobs.errors import SimulationJobPayloadError
@@ -86,6 +87,7 @@ def run_simulation_worker(
         return SimulationJobResult(
             job_id=payload.job_id,
             state=SimulationJobState.FAILED,
+            error_code=execution_error_code(exc),
             error_message=str(exc) or exc.__class__.__name__,
             created_at=payload.created_at or _utc_now(),
             started_at=started_at,

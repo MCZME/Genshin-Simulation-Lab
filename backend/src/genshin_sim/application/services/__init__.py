@@ -24,7 +24,6 @@ from genshin_sim.application.services.protocols import (
     SimulationInputValidator,
 )
 from genshin_sim.application.services.results import ResultDatabaseService, ResultsService
-from genshin_sim.application.services.simulation import SimulationTaskService
 from genshin_sim.application.services.workflows import (
     StoredWorkflow,
     WorkflowDetail,
@@ -56,7 +55,6 @@ __all__ = [
     "ResultsService",
     "RunDetail",
     "RunListItem",
-    "SimulationTaskService",
     "StoredWorkflow",
     "WorkflowDetail",
     "WorkflowError",

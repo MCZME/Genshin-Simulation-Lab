@@ -10,8 +10,6 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from genshin_sim.application.context import ApplicationContext, resolve_workspace_data_dir
-from genshin_sim.application.execution import SynchronousSimulationExecutor
-from genshin_sim.application.jobs import InMemorySimulationJobRunner
 from genshin_sim.content import create_default_content_unit_registry
 from genshin_sim.infrastructure.assets_project_amber import (
     build_asset_manifest_from_project_amber_cache,
@@ -52,7 +50,9 @@ def create_cli_application(
     asset_manifest_path: str | Path | None = None,
 ) -> ApplicationFacade:
     """组装 CLI 可用的完整 application facade。"""
+    from genshin_sim.application.batch import MAX_BATCH_CONCURRENCY
     from genshin_sim.application.facade import DefaultApplicationFacade
+    from genshin_sim.infrastructure.jobs import ProcessSimulationJobRunner
 
     root = Path(project_root)
     config_store = ProjectConfigFileStore()
@@ -78,11 +78,16 @@ def create_cli_application(
         else root / DEFAULT_ASSET_MANIFEST
     )
 
+    runner = ProcessSimulationJobRunner(
+        asset_db_path=asset_db,
+        result_db_path=result_db,
+        # 执行后端容量覆盖批调度允许的上限；批服务是唯一队列。
+        max_workers=MAX_BATCH_CONCURRENCY,
+    )
+
     asset_repository = SQLiteAssetRepository(asset_db)
     result_repository = SQLiteResultRepository(result_db)
     result_writer = SQLiteResultWriter(result_db)
-    executor = SynchronousSimulationExecutor.create(asset_repository, result_writer)
-    job_runner = InMemorySimulationJobRunner(executor)
 
     def rebuild_asset_database_from_source(db_path: str | Path) -> Path:
         fetch_project_amber_source_cache(source_cache)
@@ -96,7 +101,7 @@ def create_cli_application(
         asset_db_path=asset_db,
         result_repository=result_repository,
         result_writer=result_writer,
-        job_runner=job_runner,
+        job_runner=runner,
         asset_handler_repository=asset_repository,
         content_unit_registry=create_default_content_unit_registry(),
         init_result_database=init_result_database,
@@ -114,3 +119,22 @@ def create_cli_application(
         workflow_store=WorkflowFileStore(partial(resolve_workspace_data_dir, config_store, root)),
     )
     return DefaultApplicationFacade(context)
+
+
+def create_server_application(
+    *,
+    project_root: str | Path,
+    asset_db_path: str | Path | None = None,
+    result_db_path: str | Path | None = None,
+    source_cache_dir: str | Path | None = None,
+    asset_manifest_path: str | Path | None = None,
+) -> ApplicationFacade:
+    """组装 server 可用的完整 application facade。"""
+
+    return create_cli_application(
+        project_root=project_root,
+        asset_db_path=asset_db_path,
+        result_db_path=result_db_path,
+        source_cache_dir=source_cache_dir,
+        asset_manifest_path=asset_manifest_path,
+    )

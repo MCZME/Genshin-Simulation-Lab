@@ -237,6 +237,7 @@
       "item_id": "e-1",
       "state": "completed",
       "session_id": "a1b2c3",
+      "error_code": null,
       "error_message": null,
       "created_at": "2026-08-17T12:00:00+00:00",
       "started_at": "2026-08-17T12:00:01+00:00",
@@ -246,6 +247,7 @@
       "item_id": "e-2",
       "state": "running",
       "session_id": null,
+      "error_code": null,
       "error_message": null,
       "created_at": "2026-08-17T12:00:00+00:00",
       "started_at": "2026-08-17T12:00:02+00:00",
@@ -262,6 +264,7 @@
 ### `POST /api/v1/runs/{run_id}/cancel`
 
 - 排队成员立即 `cancelled`；运行中成员改为 `stopping`，跑完后 `cancelled`，结果不进入成功展示。
+- 成员的 `error_code` 与 `error_message` 只在失败或取消竞态时出现；成功、排队与取消为空。错误码分类见[批处理调度设计](../架构/批处理调度设计.md)。
 - 响应形状同 GET。已终态的批次再次取消仍返回当前视图。
 - 不存在 `404`。
 

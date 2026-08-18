@@ -28,6 +28,7 @@ class SimulationJobStatus:
     job_id: str
     state: SimulationJobState
     session_id: str | None = None
+    error_code: str | None = None
     error_message: str | None = None
     created_at: str = field(default_factory=_utc_now)
     started_at: str | None = None
@@ -42,6 +43,7 @@ class SimulationJobResult:
     state: SimulationJobState
     session_id: str | None = None
     summary: SimulationRunSummary | None = None
+    error_code: str | None = None
     error_message: str | None = None
     created_at: str = field(default_factory=_utc_now)
     started_at: str | None = None

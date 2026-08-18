@@ -28,11 +28,7 @@ from genshin_sim.application.execution.models import (
     RunState,
     SimulationRunSummary,
 )
-from genshin_sim.application.jobs.models import (
-    SimulationJobResult,
-    SimulationJobState,
-    SimulationJobStatus,
-)
+from genshin_sim.application.jobs.models import SimulationJobState
 
 
 class AssetListKind(StrEnum):
@@ -116,9 +112,7 @@ __all__ = [
     "RunListItem",
     "RunState",
     "SimulationInputFile",
-    "SimulationJobResult",
     "SimulationJobState",
-    "SimulationJobStatus",
     "SimulationRunSummary",
     "WorkspaceInfo",
 ]

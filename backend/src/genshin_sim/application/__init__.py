@@ -14,8 +14,9 @@ from genshin_sim.application.batch import (
     BatchRunStatus,
     BatchValidationError,
     BatchValidationResult,
+    SingleBatchResult,
 )
-from genshin_sim.application.bootstrap import create_cli_application
+from genshin_sim.application.bootstrap import create_cli_application, create_server_application
 from genshin_sim.application.config import ProjectConfig
 from genshin_sim.application.context import create_application
 from genshin_sim.application.errors import ApplicationError
@@ -29,8 +30,6 @@ from genshin_sim.application.models import (
     RunDetail,
     RunListItem,
     SimulationInputFile,
-    SimulationJobResult,
-    SimulationJobStatus,
     SimulationRunSummary,
     WorkspaceInfo,
 )
@@ -66,6 +65,7 @@ __all__ = [
     "BatchRunStatus",
     "BatchValidationError",
     "BatchValidationResult",
+    "SingleBatchResult",
     "DamageMetrics",
     "AssetInitializationPlan",
     "AssetInitializationSelector",
@@ -82,8 +82,6 @@ __all__ = [
     "RunListItem",
     "SimulationInput",
     "SimulationInputFile",
-    "SimulationJobResult",
-    "SimulationJobStatus",
     "SimulationRunSummary",
     "WorkspaceInfo",
     "WorkflowDetail",
@@ -93,4 +91,5 @@ __all__ = [
     "WorkflowSummary",
     "create_application",
     "create_cli_application",
+    "create_server_application",
 ]

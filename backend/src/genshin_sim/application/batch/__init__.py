@@ -21,6 +21,7 @@ from genshin_sim.application.batch.models import (
     BatchRunView,
     BatchValidationReport,
     BatchValidationResult,
+    SingleBatchResult,
 )
 from genshin_sim.application.batch.service import (
     DEFAULT_BATCH_CONCURRENCY,
@@ -50,6 +51,7 @@ __all__ = [
     "BatchValidationError",
     "BatchValidationReport",
     "BatchValidationResult",
+    "SingleBatchResult",
     "DEFAULT_BATCH_CONCURRENCY",
     "MAX_BATCH_CONCURRENCY",
     "MAX_BATCH_MEMBERS",

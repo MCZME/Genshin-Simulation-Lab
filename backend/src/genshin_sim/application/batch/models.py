@@ -41,6 +41,15 @@ class BatchRunState(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class SingleBatchResult:
+    """单成员批的同步等待结果；只保留结果身份与错误，不暴露 job。"""
+
+    session_id: str | None = None
+    error_code: str | None = None
+    error_message: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class BatchMember:
     """一个已展开、拥有稳定 ``item_id`` 的仿真输入成员。"""
 
@@ -114,6 +123,7 @@ class BatchMemberStatus:
     item_id: str
     state: BatchMemberState
     session_id: str | None = None
+    error_code: str | None = None
     error_message: str | None = None
     created_at: str = field(default_factory=_utc_now)
     started_at: str | None = None
@@ -124,6 +134,7 @@ class BatchMemberStatus:
             "item_id": self.item_id,
             "state": self.state.value,
             "session_id": self.session_id,
+            "error_code": self.error_code,
             "error_message": self.error_message,
             "created_at": self.created_at,
             "started_at": self.started_at,

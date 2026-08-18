@@ -113,6 +113,8 @@ class _FakeResultRepository:
 
 
 class _FakeResultWriter:
+    db_path = Path("results.db")
+
     def save_run(self, run: CompletedSimulationRun) -> str:
         return run.session_id
 
@@ -383,10 +385,16 @@ def test_facade_damage_metrics_unavailable_for_failed_run() -> None:
 
 
 def test_facade_exposes_batch_validation_and_lifecycle() -> None:
-    job_ids = iter(("job-1", "job-2"))
+    job_counter = 0
+
+    def job_id_factory() -> str:
+        nonlocal job_counter
+        job_counter += 1
+        return f"job-{job_counter}"
+
     runner = InMemorySimulationJobRunner(
         FakeExecutor(),
-        job_id_factory=lambda: next(job_ids),
+        job_id_factory=job_id_factory,
     )
     facade = _make_facade(job_runner=runner)
     members = tuple(
@@ -405,6 +413,10 @@ def test_facade_exposes_batch_validation_and_lifecycle() -> None:
     assert all(member.state is BatchMemberState.COMPLETED for member in submitted.members)
     assert facade.get_batch(submitted.run_id) == submitted
     assert facade.cancel_batch(submitted.run_id).state is BatchRunState.COMPLETED
+
+    single = facade.run_input_and_wait(minimal_input())
+    assert single.session_id == "session-1"
+    assert single.error_code is None
 
 
 def test_facade_batch_validation_returns_asset_diagnostic_for_member() -> None:

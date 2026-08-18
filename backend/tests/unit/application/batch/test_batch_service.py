@@ -294,3 +294,34 @@ def test_batch_submit_is_atomic_when_member_validation_fails() -> None:
 
     assert error.value.code == "validation_failed"
     assert runner.submitted == []
+
+
+def test_terminal_batch_remains_queryable_until_retention_expires() -> None:
+    runner = _ControlledRunner()
+    service = BatchRunService(
+        runner,
+        validator=_full_validator(),
+        run_id_factory=lambda: "run-ttl",
+        default_concurrency=1,
+    )
+    clock = [0.0]
+
+    service.submit(_members(1))
+    runner.set_status(
+        "job-1",
+        SimulationJobState.COMPLETED,
+        session_id="session-1",
+        finished_at="2026-08-18T00:00:02+00:00",
+    )
+    terminal = service.get("run-ttl")
+
+    assert terminal.state is BatchRunState.COMPLETED
+    assert service.get("run-ttl").state is BatchRunState.COMPLETED
+
+    service._monotonic_factory = lambda: clock[0]  # noqa: SLF001 - 测试时钟推进
+    service._runs["run-ttl"].terminal_at = 60.0  # noqa: SLF001 - 测试固定截止时刻
+    clock[0] = 61.0
+    service.validate_members(_members(1))
+
+    with pytest.raises(Exception, match="run-ttl"):
+        service.get("run-ttl")

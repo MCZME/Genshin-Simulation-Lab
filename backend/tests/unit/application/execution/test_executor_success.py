@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from pathlib import Path
 from typing import cast
 
 from genshin_sim.application.assembly import SimulationAssembler
@@ -49,6 +50,7 @@ class StubAssembler:
 
 class RecordingResultWriter:
     def __init__(self) -> None:
+        self.db_path = Path("results.db")
         self.completed: list[CompletedSimulationRun] = []
 
     def save_run(self, run: CompletedSimulationRun) -> str:

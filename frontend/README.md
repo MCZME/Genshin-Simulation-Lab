@@ -9,6 +9,7 @@ frontend/
 ├── src/
 │   ├── app/               # 应用外壳：导航、全局状态、错误反馈
 │   ├── theme/             # 主题 token
+│   ├── workflow/          # 定义模型、语义注册表、校验、变体编译
 │   ├── state/             # AppState / EditorState / RunState
 │   ├── api/               # HTTP API 客户端与类型
 │   ├── components/

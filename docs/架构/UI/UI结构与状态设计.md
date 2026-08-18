@@ -7,12 +7,13 @@
 >
 > 2026-08-16 补充：Flet 原生控件方案不再作为无限画布实现方案；本文以 Flet 控件树为载体的组件分类与目录细节待技术选型确认后修订，产品状态边界与模块职责继续生效。
 > 2026-08-17 补充：技术选型确认为 Python + Web 前端（React + React Flow）；组件分类与状态边界继续生效，目录细节按[前端工程规范](../../工程/前端工程规范.md)落位；MVP 范围加入枚举/区间节点。
+> 2026-08-17 补充：工作流图语义、校验与变体展开归 `frontend/`，见[项目决策记录](../../决策/项目决策记录.md) 2.29。
 
 ## 1. 定位与边界
 
 - `frontend/` 是独立 Web 前端工程，通过 `server/` 的 HTTP API 调用 application 公开能力。
 - 前端不直接访问 SQLite、不组装仿真核心对象、不实现分析算法、不调用 CLI。
-- UI 与 CLI 共享同一批应用服务；`application/` 不依赖 Flet 控件；`core/` 不感知 UI 状态。
+- UI 与 CLI 共享资产、仿真与结果等应用服务；CLI 不运行工作流。`application/` 不依赖前端实现；`core/` 不感知 UI 状态。
 - 产品以“批”为一等公民，单次模拟输入是批的特例；主界面为单一无限画布，配置 → 模拟 → 分析整条链在画布上承载。
 - [UI 原型开发经验](../../工程/UI原型开发经验.md)是正式实现前必读的经验基线；本文与[UI 工程规范](../../工程/UI工程规范.md)把其中已确认的结论固化为结构规则，未确认问题继续由原型回答。
 
@@ -75,21 +76,19 @@ UI 私有状态不持久化，全部为纯 Python 对象，不依赖 Flet，可�
 ```text
 backend/src/genshin_sim/
 ├── application/
-│   └── workflow/          # 工作流定义、校验、执行编排与存储协议（语义层，无前端依赖）
-│       ├── models.py      # WorkflowDefinition、节点/连线/端口/参数
-│       ├── validator.py   # 环、类型、区域、覆盖冲突校验
-│       ├── runtime.py     # 展开、片段应用、执行编排、运行状态回调
-│       └── store.py       # WorkflowStore 协议
+│   ├── batch/             # 已展开成员的批次编排
+│   └── services/          # 含工作流 JSON 不透明存档
 ├── infrastructure/
 │   ├── file_storage/
-│   │   └── workflow_store.py  # <data_dir>/workflows/ JSON 读写
-├── cli/                   # 命令行入口；genshin-sim ui 启动本地服务
-└── server/                # 网页服务端入口（计划中）
+│   │   └── workflow_store.py  # <data_dir>/workflows/ 不透明 JSON 读写
+├── cli/                   # 命令行入口；不运行工作流；genshin-sim ui 启动本地服务
+└── server/                # 网页服务端入口
 
 frontend/
 ├── src/
 │   ├── app/               # 应用外壳：导航、全局状态、错误反馈
 │   ├── theme/             # 主题 token
+│   ├── workflow/          # 定义模型、语义注册表、校验、变体编译
 │   ├── state/
 │   │   ├── app_state.ts
 │   │   ├── editor_state.ts
@@ -110,8 +109,8 @@ frontend/
 桥接层不依赖前端框架，可单测：
 
 - `converters.ts`：EditorState 与 WorkflowDefinition 双向转换。
-- `api/`：把 HTTP API 包装为页面可用的异步调用。
-- `runtime_subscription.ts`：订阅运行状态轮询/推送，更新 RunState。
+- `api/`：把 HTTP API 包装为页面可用的异步调用；配置预览走 `POST /inputs/validate`。
+- `runtime_subscription.ts`：轮询 `GET /runs/{run_id}` 更新 RunState；SSE/WebSocket 后置。
 
 组件不直接拼装 HTTP 请求，统一通过 API 客户端获取能力。
 
@@ -119,9 +118,9 @@ frontend/
 
 ### 7.1 分工
 
-- 语义注册表在 `application/workflow/`：节点类型、片段形状、端口模型、参数 schema、区域约束与节点级校验；前端通过 server API 读取 application 暴露的语义数据。
-- UI 注册表在 `ui/components/nodes/registry.py`：`node_kind → 编辑器组件` 映射与展示元数据（图标、默认尺寸、面板排序）。
-- 画布对象面板读语义注册表决定“当前区域有哪些对象”，再经 UI 注册表取编辑器组件；两侧以稳定 `node_kind` 为公共 key，互不 import。
+- 语义注册表在 `frontend/src/workflow/`：节点类型、片段形状、端口模型、参数 schema、区域约束与节点级校验。
+- UI 注册表在 `frontend/src/components/nodes/registry.tsx`：`node_kind → 编辑器组件` 映射与展示元数据（图标、默认尺寸、面板排序）。
+- 画布对象面板读语义注册表决定“当前区域有哪些对象”，再经 UI 注册表取编辑器组件；两侧以稳定 `node_kind` 为公共 key，互不循环依赖。
 
 ### 7.2 NodeKindSpec
 
@@ -192,7 +191,7 @@ frontend/
 ## 10. 未决事项
 
 - 结果摘要展示位置（模拟节点内嵌 vs 外壳固定面板）待定。
-- 编辑期校验边界：完整校验在 application Validator；是否提供同步轻量增量校验供前端交互期调用，待定。
+- 编辑期校验：完整图校验与变体展开在前端；后端只校验提交的 `SimulationInput`。轻量增量校验可在手势路径外同步执行。
 - 运行状态回流细节：第一版采用轮询；SSE/WebSocket 订阅端点形态待实现时细化。
 - 画布交互性能目标与节点规模基准：MVP 规模小，规则先行；待交互原型验证时定具体基准。
 - 画布实现技术栈已确认：Python + Web（React + React Flow），见[项目决策记录](../../决策/项目决策记录.md) 2.28。

@@ -11,8 +11,8 @@ UI 原型按[UI 原型验证规范](./UI原型验证规范.md)立项、验证和
 
 ## 2. 模块边界
 
-- `frontend/` 是独立 Web 前端工程，只通过 `infrastructure/http_api/` 的 HTTP API 调用 `application/services/` 的对外服务，不直接访问 SQLite，不组装仿真核心对象，不实现分析算法，不调用 CLI。
-- 前端与 CLI 共享同一批应用服务；`application/` 不依赖任何前端实现或 UI 框架。
+- `frontend/` 是独立 Web 前端工程，只通过 `server/` 的 HTTP API 调用 `application/` 对外服务，不直接访问 SQLite，不组装仿真核心对象，不实现分析算法，不调用 CLI。
+- 前端与 CLI 共享资产、仿真与结果等应用服务；CLI 不运行工作流。`application/` 不依赖任何前端实现或 UI 框架。
 - `core/` 不感知 UI 状态；画布编辑状态不得泄漏到 `core/`。
 - 技术栈已确认：Python + Web 前端（React + React Flow），桌面壳使用 pywebview 或浏览器；正式决策见[项目决策记录](../决策/项目决策记录.md) 2.28。
 
@@ -20,8 +20,9 @@ UI 原型按[UI 原型验证规范](./UI原型验证规范.md)立项、验证和
 
 画布实现区分四个概念，落位如下（详细设计见[UI 结构与状态设计](../架构/UI/UI结构与状态设计.md)）：
 
-- WorkflowDefinition / WorkflowValidator / WorkflowRuntime：`application/workflow/`，无 Flet 依赖，UI 与 CLI 可共享。
+- WorkflowDefinition / WorkflowValidator / WorkflowRuntime：`frontend/src/workflow/`；负责图语义、校验、变体展开与提交已展开成员。CLI 不共享这套能力。
 - WorkflowEditorState：`frontend/src/state/`，只装编辑期语义状态；视口、拖拽等瞬态留在组件内部。
+- 工作流 JSON 存档：后端 `infrastructure/file_storage/` 做不透明读写。
 
 UI 采用声明式结构，顶层原则为“全局声明式、命令式受控例外”。组件分为四类：
 
@@ -38,9 +39,9 @@ UI 采用声明式结构，顶层原则为“全局声明式、命令式受控�
 
 节点类型注册表分工：
 
-- 语义注册表（节点类型、片段形状、端口、参数、区域约束）在 `application/workflow/`。
-- 编辑器组件映射在 `frontend/`（React 组件注册表）。
-- 显式注册，不自动扫描；未注册节点类型在加载/校验时报错。
+- 语义注册表（节点类型、片段形状、端口、参数、区域约束）在 `frontend/src/workflow/`。
+- 编辑器组件映射在 `frontend/src/components/nodes/`（React 组件注册表）。
+- 显式注册，不自动扫描；未注册节点类型在前端加载/校验时报错。
 
 具体边界与数据模型在实现阶段定稿，不预建万能框架。
 
@@ -59,8 +60,8 @@ UI 采用声明式结构，顶层原则为“全局声明式、命令式受控�
 
 1. [工作流定义契约](../契约/工作流定义契约.md)（节点、连线、端口与片段应用语义）。
 2. [节点类型与编辑器数据契约](../契约/节点类型与编辑器数据契约.md)。
-3. [批量配置变体契约](../契约/批量配置变体契约.md)（配合 `application/batch/`）。
-4. [UI API 契约](../契约/UI API 契约.md)。
+3. [批量配置变体契约](../契约/批量配置变体契约.md)（前端编译，`application/batch/` 只编排已展开成员）。
+4. [UI API 契约](../契约/UI API 契约.md)（含 `POST /inputs/validate` 与批次轮询语义）。
 
 ## 6. 验证
 

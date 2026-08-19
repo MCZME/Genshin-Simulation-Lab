@@ -36,4 +36,9 @@ pnpm test
 pnpm build
 ```
 
-当前为目录与工具链骨架，`src/` 下尚无实现文件；`pnpm typecheck` 在源文件就位前会报告无输入。
+当前已完成工具链与最小应用入口；`src/workflow/` 图语义、校验与变体编译，以及 React Flow 画布组件在后续切片落地。
+
+## API 类型生成
+
+- 后端契约变化后重新生成：先启动后端 `genshin-sim-server`（默认端口 8000），再执行 `pnpm gen:api`。
+- 生成的 `src/api/schema.d.ts` 提交进仓库；typecheck 与构建不依赖后端在线。

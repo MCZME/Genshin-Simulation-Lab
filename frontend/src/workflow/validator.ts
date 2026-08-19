@@ -1,0 +1,539 @@
+import type {
+  Diagnostic,
+  DiagnosticSeverity,
+  WorkflowDefinition,
+  WorkflowEdge,
+  WorkflowNode,
+  WorkflowRegion,
+} from "./types";
+import {
+  MAX_BATCH_MEMBERS,
+  REGION_BOUNDARY_IN_PORT,
+  REGION_BOUNDARY_OUT_PORT,
+  WORKFLOW_SCHEMA_VERSION,
+} from "./types";
+import { rangeEntries } from "./decimal";
+import { getNodeKindSpec, groupFragments, singleFragment, validateNode } from "./registry";
+
+type EndpointKind = "node" | "region";
+
+interface Endpoint {
+  kind: EndpointKind;
+  id: string;
+}
+
+export function validateWorkflow(definition: WorkflowDefinition): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+
+  if (definition.schema_version !== WORKFLOW_SCHEMA_VERSION) {
+    diagnostics.push(
+      diagnostic("error", "SCHEMA_VERSION_UNSUPPORTED", `不支持的 schema_version：${definition.schema_version}`),
+    );
+  }
+  if (typeof definition.meta?.name !== "string") {
+    diagnostics.push(diagnostic("error", "META_INVALID", "meta.name 必须是字符串"));
+  }
+
+  const regionById = new Map<string, WorkflowRegion>();
+  for (const region of definition.regions) {
+    if (regionById.has(region.id)) {
+      diagnostics.push(
+        diagnostic("error", "DUPLICATE_ID", `区域 id 重复：${region.id}`, { region_id: region.id }),
+      );
+    }
+    regionById.set(region.id, region);
+    if (region.kind !== "configuration" && region.kind !== "analysis") {
+      diagnostics.push(
+        diagnostic("error", "REGION_KIND_INVALID", `未知区域类型：${region.kind}`, {
+          region_id: region.id,
+        }),
+      );
+    }
+  }
+
+  const nodeById = new Map<string, WorkflowNode>();
+  const rootCountByRegion = new Map<string | null, number>();
+  for (const node of definition.nodes) {
+    if (nodeById.has(node.id) || regionById.has(node.id)) {
+      diagnostics.push(
+        diagnostic("error", "DUPLICATE_ID", `节点 id 重复或与区域冲突：${node.id}`, {
+          node_id: node.id,
+        }),
+      );
+    }
+    nodeById.set(node.id, node);
+    rootCountByRegion.set(
+      node.region_id,
+      (rootCountByRegion.get(node.region_id) ?? 0) + (node.kind === "root" ? 1 : 0),
+    );
+
+    const spec = getNodeKindSpec(node.kind);
+    if (spec === null) {
+      diagnostics.push(
+        diagnostic("error", "UNKNOWN_NODE_KIND", `未注册节点类型：${node.kind}`, {
+          node_id: node.id,
+        }),
+      );
+      continue;
+    }
+
+    if (node.region_id === null) {
+      if (spec.region === "bridge") {
+        continue;
+      }
+      diagnostics.push(
+        diagnostic("warning", "FREE_NODE_DRAFT", "节点未归属区域，作为游离草稿不参与运行", {
+          node_id: node.id,
+        }),
+      );
+      continue;
+    }
+
+    const region = regionById.get(node.region_id);
+    if (region === undefined) {
+      diagnostics.push(
+        diagnostic("error", "UNKNOWN_REGION_REFERENCE", `引用了不存在的区域：${node.region_id}`, {
+          node_id: node.id,
+          region_id: node.region_id,
+        }),
+      );
+      continue;
+    }
+    if (spec.region === "bridge") {
+      diagnostics.push(
+        diagnostic("error", "BRIDGE_REGION_INVALID", "模拟桥节点不能归属区域", {
+          node_id: node.id,
+          region_id: node.region_id,
+        }),
+      );
+    } else if (spec.region !== region.kind) {
+      diagnostics.push(
+        diagnostic(
+          "error",
+          "REGION_KIND_MISMATCH",
+          `${spec.displayName}节点不能放在 ${region.kind} 区域`,
+          { node_id: node.id, region_id: node.region_id },
+        ),
+      );
+    }
+
+    diagnostics.push(...validateNode(node));
+  }
+
+  for (const [regionId, count] of rootCountByRegion) {
+    if (regionId !== null && count > 1) {
+      diagnostics.push(
+        diagnostic("error", "MULTIPLE_ROOT_NODES", "同一配置区域只能有一个根节点", {
+          region_id: regionId,
+        }),
+      );
+    }
+  }
+
+  const edgeById = new Set<string>();
+  for (const edge of definition.edges) {
+    if (edgeById.has(edge.id)) {
+      diagnostics.push(
+        diagnostic("error", "DUPLICATE_ID", `连线 id 重复：${edge.id}`, { edge_id: edge.id }),
+      );
+    }
+    edgeById.add(edge.id);
+  }
+
+  const endpoints = new Map<string, Endpoint>();
+  for (const region of regionById.values()) {
+    endpoints.set(region.id, { kind: "region", id: region.id });
+  }
+  for (const node of nodeById.values()) {
+    endpoints.set(node.id, { kind: "node", id: node.id });
+  }
+
+  markCycles(definition, endpoints, diagnostics);
+
+  const connectionCounts = new Map<string, number>();
+  for (const edge of definition.edges) {
+    validateEdge(edge, regionById, nodeById, endpoints, connectionCounts, diagnostics);
+  }
+
+  validateMemberCap(definition, regionById, diagnostics);
+  return diagnostics;
+}
+
+function validateEdge(
+  edge: WorkflowEdge,
+  regionById: Map<string, WorkflowRegion>,
+  nodeById: Map<string, WorkflowNode>,
+  endpoints: Map<string, Endpoint>,
+  connectionCounts: Map<string, number>,
+  diagnostics: Diagnostic[],
+): void {
+  const source = endpoints.get(edge.source_node_id);
+  const target = endpoints.get(edge.target_node_id);
+  if (source === undefined || target === undefined) {
+    diagnostics.push(
+      diagnostic("error", "UNKNOWN_ENDPOINT", "连线引用了不存在的节点或区域", {
+        edge_id: edge.id,
+      }),
+    );
+    return;
+  }
+
+  if (source.kind === "region") {
+    validateRegionEndpoint(edge, source.id, "source", regionById, diagnostics);
+  } else {
+    validateNodeEndpoint(edge, source.id, "source", nodeById, diagnostics);
+  }
+  if (target.kind === "region") {
+    validateRegionEndpoint(edge, target.id, "target", regionById, diagnostics);
+  } else {
+    validateNodeEndpoint(edge, target.id, "target", nodeById, diagnostics);
+  }
+
+  const sourcePort = resolvePort(edge.source_node_id, edge.source_port_id, "source", regionById, nodeById);
+  const targetPort = resolvePort(edge.target_node_id, edge.target_port_id, "target", regionById, nodeById);
+
+  if (source.kind === "node" && target.kind === "node") {
+    diagnostics.push(
+      diagnostic("error", "CONNECTION_NOT_SUPPORTED", "MVP 配置节点之间不直接连线，统一经过区域边界输入", {
+        edge_id: edge.id,
+        node_id: target.id,
+      }),
+    );
+  }
+  if (source.kind === "node" && source.id === target.id) {
+    diagnostics.push(
+      diagnostic("error", "SELF_CONNECTION", "节点不能连接自身", {
+        edge_id: edge.id,
+        node_id: source.id,
+      }),
+    );
+  }
+
+  if (sourcePort !== null && targetPort !== null) {
+    if (sourcePort.dataLanguage !== targetPort.dataLanguage) {
+      diagnostics.push(
+        diagnostic(
+          "error",
+          "DATA_LANGUAGE_MISMATCH",
+          `数据语言不匹配：${sourcePort.dataLanguage} → ${targetPort.dataLanguage}`,
+          { edge_id: edge.id },
+        ),
+      );
+    }
+    if (source.kind === "region" && edge.source_port_id === REGION_BOUNDARY_OUT_PORT) {
+      const targetNode = nodeById.get(edge.target_node_id);
+      if (targetNode === undefined || targetNode.kind !== "simulation") {
+        diagnostics.push(
+          diagnostic("error", "CONNECTION_INVALID", "配置区域边界输出只能连接模拟桥输入", {
+            edge_id: edge.id,
+          }),
+        );
+      }
+    }
+    if (source.kind === "node" && sourcePort.id === "out" && target.kind === "region") {
+      const sourceNode = nodeById.get(edge.source_node_id);
+      if (sourceNode !== undefined && sourceNode.kind === "simulation") {
+        diagnostics.push(
+          diagnostic("error", "ANALYSIS_NOT_IMPLEMENTED", "模拟桥输出与分析区域连线不在 MVP 范围", {
+            edge_id: edge.id,
+          }),
+        );
+      }
+    }
+  }
+
+  const freeNodeId = isFreeConnectedNode(source, nodeById)
+    ? source.id
+    : isFreeConnectedNode(target, nodeById)
+      ? target.id
+      : null;
+  if (freeNodeId !== null) {
+    diagnostics.push(
+      diagnostic("error", "FREE_NODE_CONNECTED", "游离草稿节点不能参与连线", {
+        edge_id: edge.id,
+        node_id: freeNodeId,
+      }),
+    );
+  }
+
+  for (const [endpointId, portId, role] of [
+    [edge.source_node_id, edge.source_port_id, "source"],
+    [edge.target_node_id, edge.target_port_id, "target"],
+  ] as const) {
+    const key = `${endpointId}:${portId}`;
+    connectionCounts.set(key, (connectionCounts.get(key) ?? 0) + 1);
+    const port = resolvePort(endpointId, portId, role, regionById, nodeById);
+    const count = connectionCounts.get(key) ?? 0;
+    if (port !== null && count > port.connectionLimit) {
+      diagnostics.push(
+        diagnostic("error", "CONNECTION_LIMIT_EXCEEDED", `端口连接数超过上限：${endpointId}.${portId}`, {
+          edge_id: edge.id,
+        }),
+      );
+    }
+  }
+}
+
+function isFreeConnectedNode(endpoint: Endpoint, nodeById: Map<string, WorkflowNode>): boolean {
+  if (endpoint.kind !== "node") {
+    return false;
+  }
+  const node = nodeById.get(endpoint.id);
+  if (node === undefined || node.region_id !== null) {
+    return false;
+  }
+  const spec = getNodeKindSpec(node.kind);
+  return spec === null || spec.region !== "bridge";
+}
+
+function validateRegionEndpoint(
+  edge: WorkflowEdge,
+  regionId: string,
+  role: "source" | "target",
+  regionById: Map<string, WorkflowRegion>,
+  diagnostics: Diagnostic[],
+): void {
+  const region = regionById.get(regionId);
+  if (region === undefined) {
+    return;
+  }
+  if (region.kind === "analysis") {
+    diagnostics.push(
+      diagnostic("error", "ANALYSIS_NOT_IMPLEMENTED", "分析区域连线不在 MVP 范围", {
+        edge_id: edge.id,
+        region_id: regionId,
+      }),
+    );
+    return;
+  }
+  const portId = role === "source" ? edge.source_port_id : edge.target_port_id;
+  const expected = role === "source" ? REGION_BOUNDARY_OUT_PORT : REGION_BOUNDARY_IN_PORT;
+  if (portId !== expected) {
+    diagnostics.push(
+      diagnostic("error", "PORT_INVALID", `区域边界端口方向错误：${portId}`, {
+        edge_id: edge.id,
+        region_id: regionId,
+      }),
+    );
+  }
+}
+
+function validateNodeEndpoint(
+  edge: WorkflowEdge,
+  nodeId: string,
+  role: "source" | "target",
+  nodeById: Map<string, WorkflowNode>,
+  diagnostics: Diagnostic[],
+): void {
+  const node = nodeById.get(nodeId);
+  if (node === undefined) {
+    return;
+  }
+  const spec = getNodeKindSpec(node.kind);
+  if (spec === null) {
+    return;
+  }
+  const portId = role === "source" ? edge.source_port_id : edge.target_port_id;
+  const ports = role === "source" ? spec.ports.outputs : spec.ports.inputs;
+  if (!ports.some((port) => port.id === portId)) {
+    diagnostics.push(
+      diagnostic("error", "PORT_NOT_FOUND", `节点缺少端口：${nodeId}.${portId}`, {
+        edge_id: edge.id,
+        node_id: nodeId,
+      }),
+    );
+  }
+}
+
+function resolvePort(
+  endpointId: string,
+  portId: string,
+  role: "source" | "target",
+  regionById: Map<string, WorkflowRegion>,
+  nodeById: Map<string, WorkflowNode>,
+) {
+  const region = regionById.get(endpointId);
+  if (region !== undefined) {
+    return {
+      id: portId,
+      cardinality: role === "source" ? "group" : "single",
+      dataLanguage: role === "source" ? "input_document" : "fragment",
+      connectionLimit: role === "source" ? 1 : Number.POSITIVE_INFINITY,
+    } as const;
+  }
+  const node = nodeById.get(endpointId);
+  if (node === undefined) {
+    return null;
+  }
+  const spec = getNodeKindSpec(node.kind);
+  if (spec === null) {
+    return null;
+  }
+  const ports = role === "source" ? spec.ports.outputs : spec.ports.inputs;
+  return ports.find((port) => port.id === portId) ?? null;
+}
+
+function markCycles(
+  definition: WorkflowDefinition,
+  endpoints: Map<string, Endpoint>,
+  diagnostics: Diagnostic[],
+): void {
+  const adjacency = new Map<string, WorkflowEdge[]>();
+  for (const edge of definition.edges) {
+    if (!endpoints.has(edge.source_node_id) || !endpoints.has(edge.target_node_id)) {
+      continue;
+    }
+    const list = adjacency.get(edge.source_node_id) ?? [];
+    list.push(edge);
+    adjacency.set(edge.source_node_id, list);
+  }
+
+  const state = new Map<string, "visiting" | "visited">();
+  const stack: string[] = [];
+  for (const id of endpoints.keys()) {
+    if (state.get(id) === "visited") {
+      continue;
+    }
+    if (visit(id, adjacency, state, stack, diagnostics)) {
+      return;
+    }
+  }
+}
+
+function visit(
+  id: string,
+  adjacency: Map<string, WorkflowEdge[]>,
+  state: Map<string, "visiting" | "visited">,
+  stack: string[],
+  diagnostics: Diagnostic[],
+): boolean {
+  state.set(id, "visiting");
+  stack.push(id);
+  for (const edge of adjacency.get(id) ?? []) {
+    const next = edge.target_node_id;
+    if (state.get(next) === "visited") {
+      continue;
+    }
+    if (state.get(next) === "visiting") {
+      const start = stack.indexOf(next);
+      for (const cycleId of stack.slice(start).concat(next)) {
+        diagnostics.push(
+          diagnostic("error", "CYCLE_DETECTED", "工作流图存在环", {
+            edge_id: edge.id,
+            node_id: cycleId,
+          }),
+        );
+      }
+      return true;
+    }
+    if (visit(next, adjacency, state, stack, diagnostics)) {
+      return true;
+    }
+  }
+  stack.pop();
+  state.set(id, "visited");
+  return false;
+}
+
+function validateMemberCap(
+  definition: WorkflowDefinition,
+  regionById: Map<string, WorkflowRegion>,
+  diagnostics: Diagnostic[],
+): void {
+  const nodeById = new Map(definition.nodes.map((node) => [node.id, node]));
+  for (const region of regionById.values()) {
+    if (region.kind !== "configuration") {
+      continue;
+    }
+    const boundaryEdges = definition.edges.filter(
+      (edge) =>
+        edge.target_node_id === region.id && edge.target_port_id === REGION_BOUNDARY_IN_PORT,
+    );
+    if (boundaryEdges.length === 0) {
+      diagnostics.push(
+        diagnostic("warning", "EMPTY_REGION", "配置区域没有数据汇入，运行会被阻止", {
+          region_id: region.id,
+        }),
+      );
+      continue;
+    }
+
+    const lastWriter = new Map<string, number>();
+    boundaryEdges.forEach((edge, index) => {
+      const node = nodeById.get(edge.source_node_id);
+      const path = node === undefined ? null : fragmentPathOf(node, definition);
+      lastWriter.set(path ?? "", index);
+    });
+
+    let count = 1;
+    boundaryEdges.forEach((edge, index) => {
+      const node = nodeById.get(edge.source_node_id);
+      if (node === undefined) {
+        return;
+      }
+      const path = fragmentPathOf(node, definition);
+      if (path !== null && lastWriter.get(path) !== index) {
+        return;
+      }
+      let variants = 1;
+      if (node.kind === "enum" && Array.isArray(node.params.values)) {
+        variants = node.params.values.length;
+      } else if (node.kind === "range") {
+        try {
+          variants = rangeEntries(
+            Number(node.params.start),
+            Number(node.params.end),
+            Number(node.params.step),
+          ).length;
+        } catch {
+          variants = 1;
+        }
+      }
+      count *= variants;
+    });
+
+    if (count > MAX_BATCH_MEMBERS) {
+      diagnostics.push(
+        diagnostic(
+          "error",
+          "MEMBER_LIMIT_EXCEEDED",
+          `展开成员数 ${count} 超过上限 ${MAX_BATCH_MEMBERS}`,
+          { region_id: region.id },
+        ),
+      );
+    }
+  }
+}
+
+function fragmentPathOf(
+  node: WorkflowNode,
+  definition: WorkflowDefinition,
+): string | null {
+  if (node.kind === "enum" || node.kind === "range") {
+    const fragments = groupFragments(node);
+    return fragments[0]?.path ?? null;
+  }
+  return singleFragment(node, definition)?.path ?? null;
+}
+
+function diagnostic(
+  severity: DiagnosticSeverity,
+  code: string,
+  message: string,
+  refs: {
+    node_id?: string | null;
+    edge_id?: string | null;
+    region_id?: string | null;
+    path?: string | null;
+  } = {},
+): Diagnostic {
+  return {
+    severity,
+    code,
+    message,
+    node_id: refs.node_id ?? null,
+    edge_id: refs.edge_id ?? null,
+    region_id: refs.region_id ?? null,
+    path: refs.path ?? null,
+  };
+}

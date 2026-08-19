@@ -6,7 +6,7 @@ export default defineConfig({
   server: {
     port: 5173,
     proxy: {
-      // 开发模式代理到本地后端；后端端口以 genshin-sim ui 实际启动为准
+      // 开发模式代理到本地后端；后端端口以 genshin-sim-server 实际启动为准
       "/api": "http://127.0.0.1:8000",
     },
   },

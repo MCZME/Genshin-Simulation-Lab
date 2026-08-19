@@ -25,4 +25,5 @@ uv run genshin-sim assets build --manifest data/assets/manifests/project_amber_y
 uv run genshin-sim run data/inputs/barbara_demo.json
 ```
 
-UI 启动（进入 Web 实现阶段后）：`uv run genshin-sim ui`。
+Web 服务启动（进入 Web 实现阶段后）：`uv run genshin-sim-server --root . --port 8000`，由 server 托管 `frontend/dist` 构建产物与 `/api/v1`。
+前端开发模式：`cd frontend; pnpm dev`，Vite 将 `/api` 代理到本地后端。

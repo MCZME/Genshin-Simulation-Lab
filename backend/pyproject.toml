@@ -25,6 +25,7 @@ dev = [
 
 [project.scripts]
 genshin-sim = "genshin_sim.cli.main:main"
+genshin-sim-server = "genshin_sim.server.main:main"
 
 [build-system]
 requires = ["uv_build>=0.11.16,<0.12.0"]

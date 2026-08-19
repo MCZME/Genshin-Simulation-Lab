@@ -184,6 +184,44 @@ export function getNodeKindSpec(kind: string): NodeKindSpec | null {
   return (REGISTRY as Record<string, NodeKindSpec>)[kind] ?? null;
 }
 
+/** 前端创建节点时写入的默认参数；编译阶段在没有显式参数时沿用同一默认值。 */
+export function createDefaultParams(kind: string): Record<string, unknown> {
+  switch (kind) {
+    case "character":
+      return {
+        slot: 1,
+        asset: "",
+        level: 90,
+        constellation: 0,
+        talents: { normal_attack: 1, elemental_skill: 1, elemental_burst: 1 },
+      };
+    case "weapon":
+      return { slot: 1, asset: "", level: 90, refinement: 1 };
+    case "artifact":
+      return { slot: 1, asset: "", pieces: 4 };
+    case "target":
+      return { index: 0, id: "target_0", level: 90 };
+    case "input_trace":
+      return { items: [] };
+    case "run_options":
+      return { max_frames: 18000 };
+    case "enum":
+      return {
+        path: "",
+        value_type: "asset",
+        values: [{ item_id: "e-1", value: "", label: null }],
+      };
+    case "range":
+      return { path: "", start: 1, end: 10, step: 1, label: null };
+    case "root":
+    case "meta":
+    case "simulation":
+      return {};
+    default:
+      return {};
+  }
+}
+
 /** 单值节点产出一个片段；根节点与模拟桥不产出来源。 */
 export function singleFragment(
   node: WorkflowNode,

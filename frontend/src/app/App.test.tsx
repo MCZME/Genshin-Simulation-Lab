@@ -6,6 +6,6 @@ import { App } from "./App";
 describe("App shell", () => {
   it("renders the application title", () => {
     const html = renderToString(<App />);
-    expect(html).toContain("Genshin Simulation Lab");
+    expect(html).toContain("全部运行");
   });
 });

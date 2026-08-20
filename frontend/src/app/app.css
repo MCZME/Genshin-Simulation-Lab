@@ -1321,6 +1321,22 @@ body {
   line-height: 1.4;
 }
 
+.asset-status-badge {
+  position: absolute;
+  bottom: -7px;
+  right: 6px;
+  z-index: 1;
+  padding: 0 4px;
+  background: #f59e0b;
+  color: #0f172a;
+  border: 1px solid #0f172a;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
 .asset-trigger-main {
   display: flex;
   flex-direction: row;

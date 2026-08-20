@@ -279,8 +279,8 @@ function validateWeapon(node: WorkflowNode): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const params = node.params;
   checkCustomPath(node, diagnostics);
-  if (!isPositiveInteger(params.slot)) {
-    diagnostics.push(paramError(node, "slot", "槽位必须是 >= 1 的整数"));
+  if (!isInRange(params.slot, 1, 4)) {
+    diagnostics.push(paramError(node, "slot", "槽位必须在 1 到 4 之间"));
   }
   if (asString(params.asset) === null) {
     diagnostics.push(paramError(node, "asset", "缺少资产引用"));

@@ -166,9 +166,11 @@ class AssetsService:
             if not registry.has_character_handler(asset.handler_key):
                 return False, "角色实现不可用"
         elif kind is AssetListKind.WEAPONS:
+            if asset.handler_key is None:
+                return False, "武器实现未接入"
             if registry is None:
                 return False, "缺少内容注册表，无法确认可运行性"
-            if asset.handler_key is not None and not registry.has_weapon_handler(asset.handler_key):
+            if not registry.has_weapon_handler(asset.handler_key):
                 return False, "武器实现不可用"
         else:
             if registry is None:

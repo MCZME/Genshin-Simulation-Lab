@@ -45,6 +45,7 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
   const [elementFilter, setElementFilter] = useState<string | null>(null);
   const [weaponTypeFilter, setWeaponTypeFilter] = useState<string | null>(null);
   const [rarityFilter, setRarityFilter] = useState<number | null>(null);
+  const [usableFilter, setUsableFilter] = useState<number | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -103,6 +104,9 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
     if (rarityFilter !== null && item.rarity !== rarityFilter) {
       return false;
     }
+    if (usableFilter !== null && item.usable !== (usableFilter === 1)) {
+      return false;
+    }
     return true;
   });
 
@@ -113,6 +117,7 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
     setElementFilter(null);
     setWeaponTypeFilter(null);
     setRarityFilter(null);
+    setUsableFilter(null);
   }
 
   function toggleOpen() {
@@ -177,6 +182,9 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
             ★{selected.rarity}
           </span>
         )}
+        {selected !== null && !selected.usable && (
+          <span className="asset-status-badge">{selected.status ?? "不可用"}</span>
+        )}
         <span className="asset-trigger-main">
           <span className="asset-name">
             {selected?.name ?? (value !== "" ? value : "选择资产")}
@@ -187,9 +195,6 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
                 <span className="asset-tag">
                   {WEAPON_LABELS[selected.weapon_type] ?? selected.weapon_type}
                 </span>
-              )}
-              {!selected.usable && (
-                <span className="asset-status">不可用</span>
               )}
             </span>
           )}
@@ -246,6 +251,18 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
                 value={rarityFilter}
                 onSelect={(value) => {
                   setRarityFilter(value);
+                  setActiveIndex(0);
+                }}
+              />
+              <FilterRow
+                label="状态"
+                options={[
+                  { value: 1, label: "已实现" },
+                  { value: 0, label: "未实现" },
+                ]}
+                value={usableFilter}
+                onSelect={(value) => {
+                  setUsableFilter(value);
                   setActiveIndex(0);
                 }}
               />

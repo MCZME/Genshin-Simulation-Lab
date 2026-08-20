@@ -142,6 +142,7 @@ export function WeaponEditor({ node, onChange, fieldErrors = {} }: NodeEditorPro
         <NumberField
           value={asNumber(params.slot)}
           min={1}
+          max={4}
           onChange={(value) => onChange({ ...params, slot: value ?? 1 })}
         />
       </FieldRow>

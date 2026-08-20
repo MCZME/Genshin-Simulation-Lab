@@ -30,6 +30,39 @@ describe("固定路径节点的编辑器", () => {
     expect(screen.queryByText("高级")).toBeNull();
   });
 
+  it("角色编辑器槽位显示数字并进入滑块编辑", () => {
+    render(<CharacterEditor node={characterNode()} onChange={vi.fn()} />);
+    const slot = screen.getByLabelText("槽位");
+    expect(slot.tagName).toBe("BUTTON");
+    expect(slot.textContent).toBe("1");
+    fireEvent.click(slot);
+    const slider = screen.getByRole("slider");
+    expect(slider.getAttribute("type")).toBe("range");
+    expect(slider.getAttribute("min")).toBe("0");
+    expect(slider.getAttribute("max")).toBe("3");
+  });
+
+  it("角色编辑器等级滑块覆盖 1-90 与 95、100", () => {
+    render(<CharacterEditor node={characterNode()} onChange={vi.fn()} />);
+    fireEvent.click(screen.getByLabelText("等级"));
+    const slider = screen.getByRole("slider");
+    expect(slider.getAttribute("max")).toBe("91");
+  });
+
+  it("角色编辑器提供三项天赋并提交修改", () => {
+    const onChange = vi.fn();
+    render(<CharacterEditor node={characterNode()} onChange={onChange} />);
+    fireEvent.click(screen.getByLabelText("元素爆发"));
+    const slider = screen.getByRole("slider");
+    fireEvent.change(slider, { target: { value: "8" } });
+    fireEvent.blur(slider);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        talents: expect.objectContaining({ elemental_burst: 9 }),
+      }),
+    );
+  });
+
   it("元信息编辑器提供名称与描述配置", () => {
     const onChange = vi.fn();
     render(

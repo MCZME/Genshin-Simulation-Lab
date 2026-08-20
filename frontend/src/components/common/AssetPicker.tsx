@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { searchAssets } from "../../api/client";
 import type { AssetResponse } from "../../api/client";
 
@@ -8,75 +8,341 @@ interface AssetPickerProps {
   onChange: (assetKey: string) => void;
 }
 
+const ELEMENT_LABELS: Record<string, string> = {
+  anemo: "风",
+  cryo: "冰",
+  dendro: "草",
+  electro: "雷",
+  geo: "岩",
+  hydro: "水",
+  pyro: "火",
+};
+
+const ELEMENT_COLORS: Record<string, string> = {
+  anemo: "#10b981",
+  cryo: "#22d3ee",
+  dendro: "#84cc16",
+  electro: "#a855f7",
+  geo: "#f59e0b",
+  hydro: "#3b82f6",
+  pyro: "#ef4444",
+};
+
+const WEAPON_LABELS: Record<string, string> = {
+  bow: "弓",
+  catalyst: "法器",
+  claymore: "双手剑",
+  polearm: "长柄",
+  sword: "单手剑",
+};
+
 export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<AssetResponse[]>([]);
   const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [elementFilter, setElementFilter] = useState<string | null>(null);
+  const [weaponTypeFilter, setWeaponTypeFilter] = useState<string | null>(null);
+  const [rarityFilter, setRarityFilter] = useState<number | null>(null);
+  const rootRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void searchAssets(assetType, query)
-      .then((response) => {
-        if (!cancelled) {
-          setItems(response.items ?? []);
-        }
-      })
-      .catch(() => {
-        if (!cancelled) {
-          setItems([]);
-        }
-      });
+    const timer = window.setTimeout(() => {
+      setLoading(true);
+      void searchAssets(assetType, query)
+        .then((response) => {
+          if (!cancelled) {
+            setItems(response.items ?? []);
+            setActiveIndex(0);
+            setLoading(false);
+          }
+        })
+        .catch(() => {
+          if (!cancelled) {
+            setItems([]);
+            setLoading(false);
+          }
+        });
+    }, 200);
     return () => {
       cancelled = true;
+      window.clearTimeout(timer);
     };
   }, [assetType, query]);
 
+  useEffect(() => {
+    if (!open) {
+      return;
+    }
+    function handleMouseDown(event: MouseEvent) {
+      if (
+        rootRef.current !== null &&
+        !rootRef.current.contains(event.target as Node)
+      ) {
+        setOpen(false);
+      }
+    }
+    document.addEventListener("mousedown", handleMouseDown);
+    return () => document.removeEventListener("mousedown", handleMouseDown);
+  }, [open]);
+
   const selected = items.find((item) => item.asset_key === value) ?? null;
+  const elementColor =
+    assetType === "characters" && selected !== null && selected.element != null
+      ? (ELEMENT_COLORS[selected.element] ?? null)
+      : null;
+  const filteredItems = items.filter((item) => {
+    if (elementFilter !== null && item.element !== elementFilter) {
+      return false;
+    }
+    if (weaponTypeFilter !== null && item.weapon_type !== weaponTypeFilter) {
+      return false;
+    }
+    if (rarityFilter !== null && item.rarity !== rarityFilter) {
+      return false;
+    }
+    return true;
+  });
+
+  function select(item: AssetResponse) {
+    onChange(item.asset_key);
+    setOpen(false);
+    setQuery("");
+    setElementFilter(null);
+    setWeaponTypeFilter(null);
+    setRarityFilter(null);
+  }
+
+  function toggleOpen() {
+    if (!open) {
+      setActiveIndex(
+        Math.max(
+          0,
+          items.findIndex((item) => item.asset_key === value),
+        ),
+      );
+    }
+    setOpen((current) => !current);
+  }
+
+  function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.key === "ArrowDown") {
+      event.preventDefault();
+      setActiveIndex((current) =>
+        Math.min(current + 1, Math.max(filteredItems.length - 1, 0)),
+      );
+    } else if (event.key === "ArrowUp") {
+      event.preventDefault();
+      setActiveIndex((current) => Math.max(current - 1, 0));
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      const item = filteredItems[activeIndex];
+      if (item !== undefined) {
+        select(item);
+      }
+    } else if (event.key === "Escape") {
+      event.preventDefault();
+      setOpen(false);
+    }
+  }
 
   return (
-    <div className="asset-picker">
+    <div
+      className={`asset-picker ${open ? "dropdown-open" : ""}`}
+      ref={rootRef}
+    >
       <button
         type="button"
         className="asset-trigger"
-        onClick={() => setOpen((current) => !current)}
+        title={selected?.status ?? undefined}
+        style={
+          elementColor !== null
+            ? {
+                borderColor: elementColor,
+                boxShadow: `inset 3px 0 0 ${elementColor}`,
+              }
+            : undefined
+        }
+        onClick={toggleOpen}
       >
-        <span className="asset-name">{selected?.name ?? (value !== "" ? value : "选择资产")}</span>
-        {selected !== null && !selected.usable && (
-          <span className="asset-status">{selected.status ?? "不可用"}</span>
+        {selected !== null && selected.rarity != null && (
+          <span
+            className="asset-rarity-badge"
+            style={
+              elementColor !== null ? { background: elementColor } : undefined
+            }
+          >
+            ★{selected.rarity}
+          </span>
         )}
+        <span className="asset-trigger-main">
+          <span className="asset-name">
+            {selected?.name ?? (value !== "" ? value : "选择资产")}
+          </span>
+          {selected !== null && (
+            <span className="asset-trigger-meta">
+              {assetType === "weapons" && selected.weapon_type != null && (
+                <span className="asset-tag">
+                  {WEAPON_LABELS[selected.weapon_type] ?? selected.weapon_type}
+                </span>
+              )}
+              {!selected.usable && (
+                <span className="asset-status">不可用</span>
+              )}
+            </span>
+          )}
+        </span>
+        <span className="asset-caret">▾</span>
       </button>
       {open && (
         <div className="asset-dropdown">
           <input
-            className="field"
+            className="field nowheel"
             type="text"
             value={query}
             placeholder="搜索资产"
             autoFocus
             onChange={(event) => setQuery(event.target.value)}
+            onKeyDown={handleKeyDown}
           />
-          <ul className="asset-list">
-            {items.map((item) => (
-              <li key={item.asset_key}>
-                <button
-                  type="button"
-                  className="asset-option"
-                  onClick={() => {
-                    onChange(item.asset_key);
-                    setOpen(false);
+          {assetType !== "artifact-sets" && (
+            <div className="asset-filters">
+              {assetType === "characters" && (
+                <FilterRow
+                  label="元素"
+                  options={Object.entries(ELEMENT_LABELS).map(([value, label]) => ({
+                    value,
+                    label,
+                  }))}
+                  value={elementFilter}
+                  onSelect={(value) => {
+                    setElementFilter(value);
+                    setActiveIndex(0);
                   }}
-                >
-                  <span>{item.name}</span>
-                  {!item.usable && (
-                    <span className="asset-status">{item.status ?? "不可用"}</span>
-                  )}
-                </button>
-              </li>
-            ))}
-            {items.length === 0 && <li className="asset-empty">没有匹配资产</li>}
+                />
+              )}
+              {(assetType === "characters" || assetType === "weapons") && (
+                <FilterRow
+                  label="类型"
+                  options={Object.entries(WEAPON_LABELS).map(([value, label]) => ({
+                    value,
+                    label,
+                  }))}
+                  value={weaponTypeFilter}
+                  onSelect={(value) => {
+                    setWeaponTypeFilter(value);
+                    setActiveIndex(0);
+                  }}
+                />
+              )}
+              <FilterRow
+                label="星级"
+                options={[5, 4, 3, 2, 1].map((value) => ({
+                  value,
+                  label: `${value}★`,
+                }))}
+                value={rarityFilter}
+                onSelect={(value) => {
+                  setRarityFilter(value);
+                  setActiveIndex(0);
+                }}
+              />
+            </div>
+          )}
+          <ul className="asset-list">
+            {loading ? (
+              <li className="asset-empty">加载中…</li>
+            ) : filteredItems.length === 0 ? (
+              <li className="asset-empty">没有匹配资产</li>
+            ) : (
+              filteredItems.map((item, index) => (
+                <li key={item.asset_key}>
+                  <button
+                    type="button"
+                    className={`asset-option ${
+                      index === activeIndex ? "active" : ""
+                    }`}
+                    onMouseEnter={() => setActiveIndex(index)}
+                    onClick={() => select(item)}
+                  >
+                    <span className="asset-option-main">
+                      <span className="asset-option-title">
+                        <span className="asset-name">{item.name}</span>
+                        {item.rarity != null && (
+                          <span className="asset-rarity">
+                            {"★".repeat(item.rarity)}
+                          </span>
+                        )}
+                        {!item.usable && (
+                          <span className="asset-status">
+                            {item.status ?? "不可用"}
+                          </span>
+                        )}
+                      </span>
+                      {(item.element != null || item.weapon_type != null) && (
+                        <span className="asset-option-tags">
+                          {item.element != null && (
+                            <span className="asset-tag">
+                              {ELEMENT_LABELS[item.element] ?? item.element}
+                            </span>
+                          )}
+                          {item.weapon_type != null && (
+                            <span className="asset-tag">
+                              {WEAPON_LABELS[item.weapon_type] ??
+                                item.weapon_type}
+                            </span>
+                          )}
+                        </span>
+                      )}
+                    </span>
+                  </button>
+                </li>
+              ))
+            )}
           </ul>
         </div>
       )}
+    </div>
+  );
+}
+
+function FilterRow<T extends string | number>({
+  label,
+  options,
+  value,
+  onSelect,
+}: {
+  label: string;
+  options: Array<{ value: T; label: string }>;
+  value: T | null;
+  onSelect: (value: T | null) => void;
+}) {
+  return (
+    <div className="asset-filter-row">
+      <span className="asset-filter-label">{label}</span>
+      <button
+        type="button"
+        className={`asset-filter-chip ${value === null ? "active" : ""}`}
+        aria-label={`${label}：全部`}
+        onClick={() => onSelect(null)}
+      >
+        全部
+      </button>
+      {options.map((option) => (
+        <button
+          key={String(option.value)}
+          type="button"
+          className={`asset-filter-chip ${
+            value === option.value ? "active" : ""
+          }`}
+          aria-label={`${label}：${option.label}`}
+          onClick={() => onSelect(value === option.value ? null : option.value)}
+        >
+          {option.label}
+        </button>
+      ))}
     </div>
   );
 }

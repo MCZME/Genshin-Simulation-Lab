@@ -57,10 +57,10 @@ describe("compileConfigurationRegion", () => {
       makeNode("sim", "simulation", {}, null),
     ];
     const edges = [
-      makeEdge("e1", "root", "out", "region-1", "in"),
-      makeEdge("e2", "char", "out", "region-1", "in"),
-      makeEdge("e3", "weapon", "out", "region-1", "in"),
-      makeEdge("e4", "target", "out", "region-1", "in"),
+      makeEdge("e1", "root", "out", "region-1", "out"),
+      makeEdge("e2", "char", "out", "region-1", "out"),
+      makeEdge("e3", "weapon", "out", "region-1", "out"),
+      makeEdge("e4", "target", "out", "region-1", "out"),
       makeEdge("e5", "region-1", "out", "sim", "in"),
     ];
     const definition = makeDefinition([makeRegion()], nodes, edges);
@@ -96,7 +96,7 @@ describe("compileConfigurationRegion", () => {
       values: [{ item_id: "e-1", value: "character:barbara", label: null }],
     });
     const edges = [
-      makeEdge("e1", "enum", "out", "region-1", "in"),
+      makeEdge("e1", "enum", "out", "region-1", "out"),
       makeEdge("e2", "region-1", "out", "sim", "in"),
     ];
     const definition = makeDefinition(
@@ -109,6 +109,29 @@ describe("compileConfigurationRegion", () => {
     expect(result.ok).toBe(true);
     const team = result.members[0].input.team as Array<Record<string, unknown>>;
     expect(team[1].slot).toBe(2);
+  });
+
+  it("普通节点自定义路径覆盖默认路径", () => {
+    const char = makeNode("char", "character", {
+      slot: 1,
+      asset: "character:barbara",
+      path: "team[0].role",
+    });
+    const edges = [
+      makeEdge("e1", "char", "out", "region-1", "out"),
+      makeEdge("e2", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [char, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    const team = result.members[0].input.team as Array<Record<string, unknown>>;
+    expect((team[0].role as Record<string, unknown>).asset_key).toBe("character:barbara");
+    expect(team[0].character).toBeUndefined();
   });
 
   it("枚举与区间按不同路径叉乘且最后一组变化最快", () => {
@@ -127,8 +150,8 @@ describe("compileConfigurationRegion", () => {
       step: 3,
     });
     const edges = [
-      makeEdge("e1", "enum", "out", "region-1", "in"),
-      makeEdge("e2", "range", "out", "region-1", "in"),
+      makeEdge("e1", "enum", "out", "region-1", "out"),
+      makeEdge("e2", "range", "out", "region-1", "out"),
       makeEdge("e3", "region-1", "out", "sim", "in"),
     ];
     const definition = makeDefinition(
@@ -166,8 +189,8 @@ describe("compileConfigurationRegion", () => {
       values: [{ item_id: "x-2", value: "character:kaeya", label: null }],
     });
     const edges = [
-      makeEdge("e1", "enum-a", "out", "region-1", "in"),
-      makeEdge("e2", "enum-b", "out", "region-1", "in"),
+      makeEdge("e1", "enum-a", "out", "region-1", "out"),
+      makeEdge("e2", "enum-b", "out", "region-1", "out"),
       makeEdge("e3", "region-1", "out", "sim", "in"),
     ];
     const definition = makeDefinition(
@@ -191,7 +214,7 @@ describe("compileConfigurationRegion", () => {
       step: 0.1,
     });
     const edges = [
-      makeEdge("e1", "range", "out", "region-1", "in"),
+      makeEdge("e1", "range", "out", "region-1", "out"),
       makeEdge("e2", "region-1", "out", "sim", "in"),
     ];
     const definition = makeDefinition(
@@ -236,8 +259,8 @@ describe("compileConfigurationRegion", () => {
       })),
     });
     const edges = [
-      makeEdge("e1", "enum-a", "out", "region-1", "in"),
-      makeEdge("e2", "enum-b", "out", "region-1", "in"),
+      makeEdge("e1", "enum-a", "out", "region-1", "out"),
+      makeEdge("e2", "enum-b", "out", "region-1", "out"),
       makeEdge("e3", "region-1", "out", "sim", "in"),
     ];
     const definition = makeDefinition(
@@ -266,7 +289,7 @@ describe("compileConfigurationRegion", () => {
   it("只有根节点时输出骨架成员", () => {
     const nodes = [makeNode("root", "root"), makeNode("sim", "simulation", {}, null)];
     const edges = [
-      makeEdge("e1", "root", "out", "region-1", "in"),
+      makeEdge("e1", "root", "out", "region-1", "out"),
       makeEdge("e2", "region-1", "out", "sim", "in"),
     ];
     const definition = makeDefinition([makeRegion()], nodes, edges);
@@ -291,7 +314,7 @@ describe("compileConfigurationRegion", () => {
           makeNode("sim", "simulation", {}, null),
         ],
         [
-          makeEdge("e1", "enum", "out", "region-1", "in"),
+          makeEdge("e1", "enum", "out", "region-1", "out"),
           makeEdge("e2", "region-1", "out", "sim", "in"),
         ],
       );
@@ -333,7 +356,7 @@ describe("compileConfigurationRegion", () => {
           makeNode("sim", "simulation", {}, null),
         ],
         [
-          makeEdge("e1", "range", "out", "region-1", "in"),
+          makeEdge("e1", "range", "out", "region-1", "out"),
           makeEdge("e2", "region-1", "out", "sim", "in"),
         ],
       );
@@ -353,5 +376,123 @@ describe("compileConfigurationRegion", () => {
       "range:scene.targets[0].level:7",
       "range:scene.targets[0].level:10",
     ]);
+  });
+
+  it("节点链按顺序应用到根文档", () => {
+    const nodes = [
+      makeNode("root", "root"),
+      makeNode("char", "character", { slot: 1, asset: "character:barbara" }),
+      makeNode("weapon", "weapon", { slot: 1, asset: "weapon:11512" }),
+      makeNode("target", "target", { index: 0, level: 90 }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const edges = [
+      makeEdge("e1", "root", "out", "char", "in"),
+      makeEdge("e2", "char", "out", "weapon", "in"),
+      makeEdge("e3", "weapon", "out", "target", "in"),
+      makeEdge("e4", "target", "out", "region-1", "out"),
+      makeEdge("e5", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(1);
+    expect(result.members[0].item_id).toBe("node:char+node:weapon+node:target");
+    const team = result.members[0].input.team as Array<Record<string, unknown>>;
+    expect(team[0].character).toBeDefined();
+    expect(team[0].weapon).toBeDefined();
+    const targets = (result.members[0].input.scene as Record<string, unknown>).targets as Array<
+      Record<string, unknown>
+    >;
+    expect(targets[0].level).toBe(90);
+  });
+
+  it("链上枚举与区间按不同路径叉乘", () => {
+    const nodes = [
+      makeNode("root", "root"),
+      makeNode("range", "range", {
+        path: "scene.targets[0].level",
+        start: 1,
+        end: 10,
+        step: 3,
+      }),
+      makeNode("enum", "enum", {
+        path: "run_options.max_frames",
+        value_type: "number",
+        values: [
+          { item_id: "e-1", value: 60, label: null },
+          { item_id: "e-2", value: 120, label: null },
+        ],
+      }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const edges = [
+      makeEdge("e1", "root", "out", "range", "in"),
+      makeEdge("e2", "range", "out", "enum", "in"),
+      makeEdge("e3", "enum", "out", "region-1", "out"),
+      makeEdge("e4", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(8);
+    expect(result.members[0].item_id).toContain("range:");
+    expect(result.members[0].item_id).toContain("e-1");
+    expect(result.members[1].item_id).toContain("e-2");
+  });
+
+  it("链上同路径后写入者覆盖并警告", () => {
+    const nodes = [
+      makeNode("char", "character", { slot: 1, asset: "character:barbara" }),
+      makeNode("enum", "enum", {
+        path: "team[0].character",
+        value_type: "asset",
+        values: [{ item_id: "e-1", value: "character:kaeya", label: null }],
+      }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const edges = [
+      makeEdge("e1", "char", "out", "enum", "in"),
+      makeEdge("e2", "enum", "out", "region-1", "out"),
+      makeEdge("e3", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(1);
+    expect(result.members[0].item_id).toBe("e-1");
+    expect(result.diagnostics.map((item) => item.code)).toContain("PATH_OVERRIDE");
+  });
+
+  it("分支复制上游输出到各分支", () => {
+    const nodes = [
+      makeNode("root", "root"),
+      makeNode("char", "character", { slot: 1, asset: "character:barbara" }),
+      makeNode("target1", "target", { index: 0, level: 90 }),
+      makeNode("target2", "target", { index: 1, level: 80 }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const edges = [
+      makeEdge("e1", "root", "out", "char", "in"),
+      makeEdge("e2", "char", "out", "target1", "in"),
+      makeEdge("e3", "char", "out", "target2", "in"),
+      makeEdge("e4", "target1", "out", "region-1", "out"),
+      makeEdge("e5", "target2", "out", "region-1", "out"),
+      makeEdge("e6", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(1);
+    expect(result.members[0].item_id).toBe("node:char+node:target1+node:target2");
+    const targets = (result.members[0].input.scene as Record<string, unknown>).targets as Array<
+      Record<string, unknown>
+    >;
+    expect(targets[0].level).toBe(90);
+    expect(targets[1].level).toBe(80);
   });
 });

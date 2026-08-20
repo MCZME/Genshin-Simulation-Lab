@@ -23,25 +23,34 @@ import {
   addEdge,
   addNode,
   addRegion,
+  canRedo,
+  canUndo,
+  createEmptyEditorState,
   deleteEdge,
+  deleteSelection,
   deleteNode,
   deleteRegion,
-  moveNode,
+  moveRegionWithChildren,
+  moveNodeWithRegion,
+  moveEdgeIncomingOrder,
+  nudgeSelection,
+  redo,
   renameWorkflow,
+  resizeRegion,
   setNodeParams,
   setSelection,
-  updateRegionRect,
+  undo,
 } from "../state/editor_state";
 import type { EditorSelection, EditorState } from "../state/editor_state";
 import { markSaved } from "../state/editor_state";
 import { createAppState, withCurrentWorkflow, withWorkspace } from "../state/app_state";
 import { definitionToEditorState, editorStateToDefinition } from "../state/converters";
-import { createExampleDefinition } from "../state/example_workflow";
 import { applyRunView, createEmptyRunState, recordMemberMetrics } from "../state/run_state";
 import type { RunState } from "../state/run_state";
 import { compileConfigurationRegion } from "../workflow/compiler";
 import type { CompileResult, Diagnostic, WorkflowDefinition } from "../workflow/types";
 import { validateWorkflow } from "../workflow/validator";
+import { getNodeKindSpec } from "../workflow/registry";
 
 type Tool = "objects" | "problems" | null;
 
@@ -53,6 +62,11 @@ export function App() {
   const [running, setRunning] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<Tool>("objects");
+  const [dragKind, setDragKind] = useState<string | null>(null);
+  const [selectionEpoch, setSelectionEpoch] = useState(0);
+  const [viewportCommand, setViewportCommand] = useState<
+    "zoom-in" | "zoom-out" | "fit" | null
+  >(null);
   const initializedRef = useRef(false);
   const pollControllerRef = useRef<AbortController | null>(null);
 
@@ -63,17 +77,15 @@ export function App() {
 
       const workflowList = await listWorkflows();
       const existing = workflowList.items[0];
-      let workflowId: string;
+      let workflowId: string | null;
       let definition: WorkflowDefinition;
       if (existing !== undefined) {
         workflowId = existing.id;
         const detail = await getWorkflow(workflowId);
         definition = detail.definition as unknown as WorkflowDefinition;
       } else {
-        const created = await createWorkflow("示例工作流");
-        workflowId = created.id;
-        definition = createExampleDefinition();
-        await saveWorkflow(workflowId, definition);
+        workflowId = null;
+        definition = createEmptyEditorState("未命名工作流").definition;
       }
       setEditorState(definitionToEditorState(definition));
       setAppState((current) =>
@@ -122,39 +134,164 @@ export function App() {
     updateEditor((state) => renameWorkflow(state, name));
   }
 
-  function handleAddRegion() {
+  function handleDragStart(kind: string) {
+    setDragKind(kind === "" ? null : kind);
+  }
+
+  function handleDropObject(
+    kind: string,
+    position: { x: number; y: number },
+    regionId: string | null,
+  ) {
+    updateEditor((state) => {
+      if (kind === "region") {
+        const next = addRegion(state, "configuration", "配置区域", {
+          x: position.x,
+          y: position.y,
+          width: 880,
+          height: 440,
+        });
+        const createdRegionId = next.definition.regions[next.definition.regions.length - 1].id;
+        return setSelection(next, { regions: [createdRegionId], nodes: [], edges: [] });
+      }
+      const spec = getNodeKindSpec(kind);
+      if (spec === null) {
+        return state;
+      }
+      const targetRegionId = spec.region === "bridge" ? null : regionId;
+      const next = addNode(state, kind, position, targetRegionId);
+      const createdNodeId = next.definition.nodes[next.definition.nodes.length - 1].id;
+      return setSelection(next, { nodes: [createdNodeId], regions: [], edges: [] });
+    });
+    setDragKind(null);
+  }
+
+  function handleUndo() {
+    if (running) {
+      return;
+    }
+    updateEditor((state) => setSelection(undo(state), { regions: [], nodes: [], edges: [] }));
+    setSelectionEpoch((epoch) => epoch + 1);
+  }
+
+  function handleRedo() {
+    if (running) {
+      return;
+    }
+    updateEditor((state) => setSelection(redo(state), { regions: [], nodes: [], edges: [] }));
+    setSelectionEpoch((epoch) => epoch + 1);
+  }
+
+  function handleMoveEdgeOrder(
+    targetNodeId: string,
+    targetPortId: string,
+    edgeId: string,
+    direction: "up" | "down",
+  ) {
     updateEditor((state) =>
-      addRegion(state, "configuration", "配置区域", {
-        x: 80 + state.definition.regions.length * 24,
-        y: 80 + state.definition.regions.length * 24,
-        width: 880,
-        height: 440,
-      }),
+      moveEdgeIncomingOrder(state, targetNodeId, targetPortId, edgeId, direction),
     );
   }
 
-  function handleAddNode(kind: string) {
-    updateEditor((state) => {
-      const regionId =
-        kind === "simulation"
-          ? null
-          : (state.selection.regions.find((id) =>
-              state.definition.regions.some(
-                (region) => region.id === id && region.kind === "configuration",
-              ),
-            ) ??
-            state.definition.regions.find((region) => region.kind === "configuration")?.id ??
-            null);
-      const offset = (state.definition.nodes.length % 6) * 28;
-      return addNode(state, kind, { x: 120 + offset, y: 120 + offset }, regionId);
-    });
-  }
+  useEffect(() => {
+    function handleKeyDown(event: KeyboardEvent) {
+      const target = event.target as HTMLElement | null;
+      const editable =
+        target !== null &&
+        (target.tagName === "INPUT" ||
+          target.tagName === "TEXTAREA" ||
+          target.tagName === "SELECT" ||
+          target.isContentEditable);
+      const mod = event.ctrlKey || event.metaKey;
+      const key = event.key;
 
-  function handleLoadExample() {
-    setEditorState(definitionToEditorState(createExampleDefinition()));
-    setRunState(createEmptyRunState());
-    setErrorMessage(null);
-  }
+      if (mod && (key === "s" || key === "S")) {
+        event.preventDefault();
+        void handleSave();
+        return;
+      }
+      if (mod && key === "Enter") {
+        event.preventDefault();
+        void handleRun();
+        return;
+      }
+      if (mod && key === "z" && !event.shiftKey) {
+        if (editable) {
+          return;
+        }
+        event.preventDefault();
+        handleUndo();
+        return;
+      }
+      if (
+        (mod && key === "Z") ||
+        (mod && key === "y") ||
+        (mod && key === "Y")
+      ) {
+        if (editable) {
+          return;
+        }
+        event.preventDefault();
+        handleRedo();
+        return;
+      }
+      if (key === "Delete" || key === "Backspace") {
+        if (editable || running || editorState === null) {
+          return;
+        }
+        event.preventDefault();
+        updateEditor((state) => deleteSelection(state));
+        return;
+      }
+      if (key === "Escape") {
+        if (activeTool !== null) {
+          setActiveTool(null);
+          return;
+        }
+        if (
+          editorState !== null &&
+          (editorState.selection.regions.length > 0 ||
+            editorState.selection.nodes.length > 0 ||
+            editorState.selection.edges.length > 0)
+        ) {
+          updateEditor((state) =>
+            setSelection(state, { regions: [], nodes: [], edges: [] }),
+          );
+          setSelectionEpoch((epoch) => epoch + 1);
+        }
+        return;
+      }
+      if (key.startsWith("Arrow")) {
+        if (editable || running || editorState === null) {
+          return;
+        }
+        const step = event.shiftKey ? 10 : 1;
+        const dx =
+          key === "ArrowLeft" ? -step : key === "ArrowRight" ? step : 0;
+        const dy = key === "ArrowUp" ? -step : key === "ArrowDown" ? step : 0;
+        event.preventDefault();
+        updateEditor((state) => nudgeSelection(state, dx, dy));
+        return;
+      }
+      if (mod && (key === "=" || key === "+")) {
+        event.preventDefault();
+        setViewportCommand("zoom-in");
+        return;
+      }
+      if (mod && key === "-") {
+        event.preventDefault();
+        setViewportCommand("zoom-out");
+        return;
+      }
+      if (mod && key === "0") {
+        event.preventDefault();
+        setViewportCommand("fit");
+      }
+    }
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  });
 
   function handleConnect(connection: {
     source_node_id: string;
@@ -194,18 +331,29 @@ export function App() {
   }
 
   async function handleSave() {
-    if (editorState === null || appState.workflowId === null) {
+    if (editorState === null || running) {
       return;
     }
     setSaving(true);
     setErrorMessage(null);
     try {
       const definition = editorStateToDefinition(editorState);
-      await saveWorkflow(appState.workflowId, definition);
+      let workflowId = appState.workflowId;
+      if (workflowId === null) {
+        const created = await createWorkflow(definition.meta.name);
+        workflowId = created.id;
+        setAppState((current) =>
+          withCurrentWorkflow(current, {
+            id: workflowId,
+            name: definition.meta.name,
+          }),
+        );
+      }
+      await saveWorkflow(workflowId, definition);
       setEditorState((current) => (current === null ? current : markSaved(current)));
       setAppState((current) =>
         withCurrentWorkflow(current, {
-          id: appState.workflowId!,
+          id: workflowId,
           name: definition.meta.name,
         }),
       );
@@ -323,6 +471,24 @@ export function App() {
           <aside className="tool-rail">
             <button
               type="button"
+              className="rail-button"
+              title="撤销 (Ctrl+Z)"
+              disabled={editorState === null || !canUndo(editorState) || running}
+              onClick={handleUndo}
+            >
+              ↶
+            </button>
+            <button
+              type="button"
+              className="rail-button"
+              title="重做 (Ctrl+Shift+Z / Ctrl+Y)"
+              disabled={editorState === null || !canRedo(editorState) || running}
+              onClick={handleRedo}
+            >
+              ↷
+            </button>
+            <button
+              type="button"
               className={`rail-button ${activeTool === "objects" ? "active" : ""}`}
               title="画布对象"
               onClick={() => setActiveTool(activeTool === "objects" ? null : "objects")}
@@ -345,9 +511,7 @@ export function App() {
           </aside>
           {activeTool === "objects" && (
             <ObjectPanel
-              onAddNode={handleAddNode}
-              onAddRegion={handleAddRegion}
-              onLoadExample={handleLoadExample}
+              onDragStart={handleDragStart}
             />
           )}
           {activeTool === "problems" && editorState !== null && (
@@ -358,22 +522,20 @@ export function App() {
             {editorState !== null && (
               <CanvasView
                 definition={editorState.definition}
-                onMoveNode={(nodeId, position) =>
-                  updateEditor((state) => moveNode(state, nodeId, position))
+                selection={editorState.selection}
+                diagnostics={diagnostics}
+                dragKind={dragKind}
+                selectionEpoch={selectionEpoch}
+                viewportCommand={viewportCommand}
+                onViewportCommandHandled={() => setViewportCommand(null)}
+                onMoveNode={(nodeId, position, regionId) =>
+                  updateEditor((state) => moveNodeWithRegion(state, nodeId, position, regionId))
                 }
                 onMoveRegion={(regionId, position) =>
-                  updateEditor((state) =>
-                    updateRegionRect(state, regionId, {
-                      x: position.x,
-                      y: position.y,
-                      width:
-                        state.definition.regions.find((region) => region.id === regionId)?.rect
-                          .width ?? 880,
-                      height:
-                        state.definition.regions.find((region) => region.id === regionId)?.rect
-                          .height ?? 440,
-                    }),
-                  )
+                  updateEditor((state) => moveRegionWithChildren(state, regionId, position))
+                }
+                onResizeRegion={(regionId, rect) =>
+                  updateEditor((state) => resizeRegion(state, regionId, rect))
                 }
                 onConnectEdge={handleConnect}
                 onSelect={handleSelect}
@@ -385,6 +547,8 @@ export function App() {
                 onDeleteRegion={(regionId) =>
                   updateEditor((state) => deleteRegion(state, regionId))
                 }
+                onDropObject={handleDropObject}
+                onMoveEdgeOrder={handleMoveEdgeOrder}
               />
             )}
           </main>

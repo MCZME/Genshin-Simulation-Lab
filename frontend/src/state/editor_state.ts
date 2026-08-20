@@ -1,4 +1,4 @@
-import type { WorkflowDefinition, WorkflowRegion } from "../workflow/types";
+import type { Rect, WorkflowDefinition, WorkflowRegion } from "../workflow/types";
 import { createDefaultParams, getNodeKindSpec } from "../workflow/registry";
 
 export interface EditorSelection {
@@ -11,25 +11,33 @@ export interface EditorState {
   definition: WorkflowDefinition;
   selection: EditorSelection;
   dirty: boolean;
+  past: WorkflowDefinition[];
+  future: WorkflowDefinition[];
+  /** 最后保存的完整定义；dirty 由当前定义与它比较派生。 */
+  saved: WorkflowDefinition | null;
 }
 
 export function createEmptyEditorState(name = "未命名工作流"): EditorState {
+  const definition: WorkflowDefinition = {
+    schema_version: 1,
+    meta: { name },
+    regions: [],
+    nodes: [],
+    edges: [],
+    layout: {},
+  };
   return {
-    definition: {
-      schema_version: 1,
-      meta: { name },
-      regions: [],
-      nodes: [],
-      edges: [],
-      layout: {},
-    },
+    definition,
     selection: { regions: [], nodes: [], edges: [] },
     dirty: false,
+    past: [],
+    future: [],
+    saved: clone(definition),
   };
 }
 
 export function renameWorkflow(state: EditorState, name: string): EditorState {
-  return withDefinition(state, {
+  return performEdit(state, {
     ...state.definition,
     meta: { ...state.definition.meta, name },
   });
@@ -43,14 +51,14 @@ export function addRegion(
 ): EditorState {
   const id = nextId("region", state.definition.regions.map((region) => region.id));
   const region: WorkflowRegion = { id, kind, name, rect };
-  return withDefinition(state, {
+  return performEdit(state, {
     ...state.definition,
     regions: [...state.definition.regions, region],
   });
 }
 
 export function renameRegion(state: EditorState, regionId: string, name: string): EditorState {
-  return withDefinition(state, {
+  return performEdit(state, {
     ...state.definition,
     regions: state.definition.regions.map((region) =>
       region.id === regionId ? { ...region, name } : region,
@@ -63,10 +71,53 @@ export function updateRegionRect(
   regionId: string,
   rect: { x: number; y: number; width: number; height: number },
 ): EditorState {
-  return withDefinition(state, {
+  return performEdit(state, {
     ...state.definition,
     regions: state.definition.regions.map((region) =>
       region.id === regionId ? { ...region, rect } : region,
+    ),
+  });
+}
+
+/** 移动区域时同步平移区域内节点的绝对坐标，作为一个原子历史步骤。 */
+export function moveRegionWithChildren(
+  state: EditorState,
+  regionId: string,
+  position: { x: number; y: number },
+): EditorState {
+  const region = state.definition.regions.find((item) => item.id === regionId);
+  if (region === undefined) {
+    return state;
+  }
+  const dx = position.x - region.rect.x;
+  const dy = position.y - region.rect.y;
+  return performEdit(state, {
+    ...state.definition,
+    regions: state.definition.regions.map((item) =>
+      item.id === regionId ? { ...item, rect: { ...item.rect, x: position.x, y: position.y } } : item,
+    ),
+    nodes: state.definition.nodes.map((node) =>
+      node.region_id === regionId
+        ? { ...node, position: { x: node.position.x + dx, y: node.position.y + dy } }
+        : node,
+    ),
+  });
+}
+
+/** 调整区域矩形；内部节点保持绝对位置不变，不做内容缩放。 */
+export function resizeRegion(
+  state: EditorState,
+  regionId: string,
+  rect: Rect,
+): EditorState {
+  const region = state.definition.regions.find((item) => item.id === regionId);
+  if (region === undefined) {
+    return state;
+  }
+  return performEdit(state, {
+    ...state.definition,
+    regions: state.definition.regions.map((item) =>
+      item.id === regionId ? { ...item, rect } : item,
     ),
   });
 }
@@ -82,7 +133,7 @@ export function addNode(
     return state;
   }
   const id = nextId("node", state.definition.nodes.map((node) => node.id));
-  return withDefinition(state, {
+  return performEdit(state, {
     ...state.definition,
     nodes: [
       ...state.definition.nodes,
@@ -96,7 +147,7 @@ export function moveNode(
   nodeId: string,
   position: { x: number; y: number },
 ): EditorState {
-  return withDefinition(state, {
+  return performEdit(state, {
     ...state.definition,
     nodes: state.definition.nodes.map((node) =>
       node.id === nodeId ? { ...node, position } : node,
@@ -104,12 +155,37 @@ export function moveNode(
   });
 }
 
+/** 拖动节点时同时更新位置与区域归属；移出区域成为草稿时断开关联连线。 */
+export function moveNodeWithRegion(
+  state: EditorState,
+  nodeId: string,
+  position: { x: number; y: number },
+  regionId: string | null,
+): EditorState {
+  const next = performEdit(state, {
+    ...state.definition,
+    nodes: state.definition.nodes.map((node) =>
+      node.id === nodeId ? { ...node, position, region_id: regionId } : node,
+    ),
+    edges:
+      regionId === null
+        ? state.definition.edges.filter(
+            (edge) => edge.source_node_id !== nodeId && edge.target_node_id !== nodeId,
+          )
+        : state.definition.edges,
+  });
+  return {
+    ...next,
+    selection: pruneSelection(state.selection, next.definition),
+  };
+}
+
 export function setNodeRegion(
   state: EditorState,
   nodeId: string,
   regionId: string | null,
 ): EditorState {
-  return withDefinition(state, {
+  return performEdit(state, {
     ...state.definition,
     nodes: state.definition.nodes.map((node) =>
       node.id === nodeId ? { ...node, region_id: regionId } : node,
@@ -122,7 +198,7 @@ export function setNodeParams(
   nodeId: string,
   params: Record<string, unknown>,
 ): EditorState {
-  return withDefinition(state, {
+  return performEdit(state, {
     ...state.definition,
     nodes: state.definition.nodes.map((node) =>
       node.id === nodeId ? { ...node, params } : node,
@@ -131,7 +207,7 @@ export function setNodeParams(
 }
 
 export function deleteNode(state: EditorState, nodeId: string): EditorState {
-  const next = withDefinition(state, {
+  const next = performEdit(state, {
     ...state.definition,
     nodes: state.definition.nodes.filter((node) => node.id !== nodeId),
     edges: state.definition.edges.filter(
@@ -151,7 +227,7 @@ export function deleteNode(state: EditorState, nodeId: string): EditorState {
 }
 
 export function deleteRegion(state: EditorState, regionId: string): EditorState {
-  const next = withDefinition(state, {
+  const next = performEdit(state, {
     ...state.definition,
     regions: state.definition.regions.filter((region) => region.id !== regionId),
     nodes: state.definition.nodes.map((node) =>
@@ -190,14 +266,14 @@ export function addEdge(
     return state;
   }
   const id = nextId("edge", state.definition.edges.map((edge) => edge.id));
-  return withDefinition(state, {
+  return performEdit(state, {
     ...state.definition,
     edges: [...state.definition.edges, { id, ...connection }],
   });
 }
 
 export function deleteEdge(state: EditorState, edgeId: string): EditorState {
-  const next = withDefinition(state, {
+  const next = performEdit(state, {
     ...state.definition,
     edges: state.definition.edges.filter((edge) => edge.id !== edgeId),
   });
@@ -210,6 +286,59 @@ export function deleteEdge(state: EditorState, edgeId: string): EditorState {
   };
 }
 
+/** 删除当前选中的区域、节点与连线，作为一个原子撤销步骤。 */
+export function deleteSelection(state: EditorState): EditorState {
+  const { regions, nodes, edges } = state.selection;
+  if (regions.length + nodes.length + edges.length === 0) {
+    return state;
+  }
+  const regionSet = new Set(regions);
+  const nodeSet = new Set(nodes);
+  const edgeSet = new Set(edges);
+  const definition: WorkflowDefinition = {
+    ...state.definition,
+    regions: state.definition.regions.filter((region) => !regionSet.has(region.id)),
+    nodes: state.definition.nodes
+      .filter((node) => !nodeSet.has(node.id))
+      .map((node) =>
+        regionSet.has(node.region_id ?? "") ? { ...node, region_id: null } : node,
+      ),
+    edges: state.definition.edges.filter(
+      (edge) =>
+        !edgeSet.has(edge.id) &&
+        !nodeSet.has(edge.source_node_id) &&
+        !nodeSet.has(edge.target_node_id) &&
+        !regionSet.has(edge.source_node_id) &&
+        !regionSet.has(edge.target_node_id),
+    ),
+  };
+  const next = performEdit(state, definition);
+  return {
+    ...next,
+    selection: pruneSelection(state.selection, next.definition),
+  };
+}
+
+/** 方向键微移选中的节点，作为一个原子撤销步骤。 */
+export function nudgeSelection(
+  state: EditorState,
+  dx: number,
+  dy: number,
+): EditorState {
+  const selected = new Set(state.selection.nodes);
+  if (selected.size === 0) {
+    return state;
+  }
+  return performEdit(state, {
+    ...state.definition,
+    nodes: state.definition.nodes.map((node) =>
+      selected.has(node.id)
+        ? { ...node, position: { x: node.position.x + dx, y: node.position.y + dy } }
+        : node,
+    ),
+  });
+}
+
 export function setSelection(
   state: EditorState,
   selection: Partial<EditorSelection>,
@@ -218,11 +347,105 @@ export function setSelection(
 }
 
 export function markSaved(state: EditorState): EditorState {
-  return { ...state, dirty: false };
+  return { ...state, saved: clone(state.definition), dirty: false };
 }
 
-function withDefinition(state: EditorState, definition: WorkflowDefinition): EditorState {
-  return { ...state, definition, dirty: true };
+export function undo(state: EditorState): EditorState {
+  if (state.past.length === 0) {
+    return state;
+  }
+  const previous = state.past[state.past.length - 1];
+  return {
+    ...state,
+    definition: previous,
+    past: state.past.slice(0, -1),
+    future: [state.definition, ...state.future],
+    selection: pruneSelection(state.selection, previous),
+    dirty: state.saved === null || !sameDefinition(previous, state.saved),
+  };
+}
+
+export function redo(state: EditorState): EditorState {
+  if (state.future.length === 0) {
+    return state;
+  }
+  const next = state.future[0];
+  return {
+    ...state,
+    definition: next,
+    past: [...state.past, state.definition],
+    future: state.future.slice(1),
+    selection: pruneSelection(state.selection, next),
+    dirty: state.saved === null || !sameDefinition(next, state.saved),
+  };
+}
+
+export function canUndo(state: EditorState): boolean {
+  return state.past.length > 0;
+}
+
+export function canRedo(state: EditorState): boolean {
+  return state.future.length > 0;
+}
+
+/** 在同一输入端口组内上移/下移一条连线；连线数组顺序即生效顺序。 */
+export function moveEdgeIncomingOrder(
+  state: EditorState,
+  targetNodeId: string,
+  targetPortId: string,
+  edgeId: string,
+  direction: "up" | "down",
+): EditorState {
+  const edges = state.definition.edges;
+  const group = edges.filter(
+    (edge) => edge.target_node_id === targetNodeId && edge.target_port_id === targetPortId,
+  );
+  const groupIds = group.map((edge) => edge.id);
+  const groupIndex = groupIds.indexOf(edgeId);
+  if (groupIndex < 0) {
+    return state;
+  }
+  const swapIndex = groupIndex + (direction === "up" ? -1 : 1);
+  if (swapIndex < 0 || swapIndex >= group.length) {
+    return state;
+  }
+  const from = edges.indexOf(group[groupIndex]);
+  const to = edges.indexOf(group[swapIndex]);
+  const next = [...edges];
+  [next[from], next[to]] = [next[to], next[from]];
+  return performEdit(state, { ...state.definition, edges: next });
+}
+
+function performEdit(state: EditorState, definition: WorkflowDefinition): EditorState {
+  return {
+    ...state,
+    past: [...state.past, state.definition],
+    future: [],
+    definition,
+    dirty: state.saved === null || !sameDefinition(definition, state.saved),
+  };
+}
+
+function pruneSelection(
+  selection: EditorSelection,
+  definition: WorkflowDefinition,
+): EditorSelection {
+  const regionIds = new Set(definition.regions.map((region) => region.id));
+  const nodeIds = new Set(definition.nodes.map((node) => node.id));
+  const edgeIds = new Set(definition.edges.map((edge) => edge.id));
+  return {
+    regions: selection.regions.filter((id) => regionIds.has(id)),
+    nodes: selection.nodes.filter((id) => nodeIds.has(id)),
+    edges: selection.edges.filter((id) => edgeIds.has(id)),
+  };
+}
+
+function sameDefinition(left: WorkflowDefinition, right: WorkflowDefinition): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function clone<T>(value: T): T {
+  return structuredClone(value);
 }
 
 function nextId(prefix: string, existing: string[]): string {

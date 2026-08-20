@@ -3,17 +3,27 @@ import {
   addEdge,
   addNode,
   addRegion,
+  canRedo,
+  canUndo,
   createEmptyEditorState,
   deleteEdge,
   deleteNode,
   deleteRegion,
+  deleteSelection,
   markSaved,
+  moveRegionWithChildren,
+  moveNodeWithRegion,
   moveNode,
+  moveEdgeIncomingOrder,
+  nudgeSelection,
+  redo,
   renameRegion,
   renameWorkflow,
+  resizeRegion,
   setNodeParams,
   setNodeRegion,
   setSelection,
+  undo,
   updateRegionRect,
 } from "./editor_state";
 
@@ -71,7 +81,7 @@ describe("editor state mutations", () => {
       source_node_id: "node-1",
       source_port_id: "out",
       target_node_id: "region-1",
-      target_port_id: "in",
+      target_port_id: "out",
     };
     state = addEdge(state, connection);
     state = addEdge(state, connection);
@@ -88,7 +98,7 @@ describe("editor state mutations", () => {
       source_node_id: "node-1",
       source_port_id: "out",
       target_node_id: "region-1",
-      target_port_id: "in",
+      target_port_id: "out",
     });
     state = addEdge(state, {
       source_node_id: "region-1",
@@ -114,7 +124,7 @@ describe("editor state mutations", () => {
       source_node_id: "node-1",
       source_port_id: "out",
       target_node_id: "region-1",
-      target_port_id: "in",
+      target_port_id: "out",
     });
 
     state = deleteRegion(state, "region-1");
@@ -144,5 +154,221 @@ describe("editor state mutations", () => {
 
     state = markSaved(state);
     expect(state.dirty).toBe(false);
+  });
+
+  it("移动区域时同步平移区域内节点", () => {
+    let state = createEmptyEditorState();
+    state = addRegion(state, "configuration", "主配置", {
+      x: 0,
+      y: 0,
+      width: 800,
+      height: 600,
+    });
+    state = addNode(state, "character", { x: 40, y: 60 }, "region-1");
+    state = addNode(state, "simulation", { x: 200, y: 300 }, null);
+
+    state = moveRegionWithChildren(state, "region-1", { x: 100, y: 50 });
+    expect(state.definition.regions[0].rect).toEqual({
+      x: 100,
+      y: 50,
+      width: 800,
+      height: 600,
+    });
+    expect(state.definition.nodes[0].position).toEqual({ x: 140, y: 110 });
+    expect(state.definition.nodes[1].position).toEqual({ x: 200, y: 300 });
+  });
+
+  it("调整区域尺寸不移动内部节点", () => {
+    let state = createEmptyEditorState();
+    state = addRegion(state, "configuration", "主配置", {
+      x: 0,
+      y: 0,
+      width: 800,
+      height: 600,
+    });
+    state = addNode(state, "character", { x: 40, y: 60 }, "region-1");
+    state = resizeRegion(state, "region-1", { x: 0, y: 0, width: 1000, height: 700 });
+    expect(state.definition.regions[0].rect).toEqual({
+      x: 0,
+      y: 0,
+      width: 1000,
+      height: 700,
+    });
+    expect(state.definition.nodes[0].position).toEqual({ x: 40, y: 60 });
+  });
+});
+
+describe("undo / redo", () => {
+  it("语义编辑进入历史并可撤销重做", () => {
+    let state = createEmptyEditorState();
+    state = addRegion(state, "configuration", "主配置", {
+      x: 0,
+      y: 0,
+      width: 800,
+      height: 600,
+    });
+    expect(canUndo(state)).toBe(true);
+    state = undo(state);
+    expect(state.definition.regions).toEqual([]);
+    expect(canRedo(state)).toBe(true);
+    state = redo(state);
+    expect(state.definition.regions).toHaveLength(1);
+    expect(state.past).toHaveLength(1);
+  });
+
+  it("撤销到与最后保存一致时未保存标记消失", () => {
+    let state = createEmptyEditorState();
+    state = addRegion(state, "configuration", "主配置", {
+      x: 0,
+      y: 0,
+      width: 800,
+      height: 600,
+    });
+    state = markSaved(state);
+    state = addNode(state, "character", { x: 10, y: 10 }, "region-1");
+    expect(state.dirty).toBe(true);
+    state = undo(state);
+    expect(state.dirty).toBe(false);
+    state = redo(state);
+    expect(state.dirty).toBe(true);
+  });
+
+  it("选择变化不进入历史", () => {
+    let state = createEmptyEditorState();
+    state = addRegion(state, "configuration", "主配置", {
+      x: 0,
+      y: 0,
+      width: 800,
+      height: 600,
+    });
+    const pastCount = state.past.length;
+    state = setSelection(state, { regions: ["region-1"], nodes: [], edges: [] });
+    expect(state.past.length).toBe(pastCount);
+    state = undo(state);
+    expect(state.definition.regions).toEqual([]);
+    expect(state.past).toHaveLength(0);
+  });
+});
+
+describe("批量删除与微移", () => {
+  function makeSmallWorkflow() {
+    let state = createEmptyEditorState();
+    state = addRegion(state, "configuration", "主配置", {
+      x: 0,
+      y: 0,
+      width: 800,
+      height: 600,
+    });
+    state = addNode(state, "character", { x: 0, y: 0 }, "region-1");
+    state = addNode(state, "simulation", { x: 0, y: 0 }, null);
+    state = addEdge(state, {
+      source_node_id: "node-1",
+      source_port_id: "out",
+      target_node_id: "region-1",
+      target_port_id: "out",
+    });
+    state = addEdge(state, {
+      source_node_id: "region-1",
+      source_port_id: "out",
+      target_node_id: "node-2",
+      target_port_id: "in",
+    });
+    return state;
+  }
+
+  it("多选删除节点与连线作为一个原子历史步骤", () => {
+    let state = makeSmallWorkflow();
+    state = setSelection(state, {
+      nodes: ["node-1", "node-2"],
+      regions: [],
+      edges: [],
+    });
+    const pastCount = state.past.length;
+    state = deleteSelection(state);
+    expect(state.definition.nodes).toEqual([]);
+    expect(state.definition.edges).toEqual([]);
+    expect(state.past.length).toBe(pastCount + 1);
+    state = undo(state);
+    expect(state.definition.nodes).toHaveLength(2);
+    expect(state.definition.edges).toHaveLength(2);
+  });
+
+  it("方向键微移所有选中节点", () => {
+    let state = createEmptyEditorState();
+    state = addRegion(state, "configuration", "主配置", {
+      x: 0,
+      y: 0,
+      width: 800,
+      height: 600,
+    });
+    state = addNode(state, "character", { x: 10, y: 20 }, "region-1");
+    state = addNode(state, "target", { x: 30, y: 40 }, "region-1");
+    state = setSelection(state, { nodes: ["node-1", "node-2"], regions: [], edges: [] });
+    state = nudgeSelection(state, 10, 0);
+    expect(state.definition.nodes[0].position).toEqual({ x: 20, y: 20 });
+    expect(state.definition.nodes[1].position).toEqual({ x: 40, y: 40 });
+    expect(state.past).toHaveLength(4);
+  });
+
+  it("拖动节点离开区域转为草稿并断开连线，拖回区域恢复归属", () => {
+    let state = createEmptyEditorState();
+    state = addRegion(state, "configuration", "主配置", {
+      x: 0,
+      y: 0,
+      width: 800,
+      height: 600,
+    });
+    state = addNode(state, "character", { x: 0, y: 0 }, "region-1");
+    state = addEdge(state, {
+      source_node_id: "node-1",
+      source_port_id: "out",
+      target_node_id: "region-1",
+      target_port_id: "out",
+    });
+
+    state = moveNodeWithRegion(state, "node-1", { x: 900, y: 900 }, null);
+    expect(state.definition.nodes[0].region_id).toBeNull();
+    expect(state.definition.nodes[0].position).toEqual({ x: 900, y: 900 });
+    expect(state.definition.edges).toEqual([]);
+
+    state = moveNodeWithRegion(state, "node-1", { x: 10, y: 10 }, "region-1");
+    expect(state.definition.nodes[0].region_id).toBe("region-1");
+  });
+});
+
+describe("入线顺序", () => {
+  it("同一输入端口内上移/下移并遵守边界", () => {
+    let state = createEmptyEditorState();
+    state = addRegion(state, "configuration", "主配置", {
+      x: 0,
+      y: 0,
+      width: 800,
+      height: 600,
+    });
+    state = addNode(state, "character", { x: 0, y: 0 }, "region-1");
+    state = addNode(state, "target", { x: 0, y: 0 }, "region-1");
+    state = addNode(state, "simulation", { x: 0, y: 0 }, null);
+    state = addEdge(state, {
+      source_node_id: "node-1",
+      source_port_id: "out",
+      target_node_id: "region-1",
+      target_port_id: "out",
+    });
+    state = addEdge(state, {
+      source_node_id: "node-2",
+      source_port_id: "out",
+      target_node_id: "region-1",
+      target_port_id: "out",
+    });
+    expect(state.definition.edges.map((edge) => edge.id)).toEqual(["edge-1", "edge-2"]);
+
+    state = moveEdgeIncomingOrder(state, "region-1", "out", "edge-2", "up");
+    expect(state.definition.edges.map((edge) => edge.id)).toEqual(["edge-2", "edge-1"]);
+
+    const unchanged = moveEdgeIncomingOrder(state, "region-1", "out", "edge-2", "up");
+    expect(unchanged.definition.edges.map((edge) => edge.id)).toEqual(["edge-2", "edge-1"]);
+
+    state = moveEdgeIncomingOrder(state, "region-1", "out", "edge-1", "down");
+    expect(state.definition.edges.map((edge) => edge.id)).toEqual(["edge-2", "edge-1"]);
   });
 });

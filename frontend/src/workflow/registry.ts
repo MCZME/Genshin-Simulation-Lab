@@ -55,8 +55,12 @@ export interface FragmentSource {
   value: unknown;
 }
 
-function fragmentPort(id: string, cardinality: PortCardinality): PortSpec {
-  return { id, cardinality, dataLanguage: "fragment", connectionLimit: 1 };
+function fragmentPort(
+  id: string,
+  cardinality: PortCardinality,
+  connectionLimit = 1,
+): PortSpec {
+  return { id, cardinality, dataLanguage: "fragment", connectionLimit };
 }
 
 export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
@@ -64,21 +68,27 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     kind: "root",
     displayName: "根节点",
     region: "configuration",
-    ports: { inputs: [], outputs: [fragmentPort("out", "single")] },
+    ports: { inputs: [], outputs: [fragmentPort("out", "single", Number.POSITIVE_INFINITY)] },
     paramFields: { file_path: { type: "string" } },
   },
   meta: {
     kind: "meta",
     displayName: "元信息",
     region: "configuration",
-    ports: { inputs: [], outputs: [fragmentPort("out", "single")] },
+    ports: {
+      inputs: [fragmentPort("in", "single")],
+      outputs: [fragmentPort("out", "single", Number.POSITIVE_INFINITY)],
+    },
     paramFields: {},
   },
   character: {
     kind: "character",
     displayName: "角色",
     region: "configuration",
-    ports: { inputs: [], outputs: [fragmentPort("out", "single")] },
+    ports: {
+      inputs: [fragmentPort("in", "single")],
+      outputs: [fragmentPort("out", "single", Number.POSITIVE_INFINITY)],
+    },
     paramFields: {
       slot: { type: "integer", required: true },
       asset: { type: "asset_ref", required: true, assetType: "characters" },
@@ -91,7 +101,10 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     kind: "weapon",
     displayName: "武器",
     region: "configuration",
-    ports: { inputs: [], outputs: [fragmentPort("out", "single")] },
+    ports: {
+      inputs: [fragmentPort("in", "single")],
+      outputs: [fragmentPort("out", "single", Number.POSITIVE_INFINITY)],
+    },
     paramFields: {
       slot: { type: "integer", required: true },
       asset: { type: "asset_ref", required: true, assetType: "weapons" },
@@ -103,7 +116,10 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     kind: "artifact",
     displayName: "圣遗物",
     region: "configuration",
-    ports: { inputs: [], outputs: [fragmentPort("out", "single")] },
+    ports: {
+      inputs: [fragmentPort("in", "single")],
+      outputs: [fragmentPort("out", "single", Number.POSITIVE_INFINITY)],
+    },
     paramFields: {
       slot: { type: "integer", required: true },
       asset: { type: "asset_ref", required: true, assetType: "artifact-sets" },
@@ -114,7 +130,10 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     kind: "target",
     displayName: "目标",
     region: "configuration",
-    ports: { inputs: [], outputs: [fragmentPort("out", "single")] },
+    ports: {
+      inputs: [fragmentPort("in", "single")],
+      outputs: [fragmentPort("out", "single", Number.POSITIVE_INFINITY)],
+    },
     paramFields: {
       index: { type: "integer", required: true },
       id: { type: "string" },
@@ -125,21 +144,30 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     kind: "input_trace",
     displayName: "按键轨迹",
     region: "configuration",
-    ports: { inputs: [], outputs: [fragmentPort("out", "single")] },
+    ports: {
+      inputs: [fragmentPort("in", "single")],
+      outputs: [fragmentPort("out", "single", Number.POSITIVE_INFINITY)],
+    },
     paramFields: { items: { type: "list", required: true } },
   },
   run_options: {
     kind: "run_options",
     displayName: "运行选项",
     region: "configuration",
-    ports: { inputs: [], outputs: [fragmentPort("out", "single")] },
+    ports: {
+      inputs: [fragmentPort("in", "single")],
+      outputs: [fragmentPort("out", "single", Number.POSITIVE_INFINITY)],
+    },
     paramFields: { max_frames: { type: "integer", default: 18000 } },
   },
   enum: {
     kind: "enum",
     displayName: "枚举",
     region: "configuration",
-    ports: { inputs: [], outputs: [fragmentPort("out", "group")] },
+    ports: {
+      inputs: [fragmentPort("in", "single")],
+      outputs: [fragmentPort("out", "group", Number.POSITIVE_INFINITY)],
+    },
     paramFields: {
       path: { type: "string", required: true },
       value_type: { type: "string", required: true },
@@ -150,7 +178,10 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     kind: "range",
     displayName: "区间",
     region: "configuration",
-    ports: { inputs: [], outputs: [fragmentPort("out", "group")] },
+    ports: {
+      inputs: [fragmentPort("in", "single")],
+      outputs: [fragmentPort("out", "group", Number.POSITIVE_INFINITY)],
+    },
     paramFields: {
       path: { type: "string", required: true },
       start: { type: "number", required: true },
@@ -169,7 +200,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
           id: "in",
           cardinality: "single",
           dataLanguage: "input_document",
-          connectionLimit: 1,
+          connectionLimit: Number.POSITIVE_INFINITY,
         },
       ],
       outputs: [
@@ -228,13 +259,14 @@ export function singleFragment(
   definition: WorkflowDefinition,
 ): FragmentSource | null {
   const params = node.params;
+  const customPath = asString(params.path);
   switch (node.kind) {
     case "root":
       return null;
     case "meta":
       return {
         item_id: `node:${node.id}`,
-        path: "meta",
+        path: customPath ?? "meta",
         value: { name: definition.meta.name, description: "" },
       };
     case "character": {
@@ -245,7 +277,7 @@ export function singleFragment(
       }
       return {
         item_id: `node:${node.id}`,
-        path: `team[${slot - 1}].${node.kind}`,
+        path: customPath ?? `team[${slot - 1}].${node.kind}`,
         value: {
           asset_key: asset,
           level: asInteger(params.level) ?? 90,
@@ -264,7 +296,7 @@ export function singleFragment(
       }
       return {
         item_id: `node:${node.id}`,
-        path: `team[${slot - 1}].weapon`,
+        path: customPath ?? `team[${slot - 1}].weapon`,
         value: {
           asset_key: asset,
           level: asInteger(params.level) ?? 90,
@@ -280,7 +312,7 @@ export function singleFragment(
       }
       return {
         item_id: `node:${node.id}`,
-        path: `team[${slot - 1}].artifacts`,
+        path: customPath ?? `team[${slot - 1}].artifacts`,
         value: {
           sets: [{ asset_key: asset, pieces: asInteger(params.pieces) ?? 4 }],
           stats: {},
@@ -291,7 +323,7 @@ export function singleFragment(
       const index = asInteger(params.index) ?? 0;
       return {
         item_id: `node:${node.id}`,
-        path: `scene.targets[${index}]`,
+        path: customPath ?? `scene.targets[${index}]`,
         value: {
           id: asString(params.id) ?? `target_${index}`,
           level: asInteger(params.level) ?? 90,
@@ -303,13 +335,13 @@ export function singleFragment(
     case "input_trace":
       return {
         item_id: `node:${node.id}`,
-        path: "input_trace",
+        path: customPath ?? "input_trace",
         value: Array.isArray(params.items) ? params.items : [],
       };
     case "run_options":
       return {
         item_id: `node:${node.id}`,
-        path: "run_options",
+        path: customPath ?? "run_options",
         value: { max_frames: asInteger(params.max_frames) ?? 18000 },
       };
     case "enum":
@@ -385,8 +417,10 @@ export function validateNode(node: WorkflowNode): Diagnostic[] {
       break;
     }
     case "meta":
+      checkCustomPath(node, diagnostics);
       break;
     case "character":
+      checkCustomPath(node, diagnostics);
       if (!isPositiveInteger(params.slot)) {
         diagnostics.push(paramError(node, "slot", "槽位必须是 >= 1 的整数"));
       }
@@ -404,6 +438,7 @@ export function validateNode(node: WorkflowNode): Diagnostic[] {
       }
       break;
     case "weapon": {
+      checkCustomPath(node, diagnostics);
       if (!isPositiveInteger(params.slot)) {
         diagnostics.push(paramError(node, "slot", "槽位必须是 >= 1 的整数"));
       }
@@ -419,6 +454,7 @@ export function validateNode(node: WorkflowNode): Diagnostic[] {
       break;
     }
     case "artifact": {
+      checkCustomPath(node, diagnostics);
       if (!isPositiveInteger(params.slot)) {
         diagnostics.push(paramError(node, "slot", "槽位必须是 >= 1 的整数"));
       }
@@ -431,6 +467,7 @@ export function validateNode(node: WorkflowNode): Diagnostic[] {
       break;
     }
     case "target": {
+      checkCustomPath(node, diagnostics);
       if (!isNonNegativeInteger(params.index)) {
         diagnostics.push(paramError(node, "index", "目标索引必须是 >= 0 的整数"));
       }
@@ -443,12 +480,14 @@ export function validateNode(node: WorkflowNode): Diagnostic[] {
       break;
     }
     case "input_trace": {
+      checkCustomPath(node, diagnostics);
       if (!Array.isArray(params.items)) {
         diagnostics.push(paramError(node, "items", "items 必须是数组"));
       }
       break;
     }
     case "run_options": {
+      checkCustomPath(node, diagnostics);
       if (params.max_frames !== undefined && !isPositiveInteger(params.max_frames)) {
         diagnostics.push(paramError(node, "max_frames", "max_frames 必须是 >= 1 的整数"));
       }
@@ -521,6 +560,18 @@ export function validateNode(node: WorkflowNode): Diagnostic[] {
   }
 
   return diagnostics;
+}
+
+function checkCustomPath(node: WorkflowNode, diagnostics: Diagnostic[]): void {
+  const path = node.params.path;
+  if (typeof path !== "string" || path.trim() === "") {
+    return;
+  }
+  try {
+    parsePath(path);
+  } catch {
+    diagnostics.push(paramError(node, "path", "路径语法错误"));
+  }
 }
 
 function paramError(node: WorkflowNode, path: string, message: string): Diagnostic {

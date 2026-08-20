@@ -2,9 +2,13 @@ export const WORKFLOW_SCHEMA_VERSION = 1;
 
 export const MAX_BATCH_MEMBERS = 200;
 
-/** 区域边界端口是区域的一部分，不作为独立节点；使用保留端口 id 参与连线。 */
-export const REGION_BOUNDARY_IN_PORT = "in";
+/**
+ * 区域边界端口是区域的一部分，不作为独立节点。
+ * 配置区域只有边界输出：`out` 同时作为区域内节点链的汇入目标和连接模拟桥的输出源；
+ * 分析区域只有边界输入：`in` 作为模拟桥结果的接收目标（MVP 之后实现）。
+ */
 export const REGION_BOUNDARY_OUT_PORT = "out";
+export const REGION_BOUNDARY_IN_PORT = "in";
 
 export type RegionKind = "configuration" | "analysis";
 

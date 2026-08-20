@@ -27,7 +27,7 @@ export function withWorkspace(
 
 export function withCurrentWorkflow(
   state: AppState,
-  workflow: { id: string; name: string },
+  workflow: { id: string | null; name: string },
 ): AppState {
   return {
     ...state,

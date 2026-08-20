@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import {
   Background,
   BackgroundVariant,
@@ -19,9 +19,13 @@ import type {
   OnNodesDelete,
   OnNodeDrag,
   OnSelectionChangeParams,
+  ReactFlowInstance,
 } from "@xyflow/react";
 import type { EditorSelection } from "../../state/editor_state";
-import type { WorkflowDefinition } from "../../workflow/types";
+import { getNodeKindSpec, groupFragments, singleFragment } from "../../workflow/registry";
+import type { Diagnostic, WorkflowDefinition, WorkflowNode } from "../../workflow/types";
+import type { IncomingOrderGroup } from "./InputOrderPopover";
+import { nodeKindColor } from "../nodes/registry";
 import { NodeCard } from "./NodeCard";
 import type { WorkflowNodeData } from "./NodeCard";
 import { RegionNode } from "./RegionNode";
@@ -29,8 +33,22 @@ import type { RegionNodeData } from "./RegionNode";
 
 export interface CanvasViewProps {
   definition: WorkflowDefinition;
-  onMoveNode: (nodeId: string, position: { x: number; y: number }) => void;
+  selection: EditorSelection;
+  diagnostics: Diagnostic[];
+  dragKind: string | null;
+  selectionEpoch: number;
+  viewportCommand: "zoom-in" | "zoom-out" | "fit" | null;
+  onViewportCommandHandled: () => void;
+  onMoveNode: (
+    nodeId: string,
+    position: { x: number; y: number },
+    regionId: string | null,
+  ) => void;
   onMoveRegion: (regionId: string, position: { x: number; y: number }) => void;
+  onResizeRegion: (
+    regionId: string,
+    rect: { x: number; y: number; width: number; height: number },
+  ) => void;
   onConnectEdge: (connection: {
     source_node_id: string;
     source_port_id: string;
@@ -42,6 +60,39 @@ export interface CanvasViewProps {
   onDeleteNode: (nodeId: string) => void;
   onDeleteEdge: (edgeId: string) => void;
   onDeleteRegion: (regionId: string) => void;
+  onDropObject: (
+    kind: string,
+    position: { x: number; y: number },
+    regionId: string | null,
+  ) => void;
+  onMoveEdgeOrder: (
+    targetNodeId: string,
+    targetPortId: string,
+    edgeId: string,
+    direction: "up" | "down",
+  ) => void;
+}
+
+interface DragPreview {
+  kind: string;
+  x: number;
+  y: number;
+  regionId: string | null;
+}
+
+interface CallbackSnapshot {
+  definition: WorkflowDefinition;
+  onViewportCommandHandled: CanvasViewProps["onViewportCommandHandled"];
+  onMoveNode: CanvasViewProps["onMoveNode"];
+  onMoveRegion: CanvasViewProps["onMoveRegion"];
+  onResizeRegion: CanvasViewProps["onResizeRegion"];
+  onConnectEdge: CanvasViewProps["onConnectEdge"];
+  onSelect: CanvasViewProps["onSelect"];
+  onParamsChange: CanvasViewProps["onParamsChange"];
+  onDeleteNode: CanvasViewProps["onDeleteNode"];
+  onDeleteEdge: CanvasViewProps["onDeleteEdge"];
+  onDeleteRegion: CanvasViewProps["onDeleteRegion"];
+  onMoveEdgeOrder: CanvasViewProps["onMoveEdgeOrder"];
 }
 
 const nodeTypes: NodeTypes = {
@@ -51,69 +102,180 @@ const nodeTypes: NodeTypes = {
 
 export function CanvasView({
   definition,
+  selection,
+  diagnostics,
+  dragKind,
+  selectionEpoch,
+  viewportCommand,
+  onViewportCommandHandled,
   onMoveNode,
   onMoveRegion,
+  onResizeRegion,
   onConnectEdge,
   onSelect,
   onParamsChange,
   onDeleteNode,
   onDeleteEdge,
   onDeleteRegion,
+  onDropObject,
+  onMoveEdgeOrder,
 }: CanvasViewProps) {
-  const callbacksRef = useRef({
+  const latestRef = useRef<CallbackSnapshot>({
+    definition,
+    onViewportCommandHandled,
     onMoveNode,
     onMoveRegion,
+    onResizeRegion,
     onConnectEdge,
+    onSelect,
     onParamsChange,
     onDeleteNode,
+    onDeleteEdge,
+    onDeleteRegion,
+    onMoveEdgeOrder,
   });
   useEffect(() => {
-    callbacksRef.current = {
+    latestRef.current = {
+      definition,
+      onViewportCommandHandled,
       onMoveNode,
       onMoveRegion,
+      onResizeRegion,
       onConnectEdge,
+      onSelect,
       onParamsChange,
       onDeleteNode,
+      onDeleteEdge,
+      onDeleteRegion,
+      onMoveEdgeOrder,
     };
   });
 
+  const rfRef = useRef<ReactFlowInstance | null>(null);
   const [nodes, setNodes, onNodesChange] = useNodesState<Node>([]);
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  const [preview, setPreview] = useState<DragPreview | null>(null);
+  const [highlightRegionId, setHighlightRegionId] = useState<string | null>(null);
+
+  const visiblePreview = dragKind === null ? null : preview;
+  const visibleHighlight = dragKind === null ? null : highlightRegionId;
 
   useEffect(() => {
-    setNodes(buildNodes(definition, callbacksRef.current));
+    setNodes((current) =>
+      mergeNodeState(
+        buildNodes(definition, diagnostics, visibleHighlight, latestRef.current),
+        current,
+      ),
+    );
     setEdges(buildEdges(definition));
-  }, [definition, setNodes, setEdges]);
+  }, [definition, diagnostics, visibleHighlight, setNodes, setEdges]);
 
-  function handleNodeDragStop(_: unknown, node: Node) {
-    if (node.type === "region") {
-      onMoveRegion(node.id, { x: node.position.x, y: node.position.y });
+  useEffect(() => {
+    setNodes((current) => {
+      const next = current.map((node) => {
+        const selected =
+          selection.regions.includes(node.id) || selection.nodes.includes(node.id);
+        return node.selected === selected ? node : { ...node, selected };
+      });
+      return next.some((node, index) => node !== current[index]) ? next : current;
+    });
+    setEdges((current) => {
+      const next = current.map((edge) => {
+        const selected = selection.edges.includes(edge.id);
+        return edge.selected === selected ? edge : { ...edge, selected };
+      });
+      return next.some((edge, index) => edge !== current[index]) ? next : current;
+    });
+  }, [selection, setNodes, setEdges]);
+
+  useEffect(() => {
+    if (selectionEpoch === 0) {
       return;
     }
-    onMoveNode(node.id, { x: node.position.x, y: node.position.y });
-  }
+    setNodes((current) => {
+      if (!current.some((node) => node.selected)) {
+        return current;
+      }
+      return current.map((node) => ({ ...node, selected: false }));
+    });
+    setEdges((current) => {
+      if (!current.some((edge) => edge.selected)) {
+        return current;
+      }
+      return current.map((edge) => ({ ...edge, selected: false }));
+    });
+  }, [selectionEpoch, setNodes, setEdges]);
 
-  const handleConnect: OnConnect = (connection: Connection) => {
+  useEffect(() => {
+    if (viewportCommand === null) {
+      return;
+    }
+    const instance = rfRef.current;
+    if (instance === null) {
+      return;
+    }
+    if (viewportCommand === "zoom-in") {
+      instance.zoomIn();
+    } else if (viewportCommand === "zoom-out") {
+      instance.zoomOut();
+    } else {
+      instance.fitView();
+    }
+    latestRef.current.onViewportCommandHandled();
+  }, [viewportCommand]);
+
+  const handleInit = useCallback((instance: ReactFlowInstance) => {
+    rfRef.current = instance;
+  }, []);
+
+  const handleNodeDragStop = useCallback((_: unknown, node: Node) => {
+    const latest = latestRef.current;
+    if (node.type === "region") {
+      latest.onMoveRegion(node.id, { x: node.position.x, y: node.position.y });
+      return;
+    }
+    const workflowNode = (node.data as WorkflowNodeData).node;
+    const spec = getNodeKindSpec(workflowNode.kind);
+    const parent = node.parentId === null
+      ? null
+      : latest.definition.regions.find((region) => region.id === node.parentId);
+    const absolute = {
+      x: node.position.x + (parent?.rect.x ?? 0),
+      y: node.position.y + (parent?.rect.y ?? 0),
+    };
+    const center = {
+      x: absolute.x + (node.measured?.width ?? 260) / 2,
+      y: absolute.y + (node.measured?.height ?? 80) / 2,
+    };
+    const regionId =
+      spec === null || spec.region === "bridge"
+        ? null
+        : compatibleRegionId(latest.definition, workflowNode.kind, center);
+    latest.onMoveNode(node.id, absolute, regionId);
+  }, []);
+
+  const handleConnect: OnConnect = useCallback((connection: Connection) => {
     if (connection.source === null || connection.target === null) {
       return;
     }
-    onConnectEdge({
+    latestRef.current.onConnectEdge({
       source_node_id: connection.source,
       source_port_id: connection.sourceHandle ?? "out",
       target_node_id: connection.target,
       target_port_id: connection.targetHandle ?? "in",
     });
-  };
+  }, []);
 
-  function handleSelectionChange(params: OnSelectionChangeParams) {
-    onSelect({
+  const handleSelectionChange = useCallback((params: OnSelectionChangeParams) => {
+    latestRef.current.onSelect({
       regions: params.nodes.filter((node) => node.type === "region").map((node) => node.id),
       nodes: params.nodes.filter((node) => node.type !== "region").map((node) => node.id),
       edges: params.edges.map((edge) => edge.id),
     });
-  }
+  }, []);
 
-  const handleNodesDelete: OnNodesDelete = (deleted) => {
+  const handleNodesDelete: OnNodesDelete = useCallback((deleted) => {
+    const { onDeleteRegion, onDeleteNode } = latestRef.current;
     for (const node of deleted) {
       if (node.type === "region") {
         onDeleteRegion(node.id);
@@ -121,20 +283,61 @@ export function CanvasView({
         onDeleteNode(node.id);
       }
     }
-  };
+  }, []);
 
-  const handleEdgesDelete: OnEdgesDelete = (deleted) => {
+  const handleEdgesDelete: OnEdgesDelete = useCallback((deleted) => {
+    const onDeleteEdge = latestRef.current.onDeleteEdge;
     for (const edge of deleted) {
       onDeleteEdge(edge.id);
     }
-  };
+  }, []);
+
+  function handleDragOver(event: React.DragEvent<HTMLDivElement>) {
+    if (dragKind === null) {
+      return;
+    }
+    event.preventDefault();
+    event.dataTransfer.dropEffect = "copy";
+    const point = rfRef.current?.screenToFlowPosition({ x: event.clientX, y: event.clientY }) ?? {
+      x: event.clientX,
+      y: event.clientY,
+    };
+    const regionId = compatibleRegionId(definition, dragKind, point);
+    setPreview({ kind: dragKind, x: event.clientX, y: event.clientY, regionId });
+    setHighlightRegionId(regionId);
+  }
+
+  function handleDrop(event: React.DragEvent<HTMLDivElement>) {
+    if (dragKind === null) {
+      return;
+    }
+    event.preventDefault();
+    const point = rfRef.current?.screenToFlowPosition({ x: event.clientX, y: event.clientY }) ?? {
+      x: event.clientX,
+      y: event.clientY,
+    };
+    onDropObject(dragKind, point, compatibleRegionId(definition, dragKind, point));
+    setPreview(null);
+    setHighlightRegionId(null);
+  }
+
+  function handleDragEnd() {
+    setPreview(null);
+    setHighlightRegionId(null);
+  }
 
   return (
-    <div className="canvas-viewport">
+    <div
+      className="canvas-viewport"
+      onDragOver={handleDragOver}
+      onDrop={handleDrop}
+      onDragEnd={handleDragEnd}
+    >
       <ReactFlow
         nodes={nodes}
         edges={edges}
         nodeTypes={nodeTypes}
+        onInit={handleInit}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
         onNodeDragStop={handleNodeDragStop as OnNodeDrag}
@@ -142,7 +345,7 @@ export function CanvasView({
         onSelectionChange={handleSelectionChange}
         onNodesDelete={handleNodesDelete}
         onEdgesDelete={handleEdgesDelete}
-        deleteKeyCode={["Backspace", "Delete"]}
+        deleteKeyCode={null}
         fitView
         minZoom={0.25}
         maxZoom={4}
@@ -159,24 +362,45 @@ export function CanvasView({
           }
         />
       </ReactFlow>
+      {visiblePreview !== null && (
+        <div
+          className={`drag-ghost ${visiblePreview.kind !== "region" && visiblePreview.regionId === null ? "draft" : ""}`}
+          style={{ left: visiblePreview.x - 12, top: visiblePreview.y - 12 }}
+        >
+          <span
+            className="node-dot"
+            style={{ background: nodeKindColor(visiblePreview.kind) }}
+          />
+          <span className="drag-ghost-label">
+            {visiblePreview.kind === "region"
+              ? "配置区域"
+              : (getNodeKindSpec(visiblePreview.kind)?.displayName ?? visiblePreview.kind)}
+          </span>
+          {visiblePreview.kind !== "region" && visiblePreview.regionId === null && (
+            <span className="draft-badge">草稿</span>
+          )}
+        </div>
+      )}
     </div>
   );
 }
 
 function buildNodes(
   definition: WorkflowDefinition,
-  callbacks: {
-    onMoveNode: CanvasViewProps["onMoveNode"];
-    onMoveRegion: CanvasViewProps["onMoveRegion"];
-    onConnectEdge: CanvasViewProps["onConnectEdge"];
-    onParamsChange: CanvasViewProps["onParamsChange"];
-    onDeleteNode: CanvasViewProps["onDeleteNode"];
-  },
+  diagnostics: Diagnostic[],
+  highlightRegionId: string | null,
+  callbacks: CallbackSnapshot,
 ): Node[] {
+  const incoming = incomingGroupsByTarget(definition);
   const nodes: Node[] = [];
   for (const region of definition.regions) {
     const data: RegionNodeData = {
       region,
+      onDeleteRegion: callbacks.onDeleteRegion,
+      onResizeRegion: callbacks.onResizeRegion,
+      onMoveEdgeOrder: callbacks.onMoveEdgeOrder,
+      incomingGroups: incoming.get(region.id) ?? [],
+      dropTarget: highlightRegionId === region.id,
     };
     nodes.push({
       id: region.id,
@@ -186,28 +410,68 @@ function buildNodes(
       height: region.rect.height,
       data,
       zIndex: 0,
+      draggable: true,
+      selected: false,
     });
   }
   for (const node of definition.nodes) {
+    const parent =
+      node.region_id === null
+        ? null
+        : definition.regions.find((region) => region.id === node.region_id);
+    const position =
+      parent == null
+        ? node.position
+        : {
+            x: node.position.x - parent.rect.x,
+            y: node.position.y - parent.rect.y,
+          };
     const data: WorkflowNodeData = {
       node,
       onParamsChange: callbacks.onParamsChange,
       onDeleteNode: callbacks.onDeleteNode,
+      onMoveEdgeOrder: callbacks.onMoveEdgeOrder,
+      incomingGroups: incoming.get(node.id) ?? [],
+      diagnostics,
     };
     nodes.push({
       id: node.id,
       type: "workflowNode",
-      position: { x: node.position.x, y: node.position.y },
+      position,
+      parentId: parent?.id,
       data,
       zIndex: 1,
+      selected: false,
     });
   }
   return nodes;
 }
 
-function buildEdges(
-  definition: WorkflowDefinition,
-): Edge[] {
+/**
+ * 定义同步时保留 React Flow 已测量的尺寸与当前选中/拖拽状态，
+ * 避免重建节点数组后重新测量并触发受控节点同步循环。
+ */
+function mergeNodeState(next: Node[], current: Node[]): Node[] {
+  const currentById = new Map(current.map((node) => [node.id, node]));
+  return next.map((node) => {
+    const existing = currentById.get(node.id);
+    if (existing === undefined) {
+      return node;
+    }
+    const measured =
+      node.width !== undefined && node.height !== undefined
+        ? { width: node.width, height: node.height }
+        : existing.measured;
+    return {
+      ...node,
+      measured,
+      selected: existing.selected,
+      dragging: existing.dragging,
+    };
+  });
+}
+
+function buildEdges(definition: WorkflowDefinition): Edge[] {
   return definition.edges.map((edge) => ({
     id: edge.id,
     source: edge.source_node_id,
@@ -215,5 +479,74 @@ function buildEdges(
     target: edge.target_node_id,
     targetHandle: edge.target_port_id,
     markerEnd: { type: MarkerType.ArrowClosed },
+    selected: false,
   }));
+}
+
+function incomingGroupsByTarget(definition: WorkflowDefinition): Map<string, IncomingOrderGroup[]> {
+  const nodeById = new Map(definition.nodes.map((node) => [node.id, node]));
+  const result = new Map<string, IncomingOrderGroup[]>();
+  for (const edge of definition.edges) {
+    const source = nodeById.get(edge.source_node_id);
+    if (source === undefined) {
+      continue;
+    }
+    const groups = result.get(edge.target_node_id) ?? [];
+    let group = groups.find((item) => item.portId === edge.target_port_id);
+    if (group === undefined) {
+      group = { portId: edge.target_port_id, items: [] };
+      groups.push(group);
+      result.set(edge.target_node_id, groups);
+    }
+    group.items.push({
+      edgeId: edge.id,
+      label: getNodeKindSpec(source.kind)?.displayName ?? source.kind,
+      path: fragmentPath(source, definition),
+    });
+  }
+  return result;
+}
+
+function fragmentPath(
+  node: WorkflowNode,
+  definition: WorkflowDefinition,
+): string | null {
+  const spec = getNodeKindSpec(node.kind);
+  if (spec === null) {
+    return null;
+  }
+  const variants = groupFragments(node);
+  if (variants.length > 0) {
+    return variants[0].path;
+  }
+  return singleFragment(node, definition)?.path ?? null;
+}
+
+function compatibleRegionId(
+  definition: WorkflowDefinition,
+  kind: string,
+  point: { x: number; y: number },
+): string | null {
+  if (kind === "region") {
+    return null;
+  }
+  const spec = getNodeKindSpec(kind);
+  if (spec === null || spec.region === "bridge") {
+    return null;
+  }
+  let match: string | null = null;
+  for (const region of definition.regions) {
+    if (region.kind !== spec.region) {
+      continue;
+    }
+    const inside =
+      point.x >= region.rect.x &&
+      point.x <= region.rect.x + region.rect.width &&
+      point.y >= region.rect.y &&
+      point.y <= region.rect.y + region.rect.height;
+    if (inside) {
+      match = region.id;
+    }
+  }
+  return match;
 }

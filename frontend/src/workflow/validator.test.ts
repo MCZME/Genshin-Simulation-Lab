@@ -61,14 +61,46 @@ describe("validateWorkflow", () => {
       makeNode("sim", "simulation", {}, null),
     ];
     const edges = [
-      makeEdge("e1", "root", "out", "region-1", "in"),
-      makeEdge("e2", "char", "out", "region-1", "in"),
-      makeEdge("e3", "target", "out", "region-1", "in"),
+      makeEdge("e1", "root", "out", "region-1", "out"),
+      makeEdge("e2", "char", "out", "region-1", "out"),
+      makeEdge("e3", "target", "out", "region-1", "out"),
       makeEdge("e4", "region-1", "out", "sim", "in"),
     ];
     const definition = makeDefinition([region], nodes, edges);
     const errors = validateWorkflow(definition).filter((item) => item.severity === "error");
     expect(errors).toEqual([]);
+  });
+
+  it("同一区域内节点链连线合法", () => {
+    const nodes = [
+      makeNode("root", "root"),
+      makeNode("char", "character", { slot: 1, asset: "character:barbara" }),
+      makeNode("target", "target", { index: 0, level: 90 }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const edges = [
+      makeEdge("e1", "root", "out", "char", "in"),
+      makeEdge("e2", "char", "out", "target", "in"),
+      makeEdge("e3", "target", "out", "region-1", "out"),
+      makeEdge("e4", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+    const errors = validateWorkflow(definition).filter((item) => item.severity === "error");
+    expect(errors).toEqual([]);
+  });
+
+  it("跨区域节点直接连线报错", () => {
+    const nodes = [
+      makeNode("char", "character", { slot: 1, asset: "character:barbara" }, "region-1"),
+      makeNode("target", "target", { index: 0, level: 90 }, "region-2"),
+    ];
+    const edges = [makeEdge("e1", "char", "out", "target", "in")];
+    const definition = makeDefinition(
+      [makeRegion("region-1"), makeRegion("region-2")],
+      nodes,
+      edges,
+    );
+    expect(codes(definition)).toContain("CROSS_REGION_CONNECTION");
   });
 
   it("未注册节点类型报错", () => {
@@ -93,7 +125,7 @@ describe("validateWorkflow", () => {
     const definition = makeDefinition(
       [makeRegion()],
       [makeNode("char", "character", { slot: 1, asset: "character:barbara" }, null)],
-      [makeEdge("e1", "char", "out", "region-1", "in")],
+      [makeEdge("e1", "char", "out", "region-1", "out")],
     );
     expect(codes(definition)).toContain("FREE_NODE_CONNECTED");
   });
@@ -120,7 +152,7 @@ describe("validateWorkflow", () => {
     const definition = makeDefinition(
       [makeRegion()],
       [makeNode("char", "character", { slot: 1, asset: "character:barbara" })],
-      [makeEdge("e1", "region-1", "out", "char", "in")],
+      [makeEdge("e1", "region-1", "out", "char", "missing")],
     );
     expect(codes(definition)).toContain("PORT_NOT_FOUND");
   });
@@ -154,6 +186,15 @@ describe("validateWorkflow", () => {
     expect(codes(definition).filter((code) => code === "PARAM_INVALID").length).toBeGreaterThanOrEqual(2);
   });
 
+  it("普通节点自定义路径语法错误时报 PARAM_INVALID", () => {
+    const definition = makeDefinition(
+      [makeRegion()],
+      [makeNode("char", "character", { slot: 1, asset: "character:barbara", path: "bad..path" })],
+      [],
+    );
+    expect(codes(definition)).toContain("PARAM_INVALID");
+  });
+
   it("同一区域多个根节点报错", () => {
     const definition = makeDefinition(
       [makeRegion()],
@@ -183,8 +224,8 @@ describe("validateWorkflow", () => {
       })),
     });
     const edges = [
-      makeEdge("e1", "enum-a", "out", "region-1", "in"),
-      makeEdge("e2", "enum-b", "out", "region-1", "in"),
+      makeEdge("e1", "enum-a", "out", "region-1", "out"),
+      makeEdge("e2", "enum-b", "out", "region-1", "out"),
       makeEdge("e3", "region-1", "out", "sim", "in"),
     ];
     const definition = makeDefinition(
@@ -209,5 +250,23 @@ describe("validateWorkflow", () => {
       edges,
     );
     expect(codes(definition)).toContain("ANALYSIS_NOT_IMPLEMENTED");
+  });
+
+  it("区域小于内部节点边界时警告", () => {
+    const region: WorkflowRegion = {
+      id: "region-1",
+      kind: "configuration",
+      name: "主配置",
+      rect: { x: 0, y: 0, width: 300, height: 200 },
+    };
+    const node: WorkflowNode = {
+      id: "char",
+      kind: "character",
+      region_id: "region-1",
+      position: { x: 100, y: 180 },
+      params: { slot: 1, asset: "character:barbara" },
+    };
+    const definition = makeDefinition([region], [node], []);
+    expect(codes(definition)).toContain("NODE_OUTSIDE_REGION");
   });
 });

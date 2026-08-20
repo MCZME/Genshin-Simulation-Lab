@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type { ReactNode } from "react";
 
 interface TextFieldProps {
@@ -8,13 +9,30 @@ interface TextFieldProps {
 }
 
 export function TextField({ value, onChange, placeholder, mono = false }: TextFieldProps) {
+  const [draft, setDraft] = useState(value);
+  function commit() {
+    if (draft !== value) {
+      onChange(draft);
+    }
+  }
   return (
     <input
+      key={value}
       className={`field ${mono ? "field-mono" : ""}`}
       type="text"
-      value={value}
+      value={draft}
       placeholder={placeholder}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          commit();
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          setDraft(value);
+          event.currentTarget.blur();
+        }
+      }}
     />
   );
 }
@@ -27,21 +45,34 @@ interface NumberFieldProps {
 }
 
 export function NumberField({ value, onChange, min, max }: NumberFieldProps) {
+  const [draft, setDraft] = useState(value === null ? "" : String(value));
+  function commit() {
+    const text = draft.trim();
+    if (text === "") {
+      onChange(null);
+      return;
+    }
+    const number = Number(text);
+    onChange(Number.isFinite(number) ? number : null);
+  }
   return (
     <input
+      key={value}
       className="field field-mono"
       type="number"
-      value={value ?? ""}
+      value={draft}
       min={min}
       max={max}
-      onChange={(event) => {
-        const text = event.target.value;
-        if (text === "") {
-          onChange(null);
-          return;
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
+      onKeyDown={(event) => {
+        if (event.key === "Enter") {
+          commit();
+          event.currentTarget.blur();
+        } else if (event.key === "Escape") {
+          setDraft(value === null ? "" : String(value));
+          event.currentTarget.blur();
         }
-        const number = Number(text);
-        onChange(Number.isFinite(number) ? number : null);
       }}
     />
   );
@@ -73,26 +104,75 @@ interface TextAreaFieldProps {
 }
 
 export function TextAreaField({ value, onChange, rows = 6, invalid = false }: TextAreaFieldProps) {
+  const [draft, setDraft] = useState(value);
+  function commit() {
+    if (draft !== value) {
+      onChange(draft);
+    }
+  }
   return (
     <textarea
+      key={value}
       className={`field field-mono ${invalid ? "field-invalid" : ""}`}
       rows={rows}
-      value={value}
+      value={draft}
       spellCheck={false}
-      onChange={(event) => onChange(event.target.value)}
+      onChange={(event) => setDraft(event.target.value)}
+      onBlur={commit}
     />
   );
 }
 
-export function FieldRow({ label, children }: { label: string; children: ReactNode }) {
+export function FieldRow({
+  label,
+  children,
+  error,
+}: {
+  label: string;
+  children: ReactNode;
+  error?: string;
+}) {
   return (
-    <label className="field-row">
-      <span className="field-label">{label}</span>
-      {children}
-    </label>
+    <div className="field-row-wrap">
+      <label className="field-row">
+        <span className="field-label">{label}</span>
+        {children}
+      </label>
+      {error !== undefined && <InlineError message={error} />}
+    </div>
   );
 }
 
 export function InlineError({ message }: { message: string }) {
   return <span className="inline-error">{message}</span>;
+}
+
+export function CollapsibleGroup({
+  title,
+  summary,
+  defaultOpen = true,
+  children,
+}: {
+  title: string;
+  summary?: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div className="collapsible-group">
+      <button
+        type="button"
+        className="collapsible-header"
+        onClick={() => setOpen((current) => !current)}
+      >
+        <span className="collapsible-caret">{open ? "▾" : "▸"}</span>
+        <span className="collapsible-title">{title}</span>
+        {!open && summary !== undefined && (
+          <span className="collapsible-summary">{summary}</span>
+        )}
+      </button>
+      {open && <div className="collapsible-body">{children}</div>}
+    </div>
+  );
 }

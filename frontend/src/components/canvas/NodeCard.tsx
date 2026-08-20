@@ -1,28 +1,50 @@
 import { Handle, Position } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
+import { useState } from "react";
+import { InputOrderPopover } from "./InputOrderPopover";
+import type { IncomingOrderGroup } from "./InputOrderPopover";
 import { nodeKindColor } from "../nodes/registry";
 import { NodeEditorHost } from "../nodes/registry";
 import { getNodeKindSpec } from "../../workflow/registry";
 import type { WorkflowNode } from "../../workflow/types";
+import type { Diagnostic } from "../../workflow/types";
 
 export type WorkflowNodeData = {
   node: WorkflowNode;
   onParamsChange: (nodeId: string, params: Record<string, unknown>) => void;
   onDeleteNode: (nodeId: string) => void;
+  onMoveEdgeOrder: (
+    targetNodeId: string,
+    targetPortId: string,
+    edgeId: string,
+    direction: "up" | "down",
+  ) => void;
+  incomingGroups: IncomingOrderGroup[];
+  diagnostics: Diagnostic[];
 } & Record<string, unknown>;
 
 export function NodeCard({ data, selected }: NodeProps) {
-  const { node, onParamsChange, onDeleteNode } = data as WorkflowNodeData;
+  const {
+    node,
+    onParamsChange,
+    onDeleteNode,
+    onMoveEdgeOrder,
+    incomingGroups,
+    diagnostics,
+  } = data as WorkflowNodeData;
   const spec = getNodeKindSpec(node.kind);
+  const isDraft = node.region_id === null && spec?.region !== "bridge";
+  const fieldErrors = collectFieldErrors(diagnostics, node.id);
 
   return (
-    <div className={`node-card ${selected ? "selected" : ""}`}>
+    <div className={`node-card ${selected ? "selected" : ""} ${isDraft ? "draft" : ""}`}>
       <header className="node-card-header">
         <span className="node-dot" style={{ background: nodeKindColor(node.kind) }} />
         <span className="node-title">{spec?.displayName ?? node.kind}</span>
+        {isDraft && <span className="draft-badge">草稿</span>}
         <button
           type="button"
-          className="icon-button"
+          className="icon-button danger"
           title="删除节点"
           onClick={() => onDeleteNode(node.id)}
         >
@@ -33,11 +55,16 @@ export function NodeCard({ data, selected }: NodeProps) {
         <NodeEditorHost
           kind={node.kind}
           node={node}
+          fieldErrors={fieldErrors}
           onChange={(params) => onParamsChange(node.id, params)}
         />
       </div>
       <footer className="node-card-footer">
-        <span className="node-path">{pathLabel(node)}</span>
+        <PathEditor
+          node={node}
+          editable={spec !== null && spec.kind !== "enum" && spec.kind !== "range"}
+          onChange={(params) => onParamsChange(node.id, params)}
+        />
         {spec?.ports.inputs.map((port) => (
           <Handle
             key={`target-${port.id}`}
@@ -57,8 +84,88 @@ export function NodeCard({ data, selected }: NodeProps) {
           />
         ))}
       </footer>
+      <InputOrderPopover
+        targetNodeId={node.id}
+        groups={incomingGroups}
+        onMoveEdgeOrder={onMoveEdgeOrder}
+      />
     </div>
   );
+}
+
+function PathEditor({
+  node,
+  editable,
+  onChange,
+}: {
+  node: WorkflowNode;
+  editable: boolean;
+  onChange: (params: Record<string, unknown>) => void;
+}) {
+  const [editing, setEditing] = useState(false);
+  const [draft, setDraft] = useState("");
+
+  if (!editable) {
+    return <span className="node-path">{pathLabel(node)}</span>;
+  }
+  if (editing) {
+    function commit() {
+      const value = draft.trim();
+      const next = { ...node.params };
+      if (value === "") {
+        delete next.path;
+      } else {
+        next.path = value;
+      }
+      onChange(next);
+      setEditing(false);
+    }
+    return (
+      <input
+        className="node-path field field-mono"
+        autoFocus
+        value={draft}
+        spellCheck={false}
+        onChange={(event) => setDraft(event.target.value)}
+        onBlur={commit}
+        onKeyDown={(event) => {
+          if (event.key === "Enter") {
+            commit();
+          } else if (event.key === "Escape") {
+            setEditing(false);
+          }
+        }}
+      />
+    );
+  }
+  return (
+    <span
+      className="node-path editable"
+      title="点击编辑路径"
+      onClick={() => {
+        setDraft(pathLabel(node));
+        setEditing(true);
+      }}
+    >
+      {pathLabel(node)}
+    </span>
+  );
+}
+
+function collectFieldErrors(
+  diagnostics: Diagnostic[],
+  nodeId: string,
+): Record<string, string[]> {
+  const result: Record<string, string[]> = {};
+  for (const item of diagnostics) {
+    if (item.node_id !== nodeId || item.path === null) {
+      continue;
+    }
+    const list = result[item.path] ?? [];
+    list.push(item.message);
+    result[item.path] = list;
+  }
+  return result;
 }
 
 function pathLabel(node: WorkflowNode): string {

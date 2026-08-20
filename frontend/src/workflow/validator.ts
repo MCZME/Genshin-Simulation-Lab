@@ -8,12 +8,12 @@ import type {
 } from "./types";
 import {
   MAX_BATCH_MEMBERS,
-  REGION_BOUNDARY_IN_PORT,
   REGION_BOUNDARY_OUT_PORT,
   WORKFLOW_SCHEMA_VERSION,
 } from "./types";
 import { rangeEntries } from "./decimal";
 import { getNodeKindSpec, groupFragments, singleFragment, validateNode } from "./registry";
+import { collectChain } from "./chain";
 
 type EndpointKind = "node" | "region";
 
@@ -156,6 +156,7 @@ export function validateWorkflow(definition: WorkflowDefinition): Diagnostic[] {
   }
 
   validateMemberCap(definition, regionById, diagnostics);
+  warnNodesOutsideRegions(definition, regionById, diagnostics);
   return diagnostics;
 }
 
@@ -193,12 +194,22 @@ function validateEdge(
   const targetPort = resolvePort(edge.target_node_id, edge.target_port_id, "target", regionById, nodeById);
 
   if (source.kind === "node" && target.kind === "node") {
-    diagnostics.push(
-      diagnostic("error", "CONNECTION_NOT_SUPPORTED", "MVP 配置节点之间不直接连线，统一经过区域边界输入", {
-        edge_id: edge.id,
-        node_id: target.id,
-      }),
-    );
+    const sourceNode = nodeById.get(edge.source_node_id);
+    const targetNode = nodeById.get(edge.target_node_id);
+    if (
+      sourceNode !== undefined &&
+      targetNode !== undefined &&
+      sourceNode.region_id !== null &&
+      targetNode.region_id !== null &&
+      sourceNode.region_id !== targetNode.region_id
+    ) {
+      diagnostics.push(
+        diagnostic("error", "CROSS_REGION_CONNECTION", "配置节点只能在同一区域内直接连线", {
+          edge_id: edge.id,
+          node_id: targetNode.id,
+        }),
+      );
+    }
   }
   if (source.kind === "node" && source.id === target.id) {
     diagnostics.push(
@@ -260,7 +271,7 @@ function validateEdge(
     [edge.source_node_id, edge.source_port_id, "source"],
     [edge.target_node_id, edge.target_port_id, "target"],
   ] as const) {
-    const key = `${endpointId}:${portId}`;
+    const key = `${endpointId}:${portId}:${role}`;
     connectionCounts.set(key, (connectionCounts.get(key) ?? 0) + 1);
     const port = resolvePort(endpointId, portId, role, regionById, nodeById);
     const count = connectionCounts.get(key) ?? 0;
@@ -307,7 +318,7 @@ function validateRegionEndpoint(
     return;
   }
   const portId = role === "source" ? edge.source_port_id : edge.target_port_id;
-  const expected = role === "source" ? REGION_BOUNDARY_OUT_PORT : REGION_BOUNDARY_IN_PORT;
+  const expected = REGION_BOUNDARY_OUT_PORT;
   if (portId !== expected) {
     diagnostics.push(
       diagnostic("error", "PORT_INVALID", `区域边界端口方向错误：${portId}`, {
@@ -441,13 +452,19 @@ function validateMemberCap(
   diagnostics: Diagnostic[],
 ): void {
   const nodeById = new Map(definition.nodes.map((node) => [node.id, node]));
+  const incomingByTarget = new Map<string, WorkflowEdge[]>();
+  for (const edge of definition.edges) {
+    const list = incomingByTarget.get(edge.target_node_id) ?? [];
+    list.push(edge);
+    incomingByTarget.set(edge.target_node_id, list);
+  }
   for (const region of regionById.values()) {
     if (region.kind !== "configuration") {
       continue;
     }
     const boundaryEdges = definition.edges.filter(
       (edge) =>
-        edge.target_node_id === region.id && edge.target_port_id === REGION_BOUNDARY_IN_PORT,
+        edge.target_node_id === region.id && edge.target_port_id === REGION_BOUNDARY_OUT_PORT,
     );
     if (boundaryEdges.length === 0) {
       diagnostics.push(
@@ -458,38 +475,36 @@ function validateMemberCap(
       continue;
     }
 
-    const lastWriter = new Map<string, number>();
-    boundaryEdges.forEach((edge, index) => {
-      const node = nodeById.get(edge.source_node_id);
-      const path = node === undefined ? null : fragmentPathOf(node, definition);
-      lastWriter.set(path ?? "", index);
-    });
-
-    let count = 1;
-    boundaryEdges.forEach((edge, index) => {
-      const node = nodeById.get(edge.source_node_id);
-      if (node === undefined) {
-        return;
+    const applications: { path: string | null; variants: number }[] = [];
+    const appliedNodes = new Set<string>();
+    for (const edge of boundaryEdges) {
+      const tail = nodeById.get(edge.source_node_id);
+      if (tail === undefined) {
+        continue;
       }
-      const path = fragmentPathOf(node, definition);
-      if (path !== null && lastWriter.get(path) !== index) {
-        return;
-      }
-      let variants = 1;
-      if (node.kind === "enum" && Array.isArray(node.params.values)) {
-        variants = node.params.values.length;
-      } else if (node.kind === "range") {
-        try {
-          variants = rangeEntries(
-            Number(node.params.start),
-            Number(node.params.end),
-            Number(node.params.step),
-          ).length;
-        } catch {
-          variants = 1;
+      const chain = collectChain(tail.id, nodeById, incomingByTarget);
+      for (const node of chain) {
+        if (node.kind === "root" || appliedNodes.has(node.id)) {
+          continue;
         }
+        appliedNodes.add(node.id);
+        applications.push({
+          path: fragmentPathOf(node, definition),
+          variants: fragmentVariantCount(node),
+        });
       }
-      count *= variants;
+    }
+
+    const lastWriter = new Map<string, number>();
+    applications.forEach((application, index) => {
+      lastWriter.set(application.path ?? "", index);
+    });
+    let count = 1;
+    applications.forEach((application, index) => {
+      if (lastWriter.get(application.path ?? "") !== index) {
+        return;
+      }
+      count *= application.variants;
     });
 
     if (count > MAX_BATCH_MEMBERS) {
@@ -505,6 +520,24 @@ function validateMemberCap(
   }
 }
 
+function fragmentVariantCount(node: WorkflowNode): number {
+  if (node.kind === "enum" && Array.isArray(node.params.values)) {
+    return node.params.values.length;
+  }
+  if (node.kind === "range") {
+    try {
+      return rangeEntries(
+        Number(node.params.start),
+        Number(node.params.end),
+        Number(node.params.step),
+      ).length;
+    } catch {
+      return 1;
+    }
+  }
+  return 1;
+}
+
 function fragmentPathOf(
   node: WorkflowNode,
   definition: WorkflowDefinition,
@@ -514,6 +547,43 @@ function fragmentPathOf(
     return fragments[0]?.path ?? null;
   }
   return singleFragment(node, definition)?.path ?? null;
+}
+
+/** 节点卡片默认尺寸，用于判断区域是否可能遮挡内容；实际高度以渲染为准。 */
+const DEFAULT_NODE_CARD_WIDTH = 260;
+const DEFAULT_NODE_CARD_HEIGHT = 80;
+
+function warnNodesOutsideRegions(
+  definition: WorkflowDefinition,
+  regionById: Map<string, WorkflowRegion>,
+  diagnostics: Diagnostic[],
+): void {
+  for (const region of regionById.values()) {
+    for (const node of definition.nodes) {
+      if (node.region_id !== region.id) {
+        continue;
+      }
+      const spec = getNodeKindSpec(node.kind);
+      if (spec === null || spec.region === "bridge") {
+        continue;
+      }
+      const inside =
+        node.position.x >= region.rect.x &&
+        node.position.y >= region.rect.y &&
+        node.position.x + DEFAULT_NODE_CARD_WIDTH <= region.rect.x + region.rect.width &&
+        node.position.y + DEFAULT_NODE_CARD_HEIGHT <= region.rect.y + region.rect.height;
+      if (!inside) {
+        diagnostics.push(
+          diagnostic(
+            "warning",
+            "NODE_OUTSIDE_REGION",
+            "节点超出区域边界，缩小区域可能遮挡内容",
+            { node_id: node.id, region_id: region.id },
+          ),
+        );
+      }
+    }
+  }
 }
 
 function diagnostic(

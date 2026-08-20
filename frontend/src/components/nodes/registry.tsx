@@ -15,36 +15,42 @@ import {
 } from "./editors";
 import type { NodeEditorProps } from "./editors";
 
+export interface NodeEditorHostProps extends Omit<NodeEditorProps, "fieldErrors"> {
+  kind: string;
+  fieldErrors?: Record<string, string[]>;
+}
+
 export function NodeEditorHost({
   kind,
   node,
   onChange,
-}: NodeEditorProps & { kind: string }) {
+  fieldErrors,
+}: NodeEditorHostProps) {
   switch (kind) {
     case "root":
-      return <RootEditor />;
+      return <RootEditor fieldErrors={fieldErrors} />;
     case "meta":
-      return <MetaEditor />;
+      return <MetaEditor fieldErrors={fieldErrors} />;
     case "character":
-      return <CharacterEditor node={node} onChange={onChange} />;
+      return <CharacterEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "weapon":
-      return <WeaponEditor node={node} onChange={onChange} />;
+      return <WeaponEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "artifact":
-      return <ArtifactEditor node={node} onChange={onChange} />;
+      return <ArtifactEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "target":
-      return <TargetEditor node={node} onChange={onChange} />;
+      return <TargetEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "input_trace":
-      return <InputTraceEditor node={node} onChange={onChange} />;
+      return <InputTraceEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "run_options":
-      return <RunOptionsEditor node={node} onChange={onChange} />;
+      return <RunOptionsEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "enum":
-      return <EnumEditor node={node} onChange={onChange} />;
+      return <EnumEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "range":
-      return <RangeEditor node={node} onChange={onChange} />;
+      return <RangeEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "simulation":
       return <SimulationEditor />;
     default:
-      return <UnknownEditor node={node} onChange={onChange} />;
+      return <UnknownEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
   }
 }
 

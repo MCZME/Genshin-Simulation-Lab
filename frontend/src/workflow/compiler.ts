@@ -3,17 +3,16 @@ import type {
   Diagnostic,
   DiagnosticSeverity,
   WorkflowDefinition,
+  WorkflowEdge,
 } from "./types";
-import {
-  MAX_BATCH_MEMBERS,
-  REGION_BOUNDARY_IN_PORT,
-} from "./types";
+import { MAX_BATCH_MEMBERS, REGION_BOUNDARY_OUT_PORT } from "./types";
 import { getNodeKindSpec, groupFragments, singleFragment } from "./registry";
+import { collectChain } from "./chain";
 import { setPath } from "./path";
 
-interface BoundaryEntry {
-  edgeId: string;
+interface FragmentApplication {
   nodeId: string;
+  edgeId: string;
   path: string;
   variants: { item_id: string; path: string; value: unknown }[];
 }
@@ -50,43 +49,63 @@ export function compileConfigurationRegion(
   }
 
   const boundaryEdges = definition.edges.filter(
-    (edge) => edge.target_node_id === regionId && edge.target_port_id === REGION_BOUNDARY_IN_PORT,
+    (edge) => edge.target_node_id === regionId && edge.target_port_id === REGION_BOUNDARY_OUT_PORT,
   );
   if (boundaryEdges.length === 0) {
     return fail(regionId, [compileError("EMPTY_REGION", "配置区域没有数据汇入，阻止运行")]);
   }
 
-  const entries: BoundaryEntry[] = [];
+  const nodeById = new Map(definition.nodes.map((node) => [node.id, node]));
+  const incomingByTarget = new Map<string, WorkflowEdge[]>();
+  for (const edge of definition.edges) {
+    const list = incomingByTarget.get(edge.target_node_id) ?? [];
+    list.push(edge);
+    incomingByTarget.set(edge.target_node_id, list);
+  }
+
+  const applications: FragmentApplication[] = [];
+  const appliedNodes = new Set<string>();
   for (const edge of boundaryEdges) {
-    const node = definition.nodes.find((item) => item.id === edge.source_node_id);
-    if (node === undefined || getNodeKindSpec(node.kind) === null) {
+    const tail = nodeById.get(edge.source_node_id);
+    if (tail === undefined || getNodeKindSpec(tail.kind) === null) {
       diagnostics.push(
         compileError("SOURCE_NODE_INVALID", `边界输入引用了无效节点：${edge.source_node_id}`),
       );
       continue;
     }
-    const single = singleFragment(node, definition);
-    const variants =
-      node.kind === "enum" || node.kind === "range" ? groupFragments(node) : single !== null ? [single] : [];
-    if (variants.length === 0) {
-      continue;
+    const chain = collectChain(tail.id, nodeById, incomingByTarget);
+    for (const node of chain) {
+      if (appliedNodes.has(node.id)) {
+        continue;
+      }
+      const single = singleFragment(node, definition);
+      const variants =
+        node.kind === "enum" || node.kind === "range"
+          ? groupFragments(node)
+          : single !== null
+            ? [single]
+            : [];
+      if (variants.length === 0) {
+        continue;
+      }
+      appliedNodes.add(node.id);
+      applications.push({
+        nodeId: node.id,
+        edgeId: edge.id,
+        path: variants[0].path,
+        variants,
+      });
     }
-    entries.push({
-      edgeId: edge.id,
-      nodeId: node.id,
-      path: variants[0].path,
-      variants,
-    });
   }
 
   if (diagnostics.some((item) => item.severity === "error")) {
     return fail(regionId, diagnostics);
   }
 
-  const orderedEntries = keepLastWriterPerPath(entries, diagnostics);
+  const orderedApplications = keepLastWriterPerPath(applications, diagnostics);
   const base = createSimulationInputSkeleton(definition.meta.name);
   let partials: PartialInput[] = [{ input: base, itemIds: [] }];
-  for (const entry of orderedEntries) {
+  for (const entry of orderedApplications) {
     const next: PartialInput[] = [];
     for (const partial of partials) {
       for (const variant of entry.variants) {
@@ -138,15 +157,15 @@ function ensureTeamSlots(input: Record<string, unknown>): void {
 }
 
 function keepLastWriterPerPath(
-  entries: BoundaryEntry[],
+  entries: FragmentApplication[],
   diagnostics: Diagnostic[],
-): BoundaryEntry[] {
+): FragmentApplication[] {
   const lastWriter = new Map<string, number>();
   entries.forEach((entry, index) => {
     lastWriter.set(entry.path, index);
   });
 
-  const ordered: BoundaryEntry[] = [];
+  const ordered: FragmentApplication[] = [];
   entries.forEach((entry, index) => {
     if (lastWriter.get(entry.path) !== index) {
       diagnostics.push(

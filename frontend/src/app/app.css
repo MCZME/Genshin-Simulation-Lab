@@ -132,6 +132,11 @@ body {
   color: #e2e8f0;
 }
 
+.rail-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
 .rail-badge {
   position: absolute;
   top: 2px;
@@ -184,6 +189,21 @@ body {
 
 .panel-action:hover {
   border-color: #475569;
+}
+
+.panel-action.draggable {
+  cursor: grab;
+  user-select: none;
+}
+
+.panel-action.draggable:active {
+  cursor: grabbing;
+}
+
+.panel-action-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .node-dot {
@@ -251,6 +271,11 @@ body {
   overflow: visible;
 }
 
+.region-node.drop-target {
+  outline: 2px dashed #38bdf8;
+  outline-offset: 4px;
+}
+
 .region-node.selected {
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.5);
 }
@@ -268,6 +293,38 @@ body {
   user-select: none;
 }
 
+.region-resize-handle {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 18px;
+  height: 18px;
+  cursor: nwse-resize;
+  touch-action: none;
+  user-select: none;
+  z-index: 30;
+  opacity: 0.55;
+}
+
+.region-resize-handle:hover,
+.region-node.selected .region-resize-handle {
+  opacity: 1;
+}
+
+.region-resize-handle::after {
+  content: "";
+  position: absolute;
+  right: 3px;
+  bottom: 3px;
+  width: 12px;
+  height: 12px;
+  background: repeating-linear-gradient(
+    135deg,
+    transparent 0 3px,
+    #94a3b8 3px 5px
+  );
+}
+
 .region-kind {
   font-size: 11px;
   color: #94a3b8;
@@ -278,6 +335,10 @@ body {
   font-weight: 600;
 }
 
+.region-delete {
+  margin-left: auto;
+}
+
 .region-handle {
   width: 10px !important;
   height: 10px !important;
@@ -286,6 +347,7 @@ body {
 }
 
 .node-card {
+  position: relative;
   width: 260px;
   background: #1e293b;
   border: 1px solid #334155;
@@ -293,9 +355,23 @@ body {
   box-shadow: 0 4px 12px rgba(0, 0, 0, 0.35);
 }
 
+.node-card.draft {
+  border-style: dashed;
+  opacity: 0.92;
+}
+
 .node-card.selected {
   border-color: #3b82f6;
   box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.45);
+}
+
+.node-card .node-card-header .icon-button.danger {
+  visibility: hidden;
+}
+
+.node-card:hover .node-card-header .icon-button.danger,
+.node-card:focus-within .node-card-header .icon-button.danger {
+  visibility: visible;
 }
 
 .node-card-header {
@@ -338,6 +414,26 @@ body {
   text-overflow: ellipsis;
 }
 
+.node-path.editable {
+  cursor: text;
+}
+
+.node-path.editable:hover {
+  color: #e2e8f0;
+  text-decoration: underline;
+}
+
+.draft-badge {
+  display: inline-block;
+  padding: 0 6px;
+  border: 1px dashed #f59e0b;
+  border-radius: 8px;
+  color: #f59e0b;
+  font-size: 10px;
+  line-height: 16px;
+  flex: none;
+}
+
 .node-handle {
   width: 8px !important;
   height: 8px !important;
@@ -349,6 +445,16 @@ body {
   display: flex;
   flex-direction: column;
   gap: 6px;
+}
+
+.field-row-wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.field-row-wrap:has(.inline-error) .field {
+  border-color: #ef4444;
 }
 
 .field-row {
@@ -398,6 +504,47 @@ body {
   font-size: 12px;
 }
 
+.collapsible-group {
+  border: 1px solid #334155;
+  border-radius: 4px;
+}
+
+.collapsible-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  background: #263449;
+  border: none;
+  border-radius: 4px;
+  color: #e2e8f0;
+  font-size: 12px;
+  padding: 4px 8px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.collapsible-caret {
+  width: 12px;
+  color: #94a3b8;
+  flex: none;
+}
+
+.collapsible-title {
+  font-weight: 600;
+}
+
+.collapsible-summary {
+  margin-left: auto;
+  color: #94a3b8;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+}
+
+.collapsible-body {
+  padding: 6px 8px;
+}
+
 .icon-button {
   width: 22px;
   height: 22px;
@@ -407,6 +554,149 @@ body {
   color: #94a3b8;
   cursor: pointer;
   line-height: 1;
+}
+
+.icon-button.danger {
+  color: #f87171;
+}
+
+.icon-button.danger:hover {
+  background: rgba(239, 68, 68, 0.15);
+  color: #fca5a5;
+}
+
+.icon-button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.drag-ghost {
+  position: fixed;
+  z-index: 50;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 120px;
+  padding: 8px 12px;
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid #475569;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+  pointer-events: none;
+  opacity: 0.85;
+}
+
+.drag-ghost.draft {
+  border-style: dashed;
+  border-color: #f59e0b;
+}
+
+.drag-ghost-label {
+  font-size: 12px;
+  color: #e2e8f0;
+}
+
+.order-controls {
+  position: absolute;
+  left: -26px;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 20;
+}
+
+.order-control {
+  position: relative;
+}
+
+.order-badge {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: #263449;
+  border: 1px solid #475569;
+  color: #e2e8f0;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.order-badge.open {
+  background: #334155;
+  border-color: #3b82f6;
+}
+
+.order-popover {
+  position: absolute;
+  left: 0;
+  top: calc(100% + 6px);
+  width: 240px;
+  background: #263449;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.45);
+  z-index: 40;
+}
+
+.order-list {
+  list-style: none;
+  margin: 0;
+  padding: 4px;
+  max-height: 220px;
+  overflow-y: auto;
+}
+
+.order-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 6px;
+  border-radius: 4px;
+}
+
+.order-row:hover {
+  background: #334155;
+}
+
+.order-row-text {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  flex: 1;
+  min-width: 0;
+}
+
+.order-index {
+  position: absolute;
+  width: 0;
+  overflow: visible;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 10px;
+  color: #64748b;
+}
+
+.order-label {
+  padding-left: 16px;
+  font-size: 12px;
+  color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.order-note {
+  padding-left: 16px;
+  font-size: 11px;
+  color: #fbbf24;
+}
+
+.order-actions {
+  display: flex;
+  gap: 2px;
+  flex: none;
 }
 
 .icon-button:hover {

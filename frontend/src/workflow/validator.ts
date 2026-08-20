@@ -11,9 +11,14 @@ import {
   REGION_BOUNDARY_OUT_PORT,
   WORKFLOW_SCHEMA_VERSION,
 } from "./types";
-import { rangeEntries } from "./decimal";
-import { getNodeKindSpec, groupFragments, singleFragment, validateNode } from "./registry";
-import { collectChain } from "./chain";
+import {
+  getNodeKindSpec,
+  isProjectionPort,
+  memberItemIds,
+  projectionItemId,
+  validateNode,
+} from "./registry";
+import { expandConfigurationRegion } from "./compiler";
 
 type EndpointKind = "node" | "region";
 
@@ -345,6 +350,17 @@ function validateNodeEndpoint(
     return;
   }
   const portId = role === "source" ? edge.source_port_id : edge.target_port_id;
+  if (role === "source" && isProjectionPort(node, portId)) {
+    if (!memberItemIds(node).includes(projectionItemId(portId))) {
+      diagnostics.push(
+        diagnostic("error", "PORT_NOT_FOUND", `节点缺少端口：${nodeId}.${portId}`, {
+          edge_id: edge.id,
+          node_id: nodeId,
+        }),
+      );
+    }
+    return;
+  }
   const ports = role === "source" ? spec.ports.outputs : spec.ports.inputs;
   if (!ports.some((port) => port.id === portId)) {
     diagnostics.push(
@@ -379,6 +395,14 @@ function resolvePort(
   const spec = getNodeKindSpec(node.kind);
   if (spec === null) {
     return null;
+  }
+  if (role === "source" && isProjectionPort(node, portId)) {
+    return {
+      id: portId,
+      cardinality: "single",
+      dataLanguage: "fragment",
+      connectionLimit: Number.POSITIVE_INFINITY,
+    } as const;
   }
   const ports = role === "source" ? spec.ports.outputs : spec.ports.inputs;
   return ports.find((port) => port.id === portId) ?? null;
@@ -451,13 +475,6 @@ function validateMemberCap(
   regionById: Map<string, WorkflowRegion>,
   diagnostics: Diagnostic[],
 ): void {
-  const nodeById = new Map(definition.nodes.map((node) => [node.id, node]));
-  const incomingByTarget = new Map<string, WorkflowEdge[]>();
-  for (const edge of definition.edges) {
-    const list = incomingByTarget.get(edge.target_node_id) ?? [];
-    list.push(edge);
-    incomingByTarget.set(edge.target_node_id, list);
-  }
   for (const region of regionById.values()) {
     if (region.kind !== "configuration") {
       continue;
@@ -474,79 +491,24 @@ function validateMemberCap(
       );
       continue;
     }
-
-    const applications: { path: string | null; variants: number }[] = [];
-    const appliedNodes = new Set<string>();
-    for (const edge of boundaryEdges) {
-      const tail = nodeById.get(edge.source_node_id);
-      if (tail === undefined) {
-        continue;
-      }
-      const chain = collectChain(tail.id, nodeById, incomingByTarget);
-      for (const node of chain) {
-        if (node.kind === "root" || appliedNodes.has(node.id)) {
-          continue;
+    const result = expandConfigurationRegion(definition, region.id);
+    if (!result.ok) {
+      for (const item of result.diagnostics) {
+        if (item.code === "MEMBER_LIMIT_EXCEEDED") {
+          diagnostics.push(item);
         }
-        appliedNodes.add(node.id);
-        applications.push({
-          path: fragmentPathOf(node, definition),
-          variants: fragmentVariantCount(node),
-        });
       }
-    }
-
-    const lastWriter = new Map<string, number>();
-    applications.forEach((application, index) => {
-      lastWriter.set(application.path ?? "", index);
-    });
-    let count = 1;
-    applications.forEach((application, index) => {
-      if (lastWriter.get(application.path ?? "") !== index) {
-        return;
-      }
-      count *= application.variants;
-    });
-
-    if (count > MAX_BATCH_MEMBERS) {
+    } else if (result.members.length > MAX_BATCH_MEMBERS) {
       diagnostics.push(
         diagnostic(
           "error",
           "MEMBER_LIMIT_EXCEEDED",
-          `展开成员数 ${count} 超过上限 ${MAX_BATCH_MEMBERS}`,
+          `展开成员数 ${result.members.length} 超过上限 ${MAX_BATCH_MEMBERS}`,
           { region_id: region.id },
         ),
       );
     }
   }
-}
-
-function fragmentVariantCount(node: WorkflowNode): number {
-  if (node.kind === "enum" && Array.isArray(node.params.values)) {
-    return node.params.values.length;
-  }
-  if (node.kind === "range") {
-    try {
-      return rangeEntries(
-        Number(node.params.start),
-        Number(node.params.end),
-        Number(node.params.step),
-      ).length;
-    } catch {
-      return 1;
-    }
-  }
-  return 1;
-}
-
-function fragmentPathOf(
-  node: WorkflowNode,
-  definition: WorkflowDefinition,
-): string | null {
-  if (node.kind === "enum" || node.kind === "range") {
-    const fragments = groupFragments(node);
-    return fragments[0]?.path ?? null;
-  }
-  return singleFragment(node, definition)?.path ?? null;
 }
 
 /** 节点卡片默认尺寸，用于判断区域是否可能遮挡内容；实际高度以渲染为准。 */

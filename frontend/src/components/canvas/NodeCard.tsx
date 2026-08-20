@@ -20,8 +20,17 @@ export type WorkflowNodeData = {
     direction: "up" | "down",
   ) => void;
   incomingGroups: IncomingOrderGroup[];
+  memberPorts: MemberPortInfo[];
+  groupCount: number;
   diagnostics: Diagnostic[];
 } & Record<string, unknown>;
+
+export interface MemberPortInfo {
+  portId: string;
+  itemId: string;
+  label: string;
+  connected: boolean;
+}
 
 export function NodeCard({ data, selected }: NodeProps) {
   const {
@@ -30,11 +39,16 @@ export function NodeCard({ data, selected }: NodeProps) {
     onDeleteNode,
     onMoveEdgeOrder,
     incomingGroups,
+    memberPorts,
+    groupCount,
     diagnostics,
   } = data as WorkflowNodeData;
   const spec = getNodeKindSpec(node.kind);
   const isDraft = node.region_id === null && spec?.region !== "bridge";
   const fieldErrors = collectFieldErrors(diagnostics, node.id);
+  const [membersOpen, setMembersOpen] = useState(false);
+  const hasMemberPorts = memberPorts.length > 0;
+  const connectedMembers = memberPorts.filter((port) => port.connected);
 
   return (
     <div className={`node-card ${selected ? "selected" : ""} ${isDraft ? "draft" : ""}`}>
@@ -65,6 +79,26 @@ export function NodeCard({ data, selected }: NodeProps) {
           editable={spec !== null && spec.kind !== "enum" && spec.kind !== "range"}
           onChange={(params) => onParamsChange(node.id, params)}
         />
+        {hasMemberPorts && (
+          <button
+            type="button"
+            className="member-toggle"
+            onClick={() => setMembersOpen((current) => !current)}
+          >
+            {membersOpen ? "收起成员" : `成员 ${memberPorts.length}`}
+          </button>
+        )}
+        {!membersOpen &&
+          connectedMembers.map((port) => (
+            <span className="member-connection-label" key={port.portId} title={port.label}>
+              {port.label}
+            </span>
+          ))}
+        {spec?.ports.outputs.some((port) => port.cardinality === "group") && groupCount > 0 && (
+          <span className="group-badge" title="组输出成员数">
+            {groupCount}
+          </span>
+        )}
         {spec?.ports.inputs.map((port) => (
           <Handle
             key={`target-${port.id}`}
@@ -84,6 +118,23 @@ export function NodeCard({ data, selected }: NodeProps) {
           />
         ))}
       </footer>
+      {membersOpen && (
+        <div className="member-ports">
+          {memberPorts.map((port) => (
+            <div className="member-port-row" key={port.portId}>
+              <span className="member-port-label" title={port.label}>
+                {port.label}
+              </span>
+              <Handle
+                type="source"
+                position={Position.Right}
+                id={port.portId}
+                className="node-handle"
+              />
+            </div>
+          ))}
+        </div>
+      )}
       <InputOrderPopover
         targetNodeId={node.id}
         groups={incomingGroups}

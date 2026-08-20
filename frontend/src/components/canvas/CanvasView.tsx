@@ -22,12 +22,17 @@ import type {
   ReactFlowInstance,
 } from "@xyflow/react";
 import type { EditorSelection } from "../../state/editor_state";
-import { getNodeKindSpec, groupFragments, singleFragment } from "../../workflow/registry";
-import type { Diagnostic, WorkflowDefinition, WorkflowNode } from "../../workflow/types";
+import {
+  getNodeKindSpec,
+  groupFragments,
+  memberItemIds,
+  singleFragment,
+} from "../../workflow/registry";
+import type { Diagnostic, EnumValue, WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 import type { IncomingOrderGroup } from "./InputOrderPopover";
 import { nodeKindColor } from "../nodes/registry";
 import { NodeCard } from "./NodeCard";
-import type { WorkflowNodeData } from "./NodeCard";
+import type { MemberPortInfo, WorkflowNodeData } from "./NodeCard";
 import { RegionNode } from "./RegionNode";
 import type { RegionNodeData } from "./RegionNode";
 
@@ -432,6 +437,9 @@ function buildNodes(
       onDeleteNode: callbacks.onDeleteNode,
       onMoveEdgeOrder: callbacks.onMoveEdgeOrder,
       incomingGroups: incoming.get(node.id) ?? [],
+      memberPorts: buildMemberPorts(node, definition),
+      groupCount:
+        node.kind === "enum" || node.kind === "range" ? memberItemIds(node).length : 0,
       diagnostics,
     };
     nodes.push({
@@ -472,14 +480,54 @@ function mergeNodeState(next: Node[], current: Node[]): Node[] {
 }
 
 function buildEdges(definition: WorkflowDefinition): Edge[] {
-  return definition.edges.map((edge) => ({
-    id: edge.id,
-    source: edge.source_node_id,
-    sourceHandle: edge.source_port_id,
-    target: edge.target_node_id,
-    targetHandle: edge.target_port_id,
-    markerEnd: { type: MarkerType.ArrowClosed },
-    selected: false,
+  return definition.edges.map((edge) => {
+    const sourceNode = definition.nodes.find((node) => node.id === edge.source_node_id);
+    const groupCount =
+      sourceNode !== undefined &&
+      (sourceNode.kind === "enum" || sourceNode.kind === "range") &&
+      edge.source_port_id === "out"
+        ? memberItemIds(sourceNode).length
+        : 0;
+    return {
+      id: edge.id,
+      source: edge.source_node_id,
+      sourceHandle: edge.source_port_id,
+      target: edge.target_node_id,
+      targetHandle: edge.target_port_id,
+      markerEnd: { type: MarkerType.ArrowClosed },
+      selected: false,
+      label: groupCount > 0 ? `×${groupCount}` : undefined,
+      labelStyle:
+        groupCount > 0
+          ? { fill: "#94a3b8", fontSize: 10, fontFamily: "ui-monospace, Consolas, monospace" }
+          : undefined,
+    };
+  });
+}
+
+function buildMemberPorts(node: WorkflowNode, definition: WorkflowDefinition): MemberPortInfo[] {
+  if (node.kind !== "enum" && node.kind !== "range") {
+    return [];
+  }
+  const connectedPorts = new Set(
+    definition.edges
+      .filter((edge) => edge.source_node_id === node.id)
+      .map((edge) => edge.source_port_id),
+  );
+  if (node.kind === "enum") {
+    const values = Array.isArray(node.params.values) ? (node.params.values as EnumValue[]) : [];
+    return values.map((item) => ({
+      portId: `out:${item.item_id}`,
+      itemId: item.item_id,
+      label: item.label ?? item.item_id,
+      connected: connectedPorts.has(`out:${item.item_id}`),
+    }));
+  }
+  return groupFragments(node).map((fragment) => ({
+    portId: `out:${fragment.item_id}`,
+    itemId: fragment.item_id,
+    label: String(fragment.value),
+    connected: connectedPorts.has(`out:${fragment.item_id}`),
   }));
 }
 

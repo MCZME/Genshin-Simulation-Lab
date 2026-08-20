@@ -269,4 +269,77 @@ describe("validateWorkflow", () => {
     const definition = makeDefinition([region], [node], []);
     expect(codes(definition)).toContain("NODE_OUTSIDE_REGION");
   });
+
+  it("多输入节点多条入线不报连接数错误", () => {
+    const nodes = [
+      makeNode("root", "root"),
+      makeNode("char", "character", { slot: 1, asset: "character:barbara" }),
+      makeNode("weapon", "weapon", { slot: 1, asset: "weapon:11512" }),
+      makeNode("target", "target", { index: 0, level: 90 }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const edges = [
+      makeEdge("e1", "root", "out", "char", "in"),
+      makeEdge("e2", "char", "out", "target", "in"),
+      makeEdge("e3", "root", "out", "weapon", "in"),
+      makeEdge("e4", "weapon", "out", "target", "in"),
+      makeEdge("e5", "target", "out", "region-1", "out"),
+      makeEdge("e6", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+    const errors = validateWorkflow(definition).filter((item) => item.severity === "error");
+    expect(errors).toEqual([]);
+  });
+
+  it("成员投影端口合法连线没有错误", () => {
+    const enumNode = makeNode("enum", "enum", {
+      path: "team[0].character",
+      value_type: "asset",
+      values: [
+        { item_id: "x-1", value: "character:barbara", label: null },
+        { item_id: "x-2", value: "character:kaeya", label: null },
+      ],
+    });
+    const target = makeNode("target", "target", { index: 0, level: 90 });
+    const edges = [
+      makeEdge("e1", "enum", "out:x-1", "target", "in"),
+      makeEdge("e2", "target", "out", "region-1", "out"),
+      makeEdge("e3", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [enumNode, target, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+    const errors = validateWorkflow(definition).filter((item) => item.severity === "error");
+    expect(errors).toEqual([]);
+  });
+
+  it("未知成员投影端口报错", () => {
+    const enumNode = makeNode("enum", "enum", {
+      path: "team[0].character",
+      value_type: "asset",
+      values: [{ item_id: "x-1", value: "character:barbara", label: null }],
+    });
+    const target = makeNode("target", "target", { index: 0, level: 90 });
+    const edges = [
+      makeEdge("e1", "enum", "out:missing", "target", "in"),
+      makeEdge("e2", "target", "out", "region-1", "out"),
+      makeEdge("e3", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [enumNode, target, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+    expect(codes(definition)).toContain("PORT_NOT_FOUND");
+  });
+
+  it("按键轨迹未闭合按下事件报错", () => {
+    const node = makeNode("trace", "input_trace", {
+      items: [{ frame: 1, events: [{ key: "keyboard.e", phase: "press" }] }],
+    });
+    const definition = makeDefinition([makeRegion()], [node], []);
+    expect(codes(definition)).toContain("PARAM_INVALID");
+  });
 });

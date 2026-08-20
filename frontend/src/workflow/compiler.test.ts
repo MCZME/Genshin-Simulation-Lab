@@ -495,4 +495,155 @@ describe("compileConfigurationRegion", () => {
     expect(targets[0].level).toBe(90);
     expect(targets[1].level).toBe(80);
   });
+
+  it("多输入节点合并不同路径片段", () => {
+    const nodes = [
+      makeNode("root", "root"),
+      makeNode("char", "character", { slot: 1, asset: "character:barbara" }),
+      makeNode("weapon", "weapon", { slot: 1, asset: "weapon:11512" }),
+      makeNode("target", "target", { index: 0, level: 90 }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const edges = [
+      makeEdge("e1", "root", "out", "char", "in"),
+      makeEdge("e2", "char", "out", "target", "in"),
+      makeEdge("e3", "root", "out", "weapon", "in"),
+      makeEdge("e4", "weapon", "out", "target", "in"),
+      makeEdge("e5", "target", "out", "region-1", "out"),
+      makeEdge("e6", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(1);
+    expect(result.members[0].item_id).toBe("node:char+node:weapon+node:target");
+    const team = result.members[0].input.team as Array<Record<string, unknown>>;
+    expect(team[0].character).toBeDefined();
+    expect(team[0].weapon).toBeDefined();
+    const targets = (result.members[0].input.scene as Record<string, unknown>).targets as Array<
+      Record<string, unknown>
+    >;
+    expect(targets[0].level).toBe(90);
+  });
+
+  it("多输入同路径覆盖并警告", () => {
+    const enumA = makeNode("enum-a", "enum", {
+      path: "team[0].character",
+      value_type: "asset",
+      values: [{ item_id: "x-1", value: "character:barbara", label: null }],
+    });
+    const enumB = makeNode("enum-b", "enum", {
+      path: "team[0].character",
+      value_type: "asset",
+      values: [{ item_id: "x-2", value: "character:kaeya", label: null }],
+    });
+    const rangeNode = makeNode("range", "range", {
+      path: "scene.targets[0].level",
+      start: 1,
+      end: 10,
+      step: 3,
+    });
+    const edges = [
+      makeEdge("e1", "enum-a", "out", "range", "in"),
+      makeEdge("e2", "enum-b", "out", "range", "in"),
+      makeEdge("e3", "range", "out", "region-1", "out"),
+      makeEdge("e4", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [enumA, enumB, rangeNode, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(4);
+    expect(result.members[0].item_id).toBe("x-2+range:scene.targets[0].level:1");
+    expect(result.diagnostics.map((item) => item.code)).toContain("PATH_OVERRIDE");
+  });
+
+  it("多输入变体按不同路径叉乘", () => {
+    const enumA = makeNode("enum-a", "enum", {
+      path: "team[0].character",
+      value_type: "asset",
+      values: [
+        { item_id: "a-1", value: "character:barbara", label: null },
+        { item_id: "a-2", value: "character:kaeya", label: null },
+      ],
+    });
+    const enumB = makeNode("enum-b", "enum", {
+      path: "scene.targets[0].level",
+      value_type: "number",
+      values: [
+        { item_id: "b-1", value: 90, label: null },
+        { item_id: "b-2", value: 80, label: null },
+      ],
+    });
+    const runNode = makeNode("run", "run_options", { max_frames: 60 });
+    const edges = [
+      makeEdge("e1", "enum-a", "out", "run", "in"),
+      makeEdge("e2", "enum-b", "out", "run", "in"),
+      makeEdge("e3", "run", "out", "region-1", "out"),
+      makeEdge("e4", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [enumA, enumB, runNode, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(4);
+    expect(result.members[0].item_id).toBe("a-1+b-1+node:run");
+    expect(result.members[3].item_id).toBe("a-2+b-2+node:run");
+  });
+
+  it("成员投影端口只输出对应成员", () => {
+    const enumNode = makeNode("enum", "enum", {
+      path: "team[0].character",
+      value_type: "asset",
+      values: [
+        { item_id: "x-1", value: "character:barbara", label: "芭芭拉" },
+        { item_id: "x-2", value: "character:kaeya", label: "凯亚" },
+      ],
+    });
+    const target1 = makeNode("target1", "target", { index: 0, level: 90 });
+    const target2 = makeNode("target2", "target", { index: 1, level: 80 });
+    const edges = [
+      makeEdge("e1", "enum", "out:x-1", "target1", "in"),
+      makeEdge("e2", "enum", "out:x-2", "target2", "in"),
+      makeEdge("e3", "target1", "out", "region-1", "out"),
+      makeEdge("e4", "target2", "out", "region-1", "out"),
+      makeEdge("e5", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [enumNode, target1, target2, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(2);
+    expect(result.members[0].item_id).toBe("x-1+node:target1");
+    expect(result.members[1].item_id).toBe("x-2+node:target2");
+    const firstTeam = result.members[0].input.team as Array<Record<string, unknown>>;
+    expect((firstTeam[0].character as Record<string, unknown>).asset_key).toBe(
+      "character:barbara",
+    );
+    const secondTeam = result.members[1].input.team as Array<Record<string, unknown>>;
+    expect((secondTeam[0].character as Record<string, unknown>).asset_key).toBe(
+      "character:kaeya",
+    );
+    const targets1 = (result.members[0].input.scene as Record<string, unknown>).targets as Array<
+      Record<string, unknown>
+    >;
+    const targets2 = (result.members[1].input.scene as Record<string, unknown>).targets as Array<
+      Record<string, unknown>
+    >;
+    expect(targets1[0].level).toBe(90);
+    expect(targets2[1].level).toBe(80);
+  });
 });

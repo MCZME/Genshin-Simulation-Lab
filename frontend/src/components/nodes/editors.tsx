@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import type { WorkflowNode } from "../../workflow/types";
 import type { EnumValue } from "../../workflow/types";
 import { AssetPicker } from "../common/AssetPicker";
@@ -194,14 +194,162 @@ export function TargetEditor({ node, onChange, fieldErrors = {} }: NodeEditorPro
 }
 
 export function InputTraceEditor({ node, onChange, fieldErrors = {} }: NodeEditorProps) {
+  const items = useMemo(
+    () => (Array.isArray(node.params.items) ? (node.params.items as TraceEventItem[]) : []),
+    [node.params.items],
+  );
+  const declaredTracks = useMemo(
+    () =>
+      Array.isArray(node.params.tracks)
+        ? node.params.tracks.filter((track): track is string => typeof track === "string")
+        : [],
+    [node.params.tracks],
+  );
+  const blocks = useMemo(() => buildBlocks(items), [items]);
+  const [scale, setScale] = useState(0.5);
+  const [newTrackKey, setNewTrackKey] = useState("");
+  const [gesture, setGesture] = useState<TraceGesture | null>(null);
   const [text, setText] = useState(() => JSON.stringify(node.params.items ?? [], null, 2));
   const [invalid, setInvalid] = useState(false);
-  const items = Array.isArray(node.params.items) ? (node.params.items as TraceEvent[]) : [];
 
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     setText(JSON.stringify(node.params.items ?? [], null, 2));
   }, [node.params.items]);
+
+  const keys = useMemo(() => {
+    const result: string[] = [...declaredTracks];
+    for (const block of blocks) {
+      if (!result.includes(block.key)) {
+        result.push(block.key);
+      }
+    }
+    return result;
+  }, [blocks, declaredTracks]);
+  const maxFrame = useMemo(() => {
+    const last = blocks.reduce((max, block) => Math.max(max, block.release ?? block.press), 0);
+    return Math.max(120, last + 120);
+  }, [blocks]);
+  const width = Math.ceil(maxFrame * scale) + 48;
+
+  function commitBlocks(next: TraceBlock[]) {
+    onChange({ ...node.params, items: blocksToItems(next) });
+  }
+
+  function commitTracks(nextTracks: string[], nextBlocks: TraceBlock[]) {
+    onChange({
+      ...node.params,
+      tracks: nextTracks,
+      items: blocksToItems(nextBlocks),
+    });
+  }
+
+  function startGesture(
+    event: React.PointerEvent<HTMLElement>,
+    block: TraceBlock,
+    mode: TraceGesture["mode"],
+  ) {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const startRelease = block.release ?? block.press;
+    setGesture({
+      blockId: block.id,
+      mode,
+      startX: event.clientX,
+      startPress: block.press,
+      startRelease,
+      press: block.press,
+      release: startRelease,
+    });
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function moveGesture(event: React.PointerEvent<HTMLDivElement>) {
+    if (gesture === null) {
+      return;
+    }
+    const delta = Math.round((event.clientX - gesture.startX) / scale);
+    let press = gesture.startPress;
+    let release = gesture.startRelease;
+    if (gesture.mode === "move") {
+      press = Math.max(1, gesture.startPress + delta);
+      release = Math.max(press + 1, gesture.startRelease + delta);
+    } else if (gesture.mode === "resize-left") {
+      press = Math.min(gesture.startPress + delta, gesture.startRelease - 1);
+      press = Math.max(1, press);
+    } else {
+      release = Math.max(gesture.startRelease + delta, gesture.startPress + 1);
+    }
+    setGesture({ ...gesture, press, release });
+  }
+
+  function endGesture(event: React.PointerEvent<HTMLDivElement>) {
+    if (gesture === null) {
+      return;
+    }
+    const final = { ...gesture };
+    setGesture(null);
+    commitBlocks(
+      blocks.map((block) =>
+        block.id === final.blockId
+          ? { ...block, press: final.press, release: final.release }
+          : block,
+      ),
+    );
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function cancelGesture(event: React.PointerEvent<HTMLDivElement>) {
+    setGesture(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function handleLanePointerDown(
+    event: React.PointerEvent<HTMLDivElement>,
+    key: string,
+  ) {
+    if (event.button !== 0 || (event.target as HTMLElement).closest(".trace-block") !== null) {
+      return;
+    }
+    const rect = event.currentTarget.getBoundingClientRect();
+    const frame = Math.min(
+      TRACE_MAX_FRAME,
+      Math.max(1, Math.round((event.clientX - rect.left) / scale)),
+    );
+    const open = blocks.find((block) => block.key === key && block.release === null);
+    if (open !== undefined) {
+      if (frame <= open.press) {
+        return;
+      }
+      commitBlocks(
+        blocks.map((block) => (block.id === open.id ? { ...block, release: frame } : block)),
+      );
+    } else {
+      commitBlocks([
+        ...blocks,
+        {
+          id: `${key}:${frame}:${blocks.length}`,
+          key,
+          press: frame,
+          release: null,
+        },
+      ]);
+    }
+  }
+
+  const visibleBlocks = blocks.map((block) => {
+    if (gesture === null || gesture.blockId !== block.id) {
+      return block;
+    }
+    return { ...block, press: gesture.press, release: gesture.release };
+  });
 
   function handleChange(next: string) {
     setText(next);
@@ -220,18 +368,242 @@ export function InputTraceEditor({ node, onChange, fieldErrors = {} }: NodeEdito
 
   return (
     <div className="node-editor">
+      <div className="trace-toolbar">
+        <span className="trace-zoom-label">{scale} px/帧</span>
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => setScale((current) => Math.max(0.125, current / 2))}
+        >
+          缩小
+        </button>
+        <button
+          type="button"
+          className="text-button"
+          onClick={() => setScale((current) => Math.min(4, current * 2))}
+        >
+          放大
+        </button>
+        <form
+          className="trace-add-track"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const key = newTrackKey.trim();
+            if (key === "" || declaredTracks.includes(key)) {
+              return;
+            }
+            commitTracks([...declaredTracks, key], blocks);
+            setNewTrackKey("");
+          }}
+        >
+          <input
+            className="field"
+            value={newTrackKey}
+            placeholder="新轨道 key"
+            onChange={(event) => setNewTrackKey(event.target.value)}
+          />
+          <button type="submit" className="text-button">
+            + 轨道
+          </button>
+        </form>
+      </div>
+      <div className="trace-scroll">
+        <div className="trace-canvas" style={{ width }}>
+          <div className="trace-ruler">
+            {Array.from({ length: Math.floor(maxFrame / 60) }, (_, index) => (index + 1) * 60).map(
+              (frame) => (
+                <span className="trace-tick" key={frame} style={{ left: frame * scale }}>
+                  {frame}
+                </span>
+              ),
+            )}
+          </div>
+          {keys.length === 0 && (
+            <p className="node-note">点击轨道空白处添加按下事件，再次点击闭合松开</p>
+          )}
+          {keys.map((key) => (
+            <div className="trace-track" key={key}>
+              <div className="trace-track-label">
+                <span className="trace-key">{key}</span>
+                <button
+                  type="button"
+                  className="icon-button"
+                  title="删除轨道"
+                  onClick={() =>
+                    commitTracks(
+                      declaredTracks.filter((track) => track !== key),
+                      blocks.filter((block) => block.key !== key),
+                    )
+                  }
+                >
+                  ×
+                </button>
+              </div>
+              <div
+                className="trace-track-lane"
+                onPointerDown={(event) => handleLanePointerDown(event, key)}
+              >
+                {visibleBlocks
+                  .filter((block) => block.key === key)
+                  .map((block) => (
+                    <div
+                      key={block.id}
+                      className={`trace-block ${block.release === null || block.invalid ? "trace-block-unclosed" : ""}`}
+                      style={{
+                        left: block.press * scale,
+                        width: Math.max(
+                          6,
+                          ((block.release ?? block.press) - block.press) * scale,
+                        ),
+                      }}
+                      onPointerDown={(event) => startGesture(event, block, "move")}
+                      onPointerMove={moveGesture}
+                      onPointerUp={endGesture}
+                      onPointerCancel={cancelGesture}
+                    >
+                      <button
+                        type="button"
+                        className="trace-block-delete"
+                        title="删除事件"
+                        onClick={(event) => {
+                          event.stopPropagation();
+                          commitBlocks(blocks.filter((item) => item.id !== block.id));
+                        }}
+                      >
+                        ×
+                      </button>
+                      <span
+                        className="trace-block-handle trace-block-handle-left"
+                        onPointerDown={(event) => startGesture(event, block, "resize-left")}
+                      />
+                      <span
+                        className="trace-block-handle trace-block-handle-right"
+                        onPointerDown={(event) => startGesture(event, block, "resize-right")}
+                      />
+                    </div>
+                  ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
       <CollapsibleGroup
-        title="按键轨迹"
-        summary={`${items.length} 个事件 · ${traceRange(items)}`}
+        title="JSON 高级编辑"
+        summary={`${items.length} 个事件 · ${traceRange(items)} · ${keys.length} 条轨道`}
         defaultOpen={false}
       >
         <TextAreaField value={text} onChange={handleChange} rows={7} invalid={invalid} />
-        {(invalid || firstError(fieldErrors, "items") !== undefined) && (
-          <InlineError message={invalid ? "必须是 JSON 数组" : firstError(fieldErrors, "items")!} />
-        )}
       </CollapsibleGroup>
+      {(invalid || firstError(fieldErrors, "items") !== undefined) && (
+        <InlineError message={invalid ? "必须是 JSON 数组" : firstError(fieldErrors, "items")!} />
+      )}
     </div>
   );
+}
+
+interface TraceEventItem {
+  frame: number;
+  events: Array<{ key: string; phase: "press" | "release" }>;
+}
+
+interface TraceBlock {
+  id: string;
+  key: string;
+  press: number;
+  release: number | null;
+  invalid?: boolean;
+}
+
+interface TraceGesture {
+  blockId: string;
+  mode: "move" | "resize-left" | "resize-right";
+  startX: number;
+  startPress: number;
+  startRelease: number;
+  press: number;
+  release: number;
+}
+
+const TRACE_MAX_FRAME = 100000;
+
+function buildBlocks(items: TraceEventItem[]): TraceBlock[] {
+  const byKey = new Map<string, Array<{ frame: number; phase: "press" | "release" }>>();
+  for (const item of items) {
+    if (typeof item.frame !== "number" || !Array.isArray(item.events)) {
+      continue;
+    }
+    for (const event of item.events) {
+      if (typeof event.key !== "string" || event.key === "") {
+        continue;
+      }
+      const list = byKey.get(event.key) ?? [];
+      list.push({ frame: item.frame, phase: event.phase === "release" ? "release" : "press" });
+      byKey.set(event.key, list);
+    }
+  }
+
+  const blocks: TraceBlock[] = [];
+  for (const [key, events] of byKey) {
+    events.sort((a, b) => a.frame - b.frame);
+    let open: { press: number } | null = null;
+    for (const event of events) {
+      if (event.phase === "press") {
+        if (open !== null) {
+          blocks.push({
+            id: `${key}:${open.press}:${blocks.length}`,
+            key,
+            press: open.press,
+            release: null,
+          });
+        }
+        open = { press: event.frame };
+      } else {
+        if (open !== null) {
+          blocks.push({
+            id: `${key}:${open.press}:${blocks.length}`,
+            key,
+            press: open.press,
+            release: Math.max(event.frame, open.press + 1),
+          });
+          open = null;
+        } else {
+          blocks.push({
+            id: `${key}:${event.frame}:${blocks.length}`,
+            key,
+            press: event.frame,
+            release: event.frame,
+            invalid: true,
+          });
+        }
+      }
+    }
+    if (open !== null) {
+      blocks.push({
+        id: `${key}:${open.press}:${blocks.length}`,
+        key,
+        press: open.press,
+        release: null,
+      });
+    }
+  }
+  return blocks;
+}
+
+function blocksToItems(blocks: TraceBlock[]): TraceEventItem[] {
+  const byFrame = new Map<number, Array<{ key: string; phase: "press" | "release" }>>();
+  for (const block of blocks) {
+    const pressEvents = byFrame.get(block.press) ?? [];
+    pressEvents.push({ key: block.key, phase: "press" });
+    byFrame.set(block.press, pressEvents);
+    if (block.release !== null) {
+      const releaseEvents = byFrame.get(block.release) ?? [];
+      releaseEvents.push({ key: block.key, phase: "release" });
+      byFrame.set(block.release, releaseEvents);
+    }
+  }
+  return [...byFrame.entries()]
+    .sort((a, b) => a[0] - b[0])
+    .map(([frame, events]) => ({ frame, events }));
 }
 
 export function RunOptionsEditor({ node, onChange, fieldErrors = {} }: NodeEditorProps) {
@@ -416,12 +788,7 @@ function firstErrorPrefix(
   return key === undefined ? undefined : errors[key]?.[0];
 }
 
-interface TraceEvent {
-  frame: number;
-  events: unknown[];
-}
-
-function traceRange(items: TraceEvent[]): string {
+function traceRange(items: TraceEventItem[]): string {
   if (items.length === 0) {
     return "无事件";
   }

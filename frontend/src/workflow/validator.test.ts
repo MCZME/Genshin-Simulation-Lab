@@ -71,6 +71,66 @@ describe("validateWorkflow", () => {
     expect(errors).toEqual([]);
   });
 
+  it("同一区域占用相同队伍槽位时报错", () => {
+    const nodes = [
+      makeNode("char1", "character", { slot: 1, asset: "character:barbara" }),
+      makeNode("char2", "character", { slot: 1, asset: "character:kaeya" }),
+      makeNode("weapon", "weapon", { slot: 1, asset: "weapon:11512" }),
+      makeNode("char3", "character", { slot: 2, asset: "character:diluc" }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, []);
+    const slotConflicts = validateWorkflow(definition).filter(
+      (item) => item.code === "TEAM_SLOT_CONFLICT",
+    );
+    expect(slotConflicts.map((item) => item.node_id).sort()).toEqual([
+      "char1",
+      "char2",
+    ]);
+  });
+
+  it("同槽位的角色武器圣遗物不视为冲突", () => {
+    const nodes = [
+      makeNode("char", "character", { slot: 1, asset: "character:barbara" }),
+      makeNode("weapon", "weapon", { slot: 1, asset: "weapon:11512" }),
+      makeNode("artifact", "artifact", { slot: 1, asset: "artifact_set:15032" }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, []);
+    expect(codes(definition)).not.toContain("TEAM_SLOT_CONFLICT");
+  });
+
+  it("不同区域可分别占用相同槽位", () => {
+    const nodes = [
+      makeNode("char1", "character", { slot: 1, asset: "character:barbara" }, "region-1"),
+      makeNode("char2", "character", { slot: 1, asset: "character:kaeya" }, "region-2"),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const definition = makeDefinition(
+      [makeRegion("region-1"), makeRegion("region-2")],
+      nodes,
+      [],
+    );
+    expect(codes(definition)).not.toContain("TEAM_SLOT_CONFLICT");
+  });
+
+  it("角色槽位越界与天赋等级越界报参数错误", () => {
+    const nodes = [
+      makeNode("char", "character", {
+        slot: 5,
+        asset: "character:barbara",
+        talents: { normal_attack: 11, elemental_skill: 10, elemental_burst: 1 },
+      }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, []);
+    const params = validateWorkflow(definition).filter((item) => item.code === "PARAM_INVALID");
+    expect(params.map((item) => item.path).sort()).toEqual([
+      "slot",
+      "talents.normal_attack",
+    ]);
+  });
+
   it("同一区域内节点链连线合法", () => {
     const nodes = [
       makeNode("root", "root"),

@@ -248,8 +248,8 @@ function validateCharacter(node: WorkflowNode): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const params = node.params;
   checkCustomPath(node, diagnostics);
-  if (!isPositiveInteger(params.slot)) {
-    diagnostics.push(paramError(node, "slot", "槽位必须是 >= 1 的整数"));
+  if (!isInRange(params.slot, 1, 4)) {
+    diagnostics.push(paramError(node, "slot", "槽位必须在 1 到 4 之间"));
   }
   if (asString(params.asset) === null) {
     diagnostics.push(paramError(node, "asset", "缺少资产引用"));
@@ -262,6 +262,15 @@ function validateCharacter(node: WorkflowNode): Diagnostic[] {
   }
   if (params.talents !== undefined && !isPlainObject(params.talents)) {
     diagnostics.push(paramError(node, "talents", "talents 必须是对象"));
+  } else {
+    const talents = isPlainObject(params.talents) ? params.talents : {};
+    for (const key of ["normal_attack", "elemental_skill", "elemental_burst"]) {
+      if (talents[key] !== undefined && !isInRange(talents[key], 1, 10)) {
+        diagnostics.push(
+          paramError(node, `talents.${key}`, "天赋等级必须在 1 到 10 之间"),
+        );
+      }
+    }
   }
   return diagnostics;
 }

@@ -161,6 +161,7 @@ export function validateWorkflow(definition: WorkflowDefinition): Diagnostic[] {
   }
 
   validateMemberCap(definition, regionById, diagnostics);
+  validateTeamSlotConflicts(definition, regionById, diagnostics);
   warnNodesOutsideRegions(definition, regionById, diagnostics);
   return diagnostics;
 }
@@ -509,6 +510,70 @@ function validateMemberCap(
       );
     }
   }
+}
+
+/** 同一配置区域内，同类别的角色/武器/圣遗物节点不能重复占用同一队伍槽位。 */
+function validateTeamSlotConflicts(
+  definition: WorkflowDefinition,
+  regionById: Map<string, WorkflowRegion>,
+  diagnostics: Diagnostic[],
+): void {
+  const nodesByRegionKindSlot = new Map<
+    string,
+    Map<string, Map<number, WorkflowNode[]>>
+  >();
+  for (const node of definition.nodes) {
+    const regionId = node.region_id;
+    if (regionId === null) {
+      continue;
+    }
+    const region = regionById.get(regionId);
+    if (region === undefined || region.kind !== "configuration") {
+      continue;
+    }
+    if (node.kind !== "character" && node.kind !== "weapon" && node.kind !== "artifact") {
+      continue;
+    }
+    const slot = nodeSlot(node);
+    if (slot === null) {
+      continue;
+    }
+    const byKind = nodesByRegionKindSlot.get(regionId) ?? new Map<string, Map<number, WorkflowNode[]>>();
+    const bySlot = byKind.get(node.kind) ?? new Map<number, WorkflowNode[]>();
+    const list = bySlot.get(slot) ?? [];
+    list.push(node);
+    bySlot.set(slot, list);
+    byKind.set(node.kind, bySlot);
+    nodesByRegionKindSlot.set(regionId, byKind);
+  }
+
+  for (const [regionId, byKind] of nodesByRegionKindSlot) {
+    for (const [kind, bySlot] of byKind) {
+      for (const [slot, nodes] of bySlot) {
+        if (nodes.length < 2) {
+          continue;
+        }
+        for (const node of nodes) {
+          diagnostics.push(
+            diagnostic(
+              "error",
+              "TEAM_SLOT_CONFLICT",
+              `队伍槽位 ${slot} 被多个${kind === "character" ? "角色" : kind === "weapon" ? "武器" : "圣遗物"}节点占用`,
+              {
+                node_id: node.id,
+                region_id: regionId,
+              },
+            ),
+          );
+        }
+      }
+    }
+  }
+}
+
+function nodeSlot(node: WorkflowNode): number | null {
+  const value = node.params.slot;
+  return typeof value === "number" && Number.isInteger(value) ? value : null;
 }
 
 /** 节点卡片默认尺寸，用于判断区域是否可能遮挡内容；实际高度以渲染为准。 */

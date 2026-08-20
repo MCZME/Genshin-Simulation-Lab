@@ -41,11 +41,11 @@ export interface ExpandedRegion {
   diagnostics: Diagnostic[];
 }
 
-export function createSimulationInputSkeleton(name: string): Record<string, unknown> {
+export function createSimulationInputSkeleton(): Record<string, unknown> {
   return {
     schema_version: 2,
     kind: "simulation_input",
-    meta: { name, description: "" },
+    meta: { name: "", description: "" },
     team: [],
     scene: {},
     input_trace: [],
@@ -105,7 +105,7 @@ export function expandConfigurationRegion(
     incomingByTarget,
   );
   const upstreamIds = new Set(upstream.map((item) => item.node.id));
-  const base = [baseDoc(definition.meta.name)];
+  const base = [baseDoc()];
   const nodeDocs = new Map<string, FlowDoc[]>();
   const edgeDocs = new Map<string, FlowDoc[]>();
   const boundarySets: FlowDoc[][] = [];
@@ -188,9 +188,9 @@ export function compileConfigurationRegion(
   };
 }
 
-function baseDoc(name: string): FlowDoc {
+function baseDoc(): FlowDoc {
   return {
-    input: createSimulationInputSkeleton(name),
+    input: createSimulationInputSkeleton(),
     itemIds: [],
     variants: new Map(),
     writers: new Map(),

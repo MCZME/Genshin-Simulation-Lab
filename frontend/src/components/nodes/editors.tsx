@@ -39,13 +39,22 @@ export function RootEditor({ fieldErrors = {} }: ErrorOnlyProps) {
   );
 }
 
-export function MetaEditor({ fieldErrors = {} }: ErrorOnlyProps) {
+export function MetaEditor({ node, onChange, fieldErrors = {} }: NodeEditorProps) {
+  const params = node.params;
   return (
     <div className="node-editor">
-      <p className="node-note">写入工作流名称到输入文档 meta</p>
-      {firstError(fieldErrors, "path") !== undefined && (
-        <InlineError message={firstError(fieldErrors, "path")!} />
-      )}
+      <FieldRow label="名称" error={firstError(fieldErrors, "name")}>
+        <TextField
+          value={asString(params.name) ?? ""}
+          onChange={(value) => onChange({ ...params, name: value })}
+        />
+      </FieldRow>
+      <FieldRow label="描述" error={firstError(fieldErrors, "description")}>
+        <TextField
+          value={asString(params.description) ?? ""}
+          onChange={(value) => onChange({ ...params, description: value })}
+        />
+      </FieldRow>
     </div>
   );
 }

@@ -521,12 +521,30 @@ export function App() {
       setErrorMessage("没有可运行的配置区域");
       return;
     }
+    if (
+      members.some((member) => {
+        const meta = member.input.meta as Record<string, unknown> | undefined;
+        return (
+          meta === undefined ||
+          typeof meta.name !== "string" ||
+          meta.name.trim() === ""
+        );
+      })
+    ) {
+      setErrorMessage("配置区域缺少元信息节点，请配置名称后运行");
+      return;
+    }
+    const firstMeta = members[0].input.meta as Record<string, unknown> | undefined;
+    const runName =
+      firstMeta !== undefined && typeof firstMeta.name === "string"
+        ? firstMeta.name
+        : definition.meta.name;
 
     setRunning(true);
     setErrorMessage(null);
     setRunState(createEmptyRunState());
     try {
-      const submitted = await submitRun(members, { name: definition.meta.name });
+      const submitted = await submitRun(members, { name: runName });
       setRunState((current) => applyRunView(current, submitted));
       const controller = new AbortController();
       pollControllerRef.current = controller;

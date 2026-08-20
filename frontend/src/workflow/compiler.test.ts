@@ -298,7 +298,28 @@ describe("compileConfigurationRegion", () => {
     expect(result.ok).toBe(true);
     expect(result.members).toHaveLength(1);
     expect(result.members[0].item_id).toBe("root");
-    expect(result.members[0].input).toEqual(createSimulationInputSkeleton("测试工作流"));
+    expect(result.members[0].input).toEqual(createSimulationInputSkeleton());
+  });
+
+  it("元信息节点写入输入文档名称与描述", () => {
+    const nodes = [
+      makeNode("root", "root"),
+      makeNode("meta", "meta", { name: "深渊满星队", description: "上半间" }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const edges = [
+      makeEdge("e1", "root", "out", "region-1", "out"),
+      makeEdge("e2", "meta", "out", "region-1", "out"),
+      makeEdge("e3", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members[0].input.meta).toEqual({
+      name: "深渊满星队",
+      description: "上半间",
+    });
   });
 
   it("枚举顺序调整后 item_id 稳定指向同一取值", () => {

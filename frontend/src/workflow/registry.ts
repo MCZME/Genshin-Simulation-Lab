@@ -74,14 +74,15 @@ function rootFragment(): FragmentSource | null {
   return null;
 }
 
-function metaFragment(
-  node: WorkflowNode,
-  definition: WorkflowDefinition,
-): FragmentSource | null {
+function metaFragment(node: WorkflowNode): FragmentSource | null {
+  const params = node.params;
   return {
     item_id: `node:${node.id}`,
-    path: asString(node.params.path) ?? "meta",
-    value: { name: definition.meta.name, description: "" },
+    path: "meta",
+    value: {
+      name: asString(params.name) ?? "",
+      description: asString(params.description) ?? "",
+    },
   };
 }
 
@@ -233,7 +234,13 @@ function validateRoot(node: WorkflowNode): Diagnostic[] {
 
 function validateMeta(node: WorkflowNode): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
-  checkCustomPath(node, diagnostics);
+  const name = node.params.name;
+  if (typeof name !== "string" || name.trim() === "") {
+    diagnostics.push(paramError(node, "name", "名称不能为空"));
+  }
+  if (node.params.description !== undefined && typeof node.params.description !== "string") {
+    diagnostics.push(paramError(node, "description", "描述必须是字符串"));
+  }
   return diagnostics;
 }
 
@@ -495,8 +502,11 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
       inputs: [fragmentPort("in", "single")],
       outputs: [fragmentPort("out", "single", Number.POSITIVE_INFINITY)],
     },
-    paramFields: {},
-    defaultParams: {},
+    paramFields: {
+      name: { type: "string", required: true },
+      description: { type: "string" },
+    },
+    defaultParams: { name: "", description: "" },
     fragment: metaFragment,
     validate: validateMeta,
   },

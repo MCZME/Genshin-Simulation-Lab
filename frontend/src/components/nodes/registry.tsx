@@ -30,7 +30,7 @@ export function NodeEditorHost({
     case "root":
       return <RootEditor fieldErrors={fieldErrors} />;
     case "meta":
-      return <MetaEditor fieldErrors={fieldErrors} />;
+      return <MetaEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "character":
       return <CharacterEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "weapon":

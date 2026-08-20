@@ -250,21 +250,28 @@ export function RegionNode({ data, selected, width, height }: NodeProps) {
       />
       {region.kind === "configuration" && (
         <>
-          <Handle
-            type="target"
-            position={Position.Right}
-            id={REGION_BOUNDARY_OUT_PORT}
-            className="region-handle"
-            isConnectableStart={false}
-            style={{ pointerEvents: connectionInProgress ? "auto" : "none" }}
-          />
+            <Handle
+              type="target"
+              position={Position.Left}
+              id={REGION_BOUNDARY_OUT_PORT}
+              className="region-handle"
+              isConnectableStart={false}
+            style={{
+                left: "auto",
+                right: -8,
+                pointerEvents: connectionInProgress ? "auto" : "none",
+              }}
+            />
           <Handle
             type="source"
             position={Position.Right}
             id={REGION_BOUNDARY_OUT_PORT}
             className="region-handle"
             isConnectableEnd={false}
-            style={{ pointerEvents: connectionInProgress ? "none" : "auto" }}
+            style={{
+              right: 0,
+              pointerEvents: connectionInProgress ? "none" : "auto",
+            }}
           />
         </>
       )}

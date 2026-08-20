@@ -73,6 +73,10 @@ class ApplicationFacade(Protocol):
         kind: AssetListKind | str,
         *,
         q: str | None = None,
+        element: str | None = None,
+        weapon_type: str | None = None,
+        rarity: int | None = None,
+        usable: bool | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> tuple[AssetListItem, ...]: ...
@@ -298,6 +302,10 @@ class DefaultApplicationFacade:
         kind: AssetListKind | str,
         *,
         q: str | None = None,
+        element: str | None = None,
+        weapon_type: str | None = None,
+        rarity: int | None = None,
+        usable: bool | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> tuple[AssetListItem, ...]:
@@ -305,6 +313,10 @@ class DefaultApplicationFacade:
             return self._assets_service.list_assets(
                 kind,
                 q=q,
+                element=element,
+                weapon_type=weapon_type,
+                rarity=rarity,
+                usable=usable,
                 limit=limit,
                 offset=offset,
             )

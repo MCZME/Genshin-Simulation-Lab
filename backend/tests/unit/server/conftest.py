@@ -230,6 +230,10 @@ class FakeApplicationFacade:
         kind: str,
         *,
         q: str | None = None,
+        element: str | None = None,
+        weapon_type: str | None = None,
+        rarity: int | None = None,
+        usable: bool | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> tuple[AssetListItem, ...]:
@@ -241,6 +245,14 @@ class FakeApplicationFacade:
             if item.asset_key.startswith(prefix + ":")
             and (not query or query in item.name.casefold() or query in item.source_id.casefold())
         ]
+        if element is not None:
+            items = [item for item in items if item.element == element]
+        if weapon_type is not None:
+            items = [item for item in items if item.weapon_type == weapon_type]
+        if rarity is not None:
+            items = [item for item in items if item.rarity == rarity]
+        if usable is not None:
+            items = [item for item in items if item.usable == usable]
         start = offset
         end = None if limit is None else start + limit
         return tuple(items[start:end])

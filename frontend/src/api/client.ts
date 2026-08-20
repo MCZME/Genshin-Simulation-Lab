@@ -118,8 +118,19 @@ export async function searchAssets(
   assetType: "characters" | "weapons" | "artifact-sets",
   query = "",
   limit = 50,
+  offset = 0,
+  filters?: {
+    element?: string | null;
+    weapon_type?: string | null;
+    rarity?: number | null;
+    usable?: number | null;
+  },
 ): Promise<AssetListResponse> {
-  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  const params = new URLSearchParams({ q: query, limit: String(limit), offset: String(offset) });
+  if (filters?.element != null) { params.set("element", filters.element); }
+  if (filters?.weapon_type != null) { params.set("weapon_type", filters.weapon_type); }
+  if (filters?.rarity != null) { params.set("rarity", String(filters.rarity)); }
+  if (filters?.usable != null) { params.set("usable", String(filters.usable)); }
   return request<AssetListResponse>(`/assets/${assetType}?${params.toString()}`);
 }
 

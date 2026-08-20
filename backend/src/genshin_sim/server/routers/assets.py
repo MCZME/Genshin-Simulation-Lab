@@ -22,11 +22,24 @@ def list_assets(
     asset_type: str,
     request: Request,
     q: str | None = Query(default=None),
+    element: str | None = Query(default=None),
+    weapon_type: str | None = Query(default=None),
+    rarity: int | None = Query(default=None, ge=1, le=5),
+    usable: bool | None = Query(default=None),
     limit: int = Query(default=50, ge=0, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> AssetListResponse:
     facade = cast(ApplicationFacade, request.app.state.application)
-    items = facade.list_assets(asset_type, q=q, limit=limit, offset=offset)
+    items = facade.list_assets(
+        asset_type,
+        q=q,
+        element=element,
+        weapon_type=weapon_type,
+        rarity=rarity,
+        usable=usable,
+        limit=limit,
+        offset=offset,
+    )
     return AssetListResponse(items=[_asset_to_dto(item) for item in items])
 
 

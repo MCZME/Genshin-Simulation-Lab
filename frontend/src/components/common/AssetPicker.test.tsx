@@ -143,14 +143,29 @@ describe("AssetPicker", () => {
     render(<AssetPicker assetType="characters" value="" onChange={vi.fn()} />);
     fireEvent.click(screen.getByRole("button", { name: /选择资产/ }));
     await waitFor(() =>
-      expect(mockedSearch).toHaveBeenCalledWith("characters", ""),
+      expect(mockedSearch).toHaveBeenCalledWith("characters", "", 50, 0, {
+        element: null,
+        weapon_type: null,
+        rarity: null,
+        usable: null,
+      }),
     );
 
     const input = screen.getByPlaceholderText("搜索资产");
     fireEvent.change(input, { target: { value: "芭" } });
-    expect(mockedSearch).not.toHaveBeenCalledWith("characters", "芭");
+    expect(mockedSearch).not.toHaveBeenCalledWith("characters", "芭", 50, 0, {
+      element: null,
+      weapon_type: null,
+      rarity: null,
+      usable: null,
+    });
     await waitFor(() =>
-      expect(mockedSearch).toHaveBeenCalledWith("characters", "芭"),
+      expect(mockedSearch).toHaveBeenCalledWith("characters", "芭", 50, 0, {
+        element: null,
+        weapon_type: null,
+        rarity: null,
+        usable: null,
+      }),
     );
   });
 

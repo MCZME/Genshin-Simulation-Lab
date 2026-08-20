@@ -53,6 +53,10 @@ class AssetsService:
         kind: AssetListKind | str,
         *,
         q: str | None = None,
+        element: str | None = None,
+        weapon_type: str | None = None,
+        rarity: int | None = None,
+        usable: bool | None = None,
         limit: int | None = None,
         offset: int = 0,
     ) -> tuple[AssetListItem, ...]:
@@ -71,6 +75,15 @@ class AssetsService:
                 for item in items
                 if query in item.name.casefold() or query in item.source_id.casefold()
             )
+        listed = tuple(self._to_list_item(item, resolved_kind) for item in items)
+        if element is not None:
+            listed = tuple(item for item in listed if item.element == element)
+        if weapon_type is not None:
+            listed = tuple(item for item in listed if item.weapon_type == weapon_type)
+        if rarity is not None:
+            listed = tuple(item for item in listed if item.rarity == rarity)
+        if usable is not None:
+            listed = tuple(item for item in listed if item.usable == usable)
         if offset or limit is not None:
             if isinstance(offset, bool) or not isinstance(offset, int) or offset < 0:
                 raise ValueError("offset 必须是非负整数")
@@ -80,8 +93,8 @@ class AssetsService:
                 raise ValueError("limit 必须是非负整数")
             start = offset
             end = None if limit is None else start + limit
-            items = items[start:end]
-        return tuple(self._to_list_item(item, resolved_kind) for item in items)
+            listed = listed[start:end]
+        return listed
 
     def get_asset(self, kind: AssetListKind | str, source_id: str) -> AssetListItem:
         """按资产类型与 source_id 返回单个展示项。"""

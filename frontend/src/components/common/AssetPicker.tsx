@@ -46,24 +46,48 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
   const [weaponTypeFilter, setWeaponTypeFilter] = useState<string | null>(null);
   const [rarityFilter, setRarityFilter] = useState<number | null>(null);
   const [usableFilter, setUsableFilter] = useState<number | null>(null);
+  const [offset, setOffset] = useState(0);
+  const [hasMore, setHasMore] = useState(true);
+  const [loadingMore, setLoadingMore] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
+  const listRef = useRef<HTMLUListElement>(null);
+
+  useEffect(() => {
+    setOffset(0);
+    setHasMore(true);
+  }, [query, elementFilter, weaponTypeFilter, rarityFilter, usableFilter]);
 
   useEffect(() => {
     let cancelled = false;
     const timer = window.setTimeout(() => {
-      setLoading(true);
-      void searchAssets(assetType, query)
+      if (offset === 0) {
+        setLoading(true);
+      } else {
+        setLoadingMore(true);
+      }
+      void searchAssets(assetType, query, 50, offset, { element: elementFilter, weapon_type: weaponTypeFilter, rarity: rarityFilter, usable: usableFilter })
         .then((response) => {
           if (!cancelled) {
-            setItems(response.items ?? []);
-            setActiveIndex(0);
-            setLoading(false);
+            const next = response.items ?? [];
+            if (offset === 0) {
+              setItems(next);
+              setActiveIndex(0);
+              setLoading(false);
+            } else {
+              setItems((prev) => [...prev, ...next]);
+              setLoadingMore(false);
+            }
+            setHasMore(next.length >= 50);
           }
         })
         .catch(() => {
           if (!cancelled) {
-            setItems([]);
-            setLoading(false);
+            if (offset === 0) {
+              setItems([]);
+              setLoading(false);
+            } else {
+              setLoadingMore(false);
+            }
           }
         });
     }, 200);
@@ -71,7 +95,7 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
       cancelled = true;
       window.clearTimeout(timer);
     };
-  }, [assetType, query]);
+  }, [assetType, query, offset, elementFilter, weaponTypeFilter, rarityFilter, usableFilter]);
 
   useEffect(() => {
     if (!open) {
@@ -153,6 +177,16 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
     }
   }
 
+  function handleListScroll() {
+    const el = listRef.current;
+    if (el === null || loadingMore || !hasMore || loading) {
+      return;
+    }
+    if (el.scrollTop + el.clientHeight >= el.scrollHeight - 100) {
+      setOffset((prev) => prev + 50);
+    }
+  }
+
   return (
     <div
       className={`asset-picker ${open ? "dropdown-open" : ""}`}
@@ -202,7 +236,7 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
         <span className="asset-caret">▾</span>
       </button>
       {open && (
-        <div className="asset-dropdown">
+        <div className="asset-dropdown nowheel">
           <input
             className="field nowheel"
             type="text"
@@ -268,7 +302,7 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
               />
             </div>
           )}
-          <ul className="asset-list">
+          <ul className="asset-list" ref={listRef} onScroll={handleListScroll}>
             {loading ? (
               <li className="asset-empty">加载中…</li>
             ) : filteredItems.length === 0 ? (
@@ -317,6 +351,10 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
                   </button>
                 </li>
               ))
+            )}
+            {loadingMore && <li className="asset-empty">加载更多…</li>}
+            {!hasMore && !loadingMore && filteredItems.length > 0 && (
+              <li className="asset-empty">没有更多资产</li>
             )}
           </ul>
         </div>

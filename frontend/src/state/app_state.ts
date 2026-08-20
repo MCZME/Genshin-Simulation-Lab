@@ -5,6 +5,8 @@ export interface AppState {
   workflowName: string;
 }
 
+const LAST_WORKFLOW_ID_KEY = "gsl.last-workflow-id";
+
 export function createAppState(): AppState {
   return {
     workspaceInitialized: false,
@@ -34,4 +36,24 @@ export function withCurrentWorkflow(
     workflowId: workflow.id,
     workflowName: workflow.name,
   };
+}
+
+export function rememberLastWorkflowId(workflowId: string | null): void {
+  try {
+    if (workflowId === null) {
+      window.localStorage.removeItem(LAST_WORKFLOW_ID_KEY);
+    } else {
+      window.localStorage.setItem(LAST_WORKFLOW_ID_KEY, workflowId);
+    }
+  } catch {
+    // localStorage 不可用（隐私模式等）时不阻断工作流切换
+  }
+}
+
+export function readLastWorkflowId(): string | null {
+  try {
+    return window.localStorage.getItem(LAST_WORKFLOW_ID_KEY);
+  } catch {
+    return null;
+  }
 }

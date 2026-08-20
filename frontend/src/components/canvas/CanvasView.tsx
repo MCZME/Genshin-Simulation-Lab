@@ -357,7 +357,11 @@ export function CanvasView({
         proOptions={{ hideAttribution: true }}
       >
         <Background variant={BackgroundVariant.Dots} gap={24} size={1.5} />
-        <Controls position="bottom-right" />
+        <Controls
+          position="bottom-right"
+          showInteractive={false}
+          style={{ right: 220 }}
+        />
         <MiniMap
           position="bottom-right"
           pannable

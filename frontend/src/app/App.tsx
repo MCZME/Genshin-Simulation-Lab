@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   cancelRun,
   createWorkflow,
+  deleteWorkflow,
   getResultMetrics,
   getRun,
   getWorkflow,
@@ -10,7 +11,7 @@ import {
   saveWorkflow,
   submitRun,
 } from "../api/client";
-import type { BatchMemberPayload } from "../api/client";
+import type { BatchMemberPayload, WorkflowListItem } from "../api/client";
 import { isRunTerminal, pollRun } from "../api/runtime_subscription";
 import { CanvasView } from "../components/canvas/CanvasView";
 import { ObjectPanel } from "../components/panels/ObjectPanel";
@@ -43,7 +44,13 @@ import {
 } from "../state/editor_state";
 import type { EditorSelection, EditorState } from "../state/editor_state";
 import { markSaved } from "../state/editor_state";
-import { createAppState, withCurrentWorkflow, withWorkspace } from "../state/app_state";
+import {
+  createAppState,
+  readLastWorkflowId,
+  rememberLastWorkflowId,
+  withCurrentWorkflow,
+  withWorkspace,
+} from "../state/app_state";
 import { definitionToEditorState, editorStateToDefinition } from "../state/converters";
 import { applyRunView, createEmptyRunState, recordMemberMetrics } from "../state/run_state";
 import type { RunState } from "../state/run_state";
@@ -57,6 +64,7 @@ type Tool = "objects" | "problems" | null;
 export function App() {
   const [appState, setAppState] = useState(() => createAppState());
   const [editorState, setEditorState] = useState<EditorState | null>(null);
+  const [workflowList, setWorkflowList] = useState<WorkflowListItem[]>([]);
   const [runState, setRunState] = useState<RunState>(() => createEmptyRunState());
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
@@ -76,11 +84,15 @@ export function App() {
       setAppState((current) => withWorkspace(current, workspace));
 
       const workflowList = await listWorkflows();
-      const existing = workflowList.items[0];
+      setWorkflowList(workflowList.items);
+      const remembered = readLastWorkflowId();
+      const target =
+        workflowList.items.find((item) => item.id === remembered) ??
+        workflowList.items[0];
       let workflowId: string | null;
       let definition: WorkflowDefinition;
-      if (existing !== undefined) {
-        workflowId = existing.id;
+      if (target !== undefined) {
+        workflowId = target.id;
         const detail = await getWorkflow(workflowId);
         definition = detail.definition as unknown as WorkflowDefinition;
       } else {
@@ -91,6 +103,7 @@ export function App() {
       setAppState((current) =>
         withCurrentWorkflow(current, { id: workflowId, name: definition.meta.name }),
       );
+      rememberLastWorkflowId(workflowId);
     } catch (error) {
       setErrorMessage(toMessage(error));
     }
@@ -337,30 +350,143 @@ export function App() {
     setSaving(true);
     setErrorMessage(null);
     try {
-      const definition = editorStateToDefinition(editorState);
-      let workflowId = appState.workflowId;
-      if (workflowId === null) {
-        const created = await createWorkflow(definition.meta.name);
-        workflowId = created.id;
-        setAppState((current) =>
-          withCurrentWorkflow(current, {
-            id: workflowId,
-            name: definition.meta.name,
-          }),
-        );
-      }
-      await saveWorkflow(workflowId, definition);
-      setEditorState((current) => (current === null ? current : markSaved(current)));
-      setAppState((current) =>
-        withCurrentWorkflow(current, {
-          id: workflowId,
-          name: definition.meta.name,
-        }),
-      );
+      await persistCurrentWorkflow();
     } catch (error) {
       setErrorMessage(toMessage(error));
     } finally {
       setSaving(false);
+    }
+  }
+
+  async function persistCurrentWorkflow(): Promise<string | null> {
+    if (editorState === null || running) {
+      return null;
+    }
+    const definition = editorStateToDefinition(editorState);
+    let workflowId = appState.workflowId;
+    if (workflowId === null) {
+      const created = await createWorkflow(definition.meta.name);
+      workflowId = created.id;
+    }
+    await saveWorkflow(workflowId, definition);
+    setEditorState((current) => (current === null ? current : markSaved(current)));
+    setAppState((current) =>
+      withCurrentWorkflow(current, {
+        id: workflowId,
+        name: definition.meta.name,
+      }),
+    );
+    rememberLastWorkflowId(workflowId);
+    await refreshWorkflowList();
+    return workflowId;
+  }
+
+  async function refreshWorkflowList(): Promise<void> {
+    const list = await listWorkflows();
+    setWorkflowList(list.items);
+  }
+
+  async function handleSwitchTo(workflowId: string): Promise<void> {
+    const detail = await getWorkflow(workflowId);
+    const definition = detail.definition as unknown as WorkflowDefinition;
+    setEditorState(definitionToEditorState(definition));
+    setAppState((current) =>
+      withCurrentWorkflow(current, {
+        id: workflowId,
+        name: definition.meta.name,
+      }),
+    );
+    rememberLastWorkflowId(workflowId);
+    setSelectionEpoch((epoch) => epoch + 1);
+  }
+
+  async function handleSwitchWorkflow(workflowId: string): Promise<void> {
+    if (running) {
+      return;
+    }
+    try {
+      await handleSwitchTo(workflowId);
+    } catch (error) {
+      setErrorMessage(toMessage(error));
+    }
+  }
+
+  async function handleSaveAndSwitch(workflowId: string): Promise<void> {
+    if (editorState === null || running) {
+      return;
+    }
+    setSaving(true);
+    setErrorMessage(null);
+    try {
+      await persistCurrentWorkflow();
+      await handleSwitchTo(workflowId);
+    } catch (error) {
+      setErrorMessage(toMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  function handleCreateWorkflow(): void {
+    if (running) {
+      return;
+    }
+    setEditorState(createEmptyEditorState("未命名工作流"));
+    setAppState((current) =>
+      withCurrentWorkflow(current, { id: null, name: "未命名工作流" }),
+    );
+    rememberLastWorkflowId(null);
+    setSelectionEpoch((epoch) => epoch + 1);
+  }
+
+  async function handleSaveAndCreate(): Promise<void> {
+    if (editorState === null || running) {
+      return;
+    }
+    setSaving(true);
+    setErrorMessage(null);
+    try {
+      await persistCurrentWorkflow();
+      handleCreateWorkflow();
+    } catch (error) {
+      setErrorMessage(toMessage(error));
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleDeleteWorkflow(workflowId: string): Promise<void> {
+    if (running) {
+      return;
+    }
+    setErrorMessage(null);
+    try {
+      await deleteWorkflow(workflowId);
+      if (appState.workflowId === workflowId) {
+        setEditorState(createEmptyEditorState("未命名工作流"));
+        setAppState((current) =>
+          withCurrentWorkflow(current, { id: null, name: "未命名工作流" }),
+        );
+        rememberLastWorkflowId(null);
+        setSelectionEpoch((epoch) => epoch + 1);
+      }
+      await refreshWorkflowList();
+    } catch (error) {
+      setErrorMessage(toMessage(error));
+    }
+  }
+
+  async function handleRenameWorkflow(workflowId: string, name: string): Promise<void> {
+    try {
+      const detail = await getWorkflow(workflowId);
+      const definition = detail.definition as unknown as WorkflowDefinition;
+      await saveWorkflow(workflowId, {
+        ...definition,
+        meta: { ...definition.meta, name },
+      });
+      await refreshWorkflowList();
+    } catch (error) {
+      setErrorMessage(toMessage(error));
     }
   }
 
@@ -455,9 +581,23 @@ export function App() {
           saving={saving}
           running={running}
           canRun={canRun}
+          canUndo={editorState !== null && canUndo(editorState)}
+          canRedo={editorState !== null && canRedo(editorState)}
+          workflows={workflowList}
+          workflowId={appState.workflowId}
           onRename={handleRename}
+          onUndo={handleUndo}
+          onRedo={handleRedo}
           onSave={() => void handleSave()}
           onRun={() => void handleRun()}
+          onCreate={handleCreateWorkflow}
+          onSaveAndCreate={() => void handleSaveAndCreate()}
+          onSwitch={(workflowId) => void handleSwitchWorkflow(workflowId)}
+          onSaveAndSwitch={(workflowId) => void handleSaveAndSwitch(workflowId)}
+          onDelete={(workflowId) => void handleDeleteWorkflow(workflowId)}
+          onRenameWorkflow={(workflowId, name) =>
+            void handleRenameWorkflow(workflowId, name)
+          }
         />
         {errorMessage !== null && (
           <div className="error-banner">
@@ -469,24 +609,6 @@ export function App() {
         )}
         <div className="app-body">
           <aside className="tool-rail">
-            <button
-              type="button"
-              className="rail-button"
-              title="撤销 (Ctrl+Z)"
-              disabled={editorState === null || !canUndo(editorState) || running}
-              onClick={handleUndo}
-            >
-              ↶
-            </button>
-            <button
-              type="button"
-              className="rail-button"
-              title="重做 (Ctrl+Shift+Z / Ctrl+Y)"
-              disabled={editorState === null || !canRedo(editorState) || running}
-              onClick={handleRedo}
-            >
-              ↷
-            </button>
             <button
               type="button"
               className={`rail-button ${activeTool === "objects" ? "active" : ""}`}

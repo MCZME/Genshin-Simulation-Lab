@@ -4,6 +4,7 @@ type Schema = components["schemas"];
 
 export type WorkspaceResponse = Schema["WorkspaceResponse"];
 export type WorkflowListResponse = Schema["WorkflowListResponse"];
+export type WorkflowListItem = Schema["WorkflowListItem"];
 export type WorkflowResponse = Schema["WorkflowResponse"];
 export type ValidateInputsResponse = Schema["ValidateInputsResponse"];
 export type RunStatusResponse = Schema["RunStatusResponse"];

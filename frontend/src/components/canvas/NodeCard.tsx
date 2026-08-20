@@ -74,11 +74,6 @@ export function NodeCard({ data, selected }: NodeProps) {
         />
       </div>
       <footer className="node-card-footer">
-        <PathEditor
-          node={node}
-          editable={spec !== null && spec.kind !== "enum" && spec.kind !== "range"}
-          onChange={(params) => onParamsChange(node.id, params)}
-        />
         {hasMemberPorts && (
           <button
             type="button"
@@ -144,65 +139,6 @@ export function NodeCard({ data, selected }: NodeProps) {
   );
 }
 
-function PathEditor({
-  node,
-  editable,
-  onChange,
-}: {
-  node: WorkflowNode;
-  editable: boolean;
-  onChange: (params: Record<string, unknown>) => void;
-}) {
-  const [editing, setEditing] = useState(false);
-  const [draft, setDraft] = useState("");
-
-  if (!editable) {
-    return <span className="node-path">{pathLabel(node)}</span>;
-  }
-  if (editing) {
-    function commit() {
-      const value = draft.trim();
-      const next = { ...node.params };
-      if (value === "") {
-        delete next.path;
-      } else {
-        next.path = value;
-      }
-      onChange(next);
-      setEditing(false);
-    }
-    return (
-      <input
-        className="node-path field field-mono"
-        autoFocus
-        value={draft}
-        spellCheck={false}
-        onChange={(event) => setDraft(event.target.value)}
-        onBlur={commit}
-        onKeyDown={(event) => {
-          if (event.key === "Enter") {
-            commit();
-          } else if (event.key === "Escape") {
-            setEditing(false);
-          }
-        }}
-      />
-    );
-  }
-  return (
-    <span
-      className="node-path editable"
-      title="点击编辑路径"
-      onClick={() => {
-        setDraft(pathLabel(node));
-        setEditing(true);
-      }}
-    >
-      {pathLabel(node)}
-    </span>
-  );
-}
-
 function collectFieldErrors(
   diagnostics: Diagnostic[],
   nodeId: string,
@@ -217,40 +153,4 @@ function collectFieldErrors(
     result[item.path] = list;
   }
   return result;
-}
-
-function pathLabel(node: WorkflowNode): string {
-  const params = node.params;
-  if (typeof params.path === "string" && params.path !== "") {
-    return params.path;
-  }
-  switch (node.kind) {
-    case "character":
-    case "weapon":
-      return `team[${asSlot(params.slot) - 1}].${node.kind}`;
-    case "artifact":
-      return `team[${asSlot(params.slot) - 1}].artifacts`;
-    case "target":
-      return `scene.targets[${asIndex(params.index)}]`;
-    case "meta":
-      return "meta";
-    case "input_trace":
-      return "input_trace";
-    case "run_options":
-      return "run_options";
-    case "root":
-      return "根数据";
-    case "simulation":
-      return "输入文档集合";
-    default:
-      return "未设置路径";
-  }
-}
-
-function asSlot(value: unknown): number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 1 ? value : 1;
-}
-
-function asIndex(value: unknown): number {
-  return typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : 0;
 }

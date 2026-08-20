@@ -691,25 +691,6 @@ body {
   border-top: 1px solid #334155;
 }
 
-.node-path {
-  flex: 1;
-  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-  font-size: 11px;
-  color: #94a3b8;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.node-path.editable {
-  cursor: text;
-}
-
-.node-path.editable:hover {
-  color: #e2e8f0;
-  text-decoration: underline;
-}
-
 .member-toggle {
   flex: none;
   margin-left: 6px;

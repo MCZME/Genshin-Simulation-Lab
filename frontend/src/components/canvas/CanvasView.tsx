@@ -43,7 +43,9 @@ export interface CanvasViewProps {
   dragKind: string | null;
   selectionEpoch: number;
   viewportCommand: "zoom-in" | "zoom-out" | "fit" | null;
+  renameRegionRequestId: string | null;
   onViewportCommandHandled: () => void;
+  onRenameRegionRequestHandled: () => void;
   onMoveNode: (
     nodeId: string,
     position: { x: number; y: number },
@@ -54,6 +56,7 @@ export interface CanvasViewProps {
     regionId: string,
     rect: { x: number; y: number; width: number; height: number },
   ) => void;
+  onRenameRegion: (regionId: string, name: string) => void;
   onConnectEdge: (connection: {
     source_node_id: string;
     source_port_id: string;
@@ -88,9 +91,11 @@ interface DragPreview {
 interface CallbackSnapshot {
   definition: WorkflowDefinition;
   onViewportCommandHandled: CanvasViewProps["onViewportCommandHandled"];
+  onRenameRegionRequestHandled: CanvasViewProps["onRenameRegionRequestHandled"];
   onMoveNode: CanvasViewProps["onMoveNode"];
   onMoveRegion: CanvasViewProps["onMoveRegion"];
   onResizeRegion: CanvasViewProps["onResizeRegion"];
+  onRenameRegion: CanvasViewProps["onRenameRegion"];
   onConnectEdge: CanvasViewProps["onConnectEdge"];
   onSelect: CanvasViewProps["onSelect"];
   onParamsChange: CanvasViewProps["onParamsChange"];
@@ -112,10 +117,13 @@ export function CanvasView({
   dragKind,
   selectionEpoch,
   viewportCommand,
+  renameRegionRequestId,
   onViewportCommandHandled,
+  onRenameRegionRequestHandled,
   onMoveNode,
   onMoveRegion,
   onResizeRegion,
+  onRenameRegion,
   onConnectEdge,
   onSelect,
   onParamsChange,
@@ -128,9 +136,11 @@ export function CanvasView({
   const latestRef = useRef<CallbackSnapshot>({
     definition,
     onViewportCommandHandled,
+    onRenameRegionRequestHandled,
     onMoveNode,
     onMoveRegion,
     onResizeRegion,
+    onRenameRegion,
     onConnectEdge,
     onSelect,
     onParamsChange,
@@ -143,9 +153,11 @@ export function CanvasView({
     latestRef.current = {
       definition,
       onViewportCommandHandled,
+      onRenameRegionRequestHandled,
       onMoveNode,
       onMoveRegion,
       onResizeRegion,
+      onRenameRegion,
       onConnectEdge,
       onSelect,
       onParamsChange,
@@ -168,12 +180,12 @@ export function CanvasView({
   useEffect(() => {
     setNodes((current) =>
       mergeNodeState(
-        buildNodes(definition, diagnostics, visibleHighlight, latestRef.current),
+        buildNodes(definition, diagnostics, visibleHighlight, latestRef.current, renameRegionRequestId),
         current,
       ),
     );
     setEdges(buildEdges(definition));
-  }, [definition, diagnostics, visibleHighlight, setNodes, setEdges]);
+  }, [definition, diagnostics, visibleHighlight, renameRegionRequestId, setNodes, setEdges]);
 
   useEffect(() => {
     setNodes((current) => {
@@ -399,6 +411,7 @@ function buildNodes(
   diagnostics: Diagnostic[],
   highlightRegionId: string | null,
   callbacks: CallbackSnapshot,
+  renameRegionRequestId: string | null,
 ): Node[] {
   const incoming = incomingGroupsByTarget(definition);
   const nodes: Node[] = [];
@@ -406,10 +419,13 @@ function buildNodes(
     const data: RegionNodeData = {
       region,
       onDeleteRegion: callbacks.onDeleteRegion,
+      onRenameRegion: callbacks.onRenameRegion,
       onResizeRegion: callbacks.onResizeRegion,
       onMoveEdgeOrder: callbacks.onMoveEdgeOrder,
       incomingGroups: incoming.get(region.id) ?? [],
       dropTarget: highlightRegionId === region.id,
+      renameRequested: region.id === renameRegionRequestId,
+      onRenameRequestHandled: callbacks.onRenameRegionRequestHandled,
     };
     nodes.push({
       id: region.id,

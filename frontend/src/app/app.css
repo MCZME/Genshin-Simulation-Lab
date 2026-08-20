@@ -588,8 +588,42 @@ body {
   font-weight: 600;
 }
 
-.region-delete {
+.region-name-input {
+  flex: 1;
+  min-width: 80px;
+  padding: 2px 6px;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  background: #0f172a;
+  color: #e2e8f0;
+  font-size: 13px;
+  font-weight: 600;
+}
+
+.region-name-input:focus {
+  border-color: #38bdf8;
+  outline: none;
+}
+
+.region-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 2px;
   margin-left: auto;
+}
+
+.region-rename {
+  opacity: 0;
+}
+
+.region-header:hover .region-rename,
+.region-header:focus-within .region-rename {
+  opacity: 1;
+}
+
+.region-rename:hover {
+  background: #334155;
+  color: #e2e8f0;
 }
 
 .region-handle {

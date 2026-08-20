@@ -36,6 +36,7 @@ import {
   moveEdgeIncomingOrder,
   nudgeSelection,
   redo,
+  renameRegion,
   renameWorkflow,
   resizeRegion,
   setNodeParams,
@@ -72,6 +73,7 @@ export function App() {
   const [activeTool, setActiveTool] = useState<Tool>("objects");
   const [dragKind, setDragKind] = useState<string | null>(null);
   const [selectionEpoch, setSelectionEpoch] = useState(0);
+  const [renameRegionRequestId, setRenameRegionRequestId] = useState<string | null>(null);
   const [viewportCommand, setViewportCommand] = useState<
     "zoom-in" | "zoom-out" | "fit" | null
   >(null);
@@ -147,6 +149,10 @@ export function App() {
     updateEditor((state) => renameWorkflow(state, name));
   }
 
+  function handleRenameRegion(regionId: string, name: string) {
+    updateEditor((state) => renameRegion(state, regionId, name));
+  }
+
   function handleDragStart(kind: string) {
     setDragKind(kind === "" ? null : kind);
   }
@@ -165,6 +171,7 @@ export function App() {
           height: 440,
         });
         const createdRegionId = next.definition.regions[next.definition.regions.length - 1].id;
+        setRenameRegionRequestId(createdRegionId);
         return setSelection(next, { regions: [createdRegionId], nodes: [], edges: [] });
       }
       const spec = getNodeKindSpec(kind);
@@ -397,6 +404,7 @@ export function App() {
       }),
     );
     rememberLastWorkflowId(workflowId);
+    setRenameRegionRequestId(null);
     setSelectionEpoch((epoch) => epoch + 1);
   }
 
@@ -436,6 +444,7 @@ export function App() {
       withCurrentWorkflow(current, { id: null, name: "未命名工作流" }),
     );
     rememberLastWorkflowId(null);
+    setRenameRegionRequestId(null);
     setSelectionEpoch((epoch) => epoch + 1);
   }
 
@@ -468,6 +477,7 @@ export function App() {
           withCurrentWorkflow(current, { id: null, name: "未命名工作流" }),
         );
         rememberLastWorkflowId(null);
+        setRenameRegionRequestId(null);
         setSelectionEpoch((epoch) => epoch + 1);
       }
       await refreshWorkflowList();
@@ -659,6 +669,9 @@ export function App() {
                 onResizeRegion={(regionId, rect) =>
                   updateEditor((state) => resizeRegion(state, regionId, rect))
                 }
+                onRenameRegion={handleRenameRegion}
+                renameRegionRequestId={renameRegionRequestId}
+                onRenameRegionRequestHandled={() => setRenameRegionRequestId(null)}
                 onConnectEdge={handleConnect}
                 onSelect={handleSelect}
                 onParamsChange={(nodeId, params) =>

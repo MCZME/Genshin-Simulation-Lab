@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Handle, Position, useReactFlow, useStore } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
 import { COLORS } from "../../theme/tokens";
@@ -16,6 +16,7 @@ const MIN_REGION_HEIGHT = 240;
 export type RegionNodeData = {
   region: WorkflowRegion;
   onDeleteRegion: (regionId: string) => void;
+  onRenameRegion: (regionId: string, name: string) => void;
   onResizeRegion: (
     regionId: string,
     rect: { x: number; y: number; width: number; height: number },
@@ -28,16 +29,22 @@ export type RegionNodeData = {
   ) => void;
   incomingGroups: IncomingOrderGroup[];
   dropTarget: boolean;
+  /** 新创建区域的一次性命名请求；处理后通过回调清除。 */
+  renameRequested: boolean;
+  onRenameRequestHandled: () => void;
 } & Record<string, unknown>;
 
 export function RegionNode({ data, selected, width, height }: NodeProps) {
   const {
     region,
     onDeleteRegion,
+    onRenameRegion,
     onResizeRegion,
     onMoveEdgeOrder,
     incomingGroups,
     dropTarget,
+    renameRequested,
+    onRenameRequestHandled,
   } = data as RegionNodeData;
   const rf = useReactFlow();
   const connectionInProgress = useStore((state) => state.connection.inProgress);
@@ -46,8 +53,58 @@ export function RegionNode({ data, selected, width, height }: NodeProps) {
     startSize: { width: number; height: number };
   } | null>(null);
   const [previewSize, setPreviewSize] = useState<{ width: number; height: number } | null>(null);
+  const [editingName, setEditingName] = useState(false);
+  const [draftName, setDraftName] = useState("");
+  const editingNameRef = useRef(false);
+  const handledRenameRequestRef = useRef(false);
+  const nameInputRef = useRef<HTMLInputElement>(null);
   const borderColor =
     region.kind === "configuration" ? COLORS.region.configuration : COLORS.region.analysis;
+
+  useEffect(() => {
+    if (!renameRequested || handledRenameRequestRef.current) {
+      return;
+    }
+    handledRenameRequestRef.current = true;
+    editingNameRef.current = true;
+    setDraftName(region.name);
+    setEditingName(true);
+    onRenameRequestHandled();
+  }, [renameRequested, region.name, onRenameRequestHandled]);
+
+  useEffect(() => {
+    if (!editingName) {
+      return;
+    }
+    nameInputRef.current?.focus();
+    nameInputRef.current?.select();
+  }, [editingName]);
+
+  function startRename() {
+    editingNameRef.current = true;
+    setDraftName(region.name);
+    setEditingName(true);
+  }
+
+  function commitRename() {
+    if (!editingNameRef.current) {
+      return;
+    }
+    editingNameRef.current = false;
+    setEditingName(false);
+    const nextName = draftName.trim();
+    if (nextName !== "" && nextName !== region.name) {
+      onRenameRegion(region.id, nextName);
+    }
+  }
+
+  function cancelRename() {
+    if (!editingNameRef.current) {
+      return;
+    }
+    editingNameRef.current = false;
+    setEditingName(false);
+  }
 
   function handleResizePointerDown(event: React.PointerEvent<HTMLDivElement>) {
     if (event.button !== 0) {
@@ -130,17 +187,58 @@ export function RegionNode({ data, selected, width, height }: NodeProps) {
         <span className="region-kind">
           {region.kind === "configuration" ? "配置区域" : "分析区域"}
         </span>
-        <span className="region-name">{region.name}</span>
-        {selected && (
-          <button
-            type="button"
-            className="icon-button danger region-delete"
-            title="删除区域"
-            onClick={() => onDeleteRegion(region.id)}
+        {editingName ? (
+          <input
+            ref={nameInputRef}
+            className="region-name-input nodrag"
+            value={draftName}
+            maxLength={60}
+            aria-label="区域名称"
+            onChange={(event) => setDraftName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === "Enter") {
+                event.preventDefault();
+                commitRename();
+              } else if (event.key === "Escape") {
+                event.preventDefault();
+                cancelRename();
+              }
+            }}
+            onBlur={commitRename}
+          />
+        ) : (
+          <span
+            className="region-name"
+            title="双击重命名"
+            onDoubleClick={startRename}
           >
-            ×
-          </button>
+            {region.name}
+          </span>
         )}
+        <div className="region-header-actions">
+          {!editingName && (
+            <button
+              type="button"
+              className="icon-button region-rename"
+              title="重命名区域"
+              aria-label={`重命名区域 ${region.name}`}
+              onClick={startRename}
+            >
+              ✎
+            </button>
+          )}
+          {selected && (
+            <button
+              type="button"
+              className="icon-button danger region-delete"
+              title="删除区域"
+              aria-label={`删除区域 ${region.name}`}
+              onClick={() => onDeleteRegion(region.id)}
+            >
+              ×
+            </button>
+          )}
+        </div>
       </header>
       <div
         className="region-resize-handle nodrag"

@@ -662,13 +662,13 @@ export function App() {
           {activeTool === "objects" && (
             <ObjectPanel
               onDragStart={handleDragStart}
+              onCollapse={() => setActiveTool(null)}
             />
           )}
           {activeTool === "problems" && editorState !== null && (
             <ProblemPanel diagnostics={diagnostics} onLocate={handleLocate} />
           )}
           <main className="canvas-area">
-            <RegionSummaryBar compiles={compiles} />
             {editorState !== null && (
               <CanvasView
                 definition={editorState.definition}
@@ -704,6 +704,7 @@ export function App() {
                 onMoveEdgeOrder={handleMoveEdgeOrder}
               />
             )}
+            <RegionSummaryBar compiles={compiles} />
           </main>
           {runState.runId !== null && <ResultPanel runState={runState} />}
         </div>

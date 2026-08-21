@@ -3,11 +3,24 @@ import { CONFIG_NODE_KINDS, nodeKindColor } from "../nodes/registry";
 
 export interface ObjectPanelProps {
   onDragStart: (kind: string) => void;
+  onCollapse: () => void;
 }
 
-export function ObjectPanel({ onDragStart }: ObjectPanelProps) {
+export function ObjectPanel({ onDragStart, onCollapse }: ObjectPanelProps) {
   return (
     <aside className="tool-panel">
+      <div className="tool-panel-header">
+        <span className="tool-panel-title">节点库</span>
+        <button
+          type="button"
+          className="tool-panel-collapse"
+          title="收起面板"
+          aria-label="收起节点面板"
+          onClick={onCollapse}
+        >
+          ‹
+        </button>
+      </div>
       <div className="panel-section">
         <h2 className="panel-title">区域</h2>
         <DraggableObject

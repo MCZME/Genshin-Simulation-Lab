@@ -51,7 +51,9 @@ export function NodeCard({ data, selected }: NodeProps) {
   const connectedMembers = memberPorts.filter((port) => port.connected);
 
   return (
-    <div className={`node-card ${selected ? "selected" : ""} ${isDraft ? "draft" : ""}`}>
+    <div
+      className={`node-card ${node.kind === "input_trace" ? "node-card-trace" : ""} ${selected ? "selected" : ""} ${isDraft ? "draft" : ""}`}
+    >
       <header className="node-card-header">
         <span className="node-dot" style={{ background: nodeKindColor(node.kind) }} />
         <span className="node-title">{spec?.displayName ?? node.kind}</span>

@@ -402,4 +402,13 @@ describe("validateWorkflow", () => {
     const definition = makeDefinition([makeRegion()], [node], []);
     expect(codes(definition)).toContain("PARAM_INVALID");
   });
+
+  it("按键轨迹不支持的按键报错", () => {
+    const node = makeNode("trace", "input_trace", {
+      items: [{ frame: 1, events: [{ key: "keyboard.w", phase: "press" }] }],
+    });
+    const definition = makeDefinition([makeRegion()], [node], []);
+    expect(codes(definition)).toContain("PARAM_INVALID");
+  });
+
 });

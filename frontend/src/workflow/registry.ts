@@ -10,6 +10,7 @@ import type {
   WorkflowNode,
 } from "./types";
 import { rangeEntries } from "./decimal";
+import { SUPPORTED_INPUT_KEYS } from "./inputKeys";
 import { parsePath } from "./path";
 
 export type ParamFieldType =
@@ -440,6 +441,15 @@ function validateInputTrace(node: WorkflowNode): Diagnostic[] {
         );
         return;
       }
+      if (!SUPPORTED_INPUT_KEYS.includes(eventRecord.key)) {
+        diagnostics.push(
+          paramError(
+            node,
+            `items[${index}].events[${eventIndex}].key`,
+            `不支持的按键 ${eventRecord.key}`,
+          ),
+        );
+      }
       if (eventRecord.phase !== "press" && eventRecord.phase !== "release") {
         diagnostics.push(
           paramError(
@@ -679,9 +689,8 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     },
     paramFields: {
       items: { type: "list", required: true },
-      tracks: { type: "list" },
     },
-    defaultParams: { items: [], tracks: [] },
+    defaultParams: { items: [] },
     fragment: inputTraceFragment,
     validate: validateInputTrace,
   },

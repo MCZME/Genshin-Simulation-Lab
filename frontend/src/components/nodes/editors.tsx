@@ -1,6 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import type { CSSProperties } from "react";
 import { ELEMENT_COLORS, ELEMENT_LABELS } from "../../theme/elements";
+import { INPUT_KEY_DEFS, inputKeyDef } from "../../workflow/inputKeys";
 import { RESISTANCE_ELEMENT_KEYS } from "../../workflow/registry";
 import type { WorkflowNode } from "../../workflow/types";
 import type { EnumValue } from "../../workflow/types";
@@ -11,7 +13,6 @@ import {
   InlineError,
   NumberField,
   SelectField,
-  TextAreaField,
   TextField,
 } from "../common/fields";
 import { isRunTerminal, useRunState } from "../run_state_context";
@@ -310,50 +311,150 @@ export function InputTraceEditor({ node, onChange, fieldErrors = {} }: NodeEdito
     () => (Array.isArray(node.params.items) ? (node.params.items as TraceEventItem[]) : []),
     [node.params.items],
   );
-  const declaredTracks = useMemo(
-    () =>
-      Array.isArray(node.params.tracks)
-        ? node.params.tracks.filter((track): track is string => typeof track === "string")
-        : [],
-    [node.params.tracks],
-  );
   const blocks = useMemo(() => buildBlocks(items), [items]);
-  const [scale, setScale] = useState(0.5);
-  const [newTrackKey, setNewTrackKey] = useState("");
   const [gesture, setGesture] = useState<TraceGesture | null>(null);
-  const [text, setText] = useState(() => JSON.stringify(node.params.items ?? [], null, 2));
-  const [invalid, setInvalid] = useState(false);
+  const [pendingBlock, setPendingBlock] = useState<TraceBlock | null>(null);
+  const [deleteHint, setDeleteHint] = useState<{ x: number; y: number } | null>(null);
+  const [paletteDrag, setPaletteDrag] = useState<PaletteDrag | null>(null);
+  const timelineRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {
-    // eslint-disable-next-line react-hooks/set-state-in-effect
-    setText(JSON.stringify(node.params.items ?? [], null, 2));
-  }, [node.params.items]);
+  const visibleBlocks = useMemo(() => {
+    let result = blocks;
+    if (gesture !== null) {
+      result = result.map((block) =>
+        block.id === gesture.blockId
+          ? { ...block, press: gesture.press, release: gesture.release }
+          : block,
+      );
+    }
+    if (pendingBlock !== null) {
+      result = result.map((block) =>
+        block.id === pendingBlock.id
+          ? { ...block, press: pendingBlock.press, release: pendingBlock.release }
+          : block,
+      );
+    }
+    return result;
+  }, [blocks, gesture, pendingBlock]);
 
-  const keys = useMemo(() => {
-    const result: string[] = [...declaredTracks];
+  const layout = useMemo(() => layoutBlocks(visibleBlocks), [visibleBlocks]);
+  const maxFrame = useMemo(() => {
+    const last = blocks.reduce((max, block) => Math.max(max, block.release ?? block.press), 0);
+    return Math.max(MIN_TIMELINE_FRAMES, last + TIMELINE_TAIL_FRAMES);
+  }, [blocks]);
+  const timelineWidth = Math.ceil(maxFrame * PX_PER_FRAME) + 24;
+  const timelineHeight = RULER_HEIGHT + Math.max(1, layout.rows) * TRACK_HEIGHT;
+  const unclosedCount = blocks.filter((block) => block.release === null).length;
+  const unsupportedKeys = useMemo(() => {
+    const result = new Set<string>();
     for (const block of blocks) {
-      if (!result.includes(block.key)) {
-        result.push(block.key);
+      if (inputKeyDef(block.key) === null) {
+        result.add(block.key);
       }
     }
     return result;
-  }, [blocks, declaredTracks]);
-  const maxFrame = useMemo(() => {
-    const last = blocks.reduce((max, block) => Math.max(max, block.release ?? block.press), 0);
-    return Math.max(120, last + 120);
   }, [blocks]);
-  const width = Math.ceil(maxFrame * scale) + 48;
+  const totalFrames = blocks.reduce(
+    (max, block) => Math.max(max, block.release ?? block.press),
+    0,
+  );
+  const ghost =
+    paletteDrag === null
+      ? null
+      : computeGhostPlacement(paletteDrag, blocks);
+  if (pendingBlock !== null) {
+    const committed = blocks.find(
+      (block) =>
+        block.key === pendingBlock.key &&
+        block.press === pendingBlock.press &&
+        block.release === pendingBlock.release,
+    );
+    if (committed !== undefined) {
+      setPendingBlock(null);
+    }
+  }
 
   function commitBlocks(next: TraceBlock[]) {
     onChange({ ...node.params, items: blocksToItems(next) });
   }
 
-  function commitTracks(nextTracks: string[], nextBlocks: TraceBlock[]) {
-    onChange({
-      ...node.params,
-      tracks: nextTracks,
-      items: blocksToItems(nextBlocks),
+  function createBlock(key: string, frame: number) {
+    const press = snapFrame(frame);
+    const created: TraceBlock = {
+      id: `${key}:${press}:${blocks.length}`,
+      key,
+      press,
+      release: press + DEFAULT_TAP_FRAMES,
+    };
+    if (overlapsSameKey(created, blocks)) {
+      return;
+    }
+    commitBlocks([...blocks, created]);
+  }
+
+  function startPaletteDrag(
+    event: React.PointerEvent<HTMLElement>,
+    key: string,
+  ) {
+    if (event.button !== 0) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    const timeline = timelineRef.current;
+    if (timeline === null) {
+      return;
+    }
+    const rect = timeline.getBoundingClientRect();
+    const zoom = rect.width / timelineWidth;
+    setPaletteDrag({
+      key,
+      x: event.clientX,
+      y: event.clientY,
+      zoom,
+      rect: {
+        left: rect.left,
+        top: rect.top,
+        right: rect.right,
+        bottom: rect.bottom,
+        width: rect.width,
+        height: rect.height,
+      },
     });
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function movePaletteDrag(event: React.PointerEvent<HTMLElement>) {
+    if (paletteDrag === null) {
+      return;
+    }
+    setPaletteDrag({ ...paletteDrag, x: event.clientX, y: event.clientY });
+  }
+
+  function endPaletteDrag(event: React.PointerEvent<HTMLElement>) {
+    if (paletteDrag === null) {
+      return;
+    }
+    const drag = paletteDrag;
+    setPaletteDrag(null);
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
+    const rect = drag.rect;
+    if (rect.width === 0 && rect.height === 0) {
+      return;
+    }
+    if (
+      event.clientX < rect.left ||
+      event.clientX > rect.right ||
+      event.clientY < rect.top ||
+      event.clientY > rect.bottom
+    ) {
+      return;
+    }
+    const frame = Math.min(
+      TRACE_MAX_FRAME,
+      Math.max(1, Math.round((event.clientX - rect.left) / (PX_PER_FRAME * drag.zoom))),
+    );
+    createBlock(drag.key, frame);
   }
 
   function startGesture(
@@ -370,32 +471,67 @@ export function InputTraceEditor({ node, onChange, fieldErrors = {} }: NodeEdito
     setGesture({
       blockId: block.id,
       mode,
+      open: block.release === null,
       startX: event.clientX,
       startPress: block.press,
       startRelease,
       press: block.press,
       release: startRelease,
     });
-    event.currentTarget.setPointerCapture(event.pointerId);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
   }
 
   function moveGesture(event: React.PointerEvent<HTMLDivElement>) {
     if (gesture === null) {
       return;
     }
-    const delta = Math.round((event.clientX - gesture.startX) / scale);
-    let press = gesture.startPress;
-    let release = gesture.startRelease;
-    if (gesture.mode === "move") {
-      press = Math.max(1, gesture.startPress + delta);
-      release = Math.max(press + 1, gesture.startRelease + delta);
-    } else if (gesture.mode === "resize-left") {
-      press = Math.min(gesture.startPress + delta, gesture.startRelease - 1);
-      press = Math.max(1, press);
-    } else {
-      release = Math.max(gesture.startRelease + delta, gesture.startPress + 1);
+    const block = visibleBlocks.find((item) => item.id === gesture.blockId);
+    if (block === undefined) {
+      return;
     }
-    setGesture({ ...gesture, press, release });
+    const timeline = timelineRef.current;
+    const zoom =
+      timeline === null ? 1 : timeline.getBoundingClientRect().width / timelineWidth;
+    const deltaFrames = Math.round(
+      (event.clientX - gesture.startX) / (PX_PER_FRAME * zoom),
+    );
+    if (timeline !== null) {
+      const rect = timeline.getBoundingClientRect();
+      const inside =
+        event.clientX >= rect.left &&
+        event.clientX <= rect.right &&
+        event.clientY >= rect.top &&
+        event.clientY <= rect.bottom;
+      setDeleteHint(inside ? null : { x: event.clientX, y: event.clientY });
+    }
+    if (gesture.mode === "move") {
+      if (gesture.open) {
+        const press = snapFrame(
+          clampTracePress(block, gesture.startPress + deltaFrames, null, blocks),
+        );
+        setGesture({ ...gesture, press, release: press });
+      } else {
+        const duration = Math.max(
+          SNAP_FRAMES,
+          snapFrame(gesture.startRelease) - snapFrame(gesture.startPress),
+        );
+        const press = snapFrame(
+          clampMovePress(block, gesture.startPress + deltaFrames, duration, blocks),
+        );
+        setGesture({ ...gesture, press, release: press + duration });
+      }
+    } else if (gesture.mode === "resize-left") {
+      const release = gesture.open ? null : gesture.startRelease;
+      const press = snapFrame(
+        clampTracePress(block, gesture.startPress + deltaFrames, release, blocks),
+      );
+      setGesture({ ...gesture, press, release: release ?? press });
+    } else {
+      const release = snapFrame(
+        clampTraceRelease(block, gesture.press, gesture.startRelease + deltaFrames, blocks),
+      );
+      setGesture({ ...gesture, release });
+    }
   }
 
   function endGesture(event: React.PointerEvent<HTMLDivElement>) {
@@ -404,210 +540,177 @@ export function InputTraceEditor({ node, onChange, fieldErrors = {} }: NodeEdito
     }
     const final = { ...gesture };
     setGesture(null);
-    commitBlocks(
-      blocks.map((block) =>
-        block.id === final.blockId
-          ? { ...block, press: final.press, release: final.release }
-          : block,
-      ),
-    );
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  }
-
-  function cancelGesture(event: React.PointerEvent<HTMLDivElement>) {
-    setGesture(null);
-    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
-      event.currentTarget.releasePointerCapture(event.pointerId);
-    }
-  }
-
-  function handleLanePointerDown(
-    event: React.PointerEvent<HTMLDivElement>,
-    key: string,
-  ) {
-    if (event.button !== 0 || (event.target as HTMLElement).closest(".trace-block") !== null) {
-      return;
-    }
-    const rect = event.currentTarget.getBoundingClientRect();
-    const frame = Math.min(
-      TRACE_MAX_FRAME,
-      Math.max(1, Math.round((event.clientX - rect.left) / scale)),
-    );
-    const open = blocks.find((block) => block.key === key && block.release === null);
-    if (open !== undefined) {
-      if (frame <= open.press) {
+    setDeleteHint(null);
+    const timeline = timelineRef.current;
+    if (timeline !== null) {
+      const rect = timeline.getBoundingClientRect();
+      const outside =
+        event.clientX < rect.left ||
+        event.clientX > rect.right ||
+        event.clientY < rect.top ||
+        event.clientY > rect.bottom;
+      if (outside) {
+        commitBlocks(blocks.filter((block) => block.id !== final.blockId));
+        event.currentTarget.releasePointerCapture?.(event.pointerId);
         return;
       }
-      commitBlocks(
-        blocks.map((block) => (block.id === open.id ? { ...block, release: frame } : block)),
-      );
-    } else {
-      commitBlocks([
-        ...blocks,
-        {
-          id: `${key}:${frame}:${blocks.length}`,
-          key,
-          press: frame,
-          release: null,
-        },
-      ]);
     }
-  }
-
-  const visibleBlocks = blocks.map((block) => {
-    if (gesture === null || gesture.blockId !== block.id) {
-      return block;
+    const release =
+      final.open && final.mode !== "resize-right"
+        ? null
+        : Math.max(final.release, final.press + SNAP_FRAMES);
+    const nextBlocks = blocks.map((block) =>
+      block.id === final.blockId
+        ? { ...block, press: final.press, release }
+        : block,
+    );
+    commitBlocks(nextBlocks);
+    const nextBlock = nextBlocks.find((block) => block.id === final.blockId);
+    if (nextBlock !== undefined) {
+      setPendingBlock(nextBlock);
     }
-    return { ...block, press: gesture.press, release: gesture.release };
-  });
-
-  function handleChange(next: string) {
-    setText(next);
-    try {
-      const parsed = JSON.parse(next) as unknown;
-      if (Array.isArray(parsed)) {
-        setInvalid(false);
-        onChange({ ...node.params, items: parsed });
-      } else {
-        setInvalid(true);
-      }
-    } catch {
-      setInvalid(true);
-    }
+    event.currentTarget.releasePointerCapture?.(event.pointerId);
   }
 
   return (
     <div className="node-editor">
       <div className="trace-toolbar">
-        <span className="trace-zoom-label">{scale} px/帧</span>
-        <button
-          type="button"
-          className="text-button"
-          onClick={() => setScale((current) => Math.max(0.125, current / 2))}
-        >
-          缩小
-        </button>
-        <button
-          type="button"
-          className="text-button"
-          onClick={() => setScale((current) => Math.min(4, current * 2))}
-        >
-          放大
-        </button>
-        <form
-          className="trace-add-track"
-          onSubmit={(event) => {
-            event.preventDefault();
-            const key = newTrackKey.trim();
-            if (key === "" || declaredTracks.includes(key)) {
-              return;
-            }
-            commitTracks([...declaredTracks, key], blocks);
-            setNewTrackKey("");
-          }}
-        >
-          <input
-            className="field nowheel"
-            value={newTrackKey}
-            placeholder="新轨道 key"
-            onChange={(event) => setNewTrackKey(event.target.value)}
-          />
-          <button type="submit" className="text-button">
-            + 轨道
-          </button>
-        </form>
-      </div>
-      <div className="trace-scroll">
-        <div className="trace-canvas" style={{ width }}>
-          <div className="trace-ruler">
-            {Array.from({ length: Math.floor(maxFrame / 60) }, (_, index) => (index + 1) * 60).map(
-              (frame) => (
-                <span className="trace-tick" key={frame} style={{ left: frame * scale }}>
-                  {frame}
-                </span>
-              ),
-            )}
-          </div>
-          {keys.length === 0 && (
-            <p className="node-note">点击轨道空白处添加按下事件，再次点击闭合松开</p>
-          )}
-          {keys.map((key) => (
-            <div className="trace-track" key={key}>
-              <div className="trace-track-label">
-                <span className="trace-key">{key}</span>
-                <button
-                  type="button"
-                  className="icon-button"
-                  title="删除轨道"
-                  onClick={() =>
-                    commitTracks(
-                      declaredTracks.filter((track) => track !== key),
-                      blocks.filter((block) => block.key !== key),
-                    )
-                  }
-                >
-                  ×
-                </button>
-              </div>
-              <div
-                className="trace-track-lane"
-                onPointerDown={(event) => handleLanePointerDown(event, key)}
-              >
-                {visibleBlocks
-                  .filter((block) => block.key === key)
-                  .map((block) => (
-                    <div
-                      key={block.id}
-                      className={`trace-block ${block.release === null || block.invalid ? "trace-block-unclosed" : ""}`}
-                      style={{
-                        left: block.press * scale,
-                        width: Math.max(
-                          6,
-                          ((block.release ?? block.press) - block.press) * scale,
-                        ),
-                      }}
-                      onPointerDown={(event) => startGesture(event, block, "move")}
-                      onPointerMove={moveGesture}
-                      onPointerUp={endGesture}
-                      onPointerCancel={cancelGesture}
-                    >
-                      <button
-                        type="button"
-                        className="trace-block-delete"
-                        title="删除事件"
-                        onClick={(event) => {
-                          event.stopPropagation();
-                          commitBlocks(blocks.filter((item) => item.id !== block.id));
-                        }}
-                      >
-                        ×
-                      </button>
-                      <span
-                        className="trace-block-handle trace-block-handle-left"
-                        onPointerDown={(event) => startGesture(event, block, "resize-left")}
-                      />
-                      <span
-                        className="trace-block-handle trace-block-handle-right"
-                        onPointerDown={(event) => startGesture(event, block, "resize-right")}
-                      />
-                    </div>
-                  ))}
-              </div>
-            </div>
+        <span className="trace-toolbar-label">拖拽按键到时间轴</span>
+        <div className="trace-palette">
+          {INPUT_KEY_DEFS.map((def) => (
+            <span
+              key={def.key}
+              className="trace-palette-chip nodrag nowheel"
+              style={{ "--key-color": def.color } as CSSProperties}
+              title={`${def.cap} · ${def.label}`}
+              onPointerDown={(event) => startPaletteDrag(event, def.key)}
+              onPointerMove={movePaletteDrag}
+              onPointerUp={endPaletteDrag}
+              onPointerCancel={() => setPaletteDrag(null)}
+            >
+              <span className="trace-block-cap">{def.cap}</span>
+            </span>
           ))}
         </div>
       </div>
-      <CollapsibleGroup
-        title="JSON 高级编辑"
-        summary={`${items.length} 个事件 · ${traceRange(items)} · ${keys.length} 条轨道`}
-        defaultOpen={false}
+      <div
+        ref={timelineRef}
+        className="trace-timeline nodrag nowheel"
+        style={{ width: timelineWidth, height: timelineHeight }}
       >
-        <TextAreaField value={text} onChange={handleChange} rows={7} invalid={invalid} />
-      </CollapsibleGroup>
-      {(invalid || firstError(fieldErrors, "items") !== undefined) && (
-        <InlineError message={invalid ? "必须是 JSON 数组" : firstError(fieldErrors, "items")!} />
+        <div className="trace-ruler">
+          {Array.from({ length: Math.floor(maxFrame / FRAMES_PER_SECOND) + 1 }, (_, index) => {
+            const frame = index * FRAMES_PER_SECOND;
+            return (
+              <span
+                className="trace-tick trace-tick-major"
+                key={`major-${frame}`}
+                style={{ left: frame * PX_PER_FRAME }}
+              >
+                {Math.round(frame / FRAMES_PER_SECOND)}s
+              </span>
+            );
+          })}
+          {Array.from({ length: Math.floor(maxFrame / RULER_MINOR_FRAMES) + 1 }, (_, index) => {
+            const frame = index * RULER_MINOR_FRAMES;
+            if (frame % FRAMES_PER_SECOND === 0) {
+              return null;
+            }
+            return (
+              <span
+                className="trace-tick trace-tick-minor"
+                key={`minor-${frame}`}
+                style={{ left: frame * PX_PER_FRAME }}
+              />
+            );
+          })}
+        </div>
+        {Array.from({ length: Math.max(1, layout.rows) }, (_, row) => (
+          <div className="trace-row" key={row} />
+        ))}
+        {visibleBlocks.map((block) => {
+          const def = inputKeyDef(block.key);
+          const row = layout.rowById.get(block.id) ?? 0;
+          const duration = Math.max(1, (block.release ?? block.press) - block.press);
+          const width = Math.max(1, duration * PX_PER_FRAME);
+          const showChip = width >= MIN_BLOCK_TEXT_PX;
+          return (
+            <div
+              key={block.id}
+              className={`trace-block ${block.release === null || block.invalid ? "trace-block-unclosed" : ""} ${def === null ? "trace-block-unsupported" : ""}`}
+              style={{
+                left: roundPx(block.press * PX_PER_FRAME),
+                top: roundPx(RULER_HEIGHT + row * TRACK_HEIGHT + 5),
+                width: roundPx(width),
+                "--key-color": def?.color ?? "#64748b",
+              } as CSSProperties}
+              title={`${def?.label ?? block.key} ${formatTraceSeconds(block.press)} → ${block.release === null ? "未松开" : formatTraceSeconds(block.release)}（${block.press}–${block.release ?? "?"} 帧）`}
+      onPointerDown={(event) => startGesture(event, block, "move")}
+      onPointerMove={moveGesture}
+      onPointerUp={endGesture}
+      onPointerCancel={() => {
+        setGesture(null);
+        setDeleteHint(null);
+      }}
+            >
+              {showChip && (
+                <span className="trace-block-chip">
+                  <span className="trace-block-cap">{def?.cap ?? "?"}</span>
+                </span>
+              )}
+              <span
+                className="trace-block-handle trace-block-handle-left"
+                onPointerDown={(event) => startGesture(event, block, "resize-left")}
+              />
+              <span
+                className="trace-block-handle trace-block-handle-right"
+                onPointerDown={(event) => startGesture(event, block, "resize-right")}
+              />
+            </div>
+          );
+        })}
+        {visibleBlocks.length === 0 && (
+          <p className="trace-empty">从上方拖拽按键到时间轴</p>
+        )}
+      {ghost !== null && (
+        <span
+          className={`trace-drag-ghost ${ghost.blocked ? "trace-drag-ghost-blocked" : ""}`}
+            style={
+              {
+                left: ghost.left,
+                top: ghost.top,
+                width: ghost.width,
+                "--key-color": ghost.color,
+              } as CSSProperties
+            }
+          >
+          {ghost.cap}
+        </span>
+      )}
+      </div>
+      {deleteHint !== null &&
+        createPortal(
+          <span
+            className="trace-delete-ghost"
+            style={{ left: deleteHint.x, top: deleteHint.y }}
+          >
+            × 删除
+          </span>,
+          document.body,
+        )}
+      <div className="trace-summary">
+        <span>{visibleBlocks.length} 个操作</span>
+        <span>总长 {formatTraceSeconds(totalFrames)}</span>
+        <span>同时最多 {layout.rows} 层</span>
+        {unclosedCount > 0 && (
+          <span className="trace-summary-warning">{unclosedCount} 个未闭合按键</span>
+        )}
+        {unsupportedKeys.size > 0 && (
+          <span className="trace-summary-warning">{unsupportedKeys.size} 个不支持按键</span>
+        )}
+      </div>
+      {firstError(fieldErrors, "items") !== undefined && (
+        <InlineError message={firstError(fieldErrors, "items")!} />
       )}
     </div>
   );
@@ -629,6 +732,7 @@ interface TraceBlock {
 interface TraceGesture {
   blockId: string;
   mode: "move" | "resize-left" | "resize-right";
+  open: boolean;
   startX: number;
   startPress: number;
   startRelease: number;
@@ -636,7 +740,211 @@ interface TraceGesture {
   release: number;
 }
 
+interface TraceRect {
+  left: number;
+  top: number;
+  right: number;
+  bottom: number;
+  width: number;
+  height: number;
+}
+
+interface PaletteDrag {
+  key: string;
+  x: number;
+  y: number;
+  zoom: number;
+  rect: TraceRect;
+}
+
 const TRACE_MAX_FRAME = 100000;
+const FRAMES_PER_SECOND = 60;
+const SNAP_FRAMES = 1; // 编辑精度：1 帧
+const RULER_MINOR_FRAMES = 6; // 标尺次刻度：0.1 秒
+const DEFAULT_TAP_FRAMES = 15; // 0.25 秒
+const PX_PER_FRAME = 1.6; // 96px / 秒
+const RULER_HEIGHT = 18;
+const TRACK_HEIGHT = 36;
+const MIN_TIMELINE_FRAMES = 360; // 6 秒
+const TIMELINE_TAIL_FRAMES = 30; // 尾部留白 0.5 秒
+const MIN_BLOCK_TEXT_PX = 20;
+
+function compareTraceBlocks(a: TraceBlock, b: TraceBlock): number {
+  return (
+    a.press - b.press ||
+    (a.key < b.key ? -1 : a.key > b.key ? 1 : 0) ||
+    (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)
+  );
+}
+
+function layoutBlocks(blocks: TraceBlock[]): {
+  rows: number;
+  rowById: Map<string, number>;
+} {
+  const sorted = [...blocks].sort(compareTraceBlocks);
+  const trackEnds: number[] = [];
+  const rowById = new Map<string, number>();
+  sorted.forEach((block) => {
+    const start = block.press;
+    const end = block.release ?? block.press;
+    let row = trackEnds.findIndex((lastEnd) => lastEnd <= start);
+    if (row === -1) {
+      row = trackEnds.length;
+      trackEnds.push(end);
+    } else {
+      trackEnds[row] = end;
+    }
+    rowById.set(block.id, row);
+  });
+  return { rows: trackEnds.length, rowById };
+}
+
+function sameKeyBounds(
+  block: TraceBlock,
+  blocks: TraceBlock[],
+): { prevEnd: number; nextStart: number } {
+  const siblings = blocks
+    .filter((item) => item.key === block.key && item.id !== block.id)
+    .sort(compareTraceBlocks);
+  let prevEnd = 0;
+  let nextStart = TRACE_MAX_FRAME + 1;
+  for (const sibling of siblings) {
+    if (compareTraceBlocks(sibling, block) < 0) {
+      prevEnd = Math.max(prevEnd, sibling.release ?? sibling.press);
+    } else {
+      nextStart = Math.min(nextStart, sibling.press);
+    }
+  }
+  return { prevEnd, nextStart };
+}
+
+function clampTracePress(
+  block: TraceBlock,
+  press: number,
+  release: number | null,
+  blocks: TraceBlock[],
+): number {
+  const { prevEnd, nextStart } = sameKeyBounds(block, blocks);
+  const upper =
+    release === null ? nextStart - 1 : Math.min(release - SNAP_FRAMES, nextStart - 1);
+  return Math.max(1, prevEnd + 1, Math.min(press, upper));
+}
+
+function clampTraceRelease(
+  block: TraceBlock,
+  press: number,
+  release: number,
+  blocks: TraceBlock[],
+): number {
+  const { nextStart } = sameKeyBounds(block, blocks);
+  return Math.max(press + SNAP_FRAMES, Math.min(release, nextStart - 1));
+}
+
+function clampMovePress(
+  block: TraceBlock,
+  targetPress: number,
+  duration: number,
+  blocks: TraceBlock[],
+): number {
+  const siblings = blocks
+    .filter((item) => item.key === block.key && item.id !== block.id)
+    .sort(compareTraceBlocks);
+  let cursor = 1;
+  let bestStart = 1;
+  let bestEnd = TRACE_MAX_FRAME;
+  let bestDist = Number.POSITIVE_INFINITY;
+  const consider = (start: number, end: number) => {
+    const fitEnd = end - duration + 1;
+    if (fitEnd < start) {
+      return;
+    }
+    const dist =
+      targetPress < start ? start - targetPress : targetPress > fitEnd ? targetPress - fitEnd : 0;
+    if (dist < bestDist) {
+      bestDist = dist;
+      bestStart = start;
+      bestEnd = fitEnd;
+    }
+  };
+  for (const sibling of siblings) {
+    consider(cursor, sibling.press - 1);
+    cursor = Math.max(cursor, (sibling.release ?? sibling.press) + 1);
+  }
+  consider(cursor, TRACE_MAX_FRAME);
+  if (!Number.isFinite(bestDist)) {
+    return Math.max(1, Math.min(targetPress, TRACE_MAX_FRAME - duration + 1));
+  }
+  return Math.max(bestStart, Math.min(targetPress, bestEnd));
+}
+
+function overlapsSameKey(created: TraceBlock, blocks: TraceBlock[]): boolean {
+  const release = created.release ?? created.press;
+  return blocks.some(
+    (block) =>
+      block.key === created.key &&
+      created.press < (block.release ?? block.press) &&
+      block.press < release,
+  );
+}
+
+function formatTraceSeconds(frames: number): string {
+  return `${(frames / FRAMES_PER_SECOND).toFixed(1)}s`;
+}
+
+function snapFrame(frame: number): number {
+  return Math.max(1, Math.round(frame / SNAP_FRAMES) * SNAP_FRAMES);
+}
+
+function roundPx(value: number): number {
+  return Math.round(value * 10) / 10;
+}
+
+function computeGhostPlacement(
+  drag: PaletteDrag,
+  blocks: TraceBlock[],
+): {
+  left: number;
+  top: number;
+  width: number;
+  blocked: boolean;
+  cap: string;
+  color: string;
+} | null {
+  const rect = drag.rect;
+  if (rect.width === 0 && rect.height === 0) {
+    return null;
+  }
+  if (
+    drag.x < rect.left ||
+    drag.x > rect.right ||
+    drag.y < rect.top ||
+    drag.y > rect.bottom
+  ) {
+    return null;
+  }
+  const frame = Math.min(
+    TRACE_MAX_FRAME,
+    Math.max(1, Math.round((drag.x - rect.left) / (PX_PER_FRAME * drag.zoom))),
+  );
+  const press = snapFrame(frame);
+  const virtual: TraceBlock = {
+    id: "ghost",
+    key: drag.key,
+    press,
+    release: press + DEFAULT_TAP_FRAMES,
+  };
+  const layout = layoutBlocks([...blocks, virtual]);
+  const row = layout.rowById.get("ghost") ?? 0;
+  const def = inputKeyDef(drag.key);
+  return {
+    left: roundPx(press * PX_PER_FRAME),
+    top: roundPx(RULER_HEIGHT + row * TRACK_HEIGHT + 5),
+    width: roundPx(Math.max(1, DEFAULT_TAP_FRAMES * PX_PER_FRAME)),
+    blocked: overlapsSameKey(virtual, blocks),
+    cap: def?.cap ?? "?",
+    color: def?.color ?? "#1d4ed8",
+  };
+}
 
 function buildBlocks(items: TraceEventItem[]): TraceBlock[] {
   const byKey = new Map<string, Array<{ frame: number; phase: "press" | "release" }>>();
@@ -702,8 +1010,9 @@ function buildBlocks(items: TraceEventItem[]): TraceBlock[] {
 }
 
 function blocksToItems(blocks: TraceBlock[]): TraceEventItem[] {
+  const sorted = [...blocks].sort(compareTraceBlocks);
   const byFrame = new Map<number, Array<{ key: string; phase: "press" | "release" }>>();
-  for (const block of blocks) {
+  for (const block of sorted) {
     const pressEvents = byFrame.get(block.press) ?? [];
     pressEvents.push({ key: block.key, phase: "press" });
     byFrame.set(block.press, pressEvents);
@@ -898,23 +1207,6 @@ function firstErrorPrefix(
     (path) => path === prefix || path.startsWith(`${prefix}[`),
   );
   return key === undefined ? undefined : errors[key]?.[0];
-}
-
-function traceRange(items: TraceEventItem[]): string {
-  if (items.length === 0) {
-    return "无事件";
-  }
-  let min = Infinity;
-  let max = -Infinity;
-  for (const item of items) {
-    if (item.frame < min) {
-      min = item.frame;
-    }
-    if (item.frame > max) {
-      max = item.frame;
-    }
-  }
-  return `首帧 ${min} · 末帧 ${max}`;
 }
 
 function asString(value: unknown): string | null {

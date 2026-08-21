@@ -627,8 +627,8 @@ body {
 }
 
 .region-handle {
-  width: 10px !important;
-  height: 10px !important;
+  width: 14px !important;
+  height: 14px !important;
   background: #3b82f6 !important;
   border: 2px solid #0f172a !important;
 }

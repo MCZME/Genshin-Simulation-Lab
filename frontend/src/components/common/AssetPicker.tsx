@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { searchAssets } from "../../api/client";
 import type { AssetResponse } from "../../api/client";
+import { ELEMENT_COLORS, ELEMENT_LABELS } from "../../theme/elements";
 
 interface AssetPickerProps {
   assetType: "characters" | "weapons" | "artifact-sets";
@@ -8,24 +9,12 @@ interface AssetPickerProps {
   onChange: (assetKey: string) => void;
 }
 
-const ELEMENT_LABELS: Record<string, string> = {
-  anemo: "风",
-  cryo: "冰",
-  dendro: "草",
-  electro: "雷",
-  geo: "岩",
-  hydro: "水",
-  pyro: "火",
-};
-
-const ELEMENT_COLORS: Record<string, string> = {
-  anemo: "#10b981",
-  cryo: "#22d3ee",
-  dendro: "#84cc16",
-  electro: "#a855f7",
-  geo: "#f59e0b",
-  hydro: "#3b82f6",
-  pyro: "#ef4444",
+type AssetFilters = {
+  query: string;
+  elementFilter: string | null;
+  weaponTypeFilter: string | null;
+  rarityFilter: number | null;
+  usableFilter: number | null;
 };
 
 const WEAPON_LABELS: Record<string, string> = {
@@ -52,10 +41,25 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
-  useEffect(() => {
+  function updateCriteria(next: Partial<AssetFilters>) {
+    if (next.query !== undefined) {
+      setQuery(next.query);
+    }
+    if (next.elementFilter !== undefined) {
+      setElementFilter(next.elementFilter);
+    }
+    if (next.weaponTypeFilter !== undefined) {
+      setWeaponTypeFilter(next.weaponTypeFilter);
+    }
+    if (next.rarityFilter !== undefined) {
+      setRarityFilter(next.rarityFilter);
+    }
+    if (next.usableFilter !== undefined) {
+      setUsableFilter(next.usableFilter);
+    }
     setOffset(0);
     setHasMore(true);
-  }, [query, elementFilter, weaponTypeFilter, rarityFilter, usableFilter]);
+  }
 
   useEffect(() => {
     let cancelled = false;
@@ -137,11 +141,13 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
   function select(item: AssetResponse) {
     onChange(item.asset_key);
     setOpen(false);
-    setQuery("");
-    setElementFilter(null);
-    setWeaponTypeFilter(null);
-    setRarityFilter(null);
-    setUsableFilter(null);
+    updateCriteria({
+      query: "",
+      elementFilter: null,
+      weaponTypeFilter: null,
+      rarityFilter: null,
+      usableFilter: null,
+    });
   }
 
   function toggleOpen() {
@@ -243,7 +249,7 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
             value={query}
             placeholder="搜索资产"
             autoFocus
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => updateCriteria({ query: event.target.value })}
             onKeyDown={handleKeyDown}
           />
           {assetType !== "artifact-sets" && (
@@ -257,7 +263,7 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
                   }))}
                   value={elementFilter}
                   onSelect={(value) => {
-                    setElementFilter(value);
+                    updateCriteria({ elementFilter: value });
                     setActiveIndex(0);
                   }}
                 />
@@ -271,7 +277,7 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
                   }))}
                   value={weaponTypeFilter}
                   onSelect={(value) => {
-                    setWeaponTypeFilter(value);
+                    updateCriteria({ weaponTypeFilter: value });
                     setActiveIndex(0);
                   }}
                 />
@@ -284,7 +290,7 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
                 }))}
                 value={rarityFilter}
                 onSelect={(value) => {
-                  setRarityFilter(value);
+                  updateCriteria({ rarityFilter: value });
                   setActiveIndex(0);
                 }}
               />
@@ -296,7 +302,7 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
                 ]}
                 value={usableFilter}
                 onSelect={(value) => {
-                  setUsableFilter(value);
+                  updateCriteria({ usableFilter: value });
                   setActiveIndex(0);
                 }}
               />

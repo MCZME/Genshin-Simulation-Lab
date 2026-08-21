@@ -26,6 +26,26 @@ from genshin_sim.content.characters.testing.runtime_probe import (
     create_runtime_probe_content_unit,
 )
 from genshin_sim.content.registries import ContentUnitRegistry
+from genshin_sim.content.weapons.bow.hunter_bow import (
+    HUNTER_BOW_HANDLER_KEY,
+    create_hunter_bow_content_unit,
+)
+from genshin_sim.content.weapons.catalyst.apprentice_notes import (
+    APPRENTICE_NOTES_HANDLER_KEY,
+    create_apprentice_notes_content_unit,
+)
+from genshin_sim.content.weapons.claymore.waster_greatsword import (
+    WASTER_GREATSWORD_HANDLER_KEY,
+    create_waster_greatsword_content_unit,
+)
+from genshin_sim.content.weapons.polearm.beginner_protector import (
+    BEGINNER_PROTECTOR_HANDLER_KEY,
+    create_beginner_protector_content_unit,
+)
+from genshin_sim.content.weapons.sword.dull_blade import (
+    DULL_BLADE_HANDLER_KEY,
+    create_dull_blade_content_unit,
+)
 
 BUILTIN_NOOP_CONTENT_HANDLER_KEYS = (
     "artifact.unimplemented_set_bonus",
@@ -60,6 +80,26 @@ def create_default_content_unit_registry() -> ContentUnitRegistry:
     registry.register_effect_factory(
         BARBARA_ENCORE_EFFECT_HANDLER_KEY,
         create_barbara_encore_effect,
+    )
+    registry.register_weapon_factory(
+        DULL_BLADE_HANDLER_KEY,
+        create_dull_blade_content_unit,
+    )
+    registry.register_weapon_factory(
+        WASTER_GREATSWORD_HANDLER_KEY,
+        create_waster_greatsword_content_unit,
+    )
+    registry.register_weapon_factory(
+        BEGINNER_PROTECTOR_HANDLER_KEY,
+        create_beginner_protector_content_unit,
+    )
+    registry.register_weapon_factory(
+        APPRENTICE_NOTES_HANDLER_KEY,
+        create_apprentice_notes_content_unit,
+    )
+    registry.register_weapon_factory(
+        HUNTER_BOW_HANDLER_KEY,
+        create_hunter_bow_content_unit,
     )
     registry.register_effect_factory(
         BARBARA_CONSTELLATION_C1_HANDLER_KEY,

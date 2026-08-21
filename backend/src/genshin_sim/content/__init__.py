@@ -106,13 +106,44 @@ from genshin_sim.content.team import (
     create_resonance_buff_definitions,
     create_resonance_definitions,
 )
+from genshin_sim.content.weapons.bow.hunter_bow import (
+    HUNTER_BOW_ASSET_KEY,
+    HUNTER_BOW_HANDLER_KEY,
+    create_hunter_bow_content_unit,
+)
+from genshin_sim.content.weapons.catalyst.apprentice_notes import (
+    APPRENTICE_NOTES_ASSET_KEY,
+    APPRENTICE_NOTES_HANDLER_KEY,
+    create_apprentice_notes_content_unit,
+)
+from genshin_sim.content.weapons.claymore.waster_greatsword import (
+    WASTER_GREATSWORD_ASSET_KEY,
+    WASTER_GREATSWORD_HANDLER_KEY,
+    create_waster_greatsword_content_unit,
+)
+from genshin_sim.content.weapons.polearm.beginner_protector import (
+    BEGINNER_PROTECTOR_ASSET_KEY,
+    BEGINNER_PROTECTOR_HANDLER_KEY,
+    create_beginner_protector_content_unit,
+)
+from genshin_sim.content.weapons.sword.dull_blade import (
+    DULL_BLADE_ASSET_KEY,
+    DULL_BLADE_HANDLER_KEY,
+    create_dull_blade_content_unit,
+)
 from genshin_sim.core.systems.buff import BuffDefinition
 
 __all__ = [
     "ArtifactContentUnitRequest",
+    "APPRENTICE_NOTES_ASSET_KEY",
+    "APPRENTICE_NOTES_HANDLER_KEY",
+    "BEGINNER_PROTECTOR_ASSET_KEY",
+    "BEGINNER_PROTECTOR_HANDLER_KEY",
     "DENDRO_EM_20_TRIGGER_KEYS",
     "DENDRO_EM_30_TRIGGER_KEYS",
     "ELECTRO_PARTICLE_TRIGGER_KEYS",
+    "DULL_BLADE_ASSET_KEY",
+    "DULL_BLADE_HANDLER_KEY",
     "BARBARA_ACTION_TABLE",
     "BARBARA_ASSET_KEY",
     "BARBARA_CHARACTER_HANDLER_KEY",
@@ -163,6 +194,8 @@ __all__ = [
     "HookDispatcherError",
     "HookResult",
     "HookSubscriptionError",
+    "HUNTER_BOW_ASSET_KEY",
+    "HUNTER_BOW_HANDLER_KEY",
     "JSONValue",
     "Modifier",
     "RUNTIME_PROBE_ACTION_KEY",
@@ -186,11 +219,18 @@ __all__ = [
     "StatePatchIntentHandler",
     "StatePatchRequest",
     "UnsupportedHookOutputError",
+    "WASTER_GREATSWORD_ASSET_KEY",
+    "WASTER_GREATSWORD_HANDLER_KEY",
     "WeaponContentUnitRequest",
+    "create_apprentice_notes_content_unit",
     "create_barbara_encore_effect",
+    "create_beginner_protector_content_unit",
     "create_default_content_unit_registry",
+    "create_dull_blade_content_unit",
+    "create_hunter_bow_content_unit",
     "create_resonance_buff_definitions",
     "create_resonance_definitions",
+    "create_waster_greatsword_content_unit",
     "MOONSIGN_BONUS_CAP",
     "MOONSIGN_BONUS_DURATION_FRAMES",
     "MOONSIGN_SCALING_BY_ELEMENT",

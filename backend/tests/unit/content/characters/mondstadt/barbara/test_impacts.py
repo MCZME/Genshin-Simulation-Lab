@@ -23,6 +23,9 @@ from genshin_sim.core.systems.aura import AuraStrength
 def test_barbara_elemental_skill_impact_factory_emits_damage_self_wet_and_ring(
     barbara_content_unit,
 ):
+    # 与集成（tests/integration/content/barbara/test_elemental_skill.py::
+    # test_barbara_elemental_skill_cast_resolves_damage_self_wet_and_ring）共存；
+    # 本用例只锁定 impact 工厂的规格编译，最终数值由集成用例锁定。
     unit = barbara_content_unit(talent_levels={"normal_attack": 1, "elemental_skill": 1})
     damage_factory = unit.impact_factories[BARBARA_ELEMENTAL_SKILL_IMPACT_KEY]
     damage_requests = damage_factory.create_requests(

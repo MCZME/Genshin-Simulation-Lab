@@ -14,7 +14,7 @@ from genshin_sim.core.events import EventType
 from genshin_sim.core.space import ACTIVE_CHARACTER_ENTITY_ID, Vector3
 
 
-def test_barbara_normal_attack_asset_scaling_resolves_real_damage(
+def test_barbara_normal_attack_scaling_resolves_damage(
     barbara_assembled,
 ):
     assembled = barbara_assembled()
@@ -45,7 +45,7 @@ def test_barbara_normal_attack_asset_scaling_resolves_real_damage(
     assert icd_events[0].payload.to_dict()["tag_key"] == "普通攻击"
 
 
-def test_barbara_charged_attack_asset_scaling_resolves_real_damage(
+def test_barbara_charged_attack_scaling_resolves_damage(
     barbara_assembled,
 ):
     assembled = barbara_assembled(input_key="mouse.right", max_frames=60)

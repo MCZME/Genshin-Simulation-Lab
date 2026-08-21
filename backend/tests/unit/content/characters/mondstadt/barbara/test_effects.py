@@ -13,7 +13,10 @@ from genshin_sim.content.definitions.effects import EffectKind, UnlockKind
 from tests.helpers import barbara as barbara_helpers
 
 
-def test_barbara_encore_effect_compiles_asset_payload_into_hook():
+def test_barbara_encore_effect_compiles_effect_payload_into_hook():
+    # 与集成（tests/integration/content/barbara/test_passives.py::
+    # test_barbara_encore_effect_mounts_hook_from_effect_payload）共存；
+    # 本用例只锁定效果 payload 到 hook 的编译规格，挂载与延长行为由集成用例锁定。
     unit = create_barbara_encore_effect(barbara_helpers.encore_request())
 
     assert unit.handler_key == BARBARA_ENCORE_EFFECT_HANDLER_KEY

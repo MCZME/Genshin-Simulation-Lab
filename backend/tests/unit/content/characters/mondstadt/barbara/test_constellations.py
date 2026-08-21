@@ -89,6 +89,9 @@ class _FakeContext:
 
 
 def test_c4_dedup_targets_and_caps_at_five(monkeypatch):
+    # 与集成（tests/integration/content/barbara/test_constellations.py::
+    # test_barbara_c4_restores_energy_per_distinct_target）共存；
+    # 本用例只锁定 C4 去重与上限逻辑，最终能量数值由集成用例锁定。
     monkeypatch.setattr(barbara_hooks_module, "DamageRequestHandler", _FakeHandler)
     hook = BarbaraConstellationC4EnergyHook(
         owner_ref="character:slot_1",

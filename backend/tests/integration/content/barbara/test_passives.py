@@ -8,7 +8,7 @@ from genshin_sim.content import BARBARA_RING_OBJECT_KEY
 from tests.helpers import barbara as barbara_helpers
 
 
-def test_barbara_encore_effect_mounts_hook_from_asset_payload(barbara_assembled):
+def test_barbara_encore_effect_mounts_hook_from_effect_payload(barbara_assembled):
     assembled = barbara_assembled(input_key="keyboard.e", max_frames=20)
 
     hooks = [

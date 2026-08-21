@@ -151,6 +151,26 @@ def test_simulation_input_rejects_invalid_scene_target_id():
         SimulationInput.from_mapping(payload)
 
 
+def test_simulation_input_accepts_target_label_and_round_trips():
+    payload = _minimal_input_payload()
+    payload["scene"] = {
+        "targets": [
+            {
+                "id": "target_1",
+                "label": "遗迹守卫",
+                "level": 90,
+                "position": {"x": 0, "y": 0, "z": 5},
+                "resistance": {"physical": 10, "pyro": 10},
+            }
+        ]
+    }
+
+    config = SimulationInput.from_mapping(payload)
+
+    assert config.scene.targets[0].label == "遗迹守卫"
+    assert config.to_dict()["scene"]["targets"][0]["label"] == "遗迹守卫"
+
+
 def test_simulation_input_rejects_unbalanced_input_trace():
     payload = _minimal_input_payload()
     payload["input_trace"] = [{"frame": 1, "events": [{"key": "keyboard.e", "phase": "press"}]}]

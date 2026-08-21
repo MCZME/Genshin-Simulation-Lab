@@ -399,6 +399,7 @@ class RuntimeAssembler:
         target_states = TargetRuntimeCollection(
             TargetRuntimeState(
                 target_id=target.target_id,
+                label=target.label,
                 level=target.level,
                 resistance=target.resistance,
             )

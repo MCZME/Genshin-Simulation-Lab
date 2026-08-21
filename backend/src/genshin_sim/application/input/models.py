@@ -254,6 +254,7 @@ class ScenePlayerConfig:
 @dataclass(frozen=True, slots=True)
 class SceneTargetConfig:
     target_id: str
+    label: str = ""
     level: int | None = None
     position: Vector3Config = field(default_factory=Vector3Config)
     resistance: dict[str, Any] = field(default_factory=dict)
@@ -261,6 +262,7 @@ class SceneTargetConfig:
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any], path: str) -> SceneTargetConfig:
         target_id = _require_string(raw.get("id"), f"{path}.id")
+        label = _optional_string(raw.get("label", ""), f"{path}.label")
         level_raw = raw.get("level")
         level = None if level_raw is None else _require_int(level_raw, f"{path}.level")
         if level is not None and level <= 0:
@@ -270,11 +272,18 @@ class SceneTargetConfig:
             f"{path}.position",
         )
         resistance = dict(_require_mapping(raw.get("resistance", {}), f"{path}.resistance"))
-        return cls(target_id=target_id, level=level, position=position, resistance=resistance)
+        return cls(
+            target_id=target_id,
+            label=label,
+            level=level,
+            position=position,
+            resistance=resistance,
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "id": self.target_id,
+            "label": self.label,
             "level": self.level,
             "position": self.position.to_dict(),
             "resistance": dict(self.resistance),

@@ -972,6 +972,134 @@ body {
   color: #cbd5e1;
 }
 
+.target-resistance-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px 8px;
+}
+
+.target-resistance-cell {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  gap: 3px;
+}
+
+.target-resistance-field {
+  position: relative;
+}
+
+.target-resistance-field .number-display {
+  border-color: var(--element-color, #334155);
+  box-shadow: inset 3px 0 0 var(--element-color, #334155);
+}
+
+.target-resistance-field .number-display:hover {
+  border-color: var(--element-color, #3b82f6);
+}
+
+.target-resistance-field .number-field-edit .field {
+  border-color: var(--element-color, #334155);
+  box-shadow: inset 3px 0 0 var(--element-color, #334155);
+}
+
+.target-resistance-badge {
+  position: absolute;
+  top: -7px;
+  left: 6px;
+  z-index: 1;
+  padding: 0 4px;
+  background: var(--element-color, #64748b);
+  color: #0f172a;
+  border: 1px solid #0f172a;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 1.4;
+  white-space: nowrap;
+}
+
+.target-resistance-cell:has(.inline-error) .number-display,
+.target-resistance-cell:has(.inline-error) .field {
+  border-color: #ef4444;
+}
+
+.target-resistance-cell:has(.inline-error) .number-display,
+.target-resistance-cell:has(.inline-error) .number-field-edit .field {
+  box-shadow: inset 3px 0 0 #ef4444;
+}
+
+.target-position-row {
+  display: flex;
+  gap: 8px;
+}
+
+.target-position-axis {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 2px;
+}
+
+.target-position-field {
+  display: flex;
+  align-items: center;
+  height: 28px;
+  min-width: 0;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  transition: border-color 0.15s ease;
+}
+
+.target-position-field:hover,
+.target-position-field:focus-within {
+  border-color: #3b82f6;
+}
+
+.target-position-axis:has(.inline-error) .target-position-field {
+  border-color: #ef4444;
+}
+
+.target-position-label {
+  flex: none;
+  width: 24px;
+  padding-left: 8px;
+  font-size: 10px;
+  line-height: 1;
+  color: #94a3b8;
+  user-select: none;
+}
+
+.target-position-field .number-display {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+  padding: 3px 6px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+.target-position-field .number-display:hover {
+  border-color: transparent;
+}
+
+.target-position-field .number-field-edit {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+}
+
+.target-position-field .number-field-edit .field {
+  height: 26px;
+  padding: 3px 6px;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
 .field-row-wrap:has(.inline-error) .field {
   border-color: #ef4444;
 }
@@ -1006,6 +1134,17 @@ body {
 
 .number-field-edit .field {
   height: 28px;
+}
+
+.field[type="number"]::-webkit-outer-spin-button,
+.field[type="number"]::-webkit-inner-spin-button {
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+.field[type="number"] {
+  -moz-appearance: textfield;
+  appearance: textfield;
 }
 
 .number-slider {

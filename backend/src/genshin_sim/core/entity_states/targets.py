@@ -14,12 +14,16 @@ class TargetRuntimeState:
 
     target_id: str
     level: int | None = None
+    label: str = ""
     resistance: Mapping[str, object] = field(default_factory=dict)
     spatial_entity_id: str = ""
 
     def __post_init__(self) -> None:
         if not self.target_id:
             msg = "目标 id 必须是非空字符串"
+            raise ValueError(msg)
+        if not isinstance(self.label, str):
+            msg = "目标 label 必须是字符串"
             raise ValueError(msg)
         if self.level is not None and self.level <= 0:
             msg = "目标等级必须是正整数"

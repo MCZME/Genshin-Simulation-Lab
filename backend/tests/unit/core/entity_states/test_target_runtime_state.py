@@ -13,11 +13,13 @@ def test_target_runtime_state_builds_default_spatial_entity_id_and_copies_resist
     target = TargetRuntimeState(
         target_id="target_1",
         level=90,
+        label="遗迹守卫",
         resistance=resistance,
     )
     resistance["pyro"] = 0.5
 
     assert target.spatial_entity_id == "target:target_1"
+    assert target.label == "遗迹守卫"
     assert target.resistance == {"pyro": 0.1}
 
 
@@ -57,6 +59,7 @@ def test_target_runtime_collection_rejects_duplicate_identity(
     ("kwargs", "message"),
     [
         ({"target_id": ""}, "目标 id 必须是非空字符串"),
+        ({"target_id": "target_1", "label": 1}, "目标 label 必须是字符串"),
         ({"target_id": "target_1", "level": 0}, "目标等级必须是正整数"),
         (
             {"target_id": "target_1", "resistance": {"": 0.1}},

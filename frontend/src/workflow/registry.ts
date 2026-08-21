@@ -148,19 +148,55 @@ function artifactFragment(
   };
 }
 
+/** 目标抗性支持的 8 个元素键；与后端 RESISTANCE_KEYS_BY_ELEMENT 保持一致。 */
+export const RESISTANCE_ELEMENT_KEYS: readonly string[] = [
+  "physical",
+  "pyro",
+  "hydro",
+  "electro",
+  "cryo",
+  "anemo",
+  "geo",
+  "dendro",
+];
+
+const DEFAULT_TARGET_POSITION: Record<string, number> = { x: 0, y: 0, z: 5 };
+
+const DEFAULT_TARGET_RESISTANCE: Record<string, number> = {
+  physical: 10,
+  pyro: 10,
+  hydro: 10,
+  electro: 10,
+  cryo: 10,
+  anemo: 10,
+  geo: 10,
+  dendro: 10,
+};
+
 function targetFragment(
   node: WorkflowNode,
 ): FragmentSource | null {
   const params = node.params;
   const index = asInteger(params.index) ?? 0;
+  const position = isPlainObject(params.position) ? params.position : {};
+  const resistance = isPlainObject(params.resistance) ? params.resistance : {};
+  const resistanceValues: Record<string, number> = {};
+  for (const key of RESISTANCE_ELEMENT_KEYS) {
+    resistanceValues[key] = asNumber(resistance[key]) ?? DEFAULT_TARGET_RESISTANCE[key];
+  }
   return {
     item_id: `node:${node.id}`,
     path: asString(params.path) ?? `scene.targets[${index}]`,
     value: {
-      id: asString(params.id) ?? `target_${index}`,
+      id: `target_${index}`,
+      label: asString(params.label) ?? "遗迹守卫",
       level: asInteger(params.level) ?? 90,
-      position: { x: 0, y: 0, z: 5 },
-      resistance: {},
+      position: {
+        x: asNumber(position.x) ?? DEFAULT_TARGET_POSITION.x,
+        y: asNumber(position.y) ?? DEFAULT_TARGET_POSITION.y,
+        z: asNumber(position.z) ?? DEFAULT_TARGET_POSITION.z,
+      },
+      resistance: resistanceValues,
     },
   };
 }
@@ -317,11 +353,40 @@ function validateTarget(node: WorkflowNode): Diagnostic[] {
   if (!isNonNegativeInteger(params.index)) {
     diagnostics.push(paramError(node, "index", "目标索引必须是 >= 0 的整数"));
   }
-  if (params.id !== undefined && asString(params.id) === null) {
-    diagnostics.push(paramError(node, "id", "目标 id 必须是字符串"));
+  if (params.label !== undefined && typeof params.label !== "string") {
+    diagnostics.push(paramError(node, "label", "目标名称必须是字符串"));
   }
   if (params.level !== undefined && !isPositiveInteger(params.level)) {
     diagnostics.push(paramError(node, "level", "等级必须是 >= 1 的整数"));
+  }
+  const position = params.position;
+  if (position !== undefined) {
+    if (!isPlainObject(position)) {
+      diagnostics.push(paramError(node, "position", "位置必须是对象"));
+    } else {
+      for (const axis of ["x", "y", "z"]) {
+        const value = position[axis];
+        if (value !== undefined && !isFiniteNumber(value)) {
+          diagnostics.push(
+            paramError(node, `position.${axis}`, `${axis.toUpperCase()} 必须是有限数字`),
+          );
+        }
+      }
+    }
+  }
+  const resistance = params.resistance;
+  if (resistance !== undefined) {
+    if (!isPlainObject(resistance)) {
+      diagnostics.push(paramError(node, "resistance", "抗性必须是对象"));
+    } else {
+      for (const [key, value] of Object.entries(resistance)) {
+        if (!RESISTANCE_ELEMENT_KEYS.includes(key)) {
+          diagnostics.push(paramError(node, `resistance.${key}`, "不支持的目标抗性条目"));
+        } else if (!isFiniteNumber(value)) {
+          diagnostics.push(paramError(node, `resistance.${key}`, "抗性必须是有限数字"));
+        }
+      }
+    }
   }
   return diagnostics;
 }
@@ -589,10 +654,18 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     },
     paramFields: {
       index: { type: "integer", required: true },
-      id: { type: "string" },
+      label: { type: "string" },
       level: { type: "integer", default: 90 },
+      position: { type: "object", default: DEFAULT_TARGET_POSITION },
+      resistance: { type: "object", default: DEFAULT_TARGET_RESISTANCE },
     },
-    defaultParams: { index: 0, id: "target_0", level: 90 },
+    defaultParams: {
+      index: 0,
+      label: "遗迹守卫",
+      level: 90,
+      position: DEFAULT_TARGET_POSITION,
+      resistance: DEFAULT_TARGET_RESISTANCE,
+    },
     fragment: targetFragment,
     validate: validateTarget,
   },
@@ -779,6 +852,10 @@ function asNumber(value: unknown): number | null {
 
 function isNonNegativeInteger(value: unknown): boolean {
   return typeof value === "number" && Number.isInteger(value) && value >= 0;
+}
+
+function isFiniteNumber(value: unknown): boolean {
+  return typeof value === "number" && Number.isFinite(value);
 }
 
 function isPositiveInteger(value: unknown): boolean {

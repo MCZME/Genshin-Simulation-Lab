@@ -168,6 +168,28 @@ export function validateWorkflow(definition: WorkflowDefinition): Diagnostic[] {
   validateRegionToSimulationLinks(definition, regionById, nodeById, connectedToSimulation, diagnostics);  return diagnostics;
 }
 
+/**
+ * 编辑期节点校验（决策 2.40）：只看节点自身的参数/路径合法性。
+ * 跨节点检查（槽位冲突、成员上限、区域-模拟连线、图结构等）不属于实时诊断，
+ * 由区域校验/运行的构建阶段执行完整 validateWorkflow。
+ */
+export function validateWorkflowNodes(definition: WorkflowDefinition): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  for (const node of definition.nodes) {
+    const spec = getNodeKindSpec(node.kind);
+    if (spec === null) {
+      diagnostics.push(
+        diagnostic("error", "UNKNOWN_NODE_KIND", `未注册节点类型：${node.kind}`, {
+          node_id: node.id,
+        }),
+      );
+      continue;
+    }
+    diagnostics.push(...validateNode(node));
+  }
+  return diagnostics;
+}
+
 /** 已连接到任一模拟节点输入的配置区域集合（决策 2.32：连接决定批次参与）。 */
 function simulationLinkedRegions(
   definition: WorkflowDefinition,

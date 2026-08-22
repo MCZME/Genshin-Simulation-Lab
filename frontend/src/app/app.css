@@ -1889,6 +1889,15 @@ body {
   font-weight: 600;
 }
 
+.status-validating {
+  background: #38bdf8;
+  color: #fff;
+}
+
+.status-validated {
+  background: #34d399;
+}
+
 .status-completed {
   background: #22c55e;
 }
@@ -2008,29 +2017,14 @@ body {
   color: #f87171;
 }
 
-.region-summary-sep {
-  color: #475569;
-}
-
-.region-summary-check.checking {
-  color: #3b82f6;
-}
-
-.region-summary-check.passed {
-  color: #22c55e;
-}
-
-.region-summary-check.failed {
-  color: #f87171;
-  cursor: default;
-}
-
-.region-check {
+.region-check,
+.region-run {
   padding: 2px 8px;
   font-size: 12px;
 }
 
-.region-check:disabled {
+.region-check:disabled,
+.region-run:disabled {
   opacity: 0.5;
   cursor: not-allowed;
 }

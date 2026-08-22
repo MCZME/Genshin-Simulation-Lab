@@ -8,6 +8,7 @@ import {
   getWorkspace,
   listWorkflows,
   saveWorkflow,
+  searchAssets,
   submitRun,
   validateInputs,
 } from "../api/client";
@@ -60,7 +61,6 @@ import {
   createRunView,
   setBatchStatus,
   setMethodStatus,
-  setRegionCheck,
   setRunPhase,
 } from "../state/run_state";
 import type { RunState } from "../state/run_state";
@@ -68,11 +68,19 @@ import { compileConfigurationRegion } from "../workflow/compiler";
 import {
   hasRunnableBatch,
   paceBuildSteps,
-  planRegionCheck,
+  planRegionRun,
   planWorkflowRun,
+  scopedDiagnostics,
+  validationErrorMessage,
 } from "../workflow/runner";
+import type { RunPlan } from "../workflow/runner";
+import {
+  assetMissingDiagnostics,
+  collectAssetReferences,
+  preflightAssetReferences,
+} from "../workflow/asset_preflight";
 import type { CompileResult, Diagnostic, WorkflowDefinition } from "../workflow/types";
-import { validateWorkflow } from "../workflow/validator";
+import { validateWorkflow, validateWorkflowNodes } from "../workflow/validator";
 import { getNodeKindSpec } from "../workflow/registry";
 import { createAppSettings, loadAppSettingsFromApi, saveAppSettingsToApi } from "../state/settings";
 import type { AppSettings } from "../state/settings";
@@ -87,7 +95,8 @@ export function App() {
   const [runState, setRunState] = useState<RunState>(() => createEmptyRunState());
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
-  const [checkingRegion, setCheckingRegion] = useState<string | null>(null);
+  /** 资产预检（决策 2.40 节点校验）：加载/切换工作流时核对的失效资产 key。 */
+  const [missingAssetKeys, setMissingAssetKeys] = useState<string[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<Tool>("objects");
   /** 结果面板定位请求（决策 2.37）：非空时面板打开并选中该 session，随后清空。 */
@@ -105,9 +114,27 @@ export function App() {
   const cancelRequestedRef = useRef(false);
   /** 当前在跑批次：模拟节点 id 与后端 run_id，供「取消整批」定位。 */
   const currentBatchRef = useRef<{ nodeId: string; runId: string | null } | null>(null);
+  /** 资产预检请求序号：丢弃加载/切换竞态中的过期结果。 */
+  const preflightSeqRef = useRef(0);
 
-  /** 运行与区域检查都持有全局编辑锁（决策 2.33 / 2.35）。 */
-  const busy = running || checkingRegion !== null;
+  /** 运行持有全局编辑锁（决策 2.33）。 */
+  const busy = running;
+
+  /** 节点校验的资产预检（决策 2.40）：加载/切换工作流时核对一次，竞态以序号丢弃。 */
+  async function runAssetPreflight(definition: WorkflowDefinition): Promise<void> {
+    const seq = ++preflightSeqRef.current;
+    const references = collectAssetReferences(definition);
+    if (references.length === 0) {
+      setMissingAssetKeys([]);
+      return;
+    }
+    const missing = await preflightAssetReferences(references, (assetType, sourceId) =>
+      searchAssets(assetType, sourceId, 200),
+    );
+    if (preflightSeqRef.current === seq) {
+      setMissingAssetKeys(missing);
+    }
+  }
 
   async function initialize() {
     try {
@@ -136,6 +163,7 @@ export function App() {
         withCurrentWorkflow(current, { id: workflowId, name: definition.meta.name }),
       );
       rememberLastWorkflowId(workflowId);
+      void runAssetPreflight(definition);
     } catch (error) {
       setErrorMessage(toMessage(error));
     }
@@ -155,12 +183,17 @@ export function App() {
     }
     const definition = editorState.definition;
     return {
-      diagnostics: validateWorkflow(definition),
+      // 节点校验（决策 2.40）：编辑期只保留节点自身参数/路径诊断 + 资产预检；
+      // 跨节点/区域校验留到区域校验与运行的构建阶段（executeRunPlan 内完整校验）。
+      diagnostics: [
+        ...validateWorkflowNodes(definition),
+        ...assetMissingDiagnostics(definition, missingAssetKeys),
+      ],
       compiles: definition.regions
         .filter((region) => region.kind === "configuration")
         .map((region) => compileConfigurationRegion(definition, region.id)),
     };
-  }, [editorState]);
+  }, [editorState, missingAssetKeys]);
 
   const canRun = useMemo(() => {
     return (
@@ -177,7 +210,7 @@ export function App() {
     if (
       editorState === null ||
       run === null ||
-      (run.phase !== "building" && run.phase !== "simulating")
+      (run.phase !== "building" && run.phase !== "validating" && run.phase !== "simulating")
     ) {
       return [];
     }
@@ -480,6 +513,7 @@ export function App() {
     rememberLastWorkflowId(workflowId);
     setRenameRegionRequestId(null);
     setSelectionEpoch((epoch) => epoch + 1);
+    void runAssetPreflight(definition);
   }
 
   async function handleSwitchWorkflow(workflowId: string): Promise<void> {
@@ -520,6 +554,7 @@ export function App() {
     rememberLastWorkflowId(null);
     setRenameRegionRequestId(null);
     setSelectionEpoch((epoch) => epoch + 1);
+    setMissingAssetKeys([]);
   }
 
   async function handleSaveAndCreate(): Promise<void> {
@@ -553,6 +588,7 @@ export function App() {
         rememberLastWorkflowId(null);
         setRenameRegionRequestId(null);
         setSelectionEpoch((epoch) => epoch + 1);
+        setMissingAssetKeys([]);
       }
       await refreshWorkflowList();
     } catch (error) {
@@ -575,17 +611,29 @@ export function App() {
   }
 
   /**
-   * 工作流运行（决策 2.33，2.38 修订）：构建（前端编译与图校验，失败零提交）→
-   * 模拟（按画布顺序依次串行执行每个模拟节点的批次，决策 2.32）→ 终态。
+   * 共用运行/校验编排（决策 2.40 修订）：全部运行与区域运行走同一条链路——
+   * 构建（前端编译与图校验，失败零提交，限速动画）→ 模拟（每批提交前先做
+   * 区域校验，再提交并轮询，按画布顺序串行，决策 2.32）→ 终态；
+   * 区域校验入口以 check 模式复用同一条链路，在批次校验后终止、不提交。
    */
-  async function handleRun() {
-    if (editorState === null || busy) {
-      return;
-    }
-    const definition = editorStateToDefinition(editorState);
-    const plan = planWorkflowRun(definition);
+  async function executeRunPlan(
+    definition: WorkflowDefinition,
+    plan: RunPlan,
+    scopeRegionIds?: Set<string>,
+    mode: "run" | "check" = "run",
+  ) {
+    // 构建阶段完整校验（决策 2.40）：图校验 + 跨节点检查 + 资产预检；
+    // 区域运行只被目标区域相关诊断阻断，全部运行保留全量诊断。
+    const fullDiagnostics = [
+      ...validateWorkflow(definition),
+      ...assetMissingDiagnostics(definition, missingAssetKeys),
+    ];
+    const runDiagnostics =
+      scopeRegionIds === undefined
+        ? fullDiagnostics
+        : scopedDiagnostics(definition, fullDiagnostics, scopeRegionIds);
     const buildErrors = [
-      ...diagnostics
+      ...runDiagnostics
         .filter((item) => item.severity === "error")
         .map((item) => item.message),
       ...plan.errors,
@@ -627,6 +675,43 @@ export function App() {
         setRunState((current) => setMethodStatus(current, regionId, nodeId, status)),
     });
 
+    if (mode === "check") {
+      setRunState((current) => setRunPhase(current, "validating"));
+      cancelRequestedRef.current = false;
+      let cancelled = false;
+      for (const batch of plan.batches) {
+        if (cancelRequestedRef.current) {
+          setRunState((current) => setBatchStatus(current, batch.nodeId, "skipped"));
+          cancelled = true;
+          continue;
+        }
+        setRunState((current) => setBatchStatus(current, batch.nodeId, "validating"));
+        try {
+          const validation = await validateInputs(batch.members);
+          if (cancelRequestedRef.current) {
+            setRunState((current) => setBatchStatus(current, batch.nodeId, "skipped"));
+            cancelled = true;
+            continue;
+          }
+          setRunState((current) =>
+            setBatchStatus(
+              current,
+              batch.nodeId,
+              validation.ok ? "validated" : "failed",
+              validation.ok ? null : validationErrorMessage(validation),
+            ),
+          );
+        } catch (error) {
+          setRunState((current) =>
+            setBatchStatus(current, batch.nodeId, "failed", toMessage(error)),
+          );
+        }
+      }
+      setRunState((current) => setRunPhase(current, cancelled ? "cancelled" : "validated"));
+      setRunning(false);
+      return;
+    }
+
     setRunState((current) => setRunPhase(current, "simulating"));
 
     cancelRequestedRef.current = false;
@@ -641,6 +726,28 @@ export function App() {
       if (cancelRequestedRef.current) {
         setRunState((current) => setBatchStatus(current, batch.nodeId, "skipped"));
         cancelled = true;
+        continue;
+      }
+      setRunState((current) => setBatchStatus(current, batch.nodeId, "validating"));
+      // 区域校验（决策 2.40）：提交前对批次成员做后端统一校验；
+      // 失败该批标失败并附成员级诊断，其余批次照跑（对齐 2.32）。
+      try {
+        const validation = await validateInputs(batch.members);
+        if (cancelRequestedRef.current) {
+          setRunState((current) => setBatchStatus(current, batch.nodeId, "skipped"));
+          cancelled = true;
+          continue;
+        }
+        if (!validation.ok) {
+          setRunState((current) =>
+            setBatchStatus(current, batch.nodeId, "failed", validationErrorMessage(validation)),
+          );
+          continue;
+        }
+      } catch (error) {
+        setRunState((current) =>
+          setBatchStatus(current, batch.nodeId, "failed", toMessage(error)),
+        );
         continue;
       }
       setRunState((current) => setBatchStatus(current, batch.nodeId, "submitting"));
@@ -697,6 +804,38 @@ export function App() {
     setRunning(false);
   }
 
+  /** 全部运行：整个工作流的运行计划进入共用编排。 */
+  async function handleRun() {
+    if (editorState === null || busy) {
+      return;
+    }
+    const definition = editorStateToDefinition(editorState);
+    await executeRunPlan(definition, planWorkflowRun(definition));
+  }
+
+  /** 区域运行（决策 2.40）：区域范围的运行计划进入共用编排，复用动画、校验与取消。 */
+  async function handleRunRegion(regionId: string) {
+    if (editorState === null || busy) {
+      return;
+    }
+    const definition = editorStateToDefinition(editorState);
+    await executeRunPlan(definition, planRegionRun(definition, regionId), new Set([regionId]));
+  }
+
+  /** 区域校验（决策 2.40 修订）：区域运行的子集，构建 + 批次校验，不提交模拟。 */
+  async function handleValidateRegion(regionId: string) {
+    if (editorState === null || busy) {
+      return;
+    }
+    const definition = editorStateToDefinition(editorState);
+    await executeRunPlan(
+      definition,
+      planRegionRun(definition, regionId),
+      new Set([regionId]),
+      "check",
+    );
+  }
+
   /** 取消整次工作流运行：取消当前批次，剩余批次由编排循环跳过（决策 2.32）；顶栏双击触发。 */
   async function handleCancelRun() {
     if (!running) {
@@ -733,73 +872,6 @@ export function App() {
   function openResultAt(sessionId: string | null): void {
     setActiveTool("results");
     setResultFocus(sessionId);
-  }
-
-  /** 检查区域（决策 2.35）：单区域构建 + 对成员的后端输入校验；不执行模拟。 */
-  async function handleCheckRegion(regionId: string) {
-    if (editorState === null || busy) {
-      return;
-    }
-    const definition = editorStateToDefinition(editorState);
-    const plan = planRegionCheck(definition, regionId);
-    setCheckingRegion(regionId);
-    setRunState((current) =>
-      setRegionCheck(current, {
-        regionId,
-        status: "checking",
-        memberCount: plan.ok ? plan.members.length : 0,
-        methods: plan.methods,
-        memberResults: [],
-        error: plan.error,
-      }),
-    );
-    try {
-      if (!plan.ok) {
-        setRunState((current) =>
-          setRegionCheck(current, {
-            regionId,
-            status: "failed",
-            memberCount: 0,
-            methods: [],
-            memberResults: [],
-            error: plan.error,
-          }),
-        );
-        return;
-      }
-      const response = await validateInputs(plan.members);
-      const memberResults = response.members.map((member) => ({
-        item_id: member.item_id,
-        ok: member.ok,
-        messages: member.ok
-          ? []
-          : (member.details ?? []).map((detail) => detail.message).filter(Boolean),
-      }));
-      const failedCount = memberResults.filter((member) => !member.ok).length;
-      setRunState((current) =>
-        setRegionCheck(current, {
-          regionId,
-          status: response.ok ? "passed" : "failed",
-          memberCount: plan.members.length,
-          methods: plan.methods,
-          memberResults,
-          error: response.ok ? null : `${failedCount} 个成员未通过校验`,
-        }),
-      );
-    } catch (error) {
-      setRunState((current) =>
-        setRegionCheck(current, {
-          regionId,
-          status: "failed",
-          memberCount: 0,
-          methods: [],
-          memberResults: [],
-          error: toMessage(error),
-        }),
-      );
-    } finally {
-      setCheckingRegion(null);
-    }
   }
 
   const runContextValue = {
@@ -913,7 +985,6 @@ export function App() {
                 dimmedNodeIds={dimmedNodeIds}
                 runningMethodNodeIds={runningMethodNodeIds}
                 interactionLocked={busy}
-                checkingRegionId={checkingRegion}
                 onViewportCommandHandled={() => setViewportCommand(null)}
                 onMoveNode={(nodeId, position, regionId) =>
                   updateEditor((state) => moveNodeWithRegion(state, nodeId, position, regionId))
@@ -939,14 +1010,11 @@ export function App() {
                 }
                 onDropObject={handleDropObject}
                 onMoveEdgeOrder={handleMoveEdgeOrder}
-                onCheckRegion={(regionId) => void handleCheckRegion(regionId)}
+                onValidateRegion={(regionId) => void handleValidateRegion(regionId)}
+                onRunRegion={(regionId) => void handleRunRegion(regionId)}
               />
             )}
-            <RegionSummaryBar
-              compiles={compiles}
-              regionChecks={runState.regionChecks}
-              checkingRegionId={checkingRegion}
-            />
+            <RegionSummaryBar compiles={compiles} />
           </main>
         </div>
         {settingsOpen && (

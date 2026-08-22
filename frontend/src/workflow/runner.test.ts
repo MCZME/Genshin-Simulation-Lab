@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type {
+  Diagnostic,
   WorkflowDefinition,
   WorkflowEdge,
   WorkflowNode,
@@ -8,8 +9,10 @@ import type {
 import {
   hasRunnableBatch,
   paceBuildSteps,
-  planRegionCheck,
+  planRegionRun,
   planWorkflowRun,
+  scopedDiagnostics,
+  validationErrorMessage,
 } from "./runner";
 
 function makeRegion(id: string): WorkflowRegion {
@@ -210,31 +213,145 @@ describe("planWorkflowRun", () => {
   });
 });
 
-describe("planRegionCheck", () => {
-  it("编译区域产出成员与方法轨迹", () => {
+describe("planRegionRun", () => {
+  it("区域运行只编译目标区域并为所连模拟节点生成批次", () => {
     const definition = makeDefinition(
       [makeRegion("region-1")],
-      simpleRegionNodes("region-1", "区域一"),
-      regionBoundaryEdges("region-1"),
+      [
+        ...simpleRegionNodes("region-1", "区域一"),
+        makeNode("sim-1", "simulation", {}, null),
+      ],
+      [
+        ...regionBoundaryEdges("region-1"),
+        makeEdge("l1", "region-1", "out", "sim-1", "in"),
+      ],
     );
-    const plan = planRegionCheck(definition, "region-1");
+    const plan = planRegionRun(definition, "region-1");
     expect(plan.ok).toBe(true);
-    expect(plan.members).toHaveLength(1);
-    expect(plan.methods.map((method) => method.nodeId)).toEqual([
+    expect(plan.batches).toHaveLength(1);
+    expect(plan.batches[0].nodeId).toBe("sim-1");
+    expect(plan.batches[0].sourceRegionIds).toEqual(["region-1"]);
+    expect(plan.batches[0].members).toHaveLength(1);
+    expect(plan.participating[0].methods.map((method) => method.nodeId)).toEqual([
       "region-1-root",
       "region-1-meta",
     ]);
+    expect(plan.skippedRegionIds).toEqual([]);
   });
 
-  it("没有数据汇入的区域检查失败", () => {
+  it("没有数据汇入的区域无法编译", () => {
     const definition = makeDefinition(
       [makeRegion("region-1")],
       [makeNode("root", "root")],
       [],
     );
-    const plan = planRegionCheck(definition, "region-1");
+    const plan = planRegionRun(definition, "region-1");
     expect(plan.ok).toBe(false);
-    expect(plan.error).toContain("无法编译");
+    expect(plan.errors.join("")).toContain("无法编译");
+  });
+
+  it("未连接模拟节点的区域无法成立批次", () => {
+    const definition = makeDefinition(
+      [makeRegion("region-1")],
+      simpleRegionNodes("region-1", "区域一"),
+      regionBoundaryEdges("region-1"),
+    );
+    const plan = planRegionRun(definition, "region-1");
+    expect(plan.ok).toBe(false);
+    expect(plan.errors.join("")).toContain("未连接模拟节点");
+  });
+});
+
+describe("validationErrorMessage", () => {
+  it("聚合失败成员与首条后端诊断", () => {
+    const message = validationErrorMessage({
+      ok: false,
+      members: [
+        { item_id: "a", ok: true },
+        {
+          item_id: "b",
+          ok: false,
+          details: [{ severity: "error", code: "ASSET_NOT_FOUND", message: "资产不存在" }],
+        },
+        { item_id: "c", ok: false, details: [] },
+      ],
+    });
+    expect(message).toContain("2 个成员");
+    expect(message).toContain("b：资产不存在");
+    expect(message).toContain("c");
+  });
+});
+
+describe("scopedDiagnostics", () => {
+  const definition = makeDefinition(
+    [makeRegion("region-1"), makeRegion("region-2")],
+    [
+      makeNode("r1-char", "character", { slot: 1, asset: "character:a" }, "region-1"),
+      makeNode("r2-char", "character", { slot: 1, asset: "character:missing" }, "region-2"),
+      makeNode("sim-1", "simulation", {}, null),
+    ],
+    [makeEdge("l1", "region-1", "out", "sim-1", "in")],
+  );
+  const diagnostics: Diagnostic[] = [
+    {
+      severity: "error",
+      code: "ASSET_NOT_FOUND",
+      message: "资产不存在：character:missing",
+      node_id: "r2-char",
+      edge_id: null,
+      region_id: null,
+      path: "asset",
+    },
+    {
+      severity: "error",
+      code: "PARAM_INVALID",
+      message: "参数无效",
+      node_id: "r1-char",
+      edge_id: null,
+      region_id: null,
+      path: "slot",
+    },
+    {
+      severity: "error",
+      code: "PARAM_INVALID",
+      message: "并发度无效",
+      node_id: "sim-1",
+      edge_id: null,
+      region_id: null,
+      path: "concurrency",
+    },
+    {
+      severity: "error",
+      code: "META_INVALID",
+      message: "meta.name 必须是字符串",
+      node_id: null,
+      edge_id: null,
+      region_id: null,
+      path: null,
+    },
+    {
+      severity: "error",
+      code: "PORT_INVALID",
+      message: "端口错误",
+      node_id: null,
+      edge_id: "l1",
+      region_id: null,
+      path: null,
+    },
+  ];
+
+  it("区域运行只保留目标区域节点、所连模拟节点与全局诊断", () => {
+    const codes = scopedDiagnostics(definition, diagnostics, new Set(["region-1"])).map(
+      (item) => item.code,
+    );
+    expect(codes).toEqual(["PARAM_INVALID", "PARAM_INVALID", "META_INVALID", "PORT_INVALID"]);
+  });
+
+  it("其他区域的节点诊断不阻断目标区域运行", () => {
+    const codes = scopedDiagnostics(definition, diagnostics, new Set(["region-2"])).map(
+      (item) => item.code,
+    );
+    expect(codes).toEqual(["ASSET_NOT_FOUND", "META_INVALID"]);
   });
 });
 

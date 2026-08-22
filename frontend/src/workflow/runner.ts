@@ -1,5 +1,6 @@
 import type { CompiledMember, Diagnostic, WorkflowDefinition, WorkflowNode } from "./types";
 import { MAX_BATCH_MEMBERS, REGION_BOUNDARY_OUT_PORT } from "./types";
+import type { ValidateInputsResponse } from "../api/client";
 import { expandConfigurationRegion } from "./compiler";
 import type { MethodTrace } from "./compiler";
 import { getNodeKindSpec } from "./registry";
@@ -194,50 +195,135 @@ export function hasRunnableBatch(definition: WorkflowDefinition): boolean {
   );
 }
 
-/** 单区域检查计划（决策 2.35）：编译该区域，供检查流程对成员做后端输入校验。 */
-export interface RegionCheckPlan {
-  ok: boolean;
-  error: string | null;
-  regionId: string;
-  regionName: string;
-  methods: Array<MethodTrace & { label: string }>;
-  members: BatchMember[];
-}
-
-export function planRegionCheck(
-  definition: WorkflowDefinition,
-  regionId: string,
-): RegionCheckPlan {
+/**
+ * 区域范围运行计划（决策 2.40）：区域运行 = 全部运行的区域子集。
+ * 构建阶段只编译目标区域；批次为连接该区域的模拟节点（按节点顺序），成员仅来自该区域。
+ */
+export function planRegionRun(definition: WorkflowDefinition, regionId: string): RunPlan {
+  const errors: string[] = [];
   const region = definition.regions.find((item) => item.id === regionId);
   if (region === undefined || region.kind !== "configuration") {
     return {
       ok: false,
-      error: "只有配置区域可以检查",
-      regionId,
-      regionName: region?.name ?? regionId,
-      methods: [],
-      members: [],
+      errors: ["只有配置区域可以运行"],
+      participating: [],
+      skippedRegionIds: [],
+      batches: [],
     };
   }
+
   const expanded = expandConfigurationRegion(definition, regionId);
   if (!expanded.ok) {
     return {
       ok: false,
-      error: `无法编译：${firstErrorMessage(expanded.diagnostics)}`,
-      regionId,
-      regionName: region.name,
-      methods: [],
-      members: [],
+      errors: [`区域 ${region.name} 无法编译：${firstErrorMessage(expanded.diagnostics)}`],
+      participating: [],
+      skippedRegionIds: [],
+      batches: [],
     };
   }
+
+  const members: BatchMember[] = expanded.members.map((member) => ({
+    ...member,
+    input: member.input,
+  }));
+  const duplicate = firstDuplicateItemId(members);
+  if (duplicate !== null) {
+    errors.push(`批次内成员 item_id 重复：${duplicate}`);
+  } else if (members.length > MAX_BATCH_MEMBERS) {
+    errors.push(`批次成员数 ${members.length} 超过上限 ${MAX_BATCH_MEMBERS}`);
+  }
+
+  const batches: BatchPlan[] = [];
+  if (errors.length === 0) {
+    const connectedRegionIds = new Set<string>([regionId]);
+    for (const node of definition.nodes.filter((item) => item.kind === "simulation")) {
+      if (orderedRegionSources(definition, node.id, connectedRegionIds).length === 0) {
+        continue;
+      }
+      batches.push({
+        nodeId: node.id,
+        name: batchName(definition, members),
+        concurrency: concurrencyOf(node),
+        sourceRegionIds: [regionId],
+        members: members.map((member) => ({ ...member })),
+      });
+    }
+    if (batches.length === 0) {
+      errors.push("该区域未连接模拟节点，批次无法成立");
+    }
+  }
+
   return {
-    ok: true,
-    error: null,
-    regionId,
-    regionName: region.name,
-    methods: withNodeLabels(expanded.methods, definition),
-    members: expanded.members.map((member) => ({ ...member, input: member.input })),
+    ok: errors.length === 0 && batches.length > 0,
+    errors,
+    participating: [
+      {
+        regionId,
+        regionName: region.name,
+        methods: withNodeLabels(expanded.methods, definition),
+        memberCount: members.length,
+      },
+    ],
+    skippedRegionIds: [],
+    batches,
   };
+}
+
+/** 区域校验失败的聚合错误（决策 2.40）：成员级诊断拼进批次失败原因。 */
+export function validationErrorMessage(
+  response: ValidateInputsResponse,
+): string {
+  const failed = response.members.filter((member) => !member.ok);
+  const parts = failed.map((member) => {
+    const detail = member.details?.[0]?.message;
+    return detail === undefined ? member.item_id : `${member.item_id}：${detail}`;
+  });
+  return `区域校验未通过（${failed.length} 个成员）——${parts.join("；")}`;
+}
+
+/**
+ * 区域运行只保留目标区域相关的图/节点诊断（决策 2.40：节点校验只看节点自身）。
+ * 无对象引用的全局诊断（schema/meta 等）仍保留，避免在坏图上继续运行。
+ */
+export function scopedDiagnostics(
+  definition: WorkflowDefinition,
+  diagnostics: Diagnostic[],
+  regionIds: Set<string>,
+): Diagnostic[] {
+  const nodeById = new Map(definition.nodes.map((node) => [node.id, node]));
+  const edgeById = new Map(definition.edges.map((edge) => [edge.id, edge]));
+  return diagnostics.filter((item) => {
+    if (item.region_id != null) {
+      return regionIds.has(item.region_id);
+    }
+    if (item.node_id != null) {
+      const node = nodeById.get(item.node_id);
+      if (node === undefined) {
+        return false;
+      }
+      if (node.region_id != null) {
+        return regionIds.has(node.region_id);
+      }
+      return (
+        node.kind === "simulation" &&
+        orderedRegionSources(definition, node.id, regionIds).length > 0
+      );
+    }
+    if (item.edge_id != null) {
+      const edge = edgeById.get(item.edge_id);
+      if (edge === undefined) {
+        return false;
+      }
+      const sourceRegion = endpointRegion(definition, nodeById, edge.source_node_id);
+      const targetRegion = endpointRegion(definition, nodeById, edge.target_node_id);
+      return (
+        (sourceRegion !== null && regionIds.has(sourceRegion)) ||
+        (targetRegion !== null && regionIds.has(targetRegion))
+      );
+    }
+    return true;
+  });
 }
 
 /** 方法轨迹补充节点显示名，供轨迹面板与画布状态展示。 */
@@ -270,6 +356,17 @@ function orderedRegionSources(
     }
   }
   return ordered;
+}
+
+function endpointRegion(
+  definition: WorkflowDefinition,
+  nodeById: Map<string, WorkflowNode>,
+  endpointId: string,
+): string | null {
+  if (definition.regions.some((region) => region.id === endpointId)) {
+    return endpointId;
+  }
+  return nodeById.get(endpointId)?.region_id ?? null;
 }
 
 function batchName(definition: WorkflowDefinition, members: BatchMember[]): string {

@@ -37,8 +37,8 @@ function renderRegion(
     onRenameRegion: vi.fn(),
     onResizeRegion: vi.fn(),
     onMoveEdgeOrder: vi.fn(),
-    onCheckRegion: vi.fn(),
-    checking: false,
+    onValidateRegion: vi.fn(),
+    onRunRegion: vi.fn(),
     interactionLocked: false,
     incomingGroups: [],
     dropTarget: false,
@@ -120,5 +120,21 @@ describe("RegionNode 区域命名", () => {
     fireEvent.change(input, { target: { value: "深渊配队" } });
     fireEvent.keyDown(input, { key: "Enter" });
     expect(onRenameRegion).toHaveBeenCalledWith("region-1", "深渊配队");
+  });
+});
+
+describe("RegionNode 区域运行", () => {
+  it("点击区域校验调用 onValidateRegion（决策 2.40 修订）", () => {
+    const onValidateRegion = vi.fn();
+    renderRegion({ data: { onValidateRegion } });
+    fireEvent.click(screen.getByRole("button", { name: "区域校验" }));
+    expect(onValidateRegion).toHaveBeenCalledWith("region-1");
+  });
+
+  it("点击区域运行调用 onRunRegion（决策 2.40）", () => {
+    const onRunRegion = vi.fn();
+    renderRegion({ data: { onRunRegion } });
+    fireEvent.click(screen.getByRole("button", { name: "区域运行" }));
+    expect(onRunRegion).toHaveBeenCalledWith("region-1");
   });
 });

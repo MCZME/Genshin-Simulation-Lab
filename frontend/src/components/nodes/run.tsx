@@ -75,6 +75,9 @@ export function SimulationEditor({ node, onChange, fieldErrors = {} }: NodeEdito
   const segments = batch === null ? [] : progressSegments(batch.members);
   const countsText = batch === null ? "" : progressCountsText(batch.members);
   const failedMembers = batch === null ? [] : batch.members.filter((member) => member.state === "failed");
+  /** 校验入口不提交成员，进度条/计数只对模拟批次展示（决策 2.40 修订）。 */
+  const showMemberProgress =
+    batch === null ? false : batch.status !== "validating" && batch.status !== "validated";
   const terminalCount =
     batch === null
       ? 0
@@ -111,24 +114,28 @@ export function SimulationEditor({ node, onChange, fieldErrors = {} }: NodeEdito
             <span className={`status-badge status-${batch.status}`}>
               {BATCH_STATUS_LABELS[batch.status]}
             </span>
-            <span className="batch-counts">{countsText}</span>
+            <span className="batch-counts">
+              {batch.status === "validated" ? "未提交模拟" : countsText}
+            </span>
           </div>
-          <div
-            className="batch-progress"
-            role="progressbar"
-            aria-label="批次成员进度"
-            aria-valuemin={0}
-            aria-valuemax={batch.members.length}
-            aria-valuenow={terminalCount}
-          >
-            {segments.map((segment) => (
-              <span
-                key={segment.state}
-                className={`batch-progress-segment seg-${segment.state}`}
-                style={{ width: `${segment.percent}%` }}
-              />
-            ))}
-          </div>
+          {showMemberProgress && (
+            <div
+              className="batch-progress"
+              role="progressbar"
+              aria-label="批次成员进度"
+              aria-valuemin={0}
+              aria-valuemax={batch.members.length}
+              aria-valuenow={terminalCount}
+            >
+              {segments.map((segment) => (
+                <span
+                  key={segment.state}
+                  className={`batch-progress-segment seg-${segment.state}`}
+                  style={{ width: `${segment.percent}%` }}
+                />
+              ))}
+            </div>
+          )}
           {failedMembers.length > 0 && (
             <ul className="member-failures">
               {failedMembers.map((member) => (

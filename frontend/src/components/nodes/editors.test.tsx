@@ -358,7 +358,6 @@ describe("模拟节点编辑器：模拟入口 + 批次监控（决策 2.38 修�
           },
         ],
       },
-      regionChecks: {},
     };
   }
 
@@ -421,5 +420,33 @@ describe("模拟节点编辑器：模拟入口 + 批次监控（决策 2.38 修�
   it("已完成的批次不显示取消按钮", () => {
     renderSimulationEditor(runStateWithBatch());
     expect(screen.queryByRole("button", { name: "取消本批" })).toBeNull();
+  });
+
+  it("校验通过批次不展示模拟进度，标记未提交模拟", () => {
+    const state: RunState = {
+      run: {
+        phase: "validated",
+        build: [],
+        buildErrors: [],
+        batches: [
+          {
+            nodeId: "sim-1",
+            name: "主配置",
+            sourceRegionIds: ["region-1"],
+            status: "validated",
+            runId: null,
+            state: null,
+            cancelRequested: false,
+            members: [member("a", "queued")],
+            error: null,
+          },
+        ],
+      },
+    };
+    const { container } = renderSimulationEditor(state);
+    expect(screen.getByText("校验通过")).not.toBeNull();
+    expect(screen.getByText("未提交模拟")).not.toBeNull();
+    expect(screen.queryByRole("progressbar", { name: "批次成员进度" })).toBeNull();
+    expect(container.querySelector(".batch-progress")).toBeNull();
   });
 });

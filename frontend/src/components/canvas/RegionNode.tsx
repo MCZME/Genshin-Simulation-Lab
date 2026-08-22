@@ -27,10 +27,11 @@ export type RegionNodeData = {
     edgeId: string,
     direction: "up" | "down",
   ) => void;
-  /** 检查区域入口（决策 2.35）：单区域构建 + 后端输入校验，不执行模拟。 */
-  onCheckRegion: (regionId: string) => void;
-  checking: boolean;
-  /** 运行/检查期间锁定破坏性交互。 */
+  /** 区域校验入口（决策 2.40 修订）：区域运行的子集，构建 + 批次校验，不提交模拟。 */
+  onValidateRegion: (regionId: string) => void;
+  /** 区域运行入口（决策 2.40）：区域范围运行复用全部运行编排。 */
+  onRunRegion: (regionId: string) => void;
+  /** 运行期间锁定破坏性交互。 */
   interactionLocked: boolean;
   incomingGroups: IncomingOrderGroup[];
   dropTarget: boolean;
@@ -46,8 +47,8 @@ export function RegionNode({ data, selected, width, height }: NodeProps) {
     onRenameRegion,
     onResizeRegion,
     onMoveEdgeOrder,
-    onCheckRegion,
-    checking,
+    onValidateRegion,
+    onRunRegion,
     interactionLocked,
     incomingGroups,
     dropTarget,
@@ -225,15 +226,26 @@ export function RegionNode({ data, selected, width, height }: NodeProps) {
         )}
         <div className="region-header-actions">
           {!editingName && region.kind === "configuration" && (
-            <button
-              type="button"
-              className="text-button region-check nowheel nodrag"
-              title="检查区域：构建并校验成员输入，不执行模拟"
-              disabled={interactionLocked}
-              onClick={() => onCheckRegion(region.id)}
-            >
-              {checking ? "检查中…" : "检查区域"}
-            </button>
+            <>
+              <button
+                type="button"
+                className="text-button region-check nowheel nodrag"
+                title="区域校验：构建该区域并校验批次成员，不执行模拟"
+                disabled={interactionLocked}
+                onClick={() => onValidateRegion(region.id)}
+              >
+                区域校验
+              </button>
+              <button
+                type="button"
+                className="text-button region-run nowheel nodrag"
+                title="区域运行：仅运行该区域连接的模拟批次"
+                disabled={interactionLocked}
+                onClick={() => onRunRegion(region.id)}
+              >
+                区域运行
+              </button>
+            </>
           )}
           {!editingName && (
             <button

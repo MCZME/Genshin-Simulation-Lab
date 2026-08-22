@@ -4,12 +4,13 @@ import type { RunState } from "./run_state";
 import { isRunTerminal } from "../api/runtime_subscription";
 import {
   applyBatchView,
+  BATCH_STATUS_LABELS,
   batchStatusFromRunState,
   createEmptyRunState,
   createRunView,
+  PHASE_LABELS,
   setBatchStatus,
   setMethodStatus,
-  setRegionCheck,
   setRunPhase,
 } from "./run_state";
 
@@ -67,7 +68,6 @@ describe("run state", () => {
   it("创建空运行状态", () => {
     const state = createEmptyRunState();
     expect(state.run).toBeNull();
-    expect(state.regionChecks).toEqual({});
   });
 
   it("从运行计划创建批次视图", () => {
@@ -119,17 +119,21 @@ describe("run state", () => {
     expect(batchStatusFromRunState(null)).toBe("running");
   });
 
-  it("记录区域检查结果", () => {
-    let state = createEmptyRunState();
-    state = setRegionCheck(state, {
-      regionId: "region-1",
-      status: "passed",
-      memberCount: 2,
-      methods: [],
-      memberResults: [{ item_id: "a", ok: true, messages: [] }],
-      error: null,
-    });
-    expect(state.regionChecks["region-1"]?.status).toBe("passed");
+  it("批次提交前标记校验中（决策 2.40）", () => {
+    let state: RunState = { ...createEmptyRunState(), run: createRunView(PLAN) };
+    state = setBatchStatus(state, "sim-1", "validating");
+    expect(state.run?.batches[0].status).toBe("validating");
+  });
+
+  it("区域校验入口使用校验完成阶段与校验通过批次状态", () => {
+    let state: RunState = { ...createEmptyRunState(), run: createRunView(PLAN) };
+    state = setRunPhase(state, "validating");
+    state = setBatchStatus(state, "sim-1", "validated");
+    expect(PHASE_LABELS.validating).toBe("校验中");
+    expect(PHASE_LABELS.validated).toBe("校验完成");
+    expect(BATCH_STATUS_LABELS.validated).toBe("校验通过");
+    expect(state.run?.phase).toBe("validating");
+    expect(state.run?.batches[0].status).toBe("validated");
   });
 
   it("判断终态", () => {

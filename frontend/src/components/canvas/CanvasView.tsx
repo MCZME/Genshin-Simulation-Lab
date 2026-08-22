@@ -48,10 +48,8 @@ export interface CanvasViewProps {
   dimmedNodeIds: string[];
   /** 构建限速推进中当前应用中的节点，画布高亮（决策 2.34 修订）。 */
   runningMethodNodeIds: string[];
-  /** 运行/检查期间锁定破坏性交互。 */
+  /** 运行期间锁定破坏性交互。 */
   interactionLocked: boolean;
-  /** 正在执行检查的区域 id。 */
-  checkingRegionId: string | null;
   onViewportCommandHandled: () => void;
   onRenameRegionRequestHandled: () => void;
   onMoveNode: (
@@ -65,7 +63,8 @@ export interface CanvasViewProps {
     rect: { x: number; y: number; width: number; height: number },
   ) => void;
   onRenameRegion: (regionId: string, name: string) => void;
-  onCheckRegion: (regionId: string) => void;
+  onValidateRegion: (regionId: string) => void;
+  onRunRegion: (regionId: string) => void;
   onConnectEdge: (connection: {
     source_node_id: string;
     source_port_id: string;
@@ -105,7 +104,8 @@ interface CallbackSnapshot {
   onMoveRegion: CanvasViewProps["onMoveRegion"];
   onResizeRegion: CanvasViewProps["onResizeRegion"];
   onRenameRegion: CanvasViewProps["onRenameRegion"];
-  onCheckRegion: CanvasViewProps["onCheckRegion"];
+  onValidateRegion: CanvasViewProps["onValidateRegion"];
+  onRunRegion: CanvasViewProps["onRunRegion"];
   onConnectEdge: CanvasViewProps["onConnectEdge"];
   onSelect: CanvasViewProps["onSelect"];
   onParamsChange: CanvasViewProps["onParamsChange"];
@@ -131,14 +131,14 @@ export function CanvasView({
   dimmedNodeIds,
   runningMethodNodeIds,
   interactionLocked,
-  checkingRegionId,
   onViewportCommandHandled,
   onRenameRegionRequestHandled,
   onMoveNode,
   onMoveRegion,
   onResizeRegion,
   onRenameRegion,
-  onCheckRegion,
+  onValidateRegion,
+  onRunRegion,
   onConnectEdge,
   onSelect,
   onParamsChange,
@@ -156,7 +156,8 @@ export function CanvasView({
     onMoveRegion,
     onResizeRegion,
     onRenameRegion,
-    onCheckRegion,
+    onValidateRegion,
+    onRunRegion,
     onConnectEdge,
     onSelect,
     onParamsChange,
@@ -174,7 +175,8 @@ export function CanvasView({
       onMoveRegion,
       onResizeRegion,
       onRenameRegion,
-      onCheckRegion,
+      onValidateRegion,
+      onRunRegion,
       onConnectEdge,
       onSelect,
       onParamsChange,
@@ -206,7 +208,6 @@ export function CanvasView({
           dimmedNodeIds,
           runningMethodNodeIds,
           interactionLocked,
-          checkingRegionId,
         ),
         current,
       ),
@@ -220,7 +221,6 @@ export function CanvasView({
     dimmedNodeIds,
     runningMethodNodeIds,
     interactionLocked,
-    checkingRegionId,
     setNodes,
     setEdges,
   ]);
@@ -453,7 +453,6 @@ function buildNodes(
   dimmedNodeIds: string[],
   runningMethodNodeIds: string[],
   interactionLocked: boolean,
-  checkingRegionId: string | null,
 ): Node[] {
   const incoming = incomingGroupsByTarget(definition);
   const dimmed = new Set(dimmedNodeIds);
@@ -466,8 +465,8 @@ function buildNodes(
       onRenameRegion: callbacks.onRenameRegion,
       onResizeRegion: callbacks.onResizeRegion,
       onMoveEdgeOrder: callbacks.onMoveEdgeOrder,
-      onCheckRegion: callbacks.onCheckRegion,
-      checking: checkingRegionId === region.id,
+      onValidateRegion: callbacks.onValidateRegion,
+      onRunRegion: callbacks.onRunRegion,
       interactionLocked,
       incomingGroups: incoming.get(region.id) ?? [],
       dropTarget: highlightRegionId === region.id,

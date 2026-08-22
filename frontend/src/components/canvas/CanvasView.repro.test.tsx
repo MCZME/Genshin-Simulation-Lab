@@ -65,14 +65,14 @@ describe("CanvasView repro", () => {
         dimmedNodeIds={[]}
         runningMethodNodeIds={[]}
         interactionLocked={false}
-        checkingRegionId={null}
         onViewportCommandHandled={() => undefined}
         onRenameRegionRequestHandled={() => undefined}
         onMoveNode={() => undefined}
         onMoveRegion={() => undefined}
         onResizeRegion={() => undefined}
         onRenameRegion={() => undefined}
-        onCheckRegion={() => undefined}
+        onValidateRegion={() => undefined}
+        onRunRegion={() => undefined}
         onConnectEdge={() => undefined}
         onSelect={() => undefined}
         onParamsChange={() => undefined}

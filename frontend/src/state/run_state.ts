@@ -2,25 +2,31 @@ import type { RunMemberStatus, RunStatusResponse } from "../api/client";
 import type { BatchPlan, RegionBuildSlice } from "../workflow/runner";
 import { isRunTerminal } from "../api/runtime_subscription";
 
-/** 工作流运行阶段（决策 2.33，2.38 修订）：构建 → 模拟 → 终态。 */
+/** 工作流运行阶段（决策 2.33，2.38 修订：构建 → 模拟 → 终态；区域校验入口使用校验阶段）。 */
 export type RunPhase =
   | "building"
+  | "validating"
   | "simulating"
   | "completed"
+  | "validated"
   | "build_failed"
   | "cancelled";
 
 export const PHASE_LABELS: Record<RunPhase, string> = {
   building: "构建中",
+  validating: "校验中",
   simulating: "模拟中",
   completed: "已完成",
+  validated: "校验完成",
   build_failed: "构建失败",
   cancelled: "已取消",
 };
 
-/** 批次步骤状态（决策 2.34 轨迹中的批次步骤；2.38 增加已取消）。 */
+/** 批次步骤状态（决策 2.34 轨迹中的批次步骤；2.38 增加已取消；2.40 增加校验中/校验通过）。 */
 export type BatchStatus =
   | "pending"
+  | "validating"
+  | "validated"
   | "submitting"
   | "running"
   | "completed"
@@ -30,6 +36,8 @@ export type BatchStatus =
 
 export const BATCH_STATUS_LABELS: Record<BatchStatus, string> = {
   pending: "等待",
+  validating: "校验中",
+  validated: "校验通过",
   submitting: "提交中",
   running: "运行中",
   completed: "成功",
@@ -88,26 +96,13 @@ export interface WorkflowRunView {
   batches: BatchView[];
 }
 
-/** 单区域检查结果（决策 2.35）。 */
-export interface RegionCheckState {
-  regionId: string;
-  status: "checking" | "passed" | "failed";
-  memberCount: number;
-  methods: RegionBuildSlice["methods"];
-  /** 逐成员后端校验结果；ok 为 false 的成员带后端诊断消息。 */
-  memberResults: Array<{ item_id: string; ok: boolean; messages: string[] }>;
-  error: string | null;
-}
-
 export interface RunState {
   /** 当前/最近一次工作流运行；null = 尚未运行。不持久化。 */
   run: WorkflowRunView | null;
-  /** 每个配置区域最近一次「检查区域」结果。 */
-  regionChecks: Record<string, RegionCheckState>;
 }
 
 export function createEmptyRunState(): RunState {
-  return { run: null, regionChecks: {} };
+  return { run: null };
 }
 
 export function createRunView(plan: {
@@ -198,10 +193,6 @@ export function setBatchStatus(
   error: string | null = null,
 ): RunState {
   return updateBatch(state, nodeId, (batch) => ({ ...batch, status, error }));
-}
-
-export function setRegionCheck(state: RunState, check: RegionCheckState): RunState {
-  return { ...state, regionChecks: { ...state.regionChecks, [check.regionId]: check } };
 }
 
 /** 后端批次终态映射到批次步骤状态。 */

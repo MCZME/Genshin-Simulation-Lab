@@ -5,7 +5,7 @@ import type {
   WorkflowNode,
   WorkflowRegion,
 } from "./types";
-import { validateWorkflow } from "./validator";
+import { validateWorkflow, validateWorkflowNodes } from "./validator";
 
 function makeRegion(
   id = "region-1",
@@ -460,4 +460,25 @@ describe("validateWorkflow", () => {
     expect(codes(definition)).toContain("PARAM_INVALID");
   });
 
+});
+
+describe("validateWorkflowNodes", () => {
+  it("编辑期只报节点自身参数/路径，不报跨节点槽位冲突", () => {
+    const definition = makeDefinition(
+      [makeRegion()],
+      [
+        makeNode("w1", "weapon", { slot: 1, asset: "weapon:a" }),
+        makeNode("w2", "weapon", { slot: 1, asset: "weapon:b" }),
+      ],
+      [],
+    );
+    const codes = validateWorkflowNodes(definition).map((item) => item.code);
+    expect(codes).not.toContain("TEAM_SLOT_CONFLICT");
+  });
+
+  it("未注册节点类型仍是节点级错误", () => {
+    const definition = makeDefinition([makeRegion()], [makeNode("x", "bogus")], []);
+    const codes = validateWorkflowNodes(definition).map((item) => item.code);
+    expect(codes).toContain("UNKNOWN_NODE_KIND");
+  });
 });

@@ -10,7 +10,7 @@
 - 工作流是 UI 产品面；CLI 不提供工作流的创建、校验或运行。
 - 后端不实现工作流图引擎，只做工作流 JSON 不透明存档、已展开成员校验与批次运行。
 - 前端拥有图语义：区域、节点、连线、校验、片段合并、变体展开、成员预览。
-- 第一条纵向链路：根节点 → 配置区域（含枚举/区间）→ 模拟桥 → 结果摘要。
+- 第一条纵向链路：根节点 → 配置区域（含枚举/区间）→ 模拟节点 → 结果摘要。
 
 ## 2. 实施切片
 
@@ -71,7 +71,7 @@
 - 内容：
   - 工程搭建：Vite + React + TypeScript + React Flow + Vitest + openapi-typescript；`pnpm lint`、`pnpm typecheck`、`pnpm test` 质量门禁可运行，OpenAPI 可生成前端 API 类型。
   - 定义模型：`WorkflowDefinition`、区域、节点、端口、连线。
-  - 语义注册表：MVP 配置节点、枚举/区间、模拟桥。
+  - 语义注册表：MVP 配置节点、枚举/区间、模拟节点。
   - 校验器：区域归属、端口类型、DAG、覆盖警告、路径语法、成员上限。
   - 批次编译器：根数据 + 片段链深合并、枚举/区间展开、同路径覆盖、不同路径叉乘、稳定 `item_id`。
   - 输出与 `POST /inputs/validate`、`POST /runs` 请求一致的已展开成员。
@@ -87,13 +87,13 @@
 - 落点：`frontend/src/components/`、`frontend/src/state/`、`frontend/src/api/`。
 - 内容：
   - 先行落地纯 TypeScript 部分并单测：`WorkflowEditorState` 与 `WorkflowDefinition` 双向转换、API 客户端（工作流存档、输入校验、批次提交、轮询、结果摘要）。
-  - React Flow 画布壳、配置区域、节点编辑器、模拟桥、问题面板。
-  - 第一条链路：根节点 → 配置区域（含枚举/区间）→ 模拟桥 → 结果摘要。
+  - React Flow 画布壳、配置区域、节点编辑器、模拟节点、问题面板。
+  - 第一条链路：根节点 → 配置区域（含枚举/区间）→ 模拟节点 → 结果摘要。
 - 验收：
   - 转换器与 API 客户端保持纯 TypeScript、可单测，不依赖 React 组件。
   - 配置区域边界展示最终成员数量、校验状态与覆盖警告。
   - 点击运行后提交已展开成员，轮询 `GET /runs/{run_id}` 更新节点状态。
-  - 模拟桥按成员展示 `queued / running / stopping / completed / failed / cancelled`。
+  - 模拟节点按成员展示 `queued / running / stopping / completed / failed / cancelled`。
   - 运行完成后展示摘要指标；部分失败按成员呈现。
 
 ### 切片 6：端到端验收

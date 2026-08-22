@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { searchAssets } from "../../api/client";
+import { getAsset, searchAssets } from "../../api/client";
 import type { AssetResponse } from "../../api/client";
 import { AssetPicker } from "./AssetPicker";
 
@@ -10,10 +10,12 @@ vi.mock("../../api/client", async (importOriginal) => {
   return {
     ...actual,
     searchAssets: vi.fn(),
+    getAsset: vi.fn().mockResolvedValue(null as never),
   };
 });
 
 const mockedSearch = vi.mocked(searchAssets);
+const mockedGetAsset = vi.mocked(getAsset);
 
 const barbara: AssetResponse = {
   asset_key: "character:barbara",
@@ -51,6 +53,8 @@ const unusable: AssetResponse = {
 afterEach(() => {
   cleanup();
   mockedSearch.mockReset();
+  // 重置并恢复安全默认：未显式配置详情返回值的用例视为解析不到。
+  mockedGetAsset.mockReset().mockResolvedValue(null as never);
 });
 
 describe("AssetPicker", () => {
@@ -239,5 +243,51 @@ describe("AssetPicker", () => {
       expect(screen.getByText("绝缘之旗印")).toBeTruthy(),
     );
     expect(screen.queryByText(/★/)).toBeNull();
+  });
+});
+
+describe("AssetPicker 选中项不在当前列表页", () => {
+  const farLan: AssetResponse = {
+    asset_key: "character:farlan",
+    source_id: "farlan",
+    name: "珐露珊",
+    usable: true,
+    status: null,
+    rarity: 4,
+    element: "anemo",
+    weapon_type: "bow",
+  };
+
+  it("按详情端点回补名称与元数据", async () => {
+    mockedSearch.mockResolvedValue({ items: [barbara] });
+    mockedGetAsset.mockResolvedValue(farLan);
+    render(
+      <AssetPicker assetType="characters" value="character:farlan" onChange={vi.fn()} />,
+    );
+
+    await waitFor(() => expect(screen.getByText("珐露珊")).toBeTruthy());
+    expect(screen.getByText("★4")).toBeTruthy();
+    expect(mockedGetAsset).toHaveBeenCalledWith("characters", "farlan");
+  });
+
+  it("详情解析失败时回退显示 asset_key", async () => {
+    mockedSearch.mockResolvedValue({ items: [barbara] });
+    mockedGetAsset.mockRejectedValue(new Error("not_found"));
+    // 用独立 asset_key 避开模块级详情缓存命中上一用例
+    render(
+      <AssetPicker assetType="characters" value="character:missing" onChange={vi.fn()} />,
+    );
+
+    await waitFor(() => expect(mockedGetAsset).toHaveBeenCalledWith("characters", "missing"));
+    await waitFor(() =>
+      expect(screen.getByRole("button", { name: /character:missing/ })).toBeTruthy(),
+    );
+  });
+
+  it("未选择资产时不请求详情", () => {
+    mockedSearch.mockResolvedValue({ items: [barbara] });
+    render(<AssetPicker assetType="characters" value="" onChange={vi.fn()} />);
+
+    expect(mockedGetAsset).not.toHaveBeenCalled();
   });
 });

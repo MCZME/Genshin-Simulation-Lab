@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { searchAssets } from "../../api/client";
+import { getAsset, searchAssets } from "../../api/client";
 import type { AssetResponse } from "../../api/client";
 import { ELEMENT_COLORS, ELEMENT_LABELS } from "../../theme/elements";
 
@@ -25,6 +25,35 @@ const WEAPON_LABELS: Record<string, string> = {
   sword: "单手剑",
 };
 
+/** 资产详情缓存：同一资产在多个节点中选择时不重复请求；失败结果也缓存为 null。 */
+const detailCache = new Map<string, Promise<AssetResponse | null>>();
+
+function sourceIdFromAssetKey(assetKey: string): string | null {
+  const index = assetKey.indexOf(":");
+  if (index === -1 || index === assetKey.length - 1) {
+    return null;
+  }
+  return assetKey.slice(index + 1);
+}
+
+/** 解析单个资产详情；无效引用或请求失败返回 null（触发按钮回退显示 asset_key）。 */
+function fetchAssetDetail(
+  assetType: "characters" | "weapons" | "artifact-sets",
+  assetKey: string,
+): Promise<AssetResponse | null> {
+  const cached = detailCache.get(assetKey);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const sourceId = sourceIdFromAssetKey(assetKey);
+  const promise =
+    sourceId === null
+      ? Promise.resolve(null)
+      : getAsset(assetType, sourceId).catch(() => null);
+  detailCache.set(assetKey, promise);
+  return promise;
+}
+
 export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<AssetResponse[]>([]);
@@ -38,6 +67,8 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  /** 当前列表页未包含的选中资产，按详情端点回补显示。 */
+  const [fallback, setFallback] = useState<AssetResponse | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
 
@@ -101,6 +132,23 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
     };
   }, [assetType, query, offset, elementFilter, weaponTypeFilter, rarityFilter, usableFilter]);
 
+  // 选中资产不在当前列表页（初始仅 50 条）时，按详情端点解析名称与元数据；
+  // 旧值残留由 selected 的派生校验挡掉，不在 effect 里同步清状态。
+  useEffect(() => {
+    if (value === "") {
+      return;
+    }
+    let cancelled = false;
+    void fetchAssetDetail(assetType, value).then((asset) => {
+      if (!cancelled && asset !== null) {
+        setFallback(asset);
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [assetType, value]);
+
   useEffect(() => {
     if (!open) {
       return;
@@ -117,7 +165,9 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
     return () => document.removeEventListener("mousedown", handleMouseDown);
   }, [open]);
 
-  const selected = items.find((item) => item.asset_key === value) ?? null;
+  const selectedFromList = items.find((item) => item.asset_key === value) ?? null;
+  const selected =
+    selectedFromList ?? (fallback !== null && fallback.asset_key === value ? fallback : null);
   const elementColor =
     assetType === "characters" && selected !== null && selected.element != null
       ? (ELEMENT_COLORS[selected.element] ?? null)

@@ -12,7 +12,7 @@ import {
   submitRun,
   validateInputs,
 } from "../api/client";
-import type { WorkflowListItem } from "../api/client";
+import type { ValidateInputsResponse, WorkflowListItem } from "../api/client";
 import { pollRun } from "../api/runtime_subscription";
 import { CanvasView } from "../components/canvas/CanvasView";
 import { ObjectPanel } from "../components/panels/ObjectPanel";
@@ -73,7 +73,7 @@ import {
   scopedDiagnostics,
   validationErrorMessage,
 } from "../workflow/runner";
-import type { RunPlan } from "../workflow/runner";
+import type { BatchPlan, RunPlan } from "../workflow/runner";
 import {
   assetMissingDiagnostics,
   collectAssetReferences,
@@ -88,6 +88,40 @@ import { SettingsModal } from "../components/shell/SettingsModal";
 
 type Tool = "objects" | "problems" | "results" | null;
 
+/** 构建阶段计划错误 → 问题面板诊断（决策 2.40 修订）。 */
+function planErrorDiagnostic(message: string, plan: RunPlan): Diagnostic {
+  return {
+    severity: "error",
+    code: "BUILD_FAILED",
+    message,
+    node_id: null,
+    edge_id: null,
+    region_id: plan.participating[0]?.regionId ?? null,
+    path: null,
+  };
+}
+
+/** 批次区域校验失败的成员级诊断 → 问题面板（决策 2.40 修订）。 */
+function validationFailureDiagnostics(
+  validation: ValidateInputsResponse,
+  batch: BatchPlan,
+): Diagnostic[] {
+  return validation.members
+    .filter((member) => !member.ok)
+    .map((member) => {
+      const detail = member.details?.[0];
+      return {
+        severity: "error",
+        code: detail?.code ?? "INPUT_INVALID",
+        message: detail?.message ?? `${member.item_id} 校验未通过`,
+        node_id: batch.nodeId,
+        edge_id: null,
+        region_id: batch.sourceRegionIds[0] ?? null,
+        path: detail?.path ?? null,
+      };
+    });
+}
+
 export function App() {
   const [appState, setAppState] = useState(() => createAppState());
   const [editorState, setEditorState] = useState<EditorState | null>(null);
@@ -97,6 +131,8 @@ export function App() {
   const [running, setRunning] = useState(false);
   /** 资产预检（决策 2.40 节点校验）：加载/切换工作流时核对的失效资产 key。 */
   const [missingAssetKeys, setMissingAssetKeys] = useState<string[]>([]);
+  /** 最近一次运行/校验的区域校验失败诊断：进问题面板而非顶部横幅（决策 2.40 修订）。 */
+  const [validationDiagnostics, setValidationDiagnostics] = useState<Diagnostic[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<Tool>("objects");
   /** 结果面板定位请求（决策 2.37）：非空时面板打开并选中该 session，随后清空。 */
@@ -239,6 +275,29 @@ export function App() {
       .filter((method) => method.status === "running")
       .map((method) => method.nodeId);
   }, [runState.run]);
+
+  /** 构建/运行诊断（完整校验 + 资产预检），并按区域运行范围过滤（决策 2.40）。 */
+  const runScopeDiagnostics = useMemo(
+    () =>
+      (definition: WorkflowDefinition, scopeRegionIds?: Set<string>): Diagnostic[] => {
+        const fullDiagnostics = [
+          ...validateWorkflow(definition),
+          ...assetMissingDiagnostics(definition, missingAssetKeys),
+        ];
+        return scopeRegionIds === undefined
+          ? fullDiagnostics
+          : scopedDiagnostics(definition, fullDiagnostics, scopeRegionIds);
+      },
+    [missingAssetKeys],
+  );
+
+  /** 问题面板诊断：编辑期节点级诊断；最近一次运行/校验失败时显示校验/构建诊断（决策 2.40 修订）。 */
+  const problemDiagnostics = useMemo<Diagnostic[]>(() => {
+    if (editorState === null) {
+      return [];
+    }
+    return validationDiagnostics.length > 0 ? validationDiagnostics : diagnostics;
+  }, [diagnostics, editorState, validationDiagnostics]);
 
   function updateSettings(next: AppSettings) {
     setSettings(next);
@@ -513,6 +572,7 @@ export function App() {
     rememberLastWorkflowId(workflowId);
     setRenameRegionRequestId(null);
     setSelectionEpoch((epoch) => epoch + 1);
+    setValidationDiagnostics([]);
     void runAssetPreflight(definition);
   }
 
@@ -555,6 +615,7 @@ export function App() {
     setRenameRegionRequestId(null);
     setSelectionEpoch((epoch) => epoch + 1);
     setMissingAssetKeys([]);
+    setValidationDiagnostics([]);
   }
 
   async function handleSaveAndCreate(): Promise<void> {
@@ -589,6 +650,7 @@ export function App() {
         setRenameRegionRequestId(null);
         setSelectionEpoch((epoch) => epoch + 1);
         setMissingAssetKeys([]);
+        setValidationDiagnostics([]);
       }
       await refreshWorkflowList();
     } catch (error) {
@@ -622,16 +684,9 @@ export function App() {
     scopeRegionIds?: Set<string>,
     mode: "run" | "check" = "run",
   ) {
-    // 构建阶段完整校验（决策 2.40）：图校验 + 跨节点检查 + 资产预检；
-    // 区域运行只被目标区域相关诊断阻断，全部运行保留全量诊断。
-    const fullDiagnostics = [
-      ...validateWorkflow(definition),
-      ...assetMissingDiagnostics(definition, missingAssetKeys),
-    ];
-    const runDiagnostics =
-      scopeRegionIds === undefined
-        ? fullDiagnostics
-        : scopedDiagnostics(definition, fullDiagnostics, scopeRegionIds);
+    setValidationDiagnostics([]);
+    setErrorMessage(null);
+    const runDiagnostics = runScopeDiagnostics(definition, scopeRegionIds);
     const buildErrors = [
       ...runDiagnostics
         .filter((item) => item.severity === "error")
@@ -654,12 +709,21 @@ export function App() {
         };
         return setRunPhase(started, "build_failed");
       });
-      // 构建失败（零提交）错误经顶部横幅呈现（决策 2.37）。
-      setErrorMessage(`构建失败：${errors.join("；")}`);
+      // 构建/校验失败（零提交）进问题面板并自动打开；顶部横幅只保留操作类错误（决策 2.40 修订）。
+      const failureDiagnostics: Diagnostic[] = [
+        ...runDiagnostics.filter((item) => item.severity === "error"),
+        ...plan.errors.map((message) => planErrorDiagnostic(message, plan)),
+      ];
+      if (failureDiagnostics.length === 0) {
+        failureDiagnostics.push(
+          planErrorDiagnostic("没有可运行的批次：配置区域未连接模拟节点", plan),
+        );
+      }
+      setValidationDiagnostics(failureDiagnostics);
+      setActiveTool("problems");
       return;
     }
 
-    setErrorMessage(null);
     setRunning(true);
     setRunState((current) => ({
       ...current,
@@ -693,6 +757,13 @@ export function App() {
             cancelled = true;
             continue;
           }
+          if (!validation.ok) {
+            setValidationDiagnostics((current) => [
+              ...current,
+              ...validationFailureDiagnostics(validation, batch),
+            ]);
+            setActiveTool("problems");
+          }
           setRunState((current) =>
             setBatchStatus(
               current,
@@ -716,6 +787,7 @@ export function App() {
 
     cancelRequestedRef.current = false;
     let cancelled = false;
+    let validationFailed = false;
     const completedSessions: Array<{
       nodeId: string;
       itemId: string;
@@ -739,6 +811,12 @@ export function App() {
           continue;
         }
         if (!validation.ok) {
+          validationFailed = true;
+          setValidationDiagnostics((current) => [
+            ...current,
+            ...validationFailureDiagnostics(validation, batch),
+          ]);
+          setActiveTool("problems");
           setRunState((current) =>
             setBatchStatus(current, batch.nodeId, "failed", validationErrorMessage(validation)),
           );
@@ -795,11 +873,13 @@ export function App() {
 
     if (cancelled) {
       setRunState((current) => setRunPhase(current, "cancelled"));
-      openResultAt(null);
     } else {
       setRunState((current) => setRunPhase(current, "completed"));
-      // 运行结束联动（决策 2.37）：自动打开结果面板并定位最新记录。
-      openResultAt(completedSessions[0]?.sessionId ?? null);
+      // 运行结束联动（决策 2.37）：自动打开结果面板并定位最新记录；
+      // 存在区域校验失败时保留问题面板，不再切到结果面板（决策 2.40 修订）。
+      if (!validationFailed) {
+        openResultAt(completedSessions[0]?.sessionId ?? null);
+      }
     }
     setRunning(false);
   }
@@ -932,10 +1012,10 @@ export function App() {
               title="问题列表"
               onClick={() => setActiveTool(activeTool === "problems" ? null : "problems")}
             >
-              问题
-              {diagnostics.filter((item) => item.severity === "error").length > 0 && (
+               问题
+              {problemDiagnostics.filter((item) => item.severity === "error").length > 0 && (
                 <span className="rail-badge">
-                  {diagnostics.filter((item) => item.severity === "error").length}
+                  {problemDiagnostics.filter((item) => item.severity === "error").length}
                 </span>
               )}
             </button>
@@ -964,7 +1044,7 @@ export function App() {
             />
           )}
           {activeTool === "problems" && editorState !== null && (
-            <ProblemPanel diagnostics={diagnostics} onLocate={handleLocate} />
+            <ProblemPanel diagnostics={problemDiagnostics} onLocate={handleLocate} />
           )}
           {activeTool === "results" && (
             <ResultsPanel

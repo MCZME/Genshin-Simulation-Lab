@@ -4,7 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunStatusResponse } from "../api/client";
 import { App } from "./App";
 
-const { oneRegionDefinition, twoRegionDefinition } = vi.hoisted(() => {
+const { oneRegionDefinition, twoRegionDefinition, conflictDefinition } = vi.hoisted(() => {
   const region = (id: string) => ({
     id,
     kind: "configuration",
@@ -61,9 +61,28 @@ const { oneRegionDefinition, twoRegionDefinition } = vi.hoisted(() => {
       layout: {},
     };
   };
+  const conflictDefinition = {
+    schema_version: 1,
+    meta: { name: "测试工作流" },
+    regions: [region("region-1")],
+    nodes: [
+      node("region-1-root", "root", {}, "region-1"),
+      node("w1", "weapon", { slot: 1, asset: "weapon:a" }, "region-1"),
+      node("w2", "weapon", { slot: 1, asset: "weapon:b" }, "region-1"),
+      node("sim-1", "simulation", {}, null),
+    ],
+    edges: [
+      edge("c1", "region-1-root", "out", "region-1", "out"),
+      edge("c2", "w1", "out", "region-1", "out"),
+      edge("c3", "w2", "out", "region-1", "out"),
+      edge("c4", "region-1", "out", "sim-1", "in"),
+    ],
+    layout: {},
+  };
   return {
     oneRegionDefinition: definition(["region-1"], ["sim-1"]),
     twoRegionDefinition: definition(["region-1", "region-2"], ["sim-1", "sim-2"]),
+    conflictDefinition,
   };
 });
 
@@ -190,9 +209,17 @@ beforeEach(() => {
     updated_at: "",
     definition: oneRegionDefinition,
   });
-  mocks.searchAssets.mockImplementation(async (_assetType, sourceId: string) => ({
-    items: [{ asset_key: `character:${sourceId}` }],
-  }));
+  mocks.searchAssets.mockImplementation(async (assetType: string, sourceId: string) => {
+    const prefix =
+      assetType === "characters"
+        ? "character"
+        : assetType === "weapons"
+          ? "weapon"
+          : "artifact-set";
+    return {
+      items: [{ asset_key: `${prefix}:${sourceId}` }],
+    };
+  });
   mocks.getAsset.mockResolvedValue(null);
   mocks.validateInputs.mockReset();
   mocks.submitRun.mockReset();
@@ -215,6 +242,7 @@ describe("App 运行编排", () => {
 
     expect(await screen.findByText(/区域校验未通过（1 个成员）/)).not.toBeNull();
     expect(screen.getAllByText("失败").length).toBeGreaterThan(0);
+    expect(screen.getByText("资产不存在")).not.toBeNull();
     expect(mocks.validateInputs).toHaveBeenCalledTimes(1);
     expect(mocks.submitRun).not.toHaveBeenCalled();
   });
@@ -243,6 +271,26 @@ describe("App 运行编排", () => {
 
     expect(await screen.findByText(/区域校验未通过（1 个成员）/)).not.toBeNull();
     expect(screen.getAllByText("失败").length).toBeGreaterThan(0);
+    expect(screen.getByText("资产不存在")).not.toBeNull();
+    expect(mocks.submitRun).not.toHaveBeenCalled();
+  });
+
+  it("构建阶段校验失败进问题面板且不显示顶部横幅", async () => {
+    mocks.getWorkflow.mockResolvedValue({
+      id: "wf-1",
+      name: "测试工作流",
+      updated_at: "",
+      definition: conflictDefinition,
+    });
+    render(<App />);
+
+    const runButton = await screen.findByRole("button", { name: "全部运行" });
+    await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(runButton);
+
+    expect((await screen.findAllByText("TEAM_SLOT_CONFLICT")).length).toBeGreaterThan(0);
+    expect(screen.getAllByText("队伍槽位 1 被多个武器节点占用").length).toBeGreaterThan(0);
+    expect(screen.queryByText(/构建失败/)).toBeNull();
     expect(mocks.submitRun).not.toHaveBeenCalled();
   });
 
@@ -285,9 +333,17 @@ describe("App 运行编排", () => {
       updated_at: "",
       definition: definitionWithMissingElsewhere,
     });
-    mocks.searchAssets.mockImplementation(async (_assetType, sourceId: string) => ({
-      items: sourceId === "missing" ? [] : [{ asset_key: `character:${sourceId}` }],
-    }));
+  mocks.searchAssets.mockImplementation(async (assetType: string, sourceId: string) => {
+    const prefix =
+      assetType === "characters"
+        ? "character"
+        : assetType === "weapons"
+          ? "weapon"
+          : "artifact-set";
+    return {
+      items: sourceId === "missing" ? [] : [{ asset_key: `${prefix}:${sourceId}` }],
+    };
+  });
     mocks.validateInputs.mockResolvedValue({
       ok: true,
       members: [{ item_id: "root", ok: true }],

@@ -48,7 +48,7 @@ export function NodeEditorHost({
     case "range":
       return <RangeEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "simulation":
-      return <SimulationEditor />;
+      return <SimulationEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     default:
       return <UnknownEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
   }

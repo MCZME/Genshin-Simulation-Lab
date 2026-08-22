@@ -48,7 +48,8 @@ export interface FragmentSource {
 export interface NodeKindSpec {
   kind: NodeKind;
   displayName: string;
-  region: RegionKind | "bridge";
+  /** 所属区域类型；null 表示画布级节点，不归属任何区域。 */
+  region: RegionKind | null;
   ports: {
     inputs: PortSpec[];
     outputs: PortSpec[];
@@ -563,8 +564,13 @@ function validateRange(node: WorkflowNode): Diagnostic[] {
   return diagnostics;
 }
 
-function noopValidate(): Diagnostic[] {
-  return [];
+function validateSimulation(node: WorkflowNode): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  const concurrency = node.params.concurrency;
+  if (concurrency !== undefined && !isInRange(concurrency, 1, 16)) {
+    diagnostics.push(paramError(node, "concurrency", "并发度必须在 1 到 16 之间"));
+  }
+  return diagnostics;
 }
 
 export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
@@ -751,8 +757,8 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
   },
   simulation: {
     kind: "simulation",
-    displayName: "模拟桥",
-    region: "bridge",
+    displayName: "模拟节点",
+    region: null,
     ports: {
       inputs: [
         {
@@ -766,10 +772,12 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
         { id: "out", cardinality: "group", dataLanguage: "session", connectionLimit: 1 },
       ],
     },
-    paramFields: {},
+    paramFields: {
+      concurrency: { type: "integer" },
+    },
     defaultParams: {},
     fragment: () => null,
-    validate: noopValidate,
+    validate: validateSimulation,
   },
 };
 
@@ -803,7 +811,7 @@ export function createDefaultParams(kind: string): Record<string, unknown> {
   return spec === null ? {} : structuredClone(spec.defaultParams);
 }
 
-/** 单值节点产出一个片段；根节点与模拟桥不产出来源。 */
+/** 单值节点产出一个片段；根节点与模拟节点不产出来源。 */
 export function singleFragment(
   node: WorkflowNode,
   definition: WorkflowDefinition,

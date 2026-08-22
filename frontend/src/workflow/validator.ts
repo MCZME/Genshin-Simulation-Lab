@@ -83,7 +83,8 @@ export function validateWorkflow(definition: WorkflowDefinition): Diagnostic[] {
     }
 
     if (node.region_id === null) {
-      if (spec.region === "bridge") {
+      if (spec.region === null) {
+        diagnostics.push(...validateNode(node));
         continue;
       }
       diagnostics.push(
@@ -104,9 +105,9 @@ export function validateWorkflow(definition: WorkflowDefinition): Diagnostic[] {
       );
       continue;
     }
-    if (spec.region === "bridge") {
+    if (spec.region === null) {
       diagnostics.push(
-        diagnostic("error", "BRIDGE_REGION_INVALID", "模拟桥节点不能归属区域", {
+        diagnostic("error", "CANVAS_NODE_REGION_INVALID", "模拟节点不能归属区域", {
           node_id: node.id,
           region_id: node.region_id,
         }),
@@ -160,10 +161,73 @@ export function validateWorkflow(definition: WorkflowDefinition): Diagnostic[] {
     validateEdge(edge, regionById, nodeById, endpoints, connectionCounts, diagnostics);
   }
 
-  validateMemberCap(definition, regionById, diagnostics);
+  const connectedToSimulation = simulationLinkedRegions(definition, regionById, nodeById);
+  validateMemberCap(definition, regionById, connectedToSimulation, diagnostics);
   validateTeamSlotConflicts(definition, regionById, diagnostics);
   warnNodesOutsideRegions(definition, regionById, diagnostics);
-  return diagnostics;
+  validateRegionToSimulationLinks(definition, regionById, nodeById, connectedToSimulation, diagnostics);  return diagnostics;
+}
+
+/** 已连接到任一模拟节点输入的配置区域集合（决策 2.32：连接决定批次参与）。 */
+function simulationLinkedRegions(
+  definition: WorkflowDefinition,
+  regionById: Map<string, WorkflowRegion>,
+  nodeById: Map<string, WorkflowNode>,
+): Set<string> {
+  const linked = new Set<string>();
+  for (const edge of definition.edges) {
+    const sourceRegion = regionById.get(edge.source_node_id);
+    const targetNode = nodeById.get(edge.target_node_id);
+    if (
+      sourceRegion?.kind === "configuration" &&
+      edge.source_port_id === REGION_BOUNDARY_OUT_PORT &&
+      targetNode?.kind === "simulation" &&
+      edge.target_port_id === "in"
+    ) {
+      linked.add(sourceRegion.id);
+    }
+  }
+  return linked;
+}
+
+/**
+ * 区域与模拟节点的连接语义（决策 2.32）：
+ * 未连接模拟节点的配置区域给警告并不参与运行；未连接任何配置区域的模拟节点批次无法成立，报错。
+ */
+function validateRegionToSimulationLinks(
+  definition: WorkflowDefinition,
+  regionById: Map<string, WorkflowRegion>,
+  nodeById: Map<string, WorkflowNode>,
+  connectedToSimulation: Set<string>,
+  diagnostics: Diagnostic[],
+): void {
+  for (const region of regionById.values()) {
+    if (region.kind === "configuration" && !connectedToSimulation.has(region.id)) {
+      diagnostics.push(
+        diagnostic("warning", "REGION_NOT_CONNECTED", "配置区域未连接模拟节点，不参与运行", {
+          region_id: region.id,
+        }),
+      );
+    }
+  }
+  for (const node of nodeById.values()) {
+    if (node.kind !== "simulation") {
+      continue;
+    }
+    const hasRegionSource = definition.edges.some(
+      (edge) =>
+        edge.target_node_id === node.id &&
+        edge.target_port_id === "in" &&
+        regionById.get(edge.source_node_id)?.kind === "configuration",
+    );
+    if (!hasRegionSource) {
+      diagnostics.push(
+        diagnostic("error", "SIM_BATCH_EMPTY", "模拟节点未连接配置区域，批次无法成立", {
+          node_id: node.id,
+        }),
+      );
+    }
+  }
 }
 
 function validateEdge(
@@ -241,7 +305,7 @@ function validateEdge(
       const targetNode = nodeById.get(edge.target_node_id);
       if (targetNode === undefined || targetNode.kind !== "simulation") {
         diagnostics.push(
-          diagnostic("error", "CONNECTION_INVALID", "配置区域边界输出只能连接模拟桥输入", {
+          diagnostic("error", "CONNECTION_INVALID", "配置区域边界输出只能连接模拟节点输入", {
             edge_id: edge.id,
           }),
         );
@@ -251,7 +315,7 @@ function validateEdge(
       const sourceNode = nodeById.get(edge.source_node_id);
       if (sourceNode !== undefined && sourceNode.kind === "simulation") {
         diagnostics.push(
-          diagnostic("error", "ANALYSIS_NOT_IMPLEMENTED", "模拟桥输出与分析区域连线不在 MVP 范围", {
+          diagnostic("error", "ANALYSIS_NOT_IMPLEMENTED", "模拟节点输出与分析区域连线不在 MVP 范围", {
             edge_id: edge.id,
           }),
         );
@@ -300,7 +364,7 @@ function isFreeConnectedNode(endpoint: Endpoint, nodeById: Map<string, WorkflowN
     return false;
   }
   const spec = getNodeKindSpec(node.kind);
-  return spec === null || spec.region !== "bridge";
+  return spec === null || spec.region !== null;
 }
 
 function validateRegionEndpoint(
@@ -474,6 +538,7 @@ function visit(
 function validateMemberCap(
   definition: WorkflowDefinition,
   regionById: Map<string, WorkflowRegion>,
+  connectedToSimulation: Set<string>,
   diagnostics: Diagnostic[],
 ): void {
   for (const region of regionById.values()) {
@@ -485,11 +550,14 @@ function validateMemberCap(
         edge.target_node_id === region.id && edge.target_port_id === REGION_BOUNDARY_OUT_PORT,
     );
     if (boundaryEdges.length === 0) {
-      diagnostics.push(
-        diagnostic("warning", "EMPTY_REGION", "配置区域没有数据汇入，运行会被阻止", {
-          region_id: region.id,
-        }),
-      );
+      // 仅连接了模拟节点的区域，空汇入才意味着批次无法成立（决策 2.32）。
+      if (connectedToSimulation.has(region.id)) {
+        diagnostics.push(
+          diagnostic("warning", "EMPTY_REGION", "配置区域没有数据汇入，所连批次无法成立", {
+            region_id: region.id,
+          }),
+        );
+      }
       continue;
     }
     const result = expandConfigurationRegion(definition, region.id);
@@ -591,7 +659,7 @@ function warnNodesOutsideRegions(
         continue;
       }
       const spec = getNodeKindSpec(node.kind);
-      if (spec === null || spec.region === "bridge") {
+      if (spec === null || spec.region === null) {
         continue;
       }
       const inside =

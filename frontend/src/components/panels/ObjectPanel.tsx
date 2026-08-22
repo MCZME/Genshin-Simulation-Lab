@@ -43,10 +43,10 @@ export function ObjectPanel({ onDragStart, onCollapse }: ObjectPanelProps) {
         ))}
       </div>
       <div className="panel-section">
-        <h2 className="panel-title">桥</h2>
+        <h2 className="panel-title">画布节点</h2>
         <DraggableObject
           kind="simulation"
-          label="模拟桥"
+          label="模拟节点"
           color={nodeKindColor("simulation")}
           onDragStart={onDragStart}
         />

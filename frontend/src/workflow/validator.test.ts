@@ -199,13 +199,52 @@ describe("validateWorkflow", () => {
     expect(codes(definition)).toContain("REGION_KIND_MISMATCH");
   });
 
-  it("模拟桥归属区域报错", () => {
+  it("模拟节点归属区域报错", () => {
     const definition = makeDefinition(
       [makeRegion()],
       [makeNode("sim", "simulation", {}, "region-1")],
       [],
     );
-    expect(codes(definition)).toContain("BRIDGE_REGION_INVALID");
+    expect(codes(definition)).toContain("CANVAS_NODE_REGION_INVALID");
+  });
+
+  it("未连接模拟节点的配置区域给警告", () => {
+    const definition = makeDefinition(
+      [makeRegion()],
+      [makeNode("char", "character", { slot: 1, asset: "character:barbara" })],
+      [makeEdge("e1", "char", "out", "region-1", "out")],
+    );
+    const diagnostics = validateWorkflow(definition);
+    const notConnected = diagnostics.find((item) => item.code === "REGION_NOT_CONNECTED");
+    expect(notConnected?.severity).toBe("warning");
+  });
+
+  it("模拟节点未连接配置区域时报批次无法成立", () => {
+    const definition = makeDefinition(
+      [makeRegion()],
+      [
+        makeNode("char", "character", { slot: 1, asset: "character:barbara" }),
+        makeNode("sim", "simulation", {}, null),
+      ],
+      [makeEdge("e1", "char", "out", "region-1", "out")],
+    );
+    const diagnostics = validateWorkflow(definition);
+    const emptyBatch = diagnostics.find((item) => item.code === "SIM_BATCH_EMPTY");
+    expect(emptyBatch?.severity).toBe("error");
+    expect(emptyBatch?.node_id).toBe("sim");
+  });
+
+  it("模拟节点并发度越界报参数错误", () => {
+    const definition = makeDefinition(
+      [makeRegion()],
+      [makeNode("sim", "simulation", { concurrency: 32 }, null)],
+      [],
+    );
+    const diagnostics = validateWorkflow(definition);
+    const invalid = diagnostics.find(
+      (item) => item.code === "PARAM_INVALID" && item.path === "concurrency",
+    );
+    expect(invalid?.severity).toBe("error");
   });
 
   it("连线引用不存在的端口报错", () => {
@@ -297,8 +336,18 @@ describe("validateWorkflow", () => {
   });
 
   it("空配置区域给出警告", () => {
-    const definition = makeDefinition([makeRegion()], [], []);
-    expect(codes(definition)).toContain("EMPTY_REGION");
+    // 未连接区域：只有未连接警告，空汇入不再额外报（决策 2.32 收窄）。
+    const unconnected = makeDefinition([makeRegion()], [], []);
+    expect(codes(unconnected)).toContain("REGION_NOT_CONNECTED");
+    expect(codes(unconnected)).not.toContain("EMPTY_REGION");
+
+    // 连接了模拟节点的空区域：所连批次无法成立。
+    const connected = makeDefinition(
+      [makeRegion()],
+      [makeNode("sim", "simulation", {}, null)],
+      [makeEdge("e1", "region-1", "out", "sim", "in")],
+    );
+    expect(codes(connected)).toContain("EMPTY_REGION");
   });
 
   it("分析区域连线不在 MVP 范围", () => {

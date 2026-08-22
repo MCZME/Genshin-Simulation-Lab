@@ -16,6 +16,7 @@ import {
   singleFragment,
 } from "./registry";
 import { collectUpstreamNodes, orderedIncomingEdges } from "./chain";
+import type { UpstreamNode } from "./chain";
 import { setPath } from "./path";
 
 interface FragmentVariant {
@@ -39,6 +40,18 @@ export interface ExpandedRegion {
   ok: boolean;
   members: CompiledMember[];
   diagnostics: Diagnostic[];
+  /** 方法应用轨迹（决策 2.34）：按「根 → 边界」拓扑序记录每个参与节点的应用信息。 */
+  methods: MethodTrace[];
+}
+
+export interface MethodTrace {
+  nodeId: string;
+  /** 该节点写入的目标路径；root 与不产出片段的节点为空。 */
+  paths: string[];
+  /** 产出变体数：单值节点为 1，枚举/区间为成员数，不产出为 0。 */
+  variants: number;
+  /** 该节点的写入是否被后继节点覆盖（对应 PATH_OVERRIDE 诊断）。 */
+  overridden: boolean;
 }
 
 export function createSimulationInputSkeleton(): Record<string, unknown> {
@@ -172,7 +185,34 @@ export function expandConfigurationRegion(
       input: doc.input,
     };
   });
-  return { ok: true, members, diagnostics };
+  return {
+    ok: true,
+    members,
+    diagnostics,
+    methods: methodTraces(upstream, definition, diagnostics),
+  };
+}
+
+function methodTraces(
+  upstream: UpstreamNode[],
+  definition: WorkflowDefinition,
+  diagnostics: Diagnostic[],
+): MethodTrace[] {
+  const overriddenNodeIds = new Set(
+    diagnostics
+      .filter((item) => item.code === "PATH_OVERRIDE" && item.node_id !== null)
+      .map((item) => item.node_id as string),
+  );
+  return upstream.map(({ node }) => {
+    const variants = nodeVariants(node, definition);
+    const paths = [...new Set(variants.map((variant) => variant.path))];
+    return {
+      nodeId: node.id,
+      paths,
+      variants: variants.length,
+      overridden: overriddenNodeIds.has(node.id),
+    };
+  });
 }
 
 export function compileConfigurationRegion(
@@ -444,5 +484,5 @@ function compileDiagnostic(
 }
 
 function fail(diagnostics: Diagnostic[]): ExpandedRegion {
-  return { ok: false, members: [], diagnostics };
+  return { ok: false, members: [], diagnostics, methods: [] };
 }

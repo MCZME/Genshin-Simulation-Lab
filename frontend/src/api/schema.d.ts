@@ -211,6 +211,24 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/settings": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Ui Settings */
+        get: operations["get_ui_settings_api_v1_settings_get"];
+        /** Save Ui Settings */
+        put: operations["save_ui_settings_api_v1_settings_put"];
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/workspace": {
         parameters: {
             query?: never;
@@ -518,6 +536,23 @@ export interface components {
             members: components["schemas"]["InputMemberRequest"][];
         };
         /**
+         * UiSettingsResponse
+         * @description GET/PUT /api/v1/settings 的响应模型。
+         */
+        UiSettingsResponse: {
+            /** Run Animation */
+            run_animation: boolean;
+            workspace: components["schemas"]["WorkspaceSettingsView"];
+        };
+        /**
+         * UiSettingsUpdateRequest
+         * @description PUT /api/v1/settings 的请求模型；工作区节不可经此修改。
+         */
+        UiSettingsUpdateRequest: {
+            /** Run Animation */
+            run_animation: boolean;
+        };
+        /**
          * ValidateInputsRequest
          * @description POST /api/v1/inputs/validate 请求体。
          */
@@ -604,6 +639,14 @@ export interface components {
             /** Name */
             name: string;
         };
+        /**
+         * WorkspaceSettingsView
+         * @description 配置面板展示的工作区信息；data_dir 为用户自配项，只读展示。
+         */
+        WorkspaceSettingsView: {
+            /** Data Dir */
+            data_dir: string;
+        };
     };
     responses: never;
     parameters: never;
@@ -617,6 +660,10 @@ export interface operations {
         parameters: {
             query?: {
                 q?: string | null;
+                element?: string | null;
+                weapon_type?: string | null;
+                rarity?: number | null;
+                usable?: boolean | null;
                 limit?: number;
                 offset?: number;
             };
@@ -1078,6 +1125,59 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_ui_settings_api_v1_settings_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UiSettingsResponse"];
+                };
+            };
+        };
+    };
+    save_ui_settings_api_v1_settings_put: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["UiSettingsUpdateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["UiSettingsResponse"];
+                };
             };
             /** @description Validation Error */
             422: {

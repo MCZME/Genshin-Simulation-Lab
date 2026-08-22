@@ -44,6 +44,14 @@ export interface CanvasViewProps {
   selectionEpoch: number;
   viewportCommand: "zoom-in" | "zoom-out" | "fit" | null;
   renameRegionRequestId: string | null;
+  /** 运行进行中不在执行路径上的节点，置灰显示（决策 2.34）。 */
+  dimmedNodeIds: string[];
+  /** 构建限速推进中当前应用中的节点，画布高亮（决策 2.34 修订）。 */
+  runningMethodNodeIds: string[];
+  /** 运行/检查期间锁定破坏性交互。 */
+  interactionLocked: boolean;
+  /** 正在执行检查的区域 id。 */
+  checkingRegionId: string | null;
   onViewportCommandHandled: () => void;
   onRenameRegionRequestHandled: () => void;
   onMoveNode: (
@@ -57,6 +65,7 @@ export interface CanvasViewProps {
     rect: { x: number; y: number; width: number; height: number },
   ) => void;
   onRenameRegion: (regionId: string, name: string) => void;
+  onCheckRegion: (regionId: string) => void;
   onConnectEdge: (connection: {
     source_node_id: string;
     source_port_id: string;
@@ -96,6 +105,7 @@ interface CallbackSnapshot {
   onMoveRegion: CanvasViewProps["onMoveRegion"];
   onResizeRegion: CanvasViewProps["onResizeRegion"];
   onRenameRegion: CanvasViewProps["onRenameRegion"];
+  onCheckRegion: CanvasViewProps["onCheckRegion"];
   onConnectEdge: CanvasViewProps["onConnectEdge"];
   onSelect: CanvasViewProps["onSelect"];
   onParamsChange: CanvasViewProps["onParamsChange"];
@@ -118,12 +128,17 @@ export function CanvasView({
   selectionEpoch,
   viewportCommand,
   renameRegionRequestId,
+  dimmedNodeIds,
+  runningMethodNodeIds,
+  interactionLocked,
+  checkingRegionId,
   onViewportCommandHandled,
   onRenameRegionRequestHandled,
   onMoveNode,
   onMoveRegion,
   onResizeRegion,
   onRenameRegion,
+  onCheckRegion,
   onConnectEdge,
   onSelect,
   onParamsChange,
@@ -141,6 +156,7 @@ export function CanvasView({
     onMoveRegion,
     onResizeRegion,
     onRenameRegion,
+    onCheckRegion,
     onConnectEdge,
     onSelect,
     onParamsChange,
@@ -158,6 +174,7 @@ export function CanvasView({
       onMoveRegion,
       onResizeRegion,
       onRenameRegion,
+      onCheckRegion,
       onConnectEdge,
       onSelect,
       onParamsChange,
@@ -180,12 +197,33 @@ export function CanvasView({
   useEffect(() => {
     setNodes((current) =>
       mergeNodeState(
-        buildNodes(definition, diagnostics, visibleHighlight, latestRef.current, renameRegionRequestId),
+        buildNodes(
+          definition,
+          diagnostics,
+          visibleHighlight,
+          latestRef.current,
+          renameRegionRequestId,
+          dimmedNodeIds,
+          runningMethodNodeIds,
+          interactionLocked,
+          checkingRegionId,
+        ),
         current,
       ),
     );
     setEdges(buildEdges(definition));
-  }, [definition, diagnostics, visibleHighlight, renameRegionRequestId, setNodes, setEdges]);
+  }, [
+    definition,
+    diagnostics,
+    visibleHighlight,
+    renameRegionRequestId,
+    dimmedNodeIds,
+    runningMethodNodeIds,
+    interactionLocked,
+    checkingRegionId,
+    setNodes,
+    setEdges,
+  ]);
 
   useEffect(() => {
     setNodes((current) => {
@@ -265,7 +303,7 @@ export function CanvasView({
       y: absolute.y + (node.measured?.height ?? 80) / 2,
     };
     const regionId =
-      spec === null || spec.region === "bridge"
+      spec === null || spec.region === null
         ? null
         : compatibleRegionId(latest.definition, workflowNode.kind, center);
     latest.onMoveNode(node.id, absolute, regionId);
@@ -412,8 +450,14 @@ function buildNodes(
   highlightRegionId: string | null,
   callbacks: CallbackSnapshot,
   renameRegionRequestId: string | null,
+  dimmedNodeIds: string[],
+  runningMethodNodeIds: string[],
+  interactionLocked: boolean,
+  checkingRegionId: string | null,
 ): Node[] {
   const incoming = incomingGroupsByTarget(definition);
+  const dimmed = new Set(dimmedNodeIds);
+  const running = new Set(runningMethodNodeIds);
   const nodes: Node[] = [];
   for (const region of definition.regions) {
     const data: RegionNodeData = {
@@ -422,6 +466,9 @@ function buildNodes(
       onRenameRegion: callbacks.onRenameRegion,
       onResizeRegion: callbacks.onResizeRegion,
       onMoveEdgeOrder: callbacks.onMoveEdgeOrder,
+      onCheckRegion: callbacks.onCheckRegion,
+      checking: checkingRegionId === region.id,
+      interactionLocked,
       incomingGroups: incoming.get(region.id) ?? [],
       dropTarget: highlightRegionId === region.id,
       renameRequested: region.id === renameRegionRequestId,
@@ -461,6 +508,9 @@ function buildNodes(
       groupCount:
         node.kind === "enum" || node.kind === "range" ? memberItemIds(node).length : 0,
       diagnostics,
+      dimmed: dimmed.has(node.id),
+      stepRunning: running.has(node.id),
+      interactionLocked,
     };
     nodes.push({
       id: node.id,
@@ -599,7 +649,7 @@ function compatibleRegionId(
     return null;
   }
   const spec = getNodeKindSpec(kind);
-  if (spec === null || spec.region === "bridge") {
+  if (spec === null || spec.region === null) {
     return null;
   }
   let match: string | null = null;

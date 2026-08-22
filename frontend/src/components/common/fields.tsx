@@ -44,9 +44,18 @@ interface NumberFieldProps {
   max?: number;
   /** 离散可选值；提供时滑块按选项索引映射（如角色等级 1-90、95、100）。 */
   options?: number[];
+  /** 空值显示文案；缺省「未设置」。 */
+  emptyLabel?: string;
 }
 
-export function NumberField({ value, onChange, min, max, options = [] }: NumberFieldProps) {
+export function NumberField({
+  value,
+  onChange,
+  min,
+  max,
+  options = [],
+  emptyLabel = "未设置",
+}: NumberFieldProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<number | null>(value);
   const editingRef = useRef(false);
@@ -99,7 +108,7 @@ export function NumberField({ value, onChange, min, max, options = [] }: NumberF
         className="number-display nowheel nodrag"
         onClick={startEdit}
       >
-        {value === null ? "未设置" : String(value)}
+        {value === null ? emptyLabel : String(value)}
       </button>
     );
   }
@@ -109,7 +118,7 @@ export function NumberField({ value, onChange, min, max, options = [] }: NumberF
     return (
       <div className="number-field-edit nowheel nodrag">
         <span className="number-slider-value">
-          {sliderValues[index] === undefined ? "未设置" : String(sliderValues[index])}
+          {sliderValues[index] === undefined ? emptyLabel : String(sliderValues[index])}
         </span>
         <input
           ref={controlRef}

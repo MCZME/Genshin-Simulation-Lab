@@ -50,7 +50,7 @@ export function orderedIncomingEdges(
 ): WorkflowEdge[] {
   const edges = incomingByTarget.get(target.id) ?? [];
   const spec = getNodeKindSpec(target.kind);
-  if (spec === null || spec.region === "bridge") {
+  if (spec === null || spec.region === null) {
     return edges.filter((edge) => nodeById.has(edge.source_node_id));
   }
   const portIndex = new Map(spec.ports.inputs.map((port, index) => [port.id, index]));

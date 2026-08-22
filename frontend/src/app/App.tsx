@@ -10,9 +10,10 @@ import {
   listWorkflows,
   saveWorkflow,
   submitRun,
+  validateInputs,
 } from "../api/client";
-import type { BatchMemberPayload, WorkflowListItem } from "../api/client";
-import { isRunTerminal, pollRun } from "../api/runtime_subscription";
+import type { WorkflowListItem } from "../api/client";
+import { pollRun } from "../api/runtime_subscription";
 import { CanvasView } from "../components/canvas/CanvasView";
 import { ObjectPanel } from "../components/panels/ObjectPanel";
 import { ProblemPanel } from "../components/panels/ProblemPanel";
@@ -53,12 +54,32 @@ import {
   withWorkspace,
 } from "../state/app_state";
 import { definitionToEditorState, editorStateToDefinition } from "../state/converters";
-import { applyRunView, createEmptyRunState, recordMemberMetrics } from "../state/run_state";
+import {
+  applyBatchView,
+  batchStatusFromRunState,
+  createEmptyRunState,
+  createRunView,
+  recordBatchMetrics,
+  setBatchStatus,
+  setMethodStatus,
+  setRegionCheck,
+  setRunPhase,
+  setSummaryStatus,
+} from "../state/run_state";
 import type { RunState } from "../state/run_state";
 import { compileConfigurationRegion } from "../workflow/compiler";
+import {
+  hasRunnableBatch,
+  paceBuildSteps,
+  planRegionCheck,
+  planWorkflowRun,
+} from "../workflow/runner";
 import type { CompileResult, Diagnostic, WorkflowDefinition } from "../workflow/types";
 import { validateWorkflow } from "../workflow/validator";
 import { getNodeKindSpec } from "../workflow/registry";
+import { createAppSettings, loadAppSettingsFromApi, saveAppSettingsToApi } from "../state/settings";
+import type { AppSettings } from "../state/settings";
+import { SettingsModal } from "../components/shell/SettingsModal";
 
 type Tool = "objects" | "problems" | null;
 
@@ -69,8 +90,11 @@ export function App() {
   const [runState, setRunState] = useState<RunState>(() => createEmptyRunState());
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
+  const [checkingRegion, setCheckingRegion] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<Tool>("objects");
+  const [settingsOpen, setSettingsOpen] = useState(false);
+  const [settings, setSettings] = useState<AppSettings>(() => createAppSettings());
   const [dragKind, setDragKind] = useState<string | null>(null);
   const [selectionEpoch, setSelectionEpoch] = useState(0);
   const [renameRegionRequestId, setRenameRegionRequestId] = useState<string | null>(null);
@@ -78,12 +102,19 @@ export function App() {
     "zoom-in" | "zoom-out" | "fit" | null
   >(null);
   const initializedRef = useRef(false);
-  const pollControllerRef = useRef<AbortController | null>(null);
+  /** 运行编排内部信号：取消整次工作流运行（当前批取消 + 剩余批次跳过）。 */
+  const cancelRequestedRef = useRef(false);
+  /** 当前在跑批次：模拟节点 id 与后端 run_id，供「取消整批」定位。 */
+  const currentBatchRef = useRef<{ nodeId: string; runId: string | null } | null>(null);
+
+  /** 运行与区域检查都持有全局编辑锁（决策 2.33 / 2.35）。 */
+  const busy = running || checkingRegion !== null;
 
   async function initialize() {
     try {
       const workspace = await getWorkspace();
       setAppState((current) => withWorkspace(current, workspace));
+      setSettings(await loadAppSettingsFromApi());
 
       const workflowList = await listWorkflows();
       setWorkflowList(workflowList.items);
@@ -135,11 +166,56 @@ export function App() {
   const canRun = useMemo(() => {
     return (
       editorState !== null &&
-      !running &&
+      !busy &&
       !diagnostics.some((item) => item.severity === "error") &&
-      compiles.some((result) => result.ok)
+      hasRunnableBatch(editorState.definition)
     );
-  }, [editorState, running, diagnostics, compiles]);
+  }, [editorState, busy, diagnostics]);
+
+  /** 运行进行中：参与执行路径的节点保持亮度，其余置灰（决策 2.34）。 */
+  const dimmedNodeIds = useMemo(() => {
+    const run = runState.run;
+    if (
+      editorState === null ||
+      run === null ||
+      (run.phase !== "building" &&
+        run.phase !== "simulating" &&
+        run.phase !== "analyzing")
+    ) {
+      return [];
+    }
+    const participants = new Set<string>();
+    for (const slice of run.build) {
+      for (const method of slice.methods) {
+        participants.add(method.nodeId);
+      }
+    }
+    for (const batch of run.batches) {
+      participants.add(batch.nodeId);
+    }
+    return editorState.definition.nodes
+      .filter((node) => !participants.has(node.id))
+      .map((node) => node.id);
+  }, [editorState, runState.run]);
+
+  /** 构建限速推进时，当前应用中的节点（画布高亮）。 */
+  const runningMethodNodeIds = useMemo(() => {
+    const run = runState.run;
+    if (run === null || run.phase !== "building") {
+      return [];
+    }
+    return run.build
+      .flatMap((slice) => slice.methods)
+      .filter((method) => method.status === "running")
+      .map((method) => method.nodeId);
+  }, [runState.run]);
+
+  function updateSettings(next: AppSettings) {
+    setSettings(next);
+    void saveAppSettingsToApi(next).catch((error) => {
+      setErrorMessage(`设置未保存：${toMessage(error)}`);
+    });
+  }
 
   function updateEditor(update: (state: EditorState) => EditorState) {
     setEditorState((current) => (current === null ? current : update(current)));
@@ -178,7 +254,7 @@ export function App() {
       if (spec === null) {
         return state;
       }
-      const targetRegionId = spec.region === "bridge" ? null : regionId;
+      const targetRegionId = spec.region === null ? null : regionId;
       const next = addNode(state, kind, position, targetRegionId);
       const createdNodeId = next.definition.nodes[next.definition.nodes.length - 1].id;
       return setSelection(next, { nodes: [createdNodeId], regions: [], edges: [] });
@@ -187,7 +263,7 @@ export function App() {
   }
 
   function handleUndo() {
-    if (running) {
+    if (busy) {
       return;
     }
     updateEditor((state) => setSelection(undo(state), { regions: [], nodes: [], edges: [] }));
@@ -195,7 +271,7 @@ export function App() {
   }
 
   function handleRedo() {
-    if (running) {
+    if (busy) {
       return;
     }
     updateEditor((state) => setSelection(redo(state), { regions: [], nodes: [], edges: [] }));
@@ -256,7 +332,7 @@ export function App() {
         return;
       }
       if (key === "Delete" || key === "Backspace") {
-        if (editable || running || editorState === null) {
+        if (editable || busy || editorState === null) {
           return;
         }
         event.preventDefault();
@@ -282,13 +358,14 @@ export function App() {
         return;
       }
       if (key.startsWith("Arrow")) {
-        if (editable || running || editorState === null) {
+        if (editable || busy || editorState === null) {
           return;
         }
         const step = event.shiftKey ? 10 : 1;
         const dx =
           key === "ArrowLeft" ? -step : key === "ArrowRight" ? step : 0;
-        const dy = key === "ArrowUp" ? -step : key === "ArrowDown" ? step : 0;
+        const dy =
+          key === "ArrowUp" ? -step : key === "ArrowDown" ? step : 0;
         event.preventDefault();
         updateEditor((state) => nudgeSelection(state, dx, dy));
         return;
@@ -351,7 +428,7 @@ export function App() {
   }
 
   async function handleSave() {
-    if (editorState === null || running) {
+    if (editorState === null || busy) {
       return;
     }
     setSaving(true);
@@ -366,7 +443,7 @@ export function App() {
   }
 
   async function persistCurrentWorkflow(): Promise<string | null> {
-    if (editorState === null || running) {
+    if (editorState === null || busy) {
       return null;
     }
     const definition = editorStateToDefinition(editorState);
@@ -409,7 +486,7 @@ export function App() {
   }
 
   async function handleSwitchWorkflow(workflowId: string): Promise<void> {
-    if (running) {
+    if (busy) {
       return;
     }
     try {
@@ -420,7 +497,7 @@ export function App() {
   }
 
   async function handleSaveAndSwitch(workflowId: string): Promise<void> {
-    if (editorState === null || running) {
+    if (editorState === null || busy) {
       return;
     }
     setSaving(true);
@@ -436,7 +513,7 @@ export function App() {
   }
 
   function handleCreateWorkflow(): void {
-    if (running) {
+    if (busy) {
       return;
     }
     setEditorState(createEmptyEditorState("未命名工作流"));
@@ -449,7 +526,7 @@ export function App() {
   }
 
   async function handleSaveAndCreate(): Promise<void> {
-    if (editorState === null || running) {
+    if (editorState === null || busy) {
       return;
     }
     setSaving(true);
@@ -465,7 +542,7 @@ export function App() {
   }
 
   async function handleDeleteWorkflow(workflowId: string): Promise<void> {
-    if (running) {
+    if (busy) {
       return;
     }
     setErrorMessage(null);
@@ -500,101 +577,220 @@ export function App() {
     }
   }
 
+  /**
+   * 工作流运行（决策 2.33）：构建（前端编译与图校验，失败零提交）→
+   * 模拟（按画布顺序依次串行执行每个模拟节点的批次，决策 2.32）→
+   * 分析（结果摘要指标拉取，失败不阻断）。
+   */
   async function handleRun() {
-    if (editorState === null || running) {
+    if (editorState === null || busy) {
       return;
     }
     const definition = editorStateToDefinition(editorState);
-    const members: BatchMemberPayload[] = [];
-    for (const region of definition.regions) {
-      if (region.kind !== "configuration") {
+    const plan = planWorkflowRun(definition);
+    const buildErrors = [
+      ...diagnostics
+        .filter((item) => item.severity === "error")
+        .map((item) => item.message),
+      ...plan.errors,
+    ];
+    if (buildErrors.length > 0 || plan.batches.length === 0) {
+      const errors =
+        buildErrors.length > 0
+          ? buildErrors
+          : ["没有可运行的批次：配置区域未连接模拟节点"];
+      setRunState((current) => {
+        const started = {
+          ...current,
+          run: createRunView({
+            participating: plan.participating,
+            batches: [],
+            buildErrors: errors,
+          }),
+        };
+        return setRunPhase(started, "build_failed");
+      });
+      return;
+    }
+
+    setErrorMessage(null);
+    setRunning(true);
+    setRunState((current) => ({
+      ...current,
+      run: createRunView(plan),
+    }));
+
+    // 构建阶段逐节点限速推进（决策 2.34 修订）：每个方法步骤保留最小执行时长，
+    // 运行过程按节点顺序真实推进；取消时剩余步骤立即跳过。
+    await paceBuildSteps(plan.participating, {
+      enabled: settings.runAnimation,
+      shouldStop: () => cancelRequestedRef.current,
+      onMethodStatus: (regionId, nodeId, status) =>
+        setRunState((current) => setMethodStatus(current, regionId, nodeId, status)),
+    });
+
+    setRunState((current) => setRunPhase(current, "simulating"));
+
+    cancelRequestedRef.current = false;
+    let cancelled = false;
+    const completedSessions: Array<{
+      nodeId: string;
+      itemId: string;
+      sessionId: string;
+    }> = [];
+
+    for (const batch of plan.batches) {
+      if (cancelRequestedRef.current) {
+        setRunState((current) => setBatchStatus(current, batch.nodeId, "skipped"));
+        cancelled = true;
         continue;
       }
-      const result = compileConfigurationRegion(definition, region.id);
-      if (!result.ok) {
-        setErrorMessage(`区域 ${region.id} 无法编译，请先修复问题`);
-        return;
-      }
-      members.push(...result.members);
-    }
-    if (members.length === 0) {
-      setErrorMessage("没有可运行的配置区域");
-      return;
-    }
-    if (
-      members.some((member) => {
-        const meta = member.input.meta as Record<string, unknown> | undefined;
-        return (
-          meta === undefined ||
-          typeof meta.name !== "string" ||
-          meta.name.trim() === ""
+      setRunState((current) => setBatchStatus(current, batch.nodeId, "submitting"));
+      currentBatchRef.current = { nodeId: batch.nodeId, runId: null };
+      try {
+        const submitted = await submitRun(batch.members, {
+          name: batch.name,
+          concurrency: batch.concurrency ?? undefined,
+        });
+        if (cancelRequestedRef.current) {
+          const view = await cancelRun(submitted.run_id);
+          setRunState((current) => applyBatchView(current, batch.nodeId, view));
+        }
+        currentBatchRef.current = { nodeId: batch.nodeId, runId: submitted.run_id };
+        setRunState((current) => {
+          const applied = applyBatchView(current, batch.nodeId, submitted);
+          return setBatchStatus(applied, batch.nodeId, "running");
+        });
+        const finalView = await pollRun(
+          submitted.run_id,
+          (view) => setRunState((current) => applyBatchView(current, batch.nodeId, view)),
+          { intervalMs: 1000, getRun },
         );
-      })
-    ) {
-      setErrorMessage("配置区域缺少元信息节点，请配置名称后运行");
-      return;
-    }
-    const firstMeta = members[0].input.meta as Record<string, unknown> | undefined;
-    const runName =
-      firstMeta !== undefined && typeof firstMeta.name === "string"
-        ? firstMeta.name
-        : definition.meta.name;
-
-    setRunning(true);
-    setErrorMessage(null);
-    setRunState(createEmptyRunState());
-    try {
-      const submitted = await submitRun(members, { name: runName });
-      setRunState((current) => applyRunView(current, submitted));
-      const controller = new AbortController();
-      pollControllerRef.current = controller;
-      const finalView = await pollRun(
-        submitted.run_id,
-        (view) => setRunState((current) => applyRunView(current, view)),
-        { signal: controller.signal, intervalMs: 1000, getRun },
-      );
-      for (const member of finalView.members) {
-        const sessionId = member.session_id;
-        if (member.state === "completed" && sessionId != null) {
-          try {
-            const metrics = await getResultMetrics(sessionId);
-            setRunState((current) => recordMemberMetrics(current, member.item_id, metrics));
-          } catch {
-            // 单成员指标失败不阻断结果面板
+        setRunState((current) =>
+          setBatchStatus(current, batch.nodeId, batchStatusFromRunState(finalView.state)),
+        );
+        for (const member of finalView.members) {
+          if (member.state === "completed" && member.session_id != null) {
+            completedSessions.push({
+              nodeId: batch.nodeId,
+              itemId: member.item_id,
+              sessionId: member.session_id,
+            });
           }
         }
+      } catch (error) {
+        // 某批失败不中断后续批次（决策 2.32）。
+        setRunState((current) =>
+          setBatchStatus(current, batch.nodeId, "failed", toMessage(error)),
+        );
+      } finally {
+        currentBatchRef.current = null;
       }
+    }
+
+    if (cancelled) {
+      setRunState((current) => setRunPhase(current, "cancelled"));
+    } else {
+      setRunState((current) => setRunPhase(current, "analyzing"));
+      setRunState((current) => setSummaryStatus(current, "running"));
+      await Promise.allSettled(
+        completedSessions.map(async ({ nodeId, itemId, sessionId }) => {
+          try {
+            const metrics = await getResultMetrics(sessionId);
+            setRunState((current) => recordBatchMetrics(current, nodeId, itemId, metrics));
+          } catch {
+            // 单成员指标失败不阻断结果摘要
+          }
+        }),
+      );
+      setRunState((current) => setSummaryStatus(current, "completed"));
+      setRunState((current) => setRunPhase(current, "completed"));
+    }
+    setRunning(false);
+  }
+
+  /** 取消整次工作流运行：取消当前批次，剩余批次由编排循环跳过（决策 2.32）。 */
+  async function handleCancelRun() {
+    if (!running) {
+      return;
+    }
+    cancelRequestedRef.current = true;
+    const current = currentBatchRef.current;
+    if (current?.runId == null) {
+      return;
+    }
+    try {
+      const view = await cancelRun(current.runId);
+      setRunState((state) => applyBatchView(state, current.nodeId, view));
     } catch (error) {
-      if (!(error instanceof DOMException && error.name === "AbortError")) {
-        setErrorMessage(toMessage(error));
-      }
-    } finally {
-      setRunning(false);
-      pollControllerRef.current = null;
+      setErrorMessage(toMessage(error));
     }
   }
 
-  async function handleCancelRun() {
-    const runId = runState.runId;
-    if (runId === null) {
+  /** 检查区域（决策 2.35）：单区域构建 + 对成员的后端输入校验；不执行模拟。 */
+  async function handleCheckRegion(regionId: string) {
+    if (editorState === null || busy) {
       return;
     }
-    pollControllerRef.current?.abort();
+    const definition = editorStateToDefinition(editorState);
+    const plan = planRegionCheck(definition, regionId);
+    setCheckingRegion(regionId);
+    setRunState((current) =>
+      setRegionCheck(current, {
+        regionId,
+        status: "checking",
+        memberCount: plan.ok ? plan.members.length : 0,
+        methods: plan.methods,
+        memberResults: [],
+        error: plan.error,
+      }),
+    );
     try {
-      const view = await cancelRun(runId);
-      setRunState((current) => applyRunView(current, view));
-      if (!isRunTerminal(view.state)) {
-        const controller = new AbortController();
-        pollControllerRef.current = controller;
-        const finalView = await pollRun(
-          runId,
-          (next) => setRunState((current) => applyRunView(current, next)),
-          { signal: controller.signal, intervalMs: 1000, getRun },
+      if (!plan.ok) {
+        setRunState((current) =>
+          setRegionCheck(current, {
+            regionId,
+            status: "failed",
+            memberCount: 0,
+            methods: [],
+            memberResults: [],
+            error: plan.error,
+          }),
         );
-        setRunState((current) => applyRunView(current, finalView));
+        return;
       }
+      const response = await validateInputs(plan.members);
+      const memberResults = response.members.map((member) => ({
+        item_id: member.item_id,
+        ok: member.ok,
+        messages: member.ok
+          ? []
+          : (member.details ?? []).map((detail) => detail.message).filter(Boolean),
+      }));
+      const failedCount = memberResults.filter((member) => !member.ok).length;
+      setRunState((current) =>
+        setRegionCheck(current, {
+          regionId,
+          status: response.ok ? "passed" : "failed",
+          memberCount: plan.members.length,
+          methods: plan.methods,
+          memberResults,
+          error: response.ok ? null : `${failedCount} 个成员未通过校验`,
+        }),
+      );
     } catch (error) {
-      setErrorMessage(toMessage(error));
+      setRunState((current) =>
+        setRegionCheck(current, {
+          regionId,
+          status: "failed",
+          memberCount: 0,
+          methods: [],
+          memberResults: [],
+          error: toMessage(error),
+        }),
+      );
+    } finally {
+      setCheckingRegion(null);
     }
   }
 
@@ -607,7 +803,7 @@ export function App() {
           name={editorState?.definition.meta.name ?? appState.workflowName}
           dirty={editorState?.dirty ?? false}
           saving={saving}
-          running={running}
+          running={busy}
           canRun={canRun}
           canUndo={editorState !== null && canUndo(editorState)}
           canRedo={editorState !== null && canRedo(editorState)}
@@ -658,6 +854,15 @@ export function App() {
                 </span>
               )}
             </button>
+            <button
+              type="button"
+              className="rail-button rail-settings"
+              title="设置"
+              aria-label="设置"
+              onClick={() => setSettingsOpen(true)}
+            >
+              ⚙
+            </button>
           </aside>
           {activeTool === "objects" && (
             <ObjectPanel
@@ -677,6 +882,10 @@ export function App() {
                 dragKind={dragKind}
                 selectionEpoch={selectionEpoch}
                 viewportCommand={viewportCommand}
+                dimmedNodeIds={dimmedNodeIds}
+                runningMethodNodeIds={runningMethodNodeIds}
+                interactionLocked={busy}
+                checkingRegionId={checkingRegion}
                 onViewportCommandHandled={() => setViewportCommand(null)}
                 onMoveNode={(nodeId, position, regionId) =>
                   updateEditor((state) => moveNodeWithRegion(state, nodeId, position, regionId))
@@ -702,12 +911,24 @@ export function App() {
                 }
                 onDropObject={handleDropObject}
                 onMoveEdgeOrder={handleMoveEdgeOrder}
+                onCheckRegion={(regionId) => void handleCheckRegion(regionId)}
               />
             )}
-            <RegionSummaryBar compiles={compiles} />
+            <RegionSummaryBar
+              compiles={compiles}
+              regionChecks={runState.regionChecks}
+              checkingRegionId={checkingRegion}
+            />
           </main>
-          {runState.runId !== null && <ResultPanel runState={runState} />}
+          {runState.run !== null && <ResultPanel runState={runState} />}
         </div>
+        {settingsOpen && (
+          <SettingsModal
+            settings={settings}
+            onChange={updateSettings}
+            onClose={() => setSettingsOpen(false)}
+          />
+        )}
       </div>
     </RunStateContext.Provider>
   );
@@ -729,5 +950,5 @@ function sameSelection(left: EditorSelection, right: EditorSelection): boolean {
 }
 
 function sameStringList(left: string[], right: string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
+  return left.length === right.length && left.every((value, index) => right[index] === value);
 }

@@ -3,6 +3,7 @@ import type { components } from "./schema";
 type Schema = components["schemas"];
 
 export type WorkspaceResponse = Schema["WorkspaceResponse"];
+export type UiSettingsResponse = Schema["UiSettingsResponse"];
 export type WorkflowListResponse = Schema["WorkflowListResponse"];
 export type WorkflowListItem = Schema["WorkflowListItem"];
 export type WorkflowResponse = Schema["WorkflowResponse"];
@@ -41,6 +42,18 @@ interface ErrorBody {
 
 export async function getWorkspace(): Promise<WorkspaceResponse> {
   return request<WorkspaceResponse>("/workspace");
+}
+
+/** 界面偏好设置持久化在后端项目配置（config.toml 的 ui 节）。 */
+export async function getUiSettings(): Promise<UiSettingsResponse> {
+  return request<UiSettingsResponse>("/settings");
+}
+
+export async function saveUiSettings(runAnimation: boolean): Promise<UiSettingsResponse> {
+  return request<UiSettingsResponse>("/settings", {
+    method: "PUT",
+    body: JSON.stringify({ run_animation: runAnimation }),
+  });
 }
 
 export async function listWorkflows(): Promise<WorkflowListResponse> {

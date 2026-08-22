@@ -27,6 +27,11 @@ export type RegionNodeData = {
     edgeId: string,
     direction: "up" | "down",
   ) => void;
+  /** 检查区域入口（决策 2.35）：单区域构建 + 后端输入校验，不执行模拟。 */
+  onCheckRegion: (regionId: string) => void;
+  checking: boolean;
+  /** 运行/检查期间锁定破坏性交互。 */
+  interactionLocked: boolean;
   incomingGroups: IncomingOrderGroup[];
   dropTarget: boolean;
   /** 新创建区域的一次性命名请求；处理后通过回调清除。 */
@@ -41,6 +46,9 @@ export function RegionNode({ data, selected, width, height }: NodeProps) {
     onRenameRegion,
     onResizeRegion,
     onMoveEdgeOrder,
+    onCheckRegion,
+    checking,
+    interactionLocked,
     incomingGroups,
     dropTarget,
     renameRequested,
@@ -216,6 +224,17 @@ export function RegionNode({ data, selected, width, height }: NodeProps) {
           </span>
         )}
         <div className="region-header-actions">
+          {!editingName && region.kind === "configuration" && (
+            <button
+              type="button"
+              className="text-button region-check nowheel nodrag"
+              title="检查区域：构建并校验成员输入，不执行模拟"
+              disabled={interactionLocked}
+              onClick={() => onCheckRegion(region.id)}
+            >
+              {checking ? "检查中…" : "检查区域"}
+            </button>
+          )}
           {!editingName && (
             <button
               type="button"
@@ -233,6 +252,7 @@ export function RegionNode({ data, selected, width, height }: NodeProps) {
               className="icon-button danger region-delete"
               title="删除区域"
               aria-label={`删除区域 ${region.name}`}
+              disabled={interactionLocked}
               onClick={() => onDeleteRegion(region.id)}
             >
               ×

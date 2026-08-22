@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 import type { RunStatusResponse } from "../api/client";
-import { applyRunView, createEmptyRunState, isRunTerminal, recordMemberMetrics } from "./run_state";
+import type { RunState } from "./run_state";
+import { isRunTerminal } from "../api/runtime_subscription";
+import {
+  applyBatchView,
+  batchStatusFromRunState,
+  createEmptyRunState,
+  createRunView,
+  recordBatchMetrics,
+  setBatchStatus,
+  setMethodStatus,
+  setRegionCheck,
+  setRunPhase,
+  setSummaryStatus,
+} from "./run_state";
 
 function runView(
   state: string,
@@ -26,38 +39,105 @@ function runView(
   } as RunStatusResponse;
 }
 
+const PLAN = {
+  participating: [
+    {
+      regionId: "region-1",
+      regionName: "主配置",
+      methods: [
+        { nodeId: "n-root", label: "根节点", paths: [], variants: 0, overridden: false },
+        { nodeId: "n-meta", label: "元信息", paths: ["meta"], variants: 1, overridden: false },
+      ],
+      memberCount: 2,
+    },
+  ],
+  batches: [
+    {
+      nodeId: "sim-1",
+      name: "主配置",
+      concurrency: null,
+      sourceRegionIds: ["region-1"],
+      members: [
+        { item_id: "a", input: {} },
+        { item_id: "b", input: {} },
+      ],
+    },
+  ],
+};
+
 describe("run state", () => {
   it("创建空运行状态", () => {
     const state = createEmptyRunState();
-    expect(state.runId).toBeNull();
-    expect(state.members).toEqual([]);
-    expect(state.metrics).toEqual({});
+    expect(state.run).toBeNull();
+    expect(state.regionChecks).toEqual({});
+  });
+
+  it("从运行计划创建批次视图", () => {
+    const state = { ...createEmptyRunState(), run: createRunView(PLAN) };
+    expect(state.run?.phase).toBe("building");
+    expect(state.run?.batches).toHaveLength(1);
+    expect(state.run?.batches[0].status).toBe("pending");
+    expect(state.run?.batches[0].members.map((member) => member.item_id)).toEqual(["a", "b"]);
   });
 
   it("应用批次视图并保留指标", () => {
-    let state = createEmptyRunState();
-    state = applyRunView(
+    let state: RunState = { ...createEmptyRunState(), run: createRunView(PLAN) };
+    state = applyBatchView(
       state,
+      "sim-1",
       runView("running", [
         { item_id: "a", state: "running", session_id: null },
         { item_id: "b", state: "queued", session_id: null },
       ]),
     );
-    expect(state.runId).toBe("run-1");
-    expect(state.state).toBe("running");
-    expect(state.members.map((member) => member.item_id)).toEqual(["a", "b"]);
+    expect(state.run?.batches[0].runId).toBe("run-1");
+    expect(state.run?.batches[0].state).toBe("running");
+    expect(state.run?.batches[0].members.map((member) => member.item_id)).toEqual(["a", "b"]);
 
-    state = recordMemberMetrics(state, "a", {
+    state = recordBatchMetrics(state, "sim-1", "a", {
       frames_run: 10,
       total_damage: { key: "total_damage", value: 100 },
     } as never);
-    state = applyRunView(
+    state = applyBatchView(
       state,
+      "sim-1",
       runView("completed", [{ item_id: "a", state: "completed", session_id: "s-1" }]),
     );
-    expect(state.state).toBe("completed");
-    expect(state.members[0].session_id).toBe("s-1");
-    expect(state.metrics.a.total_damage.value).toBe(100);
+    expect(state.run?.batches[0].members[0].session_id).toBe("s-1");
+    expect(state.run?.batches[0].metrics.a.total_damage.value).toBe(100);
+  });
+
+  it("阶段与批次状态更新", () => {
+    let state: RunState = { ...createEmptyRunState(), run: createRunView(PLAN) };
+    state = setRunPhase(state, "simulating");
+    state = setBatchStatus(state, "sim-1", "failed", "提交失败");
+    state = setSummaryStatus(state, "running");
+    expect(state.run?.phase).toBe("simulating");
+    expect(state.run?.batches[0].status).toBe("failed");
+    expect(state.run?.batches[0].error).toBe("提交失败");
+    expect(state.run?.summaryStatus).toBe("running");
+  });
+
+  it("后端批次终态映射到批次步骤状态", () => {
+    expect(batchStatusFromRunState("completed")).toBe("completed");
+    expect(batchStatusFromRunState("partial")).toBe("completed");
+    expect(batchStatusFromRunState("failed")).toBe("failed");
+    expect(batchStatusFromRunState("cancelled")).toBe("skipped");
+    expect(batchStatusFromRunState("running")).toBe("running");
+    expect(batchStatusFromRunState(null)).toBe("running");
+  });
+
+  it("记录区域检查结果", () => {
+    let state = createEmptyRunState();
+    state = setRegionCheck(state, {
+      regionId: "region-1",
+      status: "passed",
+      memberCount: 2,
+      methods: [],
+      memberResults: [{ item_id: "a", ok: true, messages: [] }],
+      error: null,
+    });
+    expect(state.regionChecks["region-1"]?.status).toBe("passed");
   });
 
   it("判断终态", () => {
@@ -66,6 +146,20 @@ describe("run state", () => {
     expect(isRunTerminal("failed")).toBe(true);
     expect(isRunTerminal("cancelled")).toBe(true);
     expect(isRunTerminal("running")).toBe(false);
-    expect(isRunTerminal(null)).toBe(false);
+  });
+});
+
+describe("构建步骤状态", () => {
+  it("创建运行视图时方法步骤为等待，逐步更新状态", () => {
+    let state: RunState = { ...createEmptyRunState(), run: createRunView(PLAN) };
+    const method = state.run?.build[0].methods[0];
+    expect(method?.status).toBe("pending");
+    expect(method?.label).toBe("根节点");
+
+    state = setMethodStatus(state, "region-1", "n-root", "running");
+    expect(state.run?.build[0].methods[0].status).toBe("running");
+    state = setMethodStatus(state, "region-1", "n-root", "done");
+    expect(state.run?.build[0].methods[0].status).toBe("done");
+    expect(state.run?.build[0].methods[1].status).toBe("pending");
   });
 });

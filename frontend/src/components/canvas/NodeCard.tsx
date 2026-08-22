@@ -23,6 +23,12 @@ export type WorkflowNodeData = {
   memberPorts: MemberPortInfo[];
   groupCount: number;
   diagnostics: Diagnostic[];
+  /** 运行进行中：不在执行路径上的节点置灰（决策 2.34）。 */
+  dimmed: boolean;
+  /** 构建限速推进中当前应用中的节点（决策 2.34 修订）。 */
+  stepRunning: boolean;
+  /** 运行/检查期间锁定破坏性交互。 */
+  interactionLocked: boolean;
 } & Record<string, unknown>;
 
 export interface MemberPortInfo {
@@ -42,9 +48,12 @@ export function NodeCard({ data, selected }: NodeProps) {
     memberPorts,
     groupCount,
     diagnostics,
+    dimmed,
+    stepRunning,
+    interactionLocked,
   } = data as WorkflowNodeData;
   const spec = getNodeKindSpec(node.kind);
-  const isDraft = node.region_id === null && spec?.region !== "bridge";
+  const isDraft = node.region_id === null && spec?.region !== null;
   const fieldErrors = collectFieldErrors(diagnostics, node.id);
   const [membersOpen, setMembersOpen] = useState(false);
   const hasMemberPorts = memberPorts.length > 0;
@@ -52,7 +61,7 @@ export function NodeCard({ data, selected }: NodeProps) {
 
   return (
     <div
-      className={`node-card ${node.kind === "input_trace" ? "node-card-trace" : ""} ${selected ? "selected" : ""} ${isDraft ? "draft" : ""}`}
+      className={`node-card ${node.kind === "input_trace" ? "node-card-trace" : ""} ${selected ? "selected" : ""} ${isDraft ? "draft" : ""} ${dimmed ? "dimmed" : ""} ${stepRunning ? "step-running" : ""}`}
     >
       <header className="node-card-header">
         <span className="node-dot" style={{ background: nodeKindColor(node.kind) }} />
@@ -62,6 +71,7 @@ export function NodeCard({ data, selected }: NodeProps) {
           type="button"
           className="icon-button danger"
           title="删除节点"
+          disabled={interactionLocked}
           onClick={() => onDeleteNode(node.id)}
         >
           ×

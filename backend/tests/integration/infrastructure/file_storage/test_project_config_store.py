@@ -96,3 +96,31 @@ def test_store_load_template_unsupported_schema_raises(tmp_path):
 
     with pytest.raises(ConfigFileError, match="项目配置示例文件无效"):
         ProjectConfigFileStore().load_template(tmp_path)
+
+
+def test_store_save_persists_ui_settings_and_preserves_comments(tmp_path):
+    store = ProjectConfigFileStore()
+    _write_example(tmp_path)
+    store.create_default(tmp_path)
+    config = ProjectConfig.from_mapping(
+        {"schema_version": 1, "workspace": {}, "ui": {"run_animation": False}}
+    )
+
+    store.save(tmp_path, config)
+
+    text = (tmp_path / "config.toml").read_text(encoding="utf-8")
+    assert "# 项目配置" in text
+    assert "run_animation = false" in text
+    assert store.load(tmp_path).ui.run_animation is False
+
+
+def test_store_load_older_config_without_ui_section_uses_default(tmp_path):
+    store = ProjectConfigFileStore()
+    (tmp_path / "config.toml").write_text(
+        'schema_version = 1\n\n[workspace]\ndata_dir = "data"\n',
+        encoding="utf-8",
+    )
+
+    config = store.load(tmp_path)
+
+    assert config.ui.run_animation is True

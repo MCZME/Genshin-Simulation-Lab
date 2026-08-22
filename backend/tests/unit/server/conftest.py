@@ -20,6 +20,7 @@ from genshin_sim.application import (
     RecordedEvent,
     RunDetail,
     RunListItem,
+    UiConfig,
     WorkflowDetail,
     WorkflowSummary,
     WorkspaceInfo,
@@ -35,6 +36,7 @@ class FakeApplicationFacade:
         self,
         *,
         workspace: WorkspaceInfo | None = None,
+        ui_settings: UiConfig | None = None,
         workflows: tuple[WorkflowDetail, ...] = (),
         results: tuple[RunDetail, ...] = (),
         assets: tuple[AssetListItem, ...] = (),
@@ -42,6 +44,8 @@ class FakeApplicationFacade:
         metrics: dict[str, DamageMetrics] | None = None,
     ) -> None:
         self.workspace = workspace or WorkspaceInfo("data", "2026.08.17", True)
+        self.ui_settings = ui_settings or UiConfig()
+        self.saved_ui_settings: list[bool] = []
         self._workflows = {workflow.id: workflow for workflow in workflows}
         self._results = {run.session_id: run for run in results}
         self._assets = list(assets)
@@ -102,6 +106,14 @@ class FakeApplicationFacade:
     def delete_workflow(self, workflow_id: str) -> None:
         self._require_workflow(workflow_id)
         del self._workflows[workflow_id]
+
+    def get_ui_settings(self) -> UiConfig:
+        return self.ui_settings
+
+    def save_ui_settings(self, *, run_animation: bool) -> UiConfig:
+        self.saved_ui_settings.append(run_animation)
+        self.ui_settings = UiConfig(run_animation=run_animation)
+        return self.ui_settings
 
     def validate_batch_inputs(self, members: list[BatchMember]) -> BatchValidationResult:
         if len(members) > 200:

@@ -17,7 +17,7 @@ from genshin_sim.application.batch import (
     SingleBatchResult,
 )
 from genshin_sim.application.bootstrap import create_cli_application, create_server_application
-from genshin_sim.application.config import ProjectConfig
+from genshin_sim.application.config import ProjectConfig, UiConfig
 from genshin_sim.application.context import create_application
 from genshin_sim.application.errors import ApplicationError
 from genshin_sim.application.facade import ApplicationFacade, DefaultApplicationFacade
@@ -76,6 +76,7 @@ __all__ = [
     "HandlerBinding",
     "HandlerBindingKind",
     "ProjectConfig",
+    "UiConfig",
     "ProjectInitializationResult",
     "RecordedEvent",
     "RunDetail",

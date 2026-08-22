@@ -27,11 +27,29 @@ class WorkspaceConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class UiConfig:
+    """界面偏好设置；语义由前端定义，此处只做类型与取值校验。"""
+
+    run_animation: bool = True
+
+    @classmethod
+    def from_mapping(cls, raw: Mapping[str, Any]) -> UiConfig:
+        value = raw.get("run_animation", True)
+        if not isinstance(value, bool):
+            raise ConfigError("ui.run_animation 必须是布尔值")
+        return cls(run_animation=value)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"run_animation": self.run_animation}
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectConfig:
     """项目配置（config.toml）。"""
 
     schema_version: int = PROJECT_CONFIG_SCHEMA_VERSION
     workspace: WorkspaceConfig = field(default_factory=WorkspaceConfig)
+    ui: UiConfig = field(default_factory=UiConfig)
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any]) -> ProjectConfig:
@@ -43,10 +61,15 @@ class ProjectConfig:
             workspace=WorkspaceConfig.from_mapping(
                 _require_mapping(raw.get("workspace", {}), "workspace")
             ),
+            ui=UiConfig.from_mapping(_require_mapping(raw.get("ui", {}), "ui")),
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {"schema_version": self.schema_version, "workspace": self.workspace.to_dict()}
+        return {
+            "schema_version": self.schema_version,
+            "workspace": self.workspace.to_dict(),
+            "ui": self.ui.to_dict(),
+        }
 
     def _data_dir_path(self, project_root: str | Path) -> Path:
         data_dir = Path(self.workspace.data_dir)

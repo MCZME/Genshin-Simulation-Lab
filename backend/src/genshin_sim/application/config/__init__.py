@@ -3,6 +3,7 @@
 from genshin_sim.application.config.models import (
     PROJECT_CONFIG_SCHEMA_VERSION,
     ProjectConfig,
+    UiConfig,
     WorkspaceConfig,
 )
 from genshin_sim.application.errors import ConfigError, ConfigFileError
@@ -12,5 +13,6 @@ __all__ = [
     "ConfigFileError",
     "PROJECT_CONFIG_SCHEMA_VERSION",
     "ProjectConfig",
+    "UiConfig",
     "WorkspaceConfig",
 ]

@@ -7,6 +7,7 @@ repository 或 infrastructure。
 from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
+from dataclasses import replace
 from pathlib import Path
 from typing import Any, Protocol
 
@@ -18,7 +19,7 @@ from genshin_sim.application.batch import (
     BatchValidationResult,
     SingleBatchResult,
 )
-from genshin_sim.application.config import ProjectConfig
+from genshin_sim.application.config import ProjectConfig, UiConfig
 from genshin_sim.application.context import ApplicationContext
 from genshin_sim.application.errors import ApplicationError
 from genshin_sim.application.input import SimulationInput
@@ -240,6 +241,10 @@ class ApplicationFacade(Protocol):
     ) -> WorkflowDetail: ...
 
     def delete_workflow(self, workflow_id: str) -> None: ...
+
+    def get_ui_settings(self) -> UiConfig: ...
+
+    def save_ui_settings(self, *, run_animation: bool) -> UiConfig: ...
 
 
 class DefaultApplicationFacade:
@@ -619,6 +624,16 @@ class DefaultApplicationFacade:
 
     def delete_workflow(self, workflow_id: str) -> None:
         self._require_workflow_service().delete(workflow_id)
+
+    def get_ui_settings(self) -> UiConfig:
+        return self._project_service.load_project(self._context.project_root).ui
+
+    def save_ui_settings(self, *, run_animation: bool) -> UiConfig:
+        root = self._context.project_root
+        config = self._project_service.load_project(root)
+        updated = replace(config, ui=UiConfig(run_animation=run_animation))
+        self._context.config_store.save(root, updated)
+        return updated.ui
 
     def _asset_database_service(
         self,

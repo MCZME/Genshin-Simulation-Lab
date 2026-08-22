@@ -28,6 +28,7 @@ def test_openapi_exposes_all_mvp_endpoints(application_facade) -> None:
 
     expected = {
         "/api/v1/workspace": {"get"},
+        "/api/v1/settings": {"get", "put"},
         "/api/v1/workflows": {"get", "post"},
         "/api/v1/workflows/{workflow_id}": {"get", "put", "delete"},
         "/api/v1/inputs/validate": {"post"},

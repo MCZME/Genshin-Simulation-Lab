@@ -77,6 +77,11 @@ class ProjectConfigFileStore:
         workspace = document["workspace"]
         workspace["data_dir"] = config.workspace.data_dir
 
+        if "ui" not in document:
+            document["ui"] = tomlkit.table()
+        ui = document["ui"]
+        ui["run_animation"] = config.ui.run_animation
+
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(tomlkit.dumps(document), encoding="utf-8")
         return path

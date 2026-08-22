@@ -16,7 +16,12 @@ def test_project_config_defaults():
 
     assert config.schema_version == PROJECT_CONFIG_SCHEMA_VERSION
     assert config.workspace.data_dir == "data"
-    assert config.to_dict() == {"schema_version": 1, "workspace": {"data_dir": "data"}}
+    assert config.ui.run_animation is True
+    assert config.to_dict() == {
+        "schema_version": 1,
+        "workspace": {"data_dir": "data"},
+        "ui": {"run_animation": True},
+    }
 
 
 def test_project_config_from_mapping():
@@ -55,3 +60,25 @@ def test_workspace_paths_accept_absolute_data_dir():
     assert config.data_dir("/unrelated") == Path("/abs/lab")
     assert config.inputs_dir("/unrelated") == Path("/abs/lab") / "inputs"
     assert config.logs_dir("/unrelated") == Path("/abs/lab") / "logs"
+
+
+def test_ui_config_from_mapping_reads_run_animation():
+    config = ProjectConfig.from_mapping(
+        {"schema_version": 1, "workspace": {}, "ui": {"run_animation": False}}
+    )
+
+    assert config.ui.run_animation is False
+    assert config.to_dict()["ui"] == {"run_animation": False}
+
+
+def test_ui_config_missing_section_falls_back_to_default():
+    config = ProjectConfig.from_mapping({"schema_version": 1, "workspace": {}})
+
+    assert config.ui.run_animation is True
+
+
+def test_ui_config_rejects_non_boolean_run_animation():
+    with pytest.raises(ConfigError, match="ui.run_animation 必须是布尔值"):
+        ProjectConfig.from_mapping(
+            {"schema_version": 1, "workspace": {}, "ui": {"run_animation": "yes"}}
+        )

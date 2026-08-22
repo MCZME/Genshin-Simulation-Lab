@@ -1,12 +1,11 @@
-import type { MetricsResponse, RunMemberStatus, RunStatusResponse } from "../api/client";
+import type { RunMemberStatus, RunStatusResponse } from "../api/client";
 import type { BatchPlan, RegionBuildSlice } from "../workflow/runner";
 import { isRunTerminal } from "../api/runtime_subscription";
 
-/** 工作流运行阶段（决策 2.33）：构建 → 模拟 → 分析 → 终态。 */
+/** 工作流运行阶段（决策 2.33，2.38 修订）：构建 → 模拟 → 终态。 */
 export type RunPhase =
   | "building"
   | "simulating"
-  | "analyzing"
   | "completed"
   | "build_failed"
   | "cancelled";
@@ -14,19 +13,19 @@ export type RunPhase =
 export const PHASE_LABELS: Record<RunPhase, string> = {
   building: "构建中",
   simulating: "模拟中",
-  analyzing: "分析中",
   completed: "已完成",
   build_failed: "构建失败",
   cancelled: "已取消",
 };
 
-/** 批次步骤状态（决策 2.34 轨迹中的批次步骤）。 */
+/** 批次步骤状态（决策 2.34 轨迹中的批次步骤；2.38 增加已取消）。 */
 export type BatchStatus =
   | "pending"
   | "submitting"
   | "running"
   | "completed"
   | "failed"
+  | "cancelled"
   | "skipped";
 
 export const BATCH_STATUS_LABELS: Record<BatchStatus, string> = {
@@ -35,6 +34,7 @@ export const BATCH_STATUS_LABELS: Record<BatchStatus, string> = {
   running: "运行中",
   completed: "成功",
   failed: "失败",
+  cancelled: "已取消",
   skipped: "跳过",
 };
 
@@ -76,20 +76,16 @@ export interface BatchView {
   state: string | null;
   cancelRequested: boolean;
   members: RunMemberStatus[];
-  /** item_id -> 指标；分析阶段填充。 */
-  metrics: Record<string, MetricsResponse>;
   /** 提交或批次级失败信息。 */
   error: string | null;
 }
 
-/** 一次工作流运行：阶段 + 步骤轨迹（构建切片 + 批次步骤 + 摘要状态）。 */
+/** 一次工作流运行：阶段 + 步骤轨迹（构建切片 + 批次步骤，决策 2.38 修订）。 */
 export interface WorkflowRunView {
   phase: RunPhase;
   build: BuildSliceView[];
   buildErrors: string[];
   batches: BatchView[];
-  /** 分析（摘要）步骤状态。 */
-  summaryStatus: BatchStatus;
 }
 
 /** 单区域检查结果（决策 2.35）。 */
@@ -144,10 +140,8 @@ export function createRunView(plan: {
       state: null,
       cancelRequested: false,
       members: batch.members.map((member) => emptyMemberStatus(member.item_id)),
-      metrics: {},
       error: null,
     })),
-    summaryStatus: "pending",
   };
 }
 
@@ -206,22 +200,6 @@ export function setBatchStatus(
   return updateBatch(state, nodeId, (batch) => ({ ...batch, status, error }));
 }
 
-export function recordBatchMetrics(
-  state: RunState,
-  nodeId: string,
-  itemId: string,
-  metrics: MetricsResponse,
-): RunState {
-  return updateBatch(state, nodeId, (batch) => ({
-    ...batch,
-    metrics: { ...batch.metrics, [itemId]: metrics },
-  }));
-}
-
-export function setSummaryStatus(state: RunState, status: BatchStatus): RunState {
-  return updateRun(state, (run) => ({ ...run, summaryStatus: status }));
-}
-
 export function setRegionCheck(state: RunState, check: RegionCheckState): RunState {
   return { ...state, regionChecks: { ...state.regionChecks, [check.regionId]: check } };
 }
@@ -234,7 +212,8 @@ export function batchStatusFromRunState(runState: string | null): BatchStatus {
     case "failed":
       return "failed";
     case "cancelled":
-      return "skipped";
+      // 用户取消的批次标记已取消；整次取消中被编排跳过的批次由循环直接标 skipped（决策 2.38）。
+      return "cancelled";
     case "partial":
       // 部分失败是正常结果（UI API 契约）：步骤层面记为成功，成员明细里看失败。
       return "completed";

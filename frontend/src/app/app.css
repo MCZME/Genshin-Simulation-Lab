@@ -320,6 +320,12 @@ body {
   border-color: #3b82f6;
 }
 
+/* 运行期间运行按钮变为取消入口（双击触发，决策 2.38）。 */
+.action-button.primary.running {
+  background: #b45309;
+  border-color: #d97706;
+}
+
 .action-button:disabled {
   opacity: 0.5;
   cursor: not-allowed;
@@ -1793,29 +1799,84 @@ body {
   gap: 6px;
 }
 
-.member-list {
-  list-style: none;
-  margin: 0;
-  padding: 0;
-  max-height: 180px;
-  overflow-y: auto;
-}
-
-.member-row {
+.batch-progress {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  padding: 3px 0;
-  border-bottom: 1px solid #1e293b;
+  height: 8px;
+  border-radius: 4px;
+  overflow: hidden;
+  background: #1e293b;
 }
 
-.member-id {
-  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+.batch-progress-segment {
+  height: 100%;
+  min-width: 0;
+}
+
+.batch-progress-segment.seg-completed {
+  background: #22c55e;
+}
+
+.batch-progress-segment.seg-failed {
+  background: #ef4444;
+}
+
+.batch-progress-segment.seg-cancelled {
+  background: #64748b;
+}
+
+.batch-progress-segment.seg-running {
+  background: #3b82f6;
+}
+
+.batch-progress-segment.seg-stopping {
+  background: #f59e0b;
+}
+
+.batch-progress-segment.seg-queued {
+  background: #334155;
+}
+
+.batch-counts {
   font-size: 11px;
   color: #94a3b8;
   overflow: hidden;
   text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.member-failures {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 120px;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.member-failure {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+}
+
+.member-failure-id {
+  flex-shrink: 0;
+  max-width: 40%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #f87171;
+}
+
+.member-failure-text {
+  min-width: 0;
+  color: #cbd5e1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .status-badge {
@@ -1930,47 +1991,7 @@ body {
   padding: 8px 4px;
 }
 
-.result-panel {
-  border-top: 1px solid #334155;
-  background: #1e293b;
-  padding: 10px 16px;
-  max-height: 220px;
-  overflow-y: auto;
-}
-
-.result-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 12px;
-}
-
-.result-table th,
-.result-table td {
-  text-align: left;
-  padding: 4px 8px;
-  border-bottom: 1px solid #334155;
-}
-
-.result-table th {
-  color: #94a3b8;
-  font-weight: 600;
-}
-
-.result-item-id {
-  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-}
-
-.result-number {
-  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-  text-align: right;
-}
-
-.panel-empty {
-  color: #64748b;
-  font-size: 12px;
-}
-
-/* ---- 运行链路（决策 2.32–2.35）---- */
+/* ---- 运行链路（决策 2.32–2.35）与结果面板（决策 2.37）---- */
 
 .node-card.dimmed {
   opacity: 0.45;
@@ -1983,68 +2004,7 @@ body {
   gap: 6px;
 }
 
-.batch-run-state {
-  font-size: 11px;
-  color: #94a3b8;
-}
-
 .node-note.danger {
-  color: #f87171;
-}
-
-.run-trace {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.trace-step {
-  margin: 0;
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 12px;
-  color: #cbd5e1;
-}
-
-.trace-icon {
-  display: inline-flex;
-  width: 18px;
-  justify-content: center;
-  font-weight: 600;
-}
-
-.trace-icon.ok {
-  color: #22c55e;
-}
-
-.trace-icon.bad {
-  color: #f87171;
-}
-
-.trace-icon.muted {
-  color: #64748b;
-}
-
-.trace-icon.active {
-  color: #3b82f6;
-}
-
-.trace-batch {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.build-errors {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-}
-
-.build-error {
-  margin: 0;
-  font-size: 12px;
   color: #f87171;
 }
 
@@ -2094,34 +2054,139 @@ body {
   z-index: 2;
 }
 
-.trace-slice {
+/* ---- 结果面板：结果库历史浏览器（决策 2.37）---- */
+
+.tool-panel-actions {
   display: flex;
-  flex-direction: column;
-  gap: 2px;
+  gap: 4px;
 }
 
-.trace-slice-title {
-  font-weight: 600;
+.result-run-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.result-run-row {
+  display: block;
+  width: 100%;
+  padding: 6px 4px;
+  background: transparent;
+  border: none;
+  border-bottom: 1px solid #263449;
+  text-align: left;
+  cursor: pointer;
+}
+
+.result-run-row:hover {
+  background: #263449;
+}
+
+.result-run-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 6px;
+}
+
+.result-run-name {
+  min-width: 0;
+  font-size: 12px;
   color: #e2e8f0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.trace-method {
-  padding-left: 26px;
+.result-run-meta {
+  display: block;
+  margin-top: 2px;
+  font-size: 11px;
   color: #94a3b8;
 }
 
-.trace-method-path {
+.result-hint {
+  margin: 8px 0 0;
+  color: #64748b;
+  font-size: 12px;
+}
+
+.result-hint.danger {
+  color: #f87171;
+}
+
+.result-more {
+  width: 100%;
+  margin-top: 8px;
+  padding: 4px 0;
+  background: #263449;
+  border: 1px solid #334155;
+  border-radius: 4px;
+  color: #94a3b8;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.result-more:hover {
+  color: #e2e8f0;
+  border-color: #475569;
+}
+
+.result-back {
+  padding: 0;
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.result-back:hover {
+  color: #e2e8f0;
+}
+
+.result-detail {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.result-detail-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: 12px;
+}
+
+.result-detail-label {
+  flex: none;
+  color: #94a3b8;
+}
+
+.result-detail-value {
+  color: #e2e8f0;
+  text-align: right;
+  overflow-wrap: anywhere;
+}
+
+.result-session-id {
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
   font-size: 11px;
-  color: #64748b;
 }
 
-.trace-method-variants {
-  color: #3b82f6;
+.result-detail-error {
+  margin-top: 4px;
+  padding: 6px 8px;
+  border: 1px solid #7f1d1d;
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.08);
 }
 
-.trace-method-overridden {
-  color: #f59e0b;
+.result-detail-error p {
+  margin: 0;
+  font-size: 12px;
+  color: #f87171;
+  overflow-wrap: anywhere;
 }
 
 .settings-overlay {

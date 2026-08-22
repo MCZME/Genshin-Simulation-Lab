@@ -10,7 +10,9 @@ export type WorkflowResponse = Schema["WorkflowResponse"];
 export type ValidateInputsResponse = Schema["ValidateInputsResponse"];
 export type RunStatusResponse = Schema["RunStatusResponse"];
 export type RunMemberStatus = Schema["RunMemberStatus"];
-export type MetricsResponse = Schema["MetricsResponse"];
+export type RunListResponse = Schema["RunListResponse"];
+export type RunListItem = Schema["RunListItem"];
+export type RunDetailResponse = Schema["RunDetailResponse"];
 export type AssetListResponse = Schema["AssetListResponse"];
 export type AssetResponse = Schema["AssetResponse"];
 export type Diagnostic = Schema["Diagnostic"];
@@ -123,8 +125,27 @@ export async function cancelRun(runId: string): Promise<RunStatusResponse> {
   });
 }
 
-export async function getResultMetrics(sessionId: string): Promise<MetricsResponse> {
-  return request<MetricsResponse>(`/results/${encodeURIComponent(sessionId)}/metrics`);
+/** 历史运行列表（结果库浏览器，决策 2.37）；后端按 created_at 倒序返回。 */
+export async function listResults(
+  options: { limit?: number; offset?: number; state?: "completed" | "failed" | "cancelled" } = {},
+): Promise<RunListResponse> {
+  const params = new URLSearchParams();
+  if (options.limit !== undefined) {
+    params.set("limit", String(options.limit));
+  }
+  if (options.offset !== undefined) {
+    params.set("offset", String(options.offset));
+  }
+  if (options.state !== undefined) {
+    params.set("state", options.state);
+  }
+  const query = params.toString();
+  return request<RunListResponse>(`/results${query === "" ? "" : `?${query}`}`);
+}
+
+/** 运行详情概要（不含事件流、指标数值，决策 2.37）。 */
+export async function getResultDetail(sessionId: string): Promise<RunDetailResponse> {
+  return request<RunDetailResponse>(`/results/${encodeURIComponent(sessionId)}`);
 }
 
 export async function searchAssets(

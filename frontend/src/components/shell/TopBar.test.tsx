@@ -25,6 +25,7 @@ function renderTopBar(overrides: Partial<Parameters<typeof TopBar>[0]> = {}) {
     onRedo: vi.fn(),
     onSave: vi.fn(),
     onRun: vi.fn(),
+    onCancelRun: vi.fn(),
     onCreate: vi.fn(),
     onSaveAndCreate: vi.fn(),
     onSwitch: vi.fn(),
@@ -47,6 +48,30 @@ describe("TopBar 工作流切换器", () => {
     fireEvent.click(screen.getByTitle("重做 (Ctrl+Shift+Z / Ctrl+Y)"));
     expect(onUndo).toHaveBeenCalledTimes(1);
     expect(onRedo).toHaveBeenCalledTimes(1);
+  });
+
+  it("运行期间运行按钮可点击，双击触发整次取消（决策 2.38）", () => {
+    const onRun = vi.fn();
+    const onCancelRun = vi.fn();
+    renderTopBar({ running: true, canRun: false, onRun, onCancelRun });
+    const button = screen.getByRole("button", { name: "运行中…" });
+    expect(button.hasAttribute("disabled")).toBe(false);
+    // 单击不触发任何动作。
+    fireEvent.click(button);
+    expect(onRun).not.toHaveBeenCalled();
+    expect(onCancelRun).not.toHaveBeenCalled();
+    fireEvent.doubleClick(button);
+    expect(onCancelRun).toHaveBeenCalledTimes(1);
+    expect(onRun).not.toHaveBeenCalled();
+  });
+
+  it("非运行期间单击触发运行", () => {
+    const onRun = vi.fn();
+    const onCancelRun = vi.fn();
+    renderTopBar({ running: false, canRun: true, onRun, onCancelRun });
+    fireEvent.click(screen.getByRole("button", { name: "全部运行" }));
+    expect(onRun).toHaveBeenCalledTimes(1);
+    expect(onCancelRun).not.toHaveBeenCalled();
   });
 
   it("不可撤销时禁用撤销按钮", () => {

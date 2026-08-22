@@ -7,12 +7,10 @@ import {
   batchStatusFromRunState,
   createEmptyRunState,
   createRunView,
-  recordBatchMetrics,
   setBatchStatus,
   setMethodStatus,
   setRegionCheck,
   setRunPhase,
-  setSummaryStatus,
 } from "./run_state";
 
 function runView(
@@ -80,7 +78,7 @@ describe("run state", () => {
     expect(state.run?.batches[0].members.map((member) => member.item_id)).toEqual(["a", "b"]);
   });
 
-  it("应用批次视图并保留指标", () => {
+  it("应用批次视图", () => {
     let state: RunState = { ...createEmptyRunState(), run: createRunView(PLAN) };
     state = applyBatchView(
       state,
@@ -94,35 +92,29 @@ describe("run state", () => {
     expect(state.run?.batches[0].state).toBe("running");
     expect(state.run?.batches[0].members.map((member) => member.item_id)).toEqual(["a", "b"]);
 
-    state = recordBatchMetrics(state, "sim-1", "a", {
-      frames_run: 10,
-      total_damage: { key: "total_damage", value: 100 },
-    } as never);
     state = applyBatchView(
       state,
       "sim-1",
       runView("completed", [{ item_id: "a", state: "completed", session_id: "s-1" }]),
     );
     expect(state.run?.batches[0].members[0].session_id).toBe("s-1");
-    expect(state.run?.batches[0].metrics.a.total_damage.value).toBe(100);
   });
 
   it("阶段与批次状态更新", () => {
     let state: RunState = { ...createEmptyRunState(), run: createRunView(PLAN) };
     state = setRunPhase(state, "simulating");
     state = setBatchStatus(state, "sim-1", "failed", "提交失败");
-    state = setSummaryStatus(state, "running");
     expect(state.run?.phase).toBe("simulating");
     expect(state.run?.batches[0].status).toBe("failed");
     expect(state.run?.batches[0].error).toBe("提交失败");
-    expect(state.run?.summaryStatus).toBe("running");
   });
 
   it("后端批次终态映射到批次步骤状态", () => {
     expect(batchStatusFromRunState("completed")).toBe("completed");
     expect(batchStatusFromRunState("partial")).toBe("completed");
     expect(batchStatusFromRunState("failed")).toBe("failed");
-    expect(batchStatusFromRunState("cancelled")).toBe("skipped");
+    // 用户取消的批次标记已取消，与整次取消跳过的批次区分（决策 2.38）。
+    expect(batchStatusFromRunState("cancelled")).toBe("cancelled");
     expect(batchStatusFromRunState("running")).toBe("running");
     expect(batchStatusFromRunState(null)).toBe("running");
   });

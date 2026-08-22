@@ -3,7 +3,6 @@ import {
   cancelRun,
   createWorkflow,
   deleteWorkflow,
-  getResultMetrics,
   getRun,
   getWorkflow,
   getWorkspace,
@@ -18,7 +17,7 @@ import { CanvasView } from "../components/canvas/CanvasView";
 import { ObjectPanel } from "../components/panels/ObjectPanel";
 import { ProblemPanel } from "../components/panels/ProblemPanel";
 import { RegionSummaryBar } from "../components/panels/RegionSummaryBar";
-import { ResultPanel } from "../components/panels/ResultPanel";
+import { ResultsPanel } from "../components/panels/ResultsPanel";
 import { RunStateContext } from "../components/run_state_context";
 import { TopBar } from "../components/shell/TopBar";
 import {
@@ -59,12 +58,10 @@ import {
   batchStatusFromRunState,
   createEmptyRunState,
   createRunView,
-  recordBatchMetrics,
   setBatchStatus,
   setMethodStatus,
   setRegionCheck,
   setRunPhase,
-  setSummaryStatus,
 } from "../state/run_state";
 import type { RunState } from "../state/run_state";
 import { compileConfigurationRegion } from "../workflow/compiler";
@@ -81,7 +78,7 @@ import { createAppSettings, loadAppSettingsFromApi, saveAppSettingsToApi } from 
 import type { AppSettings } from "../state/settings";
 import { SettingsModal } from "../components/shell/SettingsModal";
 
-type Tool = "objects" | "problems" | null;
+type Tool = "objects" | "problems" | "results" | null;
 
 export function App() {
   const [appState, setAppState] = useState(() => createAppState());
@@ -93,6 +90,8 @@ export function App() {
   const [checkingRegion, setCheckingRegion] = useState<string | null>(null);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<Tool>("objects");
+  /** 结果面板定位请求（决策 2.37）：非空时面板打开并选中该 session，随后清空。 */
+  const [resultFocus, setResultFocus] = useState<string | null>(null);
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [settings, setSettings] = useState<AppSettings>(() => createAppSettings());
   const [dragKind, setDragKind] = useState<string | null>(null);
@@ -178,9 +177,7 @@ export function App() {
     if (
       editorState === null ||
       run === null ||
-      (run.phase !== "building" &&
-        run.phase !== "simulating" &&
-        run.phase !== "analyzing")
+      (run.phase !== "building" && run.phase !== "simulating")
     ) {
       return [];
     }
@@ -578,9 +575,8 @@ export function App() {
   }
 
   /**
-   * 工作流运行（决策 2.33）：构建（前端编译与图校验，失败零提交）→
-   * 模拟（按画布顺序依次串行执行每个模拟节点的批次，决策 2.32）→
-   * 分析（结果摘要指标拉取，失败不阻断）。
+   * 工作流运行（决策 2.33，2.38 修订）：构建（前端编译与图校验，失败零提交）→
+   * 模拟（按画布顺序依次串行执行每个模拟节点的批次，决策 2.32）→ 终态。
    */
   async function handleRun() {
     if (editorState === null || busy) {
@@ -610,6 +606,8 @@ export function App() {
         };
         return setRunPhase(started, "build_failed");
       });
+      // 构建失败（零提交）错误经顶部横幅呈现（决策 2.37）。
+      setErrorMessage(`构建失败：${errors.join("；")}`);
       return;
     }
 
@@ -690,26 +688,16 @@ export function App() {
 
     if (cancelled) {
       setRunState((current) => setRunPhase(current, "cancelled"));
+      openResultAt(null);
     } else {
-      setRunState((current) => setRunPhase(current, "analyzing"));
-      setRunState((current) => setSummaryStatus(current, "running"));
-      await Promise.allSettled(
-        completedSessions.map(async ({ nodeId, itemId, sessionId }) => {
-          try {
-            const metrics = await getResultMetrics(sessionId);
-            setRunState((current) => recordBatchMetrics(current, nodeId, itemId, metrics));
-          } catch {
-            // 单成员指标失败不阻断结果摘要
-          }
-        }),
-      );
-      setRunState((current) => setSummaryStatus(current, "completed"));
       setRunState((current) => setRunPhase(current, "completed"));
+      // 运行结束联动（决策 2.37）：自动打开结果面板并定位最新记录。
+      openResultAt(completedSessions[0]?.sessionId ?? null);
     }
     setRunning(false);
   }
 
-  /** 取消整次工作流运行：取消当前批次，剩余批次由编排循环跳过（决策 2.32）。 */
+  /** 取消整次工作流运行：取消当前批次，剩余批次由编排循环跳过（决策 2.32）；顶栏双击触发。 */
   async function handleCancelRun() {
     if (!running) {
       return;
@@ -725,6 +713,26 @@ export function App() {
     } catch (error) {
       setErrorMessage(toMessage(error));
     }
+  }
+
+  /** 取消本批（决策 2.38）：仅取消当前批次，该批终态后后续批次照常继续。 */
+  async function handleCancelBatch(nodeId: string) {
+    const current = currentBatchRef.current;
+    if (current === null || current.nodeId !== nodeId || current.runId === null) {
+      return;
+    }
+    try {
+      const view = await cancelRun(current.runId);
+      setRunState((state) => applyBatchView(state, nodeId, view));
+    } catch (error) {
+      setErrorMessage(toMessage(error));
+    }
+  }
+
+  /** 打开结果面板并定位记录（决策 2.37）；sessionId 为空时只刷新列表。 */
+  function openResultAt(sessionId: string | null): void {
+    setActiveTool("results");
+    setResultFocus(sessionId);
   }
 
   /** 检查区域（决策 2.35）：单区域构建 + 对成员的后端输入校验；不执行模拟。 */
@@ -794,7 +802,11 @@ export function App() {
     }
   }
 
-  const runContextValue = { runState, onCancelRun: handleCancelRun };
+  const runContextValue = {
+    runState,
+    onCancelRun: handleCancelRun,
+    onCancelBatch: handleCancelBatch,
+  };
 
   return (
     <RunStateContext.Provider value={runContextValue}>
@@ -814,6 +826,7 @@ export function App() {
           onRedo={handleRedo}
           onSave={() => void handleSave()}
           onRun={() => void handleRun()}
+          onCancelRun={() => void handleCancelRun()}
           onCreate={handleCreateWorkflow}
           onSaveAndCreate={() => void handleSaveAndCreate()}
           onSwitch={(workflowId) => void handleSwitchWorkflow(workflowId)}
@@ -856,6 +869,14 @@ export function App() {
             </button>
             <button
               type="button"
+              className={`rail-button ${activeTool === "results" ? "active" : ""}`}
+              title="运行结果"
+              onClick={() => setActiveTool(activeTool === "results" ? null : "results")}
+            >
+              结果
+            </button>
+            <button
+              type="button"
               className="rail-button rail-settings"
               title="设置"
               aria-label="设置"
@@ -872,6 +893,13 @@ export function App() {
           )}
           {activeTool === "problems" && editorState !== null && (
             <ProblemPanel diagnostics={diagnostics} onLocate={handleLocate} />
+          )}
+          {activeTool === "results" && (
+            <ResultsPanel
+              focusSessionId={resultFocus}
+              onFocusHandled={() => setResultFocus(null)}
+              onCollapse={() => setActiveTool(null)}
+            />
           )}
           <main className="canvas-area">
             {editorState !== null && (
@@ -920,7 +948,6 @@ export function App() {
               checkingRegionId={checkingRegion}
             />
           </main>
-          {runState.run !== null && <ResultPanel runState={runState} />}
         </div>
         {settingsOpen && (
           <SettingsModal

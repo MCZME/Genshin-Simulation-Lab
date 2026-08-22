@@ -3,7 +3,10 @@ import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkflowNode } from "../../workflow/types";
+import { RunStateContext } from "../run_state_context";
+import type { RunState } from "../../state/run_state";
 import { CharacterEditor, InputTraceEditor, MetaEditor } from "./editors";
+import { SimulationEditor } from "./run";
 
 function characterNode(overrides: Partial<WorkflowNode> = {}): WorkflowNode {
   return {
@@ -294,5 +297,129 @@ describe("按键轨迹编辑器", () => {
     expect(screen.getByText("1 个不支持按键")).toBeTruthy();
     const block = container.querySelector(".trace-block");
     expect(block?.className).toContain("trace-block-unsupported");
+  });
+});
+
+describe("模拟节点编辑器：模拟入口 + 批次监控（决策 2.38 修订）", () => {
+  function simulationNode(): WorkflowNode {
+    return { id: "sim-1", kind: "simulation", region_id: null, position: { x: 0, y: 0 }, params: {} };
+  }
+
+  function member(
+    itemId: string,
+    state: "completed" | "failed" | "cancelled" | "running" | "queued",
+    overrides: Partial<{ error_code: string | null; error_message: string | null }> = {},
+  ) {
+    return {
+      item_id: itemId,
+      state,
+      session_id: state === "completed" ? `s-${itemId}` : null,
+      error_code: null,
+      error_message: null,
+      created_at: "2026-08-23T10:00:00+00:00",
+      ...overrides,
+    };
+  }
+
+  function runStateWithBatch(status: "completed" | "running" = "completed"): RunState {
+    return {
+      run: {
+        phase: status === "completed" ? "completed" : "simulating",
+        build: [],
+        buildErrors: [],
+        batches: [
+          {
+            nodeId: "sim-1",
+            name: "主配置",
+            sourceRegionIds: ["region-1"],
+            status,
+            runId: "run-1",
+            state: status,
+            cancelRequested: false,
+            members:
+              status === "completed"
+                ? [
+                    member("a", "completed"),
+                    member("b", "failed", {
+                      error_code: "SIMULATION_FAILED",
+                      error_message: "第 120 帧断言失败",
+                    }),
+                    member("c", "cancelled"),
+                  ]
+                : [
+                    member("a", "running"),
+                    member("b", "failed", {
+                      error_code: "SIMULATION_FAILED",
+                      error_message: "第 120 帧断言失败",
+                    }),
+                    member("c", "queued"),
+                  ],
+            error: null,
+          },
+        ],
+      },
+      regionChecks: {},
+    };
+  }
+
+  function renderSimulationEditor(
+    state: RunState,
+    handlers: {
+      onCancelBatch?: (nodeId: string) => void;
+    } = {},
+  ) {
+    return render(
+      <RunStateContext.Provider
+        value={{
+          runState: state,
+          onCancelRun: vi.fn(),
+          onCancelBatch: handlers.onCancelBatch ?? vi.fn(),
+        }}
+      >
+        <SimulationEditor node={simulationNode()} onChange={vi.fn()} />
+      </RunStateContext.Provider>,
+    );
+  }
+
+  it("批次进度以分段进度条与聚合计数呈现", () => {
+    const { container } = renderSimulationEditor(runStateWithBatch());
+    expect(screen.getByText("完成 1/3 · 失败 1 · 已取消 1")).not.toBeNull();
+    const bar = screen.getByRole("progressbar", { name: "批次成员进度" });
+    expect(bar.getAttribute("aria-valuenow")).toBe("3");
+    expect(bar.getAttribute("aria-valuemax")).toBe("3");
+    const segments = container.querySelectorAll(".batch-progress-segment");
+    expect(segments.length).toBe(3);
+    expect(container.querySelector(".batch-progress-segment.seg-completed")).not.toBeNull();
+    expect(container.querySelector(".batch-progress-segment.seg-failed")).not.toBeNull();
+    expect(container.querySelector(".batch-progress-segment.seg-cancelled")).not.toBeNull();
+  });
+
+  it("不显示成员标签、跳转入口与指标数值", () => {
+    const { container } = renderSimulationEditor(runStateWithBatch());
+    expect(screen.queryByText("芭芭拉 · 等级 1")).toBeNull();
+    // 完成态下唯一按钮是并发度输入本身：既无成员跳转入口，也无取消按钮。
+    const buttons = container.querySelectorAll("button");
+    expect(buttons).toHaveLength(1);
+    expect(buttons[0]?.className).toContain("number-display");
+    expect(screen.queryByText(/DPS/)).toBeNull();
+    expect(screen.queryByText(/总伤/)).toBeNull();
+  });
+
+  it("失败成员行直接显示错误文本", () => {
+    renderSimulationEditor(runStateWithBatch("running"));
+    expect(screen.getByText("完成 0/3 · 失败 1 · 运行中 1 · 排队 1")).not.toBeNull();
+    expect(screen.getByText("第 120 帧断言失败")).not.toBeNull();
+  });
+
+  it("运行中的批次可取消本批，且只针对本节点", () => {
+    const onCancelBatch = vi.fn();
+    renderSimulationEditor(runStateWithBatch("running"), { onCancelBatch });
+    fireEvent.click(screen.getByRole("button", { name: "取消本批" }));
+    expect(onCancelBatch).toHaveBeenCalledWith("sim-1");
+  });
+
+  it("已完成的批次不显示取消按钮", () => {
+    renderSimulationEditor(runStateWithBatch());
+    expect(screen.queryByRole("button", { name: "取消本批" })).toBeNull();
   });
 });

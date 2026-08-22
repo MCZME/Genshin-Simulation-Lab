@@ -16,6 +16,8 @@ export interface TopBarProps {
   onRedo: () => void;
   onSave: () => void;
   onRun: () => void;
+  /** 运行期间双击运行按钮触发整次取消（决策 2.38）。 */
+  onCancelRun: () => void;
   onCreate: () => void;
   onSaveAndCreate: () => void;
   onSwitch: (workflowId: string) => void;
@@ -41,6 +43,7 @@ export function TopBar({
   onRedo,
   onSave,
   onRun,
+  onCancelRun,
   onCreate,
   onSaveAndCreate,
   onSwitch,
@@ -384,9 +387,19 @@ export function TopBar({
         </button>
         <button
           type="button"
-          className="action-button primary"
-          disabled={running || !canRun}
-          onClick={onRun}
+          className={`action-button primary ${running ? "running" : ""}`}
+          disabled={!running && !canRun}
+          title={running ? "双击取消整次运行" : undefined}
+          onClick={() => {
+            if (!running) {
+              onRun();
+            }
+          }}
+          onDoubleClick={() => {
+            if (running) {
+              onCancelRun();
+            }
+          }}
         >
           {running ? "运行中…" : "全部运行"}
         </button>

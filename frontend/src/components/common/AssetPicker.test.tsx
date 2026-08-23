@@ -244,6 +244,30 @@ describe("AssetPicker", () => {
     );
     expect(screen.queryByText(/★/)).toBeNull();
   });
+
+  it("圣遗物选择器显示状态筛选，不显示元素/类型/星级筛选", async () => {
+    mockedSearch.mockResolvedValue({ items: [] });
+    render(
+      <AssetPicker assetType="artifact-sets" value="" onChange={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /选择资产/ }));
+
+    await waitFor(() => expect(screen.getByText("状态")).toBeTruthy());
+    expect(screen.queryByText("元素")).toBeNull();
+    expect(screen.queryByText("类型")).toBeNull();
+    expect(screen.queryByText("星级")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "状态：已实现" }));
+    await waitFor(() =>
+      expect(mockedSearch).toHaveBeenLastCalledWith(
+        "artifact-sets",
+        "",
+        50,
+        0,
+        expect.objectContaining({ usable: 1 }),
+      ),
+    );
+  });
 });
 
 describe("AssetPicker 选中项不在当前列表页", () => {

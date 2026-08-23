@@ -302,36 +302,36 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
             onChange={(event) => updateCriteria({ query: event.target.value })}
             onKeyDown={handleKeyDown}
           />
-          {assetType !== "artifact-sets" && (
-            <div className="asset-filters">
-              {assetType === "characters" && (
-                <FilterRow
-                  label="元素"
-                  options={Object.entries(ELEMENT_LABELS).map(([value, label]) => ({
-                    value,
-                    label,
-                  }))}
-                  value={elementFilter}
-                  onSelect={(value) => {
-                    updateCriteria({ elementFilter: value });
-                    setActiveIndex(0);
-                  }}
-                />
-              )}
-              {(assetType === "characters" || assetType === "weapons") && (
-                <FilterRow
-                  label="类型"
-                  options={Object.entries(WEAPON_LABELS).map(([value, label]) => ({
-                    value,
-                    label,
-                  }))}
-                  value={weaponTypeFilter}
-                  onSelect={(value) => {
-                    updateCriteria({ weaponTypeFilter: value });
-                    setActiveIndex(0);
-                  }}
-                />
-              )}
+          <div className="asset-filters">
+            {assetType === "characters" && (
+              <FilterRow
+                label="元素"
+                options={Object.entries(ELEMENT_LABELS).map(([value, label]) => ({
+                  value,
+                  label,
+                }))}
+                value={elementFilter}
+                onSelect={(value) => {
+                  updateCriteria({ elementFilter: value });
+                  setActiveIndex(0);
+                }}
+              />
+            )}
+            {(assetType === "characters" || assetType === "weapons") && (
+              <FilterRow
+                label="类型"
+                options={Object.entries(WEAPON_LABELS).map(([value, label]) => ({
+                  value,
+                  label,
+                }))}
+                value={weaponTypeFilter}
+                onSelect={(value) => {
+                  updateCriteria({ weaponTypeFilter: value });
+                  setActiveIndex(0);
+                }}
+              />
+            )}
+            {(assetType === "characters" || assetType === "weapons") && (
               <FilterRow
                 label="星级"
                 options={[5, 4, 3, 2, 1].map((value) => ({
@@ -344,20 +344,20 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
                   setActiveIndex(0);
                 }}
               />
-              <FilterRow
-                label="状态"
-                options={[
-                  { value: 1, label: "已实现" },
-                  { value: 0, label: "未实现" },
-                ]}
-                value={usableFilter}
-                onSelect={(value) => {
-                  updateCriteria({ usableFilter: value });
-                  setActiveIndex(0);
-                }}
-              />
-            </div>
-          )}
+            )}
+            <FilterRow
+              label="状态"
+              options={[
+                { value: 1, label: "已实现" },
+                { value: 0, label: "未实现" },
+              ]}
+              value={usableFilter}
+              onSelect={(value) => {
+                updateCriteria({ usableFilter: value });
+                setActiveIndex(0);
+              }}
+            />
+          </div>
           <ul className="asset-list" ref={listRef} onScroll={handleListScroll}>
             {loading ? (
               <li className="asset-empty">加载中…</li>

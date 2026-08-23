@@ -79,7 +79,12 @@ describe("validateWorkflow", () => {
       makeNode("char3", "character", { slot: 2, asset: "character:diluc" }),
       makeNode("sim", "simulation", {}, null),
     ];
-    const definition = makeDefinition([makeRegion()], nodes, []);
+    const edges = [
+      makeEdge("e1", "char1", "out", "region-1", "out"),
+      makeEdge("e2", "char2", "out", "region-1", "out"),
+      makeEdge("e3", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
     const slotConflicts = validateWorkflow(definition).filter(
       (item) => item.code === "TEAM_SLOT_CONFLICT",
     );
@@ -89,14 +94,29 @@ describe("validateWorkflow", () => {
     ]);
   });
 
+  it("未接入数据链的同槽位武器不报槽位冲突", () => {
+    // 决策 2.32：连接决定参与。未接线草稿不进入编译，也不参与跨节点冲突判定。
+    const nodes = [
+      makeNode("wired", "weapon", { slot: 1, asset: "weapon:11512" }),
+      makeNode("floating", "weapon", { slot: 1, asset: "weapon:11513" }),
+    ];
+    const edges = [makeEdge("e1", "wired", "out", "region-1", "out")];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+    expect(codes(definition)).not.toContain("TEAM_SLOT_CONFLICT");
+  });
+
   it("同槽位的角色武器圣遗物不视为冲突", () => {
     const nodes = [
       makeNode("char", "character", { slot: 1, asset: "character:barbara" }),
       makeNode("weapon", "weapon", { slot: 1, asset: "weapon:11512" }),
       makeNode("artifact", "artifact", { slot: 1, asset: "artifact_set:15032" }),
-      makeNode("sim", "simulation", {}, null),
     ];
-    const definition = makeDefinition([makeRegion()], nodes, []);
+    const edges = [
+      makeEdge("e1", "char", "out", "region-1", "out"),
+      makeEdge("e2", "weapon", "out", "region-1", "out"),
+      makeEdge("e3", "artifact", "out", "region-1", "out"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
     expect(codes(definition)).not.toContain("TEAM_SLOT_CONFLICT");
   });
 
@@ -104,12 +124,15 @@ describe("validateWorkflow", () => {
     const nodes = [
       makeNode("char1", "character", { slot: 1, asset: "character:barbara" }, "region-1"),
       makeNode("char2", "character", { slot: 1, asset: "character:kaeya" }, "region-2"),
-      makeNode("sim", "simulation", {}, null),
+    ];
+    const edges = [
+      makeEdge("e1", "char1", "out", "region-1", "out"),
+      makeEdge("e2", "char2", "out", "region-2", "out"),
     ];
     const definition = makeDefinition(
       [makeRegion("region-1"), makeRegion("region-2")],
       nodes,
-      [],
+      edges,
     );
     expect(codes(definition)).not.toContain("TEAM_SLOT_CONFLICT");
   });
@@ -295,12 +318,33 @@ describe("validateWorkflow", () => {
   });
 
   it("同一区域多个根节点报错", () => {
-    const definition = makeDefinition(
-      [makeRegion()],
-      [makeNode("root1", "root"), makeNode("root2", "root")],
-      [],
-    );
+    // 两个根节点都连入同一条区域数据链时才视为多根冲突。
+    const nodes = [
+      makeNode("root1", "root"),
+      makeNode("root2", "root"),
+      makeNode("char", "character", { slot: 1, asset: "character:barbara" }),
+    ];
+    const edges = [
+      makeEdge("e1", "root1", "out", "char", "in"),
+      makeEdge("e2", "root2", "out", "char", "in"),
+      makeEdge("e3", "char", "out", "region-1", "out"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
     expect(codes(definition)).toContain("MULTIPLE_ROOT_NODES");
+  });
+
+  it("未接线的多余根节点不报错", () => {
+    const nodes = [
+      makeNode("root1", "root"),
+      makeNode("root2", "root"),
+      makeNode("char", "character", { slot: 1, asset: "character:barbara" }),
+    ];
+    const edges = [
+      makeEdge("e1", "root1", "out", "char", "in"),
+      makeEdge("e2", "char", "out", "region-1", "out"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+    expect(codes(definition)).not.toContain("MULTIPLE_ROOT_NODES");
   });
 
   it("成员展开超过 200 报错", () => {

@@ -19,6 +19,7 @@ import {
   validateNode,
 } from "./registry";
 import { expandConfigurationRegion } from "./compiler";
+import { collectUpstreamNodes } from "./chain";
 
 type EndpointKind = "node" | "region";
 
@@ -57,7 +58,6 @@ export function validateWorkflow(definition: WorkflowDefinition): Diagnostic[] {
   }
 
   const nodeById = new Map<string, WorkflowNode>();
-  const rootCountByRegion = new Map<string | null, number>();
   for (const node of definition.nodes) {
     if (nodeById.has(node.id) || regionById.has(node.id)) {
       diagnostics.push(
@@ -67,10 +67,6 @@ export function validateWorkflow(definition: WorkflowDefinition): Diagnostic[] {
       );
     }
     nodeById.set(node.id, node);
-    rootCountByRegion.set(
-      node.region_id,
-      (rootCountByRegion.get(node.region_id) ?? 0) + (node.kind === "root" ? 1 : 0),
-    );
 
     const spec = getNodeKindSpec(node.kind);
     if (spec === null) {
@@ -126,8 +122,21 @@ export function validateWorkflow(definition: WorkflowDefinition): Diagnostic[] {
     diagnostics.push(...validateNode(node));
   }
 
+  // 跨节点检查的参与范围按连线判定（决策 2.32：连接决定批次参与）：
+  // 只统计已连入区域数据链（边界汇入边上游）的节点，未接线草稿不参与判定。
+  const connectedIdsByRegion = connectedNodeIdsByRegion(definition, regionById, nodeById);
+  const rootCountByRegion = new Map<string, number>();
+  for (const node of definition.nodes) {
+    if (node.kind !== "root" || node.region_id === null) {
+      continue;
+    }
+    if (!connectedIdsByRegion.get(node.region_id)?.has(node.id)) {
+      continue;
+    }
+    rootCountByRegion.set(node.region_id, (rootCountByRegion.get(node.region_id) ?? 0) + 1);
+  }
   for (const [regionId, count] of rootCountByRegion) {
-    if (regionId !== null && count > 1) {
+    if (count > 1) {
       diagnostics.push(
         diagnostic("error", "MULTIPLE_ROOT_NODES", "同一配置区域只能有一个根节点", {
           region_id: regionId,
@@ -163,7 +172,7 @@ export function validateWorkflow(definition: WorkflowDefinition): Diagnostic[] {
 
   const connectedToSimulation = simulationLinkedRegions(definition, regionById, nodeById);
   validateMemberCap(definition, regionById, connectedToSimulation, diagnostics);
-  validateTeamSlotConflicts(definition, regionById, diagnostics);
+  validateTeamSlotConflicts(definition, regionById, connectedIdsByRegion, diagnostics);
   warnNodesOutsideRegions(definition, regionById, diagnostics);
   validateRegionToSimulationLinks(definition, regionById, nodeById, connectedToSimulation, diagnostics);  return diagnostics;
 }
@@ -602,10 +611,48 @@ function validateMemberCap(
   }
 }
 
-/** 同一配置区域内，同类别的角色/武器/圣遗物节点不能重复占用同一队伍槽位。 */
+/**
+ * 按配置区域收集「连线上游」节点集合：从区域边界汇入边的尾节点反向可达的全部节点。
+ * 与编译展开（expandConfigurationRegion）的参与集合一致，未接线节点不在其中。
+ */
+function connectedNodeIdsByRegion(
+  definition: WorkflowDefinition,
+  regionById: Map<string, WorkflowRegion>,
+  nodeById: Map<string, WorkflowNode>,
+): Map<string, Set<string>> {
+  const incomingByTarget = new Map<string, WorkflowEdge[]>();
+  const seedsByRegion = new Map<string, Array<{ nodeId: string; edgeId: string }>>();
+  for (const edge of definition.edges) {
+    const incoming = incomingByTarget.get(edge.target_node_id) ?? [];
+    incoming.push(edge);
+    incomingByTarget.set(edge.target_node_id, incoming);
+    const region = regionById.get(edge.target_node_id);
+    if (
+      region?.kind === "configuration" &&
+      edge.target_port_id === REGION_BOUNDARY_OUT_PORT &&
+      nodeById.has(edge.source_node_id)
+    ) {
+      const seeds = seedsByRegion.get(region.id) ?? [];
+      seeds.push({ nodeId: edge.source_node_id, edgeId: edge.id });
+      seedsByRegion.set(region.id, seeds);
+    }
+  }
+  const result = new Map<string, Set<string>>();
+  for (const [regionId, seeds] of seedsByRegion) {
+    const upstream = collectUpstreamNodes(seeds, nodeById, incomingByTarget);
+    result.set(regionId, new Set(upstream.map((item) => item.node.id)));
+  }
+  return result;
+}
+
+/**
+ * 同一配置区域内，同类别的角色/武器/圣遗物节点不能重复占用同一队伍槽位。
+ * 只统计已连入区域数据链（边界汇入上游）的节点；未接线草稿不参与判定（决策 2.32）。
+ */
 function validateTeamSlotConflicts(
   definition: WorkflowDefinition,
   regionById: Map<string, WorkflowRegion>,
+  connectedIdsByRegion: Map<string, Set<string>>,
   diagnostics: Diagnostic[],
 ): void {
   const nodesByRegionKindSlot = new Map<
@@ -619,6 +666,9 @@ function validateTeamSlotConflicts(
     }
     const region = regionById.get(regionId);
     if (region === undefined || region.kind !== "configuration") {
+      continue;
+    }
+    if (!connectedIdsByRegion.get(regionId)?.has(node.id)) {
       continue;
     }
     if (node.kind !== "character" && node.kind !== "weapon" && node.kind !== "artifact") {

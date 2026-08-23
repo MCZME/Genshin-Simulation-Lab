@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { getAsset, searchAssets } from "../../api/client";
 import type { AssetResponse } from "../../api/client";
 import { ELEMENT_COLORS, ELEMENT_LABELS } from "../../theme/elements";
@@ -67,10 +67,13 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
   const [offset, setOffset] = useState(0);
   const [hasMore, setHasMore] = useState(true);
   const [loadingMore, setLoadingMore] = useState(false);
+  /** 跟踪加载中状态的 ref，用于滚动事件中同步判断避免竞态。 */
+  const loadingMoreRef = useRef(false);
   /** 当前列表页未包含的选中资产，按详情端点回补显示。 */
   const [fallback, setFallback] = useState<AssetResponse | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
   const listRef = useRef<HTMLUListElement>(null);
+  const hasMoreRef = useRef(true);
 
   function updateCriteria(next: Partial<AssetFilters>) {
     if (next.query !== undefined) {
@@ -90,14 +93,18 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
     }
     setOffset(0);
     setHasMore(true);
+    loadingMoreRef.current = false;
+    hasMoreRef.current = true;
   }
 
   useEffect(() => {
     let cancelled = false;
     const timer = window.setTimeout(() => {
       if (offset === 0) {
+        loadingMoreRef.current = false;
         setLoading(true);
       } else {
+        loadingMoreRef.current = true;
         setLoadingMore(true);
       }
       void searchAssets(assetType, query, 50, offset, { element: elementFilter, weapon_type: weaponTypeFilter, rarity: rarityFilter, usable: usableFilter })
@@ -112,7 +119,9 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
               setItems((prev) => [...prev, ...next]);
               setLoadingMore(false);
             }
+            loadingMoreRef.current = false;
             setHasMore(next.length >= 50);
+            hasMoreRef.current = next.length >= 50;
           }
         })
         .catch(() => {
@@ -123,6 +132,7 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
             } else {
               setLoadingMore(false);
             }
+            loadingMoreRef.current = false;
           }
         });
     }, 200);
@@ -233,15 +243,16 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
     }
   }
 
-  function handleListScroll() {
+  const handleListScroll = useCallback(() => {
     const el = listRef.current;
-    if (el === null || loadingMore || !hasMore || loading) {
+    if (el === null || loadingMoreRef.current || !hasMoreRef.current || loading) {
       return;
     }
     if (el.scrollTop + el.clientHeight >= el.scrollHeight - 100) {
+      loadingMoreRef.current = true;
       setOffset((prev) => prev + 50);
     }
-  }
+  }, [loading]);
 
   return (
     <div

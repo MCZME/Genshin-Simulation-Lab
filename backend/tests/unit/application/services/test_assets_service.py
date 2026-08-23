@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from genshin_sim.application.services import AssetDatabaseService, AssetsService
-from genshin_sim.assets import CharacterAsset, WeaponAsset
+from genshin_sim.assets import ArtifactSetAsset, ArtifactSetBonus, CharacterAsset, WeaponAsset
 from genshin_sim.content import create_default_content_unit_registry
 from tests.helpers.asset_repository import FakeAssetRepository
 
@@ -104,6 +104,83 @@ def test_assets_service_marks_registered_assets_usable():
     assert character.usable is True
     assert character.status is None
     assert weapon.usable is True
+
+
+def test_assets_service_artifact_set_with_unimplemented_bonus_is_unusable():
+    repository = FakeAssetRepository(
+        meta={"schema_version": "1"},
+        artifact_sets=(
+            ArtifactSetAsset(
+                asset_key="artifact_set:ready",
+                source_id="ready",
+                name="Ready Set",
+            ),
+        ),
+        artifact_set_bonuses=(
+            ArtifactSetBonus(
+                artifact_set_key="artifact_set:ready",
+                piece_count=2,
+                handler_key="artifact.unimplemented_set_bonus",
+                params={},
+            ),
+            ArtifactSetBonus(
+                artifact_set_key="artifact_set:ready",
+                piece_count=4,
+                handler_key="artifact.unimplemented_set_bonus",
+                params={},
+            ),
+        ),
+        characters=(),
+        weapons=(),
+        effect_payloads=(),
+    )
+    service = AssetsService(
+        repository,
+        content_unit_registry=create_default_content_unit_registry(),
+    )
+
+    item = service.get_asset("artifact-sets", "ready")
+
+    assert item.usable is False
+    assert item.status == "套装效果实现不可用"
+
+
+def test_assets_service_artifact_set_with_real_handler_is_usable():
+    repository = FakeAssetRepository(
+        meta={"schema_version": "1"},
+        artifact_sets=(
+            ArtifactSetAsset(
+                asset_key="artifact_set:real",
+                source_id="real",
+                name="Real Set",
+            ),
+        ),
+        artifact_set_bonuses=(
+            ArtifactSetBonus(
+                artifact_set_key="artifact_set:real",
+                piece_count=2,
+                handler_key="test.real_artifact",
+                params={},
+            ),
+            ArtifactSetBonus(
+                artifact_set_key="artifact_set:real",
+                piece_count=4,
+                handler_key="test.real_artifact",
+                params={},
+            ),
+        ),
+        characters=(),
+        weapons=(),
+        effect_payloads=(),
+    )
+    registry = create_default_content_unit_registry()
+    registry.register_artifact_factory("test.real_artifact", lambda request: None)
+    service = AssetsService(repository, content_unit_registry=registry)
+
+    item = service.get_asset("artifact-sets", "real")
+
+    assert item.usable is True
+    assert item.status is None
 
 
 def test_assets_service_inspects_by_asset_key_prefix():

@@ -17,7 +17,7 @@ from genshin_sim.assets import (
     HandlerBinding,
     WeaponAsset,
 )
-from genshin_sim.content.registries import ContentUnitRegistry
+from genshin_sim.content.registries import ContentUnitRegistry, HandlerImplementationStatus
 
 logger = logging.getLogger(__name__)
 
@@ -200,7 +200,11 @@ class AssetsService:
                 bonuses = self.repository.get_artifact_set_bonuses(asset.asset_key)
             except Exception:
                 return False, "套装效果数据不可用"
-            if not all(registry.has_artifact_handler(bonus.handler_key) for bonus in bonuses):
+            if not all(
+                registry.handler_status(bonus.handler_key)
+                is HandlerImplementationStatus.IMPLEMENTED
+                for bonus in bonuses
+            ):
                 return False, "套装效果实现不可用"
         return True, None
 

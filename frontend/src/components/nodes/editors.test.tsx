@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { WorkflowNode } from "../../workflow/types";
 import { RunStateContext } from "../run_state_context";
 import type { RunState } from "../../state/run_state";
-import { CharacterEditor, InputTraceEditor, MetaEditor } from "./editors";
+import { ArtifactEditor, CharacterEditor, InputTraceEditor, MetaEditor } from "./editors";
 import { SimulationEditor } from "./run";
 
 function characterNode(overrides: Partial<WorkflowNode> = {}): WorkflowNode {
@@ -36,10 +36,31 @@ function inputTraceNode(overrides: Partial<WorkflowNode> = {}): WorkflowNode {
   };
 }
 
+function artifactNode(overrides: Partial<WorkflowNode> = {}): WorkflowNode {
+  return {
+    id: "artifact-node",
+    kind: "artifact",
+    region_id: "region-1",
+    position: { x: 0, y: 0 },
+    params: { slot: 1, sets: [{ asset_key: "", pieces: 4 }] },
+    ...overrides,
+  };
+}
+
 function TraceHarness({ node }: { node: WorkflowNode }) {
   const [current, setCurrent] = useState(node);
   return (
     <InputTraceEditor
+      node={current}
+      onChange={(params) => setCurrent({ ...current, params })}
+    />
+  );
+}
+
+function ArtifactHarness({ node }: { node: WorkflowNode }) {
+  const [current, setCurrent] = useState(node);
+  return (
+    <ArtifactEditor
       node={current}
       onChange={(params) => setCurrent({ ...current, params })}
     />
@@ -86,6 +107,54 @@ describe("固定路径节点的编辑器", () => {
         talents: expect.objectContaining({ elemental_burst: 9 }),
       }),
     );
+  });
+
+  it("圣遗物编辑器槽位与角色一致使用 1–4 滑块", () => {
+    render(<ArtifactEditor node={artifactNode()} onChange={vi.fn()} />);
+    const slot = screen.getByLabelText("槽位");
+    expect(slot.tagName).toBe("BUTTON");
+    expect(slot.textContent).toBe("1");
+    fireEvent.click(slot);
+    const slider = screen.getByRole("slider");
+    expect(slider.getAttribute("type")).toBe("range");
+    expect(slider.getAttribute("max")).toBe("3");
+  });
+
+  it("圣遗物件数滑块只提供 1/2/4 三档并提交修改", () => {
+    const onChange = vi.fn();
+    render(<ArtifactEditor node={artifactNode()} onChange={onChange} />);
+    fireEvent.click(screen.getByLabelText("件数"));
+    const slider = screen.getByRole("slider");
+    expect(slider.getAttribute("max")).toBe("2");
+    fireEvent.change(slider, { target: { value: "0" } });
+    fireEvent.blur(slider);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        sets: [expect.objectContaining({ asset_key: "", pieces: 1 })],
+      }),
+    );
+  });
+
+  it("圣遗物编辑器默认一条套装，可添加并删除第二行", () => {
+    const { container } = render(<ArtifactHarness node={artifactNode()} />);
+    expect(screen.getByLabelText("套装 1")).toBeTruthy();
+    expect(screen.queryByLabelText("套装 2")).toBeNull();
+    expect(container.querySelector(".artifact-set-remove")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "+ 添加套装" }));
+    expect(screen.getByLabelText("套装 2")).toBeTruthy();
+    expect(container.querySelectorAll(".artifact-set-remove")).toHaveLength(2);
+
+    fireEvent.click(screen.getByTitle("删除套装 2"));
+    expect(screen.queryByLabelText("套装 2")).toBeNull();
+    expect(container.querySelector(".artifact-set-remove")).toBeNull();
+  });
+
+  it("圣遗物编辑器显示属性占位提示且不提供路径编辑", () => {
+    render(<ArtifactEditor node={artifactNode()} onChange={vi.fn()} />);
+    expect(screen.getByText("圣遗物属性：暂不影响仿真")).toBeTruthy();
+    expect(screen.queryByText("目标路径")).toBeNull();
+    expect(screen.queryByText("高级")).toBeNull();
   });
 
   it("元信息编辑器提供名称与描述配置", () => {

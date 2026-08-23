@@ -3,6 +3,12 @@ import { FieldRow, InlineError, NumberField } from "../common/fields";
 import type { NodeEditorProps } from "./common";
 import { asNumber, asString, firstError, isPlainObject } from "./common";
 const CHARACTER_LEVELS = [...Array.from({ length: 90 }, (_, index) => index + 1), 95, 100];
+const ARTIFACT_PIECE_OPTIONS = [1, 2, 4];
+
+interface ArtifactSetRow {
+  asset_key: string;
+  pieces: number;
+}
 
 export function CharacterEditor({ node, onChange, fieldErrors = {} }: NodeEditorProps) {
   const params = node.params;
@@ -118,32 +124,103 @@ export function WeaponEditor({ node, onChange, fieldErrors = {} }: NodeEditorPro
   );
 }
 
+function artifactSetRows(params: Record<string, unknown>): ArtifactSetRow[] {
+  const raw = params.sets;
+  if (!Array.isArray(raw)) {
+    return [];
+  }
+  return raw
+    .filter((item): item is Record<string, unknown> => isPlainObject(item))
+    .map((item) => ({
+      asset_key: asString(item.asset_key) ?? "",
+      pieces: asNumber(item.pieces) ?? 4,
+    }));
+}
+
 export function ArtifactEditor({ node, onChange, fieldErrors = {} }: NodeEditorProps) {
   const params = node.params;
+  const rows = artifactSetRows(params);
+
+  function updateRows(next: ArtifactSetRow[]) {
+    onChange({ ...params, sets: next });
+  }
+
+  function updateRow(index: number, patch: Partial<ArtifactSetRow>) {
+    updateRows(rows.map((row, rowIndex) => (rowIndex === index ? { ...row, ...patch } : row)));
+  }
+
+  function addSetRow() {
+    if (rows.length >= 2) {
+      return;
+    }
+    updateRows([...rows, { asset_key: "", pieces: 4 }]);
+  }
+
+  function removeSetRow(index: number) {
+    if (rows.length <= 1) {
+      return;
+    }
+    updateRows(rows.filter((_, rowIndex) => rowIndex !== index));
+  }
+
   return (
     <div className="node-editor">
       <FieldRow label="槽位" error={firstError(fieldErrors, "slot")}>
         <NumberField
           value={asNumber(params.slot)}
           min={1}
+          max={4}
           onChange={(value) => onChange({ ...params, slot: value ?? 1 })}
         />
       </FieldRow>
-      <FieldRow label="套装" error={firstError(fieldErrors, "asset")}>
-        <AssetPicker
-          assetType="artifact-sets"
-          value={asString(params.asset) ?? ""}
-          onChange={(asset) => onChange({ ...params, asset })}
-        />
-      </FieldRow>
-      <FieldRow label="件数" error={firstError(fieldErrors, "pieces")}>
-        <NumberField
-          value={asNumber(params.pieces)}
-          min={1}
-          max={5}
-          onChange={(value) => onChange({ ...params, pieces: value ?? 4 })}
-        />
-      </FieldRow>
+      <div className="node-editor-group">
+        <span className="node-editor-group-title">套装效果</span>
+        {rows.map((row, index) => (
+          <div className="artifact-set-row" key={index}>
+            <div className="artifact-set-row-fields">
+              <FieldRow
+                label={`套装 ${index + 1}`}
+                error={firstError(fieldErrors, `sets[${index}].asset_key`)}
+              >
+                <AssetPicker
+                  assetType="artifact-sets"
+                  value={row.asset_key}
+                  onChange={(asset) => updateRow(index, { asset_key: asset })}
+                />
+              </FieldRow>
+              <FieldRow
+                label="件数"
+                error={firstError(fieldErrors, `sets[${index}].pieces`)}
+              >
+                <NumberField
+                  value={row.pieces}
+                  options={ARTIFACT_PIECE_OPTIONS}
+                  onChange={(value) => updateRow(index, { pieces: value ?? 4 })}
+                />
+              </FieldRow>
+            </div>
+            {rows.length > 1 && (
+              <button
+                type="button"
+                className="icon-button danger artifact-set-remove"
+                title={`删除套装 ${index + 1}`}
+                onClick={() => removeSetRow(index)}
+              >
+                ×
+              </button>
+            )}
+          </div>
+        ))}
+        {rows.length < 2 && (
+          <button type="button" className="node-add-row" onClick={addSetRow}>
+            + 添加套装
+          </button>
+        )}
+      </div>
+      {firstError(fieldErrors, "sets") !== undefined && (
+        <InlineError message={firstError(fieldErrors, "sets")!} />
+      )}
+      <p className="node-note">圣遗物属性：暂不影响仿真</p>
       {firstError(fieldErrors, "path") !== undefined && (
         <InlineError message={firstError(fieldErrors, "path")!} />
       )}

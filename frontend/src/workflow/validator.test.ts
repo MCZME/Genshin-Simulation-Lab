@@ -109,7 +109,10 @@ describe("validateWorkflow", () => {
     const nodes = [
       makeNode("char", "character", { slot: 1, asset: "character:barbara" }),
       makeNode("weapon", "weapon", { slot: 1, asset: "weapon:11512" }),
-      makeNode("artifact", "artifact", { slot: 1, asset: "artifact_set:15032" }),
+      makeNode("artifact", "artifact", {
+        slot: 1,
+        sets: [{ asset_key: "artifact_set:15032", pieces: 4 }],
+      }),
     ];
     const edges = [
       makeEdge("e1", "char", "out", "region-1", "out"),

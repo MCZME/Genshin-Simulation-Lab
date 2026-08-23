@@ -244,6 +244,78 @@ describe("AssetPicker", () => {
     );
     expect(screen.queryByText(/★/)).toBeNull();
   });
+
+  it("圣遗物选择器显示状态筛选，不显示元素/类型/星级筛选", async () => {
+    mockedSearch.mockResolvedValue({ items: [] });
+    render(
+      <AssetPicker assetType="artifact-sets" value="" onChange={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /选择资产/ }));
+
+    await waitFor(() => expect(screen.getByText("状态")).toBeTruthy());
+    expect(screen.queryByText("元素")).toBeNull();
+    expect(screen.queryByText("类型")).toBeNull();
+    expect(screen.queryByText("星级")).toBeNull();
+
+    fireEvent.click(screen.getByRole("button", { name: "状态：已实现" }));
+    await waitFor(() =>
+      expect(mockedSearch).toHaveBeenLastCalledWith(
+        "artifact-sets",
+        "",
+        50,
+        0,
+        expect.objectContaining({ usable: 1 }),
+      ),
+    );
+  });
+
+  it("滚动列表底部时按 offset 加载下一页并追加条目", async () => {
+    const firstPage = Array.from({ length: 50 }, (_, index) => ({
+      asset_key: `artifact_set:${index}`,
+      source_id: String(index),
+      name: `套装 ${index}`,
+      usable: false,
+      status: "套装效果实现不可用",
+      rarity: null,
+      element: null,
+      weapon_type: null,
+    }));
+    const secondPage = Array.from({ length: 11 }, (_, index) => ({
+      asset_key: `artifact_set:${index + 50}`,
+      source_id: String(index + 50),
+      name: `套装 ${index + 50}`,
+      usable: false,
+      status: "套装效果实现不可用",
+      rarity: null,
+      element: null,
+      weapon_type: null,
+    }));
+    mockedSearch
+      .mockResolvedValueOnce({ items: firstPage })
+      .mockResolvedValueOnce({ items: secondPage });
+    const { container } = render(
+      <AssetPicker assetType="artifact-sets" value="" onChange={vi.fn()} />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: /选择资产/ }));
+    await waitFor(() => expect(screen.getByText("套装 0")).toBeTruthy());
+
+    const list = container.querySelector(".asset-list") as HTMLElement;
+    fireEvent.scroll(list);
+
+    await waitFor(() => expect(screen.getByText("套装 59")).toBeTruthy());
+    expect(mockedSearch).toHaveBeenLastCalledWith(
+      "artifact-sets",
+      "",
+      50,
+      50,
+      expect.objectContaining({
+        element: null,
+        weapon_type: null,
+        rarity: null,
+        usable: null,
+      }),
+    );
+  });
 });
 
 describe("AssetPicker 选中项不在当前列表页", () => {

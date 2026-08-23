@@ -136,15 +136,23 @@ function artifactFragment(
 ): FragmentSource | null {
   const params = node.params;
   const slot = asInteger(params.slot) ?? 1;
-  const asset = asString(params.asset);
-  if (asset === null) {
+  const sets = Array.isArray(params.sets)
+    ? (params.sets as unknown[])
+        .filter((entry): entry is Record<string, unknown> => isPlainObject(entry))
+        .filter((entry) => asString(entry.asset_key) !== null)
+        .map((entry) => ({
+          asset_key: entry.asset_key as string,
+          pieces: asInteger(entry.pieces) ?? 4,
+        }))
+    : [];
+  if (sets.length === 0) {
     return null;
   }
   return {
     item_id: `node:${node.id}`,
     path: asString(params.path) ?? `team[${slot - 1}].artifacts`,
     value: {
-      sets: [{ asset_key: asset, pieces: asInteger(params.pieces) ?? 4 }],
+      sets,
       stats: {},
     },
   };
@@ -336,14 +344,36 @@ function validateArtifact(node: WorkflowNode): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const params = node.params;
   checkCustomPath(node, diagnostics);
-  if (!isPositiveInteger(params.slot)) {
-    diagnostics.push(paramError(node, "slot", "槽位必须是 >= 1 的整数"));
+  if (!isInRange(params.slot, 1, 4)) {
+    diagnostics.push(paramError(node, "slot", "槽位必须在 1 到 4 之间"));
   }
-  if (asString(params.asset) === null) {
-    diagnostics.push(paramError(node, "asset", "缺少资产引用"));
+  const sets = params.sets;
+  if (!Array.isArray(sets)) {
+    diagnostics.push(paramError(node, "sets", "sets 必须是数组"));
+    return diagnostics;
   }
-  if (params.pieces !== undefined && !isPositiveInteger(params.pieces)) {
-    diagnostics.push(paramError(node, "pieces", "件数必须是 >= 1 的整数"));
+  if (sets.length < 1) {
+    diagnostics.push(paramError(node, "sets", "至少需要一条套装"));
+  }
+  if (sets.length > 2) {
+    diagnostics.push(paramError(node, "sets", "圣遗物套装最多 2 条"));
+  }
+  sets.forEach((raw, index) => {
+    const prefix = `sets[${index}]`;
+    const entry = raw as Record<string, unknown> | null;
+    if (!isPlainObject(entry)) {
+      diagnostics.push(paramError(node, prefix, "套装条目必须是对象"));
+      return;
+    }
+    if (asString(entry.asset_key) === null) {
+      diagnostics.push(paramError(node, `${prefix}.asset_key`, "缺少资产引用"));
+    }
+    if (entry.pieces !== undefined && ![1, 2, 4].includes(entry.pieces as number)) {
+      diagnostics.push(paramError(node, `${prefix}.pieces`, "件数必须是 1、2 或 4"));
+    }
+  });
+  if (!sets.some((raw) => asString((raw as Record<string, unknown> | null)?.asset_key) !== null)) {
+    diagnostics.push(paramError(node, "sets", "至少需要一条已选套装的配置"));
   }
   return diagnostics;
 }
@@ -653,10 +683,9 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     },
     paramFields: {
       slot: { type: "integer", required: true },
-      asset: { type: "asset_ref", required: true, assetType: "artifact-sets" },
-      pieces: { type: "integer", default: 4 },
+      sets: { type: "list", required: true },
     },
-    defaultParams: { slot: 1, asset: "", pieces: 4 },
+    defaultParams: { slot: 1, sets: [{ asset_key: "", pieces: 4 }] },
     fragment: artifactFragment,
     validate: validateArtifact,
   },

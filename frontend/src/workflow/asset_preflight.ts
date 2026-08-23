@@ -19,6 +19,8 @@ export interface AssetReference {
   assetKey: string;
   assetType: AssetListKind;
   sourceId: string | null;
+  /** 诊断定位路径：角色/武器为 "asset"，圣遗物为 "sets[i].asset_key"。 */
+  path: string;
 }
 
 /** 收集图中全部资产引用；asset 为空或格式无效的节点交给编译诊断处理。 */
@@ -26,11 +28,41 @@ export function collectAssetReferences(definition: WorkflowDefinition): AssetRef
   const references: AssetReference[] = [];
   for (const node of definition.nodes) {
     const assetType = ASSET_NODE_KINDS[node.kind];
-    const assetKey = typeof node.params.asset === "string" ? node.params.asset : null;
-    if (assetType === undefined || assetKey === null || assetKey === "") {
+    if (assetType === undefined) {
       continue;
     }
-    references.push({ nodeId: node.id, assetKey, assetType, sourceId: sourceIdOf(assetKey) });
+    if (node.kind === "artifact") {
+      const sets = Array.isArray(node.params.sets) ? node.params.sets : [];
+      sets.forEach((raw, index) => {
+        const entry = raw as Record<string, unknown> | null;
+        if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
+          return;
+        }
+        const assetKey = typeof entry.asset_key === "string" ? entry.asset_key : null;
+        if (assetKey === null || assetKey === "") {
+          return;
+        }
+        references.push({
+          nodeId: node.id,
+          assetKey,
+          assetType,
+          sourceId: sourceIdOf(assetKey),
+          path: `sets[${index}].asset_key`,
+        });
+      });
+      continue;
+    }
+    const assetKey = typeof node.params.asset === "string" ? node.params.asset : null;
+    if (assetKey === null || assetKey === "") {
+      continue;
+    }
+    references.push({
+      nodeId: node.id,
+      assetKey,
+      assetType,
+      sourceId: sourceIdOf(assetKey),
+      path: "asset",
+    });
   }
   return references;
 }
@@ -80,7 +112,7 @@ export function assetMissingDiagnostics(
       node_id: reference.nodeId,
       edge_id: null,
       region_id: null,
-      path: "asset",
+      path: reference.path,
     }));
 }
 

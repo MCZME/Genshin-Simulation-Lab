@@ -1,5 +1,5 @@
 import { getNodeKindSpec } from "../../workflow/registry";
-import { CONFIG_NODE_KINDS, nodeKindColor } from "../nodes/registry";
+import { ANALYSIS_NODE_KINDS, CONFIG_NODE_KINDS, nodeKindColor } from "../nodes/registry";
 
 export interface ObjectPanelProps {
   onDragStart: (kind: string) => void;
@@ -29,6 +29,12 @@ export function ObjectPanel({ onDragStart, onCollapse }: ObjectPanelProps) {
           color={nodeKindColor("region")}
           onDragStart={onDragStart}
         />
+        <DraggableObject
+          kind="analysis_region"
+          label="分析区域"
+          color={nodeKindColor("analysis_region")}
+          onDragStart={onDragStart}
+        />
       </div>
       <div className="panel-section">
         <h2 className="panel-title">配置节点</h2>
@@ -50,6 +56,24 @@ export function ObjectPanel({ onDragStart, onCollapse }: ObjectPanelProps) {
           color={nodeKindColor("simulation")}
           onDragStart={onDragStart}
         />
+        <DraggableObject
+          kind="data_provider"
+          label="数据提供"
+          color={nodeKindColor("data_provider")}
+          onDragStart={onDragStart}
+        />
+      </div>
+      <div className="panel-section">
+        <h2 className="panel-title">分析节点</h2>
+        {ANALYSIS_NODE_KINDS.map((kind) => (
+          <DraggableObject
+            key={kind}
+            kind={kind}
+            label={getNodeKindSpec(kind)?.displayName ?? kind}
+            color={nodeKindColor(kind)}
+            onDragStart={onDragStart}
+          />
+        ))}
       </div>
     </aside>
   );

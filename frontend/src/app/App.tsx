@@ -391,6 +391,17 @@ export function App() {
         setRenameRegionRequestId(createdRegionId);
         return setSelection(next, { regions: [createdRegionId], nodes: [], edges: [] });
       }
+      if (kind === "analysis_region") {
+        const next = addRegion(state, "analysis", "分析区域", {
+          x: position.x,
+          y: position.y,
+          width: 880,
+          height: 440,
+        });
+        const createdRegionId = next.definition.regions[next.definition.regions.length - 1].id;
+        setRenameRegionRequestId(createdRegionId);
+        return setSelection(next, { regions: [createdRegionId], nodes: [], edges: [] });
+      }
       const spec = getNodeKindSpec(kind);
       if (spec === null) {
         return state;

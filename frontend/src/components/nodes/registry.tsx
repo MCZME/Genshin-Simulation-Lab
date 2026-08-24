@@ -88,3 +88,17 @@ export const CONFIG_NODE_KINDS = [
   "enum",
   "range",
 ] as const;
+
+/** 分析区域内节点种类（不含画布级 data_provider）。 */
+export const ANALYSIS_NODE_KINDS = [
+  "processing",
+  "query_config",
+  "table_config",
+  "timeline_config",
+  "pie_config",
+  "bar_config",
+  "member_table",
+  "timeline",
+  "pie",
+  "bar",
+] as const;

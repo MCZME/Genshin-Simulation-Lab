@@ -24,13 +24,34 @@ export const NODE_KINDS = [
   "enum",
   "range",
   "simulation",
+  "data_provider",
+  "processing",
+  "query_config",
+  "table_config",
+  "timeline_config",
+  "pie_config",
+  "bar_config",
+  "member_table",
+  "timeline",
+  "pie",
+  "bar",
 ] as const;
 
 export type NodeKind = (typeof NODE_KINDS)[number];
 
 export type PortCardinality = "single" | "group";
 
-export type DataLanguage = "fragment" | "input_document" | "session";
+export type DataLanguage =
+  | "fragment"
+  | "input_document"
+  | "session"
+  | "session_group"
+  | "table"
+  | "query_param"
+  | "table_config"
+  | "timeline_config"
+  | "pie_config"
+  | "bar_config";
 
 export type DiagnosticSeverity = "error" | "warning" | "info";
 

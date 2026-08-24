@@ -4,6 +4,40 @@
  */
 
 export interface paths {
+    "/api/v1/analysis/templates": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Templates */
+        get: operations["list_templates_api_v1_analysis_templates_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis/templates/{template_id}/execute": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Execute Template */
+        post: operations["execute_template_api_v1_analysis_templates__template_id__execute_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/assets/{asset_type}": {
         parameters: {
             query?: never;
@@ -81,23 +115,6 @@ export interface paths {
         };
         /** Get Run Detail */
         get: operations["get_run_detail_api_v1_results__session_id__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/results/{session_id}/metrics": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** Get Run Metrics */
-        get: operations["get_run_metrics_api_v1_results__session_id__metrics_get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -339,6 +356,17 @@ export interface components {
             /** Total */
             total: number;
         };
+        /** ExecuteTemplateRequest */
+        ExecuteTemplateRequest: {
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /** Relations */
+            relations?: {
+                [key: string]: components["schemas"]["RelationPayload"];
+            };
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -368,38 +396,12 @@ export interface components {
             /** Details */
             details?: components["schemas"]["Diagnostic"][];
         };
-        /**
-         * MetricValue
-         * @description 单个指标数值与口径说明。
-         */
-        MetricValue: {
-            /** Key */
-            key: string;
-            /** Value */
-            value: number;
-            /** Definition */
-            definition: string;
-        };
-        /**
-         * MetricsResponse
-         * @description 摘要指标响应，与 DamageMetrics.to_dict() 一致。
-         */
-        MetricsResponse: {
-            /** Frames Run */
-            frames_run: number;
-            /** Frames Per Second */
-            frames_per_second: number;
-            total_damage: components["schemas"]["MetricValue"];
-            dps: components["schemas"]["MetricValue"];
-            highest_hit: components["schemas"]["MetricValue"];
-            average_hit: components["schemas"]["MetricValue"];
-            /** Damage Share By Source */
-            damage_share_by_source: components["schemas"]["ShareValue"][];
-            /** Damage Share By Kind */
-            damage_share_by_kind: components["schemas"]["ShareValue"][];
-            total_healing: components["schemas"]["MetricValue"];
-            /** Healing Share By Source */
-            healing_share_by_source: components["schemas"]["ShareValue"][];
+        /** RelationPayload */
+        RelationPayload: {
+            /** Columns */
+            columns: string[];
+            /** Rows */
+            rows: unknown[][];
         };
         /**
          * RunDetailResponse
@@ -509,18 +511,6 @@ export interface components {
             frames_run: number;
         };
         /**
-         * ShareValue
-         * @description 按分组统计的占比指标。
-         */
-        ShareValue: {
-            /** Group */
-            group: string;
-            /** Value */
-            value: number;
-            /** Definition */
-            definition: string;
-        };
-        /**
          * SubmitRunRequest
          * @description POST /api/v1/runs 请求体。
          */
@@ -534,6 +524,64 @@ export interface components {
             concurrency?: number | null;
             /** Members */
             members: components["schemas"]["InputMemberRequest"][];
+        };
+        /** TemplateColumnDto */
+        TemplateColumnDto: {
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+        };
+        /** TemplateDeclarationDto */
+        TemplateDeclarationDto: {
+            /** Template Id */
+            template_id: string;
+            /** Display Name */
+            display_name: string;
+            /** Params */
+            params: components["schemas"]["TemplateParamDto"][];
+            /** Relations */
+            relations: components["schemas"]["TemplateRelationDto"][];
+            output: components["schemas"]["TemplateOutputDto"];
+        };
+        /** TemplateListResponse */
+        TemplateListResponse: {
+            /** Items */
+            items: components["schemas"]["TemplateDeclarationDto"][];
+        };
+        /** TemplateOutputDto */
+        TemplateOutputDto: {
+            /** Columns */
+            columns: components["schemas"]["TemplateColumnDto"][];
+        };
+        /** TemplateParamDto */
+        TemplateParamDto: {
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+            /** Required */
+            required: boolean;
+            /** Binding */
+            binding: string[];
+        };
+        /** TemplateRelationDto */
+        TemplateRelationDto: {
+            /** Name */
+            name: string;
+            /** Columns */
+            columns: string[];
+            /** Required */
+            required: boolean;
+        };
+        /** TemplateResultResponse */
+        TemplateResultResponse: {
+            /** Columns */
+            columns: components["schemas"]["TemplateColumnDto"][];
+            /** Rows */
+            rows: unknown[][];
+            /** Truncated */
+            truncated: boolean;
         };
         /**
          * UiSettingsResponse
@@ -656,6 +704,61 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
+    list_templates_api_v1_analysis_templates_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateListResponse"];
+                };
+            };
+        };
+    };
+    execute_template_api_v1_analysis_templates__template_id__execute_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                template_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecuteTemplateRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["TemplateResultResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_assets_api_v1_assets__asset_type__get: {
         parameters: {
             query?: {
@@ -811,37 +914,6 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["RunDetailResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
-                };
-            };
-        };
-    };
-    get_run_metrics_api_v1_results__session_id__metrics_get: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                session_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody?: never;
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["MetricsResponse"];
                 };
             };
             /** @description Validation Error */

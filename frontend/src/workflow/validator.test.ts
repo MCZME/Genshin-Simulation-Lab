@@ -397,7 +397,7 @@ describe("validateWorkflow", () => {
     expect(codes(connected)).toContain("EMPTY_REGION");
   });
 
-  it("分析区域连线不在 MVP 范围", () => {
+  it("模拟节点输出可以连入分析区域边界", () => {
     const nodes = [makeNode("sim", "simulation", {}, null)];
     const edges = [makeEdge("e1", "sim", "out", "region-2", "in")];
     const definition = makeDefinition(
@@ -405,7 +405,8 @@ describe("validateWorkflow", () => {
       nodes,
       edges,
     );
-    expect(codes(definition)).toContain("ANALYSIS_NOT_IMPLEMENTED");
+    expect(codes(definition)).not.toContain("ANALYSIS_NOT_IMPLEMENTED");
+    expect(codes(definition)).not.toContain("ANALYSIS_BOUNDARY_SOURCE_INVALID");
   });
 
   it("区域小于内部节点边界时警告", () => {

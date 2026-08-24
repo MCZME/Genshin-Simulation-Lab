@@ -603,6 +603,125 @@ function validateSimulation(node: WorkflowNode): Diagnostic[] {
   return diagnostics;
 }
 
+function analysisPort(
+  id: string,
+  dataLanguage: DataLanguage,
+  cardinality: PortCardinality = "single",
+  connectionLimit = Number.POSITIVE_INFINITY,
+): PortSpec {
+  return { id, cardinality, dataLanguage, connectionLimit };
+}
+
+function validateDataProvider(node: WorkflowNode): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  const sessionIds = node.params.session_ids;
+  if (
+    sessionIds !== undefined &&
+    (!Array.isArray(sessionIds) ||
+      !sessionIds.every((item) => typeof item === "string"))
+  ) {
+    diagnostics.push(paramError(node, "session_ids", "session_ids 必须是字符串数组"));
+  }
+  if (node.params.filters !== undefined && !isPlainObject(node.params.filters)) {
+    diagnostics.push(paramError(node, "filters", "filters 必须是对象"));
+  }
+  return diagnostics;
+}
+
+function validateProcessing(node: WorkflowNode): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  const templateId = node.params.template_id;
+  if (typeof templateId !== "string" || templateId.trim() === "") {
+    diagnostics.push(paramError(node, "template_id", "必须选择一个分析模板"));
+  }
+  if (node.params.values !== undefined && !isPlainObject(node.params.values)) {
+    diagnostics.push(paramError(node, "values", "values 必须是对象"));
+  }
+  if (
+    node.params.value_bindings !== undefined &&
+    !isPlainObject(node.params.value_bindings)
+  ) {
+    diagnostics.push(paramError(node, "value_bindings", "value_bindings 必须是对象"));
+  }
+  return diagnostics;
+}
+
+function validateQueryConfig(node: WorkflowNode): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  const rows = node.params.rows;
+  if (!Array.isArray(rows)) {
+    diagnostics.push(paramError(node, "rows", "rows 必须是数组"));
+    return diagnostics;
+  }
+  const seen = new Set<string>();
+  for (const [index, raw] of rows.entries()) {
+    const row = raw as Record<string, unknown> | null;
+    if (!isPlainObject(row) || typeof row.param !== "string" || row.param === "") {
+      diagnostics.push(paramError(node, `rows[${index}].param`, "参数名不能为空"));
+      continue;
+    }
+    if (seen.has(row.param)) {
+      diagnostics.push(paramError(node, `rows[${index}].param`, `参数重复：${row.param}`));
+    }
+    seen.add(row.param);
+  }
+  return diagnostics;
+}
+
+function validateTableConfig(node: WorkflowNode): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  const condition = node.params.condition_columns;
+  const data = node.params.data_columns;
+  if (condition !== undefined && !isStringArray(condition)) {
+    diagnostics.push(paramError(node, "condition_columns", "条件列必须是字符串数组"));
+  }
+  if (data !== undefined && !isStringArray(data)) {
+    diagnostics.push(paramError(node, "data_columns", "数据列必须是字符串数组"));
+  }
+  const conditionCount = Array.isArray(condition) ? condition.length : 0;
+  const dataCount = Array.isArray(data) ? data.length : 0;
+  if (conditionCount + dataCount === 0) {
+    diagnostics.push(paramError(node, "condition_columns", "至少需要一个条件列或数据列"));
+  }
+  return diagnostics;
+}
+
+function validateRoleColumns(
+  node: WorkflowNode,
+  requiredRoles: string[],
+): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  for (const role of requiredRoles) {
+    const value = node.params[role];
+    if (typeof value !== "string" || value.trim() === "") {
+      diagnostics.push(paramError(node, role, `列绑定不能为空：${role}`));
+    }
+  }
+  return diagnostics;
+}
+
+function validateTimelineConfig(node: WorkflowNode): Diagnostic[] {
+  return validateRoleColumns(node, ["track", "start"]);
+}
+
+function validatePieConfig(node: WorkflowNode): Diagnostic[] {
+  return validateRoleColumns(node, ["group", "value"]);
+}
+
+function validateBarConfig(node: WorkflowNode): Diagnostic[] {
+  return validateRoleColumns(node, ["x", "y"]);
+}
+
+function validateView(): Diagnostic[] {
+  return [];
+}
+
+function isStringArray(value: unknown): boolean {
+  return (
+    Array.isArray(value) && value.every((item) => typeof item === "string")
+  );
+}
+
 export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
   root: {
     kind: "root",
@@ -798,7 +917,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
         },
       ],
       outputs: [
-        { id: "out", cardinality: "group", dataLanguage: "session", connectionLimit: 1 },
+        { id: "out", cardinality: "group", dataLanguage: "session_group", connectionLimit: 1 },
       ],
     },
     paramFields: {
@@ -807,6 +926,192 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     defaultParams: {},
     fragment: () => null,
     validate: validateSimulation,
+  },
+  data_provider: {
+    kind: "data_provider",
+    displayName: "数据提供",
+    region: null,
+    ports: {
+      inputs: [],
+      outputs: [analysisPort("out", "session_group", "group")],
+    },
+    paramFields: {
+      session_ids: { type: "list" },
+      filters: { type: "object" },
+    },
+    defaultParams: { session_ids: [], filters: { name: "", state: "" } },
+    fragment: () => null,
+    validate: validateDataProvider,
+  },
+  processing: {
+    kind: "processing",
+    displayName: "数据处理",
+    region: "analysis",
+    ports: {
+      inputs: [
+        analysisPort("in_session", "session_group", "group", 1),
+        analysisPort("in_params", "query_param", "single", Number.POSITIVE_INFINITY),
+        analysisPort("in_value", "table", "single", Number.POSITIVE_INFINITY),
+        analysisPort("in_relation", "table", "single", Number.POSITIVE_INFINITY),
+      ],
+      outputs: [analysisPort("out", "table", "single", Number.POSITIVE_INFINITY)],
+    },
+    paramFields: {
+      template_id: { type: "string", required: true },
+      values: { type: "object" },
+      value_bindings: { type: "object" },
+    },
+    defaultParams: { template_id: "", values: {}, value_bindings: {} },
+    fragment: () => null,
+    validate: validateProcessing,
+  },
+  query_config: {
+    kind: "query_config",
+    displayName: "查询参数配置",
+    region: "analysis",
+    ports: {
+      inputs: [],
+      outputs: [analysisPort("out", "query_param", "single", Number.POSITIVE_INFINITY)],
+    },
+    paramFields: {
+      rows: { type: "list", required: true },
+    },
+    defaultParams: { rows: [] },
+    fragment: () => null,
+    validate: validateQueryConfig,
+  },
+  table_config: {
+    kind: "table_config",
+    displayName: "表格配置",
+    region: "analysis",
+    ports: {
+      inputs: [],
+      outputs: [analysisPort("out", "table_config", "single", 1)],
+    },
+    paramFields: {
+      condition_columns: { type: "list" },
+      data_columns: { type: "list" },
+    },
+    defaultParams: { condition_columns: [], data_columns: [] },
+    fragment: () => null,
+    validate: validateTableConfig,
+  },
+  timeline_config: {
+    kind: "timeline_config",
+    displayName: "时间轴配置",
+    region: "analysis",
+    ports: {
+      inputs: [],
+      outputs: [analysisPort("out", "timeline_config", "single", 1)],
+    },
+    paramFields: {
+      track: { type: "string", required: true },
+      start: { type: "string", required: true },
+      end: { type: "string" },
+      value: { type: "string" },
+      label: { type: "string" },
+    },
+    defaultParams: { track: "", start: "", end: "", value: "", label: "" },
+    fragment: () => null,
+    validate: validateTimelineConfig,
+  },
+  pie_config: {
+    kind: "pie_config",
+    displayName: "饼图配置",
+    region: "analysis",
+    ports: {
+      inputs: [],
+      outputs: [analysisPort("out", "pie_config", "single", 1)],
+    },
+    paramFields: {
+      group: { type: "string", required: true },
+      value: { type: "string", required: true },
+      label: { type: "string" },
+    },
+    defaultParams: { group: "", value: "", label: "" },
+    fragment: () => null,
+    validate: validatePieConfig,
+  },
+  bar_config: {
+    kind: "bar_config",
+    displayName: "柱状图配置",
+    region: "analysis",
+    ports: {
+      inputs: [],
+      outputs: [analysisPort("out", "bar_config", "single", 1)],
+    },
+    paramFields: {
+      x: { type: "string", required: true },
+      y: { type: "string", required: true },
+      series: { type: "string" },
+    },
+    defaultParams: { x: "", y: "", series: "" },
+    fragment: () => null,
+    validate: validateBarConfig,
+  },
+  member_table: {
+    kind: "member_table",
+    displayName: "成员指标表",
+    region: "analysis",
+    ports: {
+      inputs: [
+        analysisPort("in", "table", "single", Number.POSITIVE_INFINITY),
+        analysisPort("config", "table_config", "single", 1),
+      ],
+      outputs: [],
+    },
+    paramFields: {},
+    defaultParams: {},
+    fragment: () => null,
+    validate: validateView,
+  },
+  timeline: {
+    kind: "timeline",
+    displayName: "单场时间轴",
+    region: "analysis",
+    ports: {
+      inputs: [
+        analysisPort("in", "table", "single", Number.POSITIVE_INFINITY),
+        analysisPort("config", "timeline_config", "single", 1),
+      ],
+      outputs: [],
+    },
+    paramFields: {},
+    defaultParams: {},
+    fragment: () => null,
+    validate: validateView,
+  },
+  pie: {
+    kind: "pie",
+    displayName: "占比饼图",
+    region: "analysis",
+    ports: {
+      inputs: [
+        analysisPort("in", "table", "single", Number.POSITIVE_INFINITY),
+        analysisPort("config", "pie_config", "single", 1),
+      ],
+      outputs: [],
+    },
+    paramFields: {},
+    defaultParams: {},
+    fragment: () => null,
+    validate: validateView,
+  },
+  bar: {
+    kind: "bar",
+    displayName: "指标柱状图",
+    region: "analysis",
+    ports: {
+      inputs: [
+        analysisPort("in", "table", "single", Number.POSITIVE_INFINITY),
+        analysisPort("config", "bar_config", "single", 1),
+      ],
+      outputs: [],
+    },
+    paramFields: {},
+    defaultParams: {},
+    fragment: () => null,
+    validate: validateView,
   },
 };
 

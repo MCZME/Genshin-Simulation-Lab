@@ -3,6 +3,8 @@ import {
   cancelRun,
   createWorkflow,
   deleteWorkflow,
+  executeAnalysisTemplate,
+  getAnalysisTemplates,
   getRun,
   getWorkflow,
   getWorkspace,
@@ -15,6 +17,7 @@ import {
 import type { ValidateInputsResponse, WorkflowListItem } from "../api/client";
 import { pollRun } from "../api/runtime_subscription";
 import { CanvasView } from "../components/canvas/CanvasView";
+import { TemplateCatalogContext } from "../components/analysis_context";
 import { ObjectPanel } from "../components/panels/ObjectPanel";
 import { ProblemPanel } from "../components/panels/ProblemPanel";
 import { RegionSummaryBar } from "../components/panels/RegionSummaryBar";
@@ -64,7 +67,17 @@ import {
   setRunPhase,
 } from "../state/run_state";
 import type { RunState } from "../state/run_state";
+import {
+  executeAnalysisRegion,
+  resolveBoundarySessionGroup,
+  viewInputTable,
+} from "../workflow/analysis_runner";
+import type {
+  AnalysisNodeResult,
+  ExecuteTemplate,
+} from "../workflow/analysis_runner";
 import { compileConfigurationRegion } from "../workflow/compiler";
+import { TemplateCatalog } from "../workflow/templates";
 import {
   hasRunnableBatch,
   paceBuildSteps,
@@ -127,6 +140,10 @@ export function App() {
   const [editorState, setEditorState] = useState<EditorState | null>(null);
   const [workflowList, setWorkflowList] = useState<WorkflowListItem[]>([]);
   const [runState, setRunState] = useState<RunState>(() => createEmptyRunState());
+  const [templateCatalog, setTemplateCatalog] = useState<TemplateCatalog | null>(null);
+  const [analysisResults, setAnalysisResults] = useState<Map<string, AnalysisNodeResult>>(
+    () => new Map(),
+  );
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   /** 资产预检（决策 2.40 节点校验）：加载/切换工作流时核对的失效资产 key。 */
@@ -177,6 +194,7 @@ export function App() {
       const workspace = await getWorkspace();
       setAppState((current) => withWorkspace(current, workspace));
       setSettings(await loadAppSettingsFromApi());
+      void loadTemplateCatalog();
 
       const workflowList = await listWorkflows();
       setWorkflowList(workflowList.items);
@@ -202,6 +220,40 @@ export function App() {
       void runAssetPreflight(definition);
     } catch (error) {
       setErrorMessage(toMessage(error));
+    }
+  }
+
+  /** 分析模板目录：启动时拉取一次，失败时分析区域降级为不可用。 */
+  async function loadTemplateCatalog(): Promise<void> {
+    try {
+      const response = await getAnalysisTemplates();
+      const catalog = new TemplateCatalog();
+      catalog.load(
+        response.items.map((item) => ({
+          template_id: item.template_id,
+          display_name: item.display_name,
+          params: item.params.map((param) => ({
+            name: param.name,
+            type: param.type,
+            required: param.required,
+            binding: [...param.binding],
+          })),
+          relations: item.relations.map((relation) => ({
+            name: relation.name,
+            columns: [...relation.columns],
+            required: relation.required,
+          })),
+          output: {
+            columns: item.output.columns.map((column) => ({
+              name: column.name,
+              type: column.type,
+            })),
+          },
+        })),
+      );
+      setTemplateCatalog(catalog);
+    } catch {
+      setTemplateCatalog(null);
     }
   }
 
@@ -281,14 +333,14 @@ export function App() {
     () =>
       (definition: WorkflowDefinition, scopeRegionIds?: Set<string>): Diagnostic[] => {
         const fullDiagnostics = [
-          ...validateWorkflow(definition),
+          ...validateWorkflow(definition, templateCatalog ?? undefined),
           ...assetMissingDiagnostics(definition, missingAssetKeys),
         ];
         return scopeRegionIds === undefined
           ? fullDiagnostics
           : scopedDiagnostics(definition, fullDiagnostics, scopeRegionIds);
       },
-    [missingAssetKeys],
+    [missingAssetKeys, templateCatalog],
   );
 
   /** 问题面板诊断：编辑期节点级诊断；最近一次运行/校验失败时显示校验/构建诊断（决策 2.40 修订）。 */
@@ -875,6 +927,8 @@ export function App() {
       setRunState((current) => setRunPhase(current, "cancelled"));
     } else {
       setRunState((current) => setRunPhase(current, "completed"));
+      const updatedDefinition = persistSimulationSessions(definition, completedSessions);
+      await refreshAnalysis(updatedDefinition);
       // 运行结束联动（决策 2.37）：自动打开结果面板并定位最新记录；
       // 存在区域校验失败时保留问题面板，不再切到结果面板（决策 2.40 修订）。
       if (!validationFailed) {
@@ -882,6 +936,85 @@ export function App() {
       }
     }
     setRunning(false);
+  }
+
+  /** 模拟节点保存最近一次批次会话 ID（决策：随工作流持久化）。 */
+  function persistSimulationSessions(
+    definition: WorkflowDefinition,
+    completedSessions: Array<{ nodeId: string; sessionId: string }>,
+  ): WorkflowDefinition {
+    const byNode = new Map<string, string[]>();
+    for (const item of completedSessions) {
+      const list = byNode.get(item.nodeId) ?? [];
+      list.push(item.sessionId);
+      byNode.set(item.nodeId, list);
+    }
+    if (byNode.size === 0) {
+      return definition;
+    }
+    const updated: WorkflowDefinition = {
+      ...definition,
+      nodes: definition.nodes.map((node) =>
+        node.kind === "simulation" && byNode.has(node.id)
+          ? { ...node, params: { ...node.params, last_sessions: byNode.get(node.id) } }
+          : node,
+      ),
+    };
+    for (const [nodeId, sessions] of byNode) {
+      const target = definition.nodes.find((node) => node.id === nodeId);
+      if (target !== undefined) {
+        updateEditor((state) =>
+          setNodeParams(state, nodeId, { ...target.params, last_sessions: sessions }),
+        );
+      }
+    }
+    return updated;
+  }
+
+  /** 分析区域执行：拓扑序执行处理节点，视图节点读拼接后的输入表。 */
+  async function refreshAnalysis(definition: WorkflowDefinition): Promise<void> {
+    if (templateCatalog === null) {
+      return;
+    }
+    const execute: ExecuteTemplate = async (templateId, request) => {
+      const response = await executeAnalysisTemplate(templateId, {
+        params: request.params,
+        relations: request.relations,
+      });
+      return {
+        columns: response.columns,
+        rows: response.rows,
+        truncated: response.truncated,
+      };
+    };
+    const next = new Map<string, AnalysisNodeResult>();
+    for (const region of definition.regions) {
+      if (region.kind !== "analysis") {
+        continue;
+      }
+      const sessionGroup = resolveBoundarySessionGroup(definition, region.id);
+      const results = await executeAnalysisRegion(
+        definition,
+        region.id,
+        templateCatalog,
+        sessionGroup,
+        execute,
+      );
+      for (const [nodeId, result] of results) {
+        next.set(nodeId, result);
+      }
+      for (const view of definition.nodes) {
+        if (view.region_id !== region.id || !isAnalysisViewKind(view.kind)) {
+          continue;
+        }
+        const table = viewInputTable(view.id, definition, results);
+        next.set(
+          view.id,
+          table === null ? { status: "stale" } : { status: "ready", table },
+        );
+      }
+    }
+    setAnalysisResults(next);
   }
 
   /** 全部运行：整个工作流的运行计划进入共用编排。 */
@@ -962,7 +1095,8 @@ export function App() {
 
   return (
     <RunStateContext.Provider value={runContextValue}>
-      <div className="app-shell">
+      <TemplateCatalogContext.Provider value={templateCatalog}>
+        <div className="app-shell">
         <TopBar
           name={editorState?.definition.meta.name ?? appState.workflowName}
           dirty={editorState?.dirty ?? false}
@@ -1057,6 +1191,7 @@ export function App() {
             {editorState !== null && (
               <CanvasView
                 definition={editorState.definition}
+                analysisResults={analysisResults}
                 selection={editorState.selection}
                 diagnostics={diagnostics}
                 dragKind={dragKind}
@@ -1104,7 +1239,8 @@ export function App() {
             onClose={() => setSettingsOpen(false)}
           />
         )}
-      </div>
+        </div>
+      </TemplateCatalogContext.Provider>
     </RunStateContext.Provider>
   );
 }
@@ -1126,4 +1262,8 @@ function sameSelection(left: EditorSelection, right: EditorSelection): boolean {
 
 function sameStringList(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => right[index] === value);
+}
+
+function isAnalysisViewKind(kind: string): boolean {
+  return kind === "member_table" || kind === "timeline" || kind === "pie" || kind === "bar";
 }

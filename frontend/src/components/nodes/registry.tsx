@@ -1,5 +1,11 @@
 import { COLORS } from "../../theme/tokens";
 import {
+  DataProviderEditor,
+  DisplayConfigEditor,
+  ProcessingEditor,
+  QueryConfigEditor,
+} from "./analysis";
+import {
   ArtifactEditor,
   CharacterEditor,
   EnumEditor,
@@ -49,6 +55,17 @@ export function NodeEditorHost({
       return <RangeEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "simulation":
       return <SimulationEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "data_provider":
+      return <DataProviderEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "processing":
+      return <ProcessingEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "query_config":
+      return <QueryConfigEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "table_config":
+    case "timeline_config":
+    case "pie_config":
+    case "bar_config":
+      return <DisplayConfigEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     default:
       return <UnknownEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
   }

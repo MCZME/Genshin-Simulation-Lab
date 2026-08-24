@@ -13,6 +13,11 @@ export type RunMemberStatus = Schema["RunMemberStatus"];
 export type RunListResponse = Schema["RunListResponse"];
 export type RunListItem = Schema["RunListItem"];
 export type RunDetailResponse = Schema["RunDetailResponse"];
+export type TemplateListResponse = Schema["TemplateListResponse"];
+export type TemplateDeclarationDto = Schema["TemplateDeclarationDto"];
+export type ExecuteTemplateRequest = Schema["ExecuteTemplateRequest"];
+export type TemplateResultResponse = Schema["TemplateResultResponse"];
+export type RelationPayload = Schema["RelationPayload"];
 export type AssetListResponse = Schema["AssetListResponse"];
 export type AssetResponse = Schema["AssetResponse"];
 export type Diagnostic = Schema["Diagnostic"];
@@ -146,6 +151,25 @@ export async function listResults(
 /** 运行详情概要（不含事件流、指标数值，决策 2.37）。 */
 export async function getResultDetail(sessionId: string): Promise<RunDetailResponse> {
   return request<RunDetailResponse>(`/results/${encodeURIComponent(sessionId)}`);
+}
+
+/** 分析模板目录：处理节点卡与校验的数据源（后端只增不改）。 */
+export async function getAnalysisTemplates(): Promise<TemplateListResponse> {
+  return request<TemplateListResponse>("/analysis/templates");
+}
+
+/** 执行分析模板，返回一张结果表。 */
+export async function executeAnalysisTemplate(
+  templateId: string,
+  payload: ExecuteTemplateRequest,
+): Promise<TemplateResultResponse> {
+  return request<TemplateResultResponse>(
+    `/analysis/templates/${encodeURIComponent(templateId)}/execute`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
 }
 
 export async function searchAssets(

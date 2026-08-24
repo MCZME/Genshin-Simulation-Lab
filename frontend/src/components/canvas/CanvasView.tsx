@@ -33,11 +33,14 @@ import type { IncomingOrderGroup } from "./InputOrderPopover";
 import { nodeKindColor } from "../nodes/registry";
 import { NodeCard } from "./NodeCard";
 import type { MemberPortInfo, WorkflowNodeData } from "./NodeCard";
+import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
 import { RegionNode } from "./RegionNode";
 import type { RegionNodeData } from "./RegionNode";
 
 export interface CanvasViewProps {
   definition: WorkflowDefinition;
+  /** 分析执行结果：按节点 id 索引（处理节点 = 模板结果；视图节点 = 输入表）。 */
+  analysisResults?: Map<string, AnalysisNodeResult>;
   selection: EditorSelection;
   diagnostics: Diagnostic[];
   dragKind: string | null;
@@ -122,6 +125,7 @@ const nodeTypes: NodeTypes = {
 
 export function CanvasView({
   definition,
+  analysisResults,
   selection,
   diagnostics,
   dragKind,
@@ -208,6 +212,7 @@ export function CanvasView({
           dimmedNodeIds,
           runningMethodNodeIds,
           interactionLocked,
+          analysisResults,
         ),
         current,
       ),
@@ -221,6 +226,7 @@ export function CanvasView({
     dimmedNodeIds,
     runningMethodNodeIds,
     interactionLocked,
+    analysisResults,
     setNodes,
     setEdges,
   ]);
@@ -453,6 +459,7 @@ function buildNodes(
   dimmedNodeIds: string[],
   runningMethodNodeIds: string[],
   interactionLocked: boolean,
+  analysisResults: Map<string, AnalysisNodeResult> | undefined,
 ): Node[] {
   const incoming = incomingGroupsByTarget(definition);
   const dimmed = new Set(dimmedNodeIds);
@@ -499,6 +506,7 @@ function buildNodes(
           };
     const data: WorkflowNodeData = {
       node,
+      analysisResult: analysisResults?.get(node.id),
       onParamsChange: callbacks.onParamsChange,
       onDeleteNode: callbacks.onDeleteNode,
       onMoveEdgeOrder: callbacks.onMoveEdgeOrder,

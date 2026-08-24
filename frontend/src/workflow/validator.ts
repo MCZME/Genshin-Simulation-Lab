@@ -8,6 +8,7 @@ import type {
 } from "./types";
 import {
   MAX_BATCH_MEMBERS,
+  REGION_BOUNDARY_IN_PORT,
   REGION_BOUNDARY_OUT_PORT,
   WORKFLOW_SCHEMA_VERSION,
 } from "./types";
@@ -20,6 +21,11 @@ import {
 } from "./registry";
 import { expandConfigurationRegion } from "./compiler";
 import { collectUpstreamNodes } from "./chain";
+import type { TemplateCatalog } from "./templates";
+import {
+  canBindSessionGroup,
+  canBindUpstreamColumn,
+} from "./templates";
 
 type EndpointKind = "node" | "region";
 
@@ -28,7 +34,10 @@ interface Endpoint {
   id: string;
 }
 
-export function validateWorkflow(definition: WorkflowDefinition): Diagnostic[] {
+export function validateWorkflow(
+  definition: WorkflowDefinition,
+  catalog?: TemplateCatalog,
+): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
   if (definition.schema_version !== WORKFLOW_SCHEMA_VERSION) {
@@ -174,7 +183,9 @@ export function validateWorkflow(definition: WorkflowDefinition): Diagnostic[] {
   validateMemberCap(definition, regionById, connectedToSimulation, diagnostics);
   validateTeamSlotConflicts(definition, regionById, connectedIdsByRegion, diagnostics);
   warnNodesOutsideRegions(definition, regionById, diagnostics);
-  validateRegionToSimulationLinks(definition, regionById, nodeById, connectedToSimulation, diagnostics);  return diagnostics;
+  validateRegionToSimulationLinks(definition, regionById, nodeById, connectedToSimulation, diagnostics);
+  validateAnalysisGraph(definition, nodeById, catalog, diagnostics);
+  return diagnostics;
 }
 
 /**
@@ -305,7 +316,7 @@ function validateEdge(
       sourceNode.region_id !== targetNode.region_id
     ) {
       diagnostics.push(
-        diagnostic("error", "CROSS_REGION_CONNECTION", "配置节点只能在同一区域内直接连线", {
+        diagnostic("error", "CROSS_REGION_CONNECTION", "节点只能在同一区域内直接连线", {
           edge_id: edge.id,
           node_id: targetNode.id,
         }),
@@ -342,13 +353,33 @@ function validateEdge(
         );
       }
     }
-    if (source.kind === "node" && sourcePort.id === "out" && target.kind === "region") {
+    const sourceRegion = source.kind === "region" ? regionById.get(edge.source_node_id) : undefined;
+    const targetRegion = target.kind === "region" ? regionById.get(edge.target_node_id) : undefined;
+    if (targetRegion?.kind === "analysis") {
       const sourceNode = nodeById.get(edge.source_node_id);
-      if (sourceNode !== undefined && sourceNode.kind === "simulation") {
+      const allowed = sourceNode !== undefined &&
+        (sourceNode.kind === "simulation" || sourceNode.kind === "data_provider");
+      if (!allowed) {
         diagnostics.push(
-          diagnostic("error", "ANALYSIS_NOT_IMPLEMENTED", "模拟节点输出与分析区域连线不在 MVP 范围", {
-            edge_id: edge.id,
-          }),
+          diagnostic(
+            "error",
+            "ANALYSIS_BOUNDARY_SOURCE_INVALID",
+            "分析区域边界输入只能连接模拟节点或数据提供节点",
+            { edge_id: edge.id, region_id: targetRegion.id },
+          ),
+        );
+      }
+    }
+    if (sourceRegion?.kind === "analysis") {
+      const targetNode = nodeById.get(edge.target_node_id);
+      if (targetNode === undefined || targetNode.region_id !== sourceRegion.id) {
+        diagnostics.push(
+          diagnostic(
+            "error",
+            "ANALYSIS_BOUNDARY_TARGET_INVALID",
+            "分析区域边界输入只能向本区域内节点供数",
+            { edge_id: edge.id, region_id: sourceRegion.id },
+          ),
         );
       }
     }
@@ -410,12 +441,15 @@ function validateRegionEndpoint(
     return;
   }
   if (region.kind === "analysis") {
-    diagnostics.push(
-      diagnostic("error", "ANALYSIS_NOT_IMPLEMENTED", "分析区域连线不在 MVP 范围", {
-        edge_id: edge.id,
-        region_id: regionId,
-      }),
-    );
+    const portId = role === "source" ? edge.source_port_id : edge.target_port_id;
+    if (portId !== REGION_BOUNDARY_IN_PORT) {
+      diagnostics.push(
+        diagnostic("error", "PORT_INVALID", `分析区域边界端口错误：${portId}`, {
+          edge_id: edge.id,
+          region_id: regionId,
+        }),
+      );
+    }
     return;
   }
   const portId = role === "source" ? edge.source_port_id : edge.target_port_id;
@@ -477,6 +511,17 @@ function resolvePort(
 ) {
   const region = regionById.get(endpointId);
   if (region !== undefined) {
+    if (region.kind === "analysis") {
+      if (portId !== REGION_BOUNDARY_IN_PORT) {
+        return null;
+      }
+      return {
+        id: portId,
+        cardinality: "single",
+        dataLanguage: "session_group",
+        connectionLimit: Number.POSITIVE_INFINITY,
+      } as const;
+    }
     return {
       id: portId,
       cardinality: role === "source" ? "group" : "single",
@@ -751,6 +796,267 @@ function warnNodesOutsideRegions(
       }
     }
   }
+}
+
+const ANALYSIS_VIEW_KINDS = new Set(["member_table", "timeline", "pie", "bar"]);
+const ANALYSIS_CONFIG_PORT = "config";
+const ANALYSIS_DATA_PORT = "in";
+
+/** 分析区域图级校验：模板绑定、视图配置与同结构输入（依赖模板目录）。 */
+function validateAnalysisGraph(
+  definition: WorkflowDefinition,
+  nodeById: Map<string, WorkflowNode>,
+  catalog: TemplateCatalog | undefined,
+  diagnostics: Diagnostic[],
+): void {
+  if (catalog === undefined) {
+    return;
+  }
+  const edgesByTarget = new Map<string, WorkflowEdge[]>();
+  for (const edge of definition.edges) {
+    const list = edgesByTarget.get(edge.target_node_id) ?? [];
+    list.push(edge);
+    edgesByTarget.set(edge.target_node_id, list);
+  }
+
+  for (const node of nodeById.values()) {
+    if (node.kind !== "processing") {
+      continue;
+    }
+    validateProcessingBindings(
+      node,
+      edgesByTarget,
+      nodeById,
+      catalog,
+      diagnostics,
+    );
+  }
+  for (const node of nodeById.values()) {
+    if (!ANALYSIS_VIEW_KINDS.has(node.kind)) {
+      continue;
+    }
+    validateViewInputs(node, edgesByTarget, nodeById, catalog, diagnostics);
+  }
+}
+
+function validateProcessingBindings(
+  node: WorkflowNode,
+  edgesByTarget: Map<string, WorkflowEdge[]>,
+  nodeById: Map<string, WorkflowNode>,
+  catalog: TemplateCatalog,
+  diagnostics: Diagnostic[],
+): void {
+  const templateId = String(node.params.template_id ?? "");
+  const template = catalog.get(templateId);
+  if (template === null) {
+    diagnostics.push(
+      diagnostic("error", "PROCESSING_TEMPLATE_UNKNOWN", `模板不存在：${templateId}`, {
+        node_id: node.id,
+      }),
+    );
+    return;
+  }
+
+  const values = isRecord(node.params.values) ? node.params.values : {};
+  const valueBindings = isRecord(node.params.value_bindings)
+    ? node.params.value_bindings
+    : {};
+  const incoming = edgesByTarget.get(node.id) ?? [];
+  const sessionEdges = incoming.filter((edge) => edge.target_port_id === "in_session");
+  const paramEdges = incoming.filter((edge) => edge.target_port_id === "in_params");
+  const valueEdges = incoming.filter((edge) => edge.target_port_id === "in_value");
+  const relationEdges = incoming.filter((edge) => edge.target_port_id === "in_relation");
+
+  for (const [paramName] of Object.entries(valueBindings)) {
+    const param = template.params.find((item) => item.name === paramName);
+    if (param === undefined || !canBindUpstreamColumn(param)) {
+      diagnostics.push(
+        diagnostic(
+          "error",
+          "PROCESSING_BINDING_INVALID",
+          `参数 ${paramName} 不支持上游列绑定`,
+          { node_id: node.id },
+        ),
+      );
+    }
+  }
+
+  const configRows: Array<{ param: string; value: unknown }> = [];
+  for (const edge of paramEdges) {
+    const sourceNode = nodeById.get(edge.source_node_id);
+    if (sourceNode?.kind !== "query_config" || !Array.isArray(sourceNode.params.rows)) {
+      continue;
+    }
+    for (const raw of sourceNode.params.rows) {
+      const row = raw as { param?: unknown; value?: unknown } | null;
+      if (row !== null && typeof row.param === "string" && row.param !== "") {
+        configRows.push({ param: row.param, value: row.value });
+      }
+    }
+  }
+
+  for (const param of template.params) {
+    const sources: string[] = [];
+    if (canBindSessionGroup(param) && sessionEdges.length > 0) {
+      sources.push("会话组");
+    }
+    if (Object.prototype.hasOwnProperty.call(values, param.name)) {
+      sources.push("静态值");
+    }
+    if (configRows.some((row) => row.param === param.name)) {
+      sources.push("查询参数配置");
+    }
+    if (valueBindings[param.name] !== undefined) {
+      sources.push("上游列");
+    }
+    if (sources.length === 0 && param.required) {
+      diagnostics.push(
+        diagnostic(
+          "error",
+          "PROCESSING_PARAM_UNBOUND",
+          `模板参数 ${param.name} 缺少绑定来源`,
+          { node_id: node.id },
+        ),
+      );
+    } else if (sources.length > 1) {
+      diagnostics.push(
+        diagnostic(
+          "error",
+          "PROCESSING_PARAM_CONFLICT",
+          `模板参数 ${param.name} 有多个绑定来源：${sources.join("、")}`,
+          { node_id: node.id },
+        ),
+      );
+    }
+  }
+
+  const valueColumns = new Set<string>();
+  for (const edge of valueEdges) {
+    const columns = upstreamTableColumns(edge, nodeById, catalog);
+    if (columns !== null) {
+      for (const column of columns) {
+        valueColumns.add(column);
+      }
+    }
+  }
+  for (const column of Object.values(valueBindings)) {
+    if (typeof column !== "string" || !valueColumns.has(column)) {
+      diagnostics.push(
+        diagnostic(
+          "error",
+          "PROCESSING_BINDING_COLUMN",
+          `上游列不存在：${String(column)}`,
+          { node_id: node.id },
+        ),
+      );
+    }
+  }
+
+  const declaredRelations = template.relations;
+  for (const [index, relation] of declaredRelations.entries()) {
+    const edge = relationEdges[index];
+    if (edge === undefined) {
+      if (relation.required) {
+        diagnostics.push(
+          diagnostic(
+            "error",
+            "PROCESSING_RELATION_MISSING",
+            `关系输入 ${relation.name} 缺少上游表`,
+            { node_id: node.id },
+          ),
+        );
+      }
+      continue;
+    }
+    const columns = upstreamTableColumns(edge, nodeById, catalog);
+    if (columns !== null) {
+      const missing = relation.columns.filter((column) => !columns.includes(column));
+      if (missing.length > 0) {
+        diagnostics.push(
+          diagnostic(
+            "error",
+            "PROCESSING_RELATION_COLUMNS",
+            `关系输入 ${relation.name} 缺少所需列：${missing.join("、")}`,
+            { node_id: node.id },
+          ),
+        );
+      }
+    }
+  }
+  if (relationEdges.length > declaredRelations.length) {
+    diagnostics.push(
+      diagnostic(
+        "error",
+        "PROCESSING_RELATION_EXTRA",
+        "关系输入入线多于模板声明",
+        { node_id: node.id },
+      ),
+    );
+  }
+}
+
+function validateViewInputs(
+  node: WorkflowNode,
+  edgesByTarget: Map<string, WorkflowEdge[]>,
+  nodeById: Map<string, WorkflowNode>,
+  catalog: TemplateCatalog,
+  diagnostics: Diagnostic[],
+): void {
+  const incoming = edgesByTarget.get(node.id) ?? [];
+  const configEdges = incoming.filter((edge) => edge.target_port_id === ANALYSIS_CONFIG_PORT);
+  const dataEdges = incoming.filter((edge) => edge.target_port_id === ANALYSIS_DATA_PORT);
+  if (configEdges.length === 0) {
+    diagnostics.push(
+      diagnostic("error", "VIEW_CONFIG_MISSING", "视图缺少对应的展示配置节点", {
+        node_id: node.id,
+      }),
+    );
+  }
+  let reference: string[] | null = null;
+  for (const edge of dataEdges) {
+    const columns = upstreamTableColumns(edge, nodeById, catalog);
+    if (columns === null) {
+      continue;
+    }
+    if (reference === null) {
+      reference = columns;
+      continue;
+    }
+    if (!sameColumns(reference, columns)) {
+      diagnostics.push(
+        diagnostic(
+          "error",
+          "VIEW_INPUT_SHAPE_MISMATCH",
+          "视图的多条数据入线表结构不一致",
+          { edge_id: edge.id, node_id: node.id },
+        ),
+      );
+    }
+  }
+}
+
+function upstreamTableColumns(
+  edge: WorkflowEdge,
+  nodeById: Map<string, WorkflowNode>,
+  catalog: TemplateCatalog,
+): string[] | null {
+  const source = nodeById.get(edge.source_node_id);
+  if (source?.kind !== "processing") {
+    return null;
+  }
+  const template = catalog.get(String(source.params.template_id ?? ""));
+  return template === null ? null : template.output.columns.map((column) => column.name);
+}
+
+function sameColumns(left: string[], right: string[]): boolean {
+  return (
+    left.length === right.length &&
+    left.every((item, index) => item === right[index])
+  );
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function diagnostic(

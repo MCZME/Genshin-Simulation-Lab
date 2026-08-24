@@ -5,9 +5,11 @@ import { InputOrderPopover } from "./InputOrderPopover";
 import type { IncomingOrderGroup } from "./InputOrderPopover";
 import { nodeKindColor } from "../nodes/registry";
 import { NodeEditorHost } from "../nodes/registry";
+import { AnalysisViewBody } from "../nodes/views";
 import { getNodeKindSpec } from "../../workflow/registry";
 import type { WorkflowNode } from "../../workflow/types";
 import type { Diagnostic } from "../../workflow/types";
+import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
 
 export type WorkflowNodeData = {
   node: WorkflowNode;
@@ -29,6 +31,8 @@ export type WorkflowNodeData = {
   stepRunning: boolean;
   /** 运行/检查期间锁定破坏性交互。 */
   interactionLocked: boolean;
+  /** 分析执行结果（处理节点 = 模板结果；视图节点 = 拼接后的输入表）。 */
+  analysisResult?: AnalysisNodeResult;
 } & Record<string, unknown>;
 
 export interface MemberPortInfo {
@@ -51,6 +55,7 @@ export function NodeCard({ data, selected }: NodeProps) {
     dimmed,
     stepRunning,
     interactionLocked,
+    analysisResult,
   } = data as WorkflowNodeData;
   const spec = getNodeKindSpec(node.kind);
   const isDraft = node.region_id === null && spec?.region !== null;
@@ -78,12 +83,16 @@ export function NodeCard({ data, selected }: NodeProps) {
         </button>
       </header>
       <div className="node-card-body">
-        <NodeEditorHost
-          kind={node.kind}
-          node={node}
-          fieldErrors={fieldErrors}
-          onChange={(params) => onParamsChange(node.id, params)}
-        />
+        {isAnalysisView(node.kind) ? (
+          <AnalysisViewBody node={node} result={analysisResult} />
+        ) : (
+          <NodeEditorHost
+            kind={node.kind}
+            node={node}
+            fieldErrors={fieldErrors}
+            onChange={(params) => onParamsChange(node.id, params)}
+          />
+        )}
       </div>
       <footer className="node-card-footer">
         {hasMemberPorts && (
@@ -149,6 +158,10 @@ export function NodeCard({ data, selected }: NodeProps) {
       />
     </div>
   );
+}
+
+function isAnalysisView(kind: string): boolean {
+  return kind === "member_table" || kind === "timeline" || kind === "pie" || kind === "bar";
 }
 
 function collectFieldErrors(

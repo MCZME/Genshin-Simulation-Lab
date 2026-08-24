@@ -55,8 +55,9 @@
 | POST | `/api/v1/runs/{run_id}/cancel` | 取消整批 |
 | GET | `/api/v1/results` | 历史运行列表 |
 | GET | `/api/v1/results/{session_id}` | 运行详情（不含事件流） |
-| GET | `/api/v1/results/{session_id}/metrics` | 摘要指标 |
 | GET | `/api/v1/results/{session_id}/events` | 事件分页（摘要面板不依赖） |
+| GET | `/api/v1/analysis/templates` | 分析模板目录（处理节点卡与校验的数据源） |
+| POST | `/api/v1/analysis/templates/{template_id}/execute` | 执行分析模板，返回一张结果表 |
 | GET | `/api/v1/assets/{asset_type}` | 按类型搜索/列表 |
 | GET | `/api/v1/assets/{asset_type}/{source_id}` | 资产详情 |
 
@@ -336,27 +337,6 @@
 
 不存在 `404`。
 
-### `GET /api/v1/results/{session_id}/metrics`
-
-响应为现有 `DamageMetrics.to_dict()`：
-
-```json
-{
-  "frames_run": 600,
-  "frames_per_second": 60,
-  "total_damage": { "key": "total_damage", "value": 0, "definition": "..." },
-  "dps": { "key": "dps", "value": 0, "definition": "..." },
-  "highest_hit": { "key": "highest_hit", "value": 0, "definition": "..." },
-  "average_hit": { "key": "average_hit", "value": 0, "definition": "..." },
-  "damage_share_by_source": [],
-  "damage_share_by_kind": [],
-  "total_healing": { "key": "total_healing", "value": 0, "definition": "..." },
-  "healing_share_by_source": []
-}
-```
-
-失败/取消且无事件的运行返回 `409` / `metrics_unavailable`。
-
 ### `GET /api/v1/results/{session_id}/events`
 
 查询：`frame_min`、`frame_max`、`event_type`、`offset`（默认 0）、`limit`（默认 100，最大 500）。
@@ -372,7 +352,64 @@
 
 MVP 摘要面板不依赖本端点；时间轴与分析区域再接。
 
-## 9. 资产
+## 9. 分析模板
+
+分析区域的模板执行端点；模板声明由后端拥有，前端只提交“模板 id + 参数绑定 + 关系表”，不传 SQL 文本。契约细节见[分析系统契约](../分析系统契约.md)。
+
+### `GET /api/v1/analysis/templates`
+
+```json
+{
+  "items": [
+    {
+      "template_id": "session_metrics",
+      "display_name": "每会话指标",
+      "params": [
+        {
+          "name": "session_ids",
+          "type": "string[]",
+          "required": true,
+          "binding": ["session_group", "upstream_column"]
+        }
+      ],
+      "relations": [],
+      "output": { "columns": [{ "name": "session_id", "type": "string" }] }
+    }
+  ]
+}
+```
+
+### `POST /api/v1/analysis/templates/{template_id}/execute`
+
+请求：
+
+```json
+{
+  "params": { "session_ids": ["a1b2c3"], "frame_min": 0 },
+  "relations": {
+    "source": {
+      "columns": ["total_damage", "dps"],
+      "rows": [[123.0, 61.5]]
+    }
+  }
+}
+```
+
+响应：
+
+```json
+{
+  "columns": [{ "name": "session_id", "type": "string" }],
+  "rows": [["a1b2c3"]],
+  "truncated": false
+}
+```
+
+- `params` / `relations` 均可空；展开参数 `session_ids` 就是普通 `string[]` 参数。
+- 行集硬上限 10000 行，超出 `truncated: true`；关系表上限 5000 行，超限 `400 / validation_failed`。
+- 未知模板 `404 / not_found`；参数/关系校验失败 `400 / validation_failed`。
+
+## 10. 资产
 
 `asset_type`：`characters` / `weapons` / `artifact-sets`。路径使用 `source_id`，避免 `asset_key` 中的冒号；响应里仍给完整 `asset_key`，供写入 `SimulationInput`。
 
@@ -408,7 +445,7 @@ MVP 摘要面板不依赖本端点；时间轴与分析区域再接。
 
 响应为单条与列表项相同的对象，不附加内部 payload。不存在 `404`。
 
-## 10. 状态码
+## 11. 状态码
 
 | 状态 | 何时 |
 | --- | --- |
@@ -419,12 +456,13 @@ MVP 摘要面板不依赖本端点；时间轴与分析区域再接。
 | 400 | 请求或 `SimulationInput` 校验失败、成员超限、`item_id` 重复 |
 | 401 | 网页服务模式令牌无效 |
 | 404 | 工作流 / 批次 / 结果 / 资产不存在 |
-| 409 | 工作区未初始化，或结果尚不可计算指标 |
+| 409 | 工作区未初始化，或资源已存在 |
 | 500 | 未预期错误；`message` 不泄漏内部路径 |
 
-## 11. 后置能力
+## 12. 后置能力
 
-- 分析区域端点（查询/指标/聚合/对比/视图）。
+- 分析模板扩展：原始事件查询、状态折叠（曲线）、自定义模板、分页/行限参数。
+- 分析区域前端节点与视图落地（模板目录已提供，节点注册在 `frontend/`）。
 - 结果详情中的输入快照与初始快照（含成员/变体标签；前端成员标签链路已随决策 2.29 移除，落地后此处是历史结果变体身份的唯一出口，见[项目决策记录](../../决策/项目决策记录.md) 2.29）。
 - 资产图像。
 - 文件上传/下载（输入 JSON、结果导出）。
@@ -434,7 +472,7 @@ MVP 摘要面板不依赖本端点；时间轴与分析区域再接。
 
 不纳入后端：工作流图校验、节点类型注册表、按工作流定义编译成员。
 
-## 12. 安全
+## 13. 安全
 
 - 本地模式默认绑定 `127.0.0.1`。
 - 网页服务模式可绑定 `0.0.0.0`；暴露到公网时必须启用访问令牌（`X-Access-Token`）或由反向代理负责 TLS 与访问控制。

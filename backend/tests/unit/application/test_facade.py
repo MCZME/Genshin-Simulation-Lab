@@ -313,7 +313,7 @@ def test_facade_get_run_can_skip_events() -> None:
     assert metadata.summary.frames_run == 600
 
 
-def test_facade_damage_metrics_and_event_count() -> None:
+def test_facade_counts_filtered_events() -> None:
     detail = RunDetail(
         session_id="session-1",
         state="completed",
@@ -348,7 +348,6 @@ def test_facade_damage_metrics_and_event_count() -> None:
     )
     facade = _make_facade(result_repository=_FakeResultRepository(details={"session-1": detail}))
 
-    metrics = facade.damage_metrics("session-1")
     count = facade.count_run_events(
         "session-1",
         frame_min=10,
@@ -356,32 +355,29 @@ def test_facade_damage_metrics_and_event_count() -> None:
         event_type="DAMAGE_RESOLVED",
     )
 
-    assert metrics.total_damage.value == 300.0
     assert count == 1
 
 
-def test_facade_damage_metrics_unavailable_for_failed_run() -> None:
-    detail = RunDetail(
-        session_id="session-failed",
-        state="failed",
-        input_snapshot={"meta": {"name": "demo"}},
-        initial_snapshot=None,
-        summary=None,
-        events=(),
-        error_code="RuntimeError",
-        error_message="boom",
-        created_at="2026-01-01T00:00:00+00:00",
-        started_at=None,
-        finished_at=None,
-    )
-    facade = _make_facade(
-        result_repository=_FakeResultRepository(details={"session-failed": detail})
+def test_facade_lists_and_executes_analysis_templates() -> None:
+    facade = _make_facade()
+
+    declarations = {item.template_id for item in facade.list_analysis_templates()}
+    result = facade.execute_analysis_template(
+        "session_metrics",
+        params={"session_ids": ["session-1"]},
     )
 
+    assert declarations == {
+        "session_metrics",
+        "share_rows",
+        "timeline_rows",
+        "metric_summary",
+    }
+    assert result.rows == ()
+    assert result.truncated is False
     with pytest.raises(ApplicationError) as exc_info:
-        facade.damage_metrics("session-failed")
-
-    assert exc_info.value.code == "metrics_unavailable"
+        facade.execute_analysis_template("missing", params={"session_ids": ["session-1"]})
+    assert exc_info.value.code == "not_found"
 
 
 def test_facade_exposes_batch_validation_and_lifecycle() -> None:

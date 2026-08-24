@@ -39,7 +39,7 @@ def test_validation_error_maps_to_400() -> None:
 
 
 def test_conflict_error_maps_to_409() -> None:
-    with _app_raising("metrics_unavailable") as client:
+    with _app_raising("already_exists") as client:
         response = client.get("/api/v1/workflows")
 
     assert response.status_code == 409

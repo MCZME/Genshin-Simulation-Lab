@@ -2,13 +2,12 @@
 
 from __future__ import annotations
 
-from typing import Any, cast
+from typing import cast
 
 from fastapi import APIRouter, Depends, Query, Request
 
 from genshin_sim.application import (
     ApplicationFacade,
-    DamageMetrics,
     RecordedEvent,
     RunDetail,
     RunListItem,
@@ -17,12 +16,9 @@ from genshin_sim.server.dependencies import require_initialized
 from genshin_sim.server.dto.results import (
     EventItem,
     EventPageResponse,
-    MetricsResponse,
-    MetricValue,
     RunDetailResponse,
     RunListResponse,
     RunSummary,
-    ShareValue,
 )
 from genshin_sim.server.dto.results import (
     RunListItem as RunListItemDto,
@@ -57,12 +53,6 @@ def get_run_detail(session_id: str, request: Request) -> RunDetailResponse:
     detail = facade.get_run(session_id, include_events=False)
     event_count = facade.count_run_events(session_id)
     return _detail_to_dto(detail, event_count)
-
-
-@router.get("/{session_id}/metrics", response_model=MetricsResponse)
-def get_run_metrics(session_id: str, request: Request) -> MetricsResponse:
-    facade = cast(ApplicationFacade, request.app.state.application)
-    return _metrics_to_dto(facade.damage_metrics(session_id))
 
 
 @router.get("/{session_id}/events", response_model=EventPageResponse)
@@ -133,29 +123,6 @@ def _run_name(detail: RunDetail) -> str:
         if isinstance(name, str) and name.strip():
             return name
     return "未命名仿真"
-
-
-def _metrics_to_dto(metrics: DamageMetrics) -> MetricsResponse:
-    return MetricsResponse(
-        frames_run=metrics.frames_run,
-        frames_per_second=metrics.frames_per_second,
-        total_damage=_metric_value(metrics.total_damage),
-        dps=_metric_value(metrics.dps),
-        highest_hit=_metric_value(metrics.highest_hit),
-        average_hit=_metric_value(metrics.average_hit),
-        damage_share_by_source=[_share_value(item) for item in metrics.damage_share_by_source],
-        damage_share_by_kind=[_share_value(item) for item in metrics.damage_share_by_kind],
-        total_healing=_metric_value(metrics.total_healing),
-        healing_share_by_source=[_share_value(item) for item in metrics.healing_share_by_source],
-    )
-
-
-def _metric_value(item: Any) -> MetricValue:
-    return MetricValue(key=item.key, value=item.value, definition=item.definition)
-
-
-def _share_value(item: Any) -> ShareValue:
-    return ShareValue(group=item.group, value=item.value, definition=item.definition)
 
 
 def _event_to_dto(event: RecordedEvent) -> EventItem:

@@ -49,37 +49,6 @@ class RunDetailResponse(BaseModel):
     event_count: int
 
 
-class MetricValue(BaseModel):
-    """单个指标数值与口径说明。"""
-
-    key: str
-    value: float
-    definition: str
-
-
-class ShareValue(BaseModel):
-    """按分组统计的占比指标。"""
-
-    group: str
-    value: float
-    definition: str
-
-
-class MetricsResponse(BaseModel):
-    """摘要指标响应，与 DamageMetrics.to_dict() 一致。"""
-
-    frames_run: int
-    frames_per_second: int
-    total_damage: MetricValue
-    dps: MetricValue
-    highest_hit: MetricValue
-    average_hit: MetricValue
-    damage_share_by_source: list[ShareValue]
-    damage_share_by_kind: list[ShareValue]
-    total_healing: MetricValue
-    healing_share_by_source: list[ShareValue]
-
-
 class EventItem(BaseModel):
     """单条事件。"""
 

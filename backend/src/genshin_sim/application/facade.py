@@ -11,7 +11,6 @@ from dataclasses import replace
 from pathlib import Path
 from typing import Any, Protocol
 
-from genshin_sim.analysis.processors.metrics import DamageMetrics, MetricsError
 from genshin_sim.application.batch import (
     BatchMember,
     BatchRunService,
@@ -27,10 +26,18 @@ from genshin_sim.application.models import (
     AssetListItem,
     AssetListKind,
     RecordedEvent,
+    RelationTable,
     RunDetail,
     RunListItem,
     SimulationInputFile,
+    TemplateDeclaration,
+    TemplateResult,
     WorkspaceInfo,
+)
+from genshin_sim.application.services.analysis_templates import (
+    AnalysisTemplatesService,
+    TemplateNotFoundError,
+    TemplateValidationError,
 )
 from genshin_sim.application.services.assets import (
     AssetDatabaseService,
@@ -226,7 +233,15 @@ class ApplicationFacade(Protocol):
         limit: int | None = None,
     ) -> tuple[RecordedEvent, ...]: ...
 
-    def damage_metrics(self, session_id: str) -> DamageMetrics: ...
+    def list_analysis_templates(self) -> tuple[TemplateDeclaration, ...]: ...
+
+    def execute_analysis_template(
+        self,
+        template_id: str,
+        *,
+        params: Mapping[str, Any] | None = None,
+        relations: Mapping[str, RelationTable] | None = None,
+    ) -> TemplateResult: ...
 
     def create_workflow(self, name: str = DEFAULT_WORKFLOW_NAME) -> WorkflowDetail: ...
 
@@ -263,6 +278,7 @@ class DefaultApplicationFacade:
         self._inputs_service = InputDiscoveryService(context.config_store)
         self._input_validation_service = InputValidationService()
         self._results_service = ResultsService(context.result_repository)
+        self._analysis_templates_service_impl: AnalysisTemplatesService | None = None
         self._batch_service = BatchRunService(
             context.job_runner,
             validator=BatchInputValidationService(
@@ -593,18 +609,29 @@ class DefaultApplicationFacade:
         except LookupError as exc:
             raise _result_not_found(session_id) from exc
 
-    def damage_metrics(self, session_id: str) -> DamageMetrics:
+    def list_analysis_templates(self) -> tuple[TemplateDeclaration, ...]:
+        return self._analysis_templates_service().list_templates()
+
+    def execute_analysis_template(
+        self,
+        template_id: str,
+        *,
+        params: Mapping[str, Any] | None = None,
+        relations: Mapping[str, RelationTable] | None = None,
+    ) -> TemplateResult:
         try:
-            return self._results_service.damage_metrics(session_id)
-        except KeyError:
-            raise
-        except LookupError as exc:
-            raise _result_not_found(session_id) from exc
-        except MetricsError as exc:
+            return self._analysis_templates_service().execute(
+                template_id,
+                params=params,
+                relations=relations,
+            )
+        except TemplateNotFoundError as exc:
             raise ApplicationError(
-                "metrics_unavailable",
-                "运行结果尚无法计算摘要指标",
+                "not_found",
+                f"分析模板不存在：{template_id}",
             ) from exc
+        except TemplateValidationError as exc:
+            raise ApplicationError("validation_failed", str(exc)) from exc
 
     def create_workflow(self, name: str = DEFAULT_WORKFLOW_NAME) -> WorkflowDetail:
         return self._require_workflow_service().create(name)
@@ -683,6 +710,17 @@ class DefaultApplicationFacade:
         if self._workflow_service is None:
             raise ApplicationError("workflow_store_unavailable", "工作流存档能力未配置")
         return self._workflow_service
+
+    def _analysis_templates_service(self) -> AnalysisTemplatesService:
+        if self._analysis_templates_service_impl is None:
+            executor = self._context.analysis_template_executor
+            if executor is None:
+                raise ApplicationError(
+                    "analysis_templates_unavailable",
+                    "分析模板能力未配置",
+                )
+            self._analysis_templates_service_impl = AnalysisTemplatesService(executor)
+        return self._analysis_templates_service_impl
 
 
 def _result_not_found(session_id: str) -> ApplicationError:

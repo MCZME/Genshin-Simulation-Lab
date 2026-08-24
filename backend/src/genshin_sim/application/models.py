@@ -11,7 +11,6 @@ from enum import StrEnum
 from pathlib import Path
 from typing import Any
 
-from genshin_sim.analysis.processors.metrics import DamageMetrics
 from genshin_sim.application.batch.models import (
     BatchDiagnostic,
     BatchInput,
@@ -94,6 +93,68 @@ class SimulationInputFile:
     error: str | None = None
 
 
+@dataclass(frozen=True, slots=True)
+class TemplateColumn:
+    """模板输出/关系输入的一列：名称 + 类型。"""
+
+    name: str
+    type: str
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateParam:
+    """模板参数声明。binding 为允许的来源：static/config/session_group/upstream_column。"""
+
+    name: str
+    type: str
+    required: bool
+    binding: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateRelation:
+    """模板关系输入声明：名称 + 所需列。"""
+
+    name: str
+    columns: tuple[str, ...]
+    required: bool
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateOutput:
+    """模板输出形状：列名 + 类型。"""
+
+    columns: tuple[TemplateColumn, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateDeclaration:
+    """一张模板的对外声明（前端节点卡与校验的数据源）。"""
+
+    template_id: str
+    display_name: str
+    params: tuple[TemplateParam, ...]
+    relations: tuple[TemplateRelation, ...]
+    output: TemplateOutput
+
+
+@dataclass(frozen=True, slots=True)
+class RelationTable:
+    """模板执行请求中的一张关系表（列 + 行）。"""
+
+    columns: tuple[str, ...]
+    rows: tuple[tuple[Any, ...], ...]
+
+
+@dataclass(frozen=True, slots=True)
+class TemplateResult:
+    """模板执行结果：一张表，行数硬上限内截断。"""
+
+    columns: tuple[TemplateColumn, ...]
+    rows: tuple[tuple[Any, ...], ...]
+    truncated: bool
+
+
 __all__ = [
     "AssetListItem",
     "AssetListKind",
@@ -106,13 +167,19 @@ __all__ = [
     "BatchRunState",
     "BatchRunStatus",
     "BatchValidationResult",
-    "DamageMetrics",
     "RecordedEvent",
+    "RelationTable",
     "RunDetail",
     "RunListItem",
     "RunState",
     "SimulationInputFile",
     "SimulationJobState",
     "SimulationRunSummary",
+    "TemplateColumn",
+    "TemplateDeclaration",
+    "TemplateOutput",
+    "TemplateParam",
+    "TemplateRelation",
+    "TemplateResult",
     "WorkspaceInfo",
 ]

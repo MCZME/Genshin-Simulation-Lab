@@ -16,10 +16,12 @@ from genshin_sim.application import (
     BatchRunState,
     BatchRunStatus,
     BatchValidationResult,
-    DamageMetrics,
     RecordedEvent,
+    RelationTable,
     RunDetail,
     RunListItem,
+    TemplateDeclaration,
+    TemplateResult,
     UiConfig,
     WorkflowDetail,
     WorkflowSummary,
@@ -41,7 +43,8 @@ class FakeApplicationFacade:
         results: tuple[RunDetail, ...] = (),
         assets: tuple[AssetListItem, ...] = (),
         batch_runs: tuple[BatchRunStatus, ...] = (),
-        metrics: dict[str, DamageMetrics] | None = None,
+        analysis_declarations: tuple[TemplateDeclaration, ...] = (),
+        analysis_results: dict[str, TemplateResult] | None = None,
     ) -> None:
         self.workspace = workspace or WorkspaceInfo("data", "2026.08.17", True)
         self.ui_settings = ui_settings or UiConfig()
@@ -50,7 +53,8 @@ class FakeApplicationFacade:
         self._results = {run.session_id: run for run in results}
         self._assets = list(assets)
         self._batch_runs = {run.run_id: run for run in batch_runs}
-        self._metrics = metrics or {}
+        self._analysis_declarations = analysis_declarations
+        self._analysis_results = analysis_results or {}
 
     def get_workspace(self) -> WorkspaceInfo:
         return self.workspace
@@ -231,11 +235,23 @@ class FakeApplicationFacade:
             _filter_events(self.get_run(session_id).events, frame_min, frame_max, event_type)
         )
 
-    def damage_metrics(self, session_id: str) -> DamageMetrics:
+    def list_analysis_templates(self) -> tuple[TemplateDeclaration, ...]:
+        return self._analysis_declarations
+
+    def execute_analysis_template(
+        self,
+        template_id: str,
+        *,
+        params: dict[str, Any] | None = None,
+        relations: dict[str, RelationTable] | None = None,
+    ) -> TemplateResult:
+        params = params or {}
+        if "session_ids" in params and not isinstance(params["session_ids"], list):
+            raise ApplicationError("validation_failed", "session_ids 必须是字符串列表")
         try:
-            return self._metrics[session_id]
+            return self._analysis_results[template_id]
         except KeyError as exc:
-            raise ApplicationError("metrics_unavailable", "运行结果尚无法计算摘要指标") from exc
+            raise ApplicationError("not_found", f"分析模板不存在：{template_id}") from exc
 
     def list_assets(
         self,

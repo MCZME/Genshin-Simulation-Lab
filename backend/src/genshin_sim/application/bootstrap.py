@@ -32,6 +32,9 @@ from genshin_sim.infrastructure.results_sqlite import (
     SQLiteResultWriter,
     init_result_database,
 )
+from genshin_sim.infrastructure.results_sqlite.templates import (
+    SQLiteAnalysisTemplateExecutor,
+)
 
 if TYPE_CHECKING:
     from genshin_sim.application.facade import ApplicationFacade
@@ -102,6 +105,7 @@ def create_cli_application(
         result_repository=result_repository,
         result_writer=result_writer,
         job_runner=runner,
+        analysis_template_executor=SQLiteAnalysisTemplateExecutor(result_db),
         asset_handler_repository=asset_repository,
         content_unit_registry=create_default_content_unit_registry(),
         init_result_database=init_result_database,

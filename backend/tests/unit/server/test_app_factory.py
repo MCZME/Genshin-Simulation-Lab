@@ -27,6 +27,8 @@ def test_openapi_exposes_all_mvp_endpoints(application_facade) -> None:
     schema = app.openapi()
 
     expected = {
+        "/api/v1/analysis/templates": {"get"},
+        "/api/v1/analysis/templates/{template_id}/execute": {"post"},
         "/api/v1/workspace": {"get"},
         "/api/v1/settings": {"get", "put"},
         "/api/v1/workflows": {"get", "post"},
@@ -37,7 +39,6 @@ def test_openapi_exposes_all_mvp_endpoints(application_facade) -> None:
         "/api/v1/runs/{run_id}/cancel": {"post"},
         "/api/v1/results": {"get"},
         "/api/v1/results/{session_id}": {"get"},
-        "/api/v1/results/{session_id}/metrics": {"get"},
         "/api/v1/results/{session_id}/events": {"get"},
         "/api/v1/assets/{asset_type}": {"get"},
         "/api/v1/assets/{asset_type}/{source_id}": {"get"},

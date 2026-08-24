@@ -10,7 +10,16 @@ from fastapi import FastAPI
 
 from genshin_sim.application import ApplicationFacade
 from genshin_sim.server.errors import register_error_handlers
-from genshin_sim.server.routers import assets, inputs, results, runs, settings, workflows, workspace
+from genshin_sim.server.routers import (
+    analysis,
+    assets,
+    inputs,
+    results,
+    runs,
+    settings,
+    workflows,
+    workspace,
+)
 
 APP_TITLE = "Genshin Simulation Lab"
 APP_VERSION = "0.1.0"
@@ -20,6 +29,7 @@ def create_app(application: ApplicationFacade) -> FastAPI:
     """Create the HTTP app bound to one application instance."""
     app = FastAPI(title=APP_TITLE, version=APP_VERSION)
     app.state.application = application
+    app.include_router(analysis.router)
     app.include_router(assets.router)
     app.include_router(inputs.router)
     app.include_router(results.router)

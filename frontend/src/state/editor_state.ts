@@ -155,24 +155,29 @@ export function moveNode(
   });
 }
 
-/** 拖动节点时同时更新位置与区域归属；移出区域成为草稿时断开关联连线。 */
+/** 拖动节点时同时更新位置与区域归属；仅当区域成员被拖出成草稿时断开关联连线。 */
 export function moveNodeWithRegion(
   state: EditorState,
   nodeId: string,
   position: { x: number; y: number },
   regionId: string | null,
 ): EditorState {
+  const previous = state.definition.nodes.find((node) => node.id === nodeId);
+  if (previous === undefined) {
+    return state;
+  }
+  // 画布级节点（region 为 null 的类型）始终不属于任何区域，拖动不得断线。
+  const leftRegion = previous.region_id !== null && regionId === null;
   const next = performEdit(state, {
     ...state.definition,
     nodes: state.definition.nodes.map((node) =>
       node.id === nodeId ? { ...node, position, region_id: regionId } : node,
     ),
-    edges:
-      regionId === null
-        ? state.definition.edges.filter(
-            (edge) => edge.source_node_id !== nodeId && edge.target_node_id !== nodeId,
-          )
-        : state.definition.edges,
+    edges: leftRegion
+      ? state.definition.edges.filter(
+          (edge) => edge.source_node_id !== nodeId && edge.target_node_id !== nodeId,
+        )
+      : state.definition.edges,
   });
   return {
     ...next,

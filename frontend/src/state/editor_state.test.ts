@@ -334,6 +334,34 @@ describe("批量删除与微移", () => {
     state = moveNodeWithRegion(state, "node-1", { x: 10, y: 10 }, "region-1");
     expect(state.definition.nodes[0].region_id).toBe("region-1");
   });
+
+  it("画布级节点拖动后保留连线", () => {
+    let state = createEmptyEditorState();
+    state = addRegion(state, "configuration", "主配置", {
+      x: 0,
+      y: 0,
+      width: 800,
+      height: 600,
+    });
+    state = addRegion(state, "analysis", "分析区", {
+      x: 900,
+      y: 0,
+      width: 600,
+      height: 600,
+    });
+    state = addNode(state, "simulation", { x: 850, y: 650 }, null);
+    state = addEdge(state, {
+      source_node_id: "region-1",
+      source_port_id: "out",
+      target_node_id: "node-1",
+      target_port_id: "in",
+    });
+
+    state = moveNodeWithRegion(state, "node-1", { x: 1200, y: 700 }, null);
+    expect(state.definition.nodes[0].position).toEqual({ x: 1200, y: 700 });
+    expect(state.definition.edges).toHaveLength(1);
+    expect(state.definition.edges[0].target_node_id).toBe("node-1");
+  });
 });
 
 describe("入线顺序", () => {

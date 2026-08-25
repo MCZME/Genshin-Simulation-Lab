@@ -1,9 +1,5 @@
 /** 分析区域节点编辑器（取数、关系算子、展示配置、数据提供）。 */
 
-import { useEffect, useState } from "react";
-
-import { listResults } from "../../api/client";
-import type { RunListItem } from "../../api/client";
 import type { AnalysisSchemaCatalog, FilterCondition, TableShape } from "../../workflow/templates";
 import { AGGREGATE_FUNCTIONS, CONDITION_OPERATORS } from "../../workflow/templates";
 import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
@@ -63,62 +59,6 @@ function inputShapeFor(nodeId: string, portId: string): TableShape[] {
 
 function upstreamShape(nodeId: string): TableShape[] {
   return inputShapeFor(nodeId, "in");
-}
-
-export function DataProviderEditor({ node, onChange }: EditorProps) {
-  const [runs, setRuns] = useState<RunListItem[]>([]);
-  useEffect(() => {
-    let alive = true;
-    listResults({ limit: 50 })
-      .then((response) => {
-        if (alive) {
-          setRuns(response.items);
-        }
-      })
-      .catch(() => {
-        // 结果库读取失败时编辑器保持空列表，节点仍可保存会话选择。
-      });
-    return () => {
-      alive = false;
-    };
-  }, []);
-  const selected = Array.isArray(node.params.session_ids)
-    ? (node.params.session_ids as unknown[]).filter(
-        (item): item is string => typeof item === "string",
-      )
-    : [];
-
-  const toggle = (sessionId: string) => {
-    const next = selected.includes(sessionId)
-      ? selected.filter((item) => item !== sessionId)
-      : [...selected, sessionId];
-    onChange({ ...node.params, session_ids: next });
-  };
-
-  return (
-    <div className="analysis-editor">
-      <div className="analysis-editor-summary">已选 {selected.length} 场</div>
-      {runs.length === 0 ? (
-        <div className="analysis-editor-empty">没有可用的历史运行</div>
-      ) : (
-        <ul className="analysis-run-list">
-          {runs.map((run) => (
-            <li key={run.session_id}>
-              <label>
-                <input
-                  type="checkbox"
-                  checked={selected.includes(run.session_id)}
-                  onChange={() => toggle(run.session_id)}
-                />
-                <span>{run.name}</span>
-                <span className="analysis-run-state">{run.state}</span>
-              </label>
-            </li>
-          ))}
-        </ul>
-      )}
-    </div>
-  );
 }
 
 interface RowListProps {

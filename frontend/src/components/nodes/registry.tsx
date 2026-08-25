@@ -3,7 +3,6 @@ import { COLORS } from "../../theme/tokens";
 import {
   AggregateEditor,
   ComputeEditor,
-  DataProviderEditor,
   DisplayConfigEditor,
   FetchEventsEditor,
   FetchRunsEditor,
@@ -14,6 +13,7 @@ import {
   SortEditor,
   setAnalysisEditorEnvironment,
 } from "./analysis";
+import { DataProviderEditor } from "./dataProvider";
 import {
   ArtifactEditor,
   CharacterEditor,

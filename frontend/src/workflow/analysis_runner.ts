@@ -1,44 +1,19 @@
 /**
- * 分析区域执行：把分析子图编译为模板执行步骤，按拓扑序逐节点执行。
+ * 分析区域执行：把区域内可达子图编译为查询计划，一次端点调用完成。
  *
- * 执行模型（分析区域设计 2.5）：前端按拓扑序逐节点调用模板执行端点，
- * 上游结果表随下游请求传回（关系链）；值链由前端把上游列值取出来放进 params。
+ * 执行模型（契约 v2）：前端只做可达性、拓扑序与参数收集；
+ * SQL 由后端编译，中间结果不出后端；响应携带视图终端表。
  */
 
+import { executeAnalysisQuery } from "../api/client";
+import type { AnalysisTableResponse } from "../api/client";
+import type { AnalysisTableResult } from "./templates";
 import { REGION_BOUNDARY_IN_PORT } from "./types";
 import type { WorkflowDefinition, WorkflowEdge, WorkflowNode } from "./types";
-import type { TemplateCatalog, TemplateParam, TemplateRelation } from "./templates";
-import { canBindSessionGroup } from "./templates";
-
-export interface TemplateColumn {
-  name: string;
-  type: string;
-}
-
-export interface TemplateResult {
-  columns: TemplateColumn[];
-  rows: unknown[][];
-  truncated: boolean;
-}
-
-export interface ExecutionRequest {
-  params: Record<string, unknown>;
-  relations: Record<string, { columns: string[]; rows: unknown[][] }>;
-}
-
-export type ExecuteTemplate = (
-  templateId: string,
-  request: ExecutionRequest,
-) => Promise<TemplateResult>;
-
-export interface AnalysisExecutionStep {
-  nodeId: string;
-  templateId: string;
-}
 
 export interface AnalysisNodeResult {
   status: "idle" | "loading" | "ready" | "error" | "stale";
-  table?: TemplateResult;
+  table?: AnalysisTableResult;
   error?: string;
 }
 
@@ -46,12 +21,19 @@ export function createIdleResult(): AnalysisNodeResult {
   return { status: "idle" };
 }
 
-/** 解析分析区域边界输入的会话组：多源按连线顺序合并（模拟节点最近批次 + 数据提供节点所选）。 */
+function asStringArray(value: unknown): string[] {
+  return Array.isArray(value)
+    ? value.filter((item): item is string => typeof item === "string")
+    : [];
+}
+
+/** 解析分析区域边界输入的会话组：多源按连线顺序合并并保序去重。 */
 export function resolveBoundarySessionGroup(
   definition: WorkflowDefinition,
   regionId: string,
 ): string[] {
   const sessionIds: string[] = [];
+  const seen = new Set<string>();
   const nodeById = new Map(definition.nodes.map((node) => [node.id, node]));
   const edges = definition.edges
     .filter(
@@ -61,10 +43,17 @@ export function resolveBoundarySessionGroup(
     .sort((left, right) => edgeOrder(definition, left.id) - edgeOrder(definition, right.id));
   for (const edge of edges) {
     const source = nodeById.get(edge.source_node_id);
+    let values: string[] = [];
     if (source?.kind === "simulation") {
-      sessionIds.push(...asStringArray(source.params.last_sessions));
+      values = asStringArray(source.params.last_sessions);
     } else if (source?.kind === "data_provider") {
-      sessionIds.push(...asStringArray(source.params.session_ids));
+      values = asStringArray(source.params.session_ids);
+    }
+    for (const value of values) {
+      if (!seen.has(value)) {
+        seen.add(value);
+        sessionIds.push(value);
+      }
     }
   }
   return sessionIds;
@@ -74,240 +63,250 @@ function edgeOrder(definition: WorkflowDefinition, edgeId: string): number {
   return definition.edges.findIndex((edge) => edge.id === edgeId);
 }
 
-function asStringArray(value: unknown): string[] {
-  return Array.isArray(value)
-    ? value.filter((item): item is string => typeof item === "string")
-    : [];
-}
+const FETCH_KINDS = new Set(["fetch_runs", "fetch_events"]);
+const TABLE_NODE_KINDS = new Set([
+  ...FETCH_KINDS,
+  "filter",
+  "project",
+  "sort",
+  "aggregate",
+  "limit",
+  "join",
+  "compute",
+]);
 
-/** 分析区域内处理节点的拓扑序（仅统计从边界输入可达的节点）。 */
-export function planProcessingNodes(
+/** 区域内取数节点：边界输入的直接消费者（会话组经边界注入）。 */
+export function planFetchNodes(
   definition: WorkflowDefinition,
   regionId: string,
-): AnalysisExecutionStep[] {
-  const regionNodeIds = new Set(
+): WorkflowNode[] {
+  const regionNodes = new Set(
     definition.nodes
-      .filter((node) => node.region_id === regionId)
+      .filter((node) => node.region_id === regionId && TABLE_NODE_KINDS.has(node.kind))
       .map((node) => node.id),
   );
-  const outgoing = new Map<string, WorkflowEdge[]>();
-  const incoming = new Map<string, WorkflowEdge[]>();
-  for (const edge of definition.edges) {
-    const from = outgoing.get(edge.source_node_id) ?? [];
-    from.push(edge);
-    outgoing.set(edge.source_node_id, from);
-    const to = incoming.get(edge.target_node_id) ?? [];
-    to.push(edge);
-    incoming.set(edge.target_node_id, to);
-  }
+  const fedFetches = new Set(
+    definition.edges
+      .filter((edge) => edge.source_node_id === regionId && regionNodes.has(edge.target_node_id))
+      .map((edge) => edge.target_node_id),
+  );
+  return definition.nodes.filter((node) => fedFetches.has(node.id));
+}
 
-  const reachable = new Set<string>();
-  const queue = [regionId];
+/** 从取数节点沿算子边可达的节点集合（含取数节点本身）。 */
+function reachableTableNodes(
+  definition: WorkflowDefinition,
+  regionId: string,
+): WorkflowNode[] {
+  const regionNodes = new Map(
+    definition.nodes
+      .filter((node) => node.region_id === regionId)
+      .map((node) => [node.id, node]),
+  );
+  const outgoing = new Map<string, WorkflowEdge[]>();
+  for (const edge of definition.edges) {
+    const list = outgoing.get(edge.source_node_id) ?? [];
+    list.push(edge);
+    outgoing.set(edge.source_node_id, list);
+  }
+  const result: WorkflowNode[] = [];
+  const seen = new Set<string>();
+  const queue = planFetchNodes(definition, regionId).map((node) => node.id);
+  for (const id of queue) {
+    seen.add(id);
+  }
   while (queue.length > 0) {
-    const current = queue.shift()!;
+    const current = queue.shift() as string;
+    const node = regionNodes.get(current);
+    if (node !== undefined) {
+      result.push(node);
+    }
     for (const edge of outgoing.get(current) ?? []) {
-      if (!regionNodeIds.has(edge.target_node_id)) {
-        continue;
-      }
-      if (!reachable.has(edge.target_node_id)) {
-        reachable.add(edge.target_node_id);
+      const target = regionNodes.get(edge.target_node_id);
+      if (
+        !seen.has(edge.target_node_id) &&
+        target !== undefined &&
+        TABLE_NODE_KINDS.has(target.kind)
+      ) {
+        // 视图不是表节点，不进入计划，也不阻断其上游链的遍历。
+        seen.add(edge.target_node_id);
         queue.push(edge.target_node_id);
       }
     }
   }
-
-  const processing = definition.nodes.filter(
-    (node) =>
-      node.kind === "processing" &&
-      node.region_id === regionId &&
-      reachable.has(node.id),
-  );
-  const nodeById = new Map(definition.nodes.map((node) => [node.id, node]));
-  const visited = new Set<string>();
-  const order: WorkflowNode[] = [];
-
-  const visit = (node: WorkflowNode): void => {
-    if (visited.has(node.id)) {
-      return;
-    }
-    visited.add(node.id);
-    for (const edge of incoming.get(node.id) ?? []) {
-      const upstream = nodeById.get(edge.source_node_id);
-      if (
-        upstream !== undefined &&
-        upstream.kind === "processing" &&
-        upstream.region_id === regionId &&
-        reachable.has(upstream.id)
-      ) {
-        visit(upstream);
-      }
-    }
-    order.push(node);
-  };
-  for (const node of processing) {
-    visit(node);
-  }
-  return order.map((node) => ({
-    nodeId: node.id,
-    templateId: String(node.params.template_id ?? ""),
-  }));
+  return result;
 }
 
-/** 顺序执行分析区域：构建请求（静态/配置/值链/关系链）并逐节点调用。 */
+/** 计划输出清单：区域内不再被其他表节点或视图消费的终端表。 */
+export function planOutputs(definition: WorkflowDefinition, regionId: string): string[] {
+  const nodes = reachableTableNodes(definition, regionId);
+  const consumed = new Set<string>();
+  for (const edge of definition.edges) {
+    if (nodes.some((node) => node.id === edge.source_node_id)) {
+      consumed.add(edge.source_node_id);
+    }
+  }
+  // 被视图消费不算被下游表节点消费：视图输入源必须是计划输出。
+  const viewSources = new Set(
+    definition.edges
+      .filter((edge) => {
+        const target = definition.nodes.find((node) => node.id === edge.target_node_id);
+        return (
+          target !== undefined &&
+          target.region_id === regionId &&
+          !TABLE_NODE_KINDS.has(target.kind)
+        );
+      })
+      .map((edge) => edge.source_node_id),
+  );
+  return nodes
+    .filter((node) => !consumed.has(node.id) || viewSources.has(node.id))
+    .map((node) => node.id);
+}
+
+function orderedInputs(
+  definition: WorkflowDefinition,
+  nodeId: string,
+): { params: Record<string, unknown>; inputs: string[] } {
+  const node = definition.nodes.find((item) => item.id === nodeId);
+  const edgesInto = definition.edges
+    .filter((edge) => edge.target_node_id === nodeId)
+    .sort((left, right) => edgeOrder(definition, left.id) - edgeOrder(definition, right.id));
+  // 只把表节点之间的连线作为算子输入；区域边界注入的会话组不进入 inputs。
+  const tableEdges = edgesInto.filter((edge) => {
+    const source = definition.nodes.find((item) => item.id === edge.source_node_id);
+    return source !== undefined && TABLE_NODE_KINDS.has(source.kind);
+  });
+  if (node?.kind === "join") {
+    const byPort = new Map(tableEdges.map((edge) => [edge.target_port_id, edge.source_node_id]));
+    const left = byPort.get("left");
+    const right = byPort.get("right");
+    if (left !== undefined && right !== undefined) {
+      return { params: node.params, inputs: [left, right] };
+    }
+  }
+  return {
+    params: node?.params ?? {},
+    inputs: tableEdges.map((edge) => edge.source_node_id),
+  };
+}
+
+/** 编译查询计划请求（契约 v2 第 6.1 节形状）。 */
+export function buildAnalysisPlanRequest(
+  definition: WorkflowDefinition,
+  regionId: string,
+): {
+  session_ids: string[];
+  nodes: { id: string; kind: string; params: Record<string, unknown>; inputs: string[] }[];
+  outputs: string[];
+} {
+  const nodes = reachableTableNodes(definition, regionId);
+  const nodeById = new Map(nodes.map((node) => [node.id, node]));
+  const outgoing = new Map<string, number>();
+  for (const edge of definition.edges) {
+    if (nodeById.has(edge.source_node_id)) {
+      outgoing.set(edge.source_node_id, (outgoing.get(edge.source_node_id) ?? 0) + 1);
+    }
+  }
+  const viewSources = new Set(
+    definition.edges
+      .filter((edge) => {
+        const target = definition.nodes.find((node) => node.id === edge.target_node_id);
+        return (
+          target !== undefined &&
+          target.region_id === regionId &&
+          !TABLE_NODE_KINDS.has(target.kind)
+        );
+      })
+      .map((edge) => edge.source_node_id),
+  );
+  const ordered = topologicalOrder(nodes, definition);
+  return {
+    session_ids: resolveBoundarySessionGroup(definition, regionId),
+    nodes: ordered.map((node) => {
+      const wired = orderedInputs(definition, node.id);
+      return { id: node.id, kind: node.kind, params: wired.params, inputs: wired.inputs };
+    }),
+    outputs: nodes
+      .filter((node) => (outgoing.get(node.id) ?? 0) === 0 || viewSources.has(node.id))
+      .map((node) => node.id),
+  };
+}
+
+/** 对可达表节点做稳定拓扑排序（Kahn，节点原始顺序保序）。 */
+function topologicalOrder(
+  nodes: WorkflowNode[],
+  definition: WorkflowDefinition,
+): WorkflowNode[] {
+  const ids = new Set(nodes.map((node) => node.id));
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const incoming = new Map<string, number>(nodes.map((node) => [node.id, 0]));
+  const dependents = new Map<string, string[]>();
+  for (const edge of definition.edges) {
+    if (!ids.has(edge.source_node_id) || !ids.has(edge.target_node_id)) {
+      continue;
+    }
+    incoming.set(edge.target_node_id, (incoming.get(edge.target_node_id) ?? 0) + 1);
+    const list = dependents.get(edge.source_node_id) ?? [];
+    list.push(edge.target_node_id);
+    dependents.set(edge.source_node_id, list);
+  }
+  const queue = nodes
+    .filter((node) => (incoming.get(node.id) ?? 0) === 0)
+    .map((node) => node.id);
+  const ordered: WorkflowNode[] = [];
+  while (queue.length > 0) {
+    const current = queue.shift() as string;
+    const node = byId.get(current);
+    if (node !== undefined) {
+      ordered.push(node);
+    }
+    for (const next of dependents.get(current) ?? []) {
+      const count = (incoming.get(next) ?? 0) - 1;
+      incoming.set(next, count);
+      if (count === 0) {
+        queue.push(next);
+      }
+    }
+  }
+  return ordered;
+}
+
+export type ExecuteAnalysisQueryFn = typeof executeAnalysisQuery;
+
+/** 顺序执行分析区域：编译计划并一次调用查询端点，返回各终端表状态。 */
 export async function executeAnalysisRegion(
   definition: WorkflowDefinition,
   regionId: string,
-  catalog: TemplateCatalog,
-  sessionGroup: string[],
-  execute: ExecuteTemplate,
+  execute: ExecuteAnalysisQueryFn = executeAnalysisQuery,
 ): Promise<Map<string, AnalysisNodeResult>> {
-  const steps = planProcessingNodes(definition, regionId);
   const results = new Map<string, AnalysisNodeResult>();
-  const nodeById = new Map(definition.nodes.map((node) => [node.id, node]));
-  const edgesByTarget = new Map<string, WorkflowEdge[]>();
-  for (const edge of definition.edges) {
-    const list = edgesByTarget.get(edge.target_node_id) ?? [];
-    list.push(edge);
-    edgesByTarget.set(edge.target_node_id, list);
-  }
-
-  for (const step of steps) {
-    const template = catalog.get(step.templateId);
-    if (template === null) {
-      results.set(step.nodeId, { status: "error", error: `模板不存在：${step.templateId}` });
-      continue;
+  const request = buildAnalysisPlanRequest(definition, regionId);
+  try {
+    const response = await execute(request);
+    for (const [nodeId, table] of Object.entries(response.tables)) {
+      results.set(nodeId, { status: "ready", table: toAnalysisTableResult(table) });
     }
-    const request = buildExecutionRequest(
-      nodeById.get(step.nodeId),
-      template.params,
-      template.relations,
-      edgesByTarget,
-      nodeById,
-      sessionGroup,
-      results,
-    );
-    try {
-      const table = await execute(step.templateId, request);
-      results.set(step.nodeId, { status: "ready", table });
-    } catch (error) {
-      results.set(step.nodeId, {
-        status: "error",
-        error: error instanceof Error ? error.message : String(error),
-      });
+    for (const nodeId of request.outputs) {
+      if (!results.has(nodeId)) {
+        results.set(nodeId, { status: "error", error: "查询结果缺少该节点的输出表" });
+      }
+    }
+  } catch (error) {
+    const message = error instanceof Error ? error.message : String(error);
+    for (const nodeId of request.outputs) {
+      results.set(nodeId, { status: "error", error: message });
     }
   }
   return results;
 }
 
-function buildExecutionRequest(
-  node: WorkflowNode | undefined,
-  params: TemplateParam[],
-  relations: TemplateRelation[],
-  edgesByTarget: Map<string, WorkflowEdge[]>,
-  nodeById: Map<string, WorkflowNode>,
-  sessionGroup: string[],
-  results: Map<string, AnalysisNodeResult>,
-): ExecutionRequest {
-  const request: ExecutionRequest = { params: {}, relations: {} };
-  if (node === undefined) {
-    return request;
-  }
-  const values = isRecord(node.params.values) ? node.params.values : {};
-  const valueBindings = isRecord(node.params.value_bindings)
-    ? node.params.value_bindings
-    : {};
-  const incoming = edgesByTarget.get(node.id) ?? [];
-  const sessionEdges = incoming.filter((edge) => edge.target_port_id === "in_session");
-  const paramEdges = incoming.filter((edge) => edge.target_port_id === "in_params");
-  const valueEdges = incoming.filter((edge) => edge.target_port_id === "in_value");
-  const relationEdges = incoming.filter((edge) => edge.target_port_id === "in_relation");
-
-  const configRows: Array<{ param: string; value: unknown }> = [];
-  for (const edge of paramEdges) {
-    const source = nodeById.get(edge.source_node_id);
-    if (source?.kind !== "query_config" || !Array.isArray(source.params.rows)) {
-      continue;
-    }
-    for (const raw of source.params.rows) {
-      const row = raw as { param?: unknown; value?: unknown } | null;
-      if (row !== null && typeof row.param === "string" && row.param !== "") {
-        configRows.push({ param: row.param, value: row.value });
-      }
-    }
-  }
-
-  for (const param of params) {
-    if (canBindSessionGroup(param) && sessionEdges.length > 0) {
-      request.params[param.name] = sessionGroup;
-    } else if (Object.prototype.hasOwnProperty.call(values, param.name)) {
-      request.params[param.name] = values[param.name];
-    } else {
-      const config = configRows.find((row) => row.param === param.name);
-      if (config !== undefined) {
-        request.params[param.name] = config.value;
-      } else if (valueBindings[param.name] !== undefined) {
-        const columnValues = resolveColumnValues(
-          valueEdges,
-          String(valueBindings[param.name]),
-          nodeById,
-          results,
-        );
-        if (columnValues !== null) {
-          request.params[param.name] = columnValues;
-        }
-      }
-    }
-  }
-
-  for (const [index, relation] of relations.entries()) {
-    const edge = relationEdges[index];
-    if (edge === undefined) {
-      continue;
-    }
-    const table = edgeSourceResult(edge, nodeById, results);
-    if (table !== null) {
-      request.relations[relation.name] = {
-        columns: table.columns.map((column) => column.name),
-        rows: table.rows,
-      };
-    }
-  }
-  return request;
-}
-
-function resolveColumnValues(
-  valueEdges: WorkflowEdge[],
-  column: string,
-  nodeById: Map<string, WorkflowNode>,
-  results: Map<string, AnalysisNodeResult>,
-): unknown[] | null {
-  for (const edge of valueEdges) {
-    const table = edgeSourceResult(edge, nodeById, results);
-    if (table === null) {
-      continue;
-    }
-    const index = table.columns.findIndex((item) => item.name === column);
-    if (index >= 0) {
-      return table.rows.map((row) => row[index]);
-    }
-  }
-  return null;
-}
-
-function edgeSourceResult(
-  edge: WorkflowEdge,
-  nodeById: Map<string, WorkflowNode>,
-  results: Map<string, AnalysisNodeResult>,
-): TemplateResult | null {
-  const source = nodeById.get(edge.source_node_id);
-  if (source?.kind !== "processing") {
-    return null;
-  }
-  return results.get(source.id)?.table ?? null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+function toAnalysisTableResult(table: AnalysisTableResponse): AnalysisTableResult {
+  return {
+    columns: table.columns.map((column) => ({ name: column.name, type: column.type })),
+    rows: table.rows,
+    truncated: table.truncated,
+  };
 }
 
 /** 视图数据输入：多条同结构入线的行拼接（单表语义）。 */
@@ -315,18 +314,13 @@ export function viewInputTable(
   viewNodeId: string,
   definition: WorkflowDefinition,
   results: Map<string, AnalysisNodeResult>,
-): TemplateResult | null {
-  const nodeById = new Map(definition.nodes.map((node) => [node.id, node]));
+): import("./templates").AnalysisTableResult | null {
   const dataEdges = definition.edges.filter(
     (edge) => edge.target_node_id === viewNodeId && edge.target_port_id === "in",
   );
-  const tables: TemplateResult[] = [];
+  const tables: NonNullable<AnalysisNodeResult["table"]>[] = [];
   for (const edge of dataEdges) {
-    const source = nodeById.get(edge.source_node_id);
-    if (source?.kind !== "processing") {
-      continue;
-    }
-    const result = results.get(source.id);
+    const result = results.get(edge.source_node_id);
     if (result?.status !== "ready" || result.table === undefined) {
       return null;
     }

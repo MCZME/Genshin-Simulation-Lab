@@ -21,10 +21,10 @@ import {
 } from "./registry";
 import { expandConfigurationRegion } from "./compiler";
 import { collectUpstreamNodes } from "./chain";
-import type { TemplateCatalog } from "./templates";
 import {
-  canBindSessionGroup,
-  canBindUpstreamColumn,
+  ANALYSIS_TABLE_NODE_KINDS,
+  computeAnalysisShapes,
+  type TableShape,
 } from "./templates";
 
 type EndpointKind = "node" | "region";
@@ -36,7 +36,6 @@ interface Endpoint {
 
 export function validateWorkflow(
   definition: WorkflowDefinition,
-  catalog?: TemplateCatalog,
 ): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
 
@@ -184,7 +183,7 @@ export function validateWorkflow(
   validateTeamSlotConflicts(definition, regionById, connectedIdsByRegion, diagnostics);
   warnNodesOutsideRegions(definition, regionById, diagnostics);
   validateRegionToSimulationLinks(definition, regionById, nodeById, connectedToSimulation, diagnostics);
-  validateAnalysisGraph(definition, nodeById, catalog, diagnostics);
+  validateAnalysisGraph(definition, nodeById, diagnostics);
   return diagnostics;
 }
 
@@ -802,16 +801,15 @@ const ANALYSIS_VIEW_KINDS = new Set(["member_table", "timeline", "pie", "bar"]);
 const ANALYSIS_CONFIG_PORT = "config";
 const ANALYSIS_DATA_PORT = "in";
 
-/** 分析区域图级校验：模板绑定、视图配置与同结构输入（依赖模板目录）。 */
+/** 分析区域图级校验：算子参数、视图配置与同结构输入（依赖形状推导）。 */
+const FETCH_KINDS = new Set(["fetch_runs", "fetch_events"]);
+
 function validateAnalysisGraph(
   definition: WorkflowDefinition,
   nodeById: Map<string, WorkflowNode>,
-  catalog: TemplateCatalog | undefined,
   diagnostics: Diagnostic[],
 ): void {
-  if (catalog === undefined) {
-    return;
-  }
+  const shapes = computeAnalysisShapes(definition);
   const edgesByTarget = new Map<string, WorkflowEdge[]>();
   for (const edge of definition.edges) {
     const list = edgesByTarget.get(edge.target_node_id) ?? [];
@@ -820,186 +818,62 @@ function validateAnalysisGraph(
   }
 
   for (const node of nodeById.values()) {
-    if (node.kind !== "processing") {
+    if (!ANALYSIS_TABLE_NODE_KINDS.has(node.kind)) {
       continue;
     }
-    validateProcessingBindings(
-      node,
-      edgesByTarget,
-      nodeById,
-      catalog,
-      diagnostics,
-    );
+    // 取数节点必须被本区域边界输入喂给；算子节点不接收会话组。
+    const boundaryFed = definition.edges.some((edge) => {
+      const region = definition.regions.find((item) => item.id === edge.source_node_id);
+      return (
+        region?.kind === "analysis" &&
+        edge.source_port_id === REGION_BOUNDARY_IN_PORT &&
+        edge.target_node_id === node.id &&
+        edge.target_port_id === "in"
+      );
+    });
+    const incomingTableEdges = (edgesByTarget.get(node.id) ?? []).some((edge) => {
+      const source = nodeById.get(edge.source_node_id);
+      return source !== undefined && ANALYSIS_TABLE_NODE_KINDS.has(source.kind);
+    });
+    if (FETCH_KINDS.has(node.kind) && !boundaryFed && !incomingTableEdges) {
+      diagnostics.push(
+        diagnostic("error", "FETCH_SESSION_UNBOUND", "取数节点未连接分析区域边界输入", {
+          node_id: node.id,
+        }),
+      );
+    }
+    if (node.kind !== "fetch_runs" && node.kind !== "fetch_events" && incomingTableEdges === false && !boundaryFed) {
+      diagnostics.push(
+        diagnostic("error", "ANALYSIS_SHAPE_INVALID", "算子缺少上游表输入", {
+          node_id: node.id,
+        }),
+      );
+    }
+    const shape = shapes.get(node.id);
+    if (shape === undefined || shape === null) {
+      diagnostics.push(
+        diagnostic(
+          "error",
+          "ANALYSIS_SHAPE_INVALID",
+          "算子参数或上游形状无法推导，请检查列引用与参数",
+          { node_id: node.id },
+        ),
+      );
+    }
   }
+
   for (const node of nodeById.values()) {
     if (!ANALYSIS_VIEW_KINDS.has(node.kind)) {
       continue;
     }
-    validateViewInputs(node, edgesByTarget, nodeById, catalog, diagnostics);
-  }
-}
-
-function validateProcessingBindings(
-  node: WorkflowNode,
-  edgesByTarget: Map<string, WorkflowEdge[]>,
-  nodeById: Map<string, WorkflowNode>,
-  catalog: TemplateCatalog,
-  diagnostics: Diagnostic[],
-): void {
-  const templateId = String(node.params.template_id ?? "");
-  const template = catalog.get(templateId);
-  if (template === null) {
-    diagnostics.push(
-      diagnostic("error", "PROCESSING_TEMPLATE_UNKNOWN", `模板不存在：${templateId}`, {
-        node_id: node.id,
-      }),
-    );
-    return;
-  }
-
-  const values = isRecord(node.params.values) ? node.params.values : {};
-  const valueBindings = isRecord(node.params.value_bindings)
-    ? node.params.value_bindings
-    : {};
-  const incoming = edgesByTarget.get(node.id) ?? [];
-  const sessionEdges = incoming.filter((edge) => edge.target_port_id === "in_session");
-  const paramEdges = incoming.filter((edge) => edge.target_port_id === "in_params");
-  const valueEdges = incoming.filter((edge) => edge.target_port_id === "in_value");
-  const relationEdges = incoming.filter((edge) => edge.target_port_id === "in_relation");
-
-  for (const [paramName] of Object.entries(valueBindings)) {
-    const param = template.params.find((item) => item.name === paramName);
-    if (param === undefined || !canBindUpstreamColumn(param)) {
-      diagnostics.push(
-        diagnostic(
-          "error",
-          "PROCESSING_BINDING_INVALID",
-          `参数 ${paramName} 不支持上游列绑定`,
-          { node_id: node.id },
-        ),
-      );
-    }
-  }
-
-  const configRows: Array<{ param: string; value: unknown }> = [];
-  for (const edge of paramEdges) {
-    const sourceNode = nodeById.get(edge.source_node_id);
-    if (sourceNode?.kind !== "query_config" || !Array.isArray(sourceNode.params.rows)) {
-      continue;
-    }
-    for (const raw of sourceNode.params.rows) {
-      const row = raw as { param?: unknown; value?: unknown } | null;
-      if (row !== null && typeof row.param === "string" && row.param !== "") {
-        configRows.push({ param: row.param, value: row.value });
-      }
-    }
-  }
-
-  for (const param of template.params) {
-    const sources: string[] = [];
-    if (canBindSessionGroup(param) && sessionEdges.length > 0) {
-      sources.push("会话组");
-    }
-    if (Object.prototype.hasOwnProperty.call(values, param.name)) {
-      sources.push("静态值");
-    }
-    if (configRows.some((row) => row.param === param.name)) {
-      sources.push("查询参数配置");
-    }
-    if (valueBindings[param.name] !== undefined) {
-      sources.push("上游列");
-    }
-    if (sources.length === 0 && param.required) {
-      diagnostics.push(
-        diagnostic(
-          "error",
-          "PROCESSING_PARAM_UNBOUND",
-          `模板参数 ${param.name} 缺少绑定来源`,
-          { node_id: node.id },
-        ),
-      );
-    } else if (sources.length > 1) {
-      diagnostics.push(
-        diagnostic(
-          "error",
-          "PROCESSING_PARAM_CONFLICT",
-          `模板参数 ${param.name} 有多个绑定来源：${sources.join("、")}`,
-          { node_id: node.id },
-        ),
-      );
-    }
-  }
-
-  const valueColumns = new Set<string>();
-  for (const edge of valueEdges) {
-    const columns = upstreamTableColumns(edge, nodeById, catalog);
-    if (columns !== null) {
-      for (const column of columns) {
-        valueColumns.add(column);
-      }
-    }
-  }
-  for (const column of Object.values(valueBindings)) {
-    if (typeof column !== "string" || !valueColumns.has(column)) {
-      diagnostics.push(
-        diagnostic(
-          "error",
-          "PROCESSING_BINDING_COLUMN",
-          `上游列不存在：${String(column)}`,
-          { node_id: node.id },
-        ),
-      );
-    }
-  }
-
-  const declaredRelations = template.relations;
-  for (const [index, relation] of declaredRelations.entries()) {
-    const edge = relationEdges[index];
-    if (edge === undefined) {
-      if (relation.required) {
-        diagnostics.push(
-          diagnostic(
-            "error",
-            "PROCESSING_RELATION_MISSING",
-            `关系输入 ${relation.name} 缺少上游表`,
-            { node_id: node.id },
-          ),
-        );
-      }
-      continue;
-    }
-    const columns = upstreamTableColumns(edge, nodeById, catalog);
-    if (columns !== null) {
-      const missing = relation.columns.filter((column) => !columns.includes(column));
-      if (missing.length > 0) {
-        diagnostics.push(
-          diagnostic(
-            "error",
-            "PROCESSING_RELATION_COLUMNS",
-            `关系输入 ${relation.name} 缺少所需列：${missing.join("、")}`,
-            { node_id: node.id },
-          ),
-        );
-      }
-    }
-  }
-  if (relationEdges.length > declaredRelations.length) {
-    diagnostics.push(
-      diagnostic(
-        "error",
-        "PROCESSING_RELATION_EXTRA",
-        "关系输入入线多于模板声明",
-        { node_id: node.id },
-      ),
-    );
+    validateViewInputs(node, edgesByTarget, shapes, diagnostics);
   }
 }
 
 function validateViewInputs(
   node: WorkflowNode,
   edgesByTarget: Map<string, WorkflowEdge[]>,
-  nodeById: Map<string, WorkflowNode>,
-  catalog: TemplateCatalog,
+  shapes: Map<string, TableShape[] | null>,
   diagnostics: Diagnostic[],
 ): void {
   const incoming = edgesByTarget.get(node.id) ?? [];
@@ -1014,10 +888,11 @@ function validateViewInputs(
   }
   let reference: string[] | null = null;
   for (const edge of dataEdges) {
-    const columns = upstreamTableColumns(edge, nodeById, catalog);
-    if (columns === null) {
+    const shape = shapes.get(edge.source_node_id);
+    if (shape === undefined || shape === null) {
       continue;
     }
+    const columns = shape.map((column) => column.name);
     if (reference === null) {
       reference = columns;
       continue;
@@ -1035,28 +910,11 @@ function validateViewInputs(
   }
 }
 
-function upstreamTableColumns(
-  edge: WorkflowEdge,
-  nodeById: Map<string, WorkflowNode>,
-  catalog: TemplateCatalog,
-): string[] | null {
-  const source = nodeById.get(edge.source_node_id);
-  if (source?.kind !== "processing") {
-    return null;
-  }
-  const template = catalog.get(String(source.params.template_id ?? ""));
-  return template === null ? null : template.output.columns.map((column) => column.name);
-}
-
 function sameColumns(left: string[], right: string[]): boolean {
   return (
     left.length === right.length &&
     left.every((item, index) => item === right[index])
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function diagnostic(

@@ -3,8 +3,7 @@ import {
   cancelRun,
   createWorkflow,
   deleteWorkflow,
-  executeAnalysisTemplate,
-  getAnalysisTemplates,
+  getAnalysisSchema,
   getRun,
   getWorkflow,
   getWorkspace,
@@ -17,7 +16,9 @@ import {
 import type { ValidateInputsResponse, WorkflowListItem } from "../api/client";
 import { pollRun } from "../api/runtime_subscription";
 import { CanvasView } from "../components/canvas/CanvasView";
-import { TemplateCatalogContext } from "../components/analysis_context";
+import { AnalysisSchemaCatalogContext } from "../components/analysis_context";
+import { createAnalysisSchemaCatalog } from "../workflow/templates";
+import type { AnalysisSchemaCatalog } from "../workflow/templates";
 import { ObjectPanel } from "../components/panels/ObjectPanel";
 import { ProblemPanel } from "../components/panels/ProblemPanel";
 import { RegionSummaryBar } from "../components/panels/RegionSummaryBar";
@@ -56,7 +57,11 @@ import {
   withCurrentWorkflow,
   withWorkspace,
 } from "../state/app_state";
-import { definitionToEditorState, editorStateToDefinition } from "../state/converters";
+import {
+  definitionToEditorState,
+  editorStateToDefinition,
+  migrateWorkflowDefinition,
+} from "../state/converters";
 import {
   applyBatchView,
   batchStatusFromRunState,
@@ -69,15 +74,10 @@ import {
 import type { RunState } from "../state/run_state";
 import {
   executeAnalysisRegion,
-  resolveBoundarySessionGroup,
   viewInputTable,
 } from "../workflow/analysis_runner";
-import type {
-  AnalysisNodeResult,
-  ExecuteTemplate,
-} from "../workflow/analysis_runner";
+import type { AnalysisNodeResult } from "../workflow/analysis_runner";
 import { compileConfigurationRegion } from "../workflow/compiler";
-import { TemplateCatalog } from "../workflow/templates";
 import {
   hasRunnableBatch,
   paceBuildSteps,
@@ -140,7 +140,7 @@ export function App() {
   const [editorState, setEditorState] = useState<EditorState | null>(null);
   const [workflowList, setWorkflowList] = useState<WorkflowListItem[]>([]);
   const [runState, setRunState] = useState<RunState>(() => createEmptyRunState());
-  const [templateCatalog, setTemplateCatalog] = useState<TemplateCatalog | null>(null);
+  const [schemaCatalog, setSchemaCatalog] = useState<AnalysisSchemaCatalog | null>(null);
   const [analysisResults, setAnalysisResults] = useState<Map<string, AnalysisNodeResult>>(
     () => new Map(),
   );
@@ -194,7 +194,7 @@ export function App() {
       const workspace = await getWorkspace();
       setAppState((current) => withWorkspace(current, workspace));
       setSettings(await loadAppSettingsFromApi());
-      void loadTemplateCatalog();
+      void loadAnalysisSchema();
 
       const workflowList = await listWorkflows();
       setWorkflowList(workflowList.items);
@@ -212,7 +212,7 @@ export function App() {
         workflowId = null;
         definition = createEmptyEditorState("未命名工作流").definition;
       }
-      setEditorState(definitionToEditorState(definition));
+      setEditorState(definitionToEditorState(migrateWorkflowDefinition(definition)));
       setAppState((current) =>
         withCurrentWorkflow(current, { id: workflowId, name: definition.meta.name }),
       );
@@ -223,37 +223,15 @@ export function App() {
     }
   }
 
-  /** 分析模板目录：启动时拉取一次，失败时分析区域降级为不可用。 */
-  async function loadTemplateCatalog(): Promise<void> {
+  /** 分析可读 schema：启动时拉取一次，失败时分析区域降级为不可用。 */
+  async function loadAnalysisSchema(): Promise<void> {
     try {
-      const response = await getAnalysisTemplates();
-      const catalog = new TemplateCatalog();
-      catalog.load(
-        response.items.map((item) => ({
-          template_id: item.template_id,
-          display_name: item.display_name,
-          params: item.params.map((param) => ({
-            name: param.name,
-            type: param.type,
-            required: param.required,
-            binding: [...param.binding],
-          })),
-          relations: item.relations.map((relation) => ({
-            name: relation.name,
-            columns: [...relation.columns],
-            required: relation.required,
-          })),
-          output: {
-            columns: item.output.columns.map((column) => ({
-              name: column.name,
-              type: column.type,
-            })),
-          },
-        })),
-      );
-      setTemplateCatalog(catalog);
+      const response = await getAnalysisSchema();
+      const catalog = createAnalysisSchemaCatalog();
+      catalog.load(response);
+      setSchemaCatalog(catalog);
     } catch {
-      setTemplateCatalog(null);
+      setSchemaCatalog(null);
     }
   }
 
@@ -263,6 +241,8 @@ export function App() {
     }
     initializedRef.current = true;
     void initialize();
+    // initialize 只允许在首帧执行一次，重复执行由 initializedRef 显式守护。
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const { diagnostics, compiles } = useMemo(() => {
@@ -333,14 +313,14 @@ export function App() {
     () =>
       (definition: WorkflowDefinition, scopeRegionIds?: Set<string>): Diagnostic[] => {
         const fullDiagnostics = [
-          ...validateWorkflow(definition, templateCatalog ?? undefined),
+          ...validateWorkflow(definition),
           ...assetMissingDiagnostics(definition, missingAssetKeys),
         ];
         return scopeRegionIds === undefined
           ? fullDiagnostics
           : scopedDiagnostics(definition, fullDiagnostics, scopeRegionIds);
       },
-    [missingAssetKeys, templateCatalog],
+    [missingAssetKeys],
   );
 
   /** 问题面板诊断：编辑期节点级诊断；最近一次运行/校验失败时显示校验/构建诊断（决策 2.40 修订）。 */
@@ -982,35 +962,17 @@ export function App() {
     return updated;
   }
 
-  /** 分析区域执行：拓扑序执行处理节点，视图节点读拼接后的输入表。 */
+  /** 分析区域执行：编译查询计划一次调用，视图节点读终端表。 */
   async function refreshAnalysis(definition: WorkflowDefinition): Promise<void> {
-    if (templateCatalog === null) {
+    if (schemaCatalog === null) {
       return;
     }
-    const execute: ExecuteTemplate = async (templateId, request) => {
-      const response = await executeAnalysisTemplate(templateId, {
-        params: request.params,
-        relations: request.relations,
-      });
-      return {
-        columns: response.columns,
-        rows: response.rows,
-        truncated: response.truncated,
-      };
-    };
     const next = new Map<string, AnalysisNodeResult>();
     for (const region of definition.regions) {
       if (region.kind !== "analysis") {
         continue;
       }
-      const sessionGroup = resolveBoundarySessionGroup(definition, region.id);
-      const results = await executeAnalysisRegion(
-        definition,
-        region.id,
-        templateCatalog,
-        sessionGroup,
-        execute,
-      );
+      const results = await executeAnalysisRegion(definition, region.id);
       for (const [nodeId, result] of results) {
         next.set(nodeId, result);
       }
@@ -1106,7 +1068,7 @@ export function App() {
 
   return (
     <RunStateContext.Provider value={runContextValue}>
-      <TemplateCatalogContext.Provider value={templateCatalog}>
+      <AnalysisSchemaCatalogContext.Provider value={schemaCatalog}>
         <div className="app-shell">
         <TopBar
           name={editorState?.definition.meta.name ?? appState.workflowName}
@@ -1251,7 +1213,7 @@ export function App() {
           />
         )}
         </div>
-      </TemplateCatalogContext.Provider>
+      </AnalysisSchemaCatalogContext.Provider>
     </RunStateContext.Provider>
   );
 }

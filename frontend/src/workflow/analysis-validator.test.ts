@@ -1,42 +1,9 @@
-import { describe, expect, it } from "vitest";
+/** 分析区域校验（契约 v2：取数/算子/视图规则）。 */
+
+import { expect, it } from "vitest";
 
 import type { WorkflowDefinition, WorkflowEdge, WorkflowNode, WorkflowRegion } from "./types";
-import { TemplateCatalog } from "./templates";
 import { validateWorkflow } from "./validator";
-
-function catalog(): TemplateCatalog {
-  const catalog = new TemplateCatalog();
-  catalog.load([
-    {
-      template_id: "session_metrics",
-      display_name: "每会话指标",
-      params: [
-        {
-          name: "session_ids",
-          type: "string[]",
-          required: true,
-          binding: ["session_group", "upstream_column"],
-        },
-        { name: "frame_min", type: "int", required: false, binding: ["static", "config"] },
-      ],
-      relations: [],
-      output: {
-        columns: [
-          { name: "session_id", type: "string" },
-          { name: "total_damage", type: "float" },
-        ],
-      },
-    },
-    {
-      template_id: "metric_summary",
-      display_name: "指标汇总",
-      params: [],
-      relations: [{ name: "source", columns: ["total_damage"], required: true }],
-      output: { columns: [{ name: "metric", type: "string" }] },
-    },
-  ]);
-  return catalog;
-}
 
 function analysisRegion(): WorkflowRegion {
   return {
@@ -47,18 +14,12 @@ function analysisRegion(): WorkflowRegion {
   };
 }
 
-function processingNode(
+function node(
   id: string,
-  templateId: string,
+  kind: string,
   params: Record<string, unknown> = {},
 ): WorkflowNode {
-  return {
-    id,
-    kind: "processing",
-    region_id: "analysis-1",
-    position: { x: 0, y: 0 },
-    params: { template_id: templateId, values: {}, value_bindings: {}, ...params },
-  };
+  return { id, kind, region_id: "analysis-1", position: { x: 0, y: 0 }, params };
 }
 
 function edge(
@@ -68,18 +29,20 @@ function edge(
   targetNodeId: string,
   targetPortId: string,
 ): WorkflowEdge {
-  return { id, source_node_id: sourceNodeId, source_port_id: sourcePortId, target_node_id: targetNodeId, target_port_id: targetPortId };
+  return {
+    id,
+    source_node_id: sourceNodeId,
+    source_port_id: sourcePortId,
+    target_node_id: targetNodeId,
+    target_port_id: targetPortId,
+  };
 }
 
-function definition(
-  nodes: WorkflowNode[],
-  edges: WorkflowEdge[],
-  regions: WorkflowRegion[] = [analysisRegion()],
-): WorkflowDefinition {
+function definition(nodes: WorkflowNode[], edges: WorkflowEdge[]): WorkflowDefinition {
   return {
     schema_version: 1,
-    meta: { name: "分析工作流" },
-    regions,
+    meta: { name: "t" },
+    regions: [analysisRegion()],
     nodes,
     edges,
     layout: {},
@@ -89,199 +52,85 @@ function definition(
 const codes = (result: ReturnType<typeof validateWorkflow>) =>
   result.map((item) => item.code);
 
-describe("分析区域校验", () => {
-  it("模拟节点和数据提供节点可连入分析边界，配置节点不可", () => {
-    const simulation: WorkflowNode = {
-      id: "sim",
-      kind: "simulation",
-      region_id: null,
-      position: { x: 0, y: 0 },
-      params: {},
-    };
-    const provider: WorkflowNode = {
-      id: "provider",
-      kind: "data_provider",
-      region_id: null,
-      position: { x: 0, y: 0 },
-      params: { session_ids: [] },
-    };
-    const configNode: WorkflowNode = {
-      id: "bad",
-      kind: "character",
-      region_id: "analysis-1",
-      position: { x: 0, y: 0 },
-      params: { slot: 1, asset: "character:barbara" },
-    };
+function fedRuns(id = "runs1"): WorkflowNode {
+  return node(id, "fetch_runs");
+}
 
-    const okResult = validateWorkflow(
-      definition(
-        [simulation, provider],
-        [
-          edge("e1", "sim", "out", "analysis-1", "in"),
-          edge("e2", "provider", "out", "analysis-1", "in"),
-        ],
-      ),
-      catalog(),
-    );
-    expect(codes(okResult)).not.toContain("ANALYSIS_BOUNDARY_SOURCE_INVALID");
-    expect(codes(okResult)).not.toContain("ANALYSIS_NOT_IMPLEMENTED");
+function boundaryFeed(runsId = "runs1"): WorkflowEdge {
+  return edge("b1", "analysis-1", "in", runsId, "in");
+}
 
-    const badResult = validateWorkflow(
-      definition([configNode], [edge("e1", "bad", "out", "analysis-1", "in")]),
-      catalog(),
-    );
-    expect(codes(badResult)).toContain("ANALYSIS_BOUNDARY_SOURCE_INVALID");
-  });
+it("取数节点已连接边界且链路完整时无形状错误", () => {
+  const nodes = [
+    fedRuns(),
+    node("lim1", "limit", { count: 10 }),
+  ];
+  const edges = [
+    boundaryFeed(),
+    edge("e1", "runs1", "out", "lim1", "in"),
+  ];
+  const result = validateWorkflow(definition(nodes, edges));
+  expect(codes(result)).not.toContain("FETCH_SESSION_UNBOUND");
+  expect(codes(result)).not.toContain("ANALYSIS_SHAPE_INVALID");
+});
 
-  it("处理节点必填会话组参数未连接时报错", () => {
-    const node = processingNode("p1", "session_metrics");
+it("取数节点未连接边界时报 FETCH_SESSION_UNBOUND", () => {
+  const result = validateWorkflow(definition([fedRuns()], []));
+  expect(codes(result)).toContain("FETCH_SESSION_UNBOUND");
+});
 
-    const result = validateWorkflow(definition([node], []), catalog());
+it("算子缺少上游表输入时报 ANALYSIS_SHAPE_INVALID", () => {
+  const nodes = [
+    fedRuns(),
+    node("proj1", "project", { columns: [{ name: "session_id" }] }),
+  ];
+  const edges = [boundaryFeed()];
+  const result = validateWorkflow(definition(nodes, edges));
+  expect(codes(result)).toContain("ANALYSIS_SHAPE_INVALID");
+});
 
-    expect(codes(result)).toContain("PROCESSING_PARAM_UNBOUND");
-  });
+it("未知列导致投影无法推导时报 ANALYSIS_SHAPE_INVALID", () => {
+  const nodes = [
+    fedRuns(),
+    node("proj1", "project", { columns: [{ name: "ghost" }] }),
+  ];
+  const edges = [
+    boundaryFeed(),
+    edge("e1", "runs1", "out", "proj1", "in"),
+  ];
+  const result = validateWorkflow(definition(nodes, edges));
+  expect(codes(result)).toContain("ANALYSIS_SHAPE_INVALID");
+});
 
-  it("会话组参数已连接则通过", () => {
-    const node = processingNode("p1", "session_metrics");
-    const provider: WorkflowNode = {
-      id: "provider",
-      kind: "data_provider",
-      region_id: null,
-      position: { x: 0, y: 0 },
-      params: { session_ids: ["a1"] },
-    };
-    const result = validateWorkflow(
-      definition(
-        [provider, node],
-        [
-          edge("e1", "provider", "out", "analysis-1", "in"),
-          edge("e2", "analysis-1", "in", "p1", "in_session"),
-        ],
-      ),
-      catalog(),
-    );
+it("视图缺少展示配置时报 VIEW_CONFIG_MISSING", () => {
+  const nodes = [
+    fedRuns(),
+    node("view1", "member_table"),
+  ];
+  const edges = [
+    boundaryFeed(),
+    edge("e1", "runs1", "out", "view1", "in"),
+  ];
+  const result = validateWorkflow(definition(nodes, edges));
+  expect(codes(result)).toContain("VIEW_CONFIG_MISSING");
+});
 
-    expect(codes(result)).not.toContain("PROCESSING_PARAM_UNBOUND");
-  });
-
-  it("静态值与查询参数配置同时提供同一参数时报冲突", () => {
-    const node = processingNode("p1", "session_metrics", {
-      values: { frame_min: 0 },
-    });
-    const config: WorkflowNode = {
-      id: "qc",
-      kind: "query_config",
-      region_id: "analysis-1",
-      position: { x: 0, y: 0 },
-      params: { rows: [{ param: "frame_min", value: 10 }] },
-    };
-    const provider: WorkflowNode = {
-      id: "provider",
-      kind: "data_provider",
-      region_id: null,
-      position: { x: 0, y: 0 },
-      params: { session_ids: ["a1"] },
-    };
-    const result = validateWorkflow(
-      definition(
-        [provider, node, config],
-        [
-          edge("e1", "provider", "out", "analysis-1", "in"),
-          edge("e2", "analysis-1", "in", "p1", "in_session"),
-          edge("e3", "qc", "out", "p1", "in_params"),
-        ],
-      ),
-      catalog(),
-    );
-
-    expect(codes(result)).toContain("PROCESSING_PARAM_CONFLICT");
-  });
-
-  it("值链绑定列不存在时报错", () => {
-    const node = processingNode("p1", "session_metrics", {
-      value_bindings: { session_ids: "missing_column" },
-    });
-
-    const result = validateWorkflow(definition([node], []), catalog());
-
-    expect(codes(result)).toContain("PROCESSING_BINDING_COLUMN");
-  });
-
-  it("关系输入缺失时报错", () => {
-    const node = processingNode("p1", "metric_summary");
-
-    const result = validateWorkflow(definition([node], []), catalog());
-
-    expect(codes(result)).toContain("PROCESSING_RELATION_MISSING");
-  });
-
-  it("视图缺少展示配置时报错", () => {
-    const table: WorkflowNode = {
-      id: "view",
-      kind: "member_table",
-      region_id: "analysis-1",
-      position: { x: 0, y: 0 },
-      params: {},
-    };
-
-    const result = validateWorkflow(definition([table], []), catalog());
-
-    expect(codes(result)).toContain("VIEW_CONFIG_MISSING");
-  });
-
-  it("视图多条数据入线表结构不一致时报错", () => {
-    const first = processingNode("p1", "session_metrics");
-    const second = processingNode("p2", "metric_summary");
-    const view: WorkflowNode = {
-      id: "view",
-      kind: "member_table",
-      region_id: "analysis-1",
-      position: { x: 0, y: 0 },
-      params: {},
-    };
-    const config: WorkflowNode = {
-      id: "cfg",
-      kind: "table_config",
-      region_id: "analysis-1",
-      position: { x: 0, y: 0 },
-      params: { condition_columns: [], data_columns: ["total_damage"] },
-    };
-    const result = validateWorkflow(
-      definition(
-        [first, second, view, config],
-        [
-          edge("e1", "p1", "out", "view", "in"),
-          edge("e2", "p2", "out", "view", "in"),
-          edge("e3", "cfg", "out", "view", "config"),
-        ],
-      ),
-      catalog(),
-    );
-
-    expect(codes(result)).toContain("VIEW_INPUT_SHAPE_MISMATCH");
-  });
-
-  it("分析边界向非本区域节点供数时报错", () => {
-    const simulation: WorkflowNode = {
-      id: "sim",
-      kind: "simulation",
-      region_id: null,
-      position: { x: 0, y: 0 },
-      params: {},
-    };
-    const outside = processingNode("outside", "session_metrics");
-    outside.region_id = null;
-    const result = validateWorkflow(
-      definition(
-        [simulation, outside],
-        [
-          edge("e1", "sim", "out", "analysis-1", "in"),
-          edge("e2", "analysis-1", "in", "outside", "in_session"),
-        ],
-      ),
-      catalog(),
-    );
-
-    expect(codes(result)).toContain("ANALYSIS_BOUNDARY_TARGET_INVALID");
-  });
+it("视图多条数据入线结构不一致时报 VIEW_INPUT_SHAPE_MISMATCH", () => {
+  const nodes = [
+    fedRuns(),
+    node("projA", "project", { columns: [{ name: "session_id" }] }),
+    node("projB", "project", { columns: [{ name: "frames_run" }] }),
+    node("view1", "member_table"),
+    node("cfg1", "table_config", { condition_columns: [], data_columns: [] }),
+  ];
+  const edges = [
+    boundaryFeed(),
+    edge("e1", "runs1", "out", "projA", "in"),
+    edge("e2", "runs1", "out", "projB", "in"),
+    edge("e3", "projA", "out", "view1", "in"),
+    edge("e4", "projB", "out", "view1", "in"),
+    edge("e5", "cfg1", "out", "view1", "config"),
+  ];
+  const result = validateWorkflow(definition(nodes, edges));
+  expect(codes(result)).toContain("VIEW_INPUT_SHAPE_MISMATCH");
 });

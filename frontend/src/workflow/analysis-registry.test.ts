@@ -1,157 +1,241 @@
+/** 分析节点注册表（契约 v2：取数 + 关系算子族）。 */
+
 import { describe, expect, it } from "vitest";
 
-import { definitionToEditorState } from "../state/converters";
+import { getNodeKindSpec } from "./registry";
+import { computeAnalysisShapes, fetchShape } from "./templates";
 import type { WorkflowDefinition, WorkflowNode } from "./types";
-import { REGION_BOUNDARY_IN_PORT } from "./types";
-import { getNodeKindSpec, validateNode } from "./registry";
-import {
-  PARAM_BINDING_CONFIG,
-  PARAM_BINDING_SESSION_GROUP,
-  PARAM_BINDING_STATIC,
-  PARAM_BINDING_UPSTREAM_COLUMN,
-  TemplateCatalog,
-  canBindSessionGroup,
-} from "./templates";
 
-describe("分析模板目录", () => {
-  it("加载、查询模板声明与输出列", () => {
-    const catalog = new TemplateCatalog();
-    catalog.load([
-      {
-        template_id: "session_metrics",
-        display_name: "每会话指标",
-        params: [
-          {
-            name: "session_ids",
-            type: "string[]",
-            required: true,
-            binding: [PARAM_BINDING_SESSION_GROUP, PARAM_BINDING_UPSTREAM_COLUMN],
-          },
-          { name: "frame_min", type: "int", required: false, binding: [PARAM_BINDING_STATIC, PARAM_BINDING_CONFIG] },
-        ],
-        relations: [],
-        output: { columns: [{ name: "session_id", type: "string" }] },
-      },
-    ]);
+describe("分析节点注册表", () => {
+  it("取数节点属于分析区域，入向为会话组、出向为结果表", () => {
+    const spec = getNodeKindSpec("fetch_runs");
+    expect(spec?.region).toBe("analysis");
+    expect(spec?.ports.inputs).toHaveLength(1);
+    expect(spec?.ports.inputs[0].dataLanguage).toBe("session_group");
+    expect(spec?.ports.outputs[0].dataLanguage).toBe("table");
+  });
 
-    expect(catalog.list().map((item) => item.template_id)).toEqual(["session_metrics"]);
-    expect(catalog.outputColumns("session_metrics")).toEqual([
-      { name: "session_id", type: "string" },
-    ]);
-    expect(catalog.paramNames("session_metrics")).toEqual(["session_ids", "frame_min"]);
-    expect(catalog.get("missing")).toBeNull();
-    expect(canBindSessionGroup(catalog.params("session_metrics")[0])).toBe(true);
+  it("六个单输入算子均为结果表入出，连接为双输入", () => {
+    const single = ["filter", "project", "sort", "aggregate", "limit", "compute"] as const;
+    for (const kind of single) {
+      const spec = getNodeKindSpec(kind);
+      expect(spec?.ports.inputs).toHaveLength(1);
+      expect(spec?.ports.inputs[0].dataLanguage).toBe("table");
+      expect(spec?.ports.outputs[0].dataLanguage).toBe("table");
+    }
+    const join = getNodeKindSpec("join");
+    expect(join?.ports.inputs.map((port) => port.id)).toEqual(["left", "right"]);
+  });
+
+  it("旧的处理与查询参数配置节点已退役", () => {
+    expect(getNodeKindSpec("processing")).toBeNull();
+    expect(getNodeKindSpec("query_config")).toBeNull();
   });
 });
 
-describe("分析节点注册表", () => {
-  const kinds = [
-    "data_provider",
-    "processing",
-    "query_config",
-    "table_config",
-    "timeline_config",
-    "pie_config",
-    "bar_config",
-    "member_table",
-    "timeline",
-    "pie",
-    "bar",
-  ] as const;
+describe("形状推导", () => {
+  const baseNode = (overrides: Partial<WorkflowNode>): WorkflowNode => ({
+    id: "n1",
+    kind: "fetch_runs",
+    region_id: "analysis-1",
+    position: { x: 0, y: 0 },
+    params: {},
+    ...overrides,
+  });
 
-  it.each(kinds)("%s 已注册且归属正确", (kind) => {
-    const spec = getNodeKindSpec(kind);
-    expect(spec).not.toBeNull();
-    expect(spec?.displayName).toBeTruthy();
-    if (kind === "data_provider") {
-      expect(spec?.region).toBeNull();
-    } else {
-      expect(spec?.region).toBe("analysis");
+  it("运行取数默认携带会话列与运行列，支持快照提取列", () => {
+    const node = baseNode({
+      params: { snapshot_columns: [{ path: "team[0].character.asset_key", name: "char_1_key", type: "string" }] },
+    });
+    const shape = fetchShape(node);
+    const names = shape === null ? [] : shape.map((column) => column.name);
+    expect(names).toContain("session_id");
+    expect(names).toContain("frames_run");
+    expect(names).toContain("char_1_key");
+    expect(names).not.toContain("input_snapshot_json");
+  });
+
+  function definitionWith(nodes: WorkflowNode[], edges: WorkflowDefinition["edges"]): WorkflowDefinition {
+    return { schema_version: 1, meta: { name: "t" }, regions: [], nodes, edges, layout: {} };
+  }
+
+  it("投影输出按定义收窄，聚合自动命名并推导类型", () => {
+    const definition = definitionWith(
+      [
+        baseNode({ id: "runs1" }),
+        baseNode({
+          id: "proj1",
+          kind: "project",
+          params: { columns: [{ name: "session_id" }, { name: "frames_run", as: "frames" }] },
+        }),
+        baseNode({
+          id: "agg1",
+          kind: "aggregate",
+          params: {
+            group_by: ["session_id"],
+            aggregates: [{ fn: "avg", column: "frames" }],
+          },
+        }),
+      ],
+      [
+        { id: "e1", source_node_id: "runs1", source_port_id: "out", target_node_id: "proj1", target_port_id: "in" },
+        { id: "e2", source_node_id: "proj1", source_port_id: "out", target_node_id: "agg1", target_port_id: "in" },
+      ],
+    );
+    const shapes = computeAnalysisShapes(definition);
+    expect(shapes.get("proj1")?.map((column) => column.name)).toEqual(["session_id", "frames"]);
+    const agg = shapes.get("agg1");
+    expect(agg?.map((column) => column.name + ":" + column.type)).toEqual([
+      "session_id:string",
+      "avg_frames:float",
+    ]);
+  });
+
+  it("空投影、空聚合与空计算列不可推导", () => {
+    const cases: {
+      id: string;
+      kind: "project" | "aggregate" | "compute";
+      params: Record<string, unknown>;
+    }[] = [
+      { id: "p1", kind: "project", params: { columns: [] } },
+      { id: "a1", kind: "aggregate", params: {} },
+      { id: "c1", kind: "compute", params: { columns: [] } },
+    ];
+    for (const item of cases) {
+      const definition = definitionWith(
+        [
+          baseNode({ id: "runs1" }),
+          baseNode({ id: item.id, kind: item.kind, params: item.params }),
+        ],
+        [
+          {
+            id: `e-${item.id}`,
+            source_node_id: "runs1",
+            source_port_id: "out",
+            target_node_id: item.id,
+            target_port_id: "in",
+          },
+        ],
+      );
+      expect(computeAnalysisShapes(definition).get(item.id)).toBeNull();
     }
   });
 
-  it("处理节点端口语言符合模型", () => {
-    const spec = getNodeKindSpec("processing");
-    expect(spec?.ports.inputs.map((port) => port.dataLanguage)).toEqual([
-      "session_group",
-      "query_param",
-      "table",
-      "table",
-    ]);
-    expect(spec?.ports.outputs).toEqual([
-      expect.objectContaining({ id: "out", dataLanguage: "table" }),
-    ]);
-  });
-
-  it("视图节点数据输入允许多条、配置输入限一条", () => {
-    const spec = getNodeKindSpec("member_table");
-    expect(spec?.ports.inputs).toEqual([
-      expect.objectContaining({ id: "in", dataLanguage: "table", connectionLimit: Number.POSITIVE_INFINITY }),
-      expect.objectContaining({ id: "config", dataLanguage: "table_config", connectionLimit: 1 }),
-    ]);
-  });
-
-  it("处理节点缺模板时报错", () => {
-    const node: WorkflowNode = {
-      id: "n1",
-      kind: "processing",
-      region_id: "r1",
-      position: { x: 0, y: 0 },
-      params: { template_id: "", values: {}, value_bindings: {} },
-    };
-    expect(validateNode(node).some((item) => item.code === "PARAM_INVALID")).toBe(true);
-  });
-
-  it("查询参数配置节点拒绝重复参数行", () => {
-    const node: WorkflowNode = {
-      id: "n1",
-      kind: "query_config",
-      region_id: "r1",
-      position: { x: 0, y: 0 },
-      params: { rows: [{ param: "frame_min", value: 0 }, { param: "frame_min", value: 1 }] },
-    };
-    const diagnostics = validateNode(node);
-    expect(diagnostics.some((item) => item.message.includes("参数重复"))).toBe(true);
-  });
-
-  it("时间轴配置缺必选角色时报错", () => {
-    const node: WorkflowNode = {
-      id: "n1",
-      kind: "timeline_config",
-      region_id: "r1",
-      position: { x: 0, y: 0 },
-      params: { track: "track", start: "", end: "", value: "", label: "" },
-    };
-    expect(validateNode(node).some((item) => item.message.includes("start"))).toBe(true);
-  });
-});
-
-describe("分析节点工作流定义往返", () => {
-  it("definition -> editor state 保留分析节点参数", () => {
-    const definition: WorkflowDefinition = {
-      schema_version: 1,
-      meta: { name: "分析工作流" },
-      regions: [{ id: "r1", kind: "analysis", name: "分析区域", rect: { x: 0, y: 0, width: 400, height: 300 } }],
-      nodes: [
+  it("过滤空条件组按恒真推导，非法算子参数不可推导", () => {
+    const identity = definitionWith(
+      [
+        baseNode({ id: "runs1" }),
+        baseNode({ id: "f1", kind: "filter", params: {} }),
+      ],
+      [
         {
-          id: "n1",
-          kind: "processing",
-          region_id: "r1",
-          position: { x: 0, y: 0 },
-          params: { template_id: "session_metrics", values: {}, value_bindings: {} },
+          id: "e1",
+          source_node_id: "runs1",
+          source_port_id: "out",
+          target_node_id: "f1",
+          target_port_id: "in",
         },
       ],
-      edges: [],
-      layout: {},
-    };
+    );
+    expect(computeAnalysisShapes(identity).get("f1")).not.toBeNull();
 
-    const state = definitionToEditorState(definition);
+    const invalid: {
+      id: string;
+      kind: "filter" | "sort" | "limit" | "join";
+      params: Record<string, unknown>;
+    }[] = [
+      {
+        id: "f1",
+        kind: "filter",
+        params: { conditions: [{ column: "state", op: "like", value: "x" }] },
+      },
+      { id: "s1", kind: "sort", params: { keys: [] } },
+      { id: "l1", kind: "limit", params: { count: 0 } },
+      {
+        id: "j1",
+        kind: "join",
+        params: { left_key: "session_id", right_key: "session_id", mode: "full" },
+      },
+    ];
+    for (const item of invalid) {
+      const nodes = [baseNode({ id: "runs1" })];
+      const edges = [];
+      if (item.kind === "join") {
+        nodes.push(
+          baseNode({ id: "ev1", kind: "fetch_events" }),
+          baseNode({ id: item.id, kind: item.kind, params: item.params }),
+        );
+        edges.push(
+          {
+            id: "e1",
+            source_node_id: "runs1",
+            source_port_id: "out",
+            target_node_id: item.id,
+            target_port_id: "left",
+          },
+          {
+            id: "e2",
+            source_node_id: "ev1",
+            source_port_id: "out",
+            target_node_id: item.id,
+            target_port_id: "right",
+          },
+        );
+      } else {
+        nodes.push(baseNode({ id: item.id, kind: item.kind, params: item.params }));
+        edges.push({
+          id: "e1",
+          source_node_id: "runs1",
+          source_port_id: "out",
+          target_node_id: item.id,
+          target_port_id: "in",
+        });
+      }
+      const definition = definitionWith(nodes, edges);
+      expect(computeAnalysisShapes(definition).get(item.id)).toBeNull();
+    }
+  });
 
-    expect(state.definition.nodes[0].params).toEqual({
-      template_id: "session_metrics",
-      values: {},
-      value_bindings: {},
-    });
-    expect(REGION_BOUNDARY_IN_PORT).toBe("in");
+  it("compute 非法表达式不可推导", () => {
+    const definition = definitionWith(
+      [
+        baseNode({ id: "runs1" }),
+        baseNode({
+          id: "c1",
+          kind: "compute",
+          params: {
+            columns: [
+              {
+                name: "bad",
+                expr: { op: "nope", left: { col: "frames_run" }, right: { lit: 2 } },
+              },
+            ],
+          },
+        }),
+      ],
+      [
+        {
+          id: "e1",
+          source_node_id: "runs1",
+          source_port_id: "out",
+          target_node_id: "c1",
+          target_port_id: "in",
+        },
+      ],
+    );
+    expect(computeAnalysisShapes(definition).get("c1")).toBeNull();
+  });
+
+  it("fetch_events 非法事件类型、帧范围或提取列不可推导", () => {
+    const cases: Record<string, unknown>[] = [
+      { event_types: "DAMAGE_RESOLVED" },
+      { frame_min: "0" },
+      { frame_min: 10, frame_max: 5 },
+      { payload_columns: [{ path: "x", name: "n", type: "date" }] },
+    ];
+    for (const params of cases) {
+      const node = baseNode({ id: "ev1", kind: "fetch_events", params });
+      expect(fetchShape(node)).toBeNull();
+    }
   });
 });

@@ -25,8 +25,15 @@ export const NODE_KINDS = [
   "range",
   "simulation",
   "data_provider",
-  "processing",
-  "query_config",
+  "fetch_runs",
+  "fetch_events",
+  "filter",
+  "project",
+  "sort",
+  "aggregate",
+  "limit",
+  "join",
+  "compute",
   "table_config",
   "timeline_config",
   "pie_config",
@@ -47,7 +54,6 @@ export type DataLanguage =
   | "session"
   | "session_group"
   | "table"
-  | "query_param"
   | "table_config"
   | "timeline_config"
   | "pie_config"

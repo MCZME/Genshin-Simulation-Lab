@@ -1,9 +1,9 @@
 import { createContext, useContext } from "react";
 
-import type { TemplateCatalog } from "../workflow/templates";
+import type { AnalysisSchemaCatalog } from "../workflow/templates";
 
-export const TemplateCatalogContext = createContext<TemplateCatalog | null>(null);
+export const AnalysisSchemaCatalogContext = createContext<AnalysisSchemaCatalog | null>(null);
 
-export function useTemplateCatalog(): TemplateCatalog | null {
-  return useContext(TemplateCatalogContext);
+export function useAnalysisSchemaCatalog(): AnalysisSchemaCatalog | null {
+  return useContext(AnalysisSchemaCatalogContext);
 }

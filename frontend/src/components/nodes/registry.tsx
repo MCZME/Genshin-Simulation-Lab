@@ -1,9 +1,18 @@
+import { useMemo } from "react";
 import { COLORS } from "../../theme/tokens";
 import {
+  AggregateEditor,
+  ComputeEditor,
   DataProviderEditor,
   DisplayConfigEditor,
-  ProcessingEditor,
-  QueryConfigEditor,
+  FetchEventsEditor,
+  FetchRunsEditor,
+  FilterEditor,
+  JoinEditor,
+  LimitEditor,
+  ProjectEditor,
+  SortEditor,
+  setAnalysisEditorEnvironment,
 } from "./analysis";
 import {
   ArtifactEditor,
@@ -20,10 +29,15 @@ import {
   WeaponEditor,
 } from "./editors";
 import type { NodeEditorProps } from "./editors";
+import { computeAnalysisShapes } from "../../workflow/templates";
+import type { AnalysisSchemaCatalog } from "../../workflow/templates";
+import type { WorkflowDefinition } from "../../workflow/types";
 
 export interface NodeEditorHostProps extends Omit<NodeEditorProps, "fieldErrors"> {
   kind: string;
   fieldErrors?: Record<string, string[]>;
+  definition: WorkflowDefinition;
+  catalog: AnalysisSchemaCatalog | null;
 }
 
 export function NodeEditorHost({
@@ -31,7 +45,11 @@ export function NodeEditorHost({
   node,
   onChange,
   fieldErrors,
+  definition,
+  catalog,
 }: NodeEditorHostProps) {
+  const shapes = useMemo(() => computeAnalysisShapes(definition), [definition]);
+  setAnalysisEditorEnvironment({ catalog, definition, shapes });
   switch (kind) {
     case "root":
       return <RootEditor fieldErrors={fieldErrors} />;
@@ -57,10 +75,24 @@ export function NodeEditorHost({
       return <SimulationEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "data_provider":
       return <DataProviderEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
-    case "processing":
-      return <ProcessingEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
-    case "query_config":
-      return <QueryConfigEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "fetch_runs":
+      return <FetchRunsEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "fetch_events":
+      return <FetchEventsEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "filter":
+      return <FilterEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "project":
+      return <ProjectEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "sort":
+      return <SortEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "aggregate":
+      return <AggregateEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "limit":
+      return <LimitEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "join":
+      return <JoinEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "compute":
+      return <ComputeEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "table_config":
     case "timeline_config":
     case "pie_config":
@@ -91,8 +123,15 @@ export const CONFIG_NODE_KINDS = [
 
 /** 分析区域内节点种类（不含画布级 data_provider）。 */
 export const ANALYSIS_NODE_KINDS = [
-  "processing",
-  "query_config",
+  "fetch_runs",
+  "fetch_events",
+  "filter",
+  "project",
+  "sort",
+  "aggregate",
+  "limit",
+  "join",
+  "compute",
   "table_config",
   "timeline_config",
   "pie_config",

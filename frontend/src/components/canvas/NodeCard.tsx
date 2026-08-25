@@ -5,14 +5,16 @@ import { InputOrderPopover } from "./InputOrderPopover";
 import type { IncomingOrderGroup } from "./InputOrderPopover";
 import { nodeKindColor } from "../nodes/registry";
 import { NodeEditorHost } from "../nodes/registry";
+import { useAnalysisSchemaCatalog } from "../analysis_context";
 import { AnalysisViewBody } from "../nodes/views";
 import { getNodeKindSpec } from "../../workflow/registry";
-import type { WorkflowNode } from "../../workflow/types";
+import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 import type { Diagnostic } from "../../workflow/types";
 import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
 
 export type WorkflowNodeData = {
   node: WorkflowNode;
+  definition: WorkflowDefinition;
   onParamsChange: (nodeId: string, params: Record<string, unknown>) => void;
   onDeleteNode: (nodeId: string) => void;
   onMoveEdgeOrder: (
@@ -31,7 +33,7 @@ export type WorkflowNodeData = {
   stepRunning: boolean;
   /** 运行/检查期间锁定破坏性交互。 */
   interactionLocked: boolean;
-  /** 分析执行结果（处理节点 = 模板结果；视图节点 = 拼接后的输入表）。 */
+  /** 分析执行结果（表节点 = 查询结果；视图节点 = 拼接后的输入表）。 */
   analysisResult?: AnalysisNodeResult;
 } & Record<string, unknown>;
 
@@ -45,6 +47,7 @@ export interface MemberPortInfo {
 export function NodeCard({ data, selected }: NodeProps) {
   const {
     node,
+    definition,
     onParamsChange,
     onDeleteNode,
     onMoveEdgeOrder,
@@ -59,6 +62,7 @@ export function NodeCard({ data, selected }: NodeProps) {
   } = data as WorkflowNodeData;
   const spec = getNodeKindSpec(node.kind);
   const isDraft = node.region_id === null && spec?.region !== null;
+  const catalog = useAnalysisSchemaCatalog();
   const fieldErrors = collectFieldErrors(diagnostics, node.id);
   const [membersOpen, setMembersOpen] = useState(false);
   const hasMemberPorts = memberPorts.length > 0;
@@ -89,6 +93,8 @@ export function NodeCard({ data, selected }: NodeProps) {
           <NodeEditorHost
             kind={node.kind}
             node={node}
+            definition={definition}
+            catalog={catalog}
             fieldErrors={fieldErrors}
             onChange={(params) => onParamsChange(node.id, params)}
           />

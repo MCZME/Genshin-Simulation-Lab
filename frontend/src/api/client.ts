@@ -13,11 +13,39 @@ export type RunMemberStatus = Schema["RunMemberStatus"];
 export type RunListResponse = Schema["RunListResponse"];
 export type RunListItem = Schema["RunListItem"];
 export type RunDetailResponse = Schema["RunDetailResponse"];
-export type TemplateListResponse = Schema["TemplateListResponse"];
-export type TemplateDeclarationDto = Schema["TemplateDeclarationDto"];
-export type ExecuteTemplateRequest = Schema["ExecuteTemplateRequest"];
-export type TemplateResultResponse = Schema["TemplateResultResponse"];
-export type RelationPayload = Schema["RelationPayload"];
+/** 分析查询计划节点（契约 v2：结构化计划，不含 SQL 文本）。 */
+export interface AnalysisPlanNodeDto {
+  id: string;
+  kind: string;
+  params: Record<string, unknown>;
+  inputs: string[];
+}
+
+export interface ExecutePlanRequest {
+  session_ids: string[];
+  nodes: AnalysisPlanNodeDto[];
+  outputs: string[];
+}
+
+export interface AnalysisColumnDto {
+  name: string;
+  type: string;
+}
+
+export interface AnalysisTableResponse {
+  columns: AnalysisColumnDto[];
+  rows: unknown[][];
+  truncated: boolean;
+}
+
+export interface ExecutePlanResponse {
+  tables: Record<string, AnalysisTableResponse>;
+}
+
+export interface AnalysisSchemaResponse {
+  tables: { name: string; columns: { name: string; type: string; description: string }[] }[];
+  event_types: { name: string; fields: { path: string; type: string; description: string }[] }[];
+}
 export type AssetListResponse = Schema["AssetListResponse"];
 export type AssetResponse = Schema["AssetResponse"];
 export type Diagnostic = Schema["Diagnostic"];
@@ -153,24 +181,21 @@ export async function getResultDetail(sessionId: string): Promise<RunDetailRespo
   return request<RunDetailResponse>(`/results/${encodeURIComponent(sessionId)}`);
 }
 
-/** 分析模板目录：处理节点卡与校验的数据源（后端只增不改）。 */
-export async function getAnalysisTemplates(): Promise<TemplateListResponse> {
-  return request<TemplateListResponse>("/analysis/templates");
+/** 执行分析查询计划，返回输出表集合（契约 v2）。 */
+export async function executeAnalysisQuery(
+  payload: ExecutePlanRequest,
+): Promise<ExecutePlanResponse> {
+  return request<ExecutePlanResponse>("/analysis/query", {
+    method: "POST",
+    body: JSON.stringify(payload),
+  });
 }
 
-/** 执行分析模板，返回一张结果表。 */
-export async function executeAnalysisTemplate(
-  templateId: string,
-  payload: ExecuteTemplateRequest,
-): Promise<TemplateResultResponse> {
-  return request<TemplateResultResponse>(
-    `/analysis/templates/${encodeURIComponent(templateId)}/execute`,
-    {
-      method: "POST",
-      body: JSON.stringify(payload),
-    },
-  );
+/** 取数节点编辑器的可读 schema：表列、事件类型与载荷字段。 */
+export async function getAnalysisSchema(): Promise<AnalysisSchemaResponse> {
+  return request<AnalysisSchemaResponse>("/analysis/schema");
 }
+
 
 export async function searchAssets(
   assetType: "characters" | "weapons" | "artifact-sets",

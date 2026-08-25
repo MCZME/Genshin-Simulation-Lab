@@ -4,24 +4,7 @@
  */
 
 export interface paths {
-    "/api/v1/analysis/templates": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Templates */
-        get: operations["list_templates_api_v1_analysis_templates_get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
-    "/api/v1/analysis/templates/{template_id}/execute": {
+    "/api/v1/analysis/query": {
         parameters: {
             query?: never;
             header?: never;
@@ -30,8 +13,25 @@ export interface paths {
         };
         get?: never;
         put?: never;
-        /** Execute Template */
-        post: operations["execute_template_api_v1_analysis_templates__template_id__execute_post"];
+        /** Execute Plan */
+        post: operations["execute_plan_api_v1_analysis_query_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/analysis/schema": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Read Schema */
+        get: operations["read_schema_api_v1_analysis_schema_get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -267,6 +267,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AnalysisSchemaResponse */
+        AnalysisSchemaResponse: {
+            /** Tables */
+            tables: components["schemas"]["TableSchemaDto"][];
+            /** Event Types */
+            event_types: components["schemas"]["EventTypeSchemaDto"][];
+        };
         /**
          * AssetListResponse
          * @description 按类型搜索/列表响应。
@@ -328,6 +335,18 @@ export interface components {
             /** Path */
             path?: string | null;
         };
+        /** EventFieldDto */
+        EventFieldDto: {
+            /** Path */
+            path: string;
+            /** Type */
+            type: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+        };
         /**
          * EventItem
          * @description 单条事件。
@@ -356,15 +375,27 @@ export interface components {
             /** Total */
             total: number;
         };
-        /** ExecuteTemplateRequest */
-        ExecuteTemplateRequest: {
-            /** Params */
-            params?: {
-                [key: string]: unknown;
-            };
-            /** Relations */
-            relations?: {
-                [key: string]: components["schemas"]["RelationPayload"];
+        /** EventTypeSchemaDto */
+        EventTypeSchemaDto: {
+            /** Name */
+            name: string;
+            /** Fields */
+            fields: components["schemas"]["EventFieldDto"][];
+        };
+        /** ExecutePlanRequest */
+        ExecutePlanRequest: {
+            /** Session Ids */
+            session_ids?: string[];
+            /** Nodes */
+            nodes?: components["schemas"]["PlanNodeDto"][];
+            /** Outputs */
+            outputs?: string[];
+        };
+        /** ExecutePlanResponse */
+        ExecutePlanResponse: {
+            /** Tables */
+            tables: {
+                [key: string]: components["schemas"]["TableResponse"];
             };
         };
         /** HTTPValidationError */
@@ -396,12 +427,18 @@ export interface components {
             /** Details */
             details?: components["schemas"]["Diagnostic"][];
         };
-        /** RelationPayload */
-        RelationPayload: {
-            /** Columns */
-            columns: string[];
-            /** Rows */
-            rows: unknown[][];
+        /** PlanNodeDto */
+        PlanNodeDto: {
+            /** Id */
+            id: string;
+            /** Kind */
+            kind: string;
+            /** Params */
+            params?: {
+                [key: string]: unknown;
+            };
+            /** Inputs */
+            inputs?: string[];
         };
         /**
          * RunDetailResponse
@@ -510,6 +547,18 @@ export interface components {
             /** Frames Run */
             frames_run: number;
         };
+        /** SchemaColumnDto */
+        SchemaColumnDto: {
+            /** Name */
+            name: string;
+            /** Type */
+            type: string;
+            /**
+             * Description
+             * @default
+             */
+            description: string;
+        };
         /**
          * SubmitRunRequest
          * @description POST /api/v1/runs 请求体。
@@ -525,63 +574,28 @@ export interface components {
             /** Members */
             members: components["schemas"]["InputMemberRequest"][];
         };
-        /** TemplateColumnDto */
-        TemplateColumnDto: {
+        /** TableColumnDto */
+        TableColumnDto: {
             /** Name */
             name: string;
             /** Type */
             type: string;
         };
-        /** TemplateDeclarationDto */
-        TemplateDeclarationDto: {
-            /** Template Id */
-            template_id: string;
-            /** Display Name */
-            display_name: string;
-            /** Params */
-            params: components["schemas"]["TemplateParamDto"][];
-            /** Relations */
-            relations: components["schemas"]["TemplateRelationDto"][];
-            output: components["schemas"]["TemplateOutputDto"];
-        };
-        /** TemplateListResponse */
-        TemplateListResponse: {
-            /** Items */
-            items: components["schemas"]["TemplateDeclarationDto"][];
-        };
-        /** TemplateOutputDto */
-        TemplateOutputDto: {
+        /** TableResponse */
+        TableResponse: {
             /** Columns */
-            columns: components["schemas"]["TemplateColumnDto"][];
-        };
-        /** TemplateParamDto */
-        TemplateParamDto: {
-            /** Name */
-            name: string;
-            /** Type */
-            type: string;
-            /** Required */
-            required: boolean;
-            /** Binding */
-            binding: string[];
-        };
-        /** TemplateRelationDto */
-        TemplateRelationDto: {
-            /** Name */
-            name: string;
-            /** Columns */
-            columns: string[];
-            /** Required */
-            required: boolean;
-        };
-        /** TemplateResultResponse */
-        TemplateResultResponse: {
-            /** Columns */
-            columns: components["schemas"]["TemplateColumnDto"][];
+            columns: components["schemas"]["TableColumnDto"][];
             /** Rows */
             rows: unknown[][];
             /** Truncated */
             truncated: boolean;
+        };
+        /** TableSchemaDto */
+        TableSchemaDto: {
+            /** Name */
+            name: string;
+            /** Columns */
+            columns: components["schemas"]["SchemaColumnDto"][];
         };
         /**
          * UiSettingsResponse
@@ -704,7 +718,40 @@ export interface components {
 }
 export type $defs = Record<string, never>;
 export interface operations {
-    list_templates_api_v1_analysis_templates_get: {
+    execute_plan_api_v1_analysis_query_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ExecutePlanRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ExecutePlanResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    read_schema_api_v1_analysis_schema_get: {
         parameters: {
             query?: never;
             header?: never;
@@ -719,42 +766,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": components["schemas"]["TemplateListResponse"];
-                };
-            };
-        };
-    };
-    execute_template_api_v1_analysis_templates__template_id__execute_post: {
-        parameters: {
-            query?: never;
-            header?: never;
-            path: {
-                template_id: string;
-            };
-            cookie?: never;
-        };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ExecuteTemplateRequest"];
-            };
-        };
-        responses: {
-            /** @description Successful Response */
-            200: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["TemplateResultResponse"];
-                };
-            };
-            /** @description Validation Error */
-            422: {
-                headers: {
-                    [name: string]: unknown;
-                };
-                content: {
-                    "application/json": components["schemas"]["HTTPValidationError"];
+                    "application/json": components["schemas"]["AnalysisSchemaResponse"];
                 };
             };
         };

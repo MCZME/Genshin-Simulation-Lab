@@ -39,7 +39,7 @@ import type { RegionNodeData } from "./RegionNode";
 
 export interface CanvasViewProps {
   definition: WorkflowDefinition;
-  /** 分析执行结果：按节点 id 索引（处理节点 = 模板结果；视图节点 = 输入表）。 */
+  /** 分析执行结果：按节点 id 索引（表节点 = 查询结果；视图节点 = 输入表）。 */
   analysisResults?: Map<string, AnalysisNodeResult>;
   selection: EditorSelection;
   diagnostics: Diagnostic[];
@@ -506,6 +506,7 @@ function buildNodes(
           };
     const data: WorkflowNodeData = {
       node,
+      definition,
       analysisResult: analysisResults?.get(node.id),
       onParamsChange: callbacks.onParamsChange,
       onDeleteNode: callbacks.onDeleteNode,

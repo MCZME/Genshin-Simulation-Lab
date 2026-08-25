@@ -628,45 +628,6 @@ function validateDataProvider(node: WorkflowNode): Diagnostic[] {
   return diagnostics;
 }
 
-function validateProcessing(node: WorkflowNode): Diagnostic[] {
-  const diagnostics: Diagnostic[] = [];
-  const templateId = node.params.template_id;
-  if (typeof templateId !== "string" || templateId.trim() === "") {
-    diagnostics.push(paramError(node, "template_id", "必须选择一个分析模板"));
-  }
-  if (node.params.values !== undefined && !isPlainObject(node.params.values)) {
-    diagnostics.push(paramError(node, "values", "values 必须是对象"));
-  }
-  if (
-    node.params.value_bindings !== undefined &&
-    !isPlainObject(node.params.value_bindings)
-  ) {
-    diagnostics.push(paramError(node, "value_bindings", "value_bindings 必须是对象"));
-  }
-  return diagnostics;
-}
-
-function validateQueryConfig(node: WorkflowNode): Diagnostic[] {
-  const diagnostics: Diagnostic[] = [];
-  const rows = node.params.rows;
-  if (!Array.isArray(rows)) {
-    diagnostics.push(paramError(node, "rows", "rows 必须是数组"));
-    return diagnostics;
-  }
-  const seen = new Set<string>();
-  for (const [index, raw] of rows.entries()) {
-    const row = raw as Record<string, unknown> | null;
-    if (!isPlainObject(row) || typeof row.param !== "string" || row.param === "") {
-      diagnostics.push(paramError(node, `rows[${index}].param`, "参数名不能为空"));
-      continue;
-    }
-    if (seen.has(row.param)) {
-      diagnostics.push(paramError(node, `rows[${index}].param`, `参数重复：${row.param}`));
-    }
-    seen.add(row.param);
-  }
-  return diagnostics;
-}
 
 function validateTableConfig(node: WorkflowNode): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
@@ -943,43 +904,58 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     fragment: () => null,
     validate: validateDataProvider,
   },
-  processing: {
-    kind: "processing",
-    displayName: "数据处理",
+  fetch_runs: {
+    kind: "fetch_runs",
+    displayName: "运行取数",
     region: "analysis",
     ports: {
       inputs: [
-        analysisPort("in_session", "session_group", "group", 1),
-        analysisPort("in_params", "query_param", "single", Number.POSITIVE_INFINITY),
-        analysisPort("in_value", "table", "single", Number.POSITIVE_INFINITY),
-        analysisPort("in_relation", "table", "single", Number.POSITIVE_INFINITY),
+        { id: "in", cardinality: "single", dataLanguage: "session_group", connectionLimit: 1 },
       ],
-      outputs: [analysisPort("out", "table", "single", Number.POSITIVE_INFINITY)],
+      outputs: [{ id: "out", cardinality: "group", dataLanguage: "table", connectionLimit: Number.POSITIVE_INFINITY }],
     },
-    paramFields: {
-      template_id: { type: "string", required: true },
-      values: { type: "object" },
-      value_bindings: { type: "object" },
-    },
-    defaultParams: { template_id: "", values: {}, value_bindings: {} },
+    paramFields: { snapshot_columns: { type: "list" } },
+    defaultParams: { snapshot_columns: [] },
     fragment: () => null,
-    validate: validateProcessing,
+    validate: validateFetchNode,
   },
-  query_config: {
-    kind: "query_config",
-    displayName: "查询参数配置",
+  fetch_events: {
+    kind: "fetch_events",
+    displayName: "事件取数",
     region: "analysis",
     ports: {
-      inputs: [],
-      outputs: [analysisPort("out", "query_param", "single", Number.POSITIVE_INFINITY)],
+      inputs: [
+        { id: "in", cardinality: "single", dataLanguage: "session_group", connectionLimit: 1 },
+      ],
+      outputs: [{ id: "out", cardinality: "group", dataLanguage: "table", connectionLimit: Number.POSITIVE_INFINITY }],
     },
-    paramFields: {
-      rows: { type: "list", required: true },
-    },
-    defaultParams: { rows: [] },
+    paramFields: { event_types: { type: "list" }, payload_columns: { type: "list" } },
+    defaultParams: { event_types: [], payload_columns: [] },
     fragment: () => null,
-    validate: validateQueryConfig,
+    validate: validateFetchNode,
   },
+  filter: _operator("filter", "过滤"),
+  project: _operator("project", "投影"),
+  sort: _operator("sort", "排序"),
+  aggregate: _operator("aggregate", "分组聚合"),
+  limit: _operator("limit", "截断"),
+  join: {
+    kind: "join",
+    displayName: "连接",
+    region: "analysis",
+    ports: {
+      inputs: [
+        { id: "left", cardinality: "single", dataLanguage: "table", connectionLimit: 1 },
+        { id: "right", cardinality: "single", dataLanguage: "table", connectionLimit: 1 },
+      ],
+      outputs: [{ id: "out", cardinality: "single", dataLanguage: "table", connectionLimit: Number.POSITIVE_INFINITY }],
+    },
+    paramFields: {},
+    defaultParams: {},
+    fragment: () => null,
+    validate: () => [],
+  },
+  compute: _operator("compute", "计算列"),
   table_config: {
     kind: "table_config",
     displayName: "表格配置",
@@ -1114,6 +1090,44 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     validate: validateView,
   },
 };
+
+function _operator(kind: NodeKind, displayName: string): NodeKindSpec {
+  return {
+    kind,
+    displayName,
+    region: "analysis",
+    ports: {
+      inputs: [
+        { id: "in", cardinality: "single", dataLanguage: "table", connectionLimit: 1 },
+      ],
+      outputs: [
+        { id: "out", cardinality: "single", dataLanguage: "table", connectionLimit: Number.POSITIVE_INFINITY },
+      ],
+    },
+    paramFields: {},
+    defaultParams: {},
+    fragment: () => null,
+    validate: () => [],
+  };
+}
+
+/** 取数节点基础校验：提取列结构在形状推导阶段深入检查。 */
+function validateFetchNode(node: WorkflowNode): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  for (const key of ["snapshot_columns", "payload_columns"] as const) {
+    const rows = node.params[key];
+    if (rows !== undefined && !Array.isArray(rows)) {
+      diagnostics.push(paramError(node, key, key + " 必须是数组"));
+    }
+  }
+  if (node.kind === "fetch_events") {
+    const types = node.params.event_types;
+    if (types !== undefined && !Array.isArray(types)) {
+      diagnostics.push(paramError(node, "event_types", "event_types 必须是字符串数组"));
+    }
+  }
+  return diagnostics;
+}
 
 export function getNodeKindSpec(kind: string): NodeKindSpec | null {
   return (REGISTRY as Record<string, NodeKindSpec>)[kind] ?? null;

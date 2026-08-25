@@ -1,20 +1,28 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { NodeProps } from "@xyflow/react";
 import type { WorkflowRegion } from "../../workflow/types";
 import { RegionNode, type RegionNodeData } from "./RegionNode";
+
+const handleSpy = vi.hoisted(() => ({
+  rendered: [] as Array<Record<string, unknown>>,
+  connectionInProgress: false,
+}));
 
 vi.mock("@xyflow/react", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@xyflow/react")>();
   return {
     ...actual,
-    Handle: () => null,
+    Handle: (props: Record<string, unknown>) => {
+      handleSpy.rendered.push(props);
+      return null;
+    },
     useReactFlow: () => ({
       screenToFlowPosition: () => ({ x: 0, y: 0 }),
     }),
     useStore: (selector: (state: unknown) => unknown) =>
-      selector({ connection: { inProgress: false } }),
+      selector({ connection: { inProgress: handleSpy.connectionInProgress } }),
   };
 });
 
@@ -59,6 +67,11 @@ function renderRegion(
 }
 
 afterEach(cleanup);
+
+beforeEach(() => {
+  handleSpy.rendered.length = 0;
+  handleSpy.connectionInProgress = false;
+});
 
 describe("RegionNode 区域命名", () => {
   it("双击名称进入编辑并提交重命名", () => {
@@ -136,5 +149,54 @@ describe("RegionNode 区域运行", () => {
     renderRegion({ data: { onRunRegion } });
     fireEvent.click(screen.getByRole("button", { name: "区域运行" }));
     expect(onRunRegion).toHaveBeenCalledWith("region-1");
+  });
+});
+
+describe("RegionNode 分析区域边界输入点", () => {
+  const analysisRegion: WorkflowRegion = {
+    id: "region-1",
+    kind: "analysis",
+    name: "分析区",
+    rect: { x: 0, y: 0, width: 880, height: 440 },
+  };
+
+  function renderAnalysisRegion() {
+    renderRegion({ data: { region: analysisRegion } });
+  }
+
+  it("输入点提供可发起连线的源把手，出边朝向区域内部", () => {
+    renderAnalysisRegion();
+    const sources = handleSpy.rendered.filter((props) => props.type === "source");
+    expect(sources).toHaveLength(1);
+    expect(sources[0].id).toBe("in");
+    expect(sources[0].position).toBe("right");
+    expect(sources[0].isConnectableEnd).toBe(false);
+    const style = sources[0].style as Record<string, unknown>;
+    expect(style.left).toBe(0);
+    expect(style.transform).toBe("translate(-50%, -50%)");
+    expect(style.pointerEvents).toBe("auto");
+  });
+
+  it("同一端口保留目标侧接收外部输入；连线进行中两侧互斥切换", () => {
+    renderAnalysisRegion();
+    const idleTargets = handleSpy.rendered.filter((props) => props.type === "target");
+    expect(idleTargets).toHaveLength(1);
+    expect(idleTargets[0].id).toBe("in");
+    expect(idleTargets[0].isConnectableStart).toBe(false);
+    expect((idleTargets[0].style as Record<string, unknown>).pointerEvents).toBe("none");
+
+    handleSpy.rendered.length = 0;
+    handleSpy.connectionInProgress = true;
+    renderAnalysisRegion();
+    const draggingTargets = handleSpy.rendered.filter((props) => props.type === "target");
+    const draggingSources = handleSpy.rendered.filter((props) => props.type === "source");
+    expect((draggingTargets[0].style as Record<string, unknown>).pointerEvents).toBe("auto");
+    expect((draggingSources[0].style as Record<string, unknown>).pointerEvents).toBe("none");
+  });
+
+  it("配置区域不渲染 in 端口把手", () => {
+    renderRegion();
+    const inHandles = handleSpy.rendered.filter((props) => props.id === "in");
+    expect(inHandles).toHaveLength(0);
   });
 });

@@ -308,13 +308,31 @@ export function RegionNode({ data, selected, width, height }: NodeProps) {
         </>
       )}
       {region.kind === "analysis" && (
-        <Handle
-          type="target"
-          position={Position.Left}
-          id={REGION_BOUNDARY_IN_PORT}
-          className="region-handle"
-          isConnectableStart={false}
-        />
+        <>
+          <Handle
+            type="target"
+            position={Position.Left}
+            id={REGION_BOUNDARY_IN_PORT}
+            className="region-handle"
+            isConnectableStart={false}
+            style={{
+              pointerEvents: connectionInProgress ? "auto" : "none",
+            }}
+          />
+          <Handle
+            type="source"
+            position={Position.Right}
+            id={REGION_BOUNDARY_IN_PORT}
+            className="region-handle"
+            isConnectableEnd={false}
+            style={{
+              right: "auto",
+              left: 0,
+              transform: "translate(-50%, -50%)",
+              pointerEvents: connectionInProgress ? "none" : "auto",
+            }}
+          />
+        </>
       )}
       <InputOrderPopover
         targetNodeId={region.id}

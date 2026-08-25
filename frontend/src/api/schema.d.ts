@@ -273,6 +273,8 @@ export interface components {
             tables: components["schemas"]["TableSchemaDto"][];
             /** Event Types */
             event_types: components["schemas"]["EventTypeSchemaDto"][];
+            /** Snapshot Paths */
+            snapshot_paths: components["schemas"]["SnapshotPathDto"][];
         };
         /**
          * AssetListResponse
@@ -558,6 +560,17 @@ export interface components {
              * @default
              */
             description: string;
+        };
+        /** SnapshotPathDto */
+        SnapshotPathDto: {
+            /** Path */
+            path: string;
+            /** Type */
+            type: string;
+            /** Default Name */
+            default_name: string;
+            /** Segments */
+            segments: string[];
         };
         /**
          * SubmitRunRequest

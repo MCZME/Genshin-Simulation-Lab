@@ -2907,3 +2907,155 @@ body {
   color: #64748b;
   line-height: 1.5;
 }
+
+/* ── 获取数据节点：来源切换 ── */
+
+.fetch-source-switch {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 8px;
+}
+
+.fetch-source-switch button {
+  flex: 1;
+  padding: 5px 0;
+  background: #263449;
+  border: 1px solid #475569;
+  border-radius: 5px;
+  color: #94a3b8;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fetch-source-switch button:hover {
+  color: #e2e8f0;
+}
+
+.fetch-source-switch button.active {
+  background: #1e3a5f;
+  border-color: #3b82f6;
+  color: #e2e8f0;
+}
+
+.snapshot-extract-row,
+.payload-extract-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+  margin-bottom: 6px;
+}
+
+.snapshot-cascade {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  flex: 1 1 100%;
+}
+
+.snapshot-cascade select {
+  flex: 1;
+  min-width: 0;
+}
+
+.snapshot-extract-row > input,
+.payload-extract-row > input,
+.payload-extract-row > select {
+  min-width: 0;
+  flex: 1;
+}
+
+.snapshot-extract-row > input:first-child,
+.payload-extract-row > input:first-child {
+  flex-basis: 100%;
+}
+
+.snapshot-path-input {
+  flex-basis: 100%;
+}
+
+.snapshot-type {
+  flex: none;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: #263449;
+  color: #94a3b8;
+  font-size: 10px;
+}
+
+.snapshot-add {
+  width: 100%;
+  margin-top: 2px;
+  padding: 4px 0;
+  background: #263449;
+  border: 1px dashed #475569;
+  border-radius: 5px;
+  color: #94a3b8;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.snapshot-add:hover {
+  color: #e2e8f0;
+  border-color: #3b82f6;
+}
+
+/* ── 获取数据节点：输出形状摘要 ── */
+
+.fetch-shape-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 10px;
+  padding-top: 8px;
+  border-top: 1px solid #334155;
+}
+
+.fetch-shape-fixed summary {
+  font-size: 11px;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.fetch-shape-fixed-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin: 6px 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.fetch-shape-extracts {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 4px;
+}
+
+.fetch-shape-label {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.fetch-shape-empty {
+  font-size: 11px;
+  color: #475569;
+}
+
+.fetch-shape-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 6px;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  background: #263449;
+  color: #cbd5e1;
+  font-size: 10px;
+}
+
+.fetch-shape-chip em {
+  font-style: normal;
+  color: #64748b;
+}

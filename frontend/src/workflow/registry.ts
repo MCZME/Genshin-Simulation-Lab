@@ -923,9 +923,9 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     fragment: () => null,
     validate: validateDataProvider,
   },
-  fetch_runs: {
-    kind: "fetch_runs",
-    displayName: "运行取数",
+  fetch: {
+    kind: "fetch",
+    displayName: "获取数据",
     region: "analysis",
     ports: {
       inputs: [
@@ -933,23 +933,15 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
       ],
       outputs: [{ id: "out", cardinality: "group", dataLanguage: "table", connectionLimit: Number.POSITIVE_INFINITY }],
     },
-    paramFields: { snapshot_columns: { type: "list" } },
-    defaultParams: { snapshot_columns: [] },
-    fragment: () => null,
-    validate: validateFetchNode,
-  },
-  fetch_events: {
-    kind: "fetch_events",
-    displayName: "事件取数",
-    region: "analysis",
-    ports: {
-      inputs: [
-        { id: "in", cardinality: "single", dataLanguage: "session_group", connectionLimit: 1 },
-      ],
-      outputs: [{ id: "out", cardinality: "group", dataLanguage: "table", connectionLimit: Number.POSITIVE_INFINITY }],
+    paramFields: {
+      source: { type: "string", required: true },
+      snapshot_columns: { type: "list" },
+      event_types: { type: "list" },
+      frame_min: { type: "integer" },
+      frame_max: { type: "integer" },
+      payload_columns: { type: "list" },
     },
-    paramFields: { event_types: { type: "list" }, payload_columns: { type: "list" } },
-    defaultParams: { event_types: [], payload_columns: [] },
+    defaultParams: { source: "runs", snapshot_columns: [] },
     fragment: () => null,
     validate: validateFetchNode,
   },
@@ -1130,20 +1122,22 @@ function _operator(kind: NodeKind, displayName: string): NodeKindSpec {
   };
 }
 
-/** 取数节点基础校验：提取列结构在形状推导阶段深入检查。 */
+/** 取数节点基础校验：来源与提取列结构在形状推导阶段深入检查。 */
 function validateFetchNode(node: WorkflowNode): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
+  const source = node.params.source;
+  if (source !== "runs" && source !== "events") {
+    diagnostics.push(paramError(node, "source", "source 必须是 runs 或 events"));
+  }
   for (const key of ["snapshot_columns", "payload_columns"] as const) {
     const rows = node.params[key];
     if (rows !== undefined && !Array.isArray(rows)) {
       diagnostics.push(paramError(node, key, key + " 必须是数组"));
     }
   }
-  if (node.kind === "fetch_events") {
-    const types = node.params.event_types;
-    if (types !== undefined && !Array.isArray(types)) {
-      diagnostics.push(paramError(node, "event_types", "event_types 必须是字符串数组"));
-    }
+  const types = node.params.event_types;
+  if (types !== undefined && !Array.isArray(types)) {
+    diagnostics.push(paramError(node, "event_types", "event_types 必须是字符串数组"));
   }
   return diagnostics;
 }

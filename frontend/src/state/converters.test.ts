@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import type { WorkflowDefinition } from "../workflow/types";
+import type { WorkflowDefinition, WorkflowNode } from "../workflow/types";
 import {
   cloneEditorState,
   definitionToEditorState,
@@ -49,5 +49,52 @@ describe("converters", () => {
     expect(state.definition.nodes[0].params.asset).toBe("");
     expect(state.selection.nodes).toEqual([]);
     expect(clone.dirty).toBe(state.dirty);
+  });
+
+  it("存量 fetch_runs / fetch_events 迁移为 fetch + source", () => {
+    const legacy = (id: string, kind: string, params: Record<string, unknown>): WorkflowNode =>
+      ({
+        id,
+        kind,
+        region_id: null,
+        position: { x: 0, y: 0 },
+        params,
+      }) as WorkflowNode;
+    const definition: WorkflowDefinition = {
+      schema_version: 1,
+      meta: { name: "迁移" },
+      regions: [],
+      nodes: [
+        legacy("runs1", "fetch_runs", {
+          snapshot_columns: [{ path: "team.0.character.asset_key", name: "char", type: "string" }],
+        }),
+        legacy("ev1", "fetch_events", { event_types: ["DAMAGE_RESOLVED"] }),
+      ],
+      edges: [
+        {
+          id: "e1",
+          source_node_id: "runs1",
+          source_port_id: "out",
+          target_node_id: "ev1",
+          target_port_id: "in",
+        },
+      ],
+      layout: {},
+    };
+
+    const state = definitionToEditorState(definition);
+
+    expect(state.definition.nodes[0]).toMatchObject({
+      kind: "fetch",
+      params: {
+        source: "runs",
+        snapshot_columns: [{ path: "team.0.character.asset_key", name: "char", type: "string" }],
+      },
+    });
+    expect(state.definition.nodes[1]).toMatchObject({
+      kind: "fetch",
+      params: { source: "events", event_types: ["DAMAGE_RESOLVED"] },
+    });
+    expect(state.definition.edges).toHaveLength(1);
   });
 });

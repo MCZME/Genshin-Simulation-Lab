@@ -30,6 +30,14 @@ export interface AnalysisSchemaCatalog {
   ready(): boolean;
   runsColumns(): { name: string; type: string; description: string }[];
   eventTypes(): { name: string; fields: { path: string; type: string; description: string }[] }[];
+  snapshotPaths(): AnalysisSnapshotPath[];
+}
+
+export interface AnalysisSnapshotPath {
+  path: string;
+  type: string;
+  default_name: string;
+  segments: string[];
 }
 
 export function createAnalysisSchemaCatalog(): AnalysisSchemaCatalog {
@@ -47,6 +55,9 @@ export function createAnalysisSchemaCatalog(): AnalysisSchemaCatalog {
     },
     eventTypes() {
       return schema ? schema.event_types : [];
+    },
+    snapshotPaths() {
+      return schema ? schema.snapshot_paths : [];
     },
   };
 }
@@ -165,11 +176,12 @@ function extractShape(raw: unknown): TableShape[] | null {
 
 /** 单节点输出形状（不含上游解析；取数节点形状只依赖自身参数）。 */
 export function fetchShape(node: WorkflowNode): TableShape[] | null {
-  if (node.kind === "fetch_runs") {
+  const source = node.params.source;
+  if (source === "runs") {
     const extracts = extractShape(node.params.snapshot_columns);
     return extracts === null ? null : [...RUN_BASE_COLUMNS, ...extracts];
   }
-  if (node.kind === "fetch_events") {
+  if (source === "events") {
     const eventTypes = node.params.event_types;
     if (
       eventTypes !== undefined &&
@@ -197,9 +209,24 @@ export function fetchShape(node: WorkflowNode): TableShape[] | null {
   return null;
 }
 
+/** 取数节点输出列拆分：固定列 + 提取列（供节点卡形状摘要渲染）。 */
+export function fetchColumns(
+  node: WorkflowNode,
+): { fixed: TableShape[]; extracts: TableShape[] } | null {
+  const source = node.params.source;
+  if (source === "runs") {
+    const extracts = extractShape(node.params.snapshot_columns);
+    return extracts === null ? null : { fixed: RUN_BASE_COLUMNS, extracts };
+  }
+  if (source === "events") {
+    const extracts = extractShape(node.params.payload_columns);
+    return extracts === null ? null : { fixed: EVENT_BASE_COLUMNS, extracts };
+  }
+  return null;
+}
+
 export const ANALYSIS_TABLE_NODE_KINDS = new Set([
-  "fetch_runs",
-  "fetch_events",
+  "fetch",
   "filter",
   "project",
   "sort",
@@ -519,8 +546,7 @@ export function computeAnalysisShapes(
 
     let shape: TableShape[] | null;
     switch (node.kind) {
-      case "fetch_runs":
-      case "fetch_events":
+      case "fetch":
         shape = fetchShape(node);
         break;
       case "filter":

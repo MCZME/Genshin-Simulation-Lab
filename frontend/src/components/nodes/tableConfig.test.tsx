@@ -25,10 +25,11 @@ function definitionWith(configParams: Record<string, unknown>): WorkflowDefiniti
     nodes: [
       {
         id: "fetch-1",
-        kind: "fetch_runs",
+        kind: "fetch",
         region_id: "analysis-1",
         position: { x: 0, y: 0 },
         params: {
+          source: "runs",
           snapshot_columns: [
             { path: "team.slots.0.character.asset_key", name: "char_key", type: "string" },
             { path: "team.slots.0.weapon.asset_key", name: "weapon_key", type: "string" },

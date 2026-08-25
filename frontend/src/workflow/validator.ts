@@ -804,7 +804,7 @@ const ANALYSIS_CONFIG_PORT = "config";
 const ANALYSIS_DATA_PORT = "in";
 
 /** 分析区域图级校验：算子参数、视图配置与同结构输入（依赖形状推导）。 */
-const FETCH_KINDS = new Set(["fetch_runs", "fetch_events"]);
+const FETCH_KINDS = new Set(["fetch"]);
 
 function validateAnalysisGraph(
   definition: WorkflowDefinition,
@@ -844,7 +844,7 @@ function validateAnalysisGraph(
         }),
       );
     }
-    if (node.kind !== "fetch_runs" && node.kind !== "fetch_events" && incomingTableEdges === false && !boundaryFed) {
+    if (node.kind !== "fetch" && incomingTableEdges === false && !boundaryFed) {
       diagnostics.push(
         diagnostic("error", "ANALYSIS_SHAPE_INVALID", "算子缺少上游表输入", {
           node_id: node.id,

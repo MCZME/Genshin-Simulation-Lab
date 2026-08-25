@@ -8,7 +8,7 @@ import type { WorkflowDefinition, WorkflowNode } from "./types";
 
 describe("分析节点注册表", () => {
   it("取数节点属于分析区域，入向为会话组、出向为结果表", () => {
-    const spec = getNodeKindSpec("fetch_runs");
+    const spec = getNodeKindSpec("fetch");
     expect(spec?.region).toBe("analysis");
     expect(spec?.ports.inputs).toHaveLength(1);
     expect(spec?.ports.inputs[0].dataLanguage).toBe("session_group");
@@ -65,16 +65,19 @@ describe("分析节点注册表", () => {
 describe("形状推导", () => {
   const baseNode = (overrides: Partial<WorkflowNode>): WorkflowNode => ({
     id: "n1",
-    kind: "fetch_runs",
+    kind: "fetch",
     region_id: "analysis-1",
     position: { x: 0, y: 0 },
-    params: {},
+    params: { source: "runs" },
     ...overrides,
   });
 
-  it("运行取数默认携带会话列与运行列，支持快照提取列", () => {
+  it("获取数据（运行记录）默认携带会话列与运行列，支持快照提取列", () => {
     const node = baseNode({
-      params: { snapshot_columns: [{ path: "team[0].character.asset_key", name: "char_1_key", type: "string" }] },
+      params: {
+        source: "runs",
+        snapshot_columns: [{ path: "team[0].character.asset_key", name: "char_1_key", type: "string" }],
+      },
     });
     const shape = fetchShape(node);
     const names = shape === null ? [] : shape.map((column) => column.name);
@@ -191,7 +194,7 @@ describe("形状推导", () => {
       const edges = [];
       if (item.kind === "join") {
         nodes.push(
-          baseNode({ id: "ev1", kind: "fetch_events" }),
+          baseNode({ id: "ev1", kind: "fetch", params: { source: "events" } }),
           baseNode({ id: item.id, kind: item.kind, params: item.params }),
         );
         edges.push(
@@ -255,15 +258,15 @@ describe("形状推导", () => {
     expect(computeAnalysisShapes(definition).get("c1")).toBeNull();
   });
 
-  it("fetch_events 非法事件类型、帧范围或提取列不可推导", () => {
+  it("事件记录来源非法事件类型、帧范围或提取列不可推导", () => {
     const cases: Record<string, unknown>[] = [
-      { event_types: "DAMAGE_RESOLVED" },
-      { frame_min: "0" },
-      { frame_min: 10, frame_max: 5 },
-      { payload_columns: [{ path: "x", name: "n", type: "date" }] },
+      { source: "events", event_types: "DAMAGE_RESOLVED" },
+      { source: "events", frame_min: "0" },
+      { source: "events", frame_min: 10, frame_max: 5 },
+      { source: "events", payload_columns: [{ path: "x", name: "n", type: "date" }] },
     ];
     for (const params of cases) {
-      const node = baseNode({ id: "ev1", kind: "fetch_events", params });
+      const node = baseNode({ id: "ev1", kind: "fetch", params });
       expect(fetchShape(node)).toBeNull();
     }
   });

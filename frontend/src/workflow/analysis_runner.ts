@@ -63,7 +63,7 @@ function edgeOrder(definition: WorkflowDefinition, edgeId: string): number {
   return definition.edges.findIndex((edge) => edge.id === edgeId);
 }
 
-const FETCH_KINDS = new Set(["fetch_runs", "fetch_events"]);
+const FETCH_KINDS = new Set(["fetch"]);
 const TABLE_NODE_KINDS = new Set([
   ...FETCH_KINDS,
   "filter",

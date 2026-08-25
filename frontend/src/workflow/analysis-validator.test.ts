@@ -61,7 +61,7 @@ const codes = (result: ReturnType<typeof validateWorkflow>) =>
   result.map((item) => item.code);
 
 function fedRuns(id = "runs1"): WorkflowNode {
-  return node(id, "fetch_runs");
+  return node(id, "fetch", { source: "runs" });
 }
 
 function boundaryFeed(runsId = "runs1"): WorkflowEdge {

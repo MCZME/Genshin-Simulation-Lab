@@ -30,10 +30,10 @@ function definitionWith(
     nodes: [
       {
         id: "fetch-1",
-        kind: "fetch_runs",
+        kind: "fetch",
         region_id: "analysis-1",
         position: { x: 0, y: 0 },
-        params: {},
+        params: { source: "runs" },
       },
       {
         id: "view-1",

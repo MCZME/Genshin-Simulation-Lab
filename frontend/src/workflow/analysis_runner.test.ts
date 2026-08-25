@@ -68,7 +68,7 @@ describe("查询计划编译", () => {
     const def = definition(
       [
         simulation("sim", ["a"]),
-        analysisNode("runs1", "fetch_runs"),
+        analysisNode("runs1", "fetch", { source: "runs" }),
         analysisNode("lim1", "limit", { count: 10 }),
         analysisNode("view1", "member_table"),
       ],
@@ -93,8 +93,8 @@ describe("查询计划编译", () => {
     const def = definition(
       [
         simulation("sim", ["a"]),
-        analysisNode("runs1", "fetch_runs"),
-        analysisNode("ev1", "fetch_events"),
+        analysisNode("runs1", "fetch", { source: "runs" }),
+        analysisNode("ev1", "fetch", { source: "events" }),
         analysisNode("j1", "join", { left_key: "session_id", right_key: "session_id" }),
       ],
       [
@@ -115,7 +115,7 @@ describe("查询计划编译", () => {
 describe("计划执行", () => {
   it("把响应表映射为节点结果并标记错误", async () => {
     const def = definition(
-      [simulation("sim", ["a"]), analysisNode("runs1", "fetch_runs")],
+      [simulation("sim", ["a"]), analysisNode("runs1", "fetch", { source: "runs" })],
       [
         edge("b1", "sim", "out", "analysis-1", "in"),
         edge("w1", "analysis-1", "in", "runs1", "in"),
@@ -138,7 +138,7 @@ describe("计划执行", () => {
 
   it("端点失败时所有输出节点携带错误状态", async () => {
     const def = definition(
-      [simulation("sim", ["a"]), analysisNode("runs1", "fetch_runs")],
+      [simulation("sim", ["a"]), analysisNode("runs1", "fetch", { source: "runs" })],
       [
         edge("b1", "sim", "out", "analysis-1", "in"),
         edge("w1", "analysis-1", "in", "runs1", "in"),

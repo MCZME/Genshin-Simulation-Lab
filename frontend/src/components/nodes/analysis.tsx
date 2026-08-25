@@ -1,7 +1,13 @@
 /** 分析区域节点编辑器（取数、关系算子、展示配置、数据提供）。 */
 
-import type { AnalysisSchemaCatalog, FilterCondition, TableShape } from "../../workflow/templates";
-import { AGGREGATE_FUNCTIONS, CONDITION_OPERATORS } from "../../workflow/templates";
+import { useState } from "react";
+import type {
+  AnalysisSchemaCatalog,
+  AnalysisSnapshotPath,
+  FilterCondition,
+  TableShape,
+} from "../../workflow/templates";
+import { AGGREGATE_FUNCTIONS, CONDITION_OPERATORS, fetchColumns } from "../../workflow/templates";
 import { configTargetView, viewInputShape } from "../../workflow/templates";
 import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 
@@ -125,54 +131,261 @@ function RowList({ rows, columns, onCreate, onUpdate, onRemove }: RowListProps) 
   );
 }
 
-export function FetchRunsEditor({ node, onChange }: EditorProps) {
+/** 获取数据节点：一个入口 + 来源切换（运行记录 / 事件记录）。 */
+export function FetchEditor({ node, onChange }: EditorProps) {
+  const source = node.params.source === "events" ? "events" : "runs";
+  const switchSource = (next: "runs" | "events") => {
+    if (next === source) {
+      return;
+    }
+    if (next === "runs") {
+      onChange({
+        source: next,
+        snapshot_columns: Array.isArray(node.params.snapshot_columns)
+          ? node.params.snapshot_columns
+          : [],
+      });
+    } else {
+      onChange({
+        source: next,
+        event_types: Array.isArray(node.params.event_types) ? node.params.event_types : [],
+        frame_min: node.params.frame_min,
+        frame_max: node.params.frame_max,
+        payload_columns: Array.isArray(node.params.payload_columns)
+          ? node.params.payload_columns
+          : [],
+      });
+    }
+  };
+  return (
+    <div className="analysis-editor">
+      <div className="fetch-source-switch">
+        <button
+          type="button"
+          className={source === "runs" ? "active" : ""}
+          onClick={() => switchSource("runs")}
+        >
+          运行记录
+        </button>
+        <button
+          type="button"
+          className={source === "events" ? "active" : ""}
+          onClick={() => switchSource("events")}
+        >
+          事件记录
+        </button>
+      </div>
+      {source === "runs" ? (
+        <FetchRunsSource node={node} onChange={onChange} />
+      ) : (
+        <FetchEventsSource node={node} onChange={onChange} />
+      )}
+      <FetchShapeSummary node={node} />
+    </div>
+  );
+}
+
+/** 输出形状摘要：固定列折叠 + 提取列常显（只读，编辑在参数区）。 */
+function FetchShapeSummary({ node }: { node: WorkflowNode }) {
+  const columns = fetchColumns(node);
+  if (columns === null) {
+    return null;
+  }
+  const sourceLabel = node.params.source === "events" ? "事件记录" : "运行记录";
+  return (
+    <div className="fetch-shape-summary">
+      <details className="fetch-shape-fixed">
+        <summary>
+          {sourceLabel}固定列 {columns.fixed.length}
+        </summary>
+        <ul className="fetch-shape-fixed-list">
+          {columns.fixed.map((column) => (
+            <li key={column.name}>
+              <span className="fetch-shape-chip">
+                {column.name}
+                <em>{column.type}</em>
+              </span>
+            </li>
+          ))}
+        </ul>
+      </details>
+      <div className="fetch-shape-extracts">
+        <span className="fetch-shape-label">提取列</span>
+        {columns.extracts.length === 0 ? (
+          <span className="fetch-shape-empty">无提取列</span>
+        ) : (
+          columns.extracts.map((column) => (
+            <span key={column.name} className="fetch-shape-chip">
+              {column.name}
+              <em>{column.type}</em>
+            </span>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function FetchRunsSource({ node, onChange }: EditorProps) {
   const env = useContextEnv();
-  const columns = env.catalog?.runsColumns() ?? [];
+  const paths = env.catalog?.snapshotPaths() ?? [];
+  const rows = Array.isArray(node.params.snapshot_columns)
+    ? (node.params.snapshot_columns as EditorRow[])
+    : [];
+  /** 级联选择器的本地瞬态：行号 → 已选路径段；完整选中后才写入参数。 */
+  const [selections, setSelections] = useState<Record<number, string[]>>({});
+  const MAX_SEGMENTS = 5;
+
+  const entryFor = (row: EditorRow): AnalysisSnapshotPath | null =>
+    paths.find((item) => item.path === row.path) ?? null;
+  const entryBySegments = (selected: string[]): AnalysisSnapshotPath | null =>
+    paths.find(
+      (item) =>
+        item.segments.length === selected.length &&
+        item.segments.every((segment, index) => segment === selected[index]),
+    ) ?? null;
+  const optionsAt = (selected: string[], level: number): string[] => {
+    const prefix = selected.slice(0, level);
+    return Array.from(
+      new Set(
+        paths
+          .filter((item) => prefix.every((segment, index) => item.segments[index] === segment))
+          .map((item) => item.segments[level])
+          .filter((segment): segment is string => segment !== undefined),
+      ),
+    );
+  };
+
+  const updateRow = (index: number, patch: Record<string, unknown>) => {
+    const next = [...rows];
+    next[index] = { ...next[index], ...patch };
+    onChange({ ...node.params, snapshot_columns: next });
+  };
+
+  const handleSegment = (index: number, level: number, value: string) => {
+    const current = entryFor(rows[index]);
+    const base = selections[index] ?? current?.segments ?? [];
+    const selected = [...base.slice(0, level), value];
+    setSelections((all) => ({ ...all, [index]: selected }));
+    const match = entryBySegments(selected);
+    if (match !== null) {
+      updateRow(index, { path: match.path, type: match.type, name: match.default_name });
+    }
+  };
+
+  const addRow = () => {
+    const index = rows.length;
+    setSelections((all) => ({ ...all, [index]: [] }));
+    updateRow(index, { path: "", name: "", type: "string" });
+  };
+
+  const removeRow = (index: number) => {
+    setSelections((all) => {
+      const next = { ...all };
+      delete next[index];
+      return next;
+    });
+    onChange({
+      ...node.params,
+      snapshot_columns: rows.filter((_, itemIndex) => itemIndex !== index),
+    });
+  };
+
   return (
     <div className="analysis-editor">
       <div className="analysis-field">
         <span>快照提取列</span>
       </div>
-      <RowList
-        rows={Array.isArray(node.params.snapshot_columns) ? (node.params.snapshot_columns as EditorRow[]) : []}
-        columns={[
-          { key: "path", placeholder: "快照路径，如 team[0].character.asset_key" },
-          { key: "name", placeholder: "列名" },
-          { key: "type", placeholder: "类型 string/int/float/bool" },
-        ]}
-        onCreate={() => onChange({ ...node.params, snapshot_columns: [...(Array.isArray(node.params.snapshot_columns) ? node.params.snapshot_columns : []), { path: "", name: "", type: "string" }] })}
-        onUpdate={(index, patch) => {
-          const next = [...(Array.isArray(node.params.snapshot_columns) ? (node.params.snapshot_columns as EditorRow[]) : [])];
-          next[index] = { ...next[index], ...patch };
-          onChange({ ...node.params, snapshot_columns: next });
-        }}
-        onRemove={(index) => {
-          const next = (Array.isArray(node.params.snapshot_columns) ? (node.params.snapshot_columns as EditorRow[]) : []).filter((_, i) => i !== index);
-          onChange({ ...node.params, snapshot_columns: next });
-        }}
-      />
-      <details>
-        <summary>可用字段</summary>
-        <ul>
-          {columns.map((column) => (
-            <li key={column.name}>
-              {column.name}（{column.type}）{column.description ? "：" + column.description : ""}
-            </li>
-          ))}
-        </ul>
-      </details>
+      {rows.length === 0 && <p className="analysis-editor-empty">未添加提取列</p>}
+      {rows.map((row, index) => {
+        const entry = entryFor(row);
+        const selected = selections[index] ?? entry?.segments ?? [];
+        const isDraft = row.path === "" || row.path === undefined;
+        const unknown = !isDraft && entry === null;
+        const levelCount = entry !== null ? entry.segments.length : MAX_SEGMENTS;
+        return (
+          <div key={index} className="snapshot-extract-row">
+            {!unknown && (
+              <div className="snapshot-cascade">
+                {Array.from({ length: levelCount }, (_, level) => (
+                  <select
+                    key={level}
+                    aria-label={`快照路径第 ${level + 1} 段`}
+                    value={selected[level] ?? ""}
+                    onChange={(event) => handleSegment(index, level, event.target.value)}
+                  >
+                    <option value="">…</option>
+                    {optionsAt(selected, level).map((option) => (
+                      <option key={option} value={option}>
+                        {option}
+                      </option>
+                    ))}
+                  </select>
+                ))}
+              </div>
+            )}
+            {unknown && (
+              <input
+                className="snapshot-path-input"
+                placeholder="快照路径（目录外，手动填写）"
+                value={asString(row.path) ?? ""}
+                onChange={(event) => updateRow(index, { path: event.target.value })}
+              />
+            )}
+            <input
+              aria-label={`提取列名 ${index + 1}`}
+              placeholder="列名"
+              value={asString(row.name) ?? ""}
+              onChange={(event) => updateRow(index, { name: event.target.value })}
+            />
+            <span className="snapshot-type">{asString(row.type) ?? ""}</span>
+            <button
+              type="button"
+              className="icon-button danger"
+              title="移除"
+              aria-label={`移除提取列 ${index + 1}`}
+              onClick={() => removeRow(index)}
+            >
+              ×
+            </button>
+          </div>
+        );
+      })}
+      <button type="button" className="snapshot-add" onClick={addRow}>
+        ＋ 添加提取列
+      </button>
     </div>
   );
 }
 
-export function FetchEventsEditor({ node, onChange }: EditorProps) {
+function FetchEventsSource({ node, onChange }: EditorProps) {
   const env = useContextEnv();
   const eventTypes = env.catalog?.eventTypes() ?? [];
   const selected = Array.isArray(node.params.event_types) ? (node.params.event_types as string[]) : [];
   const extracts = Array.isArray(node.params.payload_columns) ? (node.params.payload_columns as EditorRow[]) : [];
+  /** 载荷行的本地瞬态：行号 → 已选事件类型；选字段后才写入路径。 */
+  const [eventTypeFor, setEventTypeFor] = useState<Record<number, string>>({});
   const toggleType = (name: string) => {
     const next = selected.includes(name) ? selected.filter((t) => t !== name) : [...selected, name];
     onChange({ ...node.params, event_types: next });
+  };
+  const updateRow = (index: number, patch: Record<string, unknown>) => {
+    const next = [...extracts];
+    next[index] = { ...next[index], ...patch };
+    onChange({ ...node.params, payload_columns: next });
+  };
+  const typeOfRow = (index: number, row: EditorRow): string => {
+    const known = eventTypeFor[index];
+    if (known !== undefined && known !== "") {
+      return known;
+    }
+    return (
+      eventTypes.find((item) => item.fields.some((field) => field.path === row.path))?.name ?? ""
+    );
+  };
+  const handleTypeChange = (index: number, name: string) => {
+    setEventTypeFor((all) => ({ ...all, [index]: name }));
+    updateRow(index, { path: "", type: "float", name: "" });
   };
   return (
     <div className="analysis-editor">
@@ -218,25 +431,98 @@ export function FetchEventsEditor({ node, onChange }: EditorProps) {
       <div className="analysis-field">
         <span>载荷提取列</span>
       </div>
-      <RowList
-        rows={extracts}
-        columns={[
-          { key: "path", placeholder: "载荷路径，如 result.final_damage" },
-          { key: "name", placeholder: "列名" },
-          { key: "type", placeholder: "类型 string/int/float/bool" },
-        ]}
-        onCreate={() => onChange({ ...node.params, payload_columns: [...extracts, { path: "", name: "", type: "float" }] })}
-        onUpdate={(index, patch) => {
-          const next = [...extracts];
-          next[index] = { ...next[index], ...patch };
-          onChange({ ...node.params, payload_columns: next });
-        }}
-        onRemove={(index) =>
-          onChange({ ...node.params, payload_columns: extracts.filter((_, i) => i !== index) })
-        }
-      />
+      {extracts.length === 0 && <p className="analysis-editor-empty">未添加提取列</p>}
+      {extracts.map((row, index) => {
+        const typeName = typeOfRow(index, row);
+        const unknown = row.path !== "" && row.path !== undefined && typeName === "";
+        const fields = eventTypes.find((item) => item.name === typeName)?.fields ?? [];
+        return (
+          <div key={index} className="payload-extract-row">
+            <select
+              aria-label={`载荷事件类型 ${index + 1}`}
+              value={typeName}
+              onChange={(event) => handleTypeChange(index, event.target.value)}
+            >
+              <option value="">事件类型…</option>
+              {eventTypes.map((item) => (
+                <option key={item.name} value={item.name}>
+                  {item.name}
+                </option>
+              ))}
+            </select>
+            {typeName !== "" ? (
+              <select
+                aria-label={`载荷字段 ${index + 1}`}
+                value={asString(row.path) ?? ""}
+                onChange={(event) => {
+                  const field = fields.find((item) => item.path === event.target.value);
+                  if (field !== undefined) {
+                    updateRow(index, {
+                      path: field.path,
+                      type: field.type,
+                      name: defaultFieldName(field.path),
+                    });
+                  }
+                }}
+              >
+                <option value="">字段…</option>
+                {fields.map((field) => (
+                  <option key={field.path} value={field.path}>
+                    {field.path}
+                  </option>
+                ))}
+              </select>
+            ) : unknown ? (
+              <input
+                className="snapshot-path-input"
+                placeholder="载荷路径（目录外，手动填写）"
+                value={asString(row.path) ?? ""}
+                onChange={(event) => updateRow(index, { path: event.target.value })}
+              />
+            ) : null}
+            <input
+              aria-label={`载荷列名 ${index + 1}`}
+              placeholder="列名"
+              value={asString(row.name) ?? ""}
+              onChange={(event) => updateRow(index, { name: event.target.value })}
+            />
+            <span className="snapshot-type">{asString(row.type) ?? ""}</span>
+            <button
+              type="button"
+              className="icon-button danger"
+              title="移除"
+              aria-label={`移除载荷列 ${index + 1}`}
+              onClick={() => {
+                setEventTypeFor((all) => {
+                  const next = { ...all };
+                  delete next[index];
+                  return next;
+                });
+                onChange({
+                  ...node.params,
+                  payload_columns: extracts.filter((_, itemIndex) => itemIndex !== index),
+                });
+              }}
+            >
+              ×
+            </button>
+          </div>
+        );
+      })}
+      <button
+        type="button"
+        className="snapshot-add"
+        onClick={() => updateRow(extracts.length, { path: "", name: "", type: "float" })}
+      >
+        ＋ 添加提取列
+      </button>
     </div>
   );
+}
+
+function defaultFieldName(path: string): string {
+  const leaf = path.split(".").pop() ?? "";
+  return leaf === "" ? "value" : leaf;
 }
 
 export function FilterEditor({ node, onChange }: EditorProps) {

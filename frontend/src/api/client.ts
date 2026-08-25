@@ -45,6 +45,7 @@ export interface ExecutePlanResponse {
 export interface AnalysisSchemaResponse {
   tables: { name: string; columns: { name: string; type: string; description: string }[] }[];
   event_types: { name: string; fields: { path: string; type: string; description: string }[] }[];
+  snapshot_paths: { path: string; type: string; default_name: string; segments: string[] }[];
 }
 export type AssetListResponse = Schema["AssetListResponse"];
 export type AssetResponse = Schema["AssetResponse"];

@@ -4,8 +4,7 @@ import {
   AggregateEditor,
   ComputeEditor,
   DisplayConfigEditor,
-  FetchEventsEditor,
-  FetchRunsEditor,
+  FetchEditor,
   FilterEditor,
   JoinEditor,
   LimitEditor,
@@ -76,10 +75,8 @@ export function NodeEditorHost({
       return <SimulationEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "data_provider":
       return <DataProviderEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
-    case "fetch_runs":
-      return <FetchRunsEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
-    case "fetch_events":
-      return <FetchEventsEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "fetch":
+      return <FetchEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "filter":
       return <FilterEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "project":
@@ -125,8 +122,7 @@ export const CONFIG_NODE_KINDS = [
 
 /** 分析区域内节点种类（不含画布级 data_provider）。 */
 export const ANALYSIS_NODE_KINDS = [
-  "fetch_runs",
-  "fetch_events",
+  "fetch",
   "filter",
   "project",
   "sort",

@@ -16,7 +16,7 @@ from genshin_sim.application.services.assets import (
     ManifestHandlerValidator,
 )
 from genshin_sim.application.services.protocols import (
-    AnalysisTemplateExecutor,
+    AnalysisQueryExecutor,
     ProjectConfigStore,
     ResultRepository,
 )
@@ -40,7 +40,7 @@ class ApplicationContext:
     result_repository: ResultRepository
     result_writer: ResultWriter
     job_runner: SimulationJobRunner
-    analysis_template_executor: AnalysisTemplateExecutor | None = None
+    analysis_query_executor: AnalysisQueryExecutor | None = None
     asset_handler_repository: AssetHandlerBindingRepository | None = None
     content_unit_registry: ContentUnitRegistry | None = None
     init_result_database: Callable[[str | Path], Path] | None = None
@@ -78,7 +78,7 @@ def create_application(
     result_repository: ResultRepository,
     result_writer: ResultWriter,
     job_runner: SimulationJobRunner | None = None,
-    analysis_template_executor: AnalysisTemplateExecutor | None = None,
+    analysis_query_executor: AnalysisQueryExecutor | None = None,
     content_unit_registry: ContentUnitRegistry | None = None,
     workflow_store: WorkflowStore | None = None,
 ) -> ApplicationFacade:
@@ -94,13 +94,13 @@ def create_application(
             result_db_path=result_writer.db_path,
             max_workers=1,
         )
-    executor = analysis_template_executor
+    executor = analysis_query_executor
     if executor is None:
-        from genshin_sim.infrastructure.results_sqlite.templates import (
-            SQLiteAnalysisTemplateExecutor,
+        from genshin_sim.infrastructure.results_sqlite.analysis_query import (
+            SQLiteAnalysisQueryExecutor,
         )
 
-        executor = SQLiteAnalysisTemplateExecutor(result_writer.db_path)
+        executor = SQLiteAnalysisQueryExecutor(result_writer.db_path)
 
     root = Path(project_root)
     # 配置是工作流存档路径的前置条件：组装时先解析一次，之后每次操作再按当前配置解析。
@@ -113,7 +113,7 @@ def create_application(
         result_repository=result_repository,
         result_writer=result_writer,
         job_runner=runner,
-        analysis_template_executor=executor,
+        analysis_query_executor=executor,
         content_unit_registry=content_unit_registry,
         workflow_store=(
             workflow_store

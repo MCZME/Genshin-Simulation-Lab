@@ -1,81 +1,86 @@
-"""分析模板 HTTP 路由单元测试。"""
+"""分析查询 HTTP 路由单元测试。"""
 
 from fastapi.testclient import TestClient
 
 from genshin_sim.application import (
-    TemplateColumn,
-    TemplateDeclaration,
-    TemplateOutput,
-    TemplateParam,
-    TemplateResult,
+    AnalysisColumn,
+    AnalysisReadSchema,
+    AnalysisSchemaColumn,
+    AnalysisTableResult,
+    AnalysisTableSchema,
 )
 from genshin_sim.server import create_app
 
 
-def _declaration() -> TemplateDeclaration:
-    return TemplateDeclaration(
-        template_id="session_metrics",
-        display_name="每会话指标",
-        params=(TemplateParam("session_ids", "string[]", True, ("session_group",)),),
-        relations=(),
-        output=TemplateOutput(columns=(TemplateColumn("session_id", "string"),)),
+def _schema() -> AnalysisReadSchema:
+    return AnalysisReadSchema(
+        tables=(
+            AnalysisTableSchema(
+                name="simulation_runs",
+                columns=(AnalysisSchemaColumn("frames_run", "int", "实际运行帧数"),),
+            ),
+        ),
+        event_types=(),
     )
 
 
-def test_analysis_templates_list(application_facade) -> None:
-    app = create_app(application_facade(analysis_declarations=(_declaration(),)))
+def test_analysis_schema_endpoint(application_facade) -> None:
+    app = create_app(application_facade(analysis_schema=_schema()))
 
     with TestClient(app) as client:
-        response = client.get("/api/v1/analysis/templates")
+        response = client.get("/api/v1/analysis/schema")
 
     assert response.status_code == 200
     body = response.json()
-    assert body["items"][0]["template_id"] == "session_metrics"
-    assert body["items"][0]["params"][0]["binding"] == ["session_group"]
-    assert body["items"][0]["output"]["columns"][0]["name"] == "session_id"
+    assert body["tables"][0]["name"] == "simulation_runs"
+    assert body["tables"][0]["columns"][0]["name"] == "frames_run"
 
 
-def test_analysis_template_execute(application_facade) -> None:
-    result = TemplateResult(
-        columns=(TemplateColumn("session_id", "string"),),
+def test_analysis_query_executes_plan(application_facade) -> None:
+    result = AnalysisTableResult(
+        columns=(AnalysisColumn("session_id", "string"),),
         rows=(("a1b2c3",),),
         truncated=False,
     )
-    app = create_app(application_facade(analysis_results={"session_metrics": result}))
+    app = create_app(application_facade(analysis_plan_results={"c1": result}))
 
     with TestClient(app) as client:
         response = client.post(
-            "/api/v1/analysis/templates/session_metrics/execute",
-            json={"params": {"session_ids": ["a1b2c3"]}},
+            "/api/v1/analysis/query",
+            json={
+                "session_ids": ["a1b2c3"],
+                "nodes": [
+                    {"id": "runs1", "kind": "fetch_runs"},
+                    {
+                        "id": "c1",
+                        "kind": "limit",
+                        "params": {"count": 5},
+                        "inputs": ["runs1"],
+                    },
+                ],
+                "outputs": ["c1"],
+            },
         )
 
     assert response.status_code == 200
     body = response.json()
-    assert body["columns"] == [{"name": "session_id", "type": "string"}]
-    assert body["rows"] == [["a1b2c3"]]
-    assert body["truncated"] is False
+    table = body["tables"]["c1"]
+    assert table["columns"] == [{"name": "session_id", "type": "string"}]
+    assert table["rows"] == [["a1b2c3"]]
+    assert table["truncated"] is False
 
 
-def test_analysis_template_execute_unknown_returns_not_found(application_facade) -> None:
+def test_analysis_query_rejects_unknown_output(application_facade) -> None:
     app = create_app(application_facade())
 
     with TestClient(app) as client:
         response = client.post(
-            "/api/v1/analysis/templates/missing/execute",
-            json={},
-        )
-
-    assert response.status_code == 404
-    assert response.json()["code"] == "not_found"
-
-
-def test_analysis_template_execute_rejects_invalid_params(application_facade) -> None:
-    app = create_app(application_facade())
-
-    with TestClient(app) as client:
-        response = client.post(
-            "/api/v1/analysis/templates/session_metrics/execute",
-            json={"params": {"session_ids": "not-a-list"}},
+            "/api/v1/analysis/query",
+            json={
+                "session_ids": [],
+                "nodes": [{"id": "runs1", "kind": "fetch_runs"}],
+                "outputs": ["missing"],
+            },
         )
 
     assert response.status_code == 400

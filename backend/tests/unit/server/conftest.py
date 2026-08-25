@@ -6,6 +6,9 @@ from typing import Any, cast
 import pytest
 
 from genshin_sim.application import (
+    AnalysisPlan,
+    AnalysisReadSchema,
+    AnalysisTableResult,
     ApplicationError,
     ApplicationFacade,
     AssetListItem,
@@ -17,11 +20,8 @@ from genshin_sim.application import (
     BatchRunStatus,
     BatchValidationResult,
     RecordedEvent,
-    RelationTable,
     RunDetail,
     RunListItem,
-    TemplateDeclaration,
-    TemplateResult,
     UiConfig,
     WorkflowDetail,
     WorkflowSummary,
@@ -43,8 +43,8 @@ class FakeApplicationFacade:
         results: tuple[RunDetail, ...] = (),
         assets: tuple[AssetListItem, ...] = (),
         batch_runs: tuple[BatchRunStatus, ...] = (),
-        analysis_declarations: tuple[TemplateDeclaration, ...] = (),
-        analysis_results: dict[str, TemplateResult] | None = None,
+        analysis_plan_results: dict[str, AnalysisTableResult] | None = None,
+        analysis_schema: AnalysisReadSchema | None = None,
     ) -> None:
         self.workspace = workspace or WorkspaceInfo("data", "2026.08.17", True)
         self.ui_settings = ui_settings or UiConfig()
@@ -53,8 +53,8 @@ class FakeApplicationFacade:
         self._results = {run.session_id: run for run in results}
         self._assets = list(assets)
         self._batch_runs = {run.run_id: run for run in batch_runs}
-        self._analysis_declarations = analysis_declarations
-        self._analysis_results = analysis_results or {}
+        self._analysis_plan_results = analysis_plan_results or {}
+        self._analysis_schema = analysis_schema
 
     def get_workspace(self) -> WorkspaceInfo:
         return self.workspace
@@ -235,23 +235,23 @@ class FakeApplicationFacade:
             _filter_events(self.get_run(session_id).events, frame_min, frame_max, event_type)
         )
 
-    def list_analysis_templates(self) -> tuple[TemplateDeclaration, ...]:
-        return self._analysis_declarations
-
-    def execute_analysis_template(
-        self,
-        template_id: str,
-        *,
-        params: dict[str, Any] | None = None,
-        relations: dict[str, RelationTable] | None = None,
-    ) -> TemplateResult:
-        params = params or {}
-        if "session_ids" in params and not isinstance(params["session_ids"], list):
-            raise ApplicationError("validation_failed", "session_ids 必须是字符串列表")
+    def execute_analysis_plan(
+        self, plan: AnalysisPlan
+    ) -> dict[str, AnalysisTableResult]:
         try:
-            return self._analysis_results[template_id]
+            return {
+                node_id: self._analysis_plan_results[node_id]
+                for node_id in plan.outputs
+            }
         except KeyError as exc:
-            raise ApplicationError("not_found", f"分析模板不存在：{template_id}") from exc
+            raise ApplicationError(
+                "validation_failed", "outputs 引用了计划外的节点"
+            ) from exc
+
+    def analysis_schema(self) -> AnalysisReadSchema:
+        if self._analysis_schema is None:
+            raise ApplicationError("analysis_query_unavailable", "分析查询能力未配置")
+        return self._analysis_schema
 
     def list_assets(
         self,

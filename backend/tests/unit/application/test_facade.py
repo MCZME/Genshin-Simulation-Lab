@@ -7,6 +7,8 @@ from typing import Any, cast
 import pytest
 
 from genshin_sim.application import (
+    AnalysisPlan,
+    AnalysisPlanNode,
     ApplicationError,
     ApplicationFacade,
     AssetListKind,
@@ -358,26 +360,32 @@ def test_facade_counts_filtered_events() -> None:
     assert count == 1
 
 
-def test_facade_lists_and_executes_analysis_templates() -> None:
+def test_facade_executes_analysis_plan() -> None:
     facade = _make_facade()
 
-    declarations = {item.template_id for item in facade.list_analysis_templates()}
-    result = facade.execute_analysis_template(
-        "session_metrics",
-        params={"session_ids": ["session-1"]},
+    plan = AnalysisPlan(
+        session_ids=("session-1",),
+        nodes=(
+            AnalysisPlanNode(id="runs1", kind="fetch_runs"),
+            AnalysisPlanNode(id="top1", kind="limit", params={"count": 5}, inputs=("runs1",)),
+        ),
+        outputs=("top1",),
     )
+    tables = facade.execute_analysis_plan(plan)
 
-    assert declarations == {
-        "session_metrics",
-        "share_rows",
-        "timeline_rows",
-        "metric_summary",
-    }
-    assert result.rows == ()
-    assert result.truncated is False
+    assert set(tables) == {"top1"}
+    table = tables["top1"]
+    assert table.rows == ()
+    assert table.truncated is False
+    assert table.columns[0].name == "session_id"
+
+    schema = facade.analysis_schema()
+    assert any(item.name == "simulation_runs" for item in schema.tables)
+
+    bad_plan = AnalysisPlan(session_ids=(), nodes=(), outputs=("missing",))
     with pytest.raises(ApplicationError) as exc_info:
-        facade.execute_analysis_template("missing", params={"session_ids": ["session-1"]})
-    assert exc_info.value.code == "not_found"
+        facade.execute_analysis_plan(bad_plan)
+    assert exc_info.value.code == "validation_failed"
 
 
 def test_facade_exposes_batch_validation_and_lifecycle() -> None:

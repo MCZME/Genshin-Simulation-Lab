@@ -27,8 +27,8 @@ def test_openapi_exposes_all_mvp_endpoints(application_facade) -> None:
     schema = app.openapi()
 
     expected = {
-        "/api/v1/analysis/templates": {"get"},
-        "/api/v1/analysis/templates/{template_id}/execute": {"post"},
+        "/api/v1/analysis/query": {"post"},
+        "/api/v1/analysis/schema": {"get"},
         "/api/v1/workspace": {"get"},
         "/api/v1/settings": {"get", "put"},
         "/api/v1/workflows": {"get", "post"},

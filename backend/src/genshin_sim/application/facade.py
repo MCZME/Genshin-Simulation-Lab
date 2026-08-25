@@ -23,21 +23,20 @@ from genshin_sim.application.context import ApplicationContext
 from genshin_sim.application.errors import ApplicationError
 from genshin_sim.application.input import SimulationInput
 from genshin_sim.application.models import (
+    AnalysisPlan,
+    AnalysisReadSchema,
+    AnalysisTableResult,
     AssetListItem,
     AssetListKind,
     RecordedEvent,
-    RelationTable,
     RunDetail,
     RunListItem,
     SimulationInputFile,
-    TemplateDeclaration,
-    TemplateResult,
     WorkspaceInfo,
 )
-from genshin_sim.application.services.analysis_templates import (
-    AnalysisTemplatesService,
-    TemplateNotFoundError,
-    TemplateValidationError,
+from genshin_sim.application.services.analysis_query import (
+    AnalysisPlanValidationError,
+    AnalysisQueryService,
 )
 from genshin_sim.application.services.assets import (
     AssetDatabaseService,
@@ -233,15 +232,9 @@ class ApplicationFacade(Protocol):
         limit: int | None = None,
     ) -> tuple[RecordedEvent, ...]: ...
 
-    def list_analysis_templates(self) -> tuple[TemplateDeclaration, ...]: ...
+    def execute_analysis_plan(self, plan: AnalysisPlan) -> Mapping[str, AnalysisTableResult]: ...
 
-    def execute_analysis_template(
-        self,
-        template_id: str,
-        *,
-        params: Mapping[str, Any] | None = None,
-        relations: Mapping[str, RelationTable] | None = None,
-    ) -> TemplateResult: ...
+    def analysis_schema(self) -> AnalysisReadSchema: ...
 
     def create_workflow(self, name: str = DEFAULT_WORKFLOW_NAME) -> WorkflowDetail: ...
 
@@ -278,7 +271,7 @@ class DefaultApplicationFacade:
         self._inputs_service = InputDiscoveryService(context.config_store)
         self._input_validation_service = InputValidationService()
         self._results_service = ResultsService(context.result_repository)
-        self._analysis_templates_service_impl: AnalysisTemplatesService | None = None
+        self._analysis_query_service_impl: AnalysisQueryService | None = None
         self._batch_service = BatchRunService(
             context.job_runner,
             validator=BatchInputValidationService(
@@ -609,29 +602,18 @@ class DefaultApplicationFacade:
         except LookupError as exc:
             raise _result_not_found(session_id) from exc
 
-    def list_analysis_templates(self) -> tuple[TemplateDeclaration, ...]:
-        return self._analysis_templates_service().list_templates()
-
-    def execute_analysis_template(
-        self,
-        template_id: str,
-        *,
-        params: Mapping[str, Any] | None = None,
-        relations: Mapping[str, RelationTable] | None = None,
-    ) -> TemplateResult:
+    def execute_analysis_plan(self, plan: AnalysisPlan) -> Mapping[str, AnalysisTableResult]:
         try:
-            return self._analysis_templates_service().execute(
-                template_id,
-                params=params,
-                relations=relations,
-            )
-        except TemplateNotFoundError as exc:
+            return self._analysis_query_service().execute(plan)
+        except AnalysisPlanValidationError as exc:
             raise ApplicationError(
-                "not_found",
-                f"分析模板不存在：{template_id}",
+                "validation_failed",
+                str(exc),
+                details=exc.details,
             ) from exc
-        except TemplateValidationError as exc:
-            raise ApplicationError("validation_failed", str(exc)) from exc
+
+    def analysis_schema(self) -> AnalysisReadSchema:
+        return self._analysis_query_service().read_schema()
 
     def create_workflow(self, name: str = DEFAULT_WORKFLOW_NAME) -> WorkflowDetail:
         return self._require_workflow_service().create(name)
@@ -711,16 +693,16 @@ class DefaultApplicationFacade:
             raise ApplicationError("workflow_store_unavailable", "工作流存档能力未配置")
         return self._workflow_service
 
-    def _analysis_templates_service(self) -> AnalysisTemplatesService:
-        if self._analysis_templates_service_impl is None:
-            executor = self._context.analysis_template_executor
+    def _analysis_query_service(self) -> AnalysisQueryService:
+        if self._analysis_query_service_impl is None:
+            executor = self._context.analysis_query_executor
             if executor is None:
                 raise ApplicationError(
-                    "analysis_templates_unavailable",
-                    "分析模板能力未配置",
+                    "analysis_query_unavailable",
+                    "分析查询能力未配置",
                 )
-            self._analysis_templates_service_impl = AnalysisTemplatesService(executor)
-        return self._analysis_templates_service_impl
+            self._analysis_query_service_impl = AnalysisQueryService(executor)
+        return self._analysis_query_service_impl
 
 
 def _result_not_found(session_id: str) -> ApplicationError:

@@ -6,7 +6,8 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from enum import StrEnum
 from pathlib import Path
 from typing import Any
@@ -94,68 +95,93 @@ class SimulationInputFile:
 
 
 @dataclass(frozen=True, slots=True)
-class TemplateColumn:
-    """模板输出/关系输入的一列：名称 + 类型。"""
+class AnalysisColumn:
+    """分析结果表的一列：名称 + 类型（string/int/float/bool）。"""
 
     name: str
     type: str
 
 
 @dataclass(frozen=True, slots=True)
-class TemplateParam:
-    """模板参数声明。binding 为允许的来源：static/config/session_group/upstream_column。"""
+class AnalysisPlanNode:
+    """查询计划中的一个节点：id、kind、参数与有序输入。"""
 
-    name: str
-    type: str
-    required: bool
-    binding: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class TemplateRelation:
-    """模板关系输入声明：名称 + 所需列。"""
-
-    name: str
-    columns: tuple[str, ...]
-    required: bool
+    id: str
+    kind: str
+    params: Mapping[str, Any] = field(default_factory=dict)
+    inputs: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
-class TemplateOutput:
-    """模板输出形状：列名 + 类型。"""
+class AnalysisPlan:
+    """一次分析查询计划：会话组 + 节点清单 + 输出清单，不含任何 SQL 文本。"""
 
-    columns: tuple[TemplateColumn, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class TemplateDeclaration:
-    """一张模板的对外声明（前端节点卡与校验的数据源）。"""
-
-    template_id: str
-    display_name: str
-    params: tuple[TemplateParam, ...]
-    relations: tuple[TemplateRelation, ...]
-    output: TemplateOutput
+    session_ids: tuple[str, ...]
+    nodes: tuple[AnalysisPlanNode, ...]
+    outputs: tuple[str, ...]
 
 
 @dataclass(frozen=True, slots=True)
-class RelationTable:
-    """模板执行请求中的一张关系表（列 + 行）。"""
+class AnalysisTableResult:
+    """计划输出中的一张表，行数硬上限内截断。"""
 
-    columns: tuple[str, ...]
-    rows: tuple[tuple[Any, ...], ...]
-
-
-@dataclass(frozen=True, slots=True)
-class TemplateResult:
-    """模板执行结果：一张表，行数硬上限内截断。"""
-
-    columns: tuple[TemplateColumn, ...]
+    columns: tuple[AnalysisColumn, ...]
     rows: tuple[tuple[Any, ...], ...]
     truncated: bool
 
 
+@dataclass(frozen=True, slots=True)
+class AnalysisSchemaColumn:
+    """可读 schema 中一个表列。"""
+
+    name: str
+    type: str
+    description: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisTableSchema:
+    """可读 schema 中一张表。"""
+
+    name: str
+    columns: tuple[AnalysisSchemaColumn, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisEventField:
+    """事件载荷的一个可提取字段：点分路径 + 类型。"""
+
+    path: str
+    type: str
+    description: str = ""
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisEventTypeSchema:
+    """一个事件类型的可提取字段清单。"""
+
+    name: str
+    fields: tuple[AnalysisEventField, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisReadSchema:
+    """取数节点编辑器的可读 schema（表列 + 事件类型字段）。"""
+
+    tables: tuple[AnalysisTableSchema, ...]
+    event_types: tuple[AnalysisEventTypeSchema, ...]
+
+
 __all__ = [
+    "AnalysisColumn",
+    "AnalysisEventField",
+    "AnalysisEventTypeSchema",
+    "AnalysisPlan",
+    "AnalysisPlanNode",
+    "AnalysisReadSchema",
+    "AnalysisSchemaColumn",
+    "AnalysisTableResult",
+    "AnalysisTableSchema",
     "AssetListItem",
     "AssetListKind",
     "BatchDiagnostic",
@@ -168,18 +194,11 @@ __all__ = [
     "BatchRunStatus",
     "BatchValidationResult",
     "RecordedEvent",
-    "RelationTable",
     "RunDetail",
     "RunListItem",
     "RunState",
     "SimulationInputFile",
     "SimulationJobState",
     "SimulationRunSummary",
-    "TemplateColumn",
-    "TemplateDeclaration",
-    "TemplateOutput",
-    "TemplateParam",
-    "TemplateRelation",
-    "TemplateResult",
     "WorkspaceInfo",
 ]

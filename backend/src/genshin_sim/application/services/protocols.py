@@ -2,17 +2,17 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Any, Protocol
+from typing import Protocol
 
 from genshin_sim.application.config import ProjectConfig
 from genshin_sim.application.execution.models import RecordedEvent
 from genshin_sim.application.input import SimulationInput
 from genshin_sim.application.models import (
-    RelationTable,
+    AnalysisPlan,
+    AnalysisReadSchema,
+    AnalysisTableResult,
     RunDetail,
     RunListItem,
-    TemplateDeclaration,
-    TemplateResult,
 )
 
 
@@ -48,17 +48,12 @@ class ResultRepository(Protocol):
     ) -> int: ...
 
 
-class AnalysisTemplateExecutor(Protocol):
-    """结果库模板执行器的稳定读取协议。"""
+class AnalysisQueryExecutor(Protocol):
+    """结果库查询计划执行器的稳定读取协议。"""
 
-    def list_templates(self) -> tuple[TemplateDeclaration, ...]: ...
+    def execute_plan(self, plan: AnalysisPlan) -> Mapping[str, AnalysisTableResult]: ...
 
-    def execute(
-        self,
-        template_id: str,
-        params: Mapping[str, Any] | None = None,
-        relations: Mapping[str, RelationTable] | None = None,
-    ) -> TemplateResult: ...
+    def read_schema(self) -> AnalysisReadSchema: ...
 
 
 class SimulationInputValidator(Protocol):

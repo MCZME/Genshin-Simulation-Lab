@@ -1,57 +1,60 @@
-"""分析模板 HTTP DTO。"""
-
-from __future__ import annotations
+"""分析查询 HTTP DTO。"""
 
 from typing import Any
 
 from pydantic import BaseModel, Field
 
 
-class TemplateColumnDto(BaseModel):
-    name: str
-    type: str
-
-
-class TemplateParamDto(BaseModel):
-    name: str
-    type: str
-    required: bool
-    binding: list[str]
-
-
-class TemplateRelationDto(BaseModel):
-    name: str
-    columns: list[str]
-    required: bool
-
-
-class TemplateOutputDto(BaseModel):
-    columns: list[TemplateColumnDto]
-
-
-class TemplateDeclarationDto(BaseModel):
-    template_id: str
-    display_name: str
-    params: list[TemplateParamDto]
-    relations: list[TemplateRelationDto]
-    output: TemplateOutputDto
-
-
-class TemplateListResponse(BaseModel):
-    items: list[TemplateDeclarationDto]
-
-
-class RelationPayload(BaseModel):
-    columns: list[str]
-    rows: list[list[Any]]
-
-
-class ExecuteTemplateRequest(BaseModel):
+class PlanNodeDto(BaseModel):
+    id: str
+    kind: str
     params: dict[str, Any] = Field(default_factory=dict)
-    relations: dict[str, RelationPayload] = Field(default_factory=dict)
+    inputs: list[str] = Field(default_factory=list)
 
 
-class TemplateResultResponse(BaseModel):
-    columns: list[TemplateColumnDto]
+class ExecutePlanRequest(BaseModel):
+    session_ids: list[str] = Field(default_factory=list)
+    nodes: list[PlanNodeDto] = Field(default_factory=list)
+    outputs: list[str] = Field(default_factory=list)
+
+
+class TableColumnDto(BaseModel):
+    name: str
+    type: str
+
+
+class TableResponse(BaseModel):
+    columns: list[TableColumnDto]
     rows: list[list[Any]]
     truncated: bool
+
+
+class ExecutePlanResponse(BaseModel):
+    tables: dict[str, TableResponse]
+
+
+class SchemaColumnDto(BaseModel):
+    name: str
+    type: str
+    description: str = ""
+
+
+class TableSchemaDto(BaseModel):
+    name: str
+    columns: list[SchemaColumnDto]
+
+
+class EventFieldDto(BaseModel):
+    path: str
+    type: str
+    description: str = ""
+
+
+class EventTypeSchemaDto(BaseModel):
+    name: str
+    fields: list[EventFieldDto]
+
+
+class AnalysisSchemaResponse(BaseModel):
+    tables: list[TableSchemaDto]
+    event_types: list[EventTypeSchemaDto]

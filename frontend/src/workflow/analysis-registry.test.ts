@@ -2,7 +2,7 @@
 
 import { describe, expect, it } from "vitest";
 
-import { getNodeKindSpec } from "./registry";
+import { getNodeKindSpec, validateNode } from "./registry";
 import { computeAnalysisShapes, fetchShape } from "./templates";
 import type { WorkflowDefinition, WorkflowNode } from "./types";
 
@@ -30,6 +30,35 @@ describe("分析节点注册表", () => {
   it("旧的处理与查询参数配置节点已退役", () => {
     expect(getNodeKindSpec("processing")).toBeNull();
     expect(getNodeKindSpec("query_config")).toBeNull();
+  });
+
+  it("数据提供节点是画布级源节点，参数仅 session_ids", () => {
+    const spec = getNodeKindSpec("data_provider");
+    expect(spec?.region).toBeNull();
+    expect(spec?.ports.inputs).toHaveLength(0);
+    expect(spec?.ports.outputs[0].dataLanguage).toBe("session_group");
+    expect(spec?.paramFields).toEqual({ session_ids: { type: "list" } });
+    expect(spec?.defaultParams).toEqual({ session_ids: [] });
+  });
+
+  it("数据提供节点拒绝重复与超限会话", () => {
+    const base = {
+      id: "provider-1",
+      kind: "data_provider",
+      region_id: null,
+      position: { x: 0, y: 0 },
+    } as const;
+    const duplicate = validateNode({
+      ...base,
+      params: { session_ids: ["a", "a"] },
+    });
+    const overLimit = validateNode({
+      ...base,
+      params: { session_ids: Array.from({ length: 1001 }, (_, index) => `s${index}`) },
+    });
+
+    expect(duplicate.some((item) => item.message.includes("重复"))).toBe(true);
+    expect(overLimit.some((item) => item.message.includes("最多 1000 个"))).toBe(true);
   });
 });
 

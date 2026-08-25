@@ -24,6 +24,11 @@ class ResultRepository(Protocol):
         limit: int = 50,
         offset: int = 0,
         state: str | None = None,
+        *,
+        name_query: str | None = None,
+        created_from: str | None = None,
+        created_to: str | None = None,
+        session_ids: tuple[str, ...] | list[str] | None = None,
     ) -> tuple[RunListItem, ...]: ...
 
     def get_run(self, session_id: str, *, include_events: bool = True) -> RunDetail: ...

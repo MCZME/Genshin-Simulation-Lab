@@ -179,11 +179,33 @@ class FakeApplicationFacade:
         limit: int = 50,
         offset: int = 0,
         state: str | None = None,
+        *,
+        name_query: str | None = None,
+        created_from: str | None = None,
+        created_to: str | None = None,
+        session_ids: tuple[str, ...] | list[str] | None = None,
     ) -> tuple[RunListItem, ...]:
+        runs = sorted(
+            self._results.values(),
+            key=lambda run: (run.created_at, run.session_id),
+            reverse=True,
+        )
+        if session_ids is not None:
+            by_id = {run.session_id: run for run in runs}
+            ordered = tuple(
+                by_id[session_id]
+                for session_id in dict.fromkeys(session_ids)
+                if session_id in by_id
+            )
+            return tuple(_run_list_item(run) for run in ordered)[offset : offset + limit]
+        query = (name_query or "").strip().casefold()
         items = [
             _run_list_item(run)
-            for run in self._results.values()
-            if state is None or run.state == state
+            for run in runs
+            if (state is None or run.state == state)
+            and (not query or query in _run_name(run).casefold())
+            and (created_from is None or run.created_at >= created_from)
+            and (created_to is None or run.created_at <= created_to)
         ]
         return tuple(items[offset : offset + limit])
 

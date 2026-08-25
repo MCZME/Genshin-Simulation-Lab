@@ -7,6 +7,7 @@ import type {
   WorkflowRegion,
 } from "./types";
 import {
+  MAX_ANALYSIS_SESSION_IDS,
   MAX_BATCH_MEMBERS,
   REGION_BOUNDARY_IN_PORT,
   REGION_BOUNDARY_OUT_PORT,
@@ -184,6 +185,7 @@ export function validateWorkflow(
   warnNodesOutsideRegions(definition, regionById, diagnostics);
   validateRegionToSimulationLinks(definition, regionById, nodeById, connectedToSimulation, diagnostics);
   validateAnalysisGraph(definition, nodeById, diagnostics);
+  validateAnalysisBoundarySessions(definition, nodeById, diagnostics);
   return diagnostics;
 }
 
@@ -904,6 +906,78 @@ function validateViewInputs(
           "VIEW_INPUT_SHAPE_MISMATCH",
           "视图的多条数据入线表结构不一致",
           { edge_id: edge.id, node_id: node.id },
+        ),
+      );
+    }
+  }
+}
+
+/** 分析区域边界会话组校验：合并上限与空数据提供警告（数据提供节点契约 2026-08-25）。 */
+function validateAnalysisBoundarySessions(
+  definition: WorkflowDefinition,
+  nodeById: Map<string, WorkflowNode>,
+  diagnostics: Diagnostic[],
+): void {
+  const analysisRegionIds = new Set(
+    definition.regions
+      .filter((region) => region.kind === "analysis")
+      .map((region) => region.id),
+  );
+  const sourcesByRegion = new Map<string, WorkflowNode[]>();
+  for (const edge of definition.edges) {
+    if (
+      !analysisRegionIds.has(edge.target_node_id) ||
+      edge.target_port_id !== REGION_BOUNDARY_IN_PORT
+    ) {
+      continue;
+    }
+    const source = nodeById.get(edge.source_node_id);
+    if (source === undefined) {
+      continue;
+    }
+    const sources = sourcesByRegion.get(edge.target_node_id) ?? [];
+    sources.push(source);
+    sourcesByRegion.set(edge.target_node_id, sources);
+  }
+  for (const [regionId, sources] of sourcesByRegion) {
+    const merged = new Set<string>();
+    for (const source of sources) {
+      const values =
+        source.kind === "simulation"
+          ? source.params.last_sessions
+          : source.kind === "data_provider"
+            ? source.params.session_ids
+            : [];
+      if (Array.isArray(values)) {
+        for (const value of values) {
+          if (typeof value === "string") {
+            merged.add(value);
+          }
+        }
+      }
+      if (source.kind === "data_provider") {
+        const sessionIds = Array.isArray(source.params.session_ids)
+          ? (source.params.session_ids as unknown[])
+          : [];
+        if (sessionIds.length === 0) {
+          diagnostics.push(
+            diagnostic(
+              "warning",
+              "DATA_PROVIDER_EMPTY_SELECTION",
+              "数据提供节点未选择会话，分析结果将为空",
+              { node_id: source.id },
+            ),
+          );
+        }
+      }
+    }
+    if (merged.size > MAX_ANALYSIS_SESSION_IDS) {
+      diagnostics.push(
+        diagnostic(
+          "error",
+          "BOUNDARY_SESSION_LIMIT_EXCEEDED",
+          `分析区域边界会话数 ${merged.size} 超过上限 ${MAX_ANALYSIS_SESSION_IDS}`,
+          { region_id: regionId },
         ),
       );
     }

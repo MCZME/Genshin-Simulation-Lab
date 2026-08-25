@@ -158,9 +158,17 @@ export async function cancelRun(runId: string): Promise<RunStatusResponse> {
   });
 }
 
-/** 历史运行列表（结果库浏览器，决策 2.37）；后端按 created_at 倒序返回。 */
+/** 历史运行列表（结果库浏览器与数据提供节点编辑器）；后端按 created_at 倒序返回。 */
 export async function listResults(
-  options: { limit?: number; offset?: number; state?: "completed" | "failed" | "cancelled" } = {},
+  options: {
+    limit?: number;
+    offset?: number;
+    state?: "completed" | "failed" | "cancelled";
+    q?: string;
+    createdFrom?: string;
+    createdTo?: string;
+    ids?: string[];
+  } = {},
 ): Promise<RunListResponse> {
   const params = new URLSearchParams();
   if (options.limit !== undefined) {
@@ -171,6 +179,18 @@ export async function listResults(
   }
   if (options.state !== undefined) {
     params.set("state", options.state);
+  }
+  if (options.q !== undefined && options.q.trim() !== "") {
+    params.set("q", options.q.trim());
+  }
+  if (options.createdFrom !== undefined) {
+    params.set("created_from", options.createdFrom);
+  }
+  if (options.createdTo !== undefined) {
+    params.set("created_to", options.createdTo);
+  }
+  if (options.ids !== undefined && options.ids.length > 0) {
+    params.set("ids", options.ids.join(","));
   }
   const query = params.toString();
   return request<RunListResponse>(`/results${query === "" ? "" : `?${query}`}`);

@@ -22,9 +22,41 @@ class ResultsService:
         limit: int = 50,
         offset: int = 0,
         state: str | None = None,
+        *,
+        name_query: str | None = None,
+        created_from: str | None = None,
+        created_to: str | None = None,
+        session_ids: tuple[str, ...] | list[str] | None = None,
     ) -> tuple[RunListItem, ...]:
-        logger.debug("列出仿真结果", extra={"limit": limit, "offset": offset, "state": state})
-        return self.repository.list_runs(limit=limit, offset=offset, state=state)
+        logger.debug(
+            "列出仿真结果",
+            extra={
+                "limit": limit,
+                "offset": offset,
+                "state": state,
+                "name_query": name_query,
+                "created_from": created_from,
+                "created_to": created_to,
+                "session_ids": session_ids,
+            },
+        )
+        items = self.repository.list_runs(
+            limit=limit,
+            offset=offset,
+            state=state,
+            name_query=name_query,
+            created_from=created_from,
+            created_to=created_to,
+            session_ids=session_ids,
+        )
+        if session_ids is None:
+            return items
+        by_id = {item.session_id: item for item in items}
+        return tuple(
+            by_id[session_id]
+            for session_id in dict.fromkeys(session_ids)
+            if session_id in by_id
+        )
 
     def inspect_run(self, session_id: str, *, include_events: bool = True) -> RunDetail:
         logger.debug(

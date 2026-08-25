@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import cast
 
 from genshin_sim.application.execution.models import RecordedEvent
-from genshin_sim.application.models import RunDetail
+from genshin_sim.application.models import RunDetail, RunListItem
 from genshin_sim.application.services import (
     ResultDatabaseService,
     ResultsService,
@@ -38,6 +38,11 @@ class _FakeResultRepository:
         limit: int = 50,
         offset: int = 0,
         state: str | None = None,
+        *,
+        name_query: str | None = None,
+        created_from: str | None = None,
+        created_to: str | None = None,
+        session_ids: tuple[str, ...] | list[str] | None = None,
     ) -> tuple[object, ...]:
         return ()
 
@@ -83,3 +88,42 @@ def test_results_service_counts_filtered_events():
     count = service.count_events("run:1", frame_min=2, event_type="DAMAGE_RESOLVED")
 
     assert count == 1
+
+
+def test_results_service_reorders_session_ids_like_request():
+    class _OrderedRepository:
+        def list_runs(
+            self,
+            limit: int = 50,
+            offset: int = 0,
+            state: str | None = None,
+            *,
+            name_query: str | None = None,
+            created_from: str | None = None,
+            created_to: str | None = None,
+            session_ids: tuple[str, ...] | list[str] | None = None,
+        ) -> tuple[RunListItem, ...]:
+            assert session_ids == ("b", "a", "missing")
+            return (
+                _run_item("a"),
+                _run_item("b"),
+            )
+
+    service = ResultsService(cast(ResultRepository, _OrderedRepository()))
+
+    items = service.list_runs(session_ids=("b", "a", "missing"))
+
+    assert [item.session_id for item in items] == ["b", "a"]
+
+
+def _run_item(session_id: str) -> RunListItem:
+    return RunListItem(
+        session_id=session_id,
+        state="completed",
+        name=session_id,
+        stop_reason="end",
+        end_frame=1,
+        frames_run=1,
+        created_at="2026-08-11T00:00:00+00:00",
+        event_count=0,
+    )

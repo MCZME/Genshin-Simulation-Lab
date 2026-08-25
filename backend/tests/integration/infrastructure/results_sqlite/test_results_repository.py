@@ -322,6 +322,106 @@ def test_list_runs_supports_offset(tmp_path):
     assert [item.name for item in page] == ["Run 1", "Run 0"]
 
 
+def test_list_runs_filters_by_name_query_ignoring_case_and_wildcards(tmp_path):
+    db_path = tmp_path / "results.db"
+    writer = SQLiteResultWriter(db_path)
+    for session_id, name in [
+        ("name-alpha", "Alpha One"),
+        ("name-beta", "beta two"),
+        ("name-percent", "100% sure"),
+        ("name-plain", "100x sure"),
+    ]:
+        writer.save_run(
+            CompletedSimulationRun(
+                session_id=session_id,
+                input_schema_version=2,
+                input_kind="simulation_input",
+                input_meta={"name": name},
+                input_snapshot={"schema_version": 2, "kind": "simulation_input"},
+                summary=SimulationRunSummary(
+                    stop_reason="MAX_FRAMES",
+                    end_frame=1,
+                    frames_run=1,
+                ),
+                events=(),
+                created_at="2026-08-19T00:00:00+00:00",
+            )
+        )
+    repository = SQLiteResultRepository(db_path)
+
+    alpha = repository.list_runs(name_query="ALPHA")
+    percent = repository.list_runs(name_query="0%")
+
+    assert [item.name for item in alpha] == ["Alpha One"]
+    assert [item.name for item in percent] == ["100% sure"]
+
+
+def test_list_runs_filters_by_created_range_inclusive(tmp_path):
+    db_path = tmp_path / "results.db"
+    writer = SQLiteResultWriter(db_path)
+    for index in range(1, 4):
+        writer.save_run(
+            CompletedSimulationRun(
+                session_id=f"time-{index}",
+                input_schema_version=2,
+                input_kind="simulation_input",
+                input_meta={"name": f"Time {index}"},
+                input_snapshot={"schema_version": 2, "kind": "simulation_input"},
+                summary=SimulationRunSummary(
+                    stop_reason="MAX_FRAMES",
+                    end_frame=1,
+                    frames_run=1,
+                ),
+                events=(),
+                created_at=f"2026-01-0{index}T00:00:00+00:00",
+            )
+        )
+    repository = SQLiteResultRepository(db_path)
+
+    page = repository.list_runs(
+        created_from="2026-01-02T00:00:00+00:00",
+        created_to="2026-01-03T00:00:00+00:00",
+    )
+
+    assert [item.session_id for item in page] == ["time-3", "time-2"]
+
+
+def test_list_runs_filters_by_session_ids(tmp_path):
+    db_path = tmp_path / "results.db"
+    writer = SQLiteResultWriter(db_path)
+    for index in range(1, 4):
+        writer.save_run(_completed_run(f"id-{index}"))
+    repository = SQLiteResultRepository(db_path)
+
+    selected = repository.list_runs(session_ids=("id-2", "id-1"))
+    empty = repository.list_runs(session_ids=())
+
+    assert {item.session_id for item in selected} == {"id-1", "id-2"}
+    assert empty == ()
+
+
+def test_run_name_fallback_is_chinese(tmp_path):
+    db_path = tmp_path / "results.db"
+    writer = SQLiteResultWriter(db_path)
+    writer.save_run(
+        CompletedSimulationRun(
+            input_schema_version=2,
+            input_kind="simulation_input",
+            input_meta={},
+            input_snapshot={"schema_version": 2, "kind": "simulation_input"},
+            summary=SimulationRunSummary(
+                stop_reason="MAX_FRAMES",
+                end_frame=1,
+                frames_run=1,
+            ),
+            events=(),
+        )
+    )
+    repository = SQLiteResultRepository(db_path)
+
+    assert repository.list_runs()[0].name == "未命名仿真"
+
+
 def test_concurrent_writers_serialize_with_busy_timeout_and_retry(tmp_path):
     db_path = tmp_path / "results.db"
     writer = SQLiteResultWriter(db_path, busy_timeout_seconds=0.2, write_retries=2)

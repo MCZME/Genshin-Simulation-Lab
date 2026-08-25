@@ -36,6 +36,34 @@ def _run(
     )
 
 
+def _run_at(
+    session_id: str,
+    *,
+    name: str,
+    state: str = "completed",
+    created_at: str,
+) -> RunDetail:
+    return RunDetail(
+        session_id=session_id,
+        state=state,
+        input_snapshot={"meta": {"name": name}, "team": []},
+        initial_snapshot={"frame": 0},
+        summary=SimulationRunSummary(
+            stop_reason="INPUT_EXHAUSTED",
+            end_frame=600,
+            frames_run=600,
+        )
+        if state == "completed"
+        else None,
+        events=(),
+        error_code=None,
+        error_message=None,
+        created_at=created_at,
+        started_at=None,
+        finished_at=None,
+    )
+
+
 def test_results_list_and_detail_hide_sensitive_fields(application_facade) -> None:
     events = (
         RecordedEvent(frame=1, event_type="DAMAGE_DEALT", data={"value": 1}),
@@ -94,3 +122,98 @@ def test_results_missing_run_returns_not_found(application_facade) -> None:
 
     assert response.status_code == 404
     assert response.json()["code"] == "not_found"
+
+
+def test_results_list_filters_by_name_state_and_time(application_facade) -> None:
+    app = create_app(
+        application_facade(
+            results=(
+                _run_at(
+                    "session-1",
+                    name="主配队",
+                    created_at="2026-08-17T12:00:00+00:00",
+                ),
+                _run_at(
+                    "session-2",
+                    name="测试",
+                    created_at="2026-08-18T12:00:00+00:00",
+                ),
+                _run_at(
+                    "session-3",
+                    name="主配队",
+                    state="failed",
+                    created_at="2026-08-19T12:00:00+00:00",
+                ),
+            )
+        )
+    )
+
+    with TestClient(app) as client:
+        by_name = client.get("/api/v1/results", params={"q": "主配"})
+        by_name_and_state = client.get(
+            "/api/v1/results",
+            params={"q": "主配", "state": "completed"},
+        )
+        by_time = client.get(
+            "/api/v1/results",
+            params={
+                "created_from": "2026-08-18T00:00:00+00:00",
+                "created_to": "2026-08-19T23:59:59+00:00",
+            },
+        )
+
+    assert [item["session_id"] for item in by_name.json()["items"]] == [
+        "session-3",
+        "session-1",
+    ]
+    assert [item["session_id"] for item in by_name_and_state.json()["items"]] == [
+        "session-1"
+    ]
+    assert [item["session_id"] for item in by_time.json()["items"]] == [
+        "session-3",
+        "session-2",
+    ]
+
+
+def test_results_list_ids_mode_ignores_other_filters_and_preserves_order(
+    application_facade,
+) -> None:
+    app = create_app(
+        application_facade(
+            results=(
+                _run_at(
+                    "session-1",
+                    name="主配队",
+                    created_at="2026-08-17T12:00:00+00:00",
+                ),
+                _run_at(
+                    "session-3",
+                    name="主配队",
+                    state="failed",
+                    created_at="2026-08-19T12:00:00+00:00",
+                ),
+            )
+        )
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/v1/results",
+            params={"ids": "session-3,session-1,missing", "state": "failed"},
+        )
+
+    assert [item["session_id"] for item in response.json()["items"]] == [
+        "session-3",
+        "session-1",
+    ]
+
+
+def test_results_list_ids_rejects_more_than_200(application_facade) -> None:
+    app = create_app(application_facade())
+    ids = ",".join(f"session-{index}" for index in range(201))
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/results", params={"ids": ids})
+
+    assert response.status_code == 400
+    assert response.json()["code"] == "validation_failed"

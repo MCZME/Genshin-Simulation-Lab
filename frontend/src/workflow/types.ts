@@ -2,6 +2,9 @@ export const WORKFLOW_SCHEMA_VERSION = 1;
 
 export const MAX_BATCH_MEMBERS = 200;
 
+/** 分析查询契约的会话组上限（分析系统契约 6.2）。 */
+export const MAX_ANALYSIS_SESSION_IDS = 1000;
+
 /**
  * 区域边界端口是区域的一部分，不作为独立节点。
  * 配置区域只有边界输出：`out` 同时作为区域内节点链的汇入目标和连接模拟节点的输出源；

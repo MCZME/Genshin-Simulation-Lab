@@ -7,6 +7,7 @@ from typing import cast
 from fastapi import APIRouter, Depends, Query, Request
 
 from genshin_sim.application import (
+    ApplicationError,
     ApplicationFacade,
     RecordedEvent,
     RunDetail,
@@ -30,6 +31,11 @@ router = APIRouter(
     dependencies=[Depends(require_initialized)],
 )
 
+_UTC_ISO_DATETIME_PATTERN = (
+    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?\+00:00$"
+)
+MAX_SESSION_IDS = 200
+
 
 @router.get("", response_model=RunListResponse)
 def list_results(
@@ -37,13 +43,30 @@ def list_results(
     limit: int = Query(default=50, ge=0, le=200),
     offset: int = Query(default=0, ge=0),
     state: str | None = Query(default=None, pattern="^(completed|failed|cancelled)$"),
+    q: str | None = Query(default=None, max_length=64),
+    created_from: str | None = Query(default=None, pattern=_UTC_ISO_DATETIME_PATTERN),
+    created_to: str | None = Query(default=None, pattern=_UTC_ISO_DATETIME_PATTERN),
+    ids: str | None = Query(default=None),
 ) -> RunListResponse:
     facade = cast(ApplicationFacade, request.app.state.application)
+    session_ids = _parse_session_ids(ids)
+    if session_ids is not None:
+        items = facade.list_results(
+            limit=limit,
+            offset=offset,
+            session_ids=session_ids,
+        )
+    else:
+        items = facade.list_results(
+            limit=limit,
+            offset=offset,
+            state=state,
+            name_query=q,
+            created_from=created_from,
+            created_to=created_to,
+        )
     return RunListResponse(
-        items=[
-            _list_item_to_dto(item)
-            for item in facade.list_results(limit=limit, offset=offset, state=state)
-        ]
+        items=[_list_item_to_dto(item) for item in items]
     )
 
 
@@ -99,6 +122,18 @@ def _list_item_to_dto(item: RunListItem) -> RunListItemDto:
         created_at=item.created_at,
         event_count=item.event_count,
     )
+
+
+def _parse_session_ids(raw: str | None) -> tuple[str, ...] | None:
+    if raw is None or not raw.strip():
+        return None
+    session_ids = tuple(dict.fromkeys(part.strip() for part in raw.split(",") if part.strip()))
+    if len(session_ids) > MAX_SESSION_IDS:
+        raise ApplicationError(
+            "validation_failed",
+            f"ids 最多支持 {MAX_SESSION_IDS} 个会话",
+        )
+    return session_ids
 
 
 def _detail_to_dto(detail: RunDetail, event_count: int) -> RunDetailResponse:

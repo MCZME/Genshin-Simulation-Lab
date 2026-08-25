@@ -49,6 +49,14 @@ function definition(nodes: WorkflowNode[], edges: WorkflowEdge[]): WorkflowDefin
   };
 }
 
+function canvasNode(
+  id: string,
+  kind: string,
+  params: Record<string, unknown> = {},
+): WorkflowNode {
+  return { id, kind, region_id: null, position: { x: 0, y: 0 }, params };
+}
+
 const codes = (result: ReturnType<typeof validateWorkflow>) =>
   result.map((item) => item.code);
 
@@ -133,4 +141,51 @@ it("视图多条数据入线结构不一致时报 VIEW_INPUT_SHAPE_MISMATCH", ()
   ];
   const result = validateWorkflow(definition(nodes, edges));
   expect(codes(result)).toContain("VIEW_INPUT_SHAPE_MISMATCH");
+});
+
+it("空数据提供节点连入边界时报警告", () => {
+  const nodes = [canvasNode("prov1", "data_provider")];
+  const edges = [edge("b1", "prov1", "out", "analysis-1", "in")];
+
+  const result = validateWorkflow(definition(nodes, edges));
+
+  expect(result.some((item) => item.code === "DATA_PROVIDER_EMPTY_SELECTION")).toBe(true);
+});
+
+it("边界多源合并会话数超限时报错误", () => {
+  const nodes = [
+    canvasNode(
+      "prov1",
+      "data_provider",
+      { session_ids: Array.from({ length: 600 }, (_, index) => `p${index}`) },
+    ),
+    canvasNode(
+      "sim1",
+      "simulation",
+      { last_sessions: Array.from({ length: 600 }, (_, index) => `s${index}`) },
+    ),
+  ];
+  const edges = [
+    edge("b1", "prov1", "out", "analysis-1", "in"),
+    edge("b2", "sim1", "out", "analysis-1", "in"),
+  ];
+
+  const result = validateWorkflow(definition(nodes, edges));
+
+  expect(result.some((item) => item.code === "BOUNDARY_SESSION_LIMIT_EXCEEDED")).toBe(true);
+});
+
+it("边界多源合并保序去重后不误报超限", () => {
+  const nodes = [
+    canvasNode("sim1", "simulation", { last_sessions: ["s1", "s2"] }),
+    canvasNode("prov1", "data_provider", { session_ids: ["s2", "s3"] }),
+  ];
+  const edges = [
+    edge("b1", "sim1", "out", "analysis-1", "in"),
+    edge("b2", "prov1", "out", "analysis-1", "in"),
+  ];
+
+  const result = validateWorkflow(definition(nodes, edges));
+
+  expect(result.some((item) => item.code === "BOUNDARY_SESSION_LIMIT_EXCEEDED")).toBe(false);
 });

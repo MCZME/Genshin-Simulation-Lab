@@ -12,6 +12,7 @@ import type {
 import { rangeEntries } from "./decimal";
 import { SUPPORTED_INPUT_KEYS } from "./inputKeys";
 import { parsePath } from "./path";
+import { MAX_ANALYSIS_SESSION_IDS } from "./types";
 
 export type ParamFieldType =
   | "string"
@@ -621,9 +622,28 @@ function validateDataProvider(node: WorkflowNode): Diagnostic[] {
       !sessionIds.every((item) => typeof item === "string"))
   ) {
     diagnostics.push(paramError(node, "session_ids", "session_ids 必须是字符串数组"));
+    return diagnostics;
   }
-  if (node.params.filters !== undefined && !isPlainObject(node.params.filters)) {
-    diagnostics.push(paramError(node, "filters", "filters 必须是对象"));
+  if (sessionIds === undefined) {
+    return diagnostics;
+  }
+  if (sessionIds.length > MAX_ANALYSIS_SESSION_IDS) {
+    diagnostics.push(
+      paramError(
+        node,
+        "session_ids",
+        `session_ids 最多 ${MAX_ANALYSIS_SESSION_IDS} 个`,
+      ),
+    );
+  }
+  const seen = new Set<string>();
+  for (const [index, sessionId] of sessionIds.entries()) {
+    if (seen.has(sessionId)) {
+      diagnostics.push(
+        paramError(node, `session_ids[${index}]`, `session_id 重复：${sessionId}`),
+      );
+    }
+    seen.add(sessionId);
   }
   return diagnostics;
 }
@@ -898,9 +918,8 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     },
     paramFields: {
       session_ids: { type: "list" },
-      filters: { type: "object" },
     },
-    defaultParams: { session_ids: [], filters: { name: "", state: "" } },
+    defaultParams: { session_ids: [] },
     fragment: () => null,
     validate: validateDataProvider,
   },

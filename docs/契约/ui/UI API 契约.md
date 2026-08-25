@@ -295,6 +295,11 @@
 
 查询：`limit`（默认 50，最大 200）、`offset`（默认 0）、`state`（`completed` / `failed` / `cancelled`，可空）。
 
+- `q`：`name` 子串过滤，大小写不敏感，最长 64 字符。
+- `created_from` / `created_to`：`created_at` 范围，ISO-8601 UTC（必须为 `+00:00` 形式，可带小数秒），两端含端点。
+- `ids`：逗号分隔的 `session_id` 列表，去重后最多 200 个；提供时忽略 `q` / `state` / `created_from` / `created_to`，结果按请求顺序回显，不存在的会话省略。
+- 运行名缺省回退统一为「未命名仿真」（列表与详情一致）。
+
 ```json
 {
   "items": [

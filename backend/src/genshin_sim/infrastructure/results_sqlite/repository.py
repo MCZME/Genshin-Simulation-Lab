@@ -100,7 +100,7 @@ def _write_completed_run(connection: sqlite3.Connection, run: CompletedSimulatio
             run.session_id,
             RunState.COMPLETED.value,
             run.input_schema_version,
-            str(run.input_meta.get("name") or "Untitled Simulation"),
+            str(run.input_meta.get("name") or "未命名仿真"),
             _dump_json(run.input_snapshot),
             None if run.initial_snapshot is None else _dump_json(run.initial_snapshot),
             run.summary.stop_reason,
@@ -153,7 +153,7 @@ def _write_failed_run(connection: sqlite3.Connection, run: FailedSimulationRun) 
             run.session_id,
             run.state.value,
             run.input_schema_version,
-            str(run.input_meta.get("name") or "Untitled Simulation"),
+            str(run.input_meta.get("name") or "未命名仿真"),
             _dump_json(run.input_snapshot),
             None,
             None,
@@ -183,6 +183,11 @@ class SQLiteResultRepository:
         limit: int = 50,
         offset: int = 0,
         state: str | None = None,
+        *,
+        name_query: str | None = None,
+        created_from: str | None = None,
+        created_to: str | None = None,
+        session_ids: tuple[str, ...] | list[str] | None = None,
     ) -> tuple[RunListItem, ...]:
         if limit <= 0:
             return ()
@@ -190,16 +195,37 @@ class SQLiteResultRepository:
             raise ValueError("offset 必须是非负整数")
         if not self.db_path.exists():
             return ()
+        if session_ids is not None:
+            session_ids = tuple(dict.fromkeys(session_ids))
+            if not session_ids:
+                return ()
 
         with closing(_connect(self.db_path)) as connection:
             sql = (
                 "SELECT session_id, state, name, stop_reason, end_frame, frames_run, created_at,"
                 " event_count FROM simulation_runs"
             )
+            conditions: list[str] = []
             params: list[Any] = []
             if state is not None:
-                sql += " WHERE state = ?"
+                conditions.append("state = ?")
                 params.append(state)
+            if name_query is not None and name_query.strip():
+                conditions.append("name LIKE ? ESCAPE '\\'")
+                params.append(f"%{_escape_like(name_query.strip())}%")
+            if created_from is not None:
+                conditions.append("created_at >= ?")
+                params.append(created_from)
+            if created_to is not None:
+                conditions.append("created_at <= ?")
+                params.append(created_to)
+            if session_ids is not None:
+                conditions.append(
+                    f"session_id IN ({','.join('?' for _ in session_ids)})"
+                )
+                params.extend(session_ids)
+            if conditions:
+                sql += " WHERE " + " AND ".join(conditions)
             sql += " ORDER BY created_at DESC, session_id DESC LIMIT ? OFFSET ?"
             params.append(limit)
             params.append(offset)
@@ -388,6 +414,12 @@ class SQLiteResultRepository:
             )
             for row in rows
         )
+
+
+def _escape_like(value: str) -> str:
+    """把名称过滤字面量中的 LIKE 通配符转义为普通字符。"""
+
+    return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
 
 
 def _connect(

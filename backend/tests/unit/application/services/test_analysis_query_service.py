@@ -40,7 +40,7 @@ def test_execute_passes_structure_to_executor() -> None:
     service, executor = _service()
     plan = AnalysisPlan(
         session_ids=("a", "b"),
-        nodes=(AnalysisPlanNode(id="runs1", kind="fetch_runs"),),
+        nodes=(AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),),
         outputs=("runs1",),
     )
 
@@ -54,7 +54,7 @@ def test_execute_rejects_oversized_session_list() -> None:
     service, _ = _service()
     plan = AnalysisPlan(
         session_ids=tuple(f"s{i}" for i in range(1001)),
-        nodes=(AnalysisPlanNode(id="runs1", kind="fetch_runs"),),
+        nodes=(AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),),
         outputs=("runs1",),
     )
 
@@ -67,8 +67,8 @@ def test_execute_rejects_duplicate_node_ids() -> None:
     plan = AnalysisPlan(
         session_ids=("a",),
         nodes=(
-            AnalysisPlanNode(id="runs1", kind="fetch_runs"),
-            AnalysisPlanNode(id="runs1", kind="fetch_runs"),
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
         ),
         outputs=("runs1",),
     )
@@ -82,7 +82,7 @@ def test_execute_rejects_illegal_node_id() -> None:
     service, _ = _service()
     plan = AnalysisPlan(
         session_ids=(),
-        nodes=(AnalysisPlanNode(id='bad"node', kind="fetch_runs"),),
+        nodes=(AnalysisPlanNode(id='bad"node', kind="fetch", params={"source": "runs"}),),
         outputs=('bad"node',),
     )
 
@@ -94,7 +94,7 @@ def test_execute_rejects_unknown_or_empty_outputs() -> None:
     service, _ = _service()
     empty = AnalysisPlan(
         session_ids=(),
-        nodes=(AnalysisPlanNode(id="runs1", kind="fetch_runs"),),
+        nodes=(AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),),
         outputs=(),
     )
     with pytest.raises(AnalysisPlanValidationError, match="outputs 不能为空"):
@@ -102,7 +102,7 @@ def test_execute_rejects_unknown_or_empty_outputs() -> None:
 
     unknown = AnalysisPlan(
         session_ids=(),
-        nodes=(AnalysisPlanNode(id="runs1", kind="fetch_runs"),),
+        nodes=(AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),),
         outputs=("ghost",),
     )
     with pytest.raises(AnalysisPlanValidationError) as exc_info:
@@ -111,7 +111,7 @@ def test_execute_rejects_unknown_or_empty_outputs() -> None:
     assert any(item.get("node_id") == "ghost" for item in details)
 
 
-def test_read_schema_exposes_full_event_type_catalog() -> None:
+def test_read_schema_exposes_full_catalog() -> None:
     service, _ = _service()
 
     schema = service.read_schema()
@@ -132,3 +132,8 @@ def test_read_schema_exposes_full_event_type_catalog() -> None:
         item for item in schema.event_types if item.name == "TEAM_SWITCHED"
     )
     assert empty_fields.fields == ()
+    paths = {item.path: item for item in schema.snapshot_paths}
+    assert paths["team.0.character.asset_key"].default_name == "char_1_key"
+    assert paths["team.0.character.asset_key"].segments == ("队伍", "槽位 1", "角色", "资产")
+    assert paths["team.3.weapon.refinement"].default_name == "weapon_4_refinement"
+    assert paths["scene.targets.0.resistance.physical"].default_name == "target_1_res_physical"

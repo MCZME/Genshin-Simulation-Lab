@@ -165,11 +165,22 @@ class AnalysisEventTypeSchema:
 
 
 @dataclass(frozen=True, slots=True)
+class AnalysisSnapshotPath:
+    """输入快照可提取路径：逐段选择器所需的结构目录。"""
+
+    path: str
+    type: str
+    default_name: str
+    segments: tuple[str, ...]
+
+
+@dataclass(frozen=True, slots=True)
 class AnalysisReadSchema:
-    """取数节点编辑器的可读 schema（表列 + 事件类型字段）。"""
+    """取数节点编辑器的可读 schema（表列 + 事件类型字段 + 快照路径目录）。"""
 
     tables: tuple[AnalysisTableSchema, ...]
     event_types: tuple[AnalysisEventTypeSchema, ...]
+    snapshot_paths: tuple[AnalysisSnapshotPath, ...] = ()
 
 
 __all__ = [
@@ -179,6 +190,7 @@ __all__ = [
     "AnalysisPlan",
     "AnalysisPlanNode",
     "AnalysisReadSchema",
+    "AnalysisSnapshotPath",
     "AnalysisSchemaColumn",
     "AnalysisTableResult",
     "AnalysisTableSchema",

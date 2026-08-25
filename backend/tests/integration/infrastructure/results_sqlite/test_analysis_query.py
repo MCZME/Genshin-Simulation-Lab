@@ -132,14 +132,15 @@ def _column_values(table, name: str) -> list[Any]:
     return [row[index] for row in table.rows]
 
 
-def test_fetch_runs_exposes_snapshot_condition_columns(tmp_path) -> None:
+def test_fetch_runs_source_exposes_snapshot_condition_columns(tmp_path) -> None:
     executor = _executor(tmp_path)
     plan = _plan(
         (
             AnalysisPlanNode(
                 id="runs1",
-                kind="fetch_runs",
+                kind="fetch",
                 params={
+                    "source": "runs",
                     "snapshot_columns": [
                         {
                             "path": "team[0].character.asset_key",
@@ -169,11 +170,12 @@ def test_per_session_dps_pipeline_golden(tmp_path) -> None:
     executor = _executor(tmp_path)
     plan = _plan(
         (
-            AnalysisPlanNode(id="runs1", kind="fetch_runs"),
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
             AnalysisPlanNode(
                 id="ev1",
-                kind="fetch_events",
+                kind="fetch",
                 params={
+                    "source": "events",
                     "event_types": ["DAMAGE_RESOLVED"],
                     "payload_columns": [
                         {"path": "result.final_damage", "name": "damage", "type": "float"}
@@ -252,8 +254,9 @@ def test_global_aggregate_statistics_golden(tmp_path) -> None:
         (
             AnalysisPlanNode(
                 id="ev1",
-                kind="fetch_events",
+                kind="fetch",
                 params={
+                    "source": "events",
                     "payload_columns": [
                         {"path": "result.final_damage", "name": "damage", "type": "float"}
                     ]
@@ -308,7 +311,7 @@ def test_filter_pushdown_and_ne_null_semantics(tmp_path) -> None:
     executor = _executor(tmp_path)
     plan = _plan(
         (
-            AnalysisPlanNode(id="runs1", kind="fetch_runs"),
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
             AnalysisPlanNode(
                 id="f1",
                 kind="filter",
@@ -334,7 +337,7 @@ def test_empty_filter_is_identity(tmp_path) -> None:
     executor = _executor(tmp_path)
     plan = _plan(
         (
-            AnalysisPlanNode(id="runs1", kind="fetch_runs"),
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
             AnalysisPlanNode(id="f1", kind="filter", params={}, inputs=("runs1",)),
         ),
         ("f1",),
@@ -349,7 +352,7 @@ def test_project_rejects_empty_columns(tmp_path) -> None:
     executor = _executor(tmp_path)
     plan = _plan(
         (
-            AnalysisPlanNode(id="runs1", kind="fetch_runs"),
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
             AnalysisPlanNode(id="p1", kind="project", params={"columns": []}, inputs=("runs1",)),
         ),
         ("p1",),
@@ -366,7 +369,7 @@ def test_aggregate_rejects_empty_params(tmp_path) -> None:
     executor = _executor(tmp_path)
     plan = _plan(
         (
-            AnalysisPlanNode(id="ev1", kind="fetch_events"),
+            AnalysisPlanNode(id="ev1", kind="fetch", params={"source": "events"}),
             AnalysisPlanNode(id="a1", kind="aggregate", params={}, inputs=("ev1",)),
         ),
         ("a1",),
@@ -383,7 +386,7 @@ def test_compute_rejects_empty_columns(tmp_path) -> None:
     executor = _executor(tmp_path)
     plan = _plan(
         (
-            AnalysisPlanNode(id="runs1", kind="fetch_runs"),
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
             AnalysisPlanNode(id="c1", kind="compute", params={"columns": []}, inputs=("runs1",)),
         ),
         ("c1",),
@@ -399,15 +402,15 @@ def test_compute_rejects_empty_columns(tmp_path) -> None:
 @pytest.mark.parametrize(
     ("params", "reason"),
     [
-        ({"event_types": "DAMAGE_RESOLVED"}, "event_types"),
-        ({"frame_min": "0"}, "frame_min"),
-        ({"frame_min": 10, "frame_max": 5}, "frame_min"),
+        ({"source": "events", "event_types": "DAMAGE_RESOLVED"}, "event_types"),
+        ({"source": "events", "frame_min": "0"}, "frame_min"),
+        ({"source": "events", "frame_min": 10, "frame_max": 5}, "frame_min"),
     ],
 )
-def test_fetch_events_rejects_invalid_parameters(tmp_path, params, reason) -> None:
+def test_fetch_events_source_rejects_invalid_parameters(tmp_path, params, reason) -> None:
     executor = _executor(tmp_path)
     plan = _plan(
-        (AnalysisPlanNode(id="ev1", kind="fetch_events", params=params),),
+        (AnalysisPlanNode(id="ev1", kind="fetch", params=params),),
         ("ev1",),
     )
 
@@ -417,6 +420,43 @@ def test_fetch_events_rejects_invalid_parameters(tmp_path, params, reason) -> No
     details = list(exc_info.value.details)
     assert any(
         item.get("node_id") == "ev1" and reason in item.get("reason", "")
+        for item in details
+    )
+
+
+def test_fetch_rejects_missing_or_invalid_source(tmp_path) -> None:
+    executor = _executor(tmp_path)
+    plan = _plan((AnalysisPlanNode(id="f1", kind="fetch", params={}),), ("f1",))
+
+    with pytest.raises(AnalysisPlanValidationError) as exc_info:
+        executor.execute_plan(plan)
+
+    details = list(exc_info.value.details)
+    assert any(
+        item.get("node_id") == "f1" and "source" in item.get("reason", "")
+        for item in details
+    )
+
+
+def test_fetch_rejects_cross_source_params(tmp_path) -> None:
+    executor = _executor(tmp_path)
+    plan = _plan(
+        (
+            AnalysisPlanNode(
+                id="f1",
+                kind="fetch",
+                params={"source": "runs", "event_types": ["DAMAGE_RESOLVED"]},
+            ),
+        ),
+        ("f1",),
+    )
+
+    with pytest.raises(AnalysisPlanValidationError) as exc_info:
+        executor.execute_plan(plan)
+
+    details = list(exc_info.value.details)
+    assert any(
+        item.get("node_id") == "f1" and "source=runs 不支持" in item.get("reason", "")
         for item in details
     )
 
@@ -433,7 +473,7 @@ def test_output_limit_marks_truncated(tmp_path) -> None:
     executor = SQLiteAnalysisQueryExecutor(db_path)
     plan = AnalysisPlan(
         session_ids=("run:big",),
-        nodes=(AnalysisPlanNode(id="ev1", kind="fetch_events"),),
+        nodes=(AnalysisPlanNode(id="ev1", kind="fetch", params={"source": "events"}),),
         outputs=("ev1",),
     )
 

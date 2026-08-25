@@ -55,6 +55,14 @@ class EventTypeSchemaDto(BaseModel):
     fields: list[EventFieldDto]
 
 
+class SnapshotPathDto(BaseModel):
+    path: str
+    type: str
+    default_name: str
+    segments: list[str]
+
+
 class AnalysisSchemaResponse(BaseModel):
     tables: list[TableSchemaDto]
     event_types: list[EventTypeSchemaDto]
+    snapshot_paths: list[SnapshotPathDto] = Field(default_factory=list)

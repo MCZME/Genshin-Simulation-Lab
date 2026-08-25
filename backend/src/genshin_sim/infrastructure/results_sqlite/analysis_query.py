@@ -39,8 +39,7 @@ _NUMERIC_TYPES = frozenset({"int", "float"})
 _TYPE_VOCABULARY = frozenset({"string", "int", "float", "bool"})
 
 _INPUT_ARITY: dict[str, int] = {
-    "fetch_runs": 0,
-    "fetch_events": 0,
+    "fetch": 0,
     "filter": 1,
     "project": 1,
     "sort": 1,
@@ -51,8 +50,9 @@ _INPUT_ARITY: dict[str, int] = {
 }
 
 _FETCH_PARAM_KEYS: dict[str, frozenset[str]] = {
-    "fetch_runs": frozenset({"snapshot_columns"}),
-    "fetch_events": frozenset({"event_types", "frame_min", "frame_max", "payload_columns"}),
+    "fetch": frozenset(
+        {"source", "snapshot_columns", "event_types", "frame_min", "frame_max", "payload_columns"}
+    ),
     "filter": frozenset({"mode", "conditions"}),
     "project": frozenset({"columns"}),
     "sort": frozenset({"keys"}),
@@ -362,12 +362,14 @@ class _PlanCompiler:
         source_types = {column.name: column.type for column in source_columns}
         checker = _ShapeChecker(self, node, source_types)
         passthrough = tuple(AnalysisColumn(name, type_) for name, type_ in source_types.items())
-        if kind == "fetch_runs":
-            checker.check_fetch_params(params)
-            return checker.fetch_shape(_RUN_TABLE_SCHEMA, params.get("snapshot_columns"))
-        if kind == "fetch_events":
-            checker.check_fetch_params(params)
-            return checker.fetch_shape(_EVENT_TABLE_SCHEMA, params.get("payload_columns"))
+        if kind == "fetch":
+            checker.check_fetch(params)
+            source = params.get("source")
+            if source == "runs":
+                return checker.fetch_shape(_RUN_TABLE_SCHEMA, params.get("snapshot_columns"))
+            if source == "events":
+                return checker.fetch_shape(_EVENT_TABLE_SCHEMA, params.get("payload_columns"))
+            return ()
         if kind == "filter":
             checker.check_conditions(params)
             return passthrough
@@ -410,10 +412,8 @@ class _PlanCompiler:
         binder: _Binder,
         source_sql: str,
     ) -> str | None:
-        if node.kind == "fetch_runs":
-            return self._compile_fetch_runs(node, binder)
-        if node.kind == "fetch_events":
-            return self._compile_fetch_events(node, binder)
+        if node.kind == "fetch":
+            return self._compile_fetch(node, binder)
         if node.kind == "filter":
             return self._compile_filter(node, binder, source_sql)
         if node.kind == "project":
@@ -431,60 +431,50 @@ class _PlanCompiler:
             return self._compile_compute(node, input_shapes, binder, source_sql)
         return None
 
-    def _compile_fetch_runs(self, node: AnalysisPlanNode, binder: _Binder) -> str:
-        table = "simulation_runs"
-        select_items = [_quoted(item.name) for item in _RUN_TABLE_SCHEMA]
-        extracts = node.params.get("snapshot_columns") or []
-        for item in extracts:
-            path = "$." + str(item["path"])
-            select_items.append(
-                _typed_extract(table, "input_snapshot_json", path, str(item["type"]))
-                + " AS "
-                + _quoted(str(item["name"]))
-            )
-        conditions = [
-            _quoted("session_id")
-            + " IN ("
-            + _in_placeholders(binder, self._plan.session_ids)
-            + ")"
-        ]
-        return (
-            "SELECT " + ", ".join(select_items)
-            + " FROM " + table
-            + " WHERE " + " AND ".join(conditions)
-        )
-
-    def _compile_fetch_events(self, node: AnalysisPlanNode, binder: _Binder) -> str:
-        table = "simulation_events"
-        select_items = [_quoted(item.name) for item in _EVENT_TABLE_SCHEMA]
-        extracts = node.params.get("payload_columns") or []
-        for item in extracts:
-            path = "$." + str(item["path"])
-            select_items.append(
-                _typed_extract(table, "data_json", path, str(item["type"]))
-                + " AS "
-                + _quoted(str(item["name"]))
-            )
-        conditions = [
-            _quoted("session_id")
-            + " IN ("
-            + _in_placeholders(binder, self._plan.session_ids)
-            + ")"
-        ]
-        event_types = node.params.get("event_types") or []
-        if event_types:
-            conditions.append(
-                _quoted("event_type")
+    def _compile_fetch(self, node: AnalysisPlanNode, binder: _Binder) -> str:
+        if node.params.get("source") == "events":
+            table = "simulation_events"
+            select_items = [_quoted(item.name) for item in _EVENT_TABLE_SCHEMA]
+            extracts = node.params.get("payload_columns") or []
+            extract_column = "data_json"
+            conditions = [
+                _quoted("session_id")
                 + " IN ("
-                + _in_placeholders(binder, [str(item) for item in event_types])
+                + _in_placeholders(binder, self._plan.session_ids)
                 + ")"
+            ]
+            event_types = node.params.get("event_types") or []
+            if event_types:
+                conditions.append(
+                    _quoted("event_type")
+                    + " IN ("
+                    + _in_placeholders(binder, [str(item) for item in event_types])
+                    + ")"
+                )
+            frame_min = node.params.get("frame_min")
+            frame_max = node.params.get("frame_max")
+            if frame_min is not None:
+                conditions.append(_quoted("frame") + " >= " + binder.placeholder(frame_min))
+            if frame_max is not None:
+                conditions.append(_quoted("frame") + " <= " + binder.placeholder(frame_max))
+        else:
+            table = "simulation_runs"
+            select_items = [_quoted(item.name) for item in _RUN_TABLE_SCHEMA]
+            extracts = node.params.get("snapshot_columns") or []
+            extract_column = "input_snapshot_json"
+            conditions = [
+                _quoted("session_id")
+                + " IN ("
+                + _in_placeholders(binder, self._plan.session_ids)
+                + ")"
+            ]
+        for item in extracts:
+            path = "$." + str(item["path"])
+            select_items.append(
+                _typed_extract(table, extract_column, path, str(item["type"]))
+                + " AS "
+                + _quoted(str(item["name"]))
             )
-        frame_min = node.params.get("frame_min")
-        frame_max = node.params.get("frame_max")
-        if frame_min is not None:
-            conditions.append(_quoted("frame") + " >= " + binder.placeholder(frame_min))
-        if frame_max is not None:
-            conditions.append(_quoted("frame") + " <= " + binder.placeholder(frame_max))
         return (
             "SELECT " + ", ".join(select_items)
             + " FROM " + table
@@ -697,11 +687,20 @@ class _ShapeChecker:
             output.append(AnalysisColumn(name, type_))
         return tuple(output)
 
-    def check_fetch_params(self, params: Mapping[str, Any]) -> None:
-        """取数节点标量参数类型校验（提取列在 fetch_shape 中校验）。"""
+    def check_fetch(self, params: Mapping[str, Any]) -> None:
+        """取数节点来源与标量参数校验（提取列在 fetch_shape 中校验）。"""
 
-        if self.node.kind != "fetch_events":
+        source = params.get("source")
+        if source not in ("runs", "events"):
+            self.compiler._issue(self.node.id, "source 必须是 runs 或 events")
             return
+        if source == "runs":
+            for key in ("event_types", "frame_min", "frame_max", "payload_columns"):
+                if key in params:
+                    self.compiler._issue(self.node.id, f"source=runs 不支持参数 {key}")
+            return
+        if "snapshot_columns" in params:
+            self.compiler._issue(self.node.id, "source=events 不支持参数 snapshot_columns")
         event_types = params.get("event_types")
         if event_types is not None and (
             not isinstance(event_types, list)

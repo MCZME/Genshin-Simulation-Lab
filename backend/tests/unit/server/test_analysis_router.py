@@ -6,6 +6,7 @@ from genshin_sim.application import (
     AnalysisColumn,
     AnalysisReadSchema,
     AnalysisSchemaColumn,
+    AnalysisSnapshotPath,
     AnalysisTableResult,
     AnalysisTableSchema,
 )
@@ -21,6 +22,14 @@ def _schema() -> AnalysisReadSchema:
             ),
         ),
         event_types=(),
+        snapshot_paths=(
+            AnalysisSnapshotPath(
+                "team.0.character.asset_key",
+                "string",
+                "char_1_key",
+                ("队伍", "槽位 1", "角色", "资产"),
+            ),
+        ),
     )
 
 
@@ -34,6 +43,9 @@ def test_analysis_schema_endpoint(application_facade) -> None:
     body = response.json()
     assert body["tables"][0]["name"] == "simulation_runs"
     assert body["tables"][0]["columns"][0]["name"] == "frames_run"
+    assert body["snapshot_paths"][0]["path"] == "team.0.character.asset_key"
+    assert body["snapshot_paths"][0]["default_name"] == "char_1_key"
+    assert body["snapshot_paths"][0]["segments"] == ["队伍", "槽位 1", "角色", "资产"]
 
 
 def test_analysis_query_executes_plan(application_facade) -> None:
@@ -50,7 +62,7 @@ def test_analysis_query_executes_plan(application_facade) -> None:
             json={
                 "session_ids": ["a1b2c3"],
                 "nodes": [
-                    {"id": "runs1", "kind": "fetch_runs"},
+                    {"id": "runs1", "kind": "fetch", "params": {"source": "runs"}},
                     {
                         "id": "c1",
                         "kind": "limit",
@@ -78,7 +90,7 @@ def test_analysis_query_rejects_unknown_output(application_facade) -> None:
             "/api/v1/analysis/query",
             json={
                 "session_ids": [],
-                "nodes": [{"id": "runs1", "kind": "fetch_runs"}],
+                "nodes": [{"id": "runs1", "kind": "fetch", "params": {"source": "runs"}}],
                 "outputs": ["missing"],
             },
         )

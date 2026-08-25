@@ -371,7 +371,7 @@ def test_facade_executes_analysis_plan() -> None:
     plan = AnalysisPlan(
         session_ids=("session-1",),
         nodes=(
-            AnalysisPlanNode(id="runs1", kind="fetch_runs"),
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
             AnalysisPlanNode(id="top1", kind="limit", params={"count": 5}, inputs=("runs1",)),
         ),
         outputs=("top1",),

@@ -17,7 +17,10 @@ from genshin_sim.application.models import (
     AnalysisReadSchema,
     AnalysisTableResult,
 )
-from genshin_sim.application.services.analysis_schema import build_event_type_schema
+from genshin_sim.application.services.analysis_schema import (
+    build_event_type_schema,
+    build_snapshot_path_schema,
+)
 from genshin_sim.application.services.protocols import AnalysisQueryExecutor
 
 logger = logging.getLogger(__name__)
@@ -61,6 +64,7 @@ class AnalysisQueryService:
         return AnalysisReadSchema(
             tables=schema.tables,
             event_types=build_event_type_schema(),
+            snapshot_paths=build_snapshot_path_schema(),
         )
 
 

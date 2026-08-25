@@ -19,6 +19,7 @@ from genshin_sim.server.dto.analysis import (
     ExecutePlanRequest,
     ExecutePlanResponse,
     SchemaColumnDto,
+    SnapshotPathDto,
     TableColumnDto,
     TableResponse,
     TableSchemaDto,
@@ -96,5 +97,14 @@ def _schema_to_dto(schema: Any) -> AnalysisSchemaResponse:
                 ],
             )
             for event_type in schema.event_types
+        ],
+        snapshot_paths=[
+            SnapshotPathDto(
+                path=item.path,
+                type=item.type,
+                default_name=item.default_name,
+                segments=list(item.segments),
+            )
+            for item in schema.snapshot_paths
         ],
     )

@@ -383,7 +383,7 @@ MVP 摘要面板不依赖本端点；时间轴与分析区域再接。
 
 ### `GET /api/v1/analysis/schema`
 
-取数节点编辑器数据源：`tables`（可读表列 + 类型 + 说明）与 `event_types`(事件类型 + payload 字段路径)。内容聚合自结果库契约冻结清单，不另立真值。
+取数节点编辑器数据源：`tables`（可读表列 + 类型 + 说明）、`event_types`（事件类型 + payload 字段路径）与 `snapshot_paths`（输入快照结构路径目录：`path` / `type` / `default_name` / `segments`）。内容聚合自结果库契约冻结清单、事件类型文档与输入快照契约，不另立真值。
 
 ## 10. 资产
 

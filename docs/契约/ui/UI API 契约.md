@@ -56,8 +56,8 @@
 | GET | `/api/v1/results` | 历史运行列表 |
 | GET | `/api/v1/results/{session_id}` | 运行详情（不含事件流） |
 | GET | `/api/v1/results/{session_id}/events` | 事件分页（摘要面板不依赖） |
-| GET | `/api/v1/analysis/templates` | 分析模板目录（处理节点卡与校验的数据源） |
-| POST | `/api/v1/analysis/templates/{template_id}/execute` | 执行分析模板，返回一张结果表 |
+| POST | `/api/v1/analysis/query` | 执行分析查询计划，返回输出表集合 |
+| GET | `/api/v1/analysis/schema` | 取数节点可读 schema（表列、事件类型与载荷字段） |
 | GET | `/api/v1/assets/{asset_type}` | 按类型搜索/列表 |
 | GET | `/api/v1/assets/{asset_type}/{source_id}` | 资产详情 |
 
@@ -352,62 +352,33 @@
 
 MVP 摘要面板不依赖本端点；时间轴与分析区域再接。
 
-## 9. 分析模板
+## 9. 分析查询
 
-分析区域的模板执行端点；模板声明由后端拥有，前端只提交“模板 id + 参数绑定 + 关系表”，不传 SQL 文本。契约细节见[分析系统契约](../分析系统契约.md)。
+分析区域的查询计划执行端点；SQL 由后端拥有，前端只提交结构化查询计划（节点清单 + 参数 + 输入关系），不传 SQL 文本。节点种类、表达式语言、形状推导与校验规则见[分析系统契约](../分析系统契约.md)。
 
-### `GET /api/v1/analysis/templates`
+### `POST /api/v1/analysis/query`
 
-```json
-{
-  "items": [
-    {
-      "template_id": "session_metrics",
-      "display_name": "每会话指标",
-      "params": [
-        {
-          "name": "session_ids",
-          "type": "string[]",
-          "required": true,
-          "binding": ["session_group", "upstream_column"]
-        }
-      ],
-      "relations": [],
-      "output": { "columns": [{ "name": "session_id", "type": "string" }] }
-    }
-  ]
-}
-```
-
-### `POST /api/v1/analysis/templates/{template_id}/execute`
-
-请求：
-
-```json
-{
-  "params": { "session_ids": ["a1b2c3"], "frame_min": 0 },
-  "relations": {
-    "source": {
-      "columns": ["total_damage", "dps"],
-      "rows": [[123.0, 61.5]]
-    }
-  }
-}
-```
+- 请求 = `session_ids`（≤ 1000，有序去重）+ 计划节点（`kind` / `params` / 有序 `inputs`）+ `outputs` 清单；完整形状见契约第 6.1 节。
+- 校验失败 `400 / validation_failed`，`details` 定位到 `node_id`。
+- 后端编译 CTE 链一次执行，中间结果不出后端；每张返回表硬上限 10000 行，超出 `truncated: true`。
 
 响应：
 
 ```json
 {
-  "columns": [{ "name": "session_id", "type": "string" }],
-  "rows": [["a1b2c3"]],
-  "truncated": false
+  "tables": {
+    "c1": {
+      "columns": [{ "name": "session_id", "type": "string" }],
+      "rows": [["a1b2c3"]],
+      "truncated": false
+    }
+  }
 }
 ```
 
-- `params` / `relations` 均可空；展开参数 `session_ids` 就是普通 `string[]` 参数。
-- 行集硬上限 10000 行，超出 `truncated: true`；关系表上限 5000 行，超限 `400 / validation_failed`。
-- 未知模板 `404 / not_found`；参数/关系校验失败 `400 / validation_failed`。
+### `GET /api/v1/analysis/schema`
+
+取数节点编辑器数据源：`tables`（可读表列 + 类型 + 说明）与 `event_types`(事件类型 + payload 字段路径)。内容聚合自结果库契约冻结清单，不另立真值。
 
 ## 10. 资产
 
@@ -461,8 +432,8 @@ MVP 摘要面板不依赖本端点；时间轴与分析区域再接。
 
 ## 12. 后置能力
 
-- 分析模板扩展：原始事件查询、状态折叠（曲线）、自定义模板、分页/行限参数。
-- 分析区域视图补齐：时间轴、饼图、柱状图渲染与成员指标表的排序/高亮、条件列/数据列分区（节点注册与模板执行已落地第一版，见[节点类型与编辑器数据契约](./节点类型与编辑器数据契约.md)）。
+- 分析算子扩展：文本匹配条件、嵌套条件 AST、跨列比较，以及专门处理节点（时间轴持续段配对等非关系代数逻辑）。
+- 分析区域视图补齐：时间轴、饼图、柱状图渲染与成员指标表的排序/高亮、条件列/数据列分区（节点注册与查询计划执行已落地第一版，见[节点类型与编辑器数据契约](./节点类型与编辑器数据契约.md)）。
 - 结果详情中的输入快照与初始快照（含成员/变体标签；前端成员标签链路已随决策 2.29 移除，落地后此处是历史结果变体身份的唯一出口，见[项目决策记录](../../决策/项目决策记录.md) 2.29）。
 - 资产图像。
 - 文件上传/下载（输入 JSON、结果导出）。

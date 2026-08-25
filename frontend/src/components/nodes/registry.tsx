@@ -11,6 +11,7 @@ import {
   LimitEditor,
   ProjectEditor,
   SortEditor,
+  TableConfigEditor,
   setAnalysisEditorEnvironment,
 } from "./analysis";
 import { DataProviderEditor } from "./dataProvider";
@@ -93,11 +94,12 @@ export function NodeEditorHost({
       return <JoinEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "compute":
       return <ComputeEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
-    case "table_config":
     case "timeline_config":
     case "pie_config":
     case "bar_config":
       return <DisplayConfigEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "table_config":
+      return <TableConfigEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     default:
       return <UnknownEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
   }

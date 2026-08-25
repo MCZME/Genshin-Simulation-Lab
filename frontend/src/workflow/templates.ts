@@ -589,3 +589,51 @@ export function upstreamShape(
   }
   return shapes.get(edge.source_node_id) ?? [];
 }
+
+/** 视图数据输入形状：多条同结构入线取第一条可推导的形状。 */
+export function viewInputShape(
+  shapes: Map<string, TableShape[] | null>,
+  definition: WorkflowDefinition,
+  viewNodeId: string,
+): TableShape[] {
+  const dataEdges = definition.edges.filter(
+    (edge) => edge.target_node_id === viewNodeId && edge.target_port_id === "in",
+  );
+  for (const edge of dataEdges) {
+    const shape = shapes.get(edge.source_node_id);
+    if (shape !== undefined && shape !== null) {
+      return shape;
+    }
+  }
+  return [];
+}
+
+/** 视图的展示配置节点：按 kind 匹配，未连接时返回 null。 */
+export function connectedConfigNode(
+  definition: WorkflowDefinition,
+  viewNodeId: string,
+  kind: string,
+): WorkflowNode | null {
+  const edge = definition.edges.find(
+    (item) => item.target_node_id === viewNodeId && item.target_port_id === "config",
+  );
+  if (edge === undefined) {
+    return null;
+  }
+  const node = definition.nodes.find((item) => item.id === edge.source_node_id);
+  return node !== undefined && node.kind === kind ? node : null;
+}
+
+/** 展示配置节点所连的视图节点（列选项沿「配置 → 视图 → 上游」解析）。 */
+export function configTargetView(
+  definition: WorkflowDefinition,
+  configNodeId: string,
+): WorkflowNode | null {
+  const edge = definition.edges.find(
+    (item) => item.source_node_id === configNodeId && item.target_port_id === "config",
+  );
+  if (edge === undefined) {
+    return null;
+  }
+  return definition.nodes.find((item) => item.id === edge.target_node_id) ?? null;
+}

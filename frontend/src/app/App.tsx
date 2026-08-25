@@ -160,7 +160,7 @@ export function App() {
   const [selectionEpoch, setSelectionEpoch] = useState(0);
   const [renameRegionRequestId, setRenameRegionRequestId] = useState<string | null>(null);
   const [viewportCommand, setViewportCommand] = useState<
-    "zoom-in" | "zoom-out" | "fit" | null
+    "zoom-in" | "zoom-out" | "fit" | { type: "locate"; nodeId: string } | null
   >(null);
   const initializedRef = useRef(false);
   /** 运行编排内部信号：取消整次工作流运行（当前批取消 + 剩余批次跳过）。 */
@@ -557,6 +557,14 @@ export function App() {
         setSelection(state, { nodes: [], regions: [regionId], edges: [] }),
       );
     }
+  }
+
+  /** 定位到指定节点：选中并平移到节点（视图空态的修复入口）。 */
+  function handleLocateNode(nodeId: string) {
+    updateEditor((state) =>
+      setSelection(state, { nodes: [nodeId], regions: [], edges: [] }),
+    );
+    setViewportCommand({ type: "locate", nodeId });
   }
 
   async function handleSave() {
@@ -1196,6 +1204,7 @@ export function App() {
                 onDeleteRegion={(regionId) =>
                   updateEditor((state) => deleteRegion(state, regionId))
                 }
+                onLocateNode={handleLocateNode}
                 onDropObject={handleDropObject}
                 onMoveEdgeOrder={handleMoveEdgeOrder}
                 onValidateRegion={(regionId) => void handleValidateRegion(regionId)}

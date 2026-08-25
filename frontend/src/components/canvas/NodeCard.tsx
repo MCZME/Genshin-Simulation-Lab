@@ -17,6 +17,7 @@ export type WorkflowNodeData = {
   definition: WorkflowDefinition;
   onParamsChange: (nodeId: string, params: Record<string, unknown>) => void;
   onDeleteNode: (nodeId: string) => void;
+  onLocateNode: (nodeId: string) => void;
   onMoveEdgeOrder: (
     targetNodeId: string,
     targetPortId: string,
@@ -50,6 +51,7 @@ export function NodeCard({ data, selected }: NodeProps) {
     definition,
     onParamsChange,
     onDeleteNode,
+    onLocateNode,
     onMoveEdgeOrder,
     incomingGroups,
     memberPorts,
@@ -70,7 +72,7 @@ export function NodeCard({ data, selected }: NodeProps) {
 
   return (
     <div
-      className={`node-card ${node.kind === "input_trace" ? "node-card-trace" : ""} ${selected ? "selected" : ""} ${isDraft ? "draft" : ""} ${dimmed ? "dimmed" : ""} ${stepRunning ? "step-running" : ""}`}
+      className={`node-card ${isAnalysisView(node.kind) ? "node-card-view" : ""} ${node.kind === "input_trace" ? "node-card-trace" : ""} ${selected ? "selected" : ""} ${isDraft ? "draft" : ""} ${dimmed ? "dimmed" : ""} ${stepRunning ? "step-running" : ""}`}
     >
       <header className="node-card-header">
         <span className="node-dot" style={{ background: nodeKindColor(node.kind) }} />
@@ -88,7 +90,12 @@ export function NodeCard({ data, selected }: NodeProps) {
       </header>
       <div className="node-card-body">
         {isAnalysisView(node.kind) ? (
-          <AnalysisViewBody node={node} result={analysisResult} />
+          <AnalysisViewBody
+            node={node}
+            result={analysisResult}
+            definition={definition}
+            onLocateNode={onLocateNode}
+          />
         ) : (
           <NodeEditorHost
             kind={node.kind}

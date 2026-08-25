@@ -2636,3 +2636,274 @@ body {
   padding: 8px 10px;
   border-top: 1px solid #334155;
 }
+
+/* ── 分析视图：成员指标表 ── */
+
+.node-card.node-card-view {
+  width: 560px;
+  min-width: 560px;
+}
+
+.node-card.node-card-view .node-card-body {
+  max-height: none;
+  padding: 0;
+}
+
+.analysis-view-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 140px;
+  padding: 16px;
+  color: #64748b;
+  font-size: 13px;
+  text-align: center;
+}
+
+.analysis-view-state .text-button {
+  margin-top: 4px;
+}
+
+.analysis-view-loading {
+  animation: analysis-loading-pulse 1.2s ease-in-out infinite;
+}
+
+@keyframes analysis-loading-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.45;
+  }
+}
+
+.analysis-view-error {
+  color: #f87171;
+}
+
+.analysis-member-table {
+  display: flex;
+  flex-direction: column;
+  min-height: 300px;
+}
+
+.analysis-member-toolbar {
+  display: flex;
+  justify-content: flex-end;
+  align-items: center;
+  min-height: 28px;
+  padding: 2px 8px;
+  border-bottom: 1px solid #334155;
+}
+
+.analysis-member-scroll {
+  flex: 1;
+  min-height: 240px;
+  max-height: 480px;
+  overflow: auto;
+}
+
+.analysis-member-table table {
+  border-collapse: collapse;
+  width: 100%;
+  font-size: 12px;
+}
+
+.analysis-member-table th,
+.analysis-member-table td {
+  padding: 4px 8px;
+  border-bottom: 1px solid #263449;
+  white-space: nowrap;
+  text-align: right;
+}
+
+.analysis-member-table th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: #263449;
+  color: #cbd5e1;
+  font-weight: 600;
+  user-select: none;
+  cursor: pointer;
+}
+
+.analysis-member-table th.condition,
+.analysis-member-table td.condition {
+  text-align: left;
+}
+
+.analysis-member-table th.data {
+  background: #223048;
+}
+
+.analysis-member-table td.data {
+  background: rgba(148, 163, 184, 0.06);
+}
+
+.analysis-member-table th.data-start,
+.analysis-member-table td.data-start {
+  border-left: 1px solid #475569;
+}
+
+.analysis-member-table .member-th-name {
+  margin-right: 4px;
+}
+
+.member-sort-order {
+  margin-left: 4px;
+  color: #f59e0b;
+  font-size: 10px;
+}
+
+.member-sort-direction {
+  margin-left: 2px;
+  color: #93c5fd;
+  font-size: 10px;
+}
+
+.member-th-menu {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 4px;
+  border-radius: 3px;
+  color: #94a3b8;
+  cursor: pointer;
+}
+
+.member-th-menu:hover {
+  background: #475569;
+  color: #e2e8f0;
+}
+
+.member-th {
+  position: relative;
+}
+
+.member-th-dropdown {
+  position: absolute;
+  top: calc(100% + 4px);
+  right: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  min-width: 96px;
+  padding: 4px;
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  box-shadow: 0 8px 20px rgba(0, 0, 0, 0.4);
+}
+
+.member-th-dropdown button {
+  padding: 5px 8px;
+  border: none;
+  border-radius: 4px;
+  background: transparent;
+  color: #cbd5e1;
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.member-th-dropdown button:hover {
+  background: #1e3a5f;
+  color: #e2e8f0;
+}
+
+.analysis-member-table td.hl-max {
+  background: rgba(34, 197, 94, 0.22);
+  color: #bbf7d0;
+  font-weight: 700;
+}
+
+.analysis-member-table td.hl-min {
+  background: rgba(239, 68, 68, 0.2);
+  color: #fecaca;
+  font-weight: 700;
+}
+
+.analysis-member-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 28px;
+  padding: 4px 10px;
+  border-top: 1px solid #334155;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.analysis-member-truncated {
+  color: #f59e0b;
+}
+
+/* ── 表格配置节点：条件列 / 数据列绑定 ── */
+
+.table-config-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.table-binding-zone {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.table-binding-title {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.table-binding-hint {
+  font-size: 10px;
+  font-weight: 400;
+  color: #64748b;
+}
+
+.table-binding-empty {
+  margin: 0;
+  font-size: 11px;
+  color: #64748b;
+}
+
+.table-binding-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.table-binding-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.table-binding-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.table-binding-add {
+  width: 100%;
+}
+
+.analysis-editor-empty {
+  margin: 0;
+  padding: 6px 0;
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+}

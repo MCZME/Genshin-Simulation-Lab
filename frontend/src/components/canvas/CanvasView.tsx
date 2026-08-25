@@ -45,7 +45,12 @@ export interface CanvasViewProps {
   diagnostics: Diagnostic[];
   dragKind: string | null;
   selectionEpoch: number;
-  viewportCommand: "zoom-in" | "zoom-out" | "fit" | null;
+  viewportCommand:
+    | "zoom-in"
+    | "zoom-out"
+    | "fit"
+    | { type: "locate"; nodeId: string }
+    | null;
   renameRegionRequestId: string | null;
   /** 运行进行中不在执行路径上的节点，置灰显示（决策 2.34）。 */
   dimmedNodeIds: string[];
@@ -79,6 +84,7 @@ export interface CanvasViewProps {
   onDeleteNode: (nodeId: string) => void;
   onDeleteEdge: (edgeId: string) => void;
   onDeleteRegion: (regionId: string) => void;
+  onLocateNode: (nodeId: string) => void;
   onDropObject: (
     kind: string,
     position: { x: number; y: number },
@@ -115,6 +121,7 @@ interface CallbackSnapshot {
   onDeleteNode: CanvasViewProps["onDeleteNode"];
   onDeleteEdge: CanvasViewProps["onDeleteEdge"];
   onDeleteRegion: CanvasViewProps["onDeleteRegion"];
+  onLocateNode: CanvasViewProps["onLocateNode"];
   onMoveEdgeOrder: CanvasViewProps["onMoveEdgeOrder"];
 }
 
@@ -149,6 +156,7 @@ export function CanvasView({
   onDeleteNode,
   onDeleteEdge,
   onDeleteRegion,
+  onLocateNode,
   onDropObject,
   onMoveEdgeOrder,
 }: CanvasViewProps) {
@@ -168,6 +176,7 @@ export function CanvasView({
     onDeleteNode,
     onDeleteEdge,
     onDeleteRegion,
+    onLocateNode,
     onMoveEdgeOrder,
   });
   useEffect(() => {
@@ -187,6 +196,7 @@ export function CanvasView({
       onDeleteNode,
       onDeleteEdge,
       onDeleteRegion,
+      onLocateNode,
       onMoveEdgeOrder,
     };
   });
@@ -279,8 +289,13 @@ export function CanvasView({
       instance.zoomIn();
     } else if (viewportCommand === "zoom-out") {
       instance.zoomOut();
-    } else {
+    } else if (viewportCommand === "fit") {
       instance.fitView();
+    } else if (viewportCommand !== null) {
+      const target = instance.getNode(viewportCommand.nodeId);
+      if (target !== undefined) {
+        instance.fitView({ nodes: [target], padding: 0.4, maxZoom: 1.5 });
+      }
     }
     latestRef.current.onViewportCommandHandled();
   }, [viewportCommand]);
@@ -511,6 +526,7 @@ function buildNodes(
       onParamsChange: callbacks.onParamsChange,
       onDeleteNode: callbacks.onDeleteNode,
       onMoveEdgeOrder: callbacks.onMoveEdgeOrder,
+      onLocateNode: callbacks.onLocateNode,
       incomingGroups: incoming.get(node.id) ?? [],
       memberPorts: buildMemberPorts(node, definition),
       groupCount:

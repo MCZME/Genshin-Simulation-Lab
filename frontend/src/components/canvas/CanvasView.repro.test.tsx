@@ -79,6 +79,7 @@ describe("CanvasView repro", () => {
         onDeleteNode={() => undefined}
         onDeleteEdge={() => undefined}
         onDeleteRegion={() => undefined}
+        onLocateNode={() => undefined}
         onDropObject={() => undefined}
         onMoveEdgeOrder={() => undefined}
       />,

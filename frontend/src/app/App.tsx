@@ -58,6 +58,7 @@ import {
   withWorkspace,
 } from "../state/app_state";
 import {
+  backfillPayloadEventTypes,
   definitionToEditorState,
   editorStateToDefinition,
   migrateWorkflowDefinition,
@@ -199,7 +200,7 @@ export function App() {
       const workspace = await getWorkspace();
       setAppState((current) => withWorkspace(current, workspace));
       setSettings(await loadAppSettingsFromApi());
-      void loadAnalysisSchema();
+      const analysisSchemaCatalog = await loadAnalysisSchema();
 
       const workflowList = await listWorkflows();
       setWorkflowList(workflowList.items);
@@ -217,7 +218,12 @@ export function App() {
         workflowId = null;
         definition = createEmptyEditorState("未命名工作流").definition;
       }
-      setEditorState(definitionToEditorState(migrateWorkflowDefinition(definition)));
+      const migrated = migrateWorkflowDefinition(definition);
+      const backfilled =
+        analysisSchemaCatalog === null
+          ? migrated
+          : backfillPayloadEventTypes(migrated, analysisSchemaCatalog.eventTypes());
+      setEditorState(definitionToEditorState(backfilled));
       setAppState((current) =>
         withCurrentWorkflow(current, { id: workflowId, name: definition.meta.name }),
       );
@@ -229,14 +235,16 @@ export function App() {
   }
 
   /** 分析可读 schema：启动时拉取一次，失败时分析区域降级为不可用。 */
-  async function loadAnalysisSchema(): Promise<void> {
+  async function loadAnalysisSchema(): Promise<AnalysisSchemaCatalog | null> {
     try {
       const response = await getAnalysisSchema();
       const catalog = createAnalysisSchemaCatalog();
       catalog.load(response);
       setSchemaCatalog(catalog);
+      return catalog;
     } catch {
       setSchemaCatalog(null);
+      return null;
     }
   }
 

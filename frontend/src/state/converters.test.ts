@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { WorkflowDefinition, WorkflowNode } from "../workflow/types";
 import {
+  backfillPayloadEventTypes,
   cloneEditorState,
   definitionToEditorState,
   editorStateToDefinition,
@@ -96,5 +97,72 @@ describe("converters", () => {
       params: { source: "events", event_types: ["DAMAGE_RESOLVED"] },
     });
     expect(state.definition.edges).toHaveLength(1);
+  });
+
+  it("载荷提取列 event_type 按唯一路径回填，歧义与无匹配保持缺省", () => {
+    const definition: WorkflowDefinition = {
+      ...sampleDefinition(),
+      nodes: [
+        {
+          id: "ev1",
+          kind: "fetch",
+          region_id: "analysis-1",
+          position: { x: 0, y: 0 },
+          params: {
+            source: "events",
+            payload_columns: [
+              { path: "result.final_damage", name: "damage", type: "float" },
+              { path: "result.source_ref", name: "src", type: "string" },
+              { path: "custom.value", name: "custom", type: "float" },
+            ],
+          },
+        },
+      ],
+    };
+    const eventTypes = [
+      {
+        name: "DAMAGE_RESOLVED",
+        fields: [{ path: "result.final_damage" }, { path: "result.source_ref" }],
+      },
+      {
+        name: "HEALING_RESOLVED",
+        fields: [{ path: "result.final_healing" }, { path: "result.source_ref" }],
+      },
+    ];
+
+    const next = backfillPayloadEventTypes(definition, eventTypes);
+    const rows = next.nodes[0].params.payload_columns as Record<string, unknown>[];
+
+    expect(next).not.toBe(definition);
+    expect(rows[0].event_type).toBe("DAMAGE_RESOLVED");
+    expect(rows[1].event_type).toBeUndefined();
+    expect(rows[2].event_type).toBeUndefined();
+  });
+
+  it("无需回填时返回原定义引用", () => {
+    const definition: WorkflowDefinition = {
+      ...sampleDefinition(),
+      nodes: [
+        {
+          id: "ev1",
+          kind: "fetch",
+          region_id: "analysis-1",
+          position: { x: 0, y: 0 },
+          params: {
+            source: "events",
+            payload_columns: [
+              {
+                event_type: "DAMAGE_RESOLVED",
+                path: "result.final_damage",
+                name: "damage",
+                type: "float",
+              },
+            ],
+          },
+        },
+      ],
+    };
+
+    expect(backfillPayloadEventTypes(definition, [])).toBe(definition);
   });
 });

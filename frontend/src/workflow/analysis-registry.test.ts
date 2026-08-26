@@ -13,6 +13,7 @@ describe("分析节点注册表", () => {
     expect(spec?.ports.inputs).toHaveLength(1);
     expect(spec?.ports.inputs[0].dataLanguage).toBe("session_group");
     expect(spec?.ports.outputs[0].dataLanguage).toBe("table");
+    expect(spec?.ports.outputs[0].cardinality).toBe("single");
   });
 
   it("六个单输入算子均为结果表入出，连接为双输入", () => {
@@ -264,6 +265,10 @@ describe("形状推导", () => {
       { source: "events", frame_min: "0" },
       { source: "events", frame_min: 10, frame_max: 5 },
       { source: "events", payload_columns: [{ path: "x", name: "n", type: "date" }] },
+      {
+        source: "events",
+        payload_columns: [{ event_type: "", path: "x", name: "n", type: "float" }],
+      },
     ];
     for (const params of cases) {
       const node = baseNode({ id: "ev1", kind: "fetch", params });

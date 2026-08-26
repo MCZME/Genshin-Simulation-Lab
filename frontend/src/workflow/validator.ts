@@ -862,6 +862,9 @@ function validateAnalysisGraph(
         ),
       );
     }
+    if (node.kind === "fetch" && node.params.source === "events") {
+      validatePayloadEventTypeFilter(node, diagnostics);
+    }
   }
 
   for (const node of nodeById.values()) {
@@ -869,6 +872,41 @@ function validateAnalysisGraph(
       continue;
     }
     validateViewInputs(node, edgesByTarget, shapes, diagnostics);
+  }
+}
+
+/** 载荷提取列声明的事件类型不在事件类型筛选中时警告（整列将全部为 NULL）。 */
+function validatePayloadEventTypeFilter(
+  node: WorkflowNode,
+  diagnostics: Diagnostic[],
+): void {
+  const rawEventTypes = node.params.event_types;
+  if (!Array.isArray(rawEventTypes) || rawEventTypes.length === 0) {
+    return;
+  }
+  const selected = new Set(
+    rawEventTypes.filter((item): item is string => typeof item === "string"),
+  );
+  const rows = node.params.payload_columns;
+  if (!Array.isArray(rows)) {
+    return;
+  }
+  for (const row of rows) {
+    if (row === null || typeof row !== "object" || Array.isArray(row)) {
+      continue;
+    }
+    const record = row as Record<string, unknown>;
+    if (typeof record.event_type !== "string" || selected.has(record.event_type)) {
+      continue;
+    }
+    diagnostics.push(
+      diagnostic(
+        "warning",
+        "EXTRACT_EVENT_TYPE_FILTERED",
+        `载荷提取列 ${String(record.name ?? "")} 的事件类型 ${record.event_type} 未在事件类型筛选中，该列将全部为 NULL`,
+        { node_id: node.id },
+      ),
+    );
   }
 }
 

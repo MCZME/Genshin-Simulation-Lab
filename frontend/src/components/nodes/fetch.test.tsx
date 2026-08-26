@@ -162,7 +162,12 @@ describe("获取数据节点编辑器", () => {
       expect.objectContaining({
         source: "events",
         payload_columns: [
-          { path: "result.final_damage", type: "float", name: "final_damage" },
+          {
+            event_type: "DAMAGE_RESOLVED",
+            path: "result.final_damage",
+            type: "float",
+            name: "final_damage",
+          },
         ],
       }),
     );

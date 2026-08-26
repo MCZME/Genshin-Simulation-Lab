@@ -48,7 +48,10 @@ export function NodeEditorHost({
   definition,
   catalog,
 }: NodeEditorHostProps) {
-  const shapes = useMemo(() => computeAnalysisShapes(definition), [definition]);
+  const shapes = useMemo(
+    () => computeAnalysisShapes(definition, catalog),
+    [definition, catalog],
+  );
   setAnalysisEditorEnvironment({ catalog, definition, shapes });
   switch (kind) {
     case "root":

@@ -87,6 +87,40 @@ it("取数节点未连接边界时报 FETCH_SESSION_UNBOUND", () => {
   expect(codes(result)).toContain("FETCH_SESSION_UNBOUND");
 });
 
+it("载荷提取列事件类型未在事件类型筛选中时报警告", () => {
+  const nodes = [
+    node("ev1", "fetch", {
+      source: "events",
+      event_types: ["DAMAGE_RESOLVED"],
+      payload_columns: [
+        {
+          event_type: "HEALING_RESOLVED",
+          path: "result.source_ref",
+          name: "src",
+          type: "string",
+        },
+      ],
+    }),
+  ];
+  const edges = [boundaryFeed("ev1")];
+  const result = validateWorkflow(definition(nodes, edges));
+  expect(codes(result)).toContain("EXTRACT_EVENT_TYPE_FILTERED");
+});
+
+it("载荷提取列缺少事件类型时报 PARAM_INVALID", () => {
+  const nodes = [
+    node("ev1", "fetch", {
+      source: "events",
+      payload_columns: [
+        { path: "result.final_damage", name: "damage", type: "float" },
+      ],
+    }),
+  ];
+  const edges = [boundaryFeed("ev1")];
+  const result = validateWorkflow(definition(nodes, edges));
+  expect(codes(result)).toContain("PARAM_INVALID");
+});
+
 it("算子缺少上游表输入时报 ANALYSIS_SHAPE_INVALID", () => {
   const nodes = [
     fedRuns(),

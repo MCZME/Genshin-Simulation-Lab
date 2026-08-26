@@ -7,7 +7,12 @@ import type {
   FilterCondition,
   TableShape,
 } from "../../workflow/templates";
-import { AGGREGATE_FUNCTIONS, CONDITION_OPERATORS, fetchColumns } from "../../workflow/templates";
+import {
+  AGGREGATE_FUNCTIONS,
+  CONDITION_OPERATORS,
+  fetchBaseColumns,
+  fetchColumns,
+} from "../../workflow/templates";
 import { configTargetView, viewInputShape } from "../../workflow/templates";
 import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 
@@ -187,7 +192,8 @@ export function FetchEditor({ node, onChange }: EditorProps) {
 
 /** 输出形状摘要：固定列折叠 + 提取列常显（只读，编辑在参数区）。 */
 function FetchShapeSummary({ node }: { node: WorkflowNode }) {
-  const columns = fetchColumns(node);
+  const env = useContextEnv();
+  const columns = fetchColumns(node, fetchBaseColumns(node.params.source, env.catalog));
   if (columns === null) {
     return null;
   }
@@ -363,8 +369,6 @@ function FetchEventsSource({ node, onChange }: EditorProps) {
   const eventTypes = env.catalog?.eventTypes() ?? [];
   const selected = Array.isArray(node.params.event_types) ? (node.params.event_types as string[]) : [];
   const extracts = Array.isArray(node.params.payload_columns) ? (node.params.payload_columns as EditorRow[]) : [];
-  /** 载荷行的本地瞬态：行号 → 已选事件类型；选字段后才写入路径。 */
-  const [eventTypeFor, setEventTypeFor] = useState<Record<number, string>>({});
   const toggleType = (name: string) => {
     const next = selected.includes(name) ? selected.filter((t) => t !== name) : [...selected, name];
     onChange({ ...node.params, event_types: next });
@@ -374,18 +378,8 @@ function FetchEventsSource({ node, onChange }: EditorProps) {
     next[index] = { ...next[index], ...patch };
     onChange({ ...node.params, payload_columns: next });
   };
-  const typeOfRow = (index: number, row: EditorRow): string => {
-    const known = eventTypeFor[index];
-    if (known !== undefined && known !== "") {
-      return known;
-    }
-    return (
-      eventTypes.find((item) => item.fields.some((field) => field.path === row.path))?.name ?? ""
-    );
-  };
   const handleTypeChange = (index: number, name: string) => {
-    setEventTypeFor((all) => ({ ...all, [index]: name }));
-    updateRow(index, { path: "", type: "float", name: "" });
+    updateRow(index, { event_type: name, path: "", type: "float", name: "" });
   };
   return (
     <div className="analysis-editor">
@@ -433,7 +427,7 @@ function FetchEventsSource({ node, onChange }: EditorProps) {
       </div>
       {extracts.length === 0 && <p className="analysis-editor-empty">未添加提取列</p>}
       {extracts.map((row, index) => {
-        const typeName = typeOfRow(index, row);
+        const typeName = typeof row.event_type === "string" ? row.event_type : "";
         const unknown = row.path !== "" && row.path !== undefined && typeName === "";
         const fields = eventTypes.find((item) => item.name === typeName)?.fields ?? [];
         return (
@@ -493,11 +487,6 @@ function FetchEventsSource({ node, onChange }: EditorProps) {
               title="移除"
               aria-label={`移除载荷列 ${index + 1}`}
               onClick={() => {
-                setEventTypeFor((all) => {
-                  const next = { ...all };
-                  delete next[index];
-                  return next;
-                });
                 onChange({
                   ...node.params,
                   payload_columns: extracts.filter((_, itemIndex) => itemIndex !== index),
@@ -512,7 +501,9 @@ function FetchEventsSource({ node, onChange }: EditorProps) {
       <button
         type="button"
         className="snapshot-add"
-        onClick={() => updateRow(extracts.length, { path: "", name: "", type: "float" })}
+        onClick={() =>
+          updateRow(extracts.length, { event_type: "", path: "", name: "", type: "float" })
+        }
       >
         ＋ 添加提取列
       </button>

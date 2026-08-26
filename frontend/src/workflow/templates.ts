@@ -29,6 +29,7 @@ export interface AnalysisSchemaCatalog {
   load(schema: AnalysisSchemaResponse): void;
   ready(): boolean;
   runsColumns(): { name: string; type: string; description: string }[];
+  eventsColumns(): { name: string; type: string; description: string }[];
   eventTypes(): { name: string; fields: { path: string; type: string; description: string }[] }[];
   snapshotPaths(): AnalysisSnapshotPath[];
 }
@@ -51,6 +52,10 @@ export function createAnalysisSchemaCatalog(): AnalysisSchemaCatalog {
     },
     runsColumns() {
       const table = schema?.tables.find((item) => item.name === "simulation_runs");
+      return table ? table.columns : [];
+    },
+    eventsColumns() {
+      const table = schema?.tables.find((item) => item.name === "simulation_events");
       return table ? table.columns : [];
     },
     eventTypes() {
@@ -115,9 +120,9 @@ export const CONDITION_OPERATORS = [
   "is_not_null",
 ] as const;
 
-const TYPE_VOCABULARY = new Set(["string", "int", "float", "bool"]);
+export const TYPE_VOCABULARY = new Set(["string", "int", "float", "bool"]);
 const NUMERIC_TYPES = new Set(["int", "float"]);
-const COLUMN_NAME_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
+export const COLUMN_NAME_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -139,7 +144,7 @@ function literalMatches(type: string, value: unknown): boolean {
   return false;
 }
 
-function extractShape(raw: unknown): TableShape[] | null {
+function extractShape(raw: unknown, requireEventType = false): TableShape[] | null {
   if (raw === undefined) {
     return [];
   }
@@ -155,6 +160,9 @@ function extractShape(raw: unknown): TableShape[] | null {
     const path = item.path;
     const name = item.name;
     const type = item.type;
+    if (requireEventType && (typeof item.event_type !== "string" || item.event_type === "")) {
+      return null;
+    }
     if (
       typeof path !== "string" ||
       path === "" ||
@@ -174,12 +182,30 @@ function extractShape(raw: unknown): TableShape[] | null {
   return output;
 }
 
+/** 取数节点固定输出列：优先 schema 目录，未加载时降级用内置清单。 */
+export function fetchBaseColumns(
+  source: unknown,
+  catalog: AnalysisSchemaCatalog | null,
+): TableShape[] | undefined {
+  if (catalog === null || !catalog.ready()) {
+    return undefined;
+  }
+  const columns =
+    source === "events" ? catalog.eventsColumns() : catalog.runsColumns();
+  return columns.length === 0
+    ? undefined
+    : columns.map((column) => ({ name: column.name, type: column.type }));
+}
+
 /** 单节点输出形状（不含上游解析；取数节点形状只依赖自身参数）。 */
-export function fetchShape(node: WorkflowNode): TableShape[] | null {
+export function fetchShape(
+  node: WorkflowNode,
+  baseColumns?: TableShape[],
+): TableShape[] | null {
   const source = node.params.source;
   if (source === "runs") {
     const extracts = extractShape(node.params.snapshot_columns);
-    return extracts === null ? null : [...RUN_BASE_COLUMNS, ...extracts];
+    return extracts === null ? null : [...(baseColumns ?? RUN_BASE_COLUMNS), ...extracts];
   }
   if (source === "events") {
     const eventTypes = node.params.event_types;
@@ -203,8 +229,10 @@ export function fetchShape(node: WorkflowNode): TableShape[] | null {
     ) {
       return null;
     }
-    const extracts = extractShape(node.params.payload_columns);
-    return extracts === null ? null : [...EVENT_BASE_COLUMNS, ...extracts];
+    const extracts = extractShape(node.params.payload_columns, true);
+    return extracts === null
+      ? null
+      : [...(baseColumns ?? EVENT_BASE_COLUMNS), ...extracts];
   }
   return null;
 }
@@ -212,15 +240,20 @@ export function fetchShape(node: WorkflowNode): TableShape[] | null {
 /** 取数节点输出列拆分：固定列 + 提取列（供节点卡形状摘要渲染）。 */
 export function fetchColumns(
   node: WorkflowNode,
+  baseColumns?: TableShape[],
 ): { fixed: TableShape[]; extracts: TableShape[] } | null {
   const source = node.params.source;
   if (source === "runs") {
     const extracts = extractShape(node.params.snapshot_columns);
-    return extracts === null ? null : { fixed: RUN_BASE_COLUMNS, extracts };
+    return extracts === null
+      ? null
+      : { fixed: baseColumns ?? RUN_BASE_COLUMNS, extracts };
   }
   if (source === "events") {
-    const extracts = extractShape(node.params.payload_columns);
-    return extracts === null ? null : { fixed: EVENT_BASE_COLUMNS, extracts };
+    const extracts = extractShape(node.params.payload_columns, true);
+    return extracts === null
+      ? null
+      : { fixed: baseColumns ?? EVENT_BASE_COLUMNS, extracts };
   }
   return null;
 }
@@ -508,6 +541,7 @@ function limitShape(node: WorkflowNode, source: TableShape[]): TableShape[] | nu
  */
 export function computeAnalysisShapes(
   definition: WorkflowDefinition,
+  catalog?: AnalysisSchemaCatalog | null,
 ): Map<string, TableShape[] | null> {
   const nodeById = new Map(definition.nodes.map((node) => [node.id, node]));
   const incoming = new Map<string, WorkflowEdge[]>();
@@ -547,7 +581,7 @@ export function computeAnalysisShapes(
     let shape: TableShape[] | null;
     switch (node.kind) {
       case "fetch":
-        shape = fetchShape(node);
+        shape = fetchShape(node, fetchBaseColumns(node.params.source, catalog ?? null));
         break;
       case "filter":
         shape = inputShapes[0] ? filterShape(node, inputShapes[0]) : null;

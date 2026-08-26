@@ -41,6 +41,21 @@ def _damage(
     )
 
 
+def _healing(frame: int, *, amount: float, source: str = "character:slot_1") -> RecordedEvent:
+    return RecordedEvent(
+        frame=frame,
+        event_type="HEALING_RESOLVED",
+        data={
+            "result": {
+                "request_id": f"healing:{frame}",
+                "source_ref": {"kind": "character", "entity_id": source},
+                "target_ref": {"kind": "character", "entity_id": source},
+                "final_healing": amount,
+            }
+        },
+    )
+
+
 def _run(
     session_id: str,
     *,
@@ -178,7 +193,12 @@ def test_per_session_dps_pipeline_golden(tmp_path) -> None:
                     "source": "events",
                     "event_types": ["DAMAGE_RESOLVED"],
                     "payload_columns": [
-                        {"path": "result.final_damage", "name": "damage", "type": "float"}
+                        {
+                            "event_type": "DAMAGE_RESOLVED",
+                            "path": "result.final_damage",
+                            "name": "damage",
+                            "type": "float",
+                        }
                     ],
                 },
             ),
@@ -258,7 +278,12 @@ def test_global_aggregate_statistics_golden(tmp_path) -> None:
                 params={
                     "source": "events",
                     "payload_columns": [
-                        {"path": "result.final_damage", "name": "damage", "type": "float"}
+                        {
+                            "event_type": "DAMAGE_RESOLVED",
+                            "path": "result.final_damage",
+                            "name": "damage",
+                            "type": "float",
+                        }
                     ]
                 },
             ),
@@ -422,6 +447,87 @@ def test_fetch_events_source_rejects_invalid_parameters(tmp_path, params, reason
         item.get("node_id") == "ev1" and reason in item.get("reason", "")
         for item in details
     )
+
+
+def test_fetch_events_source_requires_payload_event_type(tmp_path) -> None:
+    """载荷提取列缺少 event_type 时校验拒绝（2026-08-26 契约修订）。"""
+
+    executor = _executor(tmp_path)
+    plan = _plan(
+        (
+            AnalysisPlanNode(
+                id="ev1",
+                kind="fetch",
+                params={
+                    "source": "events",
+                    "payload_columns": [
+                        {"path": "result.final_damage", "name": "damage", "type": "float"}
+                    ],
+                },
+            ),
+        ),
+        ("ev1",),
+    )
+
+    with pytest.raises(AnalysisPlanValidationError) as exc_info:
+        executor.execute_plan(plan)
+
+    details = list(exc_info.value.details)
+    assert any(
+        item.get("node_id") == "ev1" and "事件类型" in item.get("reason", "")
+        for item in details
+    )
+
+
+def test_fetch_events_source_scopes_extract_by_event_type(tmp_path) -> None:
+    """提取列按声明事件类型作用域取值：同路径字段跨类型不混合（2026-08-26）。"""
+
+    db_path = tmp_path / "results.db"
+    writer = SQLiteResultWriter(db_path)
+    writer.save_run(
+        _run(
+            "run:1",
+            events=(
+                _damage(10, amount=300.0, source="character:dps"),
+                _healing(20, amount=500.0, source="character:healer"),
+            ),
+        )
+    )
+    executor = SQLiteAnalysisQueryExecutor(db_path)
+    plan = _plan(
+        (
+            AnalysisPlanNode(
+                id="ev1",
+                kind="fetch",
+                params={
+                    "source": "events",
+                    "payload_columns": [
+                        {
+                            "event_type": "DAMAGE_RESOLVED",
+                            "path": "result.source_ref.entity_id",
+                            "name": "damage_source",
+                            "type": "string",
+                        },
+                        {
+                            "event_type": "HEALING_RESOLVED",
+                            "path": "result.source_ref.entity_id",
+                            "name": "healing_source",
+                            "type": "string",
+                        },
+                    ],
+                },
+            ),
+        ),
+        ("ev1",),
+    )
+
+    table = executor.execute_plan(plan)["ev1"]
+    damage = _column_values(table, "damage_source")
+    healing = _column_values(table, "healing_source")
+    assert [value for value in damage if value is not None] == ["character:dps"]
+    assert sum(value is None for value in damage) == 1
+    assert [value for value in healing if value is not None] == ["character:healer"]
+    assert sum(value is None for value in healing) == 1
 
 
 def test_fetch_rejects_missing_or_invalid_source(tmp_path) -> None:

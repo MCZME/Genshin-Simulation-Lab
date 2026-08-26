@@ -368,7 +368,11 @@ class _PlanCompiler:
             if source == "runs":
                 return checker.fetch_shape(_RUN_TABLE_SCHEMA, params.get("snapshot_columns"))
             if source == "events":
-                return checker.fetch_shape(_EVENT_TABLE_SCHEMA, params.get("payload_columns"))
+                return checker.fetch_shape(
+                    _EVENT_TABLE_SCHEMA,
+                    params.get("payload_columns"),
+                    require_event_type=True,
+                )
             return ()
         if kind == "filter":
             checker.check_conditions(params)
@@ -470,11 +474,21 @@ class _PlanCompiler:
             ]
         for item in extracts:
             path = "$." + str(item["path"])
-            select_items.append(
-                _typed_extract(table, extract_column, path, str(item["type"]))
-                + " AS "
-                + _quoted(str(item["name"]))
-            )
+            typed = _typed_extract(table, extract_column, path, str(item["type"]))
+            if node.params.get("source") == "events":
+                # 提取列按声明的事件类型作用域取值：其他类型行一律为 NULL
+                # （2026-08-26 契约修订，见分析系统契约 3.1）。
+                event_type = item.get("event_type") if isinstance(item, dict) else None
+                typed = (
+                    "CASE WHEN "
+                    + _quoted("event_type")
+                    + " = "
+                    + binder.placeholder(str(event_type))
+                    + " THEN "
+                    + typed
+                    + " ELSE NULL END"
+                )
+            select_items.append(typed + " AS " + _quoted(str(item["name"])))
         return (
             "SELECT " + ", ".join(select_items)
             + " FROM " + table
@@ -661,6 +675,8 @@ class _ShapeChecker:
         self,
         base_schema: tuple[AnalysisSchemaColumn, ...],
         raw_extracts: Any,
+        *,
+        require_event_type: bool = False,
     ) -> tuple[AnalysisColumn, ...]:
         output = [AnalysisColumn(item.name, item.type) for item in base_schema]
         taken = {column.name for column in output}
@@ -671,6 +687,13 @@ class _ShapeChecker:
             path = item.get("path") if isinstance(item, dict) else None
             name = item.get("name") if isinstance(item, dict) else None
             type_ = item.get("type") if isinstance(item, dict) else None
+            if require_event_type:
+                event_type = item.get("event_type") if isinstance(item, dict) else None
+                if not isinstance(event_type, str) or not event_type:
+                    self.compiler._issue(
+                        self.node.id, "载荷提取列缺少事件类型 event_type"
+                    )
+                    continue
             if not isinstance(path, str) or not path or "'" in path or path.startswith("."):
                 self.compiler._issue(self.node.id, "提取路径不合法：" + str(path))
                 continue

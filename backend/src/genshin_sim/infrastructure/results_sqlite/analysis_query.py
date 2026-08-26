@@ -51,7 +51,7 @@ _INPUT_ARITY: dict[str, int] = {
 
 _FETCH_PARAM_KEYS: dict[str, frozenset[str]] = {
     "fetch": frozenset(
-        {"source", "snapshot_columns", "event_types", "frame_min", "frame_max", "payload_columns"}
+        {"source", "snapshot_columns", "event_types", "payload_columns"}
     ),
     "filter": frozenset({"mode", "conditions"}),
     "project": frozenset({"columns"}),
@@ -455,12 +455,6 @@ class _PlanCompiler:
                     + _in_placeholders(binder, [str(item) for item in event_types])
                     + ")"
                 )
-            frame_min = node.params.get("frame_min")
-            frame_max = node.params.get("frame_max")
-            if frame_min is not None:
-                conditions.append(_quoted("frame") + " >= " + binder.placeholder(frame_min))
-            if frame_max is not None:
-                conditions.append(_quoted("frame") + " <= " + binder.placeholder(frame_max))
         else:
             table = "simulation_runs"
             select_items = [_quoted(item.name) for item in _RUN_TABLE_SCHEMA]
@@ -718,7 +712,7 @@ class _ShapeChecker:
             self.compiler._issue(self.node.id, "source 必须是 runs 或 events")
             return
         if source == "runs":
-            for key in ("event_types", "frame_min", "frame_max", "payload_columns"):
+            for key in ("event_types", "payload_columns"):
                 if key in params:
                     self.compiler._issue(self.node.id, f"source=runs 不支持参数 {key}")
             return
@@ -730,20 +724,6 @@ class _ShapeChecker:
             or any(not isinstance(item, str) for item in event_types)
         ):
             self.compiler._issue(self.node.id, "event_types 必须是字符串数组")
-        frame_min = params.get("frame_min")
-        frame_max = params.get("frame_max")
-        for key, value in (("frame_min", frame_min), ("frame_max", frame_max)):
-            if value is not None and (not isinstance(value, int) or isinstance(value, bool)):
-                self.compiler._issue(self.node.id, key + " 必须是整数")
-        if (
-            isinstance(frame_min, int)
-            and not isinstance(frame_min, bool)
-            and isinstance(frame_max, int)
-            and not isinstance(frame_max, bool)
-            and frame_min > frame_max
-        ):
-            self.compiler._issue(self.node.id, "frame_min 不能大于 frame_max")
-
     def project_shape(self, params: Mapping[str, Any]) -> tuple[AnalysisColumn, ...]:
         output: list[AnalysisColumn] = []
         seen: set[str] = set()

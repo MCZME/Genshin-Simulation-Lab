@@ -428,8 +428,8 @@ def test_compute_rejects_empty_columns(tmp_path) -> None:
     ("params", "reason"),
     [
         ({"source": "events", "event_types": "DAMAGE_RESOLVED"}, "event_types"),
-        ({"source": "events", "frame_min": "0"}, "frame_min"),
-        ({"source": "events", "frame_min": 10, "frame_max": 5}, "frame_min"),
+        ({"source": "events", "frame_min": 0}, "frame_min"),
+        ({"source": "events", "frame_max": 18000}, "frame_max"),
     ],
 )
 def test_fetch_events_source_rejects_invalid_parameters(tmp_path, params, reason) -> None:

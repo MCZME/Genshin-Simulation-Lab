@@ -1,5 +1,5 @@
 import type { CompiledMember, Diagnostic, WorkflowDefinition, WorkflowNode } from "./types";
-import { MAX_BATCH_MEMBERS, REGION_BOUNDARY_OUT_PORT } from "./types";
+import { MAX_BATCH_MEMBERS, REGION_BOUNDARY_IN_PORT, REGION_BOUNDARY_OUT_PORT } from "./types";
 import type { ValidateInputsResponse } from "../api/client";
 import { expandConfigurationRegion } from "./compiler";
 import type { MethodTrace } from "./compiler";
@@ -268,6 +268,139 @@ export function planRegionRun(definition: WorkflowDefinition, regionId: string):
     skippedRegionIds: [],
     batches,
   };
+}
+
+/**
+ * 分析区域运行的「获取输入」阶段计划（2026-08-26 定案）：
+ * 只收集边界输入连接且缺少会话（last_sessions 缺失或为空）的模拟节点，
+ * 按其连接的配置区域展开批次；已有会话的模拟节点与数据提供节点不产生批次。
+ * 返回的 RunPlan 批次为空时表示无需补跑模拟，可直接进入查询阶段。
+ */
+export function planAnalysisInputRun(
+  definition: WorkflowDefinition,
+  regionId: string,
+): RunPlan {
+  const errors: string[] = [];
+  const regionById = new Map(definition.regions.map((region) => [region.id, region]));
+  const nodeById = new Map(definition.nodes.map((node) => [node.id, node]));
+
+  const boundarySimulationIds = new Set<string>();
+  for (const edge of definition.edges) {
+    if (
+      edge.target_node_id === regionId &&
+      edge.target_port_id === REGION_BOUNDARY_IN_PORT
+    ) {
+      const source = nodeById.get(edge.source_node_id);
+      if (source?.kind === "simulation") {
+        boundarySimulationIds.add(source.id);
+      }
+    }
+  }
+
+  const needsRun = definition.nodes.filter(
+    (node) =>
+      node.kind === "simulation" &&
+      boundarySimulationIds.has(node.id) &&
+      sessionIdsOf(node).length === 0,
+  );
+  if (needsRun.length === 0) {
+    return { ok: true, errors: [], participating: [], skippedRegionIds: [], batches: [] };
+  }
+
+  const connectedRegionIds = new Set<string>();
+  for (const node of needsRun) {
+    for (const edge of definition.edges) {
+      if (
+        edge.target_node_id === node.id &&
+        edge.target_port_id === "in" &&
+        edge.source_port_id === REGION_BOUNDARY_OUT_PORT &&
+        regionById.get(edge.source_node_id)?.kind === "configuration"
+      ) {
+        connectedRegionIds.add(edge.source_node_id);
+      }
+    }
+  }
+
+  const participating: RegionBuildSlice[] = [];
+  const compiledByRegion = new Map<
+    string,
+    { members: CompiledMember[]; methods: MethodTrace[] }
+  >();
+  for (const connectedRegionId of connectedRegionIds) {
+    const expanded = expandConfigurationRegion(definition, connectedRegionId);
+    if (!expanded.ok) {
+      errors.push(
+        `区域 ${regionById.get(connectedRegionId)?.name ?? connectedRegionId} 无法编译：` +
+          firstErrorMessage(expanded.diagnostics),
+      );
+      continue;
+    }
+    compiledByRegion.set(connectedRegionId, {
+      members: expanded.members,
+      methods: expanded.methods,
+    });
+    const region = regionById.get(connectedRegionId);
+    participating.push({
+      regionId: connectedRegionId,
+      regionName: region?.name ?? connectedRegionId,
+      methods: withNodeLabels(expanded.methods, definition),
+      memberCount: expanded.members.length,
+    });
+  }
+
+  const batches: BatchPlan[] = [];
+  for (const node of needsRun) {
+    const sourceRegionIds = orderedRegionSources(definition, node.id, connectedRegionIds);
+    if (sourceRegionIds.length === 0) {
+      errors.push(`模拟节点未连接配置区域，批次无法成立`);
+      continue;
+    }
+    const members: BatchMember[] = [];
+    let missingCompile = false;
+    for (const sourceRegionId of sourceRegionIds) {
+      const compiled = compiledByRegion.get(sourceRegionId);
+      if (compiled === undefined) {
+        missingCompile = true;
+        continue;
+      }
+      members.push(...compiled.members.map((member) => ({ ...member, input: member.input })));
+    }
+    if (missingCompile) {
+      continue;
+    }
+    const duplicate = firstDuplicateItemId(members);
+    if (duplicate !== null) {
+      errors.push(`批次内成员 item_id 重复：${duplicate}`);
+      continue;
+    }
+    if (members.length > MAX_BATCH_MEMBERS) {
+      errors.push(`批次成员数 ${members.length} 超过上限 ${MAX_BATCH_MEMBERS}`);
+      continue;
+    }
+    batches.push({
+      nodeId: node.id,
+      name: batchName(definition, members),
+      concurrency: concurrencyOf(node),
+      sourceRegionIds,
+      members,
+    });
+  }
+
+  return {
+    ok: errors.length === 0 && batches.length > 0,
+    errors,
+    participating,
+    skippedRegionIds: [],
+    batches,
+  };
+}
+
+/** 模拟节点参数中的会话 ID 列表（非法值忽略）。 */
+function sessionIdsOf(node: WorkflowNode): string[] {
+  const raw = node.params.last_sessions;
+  return Array.isArray(raw)
+    ? raw.filter((item): item is string => typeof item === "string")
+    : [];
 }
 
 /** 区域校验失败的聚合错误（决策 2.40）：成员级诊断拼进批次失败原因。 */

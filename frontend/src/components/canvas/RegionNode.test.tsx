@@ -47,6 +47,8 @@ function renderRegion(
     onMoveEdgeOrder: vi.fn(),
     onValidateRegion: vi.fn(),
     onRunRegion: vi.fn(),
+    onRunAnalysis: vi.fn(),
+    analysisRunPhase: null,
     interactionLocked: false,
     incomingGroups: [],
     dropTarget: false,
@@ -149,6 +151,43 @@ describe("RegionNode 区域运行", () => {
     renderRegion({ data: { onRunRegion } });
     fireEvent.click(screen.getByRole("button", { name: "区域运行" }));
     expect(onRunRegion).toHaveBeenCalledWith("region-1");
+  });
+
+  it("分析区域渲染运行分析按钮并调用 onRunAnalysis（2026-08-26）", () => {
+    const onRunAnalysis = vi.fn();
+    const analysisRegion: WorkflowRegion = {
+      id: "region-1",
+      kind: "analysis",
+      name: "分析区",
+      rect: { x: 0, y: 0, width: 880, height: 440 },
+    };
+    renderRegion({ data: { region: analysisRegion, onRunAnalysis } });
+    fireEvent.click(screen.getByRole("button", { name: "运行分析" }));
+    expect(onRunAnalysis).toHaveBeenCalledWith("region-1");
+  });
+
+  it("分析区域运行中显示阶段文本并禁用按钮（2026-08-26）", () => {
+    const analysisRegion: WorkflowRegion = {
+      id: "region-1",
+      kind: "analysis",
+      name: "分析区",
+      rect: { x: 0, y: 0, width: 880, height: 440 },
+    };
+    renderRegion({
+      data: {
+        region: analysisRegion,
+        analysisRunPhase: { regionId: "region-1", phase: "input" },
+      },
+    });
+    expect(screen.getByText("获取输入…")).not.toBeNull();
+    expect(
+      (screen.getByRole("button", { name: "运行分析" }) as HTMLButtonElement).disabled,
+    ).toBe(true);
+  });
+
+  it("配置区域不渲染运行分析按钮", () => {
+    renderRegion();
+    expect(screen.queryByRole("button", { name: "运行分析" })).toBeNull();
   });
 });
 

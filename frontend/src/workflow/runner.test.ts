@@ -9,6 +9,7 @@ import type {
 import {
   hasRunnableBatch,
   paceBuildSteps,
+  planAnalysisInputRun,
   planRegionRun,
   planWorkflowRun,
   scopedDiagnostics,
@@ -17,6 +18,10 @@ import {
 
 function makeRegion(id: string): WorkflowRegion {
   return { id, kind: "configuration", name: `区域${id}`, rect: { x: 0, y: 0, width: 800, height: 600 } };
+}
+
+function makeAnalysisRegion(id: string): WorkflowRegion {
+  return { id, kind: "analysis", name: `分析区域${id}`, rect: { x: 0, y: 0, width: 800, height: 600 } };
 }
 
 function makeNode(
@@ -259,6 +264,105 @@ describe("planRegionRun", () => {
     const plan = planRegionRun(definition, "region-1");
     expect(plan.ok).toBe(false);
     expect(plan.errors.join("")).toContain("未连接模拟节点");
+  });
+});
+
+describe("planAnalysisInputRun", () => {
+  it("边界连接的模拟节点缺会话时生成补跑批次", () => {
+    const definition = makeDefinition(
+      [makeRegion("region-1"), makeAnalysisRegion("analysis-1")],
+      [
+        ...simpleRegionNodes("region-1", "主配队"),
+        makeNode("sim-1", "simulation", {}, null),
+        makeNode("fetch-1", "fetch", { source: "runs" }, "analysis-1"),
+      ],
+      [
+        ...regionBoundaryEdges("region-1"),
+        makeEdge("l1", "region-1", "out", "sim-1", "in"),
+        makeEdge("a1", "sim-1", "out", "analysis-1", "in"),
+        makeEdge("a2", "analysis-1", "in", "fetch-1", "in"),
+      ],
+    );
+    const plan = planAnalysisInputRun(definition, "analysis-1");
+    expect(plan.ok).toBe(true);
+    expect(plan.batches).toHaveLength(1);
+    expect(plan.batches[0].nodeId).toBe("sim-1");
+    expect(plan.batches[0].members).toHaveLength(1);
+    expect(plan.participating).toHaveLength(1);
+  });
+
+  it("模拟节点已有会话时不产生补跑批次", () => {
+    const definition = makeDefinition(
+      [makeRegion("region-1"), makeAnalysisRegion("analysis-1")],
+      [
+        ...simpleRegionNodes("region-1", "主配队"),
+        makeNode("sim-1", "simulation", { last_sessions: ["run:1"] }, null),
+        makeNode("fetch-1", "fetch", { source: "runs" }, "analysis-1"),
+      ],
+      [
+        ...regionBoundaryEdges("region-1"),
+        makeEdge("l1", "region-1", "out", "sim-1", "in"),
+        makeEdge("a1", "sim-1", "out", "analysis-1", "in"),
+        makeEdge("a2", "analysis-1", "in", "fetch-1", "in"),
+      ],
+    );
+    const plan = planAnalysisInputRun(definition, "analysis-1");
+    expect(plan.ok).toBe(true);
+    expect(plan.batches).toHaveLength(0);
+    expect(plan.errors).toHaveLength(0);
+  });
+
+  it("只连数据提供节点时无需补跑", () => {
+    const definition = makeDefinition(
+      [makeAnalysisRegion("analysis-1")],
+      [
+        makeNode("dp-1", "data_provider", { session_ids: ["run:1"] }, null),
+        makeNode("fetch-1", "fetch", { source: "runs" }, "analysis-1"),
+      ],
+      [
+        makeEdge("a1", "dp-1", "out", "analysis-1", "in"),
+        makeEdge("a2", "analysis-1", "in", "fetch-1", "in"),
+      ],
+    );
+    const plan = planAnalysisInputRun(definition, "analysis-1");
+    expect(plan.ok).toBe(true);
+    expect(plan.batches).toHaveLength(0);
+  });
+
+  it("缺会话的模拟节点未连接配置区域时报错", () => {
+    const definition = makeDefinition(
+      [makeAnalysisRegion("analysis-1")],
+      [
+        makeNode("sim-1", "simulation", {}, null),
+        makeNode("fetch-1", "fetch", { source: "runs" }, "analysis-1"),
+      ],
+      [
+        makeEdge("a1", "sim-1", "out", "analysis-1", "in"),
+        makeEdge("a2", "analysis-1", "in", "fetch-1", "in"),
+      ],
+    );
+    const plan = planAnalysisInputRun(definition, "analysis-1");
+    expect(plan.ok).toBe(false);
+    expect(plan.errors.join("")).toContain("未连接配置区域");
+  });
+
+  it("未连接分析区域的模拟节点即使缺会话也不补跑", () => {
+    const definition = makeDefinition(
+      [makeRegion("region-1"), makeAnalysisRegion("analysis-1")],
+      [
+        ...simpleRegionNodes("region-1", "主配队"),
+        makeNode("sim-1", "simulation", {}, null),
+        makeNode("fetch-1", "fetch", { source: "runs" }, "analysis-1"),
+      ],
+      [
+        ...regionBoundaryEdges("region-1"),
+        makeEdge("l1", "region-1", "out", "sim-1", "in"),
+        makeEdge("a1", "analysis-1", "in", "fetch-1", "in"),
+      ],
+    );
+    const plan = planAnalysisInputRun(definition, "analysis-1");
+    expect(plan.ok).toBe(true);
+    expect(plan.batches).toHaveLength(0);
   });
 });
 

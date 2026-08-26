@@ -74,6 +74,7 @@ import {
 import type { RunState } from "../state/run_state";
 import {
   executeAnalysisRegion,
+  planFetchNodes,
   viewInputTable,
 } from "../workflow/analysis_runner";
 import type { AnalysisNodeResult } from "../workflow/analysis_runner";
@@ -81,12 +82,14 @@ import { compileConfigurationRegion } from "../workflow/compiler";
 import {
   hasRunnableBatch,
   paceBuildSteps,
+  planAnalysisInputRun,
   planRegionRun,
   planWorkflowRun,
   scopedDiagnostics,
   validationErrorMessage,
 } from "../workflow/runner";
 import type { BatchPlan, RunPlan } from "../workflow/runner";
+import type { AnalysisRunPhase } from "../components/canvas/RegionNode";
 import {
   assetMissingDiagnostics,
   collectAssetReferences,
@@ -144,6 +147,8 @@ export function App() {
   const [analysisResults, setAnalysisResults] = useState<Map<string, AnalysisNodeResult>>(
     () => new Map(),
   );
+  /** 分析区域运行阶段（2026-08-26 定案：获取输入 → 查询 → 视图加载）。 */
+  const [analysisRunPhase, setAnalysisRunPhase] = useState<AnalysisRunPhase | null>(null);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   /** 资产预检（决策 2.40 节点校验）：加载/切换工作流时核对的失效资产 key。 */
@@ -734,6 +739,7 @@ export function App() {
     plan: RunPlan,
     scopeRegionIds?: Set<string>,
     mode: "run" | "check" = "run",
+    onCompleted?: (updatedDefinition: WorkflowDefinition) => Promise<void>,
   ) {
     setValidationDiagnostics([]);
     setErrorMessage(null);
@@ -927,11 +933,15 @@ export function App() {
     } else {
       setRunState((current) => setRunPhase(current, "completed"));
       const updatedDefinition = persistSimulationSessions(definition, completedSessions);
-      await refreshAnalysis(updatedDefinition);
-      // 运行结束联动（决策 2.37）：自动打开结果面板并定位最新记录；
-      // 存在区域校验失败时保留问题面板，不再切到结果面板（决策 2.40 修订）。
-      if (!validationFailed) {
-        openResultAt(completedSessions[0]?.sessionId ?? null);
+      if (onCompleted !== undefined) {
+        await onCompleted(updatedDefinition);
+      } else {
+        await refreshAnalysis(updatedDefinition);
+        // 运行结束联动（决策 2.37）：自动打开结果面板并定位最新记录；
+        // 存在区域校验失败时保留问题面板，不再切到结果面板（决策 2.40 修订）。
+        if (!validationFailed) {
+          openResultAt(completedSessions[0]?.sessionId ?? null);
+        }
       }
     }
     setRunning(false);
@@ -970,14 +980,20 @@ export function App() {
     return updated;
   }
 
-  /** 分析区域执行：编译查询计划一次调用，视图节点读终端表。 */
-  async function refreshAnalysis(definition: WorkflowDefinition): Promise<void> {
+  /** 分析区域执行：编译查询计划一次调用，视图节点读终端表；可限定单个区域。 */
+  async function refreshAnalysis(
+    definition: WorkflowDefinition,
+    onlyRegionId?: string,
+  ): Promise<void> {
     if (schemaCatalog === null) {
       return;
     }
     const next = new Map<string, AnalysisNodeResult>();
     for (const region of definition.regions) {
-      if (region.kind !== "analysis") {
+      if (
+        region.kind !== "analysis" ||
+        (onlyRegionId !== undefined && region.id !== onlyRegionId)
+      ) {
         continue;
       }
       const results = await executeAnalysisRegion(definition, region.id);
@@ -1028,6 +1044,67 @@ export function App() {
       new Set([regionId]),
       "check",
     );
+  }
+
+  /**
+   * 分析区域运行入口（2026-08-26 定案）：三阶段——
+   * 获取输入（边界连接的模拟节点缺会话时补跑批次并写回 last_sessions）→
+   * 数据处理（区域级查询计划一次执行）→ 视图加载（终端表落入视图节点）。
+   * 任一补跑批次失败/取消则整次中止，不进入查询。
+   */
+  async function handleRunAnalysis(regionId: string) {
+    if (editorState === null || busy) {
+      return;
+    }
+    const definition = editorStateToDefinition(editorState);
+    setValidationDiagnostics([]);
+    setErrorMessage(null);
+    const runDiagnostics = runScopeDiagnostics(definition, new Set([regionId]));
+    const inputPlan = planAnalysisInputRun(definition, regionId);
+    const graphErrors = runDiagnostics.filter((item) => item.severity === "error");
+    const errors = [...graphErrors.map((item) => item.message), ...inputPlan.errors];
+    const hasFetch = planFetchNodes(definition, regionId).length > 0;
+    if (errors.length > 0 || !hasFetch) {
+      const finalErrors =
+        errors.length > 0 ? errors : ["分析区域没有可运行的取数节点（未连接区域边界输入）"];
+      setRunState((current) => {
+        const started = {
+          ...current,
+          run: createRunView({ participating: [], batches: [], buildErrors: finalErrors }),
+        };
+        return setRunPhase(started, "build_failed");
+      });
+      const failureDiagnostics: Diagnostic[] = [
+        ...graphErrors,
+        ...inputPlan.errors.map((message) => planErrorDiagnostic(message, inputPlan)),
+      ];
+      if (errors.length === 0) {
+        failureDiagnostics.push(
+          planErrorDiagnostic("分析区域没有可运行的取数节点（未连接区域边界输入）", inputPlan),
+        );
+      }
+      setValidationDiagnostics(failureDiagnostics);
+      setActiveTool("problems");
+      return;
+    }
+    const completeAnalysis = async (updated: WorkflowDefinition) => {
+      setAnalysisRunPhase({ regionId, phase: "query" });
+      await refreshAnalysis(updated, regionId);
+      setAnalysisRunPhase(null);
+    };
+    if (inputPlan.batches.length > 0) {
+      setAnalysisRunPhase({ regionId, phase: "input" });
+      await executeRunPlan(
+        definition,
+        inputPlan,
+        new Set([regionId]),
+        "run",
+        completeAnalysis,
+      );
+      setAnalysisRunPhase(null);
+    } else {
+      await completeAnalysis(definition);
+    }
   }
 
   /** 取消整次工作流运行：取消当前批次，剩余批次由编排循环跳过（决策 2.32）；顶栏双击触发。 */
@@ -1209,6 +1286,8 @@ export function App() {
                 onMoveEdgeOrder={handleMoveEdgeOrder}
                 onValidateRegion={(regionId) => void handleValidateRegion(regionId)}
                 onRunRegion={(regionId) => void handleRunRegion(regionId)}
+                onRunAnalysis={(regionId) => void handleRunAnalysis(regionId)}
+                analysisRunPhase={analysisRunPhase}
               />
             )}
             <RegionSummaryBar compiles={compiles} />

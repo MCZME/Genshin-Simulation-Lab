@@ -13,6 +13,12 @@ import type { IncomingOrderGroup } from "./InputOrderPopover";
 const MIN_REGION_WIDTH = 400;
 const MIN_REGION_HEIGHT = 240;
 
+/** 分析区域运行阶段（2026-08-26 定案：获取输入 → 查询 → 视图加载）。 */
+export interface AnalysisRunPhase {
+  regionId: string;
+  phase: "input" | "query" | "view";
+}
+
 export type RegionNodeData = {
   region: WorkflowRegion;
   onDeleteRegion: (regionId: string) => void;
@@ -31,6 +37,10 @@ export type RegionNodeData = {
   onValidateRegion: (regionId: string) => void;
   /** 区域运行入口（决策 2.40）：区域范围运行复用全部运行编排。 */
   onRunRegion: (regionId: string) => void;
+  /** 分析区域运行入口（2026-08-26 定案）：获取输入 → 查询 → 视图加载。 */
+  onRunAnalysis: (regionId: string) => void;
+  /** 正在运行分析的区域及其阶段；未运行时为 null。 */
+  analysisRunPhase: AnalysisRunPhase | null;
   /** 运行期间锁定破坏性交互。 */
   interactionLocked: boolean;
   incomingGroups: IncomingOrderGroup[];
@@ -49,6 +59,8 @@ export function RegionNode({ data, selected, width, height }: NodeProps) {
     onMoveEdgeOrder,
     onValidateRegion,
     onRunRegion,
+    onRunAnalysis,
+    analysisRunPhase,
     interactionLocked,
     incomingGroups,
     dropTarget,
@@ -246,6 +258,26 @@ export function RegionNode({ data, selected, width, height }: NodeProps) {
                 区域运行
               </button>
             </>
+          )}
+          {!editingName && region.kind === "analysis" && (
+            <button
+              type="button"
+              className="text-button region-analysis-run nowheel nodrag"
+              title="运行分析：获取输入（缺会话时补跑模拟）、查询并加载视图"
+              disabled={interactionLocked || analysisRunPhase?.regionId === region.id}
+              onClick={() => onRunAnalysis(region.id)}
+            >
+              运行分析
+            </button>
+          )}
+          {analysisRunPhase?.regionId === region.id && (
+            <span className="region-analysis-phase">
+              {analysisRunPhase.phase === "input"
+                ? "获取输入…"
+                : analysisRunPhase.phase === "query"
+                  ? "查询…"
+                  : "加载视图…"}
+            </span>
           )}
           {!editingName && (
             <button

@@ -35,7 +35,7 @@ import { NodeCard } from "./NodeCard";
 import type { MemberPortInfo, WorkflowNodeData } from "./NodeCard";
 import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
 import { RegionNode } from "./RegionNode";
-import type { RegionNodeData } from "./RegionNode";
+import type { AnalysisRunPhase, RegionNodeData } from "./RegionNode";
 
 export interface CanvasViewProps {
   definition: WorkflowDefinition;
@@ -73,6 +73,9 @@ export interface CanvasViewProps {
   onRenameRegion: (regionId: string, name: string) => void;
   onValidateRegion: (regionId: string) => void;
   onRunRegion: (regionId: string) => void;
+  onRunAnalysis: (regionId: string) => void;
+  /** 正在运行分析的区域及其阶段；未运行时为 null。 */
+  analysisRunPhase: AnalysisRunPhase | null;
   onConnectEdge: (connection: {
     source_node_id: string;
     source_port_id: string;
@@ -115,6 +118,7 @@ interface CallbackSnapshot {
   onRenameRegion: CanvasViewProps["onRenameRegion"];
   onValidateRegion: CanvasViewProps["onValidateRegion"];
   onRunRegion: CanvasViewProps["onRunRegion"];
+  onRunAnalysis: CanvasViewProps["onRunAnalysis"];
   onConnectEdge: CanvasViewProps["onConnectEdge"];
   onSelect: CanvasViewProps["onSelect"];
   onParamsChange: CanvasViewProps["onParamsChange"];
@@ -150,6 +154,8 @@ export function CanvasView({
   onRenameRegion,
   onValidateRegion,
   onRunRegion,
+  onRunAnalysis,
+  analysisRunPhase,
   onConnectEdge,
   onSelect,
   onParamsChange,
@@ -170,6 +176,7 @@ export function CanvasView({
     onRenameRegion,
     onValidateRegion,
     onRunRegion,
+    onRunAnalysis,
     onConnectEdge,
     onSelect,
     onParamsChange,
@@ -190,6 +197,7 @@ export function CanvasView({
       onRenameRegion,
       onValidateRegion,
       onRunRegion,
+      onRunAnalysis,
       onConnectEdge,
       onSelect,
       onParamsChange,
@@ -223,6 +231,7 @@ export function CanvasView({
           runningMethodNodeIds,
           interactionLocked,
           analysisResults,
+          analysisRunPhase,
         ),
         current,
       ),
@@ -237,6 +246,7 @@ export function CanvasView({
     runningMethodNodeIds,
     interactionLocked,
     analysisResults,
+    analysisRunPhase,
     setNodes,
     setEdges,
   ]);
@@ -475,6 +485,7 @@ function buildNodes(
   runningMethodNodeIds: string[],
   interactionLocked: boolean,
   analysisResults: Map<string, AnalysisNodeResult> | undefined,
+  analysisRunPhase: AnalysisRunPhase | null,
 ): Node[] {
   const incoming = incomingGroupsByTarget(definition);
   const dimmed = new Set(dimmedNodeIds);
@@ -489,6 +500,8 @@ function buildNodes(
       onMoveEdgeOrder: callbacks.onMoveEdgeOrder,
       onValidateRegion: callbacks.onValidateRegion,
       onRunRegion: callbacks.onRunRegion,
+      onRunAnalysis: callbacks.onRunAnalysis,
+      analysisRunPhase,
       interactionLocked,
       incomingGroups: incoming.get(region.id) ?? [],
       dropTarget: highlightRegionId === region.id,

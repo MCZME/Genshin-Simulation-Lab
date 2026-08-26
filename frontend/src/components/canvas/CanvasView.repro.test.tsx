@@ -73,6 +73,8 @@ describe("CanvasView repro", () => {
         onRenameRegion={() => undefined}
         onValidateRegion={() => undefined}
         onRunRegion={() => undefined}
+        onRunAnalysis={() => undefined}
+        analysisRunPhase={null}
         onConnectEdge={() => undefined}
         onSelect={() => undefined}
         onParamsChange={() => undefined}

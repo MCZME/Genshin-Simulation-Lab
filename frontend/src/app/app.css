@@ -3783,7 +3783,10 @@ body {
 .project-line > input,
 .sort-key-line > select,
 .limit-line > input,
-.join-key-row > select {
+.join-key-row > select,
+.compute-head > input,
+.compute-head > select,
+.compute-formula-input {
   height: 26px;
   padding: 0 6px;
   background: #0f172a;
@@ -3793,6 +3796,49 @@ body {
   font-family: inherit;
   font-size: 11px;
   line-height: 1;
+}
+
+/* 计算列节点 */
+
+.node-card-compute {
+  width: 340px;
+}
+
+.compute-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.compute-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #243147;
+}
+
+.compute-head {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.compute-name-input {
+  flex: 1;
+  min-width: 0;
+}
+
+.compute-insert-select {
+  flex: none;
+  width: 100px;
+}
+
+.compute-formula-input {
+  width: 100%;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
 }
 
 .fetch-shape-chip {

@@ -3540,6 +3540,77 @@ body {
   font-size: 11px;
 }
 
+/* ── 分组聚合节点：卡片直编（2026-08-27 重构） ── */
+
+.node-card-aggregate {
+  width: 340px;
+}
+
+.aggregate-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.aggregate-section {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.aggregate-section-title {
+  margin: 0;
+  font-size: 11px;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.aggregate-group-list {
+  max-height: 150px;
+  margin: 0;
+  padding: 0 0 0 2px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.aggregate-group-list li {
+  padding: 1px 0;
+}
+
+.aggregate-group-list label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+.aggregate-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #243147;
+}
+
+.aggregate-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.aggregate-line select,
+.aggregate-line input {
+  min-width: 0;
+  flex: 1;
+}
+
+.aggregate-line select:first-child {
+  flex: 1.1;
+}
+
 .fetch-shape-chip {
   display: inline-flex;
   align-items: center;

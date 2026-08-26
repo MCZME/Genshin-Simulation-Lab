@@ -3550,8 +3550,13 @@ body {
   width: 340px;
 }
 
+.node-card-sort {
+  width: 340px;
+}
+
 .aggregate-inline,
-.project-inline {
+.project-inline,
+.sort-inline {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -3591,7 +3596,8 @@ body {
 }
 
 .aggregate-row,
-.project-row {
+.project-row,
+.sort-key-row {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -3602,7 +3608,8 @@ body {
 }
 
 .aggregate-line,
-.project-line {
+.project-line,
+.sort-key-line {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -3611,7 +3618,8 @@ body {
 .aggregate-line select,
 .aggregate-line input,
 .project-line select,
-.project-line input {
+.project-line input,
+.sort-key-line select {
   min-width: 0;
   flex: 1;
 }
@@ -3619,6 +3627,38 @@ body {
 .aggregate-line select:first-child,
 .project-line select:first-child {
   flex: 1.1;
+}
+
+.sort-key-index {
+  flex: none;
+  width: 18px;
+  font-size: 11px;
+  color: #94a3b8;
+  text-align: center;
+}
+
+.sort-move-button {
+  flex: none;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  background: #263449;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sort-move-button:hover:not(:disabled) {
+  color: #e2e8f0;
+  border-color: #3b82f6;
+}
+
+.sort-move-button:disabled {
+  opacity: 0.35;
+  cursor: default;
 }
 
 .fetch-shape-chip {

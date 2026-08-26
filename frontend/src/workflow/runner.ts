@@ -4,6 +4,7 @@ import type { ValidateInputsResponse } from "../api/client";
 import { expandConfigurationRegion } from "./compiler";
 import type { MethodTrace } from "./compiler";
 import { getNodeKindSpec } from "./registry";
+import { hashValue } from "./fingerprint";
 
 export interface BatchMember {
   item_id: string;
@@ -272,8 +273,8 @@ export function planRegionRun(definition: WorkflowDefinition, regionId: string):
 
 /**
  * 分析区域运行的「获取输入」阶段计划（2026-08-26 定案）：
- * 只收集边界输入连接且缺少会话（last_sessions 缺失或为空）的模拟节点，
- * 按其连接的配置区域展开批次；已有会话的模拟节点与数据提供节点不产生批次。
+ * 收集边界输入连接且「未就绪」的模拟节点（缺会话、无输入指纹或指纹不匹配），
+ * 按其连接的配置区域展开批次；就绪的模拟节点与数据提供节点不产生批次。
  * 返回的 RunPlan 批次为空时表示无需补跑模拟，可直接进入查询阶段。
  */
 export function planAnalysisInputRun(
@@ -282,26 +283,13 @@ export function planAnalysisInputRun(
 ): RunPlan {
   const errors: string[] = [];
   const regionById = new Map(definition.regions.map((region) => [region.id, region]));
-  const nodeById = new Map(definition.nodes.map((node) => [node.id, node]));
-
-  const boundarySimulationIds = new Set<string>();
-  for (const edge of definition.edges) {
-    if (
-      edge.target_node_id === regionId &&
-      edge.target_port_id === REGION_BOUNDARY_IN_PORT
-    ) {
-      const source = nodeById.get(edge.source_node_id);
-      if (source?.kind === "simulation") {
-        boundarySimulationIds.add(source.id);
-      }
-    }
-  }
-
+  const status = analysisInputStatus(definition, regionId);
   const needsRun = definition.nodes.filter(
     (node) =>
       node.kind === "simulation" &&
-      boundarySimulationIds.has(node.id) &&
-      sessionIdsOf(node).length === 0,
+      status.nodes.some(
+        (item) => item.nodeId === node.id && item.status !== "ready",
+      ),
   );
   if (needsRun.length === 0) {
     return { ok: true, errors: [], participating: [], skippedRegionIds: [], batches: [] };
@@ -393,6 +381,140 @@ export function planAnalysisInputRun(
     skippedRegionIds: [],
     batches,
   };
+}
+
+/** 单个模拟节点批次的输入指纹（数据源真值：有序来源区域 + 有序成员输入）。 */
+export function batchInputFingerprint(
+  batch: Pick<BatchPlan, "sourceRegionIds" | "members">,
+): string {
+  return hashValue({
+    sourceRegionIds: batch.sourceRegionIds,
+    members: batch.members.map((member) => [member.item_id, member.input]),
+  });
+}
+
+/**
+ * 模拟节点当前配置区域的期望输入指纹；未连接配置区域或区域无法编译时返回 null。
+ * 与批次写入的 last_input_fingerprint 比对，用于判断 last_sessions 是否过期。
+ */
+export function expectedInputFingerprint(
+  definition: WorkflowDefinition,
+  nodeId: string,
+): string | null {
+  const sourceRegionIds = configRegionIdsOf(definition, nodeId);
+  if (sourceRegionIds.length === 0) {
+    return null;
+  }
+  const members = mergedMembersFor(definition, sourceRegionIds);
+  return members === null
+    ? null
+    : batchInputFingerprint({ sourceRegionIds, members });
+}
+
+export interface AnalysisInputNodeStatus {
+  nodeId: string;
+  status: "ready" | "missing" | "stale";
+  /** 是否连接了配置区域（可计算期望指纹/可补跑）。 */
+  hasConfigRegion: boolean;
+}
+
+export interface AnalysisInputStatus {
+  nodes: AnalysisInputNodeStatus[];
+  /** 存在需要补跑或会话过期的模拟节点。 */
+  needsRun: boolean;
+}
+
+/**
+ * 分析区域边界输入的就绪状态（2026-08-26 定案）：
+ * - 缺会话（last_sessions 缺失/为空）→ missing；
+ * - 有会话但无 last_input_fingerprint 或与当前配置区域指纹不一致 → stale；
+ * - 有会话且指纹一致 → ready。
+ * 未连接配置区域的模拟节点无法核对/补跑：有会话视为 ready，无会话视为 missing。
+ */
+export function analysisInputStatus(
+  definition: WorkflowDefinition,
+  regionId: string,
+): AnalysisInputStatus {
+  const nodeById = new Map(definition.nodes.map((node) => [node.id, node]));
+  const boundarySimulationIds = new Set<string>();
+  for (const edge of definition.edges) {
+    if (
+      edge.target_node_id === regionId &&
+      edge.target_port_id === REGION_BOUNDARY_IN_PORT
+    ) {
+      const source = nodeById.get(edge.source_node_id);
+      if (source?.kind === "simulation") {
+        boundarySimulationIds.add(source.id);
+      }
+    }
+  }
+
+  const nodes: AnalysisInputNodeStatus[] = [];
+  for (const node of definition.nodes) {
+    if (node.kind !== "simulation" || !boundarySimulationIds.has(node.id)) {
+      continue;
+    }
+    const sessions = sessionIdsOf(node);
+    const sourceRegionIds = configRegionIdsOf(definition, node.id);
+    if (sourceRegionIds.length === 0) {
+      nodes.push({
+        nodeId: node.id,
+        status: sessions.length > 0 ? "ready" : "missing",
+        hasConfigRegion: false,
+      });
+      continue;
+    }
+    if (sessions.length === 0) {
+      nodes.push({ nodeId: node.id, status: "missing", hasConfigRegion: true });
+      continue;
+    }
+    const expected = expectedInputFingerprint(definition, node.id);
+    const stored = node.params.last_input_fingerprint;
+    const ready =
+      expected !== null && typeof stored === "string" && stored === expected;
+    nodes.push({
+      nodeId: node.id,
+      status: ready ? "ready" : "stale",
+      hasConfigRegion: true,
+    });
+  }
+  return { nodes, needsRun: nodes.some((item) => item.status !== "ready") };
+}
+
+/** 模拟节点输入侧连接的配置区域 id（按连线顺序）。 */
+function configRegionIdsOf(definition: WorkflowDefinition, nodeId: string): string[] {
+  const regionById = new Map(definition.regions.map((region) => [region.id, region]));
+  const ordered: string[] = [];
+  for (const edge of definition.edges) {
+    if (
+      edge.target_node_id === nodeId &&
+      edge.target_port_id === "in" &&
+      edge.source_port_id === REGION_BOUNDARY_OUT_PORT &&
+      regionById.get(edge.source_node_id)?.kind === "configuration" &&
+      !ordered.includes(edge.source_node_id)
+    ) {
+      ordered.push(edge.source_node_id);
+    }
+  }
+  return ordered;
+}
+
+/** 按来源区域顺序合并展开成员；任一区域编译失败返回 null。 */
+function mergedMembersFor(
+  definition: WorkflowDefinition,
+  sourceRegionIds: string[],
+): BatchMember[] | null {
+  const members: BatchMember[] = [];
+  for (const sourceRegionId of sourceRegionIds) {
+    const expanded = expandConfigurationRegion(definition, sourceRegionId);
+    if (!expanded.ok) {
+      return null;
+    }
+    members.push(
+      ...expanded.members.map((member) => ({ ...member, input: member.input })),
+    );
+  }
+  return members;
 }
 
 /** 模拟节点参数中的会话 ID 列表（非法值忽略）。 */

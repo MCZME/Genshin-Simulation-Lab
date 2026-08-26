@@ -176,6 +176,17 @@ describe("成员指标表视图", () => {
     expect(screen.getByText(/上游为空/)).not.toBeNull();
   });
 
+  it("过期状态保留旧表并显示刷新横幅", () => {
+    renderView({ status: "stale", table: sampleTable() });
+    expect(screen.getByText("结果已过期，正在刷新…")).not.toBeNull();
+    expect(screen.getByText("共 3 行")).not.toBeNull();
+  });
+
+  it("过期状态无旧表时显示过期提示", () => {
+    renderView({ status: "stale" });
+    expect(screen.getByText("结果已过期")).not.toBeNull();
+  });
+
   it("按绑定渲染列，session_id 默认隐藏，数值按类型格式化", () => {
     renderView(readyResult());
     expect(headerNames()).toEqual(["weapon", "total_damage", "dps"]);

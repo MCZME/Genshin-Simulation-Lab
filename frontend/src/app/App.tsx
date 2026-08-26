@@ -81,6 +81,8 @@ import {
 import type { AnalysisNodeResult } from "../workflow/analysis_runner";
 import { compileConfigurationRegion } from "../workflow/compiler";
 import {
+  analysisInputStatus,
+  batchInputFingerprint,
   hasRunnableBatch,
   paceBuildSteps,
   planAnalysisInputRun,
@@ -90,6 +92,7 @@ import {
   validationErrorMessage,
 } from "../workflow/runner";
 import type { BatchPlan, RunPlan } from "../workflow/runner";
+import { regionAnalysisSnapshot } from "../workflow/analysis_snapshot";
 import type { AnalysisRunPhase } from "../components/canvas/RegionNode";
 import {
   assetMissingDiagnostics,
@@ -150,6 +153,25 @@ export function App() {
   );
   /** 分析区域运行阶段（2026-08-26 定案：获取输入 → 查询 → 视图加载）。 */
   const [analysisRunPhase, setAnalysisRunPhase] = useState<AnalysisRunPhase | null>(null);
+  /** 分析区域自动重算快照：只对影响查询/展示的定义变化触发。 */
+  const analysisSnapshots = useMemo(() => {
+    const map = new Map<string, string>();
+    if (editorState === null) {
+      return map;
+    }
+    for (const region of editorState.definition.regions) {
+      if (region.kind === "analysis") {
+        map.set(region.id, regionAnalysisSnapshot(editorState.definition, region.id));
+      }
+    }
+    return map;
+  }, [editorState]);
+  /** 最近一次自动重算/显式刷新对应的区域快照；相同则跳过请求。 */
+  const lastAutoAnalysisSnapshotsRef = useRef<Map<string, string>>(new Map());
+  /** 自动重算竞态序号：过期响应丢弃。 */
+  const analysisAutoSeqRef = useRef(0);
+  /** 最新工作流定义（自动重算 effect 经 ref 读取，避免依赖函数身份）。 */
+  const latestDefinitionRef = useRef<WorkflowDefinition | null>(null);
   const [saving, setSaving] = useState(false);
   const [running, setRunning] = useState(false);
   /** 资产预检（决策 2.40 节点校验）：加载/切换工作流时核对的失效资产 key。 */
@@ -275,6 +297,10 @@ export function App() {
         .map((region) => compileConfigurationRegion(definition, region.id)),
     };
   }, [editorState, missingAssetKeys]);
+
+  useEffect(() => {
+    latestDefinitionRef.current = editorState?.definition ?? null;
+  }, [editorState]);
 
   const canRun = useMemo(() => {
     return (
@@ -851,6 +877,9 @@ export function App() {
     setRunState((current) => setRunPhase(current, "simulating"));
 
     cancelRequestedRef.current = false;
+    const fingerprintByNode = new Map(
+      plan.batches.map((batch) => [batch.nodeId, batchInputFingerprint(batch)]),
+    );
     let cancelled = false;
     let validationFailed = false;
     const completedSessions: Array<{
@@ -940,11 +969,16 @@ export function App() {
       setRunState((current) => setRunPhase(current, "cancelled"));
     } else {
       setRunState((current) => setRunPhase(current, "completed"));
-      const updatedDefinition = persistSimulationSessions(definition, completedSessions);
+      const updatedDefinition = persistSimulationSessions(
+        definition,
+        completedSessions,
+        fingerprintByNode,
+      );
       if (onCompleted !== undefined) {
         await onCompleted(updatedDefinition);
       } else {
         await refreshAnalysis(updatedDefinition);
+        syncAnalysisSnapshotRef(updatedDefinition);
         // 运行结束联动（决策 2.37）：自动打开结果面板并定位最新记录；
         // 存在区域校验失败时保留问题面板，不再切到结果面板（决策 2.40 修订）。
         if (!validationFailed) {
@@ -959,6 +993,7 @@ export function App() {
   function persistSimulationSessions(
     definition: WorkflowDefinition,
     completedSessions: Array<{ nodeId: string; sessionId: string }>,
+    fingerprintByNode?: Map<string, string>,
   ): WorkflowDefinition {
     const byNode = new Map<string, string[]>();
     for (const item of completedSessions) {
@@ -973,7 +1008,16 @@ export function App() {
       ...definition,
       nodes: definition.nodes.map((node) =>
         node.kind === "simulation" && byNode.has(node.id)
-          ? { ...node, params: { ...node.params, last_sessions: byNode.get(node.id) } }
+          ? {
+              ...node,
+              params: {
+                ...node.params,
+                last_sessions: byNode.get(node.id),
+                ...(fingerprintByNode?.get(node.id) !== undefined
+                  ? { last_input_fingerprint: fingerprintByNode.get(node.id) }
+                  : {}),
+              },
+            }
           : node,
       ),
     };
@@ -981,7 +1025,13 @@ export function App() {
       const target = definition.nodes.find((node) => node.id === nodeId);
       if (target !== undefined) {
         updateEditor((state) =>
-          setNodeParams(state, nodeId, { ...target.params, last_sessions: sessions }),
+          setNodeParams(state, nodeId, {
+            ...target.params,
+            last_sessions: sessions,
+            ...(fingerprintByNode?.get(nodeId) !== undefined
+              ? { last_input_fingerprint: fingerprintByNode.get(nodeId) }
+              : {}),
+          }),
         );
       }
     }
@@ -996,7 +1046,7 @@ export function App() {
     if (schemaCatalog === null) {
       return;
     }
-    const next = new Map<string, AnalysisNodeResult>();
+    const updates = new Map<string, AnalysisNodeResult>();
     for (const region of definition.regions) {
       if (
         region.kind !== "analysis" ||
@@ -1006,21 +1056,126 @@ export function App() {
       }
       const results = await executeAnalysisRegion(definition, region.id);
       for (const [nodeId, result] of results) {
-        next.set(nodeId, result);
+        updates.set(nodeId, result);
       }
       for (const view of definition.nodes) {
         if (view.region_id !== region.id || !isAnalysisViewKind(view.kind)) {
           continue;
         }
         const table = viewInputTable(view.id, definition, results);
-        next.set(
+        updates.set(
           view.id,
           table === null ? { status: "stale" } : { status: "ready", table },
         );
       }
     }
-    setAnalysisResults(next);
+    setAnalysisResults((current) => new Map([...current, ...updates]));
   }
+
+  /** 显式刷新/补跑后记录区域快照，避免自动重算重复发同一请求。 */
+  function syncAnalysisSnapshotRef(definition: WorkflowDefinition) {
+    const snapshots = new Map<string, string>();
+    for (const region of definition.regions) {
+      if (region.kind === "analysis") {
+        snapshots.set(region.id, regionAnalysisSnapshot(definition, region.id));
+      }
+    }
+    lastAutoAnalysisSnapshotsRef.current = snapshots;
+  }
+
+  /** 自动重算触发前：保留旧表并标 stale，无旧表标 loading（不闪空）。 */
+  function markAnalysisRegionLoading(definition: WorkflowDefinition, regionId: string) {
+    setAnalysisResults((current) => {
+      const next = new Map(current);
+      for (const node of definition.nodes) {
+        if (node.region_id !== regionId) {
+          continue;
+        }
+        const existing = current.get(node.id);
+        next.set(
+          node.id,
+          existing?.table !== undefined
+            ? { status: "stale", table: existing.table }
+            : { status: "loading" },
+        );
+      }
+      return next;
+    });
+  }
+
+  /** 输入未就绪/过期：视图给出可操作提示（缺会话与过期区分文案）。 */
+  function markAnalysisInputPending(
+    definition: WorkflowDefinition,
+    regionId: string,
+    message: string,
+  ) {
+    setAnalysisResults((current) => {
+      const next = new Map(current);
+      for (const view of definition.nodes) {
+        if (view.region_id !== regionId || !isAnalysisViewKind(view.kind)) {
+          continue;
+        }
+        next.set(view.id, { status: "error", error: message });
+      }
+      return next;
+    });
+  }
+
+  /** 自动重算：快照变化后防抖执行；缺会话/过期不查询只提示。 */
+  async function refreshStaleAnalysisRegions(definition: WorkflowDefinition) {
+    const latest = new Map(lastAutoAnalysisSnapshotsRef.current);
+    for (const region of definition.regions) {
+      if (region.kind !== "analysis") {
+        continue;
+      }
+      const snapshot = analysisSnapshots.get(region.id);
+      if (snapshot === undefined || latest.get(region.id) === snapshot) {
+        continue;
+      }
+      if (analysisRunPhase?.regionId === region.id) {
+        continue;
+      }
+      if (planFetchNodes(definition, region.id).length === 0) {
+        latest.set(region.id, snapshot);
+        continue;
+      }
+      const input = analysisInputStatus(definition, region.id);
+      if (input.needsRun) {
+        const first = input.nodes.find((item) => item.status !== "ready");
+        const message =
+          first?.status === "missing"
+            ? "模拟数据未运行，请点击区域「运行分析」补跑"
+            : "配置已变更或输入指纹缺失，会话可能过期，请点击区域「运行分析」刷新";
+        markAnalysisInputPending(definition, region.id, message);
+        latest.set(region.id, snapshot);
+        continue;
+      }
+      const regionDiagnostics = runScopeDiagnostics(definition, new Set([region.id]));
+      if (regionDiagnostics.some((item) => item.severity === "error")) {
+        continue;
+      }
+      const seq = ++analysisAutoSeqRef.current;
+      markAnalysisRegionLoading(definition, region.id);
+      await refreshAnalysis(definition, region.id);
+      if (seq !== analysisAutoSeqRef.current) {
+        continue;
+      }
+      latest.set(region.id, snapshot);
+      lastAutoAnalysisSnapshotsRef.current = latest;
+    }
+  }
+
+  useEffect(() => {
+    const definition = latestDefinitionRef.current;
+    if (definition === null || schemaCatalog === null) {
+      return;
+    }
+    const timer = window.setTimeout(() => {
+      void refreshStaleAnalysisRegions(definition);
+    }, 300);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [analysisSnapshots, schemaCatalog]);
 
   /** 全部运行：整个工作流的运行计划进入共用编排。 */
   async function handleRun() {
@@ -1098,6 +1253,7 @@ export function App() {
     const completeAnalysis = async (updated: WorkflowDefinition) => {
       setAnalysisRunPhase({ regionId, phase: "query" });
       await refreshAnalysis(updated, regionId);
+      syncAnalysisSnapshotRef(updated);
       setAnalysisRunPhase(null);
     };
     if (inputPlan.batches.length > 0) {

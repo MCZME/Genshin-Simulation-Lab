@@ -7,6 +7,9 @@ import type {
   WorkflowRegion,
 } from "./types";
 import {
+  analysisInputStatus,
+  batchInputFingerprint,
+  expectedInputFingerprint,
   hasRunnableBatch,
   paceBuildSteps,
   planAnalysisInputRun,
@@ -292,11 +295,11 @@ describe("planAnalysisInputRun", () => {
   });
 
   it("模拟节点已有会话时不产生补跑批次", () => {
-    const definition = makeDefinition(
+    const base = makeDefinition(
       [makeRegion("region-1"), makeAnalysisRegion("analysis-1")],
       [
         ...simpleRegionNodes("region-1", "主配队"),
-        makeNode("sim-1", "simulation", { last_sessions: ["run:1"] }, null),
+        makeNode("sim-1", "simulation", {}, null),
         makeNode("fetch-1", "fetch", { source: "runs" }, "analysis-1"),
       ],
       [
@@ -306,6 +309,18 @@ describe("planAnalysisInputRun", () => {
         makeEdge("a2", "analysis-1", "in", "fetch-1", "in"),
       ],
     );
+    const fingerprint = expectedInputFingerprint(base, "sim-1");
+    const definition: WorkflowDefinition = {
+      ...base,
+      nodes: base.nodes.map((node) =>
+        node.id === "sim-1"
+          ? {
+              ...node,
+              params: { last_sessions: ["run:1"], last_input_fingerprint: fingerprint },
+            }
+          : node,
+      ),
+    };
     const plan = planAnalysisInputRun(definition, "analysis-1");
     expect(plan.ok).toBe(true);
     expect(plan.batches).toHaveLength(0);
@@ -363,6 +378,116 @@ describe("planAnalysisInputRun", () => {
     const plan = planAnalysisInputRun(definition, "analysis-1");
     expect(plan.ok).toBe(true);
     expect(plan.batches).toHaveLength(0);
+  });
+
+  it("会话与输入指纹不匹配时生成补跑批次", () => {
+    const definition = makeDefinition(
+      [makeRegion("region-1"), makeAnalysisRegion("analysis-1")],
+      [
+        ...simpleRegionNodes("region-1", "主配队"),
+        makeNode(
+          "sim-1",
+          "simulation",
+          { last_sessions: ["run:1"], last_input_fingerprint: "stale-fp" },
+          null,
+        ),
+        makeNode("fetch-1", "fetch", { source: "runs" }, "analysis-1"),
+      ],
+      [
+        ...regionBoundaryEdges("region-1"),
+        makeEdge("l1", "region-1", "out", "sim-1", "in"),
+        makeEdge("a1", "sim-1", "out", "analysis-1", "in"),
+        makeEdge("a2", "analysis-1", "in", "fetch-1", "in"),
+      ],
+    );
+    const plan = planAnalysisInputRun(definition, "analysis-1");
+    expect(plan.ok).toBe(true);
+    expect(plan.batches).toHaveLength(1);
+    expect(plan.batches[0].nodeId).toBe("sim-1");
+  });
+
+  it("有会话但未连接配置区域时视为就绪", () => {
+    const definition = makeDefinition(
+      [makeAnalysisRegion("analysis-1")],
+      [
+        makeNode("sim-1", "simulation", { last_sessions: ["run:1"] }, null),
+        makeNode("fetch-1", "fetch", { source: "runs" }, "analysis-1"),
+      ],
+      [
+        makeEdge("a1", "sim-1", "out", "analysis-1", "in"),
+        makeEdge("a2", "analysis-1", "in", "fetch-1", "in"),
+      ],
+    );
+    const plan = planAnalysisInputRun(definition, "analysis-1");
+    expect(plan.ok).toBe(true);
+    expect(plan.batches).toHaveLength(0);
+  });
+
+  it("analysisInputStatus 区分缺会话/过期/就绪", () => {
+    const base = makeDefinition(
+      [makeRegion("region-1"), makeAnalysisRegion("analysis-1")],
+      [
+        ...simpleRegionNodes("region-1", "主配队"),
+        makeNode("sim-1", "simulation", {}, null),
+        makeNode("fetch-1", "fetch", { source: "runs" }, "analysis-1"),
+      ],
+      [
+        ...regionBoundaryEdges("region-1"),
+        makeEdge("l1", "region-1", "out", "sim-1", "in"),
+        makeEdge("a1", "sim-1", "out", "analysis-1", "in"),
+        makeEdge("a2", "analysis-1", "in", "fetch-1", "in"),
+      ],
+    );
+    const fingerprint = expectedInputFingerprint(base, "sim-1");
+    const stale = {
+      ...base,
+      nodes: base.nodes.map((node) =>
+        node.id === "sim-1"
+          ? {
+              ...node,
+              params: {
+                last_sessions: ["run:1"],
+                last_input_fingerprint: "stale-fp",
+              },
+            }
+          : node,
+      ),
+    };
+    const ready = {
+      ...base,
+      nodes: base.nodes.map((node) =>
+        node.id === "sim-1"
+          ? {
+              ...node,
+              params: {
+                last_sessions: ["run:1"],
+                last_input_fingerprint: fingerprint,
+              },
+            }
+          : node,
+      ),
+    };
+    expect(analysisInputStatus(base, "analysis-1").nodes[0].status).toBe("missing");
+    expect(analysisInputStatus(stale, "analysis-1").nodes[0].status).toBe("stale");
+    expect(analysisInputStatus(ready, "analysis-1").nodes[0].status).toBe("ready");
+    expect(analysisInputStatus(ready, "analysis-1").needsRun).toBe(false);
+  });
+
+  it("batchInputFingerprint 稳定且随输入变化", () => {
+    const left = {
+      sourceRegionIds: ["region-1"],
+      members: [{ item_id: "m1", input: { x: 1, y: 2 } }],
+    };
+    const reorderedKeys = {
+      sourceRegionIds: ["region-1"],
+      members: [{ item_id: "m1", input: { y: 2, x: 1 } }],
+    };
+    const changed = {
+      sourceRegionIds: ["region-1"],
+      members: [{ item_id: "m1", input: { x: 1, y: 3 } }],
+    };
+    expect(batchInputFingerprint(left)).toBe(batchInputFingerprint(reorderedKeys));
+    expect(batchInputFingerprint(left)).not.toBe(batchInputFingerprint(changed));
   });
 });
 

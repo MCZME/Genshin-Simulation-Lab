@@ -70,6 +70,14 @@ export function AnalysisViewBody({
     );
   }
   if (result.status === "stale") {
+    if (result.table !== undefined) {
+      return (
+        <div className="analysis-view-stale">
+          <div className="analysis-stale-banner">结果已过期，正在刷新…</div>
+          {renderAnalysisTable(node, definition, result.table)}
+        </div>
+      );
+    }
     return <div className="analysis-view-state">结果已过期</div>;
   }
   if (result.status === "error") {
@@ -79,6 +87,14 @@ export function AnalysisViewBody({
   if (table === undefined || table.rows.length === 0) {
     return <div className="analysis-view-state">上游为空（无匹配数据）</div>;
   }
+  return renderAnalysisTable(node, definition, table);
+}
+
+function renderAnalysisTable(
+  node: WorkflowNode,
+  definition: WorkflowDefinition,
+  table: AnalysisTableResult,
+) {
   switch (node.kind) {
     case "member_table":
       return <MemberTable node={node} definition={definition} table={table} />;

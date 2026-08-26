@@ -42,10 +42,22 @@ export interface ExecutePlanResponse {
   tables: Record<string, AnalysisTableResponse>;
 }
 
+/** 输入快照结构树节点：对象 / 列表 / 标量；列表不枚举位置。 */
+export interface AnalysisSchemaNodeDto {
+  key: string;
+  label: string;
+  kind: "object" | "list" | "scalar";
+  type?: string;
+  description?: string;
+  default_name?: string;
+  default_name_template?: string;
+  children?: AnalysisSchemaNodeDto[];
+}
+
 export interface AnalysisSchemaResponse {
   tables: { name: string; columns: { name: string; type: string; description: string }[] }[];
   event_types: { name: string; fields: { path: string; type: string; description: string }[] }[];
-  snapshot_paths: { path: string; type: string; default_name: string; segments: string[] }[];
+  snapshot_tree: AnalysisSchemaNodeDto | null;
 }
 export type AssetListResponse = Schema["AssetListResponse"];
 export type AssetResponse = Schema["AssetResponse"];

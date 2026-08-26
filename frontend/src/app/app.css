@@ -3000,47 +3000,409 @@ body {
   border-color: #3b82f6;
 }
 
-/* ── 获取数据节点：输出形状摘要 ── */
-
-.fetch-shape-summary {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  margin-top: 10px;
-  padding-top: 8px;
-  border-top: 1px solid #334155;
+.fetch-shape-empty {
+  font-size: 11px;
+  color: #475569;
 }
 
-.fetch-shape-fixed summary {
+/* ── 获取数据节点：加宽卡片与新版编辑器布局（2026-08-26） ── */
+
+.node-card-fetch {
+  width: 360px;
+}
+
+.fetch-switch-hint {
+  margin: 0 0 6px;
   font-size: 11px;
+  color: #f59e0b;
+}
+
+.fetch-inline-error {
+  margin: 2px 0;
+  padding: 2px 6px;
+  border-radius: 4px;
+  background: rgba(239, 68, 68, 0.12);
+  color: #f87171;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.fetch-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 8px 0 4px;
+  font-size: 12px;
+  color: #cbd5e1;
+}
+
+.fetch-quick-row {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-wrap: wrap;
+}
+
+.fetch-quick-label {
+  font-size: 11px;
+  color: #64748b;
+}
+
+.fetch-quick-button {
+  padding: 2px 6px;
+  background: #263449;
+  border: 1px dashed #475569;
+  border-radius: 999px;
   color: #94a3b8;
+  font-size: 10px;
   cursor: pointer;
 }
 
-.fetch-shape-fixed-list {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-  margin: 6px 0 0;
-  padding: 0;
-  list-style: none;
+.fetch-quick-button:hover {
+  color: #e2e8f0;
+  border-color: #3b82f6;
 }
 
-.fetch-shape-extracts {
+.fetch-extract-row {
   display: flex;
-  flex-wrap: wrap;
+  flex-direction: column;
+  gap: 4px;
+  margin-bottom: 8px;
+  padding: 6px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: #243147;
+}
+
+.fetch-extract-line {
+  display: flex;
   align-items: center;
   gap: 4px;
 }
 
-.fetch-shape-label {
+.fetch-extract-line > input,
+.fetch-extract-line > select {
+  flex: 1;
+  min-width: 0;
+}
+
+.fetch-extract-line .snapshot-type {
+  flex: none;
+}
+
+.snapshot-path-button {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  padding: 4px 8px;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 5px;
+  color: #cbd5e1;
+  font-size: 11px;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: pointer;
+}
+
+.snapshot-path-button:hover {
+  border-color: #3b82f6;
+}
+
+.fetch-manual-toggle {
+  flex: none;
+  padding: 3px 6px;
+  background: #263449;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  color: #94a3b8;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.fetch-manual-toggle:hover {
+  color: #e2e8f0;
+}
+
+.fetch-popover {
+  position: fixed;
+  display: flex;
+  flex-direction: column;
+  z-index: 50;
+  overflow: hidden;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.5);
+}
+
+.fetch-popover-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 36px;
+  padding: 0 10px;
+  border-bottom: 1px solid #334155;
+  font-size: 12px;
+  color: #e2e8f0;
+}
+
+.fetch-popover-actions {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 8px 10px;
+  border-top: 1px solid #334155;
+}
+
+.fetch-popover-primary {
+  padding: 4px 12px;
+  background: #1d4ed8;
+  border: 1px solid #2563eb;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fetch-popover-primary:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.path-select-cascade {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 10px;
+}
+
+.path-select-cascade select {
+  flex: 1;
+  min-width: 120px;
+}
+
+.path-select-preview {
+  margin: 0 10px 8px;
+  padding: 6px 8px;
+  border-radius: 5px;
+  background: #263449;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.fetch-event-filter {
+  margin-bottom: 8px;
+}
+
+.fetch-event-filter-summary {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fetch-filter-label {
+  flex: none;
   font-size: 11px;
   color: #94a3b8;
 }
 
-.fetch-shape-empty {
+.fetch-filter-chips {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+}
+
+.fetch-chip {
+  display: inline-block;
+  max-width: 110px;
+  overflow: hidden;
+  padding: 2px 6px;
+  border: 1px solid #334155;
+  border-radius: 999px;
+  background: #263449;
+  color: #cbd5e1;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fetch-filter-edit {
+  flex: none;
+  padding: 3px 8px;
+  background: #263449;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  color: #94a3b8;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.fetch-filter-edit:hover {
+  color: #e2e8f0;
+}
+
+.event-filter-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 10px;
+  border-bottom: 1px solid #334155;
+}
+
+.event-filter-search {
+  flex: 1;
+  min-width: 0;
+}
+
+.event-filter-list {
+  flex: 1;
+  margin: 0;
+  padding: 6px 10px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.event-filter-list li {
+  padding: 2px 0;
+}
+
+.event-filter-list label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.fetch-frame-row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.fetch-frame-row label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  flex: 1;
+  min-width: 0;
+}
+
+.fetch-frame-row label span {
+  flex: none;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.fetch-frame-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+/* ── 获取数据节点：摘要卡 + 大弹层配置器（2026-08-26 重构） ── */
+
+.fetch-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fetch-summary-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fetch-source-badge {
+  padding: 2px 8px;
+  border: 1px solid #3b82f6;
+  border-radius: 999px;
+  background: #1e3a5f;
+  color: #bfdbfe;
+  font-size: 11px;
+}
+
+.fetch-edit-button {
+  padding: 4px 10px;
+  background: #1d4ed8;
+  border: 1px solid #2563eb;
+  border-radius: 5px;
+  color: #fff;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.fetch-edit-button:hover {
+  background: #1e40af;
+}
+
+.fetch-summary-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.fetch-summary-frame {
+  color: #64748b;
+}
+
+.fetch-summary-columns {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.fetch-summary-empty {
   font-size: 11px;
   color: #475569;
+}
+
+.fetch-summary-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+}
+
+.fetch-summary-table th,
+.fetch-summary-table td {
+  padding: 3px 6px;
+  border: 1px solid #334155;
+  text-align: left;
+}
+
+.fetch-summary-table th {
+  background: #263449;
+  color: #94a3b8;
+  font-weight: 500;
+}
+
+.fetch-summary-table td {
+  color: #cbd5e1;
+}
+
+.fetch-summary-table td:first-child {
+  max-width: 130px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fetch-summary-table td:last-child {
+  max-width: 150px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .fetch-shape-chip {
@@ -3058,4 +3420,278 @@ body {
 .fetch-shape-chip em {
   font-style: normal;
   color: #64748b;
+}
+
+.fetch-config-modal {
+  position: fixed;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  display: flex;
+  flex-direction: column;
+  width: min(780px, calc(100vw - 32px));
+  height: min(600px, calc(100vh - 32px));
+  z-index: 200;
+  overflow: hidden;
+  background: #1e293b;
+  border: 1px solid #475569;
+  border-radius: 10px;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.55);
+}
+
+.fetch-modal-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  height: 42px;
+  padding: 0 12px;
+  border-bottom: 1px solid #334155;
+  font-size: 13px;
+  color: #e2e8f0;
+}
+
+.fetch-modal-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 12px;
+  overflow-y: auto;
+}
+
+.fetch-modal-section {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.fetch-modal-section h3 {
+  margin: 0;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.fetch-modal-errors {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.fetch-modal-footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  height: 48px;
+  padding: 0 12px;
+  border-top: 1px solid #334155;
+}
+
+.fetch-event-scope {
+  overflow: hidden;
+  background: #243147;
+  border: 1px solid #334155;
+  border-radius: 6px;
+}
+
+.event-filter-list {
+  max-height: 180px;
+  margin: 0;
+  padding: 6px 10px;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.fetch-catalog {
+  display: flex;
+  gap: 10px;
+  min-height: 220px;
+}
+
+.fetch-catalog-left,
+.fetch-catalog-right {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  background: #243147;
+  border: 1px solid #334155;
+  border-radius: 6px;
+}
+
+.fetch-catalog-list {
+  flex: 1;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  list-style: none;
+}
+
+.fetch-catalog-list > li {
+  padding: 2px 0;
+}
+
+.fetch-catalog-list label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.fetch-catalog-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fetch-catalog-default {
+  flex: none;
+  font-style: normal;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.fetch-field-list {
+  margin: 0 0 4px 22px;
+  padding: 0;
+  list-style: none;
+}
+
+.fetch-field-list label {
+  font-size: 11px;
+}
+
+.fetch-field-label {
+  flex: 1;
+  min-width: 0;
+}
+
+.fetch-field-list em {
+  flex: none;
+  font-style: normal;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.fetch-catalog-right-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.fetch-selected-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.fetch-selected-source {
+  flex: none;
+  max-width: 120px;
+  overflow: hidden;
+  padding: 2px 6px;
+  background: #263449;
+  border-radius: 4px;
+  color: #94a3b8;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fetch-selected-row input {
+  flex: 1;
+  min-width: 0;
+}
+
+.fetch-selected-row .snapshot-type {
+  flex: none;
+}
+
+.fetch-manual-adder {
+  margin-top: 4px;
+}
+
+.fetch-manual-adder-form {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fetch-manual-adder-form > * {
+  flex: 1;
+  min-width: 120px;
+}
+
+/* ── 获取数据节点：输入条件结构树（2026-08-26） ── */
+
+.fetch-tree-folder > .fetch-tree-folder-label {
+  display: block;
+  padding: 3px 0;
+  color: #94a3b8;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.fetch-tree-children {
+  margin: 0 0 4px 16px;
+  padding: 0;
+  list-style: none;
+}
+
+.fetch-tree-leaf {
+  padding: 2px 0;
+}
+
+.fetch-tree-leaf > label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+  color: #cbd5e1;
+  font-size: 12px;
+}
+
+.fetch-tree-leaf > label em {
+  flex: none;
+  font-style: normal;
+  color: #64748b;
+  font-size: 10px;
+}
+
+.fetch-index-panel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin: 4px 0 4px 22px;
+  padding: 6px;
+  background: #1e293b;
+  border: 1px solid #334155;
+  border-radius: 5px;
+}
+
+.fetch-index-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: #94a3b8;
+  font-size: 11px;
+}
+
+.fetch-index-field input {
+  width: 56px;
+}
+
+.fetch-scope-status {
+  font-size: 11px;
+  color: #94a3b8;
 }

@@ -938,8 +938,6 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
       source: { type: "string", required: true },
       snapshot_columns: { type: "list" },
       event_types: { type: "list" },
-      frame_min: { type: "integer" },
-      frame_max: { type: "integer" },
       payload_columns: { type: "list" },
     },
     defaultParams: { source: "runs", snapshot_columns: [] },
@@ -1134,7 +1132,7 @@ function validateFetchNode(node: WorkflowNode): Diagnostic[] {
     return diagnostics;
   }
   if (source === "runs") {
-    for (const key of ["event_types", "frame_min", "frame_max", "payload_columns"] as const) {
+    for (const key of ["event_types", "payload_columns"] as const) {
       if (node.params[key] !== undefined) {
         diagnostics.push(paramError(node, key, `source=runs 不支持参数 ${key}`));
       }
@@ -1152,23 +1150,6 @@ function validateFetchNode(node: WorkflowNode): Diagnostic[] {
     types.some((item) => typeof item !== "string")
   ) {
     diagnostics.push(paramError(node, "event_types", "event_types 必须是字符串数组"));
-  }
-  const frameMin = node.params.frame_min;
-  const frameMax = node.params.frame_max;
-  for (const [key, value] of [
-    ["frame_min", frameMin],
-    ["frame_max", frameMax],
-  ] as const) {
-    if (value !== undefined && (typeof value !== "number" || !Number.isInteger(value))) {
-      diagnostics.push(paramError(node, key, `${key} 必须是整数`));
-    }
-  }
-  if (
-    typeof frameMin === "number" &&
-    typeof frameMax === "number" &&
-    frameMin > frameMax
-  ) {
-    diagnostics.push(paramError(node, "frame_min", "frame_min 不能大于 frame_max"));
   }
   if (source === "runs") {
     validateExtractRows(node, "snapshot_columns", false, diagnostics);
@@ -1196,32 +1177,46 @@ function validateExtractRows(
     diagnostics.push(paramError(node, key, `提取列数量超过上限 ${MAX_EXTRACT_COLUMNS}`));
   }
   const seen = new Set<string>();
-  for (const row of rows.slice(0, MAX_EXTRACT_COLUMNS)) {
+  rows.slice(0, MAX_EXTRACT_COLUMNS).forEach((row, index) => {
     if (row === null || typeof row !== "object" || Array.isArray(row)) {
-      diagnostics.push(paramError(node, key, "提取列必须是对象"));
-      continue;
+      diagnostics.push(paramError(node, `${key}.${index}`, "提取列必须是对象"));
+      return;
     }
     const record = row as Record<string, unknown>;
     if (requireEventType && (typeof record.event_type !== "string" || record.event_type === "")) {
-      diagnostics.push(paramError(node, key, "载荷提取列缺少事件类型 event_type"));
+      diagnostics.push(
+        paramError(
+          node,
+          `${key}.${index}.event_type`,
+          "载荷提取列缺少事件类型 event_type",
+        ),
+      );
     }
     const path = record.path;
     if (typeof path !== "string" || path === "" || path.includes("'") || path.startsWith(".")) {
-      diagnostics.push(paramError(node, key, `提取路径不合法：${String(path)}`));
+      diagnostics.push(
+        paramError(node, `${key}.${index}.path`, `提取路径不合法：${String(path)}`),
+      );
     }
     const name = record.name;
     if (typeof name !== "string" || !COLUMN_NAME_PATTERN.test(name)) {
-      diagnostics.push(paramError(node, key, `提取列名不合法：${String(name)}`));
+      diagnostics.push(
+        paramError(node, `${key}.${index}.name`, `提取列名不合法：${String(name)}`),
+      );
     } else if (seen.has(name)) {
-      diagnostics.push(paramError(node, key, `输出列名重复：${name}`));
+      diagnostics.push(
+        paramError(node, `${key}.${index}.name`, `输出列名重复：${name}`),
+      );
     } else {
       seen.add(name);
     }
     const type = record.type;
     if (typeof type !== "string" || !TYPE_VOCABULARY.has(type)) {
-      diagnostics.push(paramError(node, key, `提取列类型不合法：${String(type)}`));
+      diagnostics.push(
+        paramError(node, `${key}.${index}.type`, `提取列类型不合法：${String(type)}`),
+      );
     }
-  }
+  });
 }
 
 export function getNodeKindSpec(kind: string): NodeKindSpec | null {

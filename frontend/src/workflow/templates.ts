@@ -31,14 +31,71 @@ export interface AnalysisSchemaCatalog {
   runsColumns(): { name: string; type: string; description: string }[];
   eventsColumns(): { name: string; type: string; description: string }[];
   eventTypes(): { name: string; fields: { path: string; type: string; description: string }[] }[];
-  snapshotPaths(): AnalysisSnapshotPath[];
+  snapshotTree(): AnalysisSchemaNode | null;
 }
 
-export interface AnalysisSnapshotPath {
-  path: string;
+/** 输入快照结构树节点：对象 / 列表 / 标量；列表不枚举位置。 */
+export interface AnalysisSchemaNode {
+  key: string;
+  label: string;
+  kind: "object" | "list" | "scalar";
+  type?: string;
+  description?: string;
+  default_name?: string;
+  default_name_template?: string;
+  children?: AnalysisSchemaNode[];
+}
+
+/** 树中的标量叶子：路径模板 + 标签链 + 默认列名模板。 */
+export interface SnapshotLeaf {
+  pathTemplate: string;
+  labels: string[];
+  listLabels: string[];
+  defaultNameTemplate: string | null;
   type: string;
-  default_name: string;
-  segments: string[];
+  description: string;
+}
+
+/** 把结构树拍平成叶子清单（列表位置用 {n} 占位，由用户输入）。 */
+export function snapshotLeaves(tree: AnalysisSchemaNode | null): SnapshotLeaf[] {
+  if (tree === null) {
+    return [];
+  }
+  const leaves: SnapshotLeaf[] = [];
+  const visit = (
+    node: AnalysisSchemaNode,
+    segments: string[],
+    labels: string[],
+    listLabels: string[],
+    isRoot: boolean,
+  ) => {
+    const nextSegments =
+      isRoot
+        ? segments
+        : node.kind === "list"
+        ? [...segments, `${node.key}.{${listLabels.length}}`]
+        : [...segments, node.key];
+    const nextLabels = [...labels, node.label];
+    const nextListLabels =
+      node.kind === "list" ? [...listLabels, node.label] : listLabels;
+    if (node.kind === "scalar") {
+      leaves.push({
+        pathTemplate: nextSegments.join("."),
+        labels: nextLabels,
+        listLabels: nextListLabels,
+        defaultNameTemplate:
+          node.default_name_template ?? node.default_name ?? null,
+        type: node.type ?? "",
+        description: node.description ?? "",
+      });
+      return;
+    }
+    for (const child of node.children ?? []) {
+      visit(child, nextSegments, nextLabels, nextListLabels, false);
+    }
+  };
+  visit(tree, [], [], [], true);
+  return leaves;
 }
 
 export function createAnalysisSchemaCatalog(): AnalysisSchemaCatalog {
@@ -61,8 +118,8 @@ export function createAnalysisSchemaCatalog(): AnalysisSchemaCatalog {
     eventTypes() {
       return schema ? schema.event_types : [];
     },
-    snapshotPaths() {
-      return schema ? schema.snapshot_paths : [];
+    snapshotTree() {
+      return schema ? schema.snapshot_tree : null;
     },
   };
 }
@@ -215,45 +272,10 @@ export function fetchShape(
     ) {
       return null;
     }
-    const frameMin = node.params.frame_min;
-    const frameMax = node.params.frame_max;
-    const validFrame = (value: unknown): boolean =>
-      value === undefined || (typeof value === "number" && Number.isInteger(value));
-    if (!validFrame(frameMin) || !validFrame(frameMax)) {
-      return null;
-    }
-    if (
-      typeof frameMin === "number" &&
-      typeof frameMax === "number" &&
-      frameMin > frameMax
-    ) {
-      return null;
-    }
     const extracts = extractShape(node.params.payload_columns, true);
     return extracts === null
       ? null
       : [...(baseColumns ?? EVENT_BASE_COLUMNS), ...extracts];
-  }
-  return null;
-}
-
-/** 取数节点输出列拆分：固定列 + 提取列（供节点卡形状摘要渲染）。 */
-export function fetchColumns(
-  node: WorkflowNode,
-  baseColumns?: TableShape[],
-): { fixed: TableShape[]; extracts: TableShape[] } | null {
-  const source = node.params.source;
-  if (source === "runs") {
-    const extracts = extractShape(node.params.snapshot_columns);
-    return extracts === null
-      ? null
-      : { fixed: baseColumns ?? RUN_BASE_COLUMNS, extracts };
-  }
-  if (source === "events") {
-    const extracts = extractShape(node.params.payload_columns, true);
-    return extracts === null
-      ? null
-      : { fixed: baseColumns ?? EVENT_BASE_COLUMNS, extracts };
   }
   return null;
 }

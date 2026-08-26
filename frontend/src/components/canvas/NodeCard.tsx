@@ -72,7 +72,7 @@ export function NodeCard({ data, selected }: NodeProps) {
 
   return (
     <div
-      className={`node-card ${isAnalysisView(node.kind) ? "node-card-view" : ""} ${node.kind === "input_trace" ? "node-card-trace" : ""} ${selected ? "selected" : ""} ${isDraft ? "draft" : ""} ${dimmed ? "dimmed" : ""} ${stepRunning ? "step-running" : ""}`}
+      className={`node-card ${isAnalysisView(node.kind) ? "node-card-view" : ""} ${node.kind === "input_trace" ? "node-card-trace" : ""} ${node.kind === "fetch" ? "node-card-fetch" : ""} ${selected ? "selected" : ""} ${isDraft ? "draft" : ""} ${dimmed ? "dimmed" : ""} ${stepRunning ? "step-running" : ""}`}
     >
       <header className="node-card-header">
         <span className="node-dot" style={{ background: nodeKindColor(node.kind) }} />

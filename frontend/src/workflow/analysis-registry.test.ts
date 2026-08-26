@@ -262,8 +262,6 @@ describe("形状推导", () => {
   it("事件记录来源非法事件类型、帧范围或提取列不可推导", () => {
     const cases: Record<string, unknown>[] = [
       { source: "events", event_types: "DAMAGE_RESOLVED" },
-      { source: "events", frame_min: "0" },
-      { source: "events", frame_min: 10, frame_max: 5 },
       { source: "events", payload_columns: [{ path: "x", name: "n", type: "date" }] },
       {
         source: "events",

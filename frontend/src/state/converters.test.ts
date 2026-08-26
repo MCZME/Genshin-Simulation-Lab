@@ -99,6 +99,32 @@ describe("converters", () => {
     expect(state.definition.edges).toHaveLength(1);
   });
 
+  it("旧 fetch 的帧范围参数加载时丢弃", () => {
+    const definition: WorkflowDefinition = {
+      ...sampleDefinition(),
+      nodes: [
+        {
+          id: "ev1",
+          kind: "fetch",
+          region_id: "analysis-1",
+          position: { x: 0, y: 0 },
+          params: {
+            source: "events",
+            event_types: [],
+            frame_min: 0,
+            frame_max: 18000,
+            payload_columns: [],
+          },
+        },
+      ],
+    };
+
+    const state = definitionToEditorState(definition);
+
+    expect(state.definition.nodes[0].params).not.toHaveProperty("frame_min");
+    expect(state.definition.nodes[0].params).not.toHaveProperty("frame_max");
+  });
+
   it("载荷提取列 event_type 按唯一路径回填，歧义与无匹配保持缺省", () => {
     const definition: WorkflowDefinition = {
       ...sampleDefinition(),

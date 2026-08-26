@@ -5,6 +5,7 @@ import type { EditorState } from "./editor_state";
  * 存量工作流迁移：
  * - 算子化重做（决策 2.32）后，processing 与 query_config 节点及其连线在加载时移除；
  * - 取数节点合并（2026-08-26 修订）后，fetch_runs / fetch_events 转为 fetch + source。
+ * - 取数节点移除帧范围（2026-08-26 修订）后，旧 fetch 参数 frame_min/frame_max 丢弃。
  */
 const RETIRED_NODE_KINDS = new Set(["processing", "query_config"]);
 const FETCH_SOURCE_BY_KIND: Record<string, "runs" | "events"> = {
@@ -17,7 +18,12 @@ export function migrateWorkflowDefinition(
 ): WorkflowDefinition {
   const hasRetired = definition.nodes.some((node) => RETIRED_NODE_KINDS.has(node.kind));
   const hasLegacyFetch = definition.nodes.some((node) => node.kind in FETCH_SOURCE_BY_KIND);
-  if (!hasRetired && !hasLegacyFetch) {
+  const hasLegacyFrameParams = definition.nodes.some(
+    (node) =>
+      node.kind === "fetch" &&
+      (node.params.frame_min !== undefined || node.params.frame_max !== undefined),
+  );
+  if (!hasRetired && !hasLegacyFetch && !hasLegacyFrameParams) {
     return definition;
   }
   const retiredIds = new Set(
@@ -28,6 +34,12 @@ export function migrateWorkflowDefinition(
   const nodes = definition.nodes
     .filter((node) => !retiredIds.has(node.id))
     .map((node) => {
+      if (node.kind === "fetch") {
+        const params = { ...node.params };
+        delete params.frame_min;
+        delete params.frame_max;
+        return { ...node, params };
+      }
       const source = FETCH_SOURCE_BY_KIND[node.kind];
       if (source === undefined) {
         return node;

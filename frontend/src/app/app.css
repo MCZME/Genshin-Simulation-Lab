@@ -3546,7 +3546,12 @@ body {
   width: 340px;
 }
 
-.aggregate-inline {
+.node-card-project {
+  width: 340px;
+}
+
+.aggregate-inline,
+.project-inline {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -3585,7 +3590,8 @@ body {
   color: #cbd5e1;
 }
 
-.aggregate-row {
+.aggregate-row,
+.project-row {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -3595,19 +3601,23 @@ body {
   background: #243147;
 }
 
-.aggregate-line {
+.aggregate-line,
+.project-line {
   display: flex;
   align-items: center;
   gap: 6px;
 }
 
 .aggregate-line select,
-.aggregate-line input {
+.aggregate-line input,
+.project-line select,
+.project-line input {
   min-width: 0;
   flex: 1;
 }
 
-.aggregate-line select:first-child {
+.aggregate-line select:first-child,
+.project-line select:first-child {
   flex: 1.1;
 }
 

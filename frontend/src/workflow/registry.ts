@@ -948,7 +948,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
   project: _operator("project", "投影"),
   sort: _operator("sort", "排序"),
   aggregate: _operator("aggregate", "分组聚合"),
-  limit: _operator("limit", "截断"),
+  limit: _operator("limit", "限制行数"),
   join: {
     kind: "join",
     displayName: "连接",

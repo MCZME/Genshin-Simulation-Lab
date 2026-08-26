@@ -1035,8 +1035,6 @@ function defaultFieldName(path: string): string {
   return leaf === "" ? "value" : leaf;
 }
 
-/* ── 过滤节点：摘要卡 + 轻量弹层（2026-08-27 重构） ── */
-
 const FILTER_OPERATOR_LABELS: Record<string, string> = {
   eq: "等于",
   ne: "不等于",
@@ -1155,7 +1153,6 @@ function toScalarValue(value: unknown, type: string): unknown {
   return filterValueMatchesType(type, value) ? value : undefined;
 }
 
-/** 过滤节点：卡片直编（条件少，无需弹层；2026-08-27 重构）。 */
 export function FilterEditor({ node, onChange }: EditorProps) {
   const shape = upstreamShape(node.id);
   const mode = node.params.mode === "any" ? "any" : "all";
@@ -1434,8 +1431,6 @@ function FilterMultiValue({
   );
 }
 
-/* ── 投影节点：卡片直编（2026-08-27 重构） ── */
-
 function normalizeProjectRow(row: EditorRow): EditorRow {
   const next = { ...row };
   const name = typeof next.name === "string" ? next.name : "";
@@ -1565,8 +1560,6 @@ function ProjectRow({
     </div>
   );
 }
-
-/* ── 排序节点：卡片直编（2026-08-27 重构） ── */
 
 const SORT_DIRECTION_LABELS: Record<string, string> = {
   asc: "升序",
@@ -1732,8 +1725,6 @@ function SortKeyRow({
     </div>
   );
 }
-
-/* ── 分组聚合节点：卡片直编（2026-08-27 重构） ── */
 
 const AGGREGATE_FUNCTION_LABELS: Record<string, string> = {
   sum: "求和",
@@ -1973,17 +1964,37 @@ function AggregateRow({
   );
 }
 
+const LIMIT_MAX = 10_000;
+
 export function LimitEditor({ node, onChange }: EditorProps) {
+  const count = node.params.count;
+  const raw = typeof count === "number" ? String(count) : "";
+  const valid =
+    typeof count === "number" && Number.isInteger(count) && count >= 1 && count <= LIMIT_MAX;
   return (
-    <div className="analysis-editor">
-      <input
-        type="number"
-        min={1}
-        value={node.params.count === undefined ? "" : String(node.params.count)}
-        onChange={(e) =>
-          onChange({ ...node.params, count: e.target.value === "" ? undefined : Number(e.target.value) })
-        }
-      />
+    <div className="limit-inline">
+      <label className="limit-line">
+        <span>保留前</span>
+        <input
+          type="number"
+          min={1}
+          max={LIMIT_MAX}
+          step={1}
+          value={raw}
+          placeholder="1000"
+          onChange={(event) => {
+            const next = { ...node.params };
+            if (event.target.value === "") {
+              delete next.count;
+            } else {
+              next.count = Number(event.target.value);
+            }
+            onChange(next);
+          }}
+        />
+        <span>行</span>
+      </label>
+      {!valid && <p className="filter-row-error">请输入 1–10000 的整数</p>}
     </div>
   );
 }

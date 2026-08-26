@@ -87,7 +87,7 @@ describe("CanvasView repro", () => {
       />,
     );
     const regionNode = screen.getByTestId("rf__node-region-1");
-    expect(regionNode.classList).toContain("draggable");
-    expect(regionNode.classList).toContain("nopan");
+    expect(regionNode.classList).not.toContain("draggable");
+    expect(regionNode.classList).toContain("selectable");
   });
 });

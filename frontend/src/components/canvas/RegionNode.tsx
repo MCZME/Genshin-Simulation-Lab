@@ -27,6 +27,8 @@ export type RegionNodeData = {
     regionId: string,
     rect: { x: number; y: number; width: number; height: number },
   ) => void;
+  /** 顶栏拖拽移动区域（2026-08-27：仅顶栏可拖动）。 */
+  onMoveRegion: (regionId: string, position: { x: number; y: number }) => void;
   onMoveEdgeOrder: (
     targetNodeId: string,
     targetPortId: string,
@@ -50,12 +52,20 @@ export type RegionNodeData = {
   onRenameRequestHandled: () => void;
 } & Record<string, unknown>;
 
-export function RegionNode({ data, selected, width, height }: NodeProps) {
+export function RegionNode({
+  data,
+  selected,
+  width,
+  height,
+  positionAbsoluteX,
+  positionAbsoluteY,
+}: NodeProps) {
   const {
     region,
     onDeleteRegion,
     onRenameRegion,
     onResizeRegion,
+    onMoveRegion,
     onMoveEdgeOrder,
     onValidateRegion,
     onRunRegion,
@@ -73,7 +83,13 @@ export function RegionNode({ data, selected, width, height }: NodeProps) {
     startFlow: { x: number; y: number };
     startSize: { width: number; height: number };
   } | null>(null);
+  const moveDragRef = useRef<{
+    startFlow: { x: number; y: number };
+    startAbsolute: { x: number; y: number };
+    moved: boolean;
+  } | null>(null);
   const [previewSize, setPreviewSize] = useState<{ width: number; height: number } | null>(null);
+  const [moving, setMoving] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState("");
   const editingNameRef = useRef(false);
@@ -185,6 +201,69 @@ export function RegionNode({ data, selected, width, height }: NodeProps) {
     }
   }
 
+  function handleMovePointerDown(event: React.PointerEvent<HTMLElement>) {
+    if (event.button !== 0 || interactionLocked) {
+      return;
+    }
+    const target = event.target as HTMLElement;
+    if (target.closest("button, input, select, textarea, .nodrag") !== null) {
+      return;
+    }
+    event.preventDefault();
+    moveDragRef.current = {
+      startFlow: rf.screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+      startAbsolute: { x: positionAbsoluteX, y: positionAbsoluteY },
+      moved: false,
+    };
+    setMoving(true);
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+  }
+
+  function handleMovePointerMove(event: React.PointerEvent<HTMLElement>) {
+    const drag = moveDragRef.current;
+    if (drag === null) {
+      return;
+    }
+    const current = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const position = {
+      x: drag.startAbsolute.x + current.x - drag.startFlow.x,
+      y: drag.startAbsolute.y + current.y - drag.startFlow.y,
+    };
+    if (position.x !== drag.startAbsolute.x || position.y !== drag.startAbsolute.y) {
+      drag.moved = true;
+    }
+    rf.setNodes((nodes) =>
+      nodes.map((node) => (node.id === region.id ? { ...node, position } : node)),
+    );
+  }
+
+  function handleMovePointerUp(event: React.PointerEvent<HTMLElement>) {
+    const drag = moveDragRef.current;
+    if (drag === null) {
+      return;
+    }
+    moveDragRef.current = null;
+    setMoving(false);
+    const current = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    if (drag.moved) {
+      onMoveRegion(region.id, {
+        x: drag.startAbsolute.x + current.x - drag.startFlow.x,
+        y: drag.startAbsolute.y + current.y - drag.startFlow.y,
+      });
+    }
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
+  }
+
+  function handleMovePointerCancel(event: React.PointerEvent<HTMLElement>) {
+    moveDragRef.current = null;
+    setMoving(false);
+    if (event.currentTarget.hasPointerCapture?.(event.pointerId)) {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    }
+  }
+
   const currentWidth = width ?? region.rect.width;
   const currentHeight = height ?? region.rect.height;
   if (
@@ -204,7 +283,14 @@ export function RegionNode({ data, selected, width, height }: NodeProps) {
         borderColor,
       }}
     >
-      <header className="region-header" style={{ borderColor }}>
+      <header
+        className={`region-header${moving ? " dragging" : ""}`}
+        style={{ borderColor }}
+        onPointerDown={handleMovePointerDown}
+        onPointerMove={handleMovePointerMove}
+        onPointerUp={handleMovePointerUp}
+        onPointerCancel={handleMovePointerCancel}
+      >
         <span className="region-kind">
           {region.kind === "configuration" ? "配置区域" : "分析区域"}
         </span>

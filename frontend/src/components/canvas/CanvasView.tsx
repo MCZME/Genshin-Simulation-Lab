@@ -497,6 +497,7 @@ function buildNodes(
       onDeleteRegion: callbacks.onDeleteRegion,
       onRenameRegion: callbacks.onRenameRegion,
       onResizeRegion: callbacks.onResizeRegion,
+      onMoveRegion: callbacks.onMoveRegion,
       onMoveEdgeOrder: callbacks.onMoveEdgeOrder,
       onValidateRegion: callbacks.onValidateRegion,
       onRunRegion: callbacks.onRunRegion,
@@ -516,7 +517,7 @@ function buildNodes(
       height: region.rect.height,
       data,
       zIndex: 0,
-      draggable: true,
+      draggable: false,
       selected: false,
     });
   }

@@ -8,6 +8,7 @@ import { RegionNode, type RegionNodeData } from "./RegionNode";
 const handleSpy = vi.hoisted(() => ({
   rendered: [] as Array<Record<string, unknown>>,
   connectionInProgress: false,
+  setNodes: vi.fn(),
 }));
 
 vi.mock("@xyflow/react", async (importOriginal) => {
@@ -19,7 +20,11 @@ vi.mock("@xyflow/react", async (importOriginal) => {
       return null;
     },
     useReactFlow: () => ({
-      screenToFlowPosition: () => ({ x: 0, y: 0 }),
+      screenToFlowPosition: (point: { x: number; y: number }) => ({
+        x: point.x,
+        y: point.y,
+      }),
+      setNodes: handleSpy.setNodes,
     }),
     useStore: (selector: (state: unknown) => unknown) =>
       selector({ connection: { inProgress: handleSpy.connectionInProgress } }),
@@ -44,6 +49,7 @@ function renderRegion(
     onDeleteRegion: vi.fn(),
     onRenameRegion: vi.fn(),
     onResizeRegion: vi.fn(),
+    onMoveRegion: vi.fn(),
     onMoveEdgeOrder: vi.fn(),
     onValidateRegion: vi.fn(),
     onRunRegion: vi.fn(),
@@ -62,6 +68,8 @@ function renderRegion(
     selected: overrides.selected ?? false,
     width: 880,
     height: 440,
+    positionAbsoluteX: 0,
+    positionAbsoluteY: 0,
   } as unknown as NodeProps;
   return render(
     <RegionNode {...props} />,
@@ -73,6 +81,7 @@ afterEach(cleanup);
 beforeEach(() => {
   handleSpy.rendered.length = 0;
   handleSpy.connectionInProgress = false;
+  handleSpy.setNodes.mockClear();
 });
 
 describe("RegionNode 区域命名", () => {
@@ -237,5 +246,62 @@ describe("RegionNode 分析区域边界输入点", () => {
     renderRegion();
     const inHandles = handleSpy.rendered.filter((props) => props.id === "in");
     expect(inHandles).toHaveLength(0);
+  });
+});
+
+describe("RegionNode 区域拖拽", () => {
+  it("仅顶栏可拖动区域并提交新位置", () => {
+    const onMoveRegion = vi.fn();
+    renderRegion({ data: { onMoveRegion } });
+    const name = screen.getByText("主配置");
+    fireEvent.pointerDown(name, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(name, { pointerId: 1, clientX: 130, clientY: 120 });
+    fireEvent.pointerUp(name, { pointerId: 1, clientX: 130, clientY: 120 });
+
+    expect(onMoveRegion).toHaveBeenCalledWith("region-1", { x: 30, y: 20 });
+    expect(handleSpy.setNodes).toHaveBeenCalled();
+  });
+
+  it("顶栏按钮上按下不触发拖拽", () => {
+    const onMoveRegion = vi.fn();
+    renderRegion({ data: { onMoveRegion } });
+    const button = screen.getByRole("button", { name: "区域校验" });
+    fireEvent.pointerDown(button, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(button, { pointerId: 1, clientX: 130, clientY: 120 });
+    fireEvent.pointerUp(button, { pointerId: 1, clientX: 130, clientY: 120 });
+
+    expect(onMoveRegion).not.toHaveBeenCalled();
+  });
+
+  it("交互锁定时顶栏不触发拖拽", () => {
+    const onMoveRegion = vi.fn();
+    renderRegion({ data: { onMoveRegion, interactionLocked: true } });
+    const name = screen.getByText("主配置");
+    fireEvent.pointerDown(name, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(name, { pointerId: 1, clientX: 130, clientY: 120 });
+    fireEvent.pointerUp(name, { pointerId: 1, clientX: 130, clientY: 120 });
+
+    expect(onMoveRegion).not.toHaveBeenCalled();
+  });
+
+  it("顶栏未移动的点击不提交位置", () => {
+    const onMoveRegion = vi.fn();
+    renderRegion({ data: { onMoveRegion } });
+    const name = screen.getByText("主配置");
+    fireEvent.pointerDown(name, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerUp(name, { pointerId: 1, clientX: 100, clientY: 100 });
+
+    expect(onMoveRegion).not.toHaveBeenCalled();
+  });
+
+  it("区域主体按下不触发拖拽", () => {
+    const onMoveRegion = vi.fn();
+    const { container } = renderRegion({ data: { onMoveRegion } });
+    const root = container.querySelector(".region-node") as HTMLElement;
+    fireEvent.pointerDown(root, { button: 0, pointerId: 1, clientX: 100, clientY: 100 });
+    fireEvent.pointerMove(root, { pointerId: 1, clientX: 130, clientY: 120 });
+    fireEvent.pointerUp(root, { pointerId: 1, clientX: 130, clientY: 120 });
+
+    expect(onMoveRegion).not.toHaveBeenCalled();
   });
 });

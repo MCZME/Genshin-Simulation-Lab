@@ -593,6 +593,10 @@ body {
   user-select: none;
 }
 
+.region-header.dragging {
+  cursor: grabbing;
+}
+
 .region-resize-handle {
   position: absolute;
   right: 0;

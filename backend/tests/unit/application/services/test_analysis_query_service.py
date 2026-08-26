@@ -132,8 +132,37 @@ def test_read_schema_exposes_full_catalog() -> None:
         item for item in schema.event_types if item.name == "TEAM_SWITCHED"
     )
     assert empty_fields.fields == ()
-    paths = {item.path: item for item in schema.snapshot_paths}
-    assert paths["team.0.character.asset_key"].default_name == "char_1_key"
-    assert paths["team.0.character.asset_key"].segments == ("队伍", "槽位 1", "角色", "资产")
-    assert paths["team.3.weapon.refinement"].default_name == "weapon_4_refinement"
-    assert paths["scene.targets.0.resistance.physical"].default_name == "target_1_res_physical"
+    tree = schema.snapshot_tree
+    assert tree is not None
+    assert tree.kind == "object"
+    leaves = {
+        path: node
+        for path, node in _walk_paths(tree)
+        if node.kind == "scalar"
+    }
+    assert (
+        leaves[("root", "team", "character", "asset_key")].default_name_template
+        == "char_{0}_key"
+    )
+    assert (
+        leaves[("root", "team", "weapon", "refinement")].default_name_template
+        == "weapon_{0}_refinement"
+    )
+    assert (
+        leaves[
+            ("root", "scene", "targets", "target", "resistance", "physical")
+        ].default_name_template
+        == "target_{0}_res_physical"
+    )
+    assert leaves[("root", "meta", "name")].default_name == "meta_name"
+    team = next(node for path, node in _walk_paths(tree) if path == ("root", "team"))
+    assert team.kind == "list"
+    # 列表节点不枚举位置：children 是元素结构，不应出现数字键子节点。
+    assert all(not child.key.isdigit() for child in team.children)
+
+
+def _walk_paths(node, prefix=()):
+    path = prefix + (node.key,)
+    yield path, node
+    for child in node.children:
+        yield from _walk_paths(child, path)

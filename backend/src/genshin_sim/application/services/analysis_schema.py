@@ -12,7 +12,7 @@ from __future__ import annotations
 from genshin_sim.application.models import (
     AnalysisEventField,
     AnalysisEventTypeSchema,
-    AnalysisSnapshotPath,
+    AnalysisSchemaNode,
 )
 from genshin_sim.core.events.specs import EVENT_SPECS
 
@@ -51,45 +51,6 @@ def build_event_type_schema() -> tuple[AnalysisEventTypeSchema, ...]:
     )
 
 
-_CHARACTER_FIELDS: tuple[tuple[str, str, str], ...] = (
-    ("asset_key", "string", "key"),
-    ("level", "int", "level"),
-    ("constellation", "int", "constellation"),
-    ("talents.normal_attack", "int", "talent_normal"),
-    ("talents.elemental_skill", "int", "talent_skill"),
-    ("talents.elemental_burst", "int", "talent_burst"),
-)
-
-_WEAPON_FIELDS: tuple[tuple[str, str, str], ...] = (
-    ("asset_key", "string", "key"),
-    ("level", "int", "level"),
-    ("refinement", "int", "refinement"),
-)
-
-_ARTIFACT_FIELDS: tuple[tuple[str, str, str], ...] = (
-    ("asset_key", "string", "key"),
-    ("pieces", "int", "pieces"),
-)
-
-_TARGET_FIELDS: tuple[tuple[str, str, str], ...] = (
-    ("id", "string", "id"),
-    ("label", "string", "label"),
-    ("level", "int", "level"),
-)
-
-_FIELD_LABELS: dict[str, str] = {
-    "asset_key": "资产",
-    "level": "等级",
-    "constellation": "命座",
-    "talents.normal_attack": "普通攻击天赋",
-    "talents.elemental_skill": "元素战技天赋",
-    "talents.elemental_burst": "元素爆发天赋",
-    "refinement": "精炼",
-    "pieces": "件数",
-    "id": "ID",
-    "label": "展示名",
-}
-
 _ELEMENT_LABELS: dict[str, str] = {
     "physical": "物理",
     "pyro": "火元素",
@@ -102,86 +63,151 @@ _ELEMENT_LABELS: dict[str, str] = {
 }
 
 
-def build_snapshot_path_schema() -> tuple[AnalysisSnapshotPath, ...]:
-    """输入快照可提取路径目录（镜像模拟输入契约第一版字段）。"""
+def build_snapshot_tree() -> AnalysisSchemaNode:
+    """输入快照结构树（镜像《模拟输入契约》第一版字段）。
 
-    entries: list[AnalysisSnapshotPath] = []
-    entries.append(
-        AnalysisSnapshotPath("meta.name", "string", "meta_name", ("元信息", "名称"))
-    )
-    entries.append(
-        AnalysisSnapshotPath(
-            "meta.description", "string", "meta_description", ("元信息", "描述")
+    列表节点（队伍 / 圣遗物套装 / 目标）不枚举位置——目标等集合可能是变长；
+    列表叶子的 default_name_template 用 {0}/{1}... 按列表祖先顺序占位，
+    由前端在用户输入位置后替换（显示 1 基，路径 0 基）。
+    """
+
+    def scalar(
+        key: str,
+        label: str,
+        type_: str,
+        *,
+        default_name: str | None = None,
+        template: str | None = None,
+    ) -> AnalysisSchemaNode:
+        return AnalysisSchemaNode(
+            key=key,
+            label=label,
+            kind="scalar",
+            type=type_,
+            default_name=default_name,
+            default_name_template=template,
         )
+
+    def object_(
+        key: str, label: str, children: tuple[AnalysisSchemaNode, ...]
+    ) -> AnalysisSchemaNode:
+        return AnalysisSchemaNode(key=key, label=label, kind="object", children=children)
+
+    def list_(
+        key: str, label: str, children: tuple[AnalysisSchemaNode, ...]
+    ) -> AnalysisSchemaNode:
+        return AnalysisSchemaNode(key=key, label=label, kind="list", children=children)
+
+    character = object_(
+        "character",
+        "角色",
+        (
+            scalar("asset_key", "资产", "string", template="char_{0}_key"),
+            scalar("level", "等级", "int", template="char_{0}_level"),
+            scalar("constellation", "命座", "int", template="char_{0}_constellation"),
+            object_(
+                "talents",
+                "天赋",
+                (
+                    scalar(
+                        "normal_attack",
+                        "普通攻击天赋",
+                        "int",
+                        template="char_{0}_talent_normal",
+                    ),
+                    scalar(
+                        "elemental_skill",
+                        "元素战技天赋",
+                        "int",
+                        template="char_{0}_talent_skill",
+                    ),
+                    scalar(
+                        "elemental_burst",
+                        "元素爆发天赋",
+                        "int",
+                        template="char_{0}_talent_burst",
+                    ),
+                ),
+            ),
+        ),
     )
-    for slot in range(4):
-        slot_label = f"槽位 {slot + 1}"
-        for field, type_, short in _CHARACTER_FIELDS:
-            entries.append(
-                AnalysisSnapshotPath(
-                    f"team.{slot}.character.{field}",
-                    type_,
-                    f"char_{slot + 1}_{short}",
-                    ("队伍", slot_label, "角色", _FIELD_LABELS[field]),
-                )
-            )
-        for field, type_, short in _WEAPON_FIELDS:
-            entries.append(
-                AnalysisSnapshotPath(
-                    f"team.{slot}.weapon.{field}",
-                    type_,
-                    f"weapon_{slot + 1}_{short}",
-                    ("队伍", slot_label, "武器", _FIELD_LABELS[field]),
-                )
-            )
-        for set_index in range(2):
-            for field, type_, short in _ARTIFACT_FIELDS:
-                entries.append(
-                    AnalysisSnapshotPath(
-                        f"team.{slot}.artifacts.sets.{set_index}.{field}",
-                        type_,
-                        f"set_{slot + 1}_{set_index + 1}_{short}",
-                        (
-                            "队伍",
-                            slot_label,
-                            "圣遗物套装",
-                            f"第 {set_index + 1} 套",
-                            _FIELD_LABELS[field],
-                        ),
+    weapon = object_(
+        "weapon",
+        "武器",
+        (
+            scalar("asset_key", "资产", "string", template="weapon_{0}_key"),
+            scalar("level", "等级", "int", template="weapon_{0}_level"),
+            scalar("refinement", "精炼", "int", template="weapon_{0}_refinement"),
+        ),
+    )
+    sets = list_(
+        "sets",
+        "套装",
+        (
+            scalar("asset_key", "套装", "string", template="set_{0}_{1}_key"),
+            scalar("pieces", "件数", "int", template="set_{0}_{1}_pieces"),
+        ),
+    )
+    team = list_(
+        "team",
+        "队伍",
+        (character, weapon, object_("artifacts", "圣遗物", (sets,))),
+    )
+    target = object_(
+        "target",
+        "目标",
+        (
+            scalar("id", "ID", "string", template="target_{0}_id"),
+            scalar("label", "展示名", "string", template="target_{0}_label"),
+            scalar("level", "等级", "int", template="target_{0}_level"),
+            object_(
+                "resistance",
+                "抗性",
+                tuple(
+                    scalar(
+                        element,
+                        element_label,
+                        "int",
+                        template=f"target_{{{0}}}_res_{element}",
                     )
-                )
-    for target_index in range(4):
-        target_label = f"目标 {target_index + 1}"
-        for field, type_, short in _TARGET_FIELDS:
-            entries.append(
-                AnalysisSnapshotPath(
-                    f"scene.targets.{target_index}.{field}",
-                    type_,
-                    f"target_{target_index + 1}_{short}",
-                    ("场景", target_label, _FIELD_LABELS[field]),
-                )
-            )
-        for element, element_label in _ELEMENT_LABELS.items():
-            entries.append(
-                AnalysisSnapshotPath(
-                    f"scene.targets.{target_index}.resistance.{element}",
-                    "int",
-                    f"target_{target_index + 1}_res_{element}",
-                    ("场景", target_label, "抗性", element_label),
-                )
-            )
-    for axis, label in (("x", "X"), ("y", "Y"), ("z", "Z")):
-        entries.append(
-            AnalysisSnapshotPath(
-                f"scene.player.position.{axis}",
-                "float",
-                f"player_pos_{axis}",
-                ("场景", "玩家", "位置", label),
-            )
-        )
-    entries.append(
-        AnalysisSnapshotPath(
-            "run_options.max_frames", "int", "max_frames", ("运行选项", "最大帧数")
-        )
+                    for element, element_label in _ELEMENT_LABELS.items()
+                ),
+            ),
+        ),
     )
-    return tuple(entries)
+    scene = object_(
+        "scene",
+        "场景",
+        (
+            list_("targets", "目标", (target,)),
+            object_(
+                "player",
+                "玩家",
+                (
+                    object_(
+                        "position",
+                        "位置",
+                        (
+                            scalar("x", "X", "float", default_name="player_pos_x"),
+                            scalar("y", "Y", "float", default_name="player_pos_y"),
+                            scalar("z", "Z", "float", default_name="player_pos_z"),
+                        ),
+                    ),
+                ),
+            ),
+        ),
+    )
+    meta = object_(
+        "meta",
+        "元信息",
+        (
+            scalar("name", "名称", "string", default_name="meta_name"),
+            scalar("description", "描述", "string", default_name="meta_description"),
+        ),
+    )
+    run_options = object_(
+        "run_options",
+        "运行选项",
+        (scalar("max_frames", "最大帧数", "int", default_name="max_frames"),),
+    )
+    return object_("root", "输入快照", (meta, team, scene, run_options))

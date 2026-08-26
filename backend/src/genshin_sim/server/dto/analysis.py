@@ -1,5 +1,7 @@
 """分析查询 HTTP DTO。"""
 
+from __future__ import annotations
+
 from typing import Any
 
 from pydantic import BaseModel, Field
@@ -55,14 +57,20 @@ class EventTypeSchemaDto(BaseModel):
     fields: list[EventFieldDto]
 
 
-class SnapshotPathDto(BaseModel):
-    path: str
-    type: str
-    default_name: str
-    segments: list[str]
+class SchemaNodeDto(BaseModel):
+    """输入快照结构树节点（object / list / scalar）。"""
+
+    key: str
+    label: str
+    kind: str
+    type: str | None = None
+    description: str = ""
+    default_name: str | None = None
+    default_name_template: str | None = None
+    children: list[SchemaNodeDto] = Field(default_factory=list)
 
 
 class AnalysisSchemaResponse(BaseModel):
     tables: list[TableSchemaDto]
     event_types: list[EventTypeSchemaDto]
-    snapshot_paths: list[SnapshotPathDto] = Field(default_factory=list)
+    snapshot_tree: SchemaNodeDto | None = None

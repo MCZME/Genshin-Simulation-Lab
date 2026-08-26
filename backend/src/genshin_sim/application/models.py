@@ -165,22 +165,30 @@ class AnalysisEventTypeSchema:
 
 
 @dataclass(frozen=True, slots=True)
-class AnalysisSnapshotPath:
-    """输入快照可提取路径：逐段选择器所需的结构目录。"""
+class AnalysisSchemaNode:
+    """输入快照结构树节点：对象 / 列表 / 标量。
 
-    path: str
-    type: str
-    default_name: str
-    segments: tuple[str, ...]
+    列表节点不枚举位置（队伍/目标等可能是变长集合），由用户输入位置编号；
+    叶子经 default_name_template 用 {0}/{1}... 按列表祖先顺序占位。
+    """
+
+    key: str
+    label: str
+    kind: str  # "object" | "list" | "scalar"
+    type: str | None = None
+    description: str = ""
+    default_name: str | None = None
+    default_name_template: str | None = None
+    children: tuple[AnalysisSchemaNode, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
 class AnalysisReadSchema:
-    """取数节点编辑器的可读 schema（表列 + 事件类型字段 + 快照路径目录）。"""
+    """取数节点编辑器的可读 schema（表列 + 事件类型字段 + 快照结构树）。"""
 
     tables: tuple[AnalysisTableSchema, ...]
     event_types: tuple[AnalysisEventTypeSchema, ...]
-    snapshot_paths: tuple[AnalysisSnapshotPath, ...] = ()
+    snapshot_tree: AnalysisSchemaNode | None = None
 
 
 __all__ = [
@@ -190,7 +198,7 @@ __all__ = [
     "AnalysisPlan",
     "AnalysisPlanNode",
     "AnalysisReadSchema",
-    "AnalysisSnapshotPath",
+    "AnalysisSchemaNode",
     "AnalysisSchemaColumn",
     "AnalysisTableResult",
     "AnalysisTableSchema",

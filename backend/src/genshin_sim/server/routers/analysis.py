@@ -19,7 +19,7 @@ from genshin_sim.server.dto.analysis import (
     ExecutePlanRequest,
     ExecutePlanResponse,
     SchemaColumnDto,
-    SnapshotPathDto,
+    SchemaNodeDto,
     TableColumnDto,
     TableResponse,
     TableSchemaDto,
@@ -98,13 +98,20 @@ def _schema_to_dto(schema: Any) -> AnalysisSchemaResponse:
             )
             for event_type in schema.event_types
         ],
-        snapshot_paths=[
-            SnapshotPathDto(
-                path=item.path,
-                type=item.type,
-                default_name=item.default_name,
-                segments=list(item.segments),
-            )
-            for item in schema.snapshot_paths
-        ],
+        snapshot_tree=(
+            _node_to_dto(schema.snapshot_tree) if schema.snapshot_tree is not None else None
+        ),
+    )
+
+
+def _node_to_dto(node: Any) -> SchemaNodeDto:
+    return SchemaNodeDto(
+        key=node.key,
+        label=node.label,
+        kind=node.kind,
+        type=node.type,
+        description=node.description,
+        default_name=node.default_name,
+        default_name_template=node.default_name_template,
+        children=[_node_to_dto(child) for child in node.children],
     )

@@ -2923,6 +2923,7 @@ body {
   border: 1px solid #475569;
   border-radius: 5px;
   color: #94a3b8;
+  font-family: inherit;
   font-size: 12px;
   cursor: pointer;
 }
@@ -3454,6 +3455,7 @@ body {
   border: 1px solid #475569;
   border-radius: 4px;
   color: #94a3b8;
+  font-family: inherit;
   font-size: 13px;
   line-height: 1;
   cursor: pointer;
@@ -3479,6 +3481,7 @@ body {
   border: 1px dashed #475569;
   border-radius: 5px;
   color: #94a3b8;
+  font-family: inherit;
   font-size: 11px;
   cursor: pointer;
 }
@@ -3642,6 +3645,7 @@ body {
   border: 1px solid #475569;
   border-radius: 4px;
   color: #94a3b8;
+  font-family: inherit;
   font-size: 12px;
   line-height: 1;
   cursor: pointer;
@@ -3674,6 +3678,121 @@ body {
 .limit-line input {
   flex: 1;
   min-width: 0;
+}
+
+/* 合并表（连接）节点 */
+
+.node-card-join {
+  width: 340px;
+}
+
+.join-inline {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.join-hint {
+  margin: 0;
+  font-size: 11px;
+  color: #64748b;
+  line-height: 1.5;
+}
+
+.join-mode-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 6px;
+}
+
+.join-mode-card {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 8px 10px;
+  min-width: 0;
+  background: #243147;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  text-align: left;
+  font-family: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.join-mode-card:hover {
+  border-color: #475569;
+}
+
+.join-mode-card.active {
+  background: #1e3a5f;
+  border-color: #3b82f6;
+}
+
+.join-mode-title {
+  font-size: 12px;
+  color: #e2e8f0;
+}
+
+.join-mode-card.active .join-mode-title {
+  color: #fff;
+}
+
+.join-mode-description {
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.join-key-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.join-key-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.join-key-label {
+  flex: none;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.join-equals {
+  flex: none;
+  font-size: 12px;
+  color: #64748b;
+}
+
+.join-warning {
+  margin: 0;
+  font-size: 11px;
+  color: #f59e0b;
+  line-height: 1.4;
+}
+
+/* 算子卡片内的列/值下拉与输入框统一外观 */
+
+.filter-condition-line > select,
+.filter-condition-line > input,
+.aggregate-line > select,
+.aggregate-line > input,
+.project-line > select,
+.project-line > input,
+.sort-key-line > select,
+.limit-line > input,
+.join-key-row > select {
+  height: 26px;
+  padding: 0 6px;
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 5px;
+  color: #e2e8f0;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1;
 }
 
 .fetch-shape-chip {

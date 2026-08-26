@@ -951,7 +951,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
   limit: _operator("limit", "限制行数"),
   join: {
     kind: "join",
-    displayName: "连接",
+    displayName: "合并表",
     region: "analysis",
     ports: {
       inputs: [

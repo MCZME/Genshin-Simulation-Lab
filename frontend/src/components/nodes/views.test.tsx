@@ -298,6 +298,23 @@ describe("表格纯逻辑", () => {
     expect(formatCell("sword", "string")).toBe("sword");
   });
 
+  it("formatCell 按 valueKind 解析资产与枚举显示名", () => {
+    const names = new Map([["character:barbara", "芭芭拉"]]);
+    expect(formatCell("character:barbara", "string", "asset:characters", names)).toBe(
+      "芭芭拉",
+    );
+    expect(formatCell("character:missing", "string", "asset:characters", names)).toBe(
+      "character:missing",
+    );
+    expect(formatCell("hydro", "string", "enum:element")).toBe("水");
+    expect(formatCell("completed", "string", "enum:run_state")).toBe("已完成");
+    expect(formatCell("DAMAGE_RESOLVED", "string", "enum:event_type")).toBe(
+      "伤害结算",
+    );
+    expect(formatCell("unknown", "string", "enum:element")).toBe("unknown");
+    expect(formatCell("sword", "string", undefined)).toBe("sword");
+  });
+
   it("compareCells 空值恒排最后", () => {
     expect(compareCells(null, 1)).toBeGreaterThan(0);
     expect(compareCells(1, null)).toBeLessThan(0);

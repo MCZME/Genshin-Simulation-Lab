@@ -43,6 +43,7 @@ def _schema() -> AnalysisReadSchema:
                                     kind="scalar",
                                     type="string",
                                     default_name_template="char_{0}_key",
+                                    value_kind="asset:characters",
                                 ),
                             ),
                         ),
@@ -68,6 +69,8 @@ def test_analysis_schema_endpoint(application_facade) -> None:
     leaf = body["snapshot_tree"]["children"][0]["children"][0]["children"][0]
     assert leaf["key"] == "asset_key"
     assert leaf["default_name_template"] == "char_{0}_key"
+    assert leaf["value_kind"] == "asset:characters"
+    assert body["tables"][0]["columns"][0]["value_kind"] == ""
 
 
 def test_analysis_query_executes_plan(application_facade) -> None:

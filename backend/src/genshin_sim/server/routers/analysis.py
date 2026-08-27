@@ -79,7 +79,10 @@ def _schema_to_dto(schema: Any) -> AnalysisSchemaResponse:
                 name=table.name,
                 columns=[
                     SchemaColumnDto(
-                        name=column.name, type=column.type, description=column.description
+                        name=column.name,
+                        type=column.type,
+                        description=column.description,
+                        value_kind=column.value_kind,
                     )
                     for column in table.columns
                 ],
@@ -91,7 +94,10 @@ def _schema_to_dto(schema: Any) -> AnalysisSchemaResponse:
                 name=event_type.name,
                 fields=[
                     EventFieldDto(
-                        path=field.path, type=field.type, description=field.description
+                        path=field.path,
+                        type=field.type,
+                        description=field.description,
+                        value_kind=field.value_kind,
                     )
                     for field in event_type.fields
                 ],
@@ -113,5 +119,6 @@ def _node_to_dto(node: Any) -> SchemaNodeDto:
         description=node.description,
         default_name=node.default_name,
         default_name_template=node.default_name_template,
+        value_kind=node.value_kind,
         children=[_node_to_dto(child) for child in node.children],
     )

@@ -110,6 +110,18 @@ class AssetsService:
         asset = self._get_asset(resolved_kind, f"{prefix}:{source_id}")
         return self._to_list_item(asset, resolved_kind)
 
+    def resolve_assets(self, keys: Sequence[str]) -> tuple[AssetListItem, ...]:
+        """按完整 asset_key 批量解析展示项；未知或缺失的键静默跳过。"""
+
+        items: list[AssetListItem] = []
+        for key in dict.fromkeys(keys):
+            try:
+                asset = self.inspect_asset(key)
+            except (KeyError, LookupError, ValueError):
+                continue
+            items.append(self._to_list_item(asset, _asset_list_kind(key)))
+        return tuple(items)
+
     def inspect_asset(self, asset_key: str) -> CharacterAsset | WeaponAsset | ArtifactSetAsset:
         logger.debug("查看资产", extra={"asset_key": asset_key})
         if asset_key.startswith("character:"):
@@ -119,6 +131,7 @@ class AssetsService:
         if asset_key.startswith("artifact_set:"):
             return self.repository.get_artifact_set(asset_key)
         raise ValueError(f"不支持的 asset_key 类型：{asset_key}")
+
 
     def inspect_asset_dict(self, asset_key: str) -> dict[str, Any]:
         item = self.inspect_asset(asset_key)
@@ -214,6 +227,18 @@ class AssetsService:
         except Exception:
             return False
         return all(registry.has_effect_handler(effect.handler_key) for effect in effects)
+
+
+def _asset_list_kind(key: str) -> AssetListKind:
+    """按 asset_key 前缀映射资产列表类别。"""
+
+    if key.startswith("character:"):
+        return AssetListKind.CHARACTERS
+    if key.startswith("weapon:"):
+        return AssetListKind.WEAPONS
+    if key.startswith("artifact_set:"):
+        return AssetListKind.ARTIFACT_SETS
+    raise ValueError(f"不支持的 asset_key 类型：{key}")
 
 
 class AssetDatabaseService:

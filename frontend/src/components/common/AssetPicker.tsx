@@ -1,7 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { getAsset, searchAssets } from "../../api/client";
 import type { AssetResponse } from "../../api/client";
-import { ELEMENT_COLORS, ELEMENT_LABELS } from "../../theme/elements";
+import {
+  ELEMENT_COLORS,
+  ELEMENT_LABELS,
+  WEAPON_LABELS,
+} from "../../theme/elements";
 
 interface AssetPickerProps {
   assetType: "characters" | "weapons" | "artifact-sets";
@@ -15,14 +19,6 @@ type AssetFilters = {
   weaponTypeFilter: string | null;
   rarityFilter: number | null;
   usableFilter: number | null;
-};
-
-const WEAPON_LABELS: Record<string, string> = {
-  bow: "弓",
-  catalyst: "法器",
-  claymore: "双手剑",
-  polearm: "长柄",
-  sword: "单手剑",
 };
 
 /** 资产详情缓存：同一资产在多个节点中选择时不重复请求；失败结果也缓存为 null。 */

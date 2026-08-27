@@ -70,7 +70,12 @@ _COMPUTE_OPERATORS = frozenset({"+", "-", "*", "/"})
 
 _RUN_TABLE_SCHEMA: tuple[AnalysisSchemaColumn, ...] = (
     AnalysisSchemaColumn("session_id", "string", "会话 ID"),
-    AnalysisSchemaColumn("state", "string", "运行状态 completed/failed/cancelled"),
+    AnalysisSchemaColumn(
+        "state",
+        "string",
+        "运行状态 completed/failed/cancelled",
+        "enum:run_state",
+    ),
     AnalysisSchemaColumn("name", "string", "运行展示名"),
     AnalysisSchemaColumn("input_schema_version", "int", "输入快照格式版本"),
     AnalysisSchemaColumn("created_at", "string", "创建时间"),
@@ -91,7 +96,7 @@ _EVENT_TABLE_SCHEMA: tuple[AnalysisSchemaColumn, ...] = (
     AnalysisSchemaColumn("session_id", "string", "会话 ID"),
     AnalysisSchemaColumn("ordinal", "int", "会话内全局事实顺序"),
     AnalysisSchemaColumn("frame", "int", "事件帧号"),
-    AnalysisSchemaColumn("event_type", "string", "事件类型名"),
+    AnalysisSchemaColumn("event_type", "string", "事件类型名", "enum:event_type"),
 )
 
 class SQLiteAnalysisQueryExecutor:

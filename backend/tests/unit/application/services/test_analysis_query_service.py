@@ -8,7 +8,9 @@ from genshin_sim.application.models import (
     AnalysisPlan,
     AnalysisPlanNode,
     AnalysisReadSchema,
+    AnalysisSchemaColumn,
     AnalysisTableResult,
+    AnalysisTableSchema,
 )
 from genshin_sim.application.services.analysis_query import (
     AnalysisPlanValidationError,
@@ -28,7 +30,33 @@ class _FakeExecutor:
         }
 
     def read_schema(self) -> AnalysisReadSchema:
-        return AnalysisReadSchema(tables=(), event_types=())
+        return AnalysisReadSchema(
+            tables=(
+                AnalysisTableSchema(
+                    name="simulation_runs",
+                    columns=(
+                        AnalysisSchemaColumn(
+                            "state",
+                            "string",
+                            "运行状态",
+                            "enum:run_state",
+                        ),
+                    ),
+                ),
+                AnalysisTableSchema(
+                    name="simulation_events",
+                    columns=(
+                        AnalysisSchemaColumn(
+                            "event_type",
+                            "string",
+                            "事件类型名",
+                            "enum:event_type",
+                        ),
+                    ),
+                ),
+            ),
+            event_types=(),
+        )
 
 
 def _service() -> tuple[AnalysisQueryService, _FakeExecutor]:
@@ -116,6 +144,16 @@ def test_read_schema_exposes_full_catalog() -> None:
 
     schema = service.read_schema()
 
+    runs = next(table for table in schema.tables if table.name == "simulation_runs")
+    assert {column.name: column.value_kind for column in runs.columns}["state"] == (
+        "enum:run_state"
+    )
+    events_table = next(
+        table for table in schema.tables if table.name == "simulation_events"
+    )
+    assert {column.name: column.value_kind for column in events_table.columns}["event_type"] == (
+        "enum:event_type"
+    )
     names = {item.name for item in schema.event_types}
     assert "DAMAGE_RESOLVED" in names
     assert "TEAM_SWITCHED" in names
@@ -128,6 +166,8 @@ def test_read_schema_exposes_full_catalog() -> None:
         "result.damage_type",
         "result.element",
     }
+    element_field = next(field for field in damage.fields if field.path == "result.element")
+    assert element_field.value_kind == "enum:element"
     empty_fields = next(
         item for item in schema.event_types if item.name == "TEAM_SWITCHED"
     )
@@ -144,6 +184,9 @@ def test_read_schema_exposes_full_catalog() -> None:
         leaves[("root", "team", "character", "asset_key")].default_name_template
         == "char_{0}_key"
     )
+    assert leaves[("root", "team", "character", "asset_key")].value_kind == (
+        "asset:characters"
+    )
     assert (
         leaves[("root", "team", "weapon", "refinement")].default_name_template
         == "weapon_{0}_refinement"
@@ -153,6 +196,10 @@ def test_read_schema_exposes_full_catalog() -> None:
             ("root", "scene", "targets", "target", "resistance", "physical")
         ].default_name_template
         == "target_{0}_res_physical"
+    )
+    assert (
+        leaves[("root", "scene", "targets", "target", "resistance", "physical")].value_kind
+        == "enum:element"
     )
     assert leaves[("root", "meta", "name")].default_name == "meta_name"
     team = next(node for path, node in _walk_paths(tree) if path == ("root", "team"))

@@ -2,8 +2,22 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
-import { connectedConfigNode, type AnalysisTableResult } from "../../workflow/templates";
+import {
+  computeAnalysisShapes,
+  connectedConfigNode,
+  viewInputShape,
+  type AnalysisTableResult,
+} from "../../workflow/templates";
 import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
+import {
+  DAMAGE_TYPE_LABELS,
+  ELEMENT_LABELS,
+  EVENT_TYPE_LABELS,
+  RUN_STATE_LABELS,
+  WEAPON_LABELS,
+} from "../../theme/elements";
+import { useAnalysisSchemaCatalog } from "../analysis_context";
+import { useAssetNames } from "./useAssetNames";
 
 const ROW_HEIGHT = 28;
 /** 超过该行数启用窗口化渲染，避免大批量一次性铺 DOM。 */
@@ -17,6 +31,14 @@ interface SortKey {
   direction: SortDirection;
 }
 type HighlightMode = "max" | "min";
+
+const ENUM_LABEL_MAPS: Record<string, Record<string, string>> = {
+  "enum:element": ELEMENT_LABELS,
+  "enum:weapon_type": WEAPON_LABELS,
+  "enum:run_state": RUN_STATE_LABELS,
+  "enum:event_type": EVENT_TYPE_LABELS,
+  "enum:damage_type": DAMAGE_TYPE_LABELS,
+};
 
 export function AnalysisViewBody({
   node,
@@ -135,6 +157,19 @@ function MemberTable({
     () => new Map(table.columns.map((column) => [column.name, column.type])),
     [table.columns],
   );
+  const catalog = useAnalysisSchemaCatalog();
+  const shapes = useMemo(
+    () => computeAnalysisShapes(definition, catalog),
+    [definition, catalog],
+  );
+  const inputShape = useMemo(
+    () => viewInputShape(shapes, definition, node.id),
+    [shapes, definition, node.id],
+  );
+  const valueKinds = useMemo(
+    () => new Map(inputShape.map((column) => [column.name, column.valueKind ?? ""])),
+    [inputShape],
+  );
 
   const defaultOrder = useMemo(() => {
     const present = new Set(table.columns.map((column) => column.name));
@@ -197,6 +232,28 @@ function MemberTable({
   const visibleRows = virtualizing
     ? sortedRows.slice(windowRange.start, windowRange.end)
     : sortedRows;
+
+  const assetKeys = useMemo(() => {
+    const keys = new Set<string>();
+    for (const column of conditionColumns) {
+      const kind = valueKinds.get(column) ?? "";
+      if (!kind.startsWith("asset:")) {
+        continue;
+      }
+      const index = columnIndex.get(column);
+      if (index === undefined) {
+        continue;
+      }
+      for (const row of table.rows) {
+        const value = row[index];
+        if (typeof value === "string" && value !== "") {
+          keys.add(value);
+        }
+      }
+    }
+    return Array.from(keys);
+  }, [conditionColumns, valueKinds, columnIndex, table.rows]);
+  const assetNames = useAssetNames(assetKeys);
 
   const highlightValues = useMemo(() => {
     const result = new Map<string, number>();
@@ -411,7 +468,12 @@ function MemberTable({
                     .join(" ");
                   return (
                     <td key={column} className={cellClass}>
-                      {formatCell(value, typeOf.get(column))}
+                      {formatCell(
+                        value,
+                        typeOf.get(column),
+                        valueKinds.get(column),
+                        assetNames,
+                      )}
                     </td>
                   );
                 })}
@@ -438,10 +500,27 @@ function asStringArray(value: unknown): string[] {
     : [];
 }
 
-/** 单元格格式化：int 千分位、float 两位小数去尾零、空值显示“—”。 */
-export function formatCell(value: unknown, type?: string): string {
+/**
+ * 单元格格式化：按 valueKind 解析显示名（资产/枚举），
+ * 数值沿用 int 千分位、float 两位小数去尾零，空值显示“—”。
+ */
+export function formatCell(
+  value: unknown,
+  type?: string,
+  valueKind?: string,
+  assetNames?: Map<string, string>,
+): string {
   if (value === null || value === undefined) {
     return "—";
+  }
+  if (typeof value === "string" && valueKind !== undefined && valueKind !== "") {
+    if (valueKind.startsWith("asset:")) {
+      return assetNames?.get(value) ?? value;
+    }
+    const map = ENUM_LABEL_MAPS[valueKind];
+    if (map !== undefined) {
+      return map[value] ?? value;
+    }
   }
   if (typeof value === "number") {
     if (!Number.isFinite(value)) {

@@ -63,6 +63,26 @@ def test_assets_list_and_detail_do_not_expose_handler_key(application_facade) ->
     assert "handler_key" not in detail.json()
 
 
+def test_assets_resolve_returns_found_names_only(application_facade) -> None:
+    app = create_app(application_facade(assets=(_CHARACTER, _WEAPON)))
+
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/assets/resolve",
+            json={
+                "keys": [
+                    "character:barbara",
+                    "weapon:test",
+                    "character:missing",
+                    "character:barbara",
+                ]
+            },
+        )
+
+    assert response.status_code == 200
+    assert response.json()["items"] == [asdict(_CHARACTER), asdict(_WEAPON)]
+
+
 def test_assets_list_defaults_and_nullable_fields(application_facade) -> None:
     app = create_app(application_facade(assets=(_WEAPON, _ARTIFACT_SET)))
 

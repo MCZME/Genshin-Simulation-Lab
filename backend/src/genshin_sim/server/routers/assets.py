@@ -8,13 +8,27 @@ from fastapi import APIRouter, Depends, Query, Request
 
 from genshin_sim.application import ApplicationFacade, AssetListItem
 from genshin_sim.server.dependencies import require_initialized
-from genshin_sim.server.dto.assets import AssetListResponse, AssetResponse
+from genshin_sim.server.dto.assets import (
+    AssetListResponse,
+    AssetResponse,
+    ResolveAssetsRequest,
+)
 
 router = APIRouter(
     prefix="/api/v1/assets",
     tags=["assets"],
     dependencies=[Depends(require_initialized)],
 )
+
+
+@router.post("/resolve", response_model=AssetListResponse)
+def resolve_assets(payload: ResolveAssetsRequest, request: Request) -> AssetListResponse:
+    facade = cast(ApplicationFacade, request.app.state.application)
+    unique = tuple(
+        dict.fromkeys(key.strip() for key in payload.keys if key and key.strip())
+    )
+    items = facade.resolve_assets(unique)
+    return AssetListResponse(items=[_asset_to_dto(item) for item in items])
 
 
 @router.get("/{asset_type}", response_model=AssetListResponse)

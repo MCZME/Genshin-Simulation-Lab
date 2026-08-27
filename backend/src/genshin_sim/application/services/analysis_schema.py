@@ -21,8 +21,8 @@ _KNOWN_PAYLOAD_FIELDS: dict[str, tuple[AnalysisEventField, ...]] = {
         AnalysisEventField("result.final_damage", "float", "结算伤害值"),
         AnalysisEventField("result.source_ref", "string", "伤害来源引用（字符串形态）"),
         AnalysisEventField("result.source_ref.entity_id", "string", "伤害来源实体（对象形态）"),
-        AnalysisEventField("result.damage_type", "string", "伤害类型"),
-        AnalysisEventField("result.element", "string", "伤害元素"),
+        AnalysisEventField("result.damage_type", "string", "伤害类型", "enum:damage_type"),
+        AnalysisEventField("result.element", "string", "伤害元素", "enum:element"),
     ),
     "HEALING_RESOLVED": (
         AnalysisEventField("result.final_healing", "float", "结算治疗值"),
@@ -78,6 +78,7 @@ def build_snapshot_tree() -> AnalysisSchemaNode:
         *,
         default_name: str | None = None,
         template: str | None = None,
+        value_kind: str = "",
     ) -> AnalysisSchemaNode:
         return AnalysisSchemaNode(
             key=key,
@@ -86,6 +87,7 @@ def build_snapshot_tree() -> AnalysisSchemaNode:
             type=type_,
             default_name=default_name,
             default_name_template=template,
+            value_kind=value_kind,
         )
 
     def object_(
@@ -102,7 +104,13 @@ def build_snapshot_tree() -> AnalysisSchemaNode:
         "character",
         "角色",
         (
-            scalar("asset_key", "资产", "string", template="char_{0}_key"),
+            scalar(
+                "asset_key",
+                "资产",
+                "string",
+                template="char_{0}_key",
+                value_kind="asset:characters",
+            ),
             scalar("level", "等级", "int", template="char_{0}_level"),
             scalar("constellation", "命座", "int", template="char_{0}_constellation"),
             object_(
@@ -135,7 +143,13 @@ def build_snapshot_tree() -> AnalysisSchemaNode:
         "weapon",
         "武器",
         (
-            scalar("asset_key", "资产", "string", template="weapon_{0}_key"),
+            scalar(
+                "asset_key",
+                "资产",
+                "string",
+                template="weapon_{0}_key",
+                value_kind="asset:weapons",
+            ),
             scalar("level", "等级", "int", template="weapon_{0}_level"),
             scalar("refinement", "精炼", "int", template="weapon_{0}_refinement"),
         ),
@@ -144,7 +158,13 @@ def build_snapshot_tree() -> AnalysisSchemaNode:
         "sets",
         "套装",
         (
-            scalar("asset_key", "套装", "string", template="set_{0}_{1}_key"),
+            scalar(
+                "asset_key",
+                "套装",
+                "string",
+                template="set_{0}_{1}_key",
+                value_kind="asset:artifact-sets",
+            ),
             scalar("pieces", "件数", "int", template="set_{0}_{1}_pieces"),
         ),
     )
@@ -169,6 +189,7 @@ def build_snapshot_tree() -> AnalysisSchemaNode:
                         element_label,
                         "int",
                         template=f"target_{{{0}}}_res_{element}",
+                        value_kind="enum:element",
                     )
                     for element, element_label in _ELEMENT_LABELS.items()
                 ),

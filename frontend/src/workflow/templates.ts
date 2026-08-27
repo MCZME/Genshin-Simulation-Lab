@@ -11,6 +11,8 @@ import type { WorkflowDefinition, WorkflowEdge, WorkflowNode } from "./types";
 export interface TableShape {
   name: string;
   type: string;
+  /** 单元格值的显示类别：asset:* 走资产名解析，enum:* 走词表，缺省为原文。 */
+  valueKind?: string;
 }
 
 export interface FetchExtractColumn {
@@ -28,9 +30,12 @@ export interface FilterCondition {
 export interface AnalysisSchemaCatalog {
   load(schema: AnalysisSchemaResponse): void;
   ready(): boolean;
-  runsColumns(): { name: string; type: string; description: string }[];
-  eventsColumns(): { name: string; type: string; description: string }[];
-  eventTypes(): { name: string; fields: { path: string; type: string; description: string }[] }[];
+  runsColumns(): { name: string; type: string; description: string; value_kind: string }[];
+  eventsColumns(): { name: string; type: string; description: string; value_kind: string }[];
+  eventTypes(): {
+    name: string;
+    fields: { path: string; type: string; description: string; value_kind: string }[];
+  }[];
   snapshotTree(): AnalysisSchemaNode | null;
 }
 
@@ -41,6 +46,7 @@ export interface AnalysisSchemaNode {
   kind: "object" | "list" | "scalar";
   type?: string;
   description?: string;
+  value_kind?: string;
   default_name?: string;
   default_name_template?: string;
   children?: AnalysisSchemaNode[];
@@ -54,6 +60,7 @@ export interface SnapshotLeaf {
   defaultNameTemplate: string | null;
   type: string;
   description: string;
+  valueKind?: string;
 }
 
 /** 把结构树拍平成叶子清单（列表位置用 {n} 占位，由用户输入）。 */
@@ -87,6 +94,7 @@ export function snapshotLeaves(tree: AnalysisSchemaNode | null): SnapshotLeaf[] 
           node.default_name_template ?? node.default_name ?? null,
         type: node.type ?? "",
         description: node.description ?? "",
+        valueKind: node.value_kind ?? "",
       });
       return;
     }
@@ -201,7 +209,11 @@ function literalMatches(type: string, value: unknown): boolean {
   return false;
 }
 
-function extractShape(raw: unknown, requireEventType = false): TableShape[] | null {
+function extractShape(
+  raw: unknown,
+  requireEventType = false,
+  valueKindFor?: (item: Record<string, unknown>) => string,
+): TableShape[] | null {
   if (raw === undefined) {
     return [];
   }
@@ -234,9 +246,39 @@ function extractShape(raw: unknown, requireEventType = false): TableShape[] | nu
       return null;
     }
     seen.add(name);
-    output.push({ name, type });
+    const valueKind = valueKindFor?.(item) ?? "";
+    output.push(valueKind === "" ? { name, type } : { name, type, valueKind });
   }
   return output;
+}
+
+/** 路径模板（{0}/{1} 占位）与具体路径是否匹配。 */
+function matchesPathTemplate(path: string, template: string): boolean {
+  const pattern = template
+    .split(".")
+    .map((segment) => segment.replace(/^\{(\d+)\}$/, "[0-9]+"))
+    .join("\\.");
+  return new RegExp(`^${pattern}$`).test(path);
+}
+
+/** 快照提取列的 value_kind：按路径匹配结构树叶子声明。 */
+function snapshotValueKind(catalog: AnalysisSchemaCatalog | null, path: string): string {
+  const leaves = snapshotLeaves(catalog?.snapshotTree() ?? null);
+  const leaf = leaves.find((item) => matchesPathTemplate(path, item.pathTemplate));
+  return leaf?.valueKind ?? "";
+}
+
+/** 事件载荷提取列的 value_kind：按事件类型 + 路径匹配字段声明。 */
+function payloadValueKind(
+  catalog: AnalysisSchemaCatalog | null,
+  eventType: string,
+  path: string,
+): string {
+  const field = catalog
+    ?.eventTypes()
+    .find((item) => item.name === eventType)
+    ?.fields.find((item) => item.path === path);
+  return field?.value_kind ?? "";
 }
 
 /** 取数节点固定输出列：优先 schema 目录，未加载时降级用内置清单。 */
@@ -251,17 +293,25 @@ export function fetchBaseColumns(
     source === "events" ? catalog.eventsColumns() : catalog.runsColumns();
   return columns.length === 0
     ? undefined
-    : columns.map((column) => ({ name: column.name, type: column.type }));
+    : columns.map((column) => ({
+        name: column.name,
+        type: column.type,
+        ...(column.value_kind === "" ? {} : { valueKind: column.value_kind }),
+      }));
 }
 
 /** 单节点输出形状（不含上游解析；取数节点形状只依赖自身参数）。 */
 export function fetchShape(
   node: WorkflowNode,
   baseColumns?: TableShape[],
+  catalog?: AnalysisSchemaCatalog | null,
 ): TableShape[] | null {
   const source = node.params.source;
   if (source === "runs") {
-    const extracts = extractShape(node.params.snapshot_columns);
+    const extracts = extractShape(node.params.snapshot_columns, false, (item) => {
+      const path = typeof item.path === "string" ? item.path : "";
+      return snapshotValueKind(catalog ?? null, path);
+    });
     return extracts === null ? null : [...(baseColumns ?? RUN_BASE_COLUMNS), ...extracts];
   }
   if (source === "events") {
@@ -272,7 +322,11 @@ export function fetchShape(
     ) {
       return null;
     }
-    const extracts = extractShape(node.params.payload_columns, true);
+    const extracts = extractShape(node.params.payload_columns, true, (item) => {
+      const eventType = typeof item.event_type === "string" ? item.event_type : "";
+      const path = typeof item.path === "string" ? item.path : "";
+      return payloadValueKind(catalog ?? null, eventType, path);
+    });
     return extracts === null
       ? null
       : [...(baseColumns ?? EVENT_BASE_COLUMNS), ...extracts];
@@ -314,6 +368,9 @@ function aggregateShape(node: WorkflowNode, source: TableShape[]): TableShape[] 
     return null;
   }
   const types = new Map(source.map((column) => [column.name, column.type]));
+  const valueKinds = new Map(
+    source.map((column) => [column.name, column.valueKind ?? ""]),
+  );
   const output: TableShape[] = [];
   const seen = new Set<string>();
   for (const name of groupBy) {
@@ -322,7 +379,8 @@ function aggregateShape(node: WorkflowNode, source: TableShape[]): TableShape[] 
       return null;
     }
     seen.add(name);
-    output.push({ name, type });
+    const valueKind = valueKinds.get(name) ?? "";
+    output.push(valueKind === "" ? { name, type } : { name, type, valueKind });
   }
   for (const item of aggregates) {
     if (!isRecord(item)) {
@@ -361,6 +419,9 @@ function aggregateShape(node: WorkflowNode, source: TableShape[]): TableShape[] 
 
 function projectShape(node: WorkflowNode, source: TableShape[]): TableShape[] | null {
   const types = new Map(source.map((column) => [column.name, column.type]));
+  const valueKinds = new Map(
+    source.map((column) => [column.name, column.valueKind ?? ""]),
+  );
   if (!Array.isArray(node.params.columns) || node.params.columns.length === 0) {
     return null;
   }
@@ -376,28 +437,33 @@ function projectShape(node: WorkflowNode, source: TableShape[]): TableShape[] | 
       return null;
     }
     seen.add(final);
-    output.push({ name: final, type: types.get(item.name) as string });
+    const valueKind = valueKinds.get(item.name) ?? "";
+    output.push(
+      valueKind === ""
+        ? { name: final, type: types.get(item.name) as string }
+        : { name: final, type: types.get(item.name) as string, valueKind },
+    );
   }
   return output;
 }
 
 function joinShape(node: WorkflowNode, left: TableShape[], right: TableShape[]): TableShape[] | null {
   const leftNames = new Set(left.map((column) => column.name));
-  const rightTypes = new Map(right.map((column) => [column.name, column.type]));
+  const rightByKey = new Map(right.map((column) => [column.name, column]));
   const mode = node.params.mode ?? "inner";
   if (
     (mode !== "inner" && mode !== "left") ||
     typeof node.params.left_key !== "string" ||
     !leftNames.has(node.params.left_key) ||
     typeof node.params.right_key !== "string" ||
-    !rightTypes.has(node.params.right_key)
+    !rightByKey.has(node.params.right_key)
   ) {
     return null;
   }
   const output = [...left];
-  for (const [name, type] of rightTypes) {
+  for (const [name, column] of rightByKey) {
     if (!leftNames.has(name)) {
-      output.push({ name, type });
+      output.push(column);
     }
   }
   return output;
@@ -603,7 +669,11 @@ export function computeAnalysisShapes(
     let shape: TableShape[] | null;
     switch (node.kind) {
       case "fetch":
-        shape = fetchShape(node, fetchBaseColumns(node.params.source, catalog ?? null));
+        shape = fetchShape(
+          node,
+          fetchBaseColumns(node.params.source, catalog ?? null),
+          catalog,
+        );
         break;
       case "filter":
         shape = inputShapes[0] ? filterShape(node, inputShapes[0]) : null;

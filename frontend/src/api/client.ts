@@ -49,14 +49,21 @@ export interface AnalysisSchemaNodeDto {
   kind: "object" | "list" | "scalar";
   type?: string;
   description?: string;
+  value_kind?: string;
   default_name?: string;
   default_name_template?: string;
   children?: AnalysisSchemaNodeDto[];
 }
 
 export interface AnalysisSchemaResponse {
-  tables: { name: string; columns: { name: string; type: string; description: string }[] }[];
-  event_types: { name: string; fields: { path: string; type: string; description: string }[] }[];
+  tables: {
+    name: string;
+    columns: { name: string; type: string; description: string; value_kind: string }[];
+  }[];
+  event_types: {
+    name: string;
+    fields: { path: string; type: string; description: string; value_kind: string }[];
+  }[];
   snapshot_tree: AnalysisSchemaNodeDto | null;
 }
 export type AssetListResponse = Schema["AssetListResponse"];
@@ -257,6 +264,14 @@ export async function getAsset(
   return request<AssetResponse>(
     `/assets/${assetType}/${encodeURIComponent(sourceId)}`,
   );
+}
+
+/** 按完整 asset_key 批量解析资产显示名；缺失的键不返回。 */
+export async function resolveAssets(keys: string[]): Promise<AssetListResponse> {
+  return request<AssetListResponse>("/assets/resolve", {
+    method: "POST",
+    body: JSON.stringify({ keys }),
+  });
 }
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {

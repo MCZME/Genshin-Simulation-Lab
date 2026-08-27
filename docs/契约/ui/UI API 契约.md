@@ -383,7 +383,7 @@ MVP 摘要面板不依赖本端点；时间轴与分析区域再接。
 
 ### `GET /api/v1/analysis/schema`
 
-取数节点编辑器数据源：`tables`（可读表列 + 类型 + 说明）、`event_types`（事件类型 + payload 字段路径）与 `snapshot_tree`（输入快照结构树：`object` / `list` / `scalar` 节点，列表不枚举位置、叶子带默认列名模板）。内容聚合自结果库契约冻结清单、事件类型文档与输入快照契约，不另立真值。
+取数节点编辑器数据源：`tables`（可读表列 + 类型 + 说明 + `value_kind`）、`event_types`（事件类型 + payload 字段路径 + `value_kind`）与 `snapshot_tree`（输入快照结构树：`object` / `list` / `scalar` 节点，列表不枚举位置、叶子带默认列名模板与 `value_kind`）。内容聚合自结果库契约冻结清单、事件类型文档与输入快照契约，不另立真值。`value_kind` 声明单元格值显示类别（资产 key / 封闭词表 / 普通值），显示名解析由前端承担，后端结果仍返回原始值。
 
 ## 10. 资产
 
@@ -420,6 +420,17 @@ MVP 摘要面板不依赖本端点；时间轴与分析区域再接。
 ### `GET /api/v1/assets/{asset_type}/{source_id}`
 
 响应为单条与列表项相同的对象，不附加内部 payload。不存在 `404`。
+
+### `POST /api/v1/assets/resolve`
+
+按完整 `asset_key` 批量解析资产显示名（分析视图单元格显示用）：
+
+```json
+{ "keys": ["character:barbara", "weapon:thrilling_tales"] }
+```
+
+- `keys`：`asset_key` 列表，去重后最多 200 个；空项忽略。
+- 响应为 `AssetListResponse`，只包含能解析的资产（缺失 / 未知键不回显，前端回退原文显示）。
 
 ## 11. 状态码
 

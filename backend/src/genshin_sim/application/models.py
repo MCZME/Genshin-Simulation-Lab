@@ -137,6 +137,7 @@ class AnalysisSchemaColumn:
     name: str
     type: str
     description: str = ""
+    value_kind: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -154,6 +155,7 @@ class AnalysisEventField:
     path: str
     type: str
     description: str = ""
+    value_kind: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -179,6 +181,7 @@ class AnalysisSchemaNode:
     description: str = ""
     default_name: str | None = None
     default_name_template: str | None = None
+    value_kind: str = ""
     children: tuple[AnalysisSchemaNode, ...] = ()
 
 

@@ -22,3 +22,9 @@ class AssetListResponse(BaseModel):
     """按类型搜索/列表响应。"""
 
     items: list[AssetResponse] = Field(default_factory=list)
+
+
+class ResolveAssetsRequest(BaseModel):
+    """按 asset_key 批量解析显示名（最多 200 个）。"""
+
+    keys: list[str] = Field(default_factory=list, max_length=200)

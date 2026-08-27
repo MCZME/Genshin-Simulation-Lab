@@ -90,6 +90,8 @@ class ApplicationFacade(Protocol):
 
     def get_asset(self, kind: AssetListKind | str, source_id: str) -> AssetListItem: ...
 
+    def resolve_assets(self, keys: tuple[str, ...]) -> tuple[AssetListItem, ...]: ...
+
     def inspect_asset(self, asset_key: str) -> dict[str, Any]: ...
 
     def init_asset_database(self, path: str | Path) -> Path: ...
@@ -350,6 +352,9 @@ class DefaultApplicationFacade:
                 "not_found",
                 f"资产不存在：{kind}/{source_id}",
             ) from exc
+
+    def resolve_assets(self, keys: tuple[str, ...]) -> tuple[AssetListItem, ...]:
+        return self._assets_service.resolve_assets(keys)
 
     def inspect_asset(self, asset_key: str) -> dict[str, Any]:
         return self._assets_service.inspect_asset_dict(asset_key)

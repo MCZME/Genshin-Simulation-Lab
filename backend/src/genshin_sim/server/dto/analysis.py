@@ -39,6 +39,7 @@ class SchemaColumnDto(BaseModel):
     name: str
     type: str
     description: str = ""
+    value_kind: str = ""
 
 
 class TableSchemaDto(BaseModel):
@@ -50,6 +51,7 @@ class EventFieldDto(BaseModel):
     path: str
     type: str
     description: str = ""
+    value_kind: str = ""
 
 
 class EventTypeSchemaDto(BaseModel):
@@ -67,6 +69,7 @@ class SchemaNodeDto(BaseModel):
     description: str = ""
     default_name: str | None = None
     default_name_template: str | None = None
+    value_kind: str = ""
     children: list[SchemaNodeDto] = Field(default_factory=list)
 
 

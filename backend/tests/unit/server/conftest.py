@@ -314,6 +314,10 @@ class FakeApplicationFacade:
                 return item
         raise ApplicationError("not_found", f"资产不存在：{kind}/{source_id}")
 
+    def resolve_assets(self, keys: tuple[str, ...]) -> tuple[AssetListItem, ...]:
+        found = {item.asset_key: item for item in self._assets}
+        return tuple(found[key] for key in keys if key in found)
+
     def _require_workflow(self, workflow_id: str) -> WorkflowDetail:
         try:
             return self._workflows[workflow_id]

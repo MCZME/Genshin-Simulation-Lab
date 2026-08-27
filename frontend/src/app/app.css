@@ -2949,25 +2949,90 @@ body {
 
 /* ── 表格配置节点：条件列 / 数据列绑定 ── */
 
+.node-card.node-card-table-config {
+  width: 420px;
+}
+
 .table-config-editor {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
+  align-items: start;
+}
+
+.table-config-editor-empty {
+  grid-column: 1 / -1;
 }
 
 .table-binding-zone {
   display: flex;
   flex-direction: column;
   gap: 6px;
+  min-width: 0;
+  padding: 8px;
+  border: 1px solid #334155;
+  border-radius: 6px;
+  background: rgba(148, 163, 184, 0.04);
+}
+
+.table-binding-zone.zone-data {
+  border-color: rgba(59, 130, 246, 0.25);
+  background: rgba(59, 130, 246, 0.07);
+}
+
+.table-binding-header {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.table-binding-collapse {
+  flex: none;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.table-binding-collapse:hover {
+  color: #e2e8f0;
 }
 
 .table-binding-title {
-  display: flex;
-  align-items: baseline;
-  gap: 8px;
+  flex: none;
   font-size: 12px;
   font-weight: 600;
   color: #cbd5e1;
+}
+
+.table-binding-count {
+  flex: none;
+  padding: 0 6px;
+  border-radius: 999px;
+  background: rgba(148, 163, 184, 0.14);
+  color: #94a3b8;
+  font-size: 10px;
+  line-height: 16px;
+}
+
+.table-binding-add-button {
+  margin-left: auto;
+  padding: 1px 7px;
+  border: 1px solid #475569;
+  border-radius: 4px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 12px;
+  line-height: 16px;
+  cursor: pointer;
+}
+
+.table-binding-add-button:hover {
+  background: #1e3a5f;
+  border-color: #3b82f6;
+  color: #e2e8f0;
 }
 
 .table-binding-hint {
@@ -2995,6 +3060,7 @@ body {
   display: flex;
   align-items: center;
   gap: 4px;
+  padding: 2px 0;
 }
 
 .table-binding-row select {
@@ -3002,13 +3068,96 @@ body {
   min-width: 0;
 }
 
-.table-binding-add {
-  width: 100%;
+.table-binding-drag {
+  flex: none;
+  min-width: 20px;
+  padding: 2px 4px;
+  color: #64748b;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: -3px;
+  text-align: center;
+  cursor: grab;
+  user-select: none;
 }
 
-.table-size-row {
+.table-binding-drag:hover {
+  color: #cbd5e1;
+}
+
+.table-binding-row .icon-button {
+  opacity: 0.55;
+}
+
+.table-binding-row:hover .icon-button,
+.table-binding-row .icon-button:focus-visible {
+  opacity: 1;
+}
+
+.table-binding-row.drag-target {
+  outline: 1px dashed #3b82f6;
+  outline-offset: -1px;
+  border-radius: 4px;
+}
+
+.table-binding-add-panel {
   display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid #475569;
+  border-radius: 6px;
+  background: #0f172a;
+}
+
+.table-binding-add-search {
+  width: 100%;
+  min-width: 0;
+}
+
+.table-binding-add-options {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 160px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.table-binding-add-option label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 4px;
+  color: #cbd5e1;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.table-binding-add-option:hover {
+  background: #1e3a5f;
+  border-radius: 4px;
+}
+
+.table-binding-add-option input {
+  margin: 0;
+}
+
+.table-binding-add-actions {
+  display: flex;
+  justify-content: flex-end;
   gap: 8px;
+}
+
+.table-display-zone {
+  grid-column: 1 / -1;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding-top: 8px;
+  border-top: 1px dashed #334155;
 }
 
 .table-size-field {
@@ -3971,6 +4120,9 @@ body {
 .sort-key-line > select,
 .limit-line > input,
 .join-key-row > select,
+.table-binding-row > select,
+.table-binding-add-search,
+.table-size-field > select,
 .compute-head > input,
 .compute-head > select,
 .compute-formula-input {

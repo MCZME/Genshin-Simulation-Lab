@@ -1,5 +1,6 @@
 /** 展示配置节点：表格 / 时间轴 / 饼图 / 柱状图绑定编辑。 */
 
+import { useState } from "react";
 import { configTargetView, viewInputShape } from "../../../workflow/templates";
 import { normalizeWidthMode } from "../../../workflow/view_size";
 import { asString } from "../common";
@@ -47,112 +48,220 @@ function normalizeTableParams(params: Record<string, unknown>): Record<string, u
   };
 }
 
-function moveBinding(columns: string[], index: number, delta: -1 | 1): string[] {
-  const target = index + delta;
-  if (target < 0 || target >= columns.length) {
-    return columns;
-  }
-  const next = [...columns];
-  const [item] = next.splice(index, 1);
-  next.splice(target, 0, item);
-  return next;
+type BindingZone = "condition" | "data";
+
+interface BindingDragSource {
+  zone: BindingZone;
+  index: number;
+  column: string;
 }
 
 function BindingList({
+  zone,
   title,
   hint,
   columns,
   available,
   taken,
   onChange,
+  dragSource,
+  onDragStart,
+  onDragEnd,
+  onDropAt,
+  onDropAppend,
 }: {
+  zone: BindingZone;
   title: string;
   hint: string;
   columns: string[];
   available: string[];
   taken: Set<string>;
   onChange: (next: string[]) => void;
+  dragSource: BindingDragSource | null;
+  onDragStart: (source: BindingDragSource) => void;
+  onDragEnd: () => void;
+  onDropAt: (zone: BindingZone, index: number) => void;
+  onDropAppend: (zone: BindingZone) => void;
 }) {
+  const [collapsed, setCollapsed] = useState(false);
+  const [addOpen, setAddOpen] = useState(false);
+  const [search, setSearch] = useState("");
+  const [pending, setPending] = useState<string[]>([]);
+  const keyword = search.trim().toLowerCase();
+  const filtered = available.filter(
+    (name) =>
+      !taken.has(name) && (keyword === "" || name.toLowerCase().includes(keyword)),
+  );
+  const toggleAdd = () => {
+    setAddOpen((current) => !current);
+    setSearch("");
+    setPending([]);
+  };
+  const confirmAdd = () => {
+    if (pending.length > 0) {
+      onChange([...columns, ...pending]);
+    }
+    setAddOpen(false);
+    setSearch("");
+    setPending([]);
+  };
   return (
-    <div className="table-binding-zone">
-      <div className="table-binding-title">
-        <span>{title}</span>
-        <span className="table-binding-hint">{hint}</span>
+    <div
+      className={`table-binding-zone ${zone === "data" ? "zone-data" : ""}`}
+      onDragOver={(event) => event.preventDefault()}
+      onDrop={(event) => {
+        event.preventDefault();
+        onDropAppend(zone);
+      }}
+    >
+      <div className="table-binding-header">
+        <button
+          type="button"
+          className="table-binding-collapse"
+          aria-label={collapsed ? `展开${title}` : `折叠${title}`}
+          onClick={() => {
+            setCollapsed((current) => !current);
+            setAddOpen(false);
+          }}
+        >
+          {collapsed ? "▸" : "▾"}
+        </button>
+        <span className="table-binding-title">{title}</span>
+        <span className="table-binding-count">{columns.length}</span>
+        {!collapsed && (
+          <button
+            type="button"
+            className="table-binding-add-button"
+            aria-label={`添加${title}`}
+            title={`添加${title}`}
+            onClick={toggleAdd}
+          >
+            ＋
+          </button>
+        )}
       </div>
-      {columns.length === 0 ? (
-        <p className="table-binding-empty">未选择列</p>
-      ) : (
-        <ul className="table-binding-list">
-          {columns.map((column, index) => (
-            <li key={`${column}-${index}`} className="table-binding-row">
-              <select
-                aria-label={`${title}第 ${index + 1} 行`}
-                value={column}
-                onChange={(event) =>
-                  onChange(columns.map((item, i) => (i === index ? event.target.value : item)))
-                }
-              >
-                <option value="">列…</option>
-                {available
-                  .filter((name) => !taken.has(name) || name === column)
-                  .map((name) => (
-                    <option key={name} value={name}>
-                      {name}
-                    </option>
+      {!collapsed && (
+        <>
+          <span className="table-binding-hint">{hint}</span>
+          {columns.length === 0 ? (
+            <p className="table-binding-empty">未选择列</p>
+          ) : (
+            <ul className="table-binding-list">
+              {columns.map((column, index) => (
+                <li
+                  key={`${column}-${index}`}
+                  className={`table-binding-row ${
+                    dragSource !== null &&
+                    !(dragSource.zone === zone && dragSource.index === index)
+                      ? "drag-target"
+                      : ""
+                  }`}
+                  onDragOver={(event) => event.preventDefault()}
+                  onDrop={(event) => {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    onDropAt(zone, index);
+                  }}
+                >
+                  <span
+                    className="table-binding-drag nodrag"
+                    draggable
+                    title="拖拽调整顺序或移动分区"
+                    onDragStart={(event) => {
+                      event.dataTransfer.effectAllowed = "move";
+                      event.dataTransfer.setData("text/plain", column);
+                      onDragStart({ zone, index, column });
+                    }}
+                    onDragEnd={onDragEnd}
+                  >
+                    ⋮⋮
+                  </span>
+                  <select
+                    aria-label={`${title}第 ${index + 1} 行`}
+                    value={column}
+                    onChange={(event) =>
+                      onChange(
+                        columns.map((item, i) =>
+                          i === index ? event.target.value : item,
+                        ),
+                      )
+                    }
+                  >
+                    <option value="">列…</option>
+                    {available
+                      .filter((name) => !taken.has(name) || name === column)
+                      .map((name) => (
+                        <option key={name} value={name}>
+                          {name}
+                        </option>
+                      ))}
+                  </select>
+                  <button
+                    type="button"
+                    className="icon-button danger"
+                    title="移除"
+                    aria-label={`移除 ${column}`}
+                    onClick={() => onChange(columns.filter((_, i) => i !== index))}
+                  >
+                    ×
+                  </button>
+                </li>
+              ))}
+            </ul>
+          )}
+          {addOpen && (
+            <div className="table-binding-add-panel">
+              <input
+                className="table-binding-add-search"
+                type="search"
+                placeholder="搜索列名"
+                aria-label={`搜索${title}`}
+                value={search}
+                onChange={(event) => setSearch(event.target.value)}
+              />
+              {filtered.length === 0 ? (
+                <p className="table-binding-empty">没有可添加的列</p>
+              ) : (
+                <ul className="table-binding-add-options">
+                  {filtered.map((name) => (
+                    <li key={name} className="table-binding-add-option">
+                      <label>
+                        <input
+                          type="checkbox"
+                          checked={pending.includes(name)}
+                          aria-label={`选择列 ${name}`}
+                          onChange={(event) =>
+                            setPending((current) =>
+                              event.target.checked
+                                ? [...current, name]
+                                : current.filter((item) => item !== name),
+                            )
+                          }
+                        />
+                        {name}
+                      </label>
+                    </li>
                   ))}
-              </select>
-              <button
-                type="button"
-                className="icon-button"
-                title="上移"
-                aria-label={`上移 ${column}`}
-                disabled={index === 0}
-                onClick={() => onChange(moveBinding(columns, index, -1))}
-              >
-                ↑
-              </button>
-              <button
-                type="button"
-                className="icon-button"
-                title="下移"
-                aria-label={`下移 ${column}`}
-                disabled={index === columns.length - 1}
-                onClick={() => onChange(moveBinding(columns, index, 1))}
-              >
-                ↓
-              </button>
-              <button
-                type="button"
-                className="icon-button danger"
-                title="移除"
-                aria-label={`移除 ${column}`}
-                onClick={() => onChange(columns.filter((_, i) => i !== index))}
-              >
-                ×
-              </button>
-            </li>
-          ))}
-        </ul>
+                </ul>
+              )}
+              <div className="table-binding-add-actions">
+                <button type="button" className="text-button" onClick={toggleAdd}>
+                  取消
+                </button>
+                <button
+                  type="button"
+                  className="text-button"
+                  aria-label={`确认添加${title}`}
+                  disabled={pending.length === 0}
+                  onClick={confirmAdd}
+                >
+                  添加 {pending.length} 列
+                </button>
+              </div>
+            </div>
+          )}
+        </>
       )}
-      <select
-        className="table-binding-add"
-        aria-label={`添加${title}`}
-        value=""
-        onChange={(event) => {
-          if (event.target.value !== "") {
-            onChange([...columns, event.target.value]);
-          }
-        }}
-      >
-        <option value="">＋ 添加{title}</option>
-        {available
-          .filter((name) => !taken.has(name))
-          .map((name) => (
-            <option key={name} value={name}>
-              {name}
-            </option>
-          ))}
-      </select>
     </div>
   );
 }
@@ -167,12 +276,46 @@ export function TableConfigEditor({ node, onChange }: EditorProps) {
   const data = asStringArray(node.params.data_columns);
   const taken = new Set([...condition, ...data]);
   const widthMode = node.params.width_mode === "fixed" ? "fixed" : "auto";
+  const [dragSource, setDragSource] = useState<BindingDragSource | null>(null);
+
+  function commitMove(
+    source: BindingDragSource,
+    targetZone: BindingZone,
+    targetIndex?: number,
+  ) {
+    const next = {
+      condition_columns: [...condition],
+      data_columns: [...data],
+    };
+    const sourceList =
+      source.zone === "condition" ? next.condition_columns : next.data_columns;
+    const targetList =
+      targetZone === "condition" ? next.condition_columns : next.data_columns;
+    const [moved] = sourceList.splice(source.index, 1);
+    if (moved === undefined) {
+      setDragSource(null);
+      return;
+    }
+    targetList.splice(targetIndex ?? targetList.length, 0, moved);
+    onChange(
+      normalizeTableParams({
+        ...node.params,
+        condition_columns: next.condition_columns,
+        data_columns: next.data_columns,
+      }),
+    );
+    setDragSource(null);
+  }
+
   return (
     <div className="analysis-editor table-config-editor">
       {available.length === 0 && (
-        <p className="analysis-editor-empty">连接视图并接通数据源后，这里会出现可绑定的列。</p>
+        <p className="analysis-editor-empty table-config-editor-empty">
+          连接视图并接通数据源后，这里会出现可绑定的列。
+        </p>
       )}
       <BindingList
+        zone="condition"
         title="条件列"
         hint="说明这一行是什么配置"
         columns={condition}
@@ -181,8 +324,22 @@ export function TableConfigEditor({ node, onChange }: EditorProps) {
         onChange={(next) =>
           onChange(normalizeTableParams({ ...node.params, condition_columns: next }))
         }
+        dragSource={dragSource}
+        onDragStart={setDragSource}
+        onDragEnd={() => setDragSource(null)}
+        onDropAt={(targetZone, index) => {
+          if (dragSource !== null) {
+            commitMove(dragSource, targetZone, index);
+          }
+        }}
+        onDropAppend={(targetZone) => {
+          if (dragSource !== null) {
+            commitMove(dragSource, targetZone);
+          }
+        }}
       />
       <BindingList
+        zone="data"
         title="数据列"
         hint="要分析的指标"
         columns={data}
@@ -191,12 +348,25 @@ export function TableConfigEditor({ node, onChange }: EditorProps) {
         onChange={(next) =>
           onChange(normalizeTableParams({ ...node.params, data_columns: next }))
         }
+        dragSource={dragSource}
+        onDragStart={setDragSource}
+        onDragEnd={() => setDragSource(null)}
+        onDropAt={(targetZone, index) => {
+          if (dragSource !== null) {
+            commitMove(dragSource, targetZone, index);
+          }
+        }}
+        onDropAppend={(targetZone) => {
+          if (dragSource !== null) {
+            commitMove(dragSource, targetZone);
+          }
+        }}
       />
-      <div className="table-binding-zone">
+      <div className="table-display-zone">
         <div className="table-binding-title">
-          <span>宽度</span>
+          <span>展示</span>
           <span className="table-binding-hint">
-            自适应模式内容超出上限时裁剪，拖宽查看
+            高度手动调节；自适应内容超出上限时裁剪，拖宽查看
           </span>
         </div>
         <label className="table-size-field">
@@ -213,9 +383,6 @@ export function TableConfigEditor({ node, onChange }: EditorProps) {
             <option value="fixed">固定</option>
           </select>
         </label>
-        <p className="analysis-editor-empty">
-          高度始终手动调节；自适应内容超过上限时裁剪，固定模式可拖宽显示全部列。
-        </p>
       </div>
     </div>
   );

@@ -428,6 +428,7 @@ function MemberTable({
                   : conditionOrder >= 0;
                 const classNames = [
                   "member-th",
+                  "nodrag",
                   isData ? "data" : "condition",
                   isDataStart ? "data-start" : "",
                   sorted ? "sorted" : "",

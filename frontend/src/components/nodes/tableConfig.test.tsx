@@ -83,6 +83,10 @@ function renderEditor(configParams: Record<string, unknown>, onChange = vi.fn())
   return onChange;
 }
 
+function dragDataTransfer() {
+  return { setData: vi.fn(), effectAllowed: "" };
+}
+
 describe("表格配置节点编辑器", () => {
   it("渲染条件列/数据列两个分区，绑定列显示在行内下拉", () => {
     renderEditor({
@@ -95,15 +99,18 @@ describe("表格配置节点编辑器", () => {
     expect((dataSelect as HTMLSelectElement).value).toBe("frames_run");
   });
 
-  it("添加列时排除已绑定列并写入新数组", () => {
+  it("添加列时排除已绑定列，多选后一次性写入", () => {
     const onChange = renderEditor({
       condition_columns: ["weapon_key"],
       data_columns: [],
     });
-    const addSelect = screen.getByLabelText("添加数据列") as HTMLSelectElement;
-    const options = Array.from(addSelect.options).map((option) => option.value);
-    expect(options).not.toContain("weapon_key");
-    fireEvent.change(addSelect, { target: { value: "frames_run" } });
+    fireEvent.click(screen.getByRole("button", { name: "添加数据列" }));
+    const optionLabels = Array.from(
+      document.querySelectorAll(".table-binding-add-option input"),
+    ).map((item) => item.getAttribute("aria-label"));
+    expect(optionLabels).not.toContain("选择列 weapon_key");
+    fireEvent.click(screen.getByLabelText("选择列 frames_run"));
+    fireEvent.click(screen.getByRole("button", { name: "确认添加数据列" }));
     expect(onChange).toHaveBeenCalledWith({
       condition_columns: ["weapon_key"],
       data_columns: ["frames_run"],
@@ -111,16 +118,87 @@ describe("表格配置节点编辑器", () => {
     });
   });
 
-  it("支持上移/下移与移除", () => {
+  it("添加列支持搜索过滤", () => {
+    const onChange = renderEditor({
+      condition_columns: [],
+      data_columns: [],
+    });
+    fireEvent.click(screen.getByRole("button", { name: "添加条件列" }));
+    fireEvent.change(screen.getByLabelText("搜索条件列"), {
+      target: { value: "char" },
+    });
+    expect(screen.getByLabelText("选择列 char_key")).not.toBeNull();
+    expect(screen.queryByLabelText("选择列 weapon_key")).toBeNull();
+    fireEvent.click(screen.getByLabelText("选择列 char_key"));
+    fireEvent.click(screen.getByRole("button", { name: "确认添加条件列" }));
+    expect(onChange).toHaveBeenLastCalledWith({
+      condition_columns: ["char_key"],
+      data_columns: [],
+      width_mode: "auto",
+    });
+  });
+
+  it("分区可折叠与展开", () => {
+    renderEditor({
+      condition_columns: ["weapon_key"],
+      data_columns: [],
+    });
+    expect(screen.getByLabelText("条件列第 1 行")).not.toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "折叠条件列" }));
+    expect(screen.queryByLabelText("条件列第 1 行")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "展开条件列" }));
+    expect(screen.getByLabelText("条件列第 1 行")).not.toBeNull();
+  });
+
+  it("拖拽手柄在同区内调整顺序", () => {
     const onChange = renderEditor({
       condition_columns: ["char_key", "weapon_key"],
       data_columns: [],
     });
-    fireEvent.click(screen.getByRole("button", { name: "下移 char_key" }));
+    const container = document.querySelector(
+      ".table-config-editor",
+    ) as HTMLElement;
+    const rows = Array.from(container.querySelectorAll(".table-binding-row"));
+    const drag = rows[0].querySelector(".table-binding-drag") as HTMLElement;
+    expect(drag.className).toContain("nodrag");
+    const transfer = dragDataTransfer();
+    fireEvent.dragStart(drag, { dataTransfer: transfer });
+    fireEvent.dragOver(rows[1], { dataTransfer: transfer });
+    fireEvent.drop(rows[1], { dataTransfer: transfer });
+    fireEvent.dragEnd(drag);
     expect(onChange).toHaveBeenLastCalledWith({
       condition_columns: ["weapon_key", "char_key"],
       data_columns: [],
       width_mode: "auto",
+    });
+  });
+
+  it("拖拽手柄可跨区移动列", () => {
+    const onChange = renderEditor({
+      condition_columns: ["weapon_key"],
+      data_columns: ["frames_run"],
+    });
+    const container = document.querySelector(
+      ".table-config-editor",
+    ) as HTMLElement;
+    const rows = Array.from(container.querySelectorAll(".table-binding-row"));
+    const drag = rows[0].querySelector(".table-binding-drag") as HTMLElement;
+    const transfer = dragDataTransfer();
+    fireEvent.dragStart(drag, { dataTransfer: transfer });
+    fireEvent.dragOver(rows[1], { dataTransfer: transfer });
+    fireEvent.drop(rows[1], { dataTransfer: transfer });
+    fireEvent.dragEnd(drag);
+    expect(onChange).toHaveBeenLastCalledWith({
+      condition_columns: [],
+      data_columns: ["weapon_key", "frames_run"],
+      width_mode: "auto",
+    });
+  });
+
+  it("支持移除已绑定列", () => {
+    const onChange = renderEditor({
+      condition_columns: ["char_key", "weapon_key"],
+      data_columns: [],
     });
     fireEvent.click(screen.getByRole("button", { name: "移除 weapon_key" }));
     expect(onChange).toHaveBeenLastCalledWith({

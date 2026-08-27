@@ -210,7 +210,7 @@ export function NodeCard({ data, selected }: NodeProps) {
 
   return (
     <div
-      className={`node-card ${isAnalysisView(node.kind) ? "node-card-view" : ""} ${node.kind === "input_trace" ? "node-card-trace" : ""} ${node.kind === "fetch" ? "node-card-fetch" : ""} ${node.kind === "filter" ? "node-card-filter" : ""} ${node.kind === "aggregate" ? "node-card-aggregate" : ""} ${node.kind === "project" ? "node-card-project" : ""} ${node.kind === "sort" ? "node-card-sort" : ""} ${node.kind === "join" ? "node-card-join" : ""} ${node.kind === "compute" ? "node-card-compute" : ""} ${selected ? "selected" : ""} ${isDraft ? "draft" : ""} ${dimmed ? "dimmed" : ""} ${stepRunning ? "step-running" : ""}`}
+      className={`node-card ${isAnalysisView(node.kind) ? "node-card-view" : ""} ${node.kind === "input_trace" ? "node-card-trace" : ""} ${node.kind === "fetch" ? "node-card-fetch" : ""} ${node.kind === "table_config" ? "node-card-table-config" : ""} ${node.kind === "filter" ? "node-card-filter" : ""} ${node.kind === "aggregate" ? "node-card-aggregate" : ""} ${node.kind === "project" ? "node-card-project" : ""} ${node.kind === "sort" ? "node-card-sort" : ""} ${node.kind === "join" ? "node-card-join" : ""} ${node.kind === "compute" ? "node-card-compute" : ""} ${selected ? "selected" : ""} ${isDraft ? "draft" : ""} ${dimmed ? "dimmed" : ""} ${stepRunning ? "step-running" : ""}`}
       style={isView ? { width: displayWidth, height: displayHeight } : undefined}
     >
       <header className="node-card-header">

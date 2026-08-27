@@ -1,6 +1,6 @@
 """application facade 单元测试。"""
 
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from pathlib import Path
 from typing import Any, cast
 
@@ -17,12 +17,20 @@ from genshin_sim.application import (
     BatchRunState,
     create_application,
 )
+from genshin_sim.application.execution import SimulationExecutionOutcome
 from genshin_sim.application.execution.models import (
     CompletedSimulationRun,
     FailedSimulationRun,
     SimulationRunSummary,
 )
-from genshin_sim.application.jobs import InMemorySimulationJobRunner, SimulationJobRunner
+from genshin_sim.application.input import SimulationInput
+from genshin_sim.application.jobs import (
+    SimulationJobNotFoundError,
+    SimulationJobResult,
+    SimulationJobRunner,
+    SimulationJobState,
+    SimulationJobStatus,
+)
 from genshin_sim.application.models import RecordedEvent, RunDetail, RunListItem
 from genshin_sim.application.services.workflows import (
     StoredWorkflow,
@@ -127,6 +135,73 @@ class _FakeResultWriter:
 
     def save_failed_run(self, run: FailedSimulationRun) -> str:
         return run.session_id
+
+
+class _FakeJobRunner:
+    """同步完成任务的假 job runner，替代已删除的内存版 runner。"""
+
+    def __init__(
+        self,
+        executor: FakeExecutor,
+        *,
+        job_id_factory: Callable[[], str],
+    ) -> None:
+        self._executor = executor
+        self._job_id_factory = job_id_factory
+        self._results: dict[str, SimulationJobResult] = {}
+
+    def submit_input(self, config: SimulationInput) -> str:
+        job_id = self._job_id_factory()
+        self._execute(job_id, lambda: self._executor.execute_input(config))
+        return job_id
+
+    def submit_file(self, path: str | Path) -> str:
+        job_id = self._job_id_factory()
+        self._execute(job_id, lambda: self._executor.execute_file(path))
+        return job_id
+
+    def _execute(
+        self,
+        job_id: str,
+        execute: Callable[[], SimulationExecutionOutcome],
+    ) -> None:
+        try:
+            outcome = execute()
+        except Exception as exc:
+            self._results[job_id] = SimulationJobResult(
+                job_id=job_id,
+                state=SimulationJobState.FAILED,
+                error_message=str(exc),
+            )
+            return
+        self._results[job_id] = SimulationJobResult(
+            job_id=job_id,
+            state=SimulationJobState.COMPLETED,
+            session_id=outcome.session_id,
+            summary=outcome.run.summary,
+        )
+
+    def get_status(self, job_id: str) -> SimulationJobStatus:
+        result = self._require(job_id)
+        return SimulationJobStatus(
+            job_id=result.job_id,
+            state=result.state,
+            session_id=result.session_id,
+            error_code=result.error_code,
+            error_message=result.error_message,
+        )
+
+    def get_result(self, job_id: str) -> SimulationJobResult:
+        return self._require(job_id)
+
+    def cancel(self, job_id: str) -> SimulationJobStatus:
+        return self.get_status(job_id)
+
+    def _require(self, job_id: str) -> SimulationJobResult:
+        try:
+            return self._results[job_id]
+        except KeyError as exc:
+            raise SimulationJobNotFoundError(f"仿真任务不存在：{job_id}") from exc
 
 
 class _FakeWorkflowStore:
@@ -401,7 +476,7 @@ def test_facade_exposes_batch_validation_and_lifecycle() -> None:
         job_counter += 1
         return f"job-{job_counter}"
 
-    runner = InMemorySimulationJobRunner(
+    runner = _FakeJobRunner(
         FakeExecutor(),
         job_id_factory=job_id_factory,
     )

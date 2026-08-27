@@ -192,6 +192,22 @@ def _quoted(identifier: str) -> str:
     return '"' + identifier + '"'
 
 
+def _sqlite_json_path(path: str) -> str:
+    """点分路径转 SQLite json_extract 路径：数字段按数组下标转方括号。
+
+    契约路径用数字段表示数组下标（如 `team.0.character.asset_key`），
+    SQLite 只接受 `[0]` 方括号下标；已用方括号的存量路径也兼容。
+    """
+
+    parts: list[str] = []
+    for segment in path.split("."):
+        if segment.isdigit():
+            parts.append(f"[{segment}]")
+        else:
+            parts.append("." + segment)
+    return "$" + "".join(parts)
+
+
 def _node_sql(node_id: str) -> str:
     return _quoted("n_" + node_id)
 
@@ -472,7 +488,7 @@ class _PlanCompiler:
                 + ")"
             ]
         for item in extracts:
-            path = "$." + str(item["path"])
+            path = _sqlite_json_path(str(item["path"]))
             typed = _typed_extract(table, extract_column, path, str(item["type"]))
             if node.params.get("source") == "events":
                 # 提取列按声明的事件类型作用域取值：其他类型行一律为 NULL

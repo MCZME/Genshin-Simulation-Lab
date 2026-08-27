@@ -179,6 +179,45 @@ def test_fetch_runs_source_exposes_snapshot_condition_columns(tmp_path) -> None:
     assert all(column.name != "input_snapshot_json" for column in table.columns)
 
 
+def test_fetch_snapshot_dot_numeric_index_paths(tmp_path) -> None:
+    """契约点分路径（数组下标为数字段）也能提取：角色与武器精炼不为空。"""
+
+    executor = _executor(tmp_path)
+    plan = _plan(
+        (
+            AnalysisPlanNode(
+                id="runs1",
+                kind="fetch",
+                params={
+                    "source": "runs",
+                    "snapshot_columns": [
+                        {
+                            "path": "team.0.character.asset_key",
+                            "name": "char_1_key",
+                            "type": "string",
+                        },
+                        {
+                            "path": "team.0.weapon.refinement",
+                            "name": "weapon_1_refinement",
+                            "type": "int",
+                        },
+                    ],
+                },
+            ),
+        ),
+        ("runs1",),
+    )
+
+    tables = executor.execute_plan(plan)
+
+    table = tables["runs1"]
+    assert _column_values(table, "char_1_key") == [
+        "character:barbara",
+        "character:amber",
+    ]
+    assert _column_values(table, "weapon_1_refinement") == [5, 1]
+
+
 def test_per_session_dps_pipeline_golden(tmp_path) -> None:
     """成员指标主链 golden：事件求和 → 连接运行表 → 计算 DPS。"""
 

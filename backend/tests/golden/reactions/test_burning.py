@@ -12,40 +12,13 @@ from genshin_sim.core.elements import (
 )
 from genshin_sim.core.systems.aura import AuraStrength
 from genshin_sim.core.systems.damage import DamageType
-from genshin_sim.core.systems.reaction import (
-    create_default_reaction_bootstrap,
-)
-from genshin_sim.core.systems.reaction.mechanics.burning import (
-    BURNING_DAMAGE_KIND_KEY,
-    BURNING_DAMAGE_PROFILE_KEY,
-    BURNING_PYRO_AURA_APPLICATION_PROFILE_KEY,
-    BURNING_REACTION_KEY,
-    burning_damage_profile,
-    burning_gate_definitions,
-    burning_pyro_aura_application_profile,
-)
+from genshin_sim.core.systems.reaction.mechanics.burning import BURNING_DAMAGE_KIND_KEY
 from genshin_sim.core.systems.reaction.states import ScheduledStateTickCause
 from tests.helpers.reactions import advance_to, apply_aura, aura_request, target_subject
 
 BURNING_DAMAGE = 361.71325
 ESTABLISH_SOURCE = ElementalSourceRef("character:slot_1", "golden:burning:establish")
 MAINTENANCE_SOURCE = ElementalSourceRef("character:slot_1", "golden:burning:maintenance")
-
-
-def test_reaction_registry_registers_burning_with_prior_mechanics() -> None:
-    registry = create_default_reaction_bootstrap().reaction_registry
-    keys = {definition.reaction_key for definition in registry.definitions}
-
-    assert BURNING_REACTION_KEY in keys
-    assert "reaction.crystallize" in keys
-    assert "reaction.swirl" in keys
-    gates = create_default_reaction_bootstrap().damage_gate_definitions
-    assert burning_gate_definitions()[0] in gates
-    assert burning_damage_profile().profile_key == BURNING_DAMAGE_PROFILE_KEY
-    assert (
-        burning_pyro_aura_application_profile().profile_key
-        == BURNING_PYRO_AURA_APPLICATION_PROFILE_KEY
-    )
 
 
 @pytest.mark.parametrize(

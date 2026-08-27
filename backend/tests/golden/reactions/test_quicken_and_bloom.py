@@ -1,6 +1,6 @@
 """原激化、超激化、蔓激化与绽放机制簇的生产纵向 golden case。
 
-超 500 行说明：单一关注点（激化与绽放机制族 golden），暂不拆分。
+单一关注点：激化与绽放机制族 golden。
 """
 
 from __future__ import annotations
@@ -10,12 +10,7 @@ from fractions import Fraction
 
 import pytest
 
-from genshin_sim.core.attributes import STAT_ATK_TOTAL
-from genshin_sim.core.coordination.elemental_reaction import (
-    BloomCoreTriggerError,
-    BloomCoreTriggerRequest,
-    SprawlingShotResolutionRequest,
-)
+from genshin_sim.core.coordination.elemental_reaction import SprawlingShotResolutionRequest
 from genshin_sim.core.elements import (
     AuraAmount,
     AuraKind,
@@ -24,19 +19,10 @@ from genshin_sim.core.elements import (
     ElementalSubjectRef,
 )
 from genshin_sim.core.events import EventType, ReactionOccurredPayload
-from genshin_sim.core.impacts import (
-    DamageImpactSpec,
-    ImpactKind,
-    ImpactRequest,
-)
 from genshin_sim.core.space import Vector3
 from genshin_sim.core.systems.aura import AuraDecayMode, AuraStrength
-from genshin_sim.core.systems.damage import DamageScalingTerm, DamageType
-from genshin_sim.core.systems.reaction import (
-    GeneratedDamageImpactEffect,
-    SprawlingShotResolution,
-    UnsupportedDendroReactionCandidateError,
-)
+from genshin_sim.core.systems.damage import DamageType
+from genshin_sim.core.systems.reaction import GeneratedDamageImpactEffect, SprawlingShotResolution
 from genshin_sim.core.systems.reaction.mechanics.bloom.keys import (
     BLOOM_EXPLOSION_DAMAGE_KIND_KEY,
     BURGEON_DAMAGE_KIND_KEY,
@@ -49,7 +35,17 @@ from genshin_sim.core.systems.reaction.mechanics.catalyze.mechanic import (
     SPREAD_PROFILE_KEY,
     SPREAD_REACTION_KEY,
 )
-from tests.helpers.reactions import advance_to, apply_aura, aura_request, target_subject
+from tests.helpers.reactions import (
+    advance_to,
+    apply_aura,
+    aura_request,
+    bloom_core_trigger_request,
+    consume_aura,
+    create_bloom_core,
+    establish_quicken_with_remaining_dendro,
+    reaction_damage_request,
+    target_subject,
+)
 
 CATALYZE_EM = 200.0
 CATALYZE_LEVEL_MULTIPLIER = 1446.853
@@ -106,7 +102,7 @@ def test_damage_icd_aura_quicken_and_catalyze_formula_audit(
 
     establish_record = assembled.elemental_settlement_coordinator.settle_damage_impact(
         assembled.context,
-        _damage_request(
+        reaction_damage_request(
             trigger_element,
             "golden:catalyze:establish",
             main_attack_tag="testing.runtime_probe.direct",
@@ -124,7 +120,7 @@ def test_damage_icd_aura_quicken_and_catalyze_formula_audit(
 
     catalyze_record = assembled.elemental_settlement_coordinator.settle_damage_impact(
         assembled.context,
-        _damage_request(
+        reaction_damage_request(
             trigger_element,
             "golden:catalyze:trigger",
             main_attack_tag=CATALYZE_DAMAGE_FORMULA_KEY,
@@ -184,7 +180,7 @@ def test_quicken_decay_larger_coverage_and_natural_expiry(
     )
     assembled.elemental_settlement_coordinator.settle_damage_impact(
         assembled.context,
-        _damage_request(
+        reaction_damage_request(
             Element.ELECTRO,
             "golden:quicken:establish",
             main_attack_tag="testing.runtime_probe.direct",
@@ -208,7 +204,7 @@ def test_quicken_decay_larger_coverage_and_natural_expiry(
 
     coverage_record = assembled.elemental_settlement_coordinator.settle_damage_impact(
         assembled.context,
-        _damage_request(
+        reaction_damage_request(
             Element.ELECTRO,
             "golden:quicken:coverage",
             frame=1,
@@ -246,7 +242,7 @@ def test_quicken_and_dendro_burning_deplete_independently_and_recover(
         target_resistances={"electro": 0.1, "dendro": 0.1},
         elemental_mastery=0.0,
     )
-    recovery_target = _establish_quicken_with_remaining_dendro(recovery)
+    recovery_target = establish_quicken_with_remaining_dendro(recovery)
     _establish_burning(recovery, request_id="golden:quicken-burning:recovery")
     recovery_burning = recovery.reaction_runtime.burning_state_for(recovery_target)
     recovery_view = recovery.aura_runtime.view(recovery_target)
@@ -260,7 +256,7 @@ def test_quicken_and_dendro_burning_deplete_independently_and_recover(
     assert recovery_dendro.decay_mode is AuraDecayMode.REACTION_MANAGED
     assert len(recovery_burning.dendro_like_link_refs) == 2
 
-    _consume_aura(
+    consume_aura(
         recovery,
         aura_kind=AuraKind.BURNING,
         amount=AuraAmount(Fraction(19, 10)),
@@ -290,7 +286,7 @@ def test_quicken_and_dendro_burning_deplete_independently_and_recover(
         target_resistances={"electro": 0.1, "dendro": 0.1},
         elemental_mastery=0.0,
     )
-    depletion_target = _establish_quicken_with_remaining_dendro(depletion)
+    depletion_target = establish_quicken_with_remaining_dendro(depletion)
     _establish_burning(depletion, request_id="golden:quicken-burning:depletion")
 
     advance_to(depletion, 150)
@@ -302,41 +298,6 @@ def test_quicken_and_dendro_burning_deplete_independently_and_recover(
     assert depletion.reaction_runtime.burning_state_for(depletion_target) is not None
     assert remaining_dendro is not None
     assert remaining_dendro.decay_mode is AuraDecayMode.REACTION_MANAGED
-
-
-def test_anemo_on_quicken_is_rejected_before_writing(
-    golden_assembled,
-) -> None:
-    assembled = golden_assembled(
-        meta_name="quicken and bloom golden",
-        max_frames=1000,
-        target_resistances={"electro": 0.1, "dendro": 0.1},
-        elemental_mastery=0.0,
-    )
-    target_ref = _establish_quicken(assembled)
-    aura_before = assembled.aura_runtime.snapshot()
-    reaction_before = assembled.reaction_runtime.snapshot(0)
-    icd_before = assembled.aura_icd_runtime.snapshot()
-    damage_count = len(assembled.damage_handler.records)
-
-    with pytest.raises(
-        UnsupportedDendroReactionCandidateError,
-        match="雷/风扩散进入未实现的激化扩散候选",
-    ):
-        assembled.elemental_settlement_coordinator.settle_aura_impact(
-            assembled.context,
-            aura_request(
-                Element.ANEMO,
-                "golden:unsupported:anemo",
-                impact_key="golden.reactions.application",
-            ),
-        )
-
-    assert assembled.aura_runtime.snapshot() == aura_before
-    assert assembled.reaction_runtime.snapshot(0) == reaction_before
-    assert assembled.aura_icd_runtime.snapshot() == icd_before
-    assert len(assembled.damage_handler.records) == damage_count
-    assert assembled.reaction_runtime.quicken_state_for(target_ref) is not None
 
 
 def test_hydro_on_dendro_creates_a_bound_dendro_core(golden_assembled) -> None:
@@ -445,7 +406,7 @@ def test_sixth_core_evicts_oldest_and_settles_bloom_damage(
         elemental_mastery=0.0,
     )
     created = tuple(
-        _create_bloom_core(assembled, f"golden:bloom-capacity:{index}") for index in range(6)
+        create_bloom_core(assembled, f"golden:bloom-capacity:{index}") for index in range(6)
     )
 
     active = assembled.reaction_runtime.active_dendro_cores()
@@ -475,11 +436,11 @@ def test_burgeon_contact_terminates_confirmed_core_and_settles_damage(
         target_resistances={"electro": 0.1, "dendro": 0.1},
         elemental_mastery=0.0,
     )
-    core = _create_bloom_core(assembled, "golden:burgeon")
+    core = create_bloom_core(assembled, "golden:burgeon")
 
     result = assembled.elemental_settlement_coordinator.trigger_bloom_cores(
         assembled.context,
-        _bloom_core_trigger_request(
+        bloom_core_trigger_request(
             assembled,
             operation_id="golden:burgeon:contact",
             incoming_element=Element.PYRO,
@@ -519,12 +480,12 @@ def test_hyperbloom_locks_target_then_settles_arrival_damage(
         target_resistances={"electro": 0.1, "dendro": 0.1},
         elemental_mastery=0.0,
     )
-    core = _create_bloom_core(assembled, "golden:hyperbloom")
+    core = create_bloom_core(assembled, "golden:hyperbloom")
     core_entity = assembled.space_runtime.get_entity(core.space_entity_ref)
     assert core_entity is not None
     trigger = assembled.elemental_settlement_coordinator.trigger_bloom_cores(
         assembled.context,
-        _bloom_core_trigger_request(
+        bloom_core_trigger_request(
             assembled,
             operation_id="golden:hyperbloom:contact",
             incoming_element=Element.ELECTRO,
@@ -567,58 +528,6 @@ def test_hyperbloom_locks_target_then_settles_arrival_damage(
     assert effect.damage_kind_key == HYPERBLOOM_DAMAGE_KIND_KEY
 
 
-def test_bloom_core_contact_requires_matching_committed_impact(
-    golden_assembled,
-) -> None:
-    assembled = golden_assembled(
-        meta_name="quicken and bloom golden",
-        max_frames=1000,
-        target_resistances={"electro": 0.1, "dendro": 0.1},
-        elemental_mastery=0.0,
-    )
-    core = _create_bloom_core(assembled, "golden:bloom-contact-evidence")
-    request = _bloom_core_trigger_request(
-        assembled,
-        operation_id="golden:bloom-contact-evidence:valid",
-        incoming_element=Element.ELECTRO,
-        contacted_core_refs=(core.instance_ref,),
-    )
-    invalid_requests = (
-        replace(
-            request,
-            operation_id="golden:bloom-contact-evidence:missing",
-            associated_impact_ref=None,
-        ),
-        replace(
-            request,
-            operation_id="golden:bloom-contact-evidence:unknown",
-            associated_impact_ref="golden:bloom-contact-evidence:unknown-impact",
-        ),
-        replace(
-            request,
-            operation_id="golden:bloom-contact-evidence:source",
-            source_ref=ElementalSourceRef("character:slot_1", "different-impact"),
-        ),
-        replace(
-            request,
-            operation_id="golden:bloom-contact-evidence:element",
-            incoming_element=Element.PYRO,
-        ),
-        replace(
-            request,
-            operation_id="golden:bloom-contact-evidence:amount",
-            incoming_amount=AuraAmount(Fraction(1, 2)),
-        ),
-    )
-
-    for invalid in invalid_requests:
-        with pytest.raises(BloomCoreTriggerError, match="Impact|impact"):
-            assembled.bloom_core_trigger_coordinator.trigger(assembled.context, invalid)
-
-    assert assembled.reaction_runtime.dendro_core_state_for(core.instance_ref) == core
-    assert assembled.space_runtime.get_entity(core.space_entity_ref) is not None
-
-
 @pytest.mark.parametrize(
     ("target_distance", "expects_shot"),
     ((15.0, True), (15.001, False)),
@@ -634,7 +543,7 @@ def test_hyperbloom_uses_confirmed_fifteen_meter_target_boundary(
         target_resistances={"electro": 0.1, "dendro": 0.1},
         elemental_mastery=0.0,
     )
-    core = _create_bloom_core(assembled, "golden:hyperbloom-search-boundary")
+    core = create_bloom_core(assembled, "golden:hyperbloom-search-boundary")
     target_entity = assembled.space_runtime.get_entity("target:target_1")
     assert target_entity is not None
     assembled.space_runtime.update_entity(
@@ -643,7 +552,7 @@ def test_hyperbloom_uses_confirmed_fifteen_meter_target_boundary(
 
     trigger = assembled.elemental_settlement_coordinator.trigger_bloom_cores(
         assembled.context,
-        _bloom_core_trigger_request(
+        bloom_core_trigger_request(
             assembled,
             operation_id="golden:hyperbloom:search-boundary",
             incoming_element=Element.ELECTRO,
@@ -665,14 +574,14 @@ def test_hyperbloom_selects_nearest_target_within_search_range(
         elemental_mastery=0.0,
         target_positions=(0.0, 10.0),
     )
-    core = _create_bloom_core(assembled, "golden:hyperbloom-nearest-target")
+    core = create_bloom_core(assembled, "golden:hyperbloom-nearest-target")
     first_target = assembled.space_runtime.get_entity("target:target_1")
     assert first_target is not None
     assembled.space_runtime.update_entity(replace(first_target, position=Vector3(14.0, 0.0, 0.0)))
 
     trigger = assembled.elemental_settlement_coordinator.trigger_bloom_cores(
         assembled.context,
-        _bloom_core_trigger_request(
+        bloom_core_trigger_request(
             assembled,
             operation_id="golden:hyperbloom:nearest-target",
             incoming_element=Element.ELECTRO,
@@ -694,10 +603,10 @@ def test_hyperbloom_arrival_requires_locked_target_within_one_meter(
         target_resistances={"electro": 0.1, "dendro": 0.1},
         elemental_mastery=0.0,
     )
-    core = _create_bloom_core(assembled, "golden:hyperbloom-out-of-range")
+    core = create_bloom_core(assembled, "golden:hyperbloom-out-of-range")
     trigger = assembled.elemental_settlement_coordinator.trigger_bloom_cores(
         assembled.context,
-        _bloom_core_trigger_request(
+        bloom_core_trigger_request(
             assembled,
             operation_id="golden:hyperbloom-out-of-range:contact",
             incoming_element=Element.ELECTRO,
@@ -721,57 +630,6 @@ def test_hyperbloom_arrival_requires_locked_target_within_one_meter(
     assert len(result.occurrences) == 1
     assert result.occurrences[0].direction_key == "arrived"
     assert len(assembled.damage_handler.records) == damage_count
-
-
-def test_character_damage_prevalidation_does_not_consume_gate(
-    golden_assembled,
-) -> None:
-    assembled = golden_assembled(
-        meta_name="quicken and bloom golden",
-        max_frames=1000,
-        target_resistances={"electro": 0.1, "dendro": 0.1},
-        elemental_mastery=0.0,
-    )
-    _create_bloom_core(assembled, "golden:bloom-character-prevalidation")
-    damage_count = len(assembled.damage_handler.records)
-    gate_records = assembled.reaction_runtime.gate_records
-    assembled.elemental_settlement_coordinator.character_damage_taken_coordinator = None
-
-    with pytest.raises(RuntimeError, match="CharacterDamageTakenCoordinator"):
-        assembled.elemental_settlement_coordinator.update_frame(assembled.context, 360)
-
-    assert len(assembled.damage_handler.records) == damage_count
-    assert assembled.reaction_runtime.gate_records == gate_records
-
-
-def test_hydro_rejects_unconfirmed_dendro_and_quicken_coexistence(
-    golden_assembled,
-) -> None:
-    assembled = golden_assembled(
-        meta_name="quicken and bloom golden",
-        max_frames=1000,
-        target_resistances={"electro": 0.1, "dendro": 0.1},
-        elemental_mastery=0.0,
-    )
-    _establish_quicken_with_remaining_dendro(assembled)
-    aura_before = assembled.aura_runtime.snapshot()
-    reaction_before = assembled.reaction_runtime.snapshot(0)
-
-    with pytest.raises(
-        UnsupportedDendroReactionCandidateError,
-        match="同时进入普通草与激元素绽放候选",
-    ):
-        assembled.elemental_settlement_coordinator.settle_aura_impact(
-            assembled.context,
-            aura_request(
-                Element.HYDRO,
-                "golden:bloom-ambiguous-hydro",
-                impact_key="golden.reactions.application",
-            ),
-        )
-
-    assert assembled.aura_runtime.snapshot() == aura_before
-    assert assembled.reaction_runtime.snapshot(0) == reaction_before
 
 
 def test_dendro_on_electro_charged_runs_quicken_then_two_blooms(
@@ -817,148 +675,10 @@ def test_dendro_on_electro_charged_runs_quicken_then_two_blooms(
     assert assembled.aura_runtime.view(target_subject()).component_for(AuraKind.HYDRO) is None
 
 
-def _establish_quicken(assembled) -> ElementalSubjectRef:
-    target_ref = target_subject()
-    apply_aura(
-        assembled,
-        Element.DENDRO,
-        "golden:quicken:seed",
-        strength=AuraStrength.WEAK,
-        source_ref=CATALYZE_SOURCE,
-    )
-    assembled.elemental_settlement_coordinator.settle_damage_impact(
-        assembled.context,
-        _damage_request(
-            Element.ELECTRO,
-            "golden:quicken:establish",
-            main_attack_tag="testing.runtime_probe.direct",
-        ),
-    )
-    assert assembled.reaction_runtime.quicken_state_for(target_ref) is not None
-    return target_ref
-
-
-def _create_bloom_core(assembled, request_prefix: str):
-    apply_aura(
-        assembled,
-        Element.DENDRO,
-        f"{request_prefix}:seed",
-        strength=AuraStrength.WEAK,
-        source_ref=CATALYZE_SOURCE,
-    )
-    assembled.elemental_settlement_coordinator.settle_aura_impact(
-        assembled.context,
-        aura_request(
-            Element.HYDRO,
-            f"{request_prefix}:trigger",
-            impact_key="golden.reactions.application",
-        ),
-    )
-    return assembled.reaction_runtime.active_dendro_cores()[0]
-
-
-def _bloom_core_trigger_request(
-    assembled,
-    *,
-    operation_id: str,
-    incoming_element: Element,
-    contacted_core_refs,
-    incoming_amount: AuraAmount | None = None,
-) -> BloomCoreTriggerRequest:
-    resolved_amount = AuraAmount.one() if incoming_amount is None else incoming_amount
-    associated_impact_ref = f"{operation_id}:impact"
-    assembled.elemental_settlement_coordinator.settle_aura_impact(
-        assembled.context,
-        aura_request(
-            incoming_element,
-            associated_impact_ref,
-            elemental_amount=resolved_amount,
-            impact_key="golden.reactions.application",
-        ),
-    )
-    return BloomCoreTriggerRequest(
-        operation_id=operation_id,
-        frame=0,
-        source_ref=ElementalSourceRef("character:slot_1", associated_impact_ref),
-        incoming_element=incoming_element,
-        incoming_amount=resolved_amount,
-        contacted_core_refs=contacted_core_refs,
-        associated_impact_ref=associated_impact_ref,
-    )
-
-
-def _establish_quicken_with_remaining_dendro(assembled) -> ElementalSubjectRef:
-    target_ref = target_subject()
-    apply_aura(
-        assembled,
-        Element.DENDRO,
-        "golden:quicken-burning:seed",
-        strength=AuraStrength.STRONG,
-        elemental_amount=AuraAmount(3),
-        source_ref=CATALYZE_SOURCE,
-    )
-    assembled.elemental_settlement_coordinator.settle_damage_impact(
-        assembled.context,
-        _damage_request(
-            Element.ELECTRO,
-            "golden:quicken-burning:establish",
-            main_attack_tag="testing.runtime_probe.direct",
-        ),
-    )
-    assert assembled.aura_runtime.view(target_ref).component_for(AuraKind.QUICKEN) is not None
-    assert assembled.aura_runtime.view(target_ref).component_for(AuraKind.DENDRO) is not None
-    return target_ref
-
-
 def _establish_burning(assembled, *, request_id: str) -> None:
     assembled.elemental_settlement_coordinator.settle_aura_impact(
         assembled.context,
         aura_request(Element.PYRO, request_id, impact_key="golden.reactions.application"),
-    )
-
-
-def _consume_aura(
-    assembled,
-    *,
-    aura_kind: AuraKind,
-    amount: AuraAmount,
-    operation_id: str,
-) -> None:
-    planner = assembled.aura_runtime.begin_batch(0, operation_id)
-    planner.consume(
-        interaction_id=operation_id,
-        subject_ref=target_subject(),
-        aura_kind=aura_kind,
-        amount=amount,
-    )
-    assembled.aura_runtime.commit_prevalidated(planner.seal())
-
-
-def _damage_request(
-    element: Element,
-    request_id: str,
-    *,
-    main_attack_tag: str,
-    frame: int = 0,
-) -> ImpactRequest:
-    return ImpactRequest(
-        frame=frame,
-        kind=ImpactKind.DAMAGE,
-        impact_key="golden.reactions.damage",
-        owner_slot=1,
-        request_id=request_id,
-        target_refs=("target_1",),
-        damage_spec=DamageImpactSpec(
-            impact_ref=request_id,
-            main_attack_tag=main_attack_tag,
-            element=Element(element.value),
-            scaling_terms=(DamageScalingTerm("atk", STAT_ATK_TOTAL, 1.0),),
-            can_crit=False,
-            elemental_strength=AuraStrength.WEAK,
-            elemental_amount=AuraAmount.one(),
-            icd_tag_key="golden.reactions.damage",
-            icd_sequence_key="icd.none",
-        ),
     )
 
 

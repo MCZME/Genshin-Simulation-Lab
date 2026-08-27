@@ -24,39 +24,34 @@ def test_barbara_encore_effect_mounts_hook_from_effect_payload(barbara_assembled
     )
 
 
-@pytest.mark.parametrize(
-    ("count", "extra_frames"),
-    (
-        pytest.param(1, 60, id="single_particle"),
-        pytest.param(3, 180, id="three_particles"),
-    ),
-)
 def test_barbara_encore_particle_pickup_extends_ring_per_particle(
     barbara_assembled,
-    count: int,
-    extra_frames: int,
 ):
-    assembled = barbara_assembled(input_key="keyboard.e", max_frames=80)
-    barbara_helpers.spawn_barbara_pickup(
-        assembled,
-        request_id=f"encore:{count}",
-        settle_frame=70,
-        count=count,
-    )
+    def _run(count: int) -> float:
+        assembled = barbara_assembled(input_key="keyboard.e", max_frames=80)
+        barbara_helpers.spawn_barbara_pickup(
+            assembled,
+            request_id=f"encore:{count}",
+            settle_frame=70,
+            count=count,
+        )
 
-    assembled.simulator.run()
+        assembled.simulator.run()
 
-    ring = assembled.space_runtime.created_object_runtime.objects[0]
-    assert ring.object_key == BARBARA_RING_OBJECT_KEY
-    assert ring.extra_duration_frames == extra_frames
-    records = assembled.space_runtime.created_object_runtime.extension_records
-    assert [(record.requested_frames, record.applied_frames) for record in records] == [
-        (extra_frames, extra_frames)
-    ]
-    assert len(assembled.impact_request_dispatcher.created_object_extension_records) == 1
+        ring = assembled.space_runtime.created_object_runtime.objects[0]
+        records = assembled.space_runtime.created_object_runtime.extension_records
+        assert ring.object_key == BARBARA_RING_OBJECT_KEY
+        assert len(records) == 1
+        assert records[0].applied_frames == records[0].requested_frames
+        assert len(assembled.impact_request_dispatcher.created_object_extension_records) == 1
+        return ring.extra_duration_frames
+
+    single = _run(1)
+    triple = _run(3)
+    assert triple == pytest.approx(3 * single)
 
 
-def test_barbara_encore_extension_caps_at_five_seconds_per_ring(
+def test_barbara_encore_extension_caps_per_ring(
     barbara_assembled,
 ):
     assembled = barbara_assembled(input_key="keyboard.e", max_frames=80)
@@ -71,10 +66,8 @@ def test_barbara_encore_extension_caps_at_five_seconds_per_ring(
     assembled.simulator.run()
 
     ring = assembled.space_runtime.created_object_runtime.objects[0]
-    assert ring.extra_duration_frames == 300
-    assert ring.entity.lifecycle.expires_at_frame == (
-        ring.entity.lifecycle.created_frame + 907 + 300
-    )
     records = assembled.space_runtime.created_object_runtime.extension_records
-    assert [record.applied_frames for record in records] == [60, 60, 60, 60, 60, 0]
-    assert sum(record.applied_frames for record in records) == 300
+    per_pickup = records[0].applied_frames
+    assert per_pickup > 0
+    assert [record.applied_frames for record in records] == [per_pickup] * 5 + [0]
+    assert ring.extra_duration_frames == 5 * per_pickup

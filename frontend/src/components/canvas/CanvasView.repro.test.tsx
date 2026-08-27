@@ -88,6 +88,8 @@ describe("CanvasView repro", () => {
         onMoveEdgeOrder={() => undefined}
       />,
     );
+    // rf__node-region-1 是 React Flow 内部生成的 test id，不属于公开 API；
+    // React Flow 升级可能改变该命名，升级时需同步调整此断言。
     const regionNode = screen.getByTestId("rf__node-region-1");
     expect(regionNode.classList).not.toContain("draggable");
     expect(regionNode.classList).toContain("selectable");

@@ -1,4 +1,4 @@
-# 本文件超过 500 行软上限：单一关注点（护盾运行时）的密集契约测试，按断言密度组织，暂不拆分。
+# 单一关注点：护盾运行时。
 from __future__ import annotations
 
 from dataclasses import replace

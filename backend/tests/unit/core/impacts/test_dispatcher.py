@@ -110,3 +110,24 @@ def test_damage_impact_spec_requires_strike_type_enum_when_provided():
             elemental_strength=cast(AuraStrength, "weak"),
             elemental_amount=AuraAmount.one(),
         )
+
+
+def test_elemental_damage_request_requires_stable_root_identity():
+    with pytest.raises(
+        ValueError,
+        match="元素交互 ImpactRequest 必须提供 request_id 或 source_impact_point_id",
+    ):
+        ImpactRequest(
+            frame=0,
+            kind=ImpactKind.DAMAGE,
+            impact_key="golden.missing_root_identity",
+            owner_slot=1,
+            target_refs=("target_1",),
+            damage_spec=DamageImpactSpec(
+                impact_ref="golden:shared_impact_ref",
+                main_attack_tag="testing.runtime_probe.direct",
+                element=Element.HYDRO,
+                elemental_strength=AuraStrength.WEAK,
+                elemental_amount=AuraAmount.one(),
+            ),
+        )

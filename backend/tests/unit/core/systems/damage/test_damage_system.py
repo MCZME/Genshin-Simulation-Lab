@@ -1,4 +1,4 @@
-# 超 500 行说明：单一关注点（伤害系统公式、策略与注册表），暂不拆分。
+# 单一关注点：伤害系统公式、策略与注册表。
 from __future__ import annotations
 
 import pytest

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from genshin_sim.core.attributes import STAT_ATK_TOTAL
+from genshin_sim.core.coordination.elemental_reaction import BloomCoreTriggerRequest
 from genshin_sim.core.elements import (
     AuraAmount,
+    AuraKind,
     Element,
     ElementalSourceRef,
     ElementalSubjectRef,
@@ -11,12 +14,13 @@ from genshin_sim.core.elements import (
 )
 from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import (
+    DamageImpactSpec,
     ElementalApplicationSpec,
     ImpactKind,
     ImpactRequest,
 )
 from genshin_sim.core.systems.aura import AuraApplicationRequest, AuraStrength
-from genshin_sim.core.systems.damage import DamageType
+from genshin_sim.core.systems.damage import DamageScalingTerm, DamageType
 from genshin_sim.core.systems.reaction import CapturedTransformativeScalingBasis
 
 
@@ -140,3 +144,141 @@ def lunar_damage_record_count(assembled) -> int:
         for record in assembled.damage_handler.records
         if record.result.damage_type is DamageType.LUNAR_REACTION and record.result.final_damage > 0
     )
+
+
+def reaction_damage_request(
+    element: Element,
+    request_id: str,
+    *,
+    main_attack_tag: str,
+    frame: int = 0,
+) -> ImpactRequest:
+    return ImpactRequest(
+        frame=frame,
+        kind=ImpactKind.DAMAGE,
+        impact_key="golden.reactions.damage",
+        owner_slot=1,
+        request_id=request_id,
+        target_refs=("target_1",),
+        damage_spec=DamageImpactSpec(
+            impact_ref=request_id,
+            main_attack_tag=main_attack_tag,
+            element=Element(element.value),
+            scaling_terms=(DamageScalingTerm("atk", STAT_ATK_TOTAL, 1.0),),
+            can_crit=False,
+            elemental_strength=AuraStrength.WEAK,
+            elemental_amount=AuraAmount.one(),
+            icd_tag_key="golden.reactions.damage",
+            icd_sequence_key="icd.none",
+        ),
+    )
+
+
+def establish_quicken(assembled) -> ElementalSubjectRef:
+    target_ref = target_subject()
+    apply_aura(
+        assembled,
+        Element.DENDRO,
+        "golden:quicken:seed",
+        strength=AuraStrength.WEAK,
+        source_ref=ElementalSourceRef("golden:quicken-and-bloom"),
+    )
+    assembled.elemental_settlement_coordinator.settle_damage_impact(
+        assembled.context,
+        reaction_damage_request(
+            Element.ELECTRO,
+            "golden:quicken:establish",
+            main_attack_tag="testing.runtime_probe.direct",
+        ),
+    )
+    assert assembled.reaction_runtime.quicken_state_for(target_ref) is not None
+    return target_ref
+
+
+def create_bloom_core(assembled, request_prefix: str):
+    apply_aura(
+        assembled,
+        Element.DENDRO,
+        f"{request_prefix}:seed",
+        strength=AuraStrength.WEAK,
+        source_ref=ElementalSourceRef("golden:quicken-and-bloom"),
+    )
+    assembled.elemental_settlement_coordinator.settle_aura_impact(
+        assembled.context,
+        aura_request(
+            Element.HYDRO,
+            f"{request_prefix}:trigger",
+            impact_key="golden.reactions.application",
+        ),
+    )
+    return assembled.reaction_runtime.active_dendro_cores()[0]
+
+
+def bloom_core_trigger_request(
+    assembled,
+    *,
+    operation_id: str,
+    incoming_element: Element,
+    contacted_core_refs,
+    incoming_amount: AuraAmount | None = None,
+) -> BloomCoreTriggerRequest:
+    resolved_amount = AuraAmount.one() if incoming_amount is None else incoming_amount
+    associated_impact_ref = f"{operation_id}:impact"
+    assembled.elemental_settlement_coordinator.settle_aura_impact(
+        assembled.context,
+        aura_request(
+            incoming_element,
+            associated_impact_ref,
+            elemental_amount=resolved_amount,
+            impact_key="golden.reactions.application",
+        ),
+    )
+    return BloomCoreTriggerRequest(
+        operation_id=operation_id,
+        frame=0,
+        source_ref=ElementalSourceRef("character:slot_1", associated_impact_ref),
+        incoming_element=incoming_element,
+        incoming_amount=resolved_amount,
+        contacted_core_refs=contacted_core_refs,
+        associated_impact_ref=associated_impact_ref,
+    )
+
+
+def establish_quicken_with_remaining_dendro(assembled) -> ElementalSubjectRef:
+    target_ref = target_subject()
+    apply_aura(
+        assembled,
+        Element.DENDRO,
+        "golden:quicken-burning:seed",
+        strength=AuraStrength.STRONG,
+        elemental_amount=AuraAmount(3),
+        source_ref=ElementalSourceRef("golden:quicken-and-bloom"),
+    )
+    assembled.elemental_settlement_coordinator.settle_damage_impact(
+        assembled.context,
+        reaction_damage_request(
+            Element.ELECTRO,
+            "golden:quicken-burning:establish",
+            main_attack_tag="testing.runtime_probe.direct",
+        ),
+    )
+    assert assembled.aura_runtime.view(target_ref).component_for(AuraKind.QUICKEN) is not None
+    assert assembled.aura_runtime.view(target_ref).component_for(AuraKind.DENDRO) is not None
+    return target_ref
+
+
+def consume_aura(
+    assembled,
+    *,
+    aura_kind,
+    amount: AuraAmount,
+    operation_id: str,
+) -> None:
+    planner = assembled.aura_runtime.begin_batch(0, operation_id)
+    planner.consume(
+        interaction_id=operation_id,
+        subject_ref=target_subject(),
+        aura_kind=aura_kind,
+        amount=amount,
+    )
+    assembled.aura_runtime.commit_prevalidated(planner.seal())

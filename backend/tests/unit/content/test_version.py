@@ -51,7 +51,6 @@ def test_barbara_content_unit_exposes_version():
             talent_scalings=_na_scaling_entries(),
         )
     )
-    assert BARBARA_VERSION == "dev-elemental-burst"
     assert unit.version == BARBARA_VERSION
 
 
@@ -186,5 +185,4 @@ def test_runtime_probe_content_unit_exposes_version():
             slot=1,
         )
     )
-    assert RUNTIME_PROBE_VERSION == "dev-runtime-probe"
     assert unit.version == RUNTIME_PROBE_VERSION

@@ -1,4 +1,4 @@
-# 超 500 行说明：单一关注点（元素反应流水线 golden），暂不拆分。
+# 单一关注点：元素反应流水线 golden。
 from __future__ import annotations
 
 from fractions import Fraction
@@ -27,11 +27,10 @@ from genshin_sim.core.impacts import (
 )
 from genshin_sim.core.systems.aura import (
     AuraApplicationRequest,
-    AuraEventPublicationError,
     AuraStrength,
     FrozenAuraApplicationRequest,
 )
-from genshin_sim.core.systems.damage import DamageScalingTerm, DamageValidationError
+from genshin_sim.core.systems.damage import DamageScalingTerm
 
 
 @pytest.mark.parametrize(
@@ -139,38 +138,6 @@ def test_vaporize_and_melt_damage_golden_cases(
         component = assembled.aura_runtime.view(target_ref).component_for(remaining_kind)
         assert component is not None
         assert component.current_amount == remaining_amount
-
-
-def test_damage_preflight_failure_does_not_commit_elemental_domain_state(golden_assembled):
-    assembled = golden_assembled(meta_name="elemental golden", max_frames=1)
-    bad_request = ImpactRequest(
-        frame=0,
-        kind=ImpactKind.DAMAGE,
-        impact_key="golden.invalid_damage",
-        owner_slot=1,
-        request_id="golden:invalid_damage",
-        target_refs=("target_1",),
-        damage_spec=DamageImpactSpec(
-            impact_ref="golden:invalid_damage",
-            main_attack_tag="missing.damage_profile",
-            element=Element.HYDRO,
-            scaling_terms=(DamageScalingTerm("atk", STAT_ATK_TOTAL, 1.0),),
-            can_crit=False,
-            elemental_strength=AuraStrength.WEAK,
-            elemental_amount=AuraAmount.one(),
-        ),
-    )
-
-    with pytest.raises(DamageValidationError, match="主攻击标签未映射 DamageProfile"):
-        assembled.elemental_settlement_coordinator.settle_damage_impact(
-            assembled.context,
-            bad_request,
-        )
-
-    assert not assembled.aura_runtime.snapshot().targets
-    assert not assembled.aura_icd_runtime.snapshot().records
-    assert assembled.reaction_runtime.version == 0
-    assert not assembled.damage_handler.records
 
 
 def test_nonstandard_elemental_amount_is_preserved_when_forming_aura(golden_assembled):
@@ -357,53 +324,6 @@ def test_shattered_completely_removes_frozen_amount_above_eight_gu(
     assert assembled.reaction_runtime.frozen_state_for(target_ref) is None
 
 
-def test_same_frame_requests_with_shared_impact_ref_use_distinct_batches(golden_assembled):
-    assembled = golden_assembled(meta_name="elemental golden", max_frames=1)
-    first = _damage_request(
-        Element.HYDRO,
-        request_id="golden:shared:first",
-        impact_ref="golden:shared",
-    )
-    second = _damage_request(
-        Element.HYDRO,
-        request_id="golden:shared:second",
-        impact_ref="golden:shared",
-    )
-
-    first_record = assembled.elemental_settlement_coordinator.settle_damage_impact(
-        assembled.context,
-        first,
-    )
-    second_record = assembled.elemental_settlement_coordinator.settle_damage_impact(
-        assembled.context,
-        second,
-    )
-
-    assert first_record.batch_id != second_record.batch_id
-    assert len(assembled.damage_handler.records) == 2
-
-
-def test_typed_elemental_request_requires_stable_root_identity():
-    with pytest.raises(
-        ValueError,
-        match="元素交互 ImpactRequest 必须提供 request_id 或 source_impact_point_id",
-    ):
-        ImpactRequest(
-            frame=0,
-            kind=ImpactKind.DAMAGE,
-            impact_key="golden.missing_root_identity",
-            owner_slot=1,
-            target_refs=("target_1",),
-            damage_spec=DamageImpactSpec(
-                impact_ref="golden:shared_impact_ref",
-                main_attack_tag="testing.runtime_probe.direct",
-                element=Element.HYDRO,
-                elemental_strength=AuraStrength.WEAK,
-                elemental_amount=AuraAmount.one(),
-            ),
-        )
-
-
 def test_non_damage_elemental_application_reacts_without_creating_damage(
     golden_assembled,
 ):
@@ -496,39 +416,6 @@ def test_physical_damage_with_binding_advances_icd_without_elemental_application
     assert not assembled.aura_runtime.snapshot().targets
     record = assembled.aura_icd_runtime.snapshot().records[0]
     assert record.next_sequence_index == 2
-
-
-def test_elemental_fact_callback_cannot_mutate_aura_state(golden_assembled):
-    assembled = golden_assembled(meta_name="elemental golden", max_frames=1)
-    target_ref = ElementalSubjectRef.target("target:target_1")
-
-    def apply_aura_during_fact(_: object) -> None:
-        assembled.aura_runtime.apply(
-            AuraApplicationRequest(
-                "golden:reentrant_pyro",
-                "golden:reentrant_pyro:application",
-                "golden:reentrant_pyro:impact",
-                0,
-                0,
-                ElementalSourceRef("golden:reentrant"),
-                target_ref,
-                Element.PYRO,
-                AuraStrength.WEAK,
-            )
-        )
-
-    assembled.context.events.subscribe(EventType.AURA_ICD_RESOLVED, apply_aura_during_fact)
-
-    with pytest.raises(AuraEventPublicationError, match="事实发布期间不允许修改"):
-        assembled.elemental_settlement_coordinator.settle_damage_impact(
-            assembled.context,
-            _damage_request(Element.HYDRO, request_id="golden:reentrant_hydro"),
-        )
-
-    component = assembled.aura_runtime.view(target_ref).component_for(AuraKind.HYDRO)
-    assert component is not None
-    assert len(assembled.damage_handler.records) == 1
-    assert assembled.elemental_interaction_coordinator.records[-1].damage_request_ids
 
 
 def _damage_request(

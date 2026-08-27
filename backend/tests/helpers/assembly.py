@@ -2,6 +2,11 @@
 
 from __future__ import annotations
 
+import sqlite3
+from collections.abc import Mapping
+from pathlib import Path
+
+from genshin_sim.application.assembly import SimulationAssembler
 from genshin_sim.application.input import SimulationInput
 from genshin_sim.core.actions import (
     ActionInterpretationResult,
@@ -19,6 +24,10 @@ from genshin_sim.core.attributes import (
 )
 from genshin_sim.core.impacts import ActionImpactContext, ImpactKind, ImpactRequest
 from genshin_sim.core.space import CreatedObjectRuntimeState
+from genshin_sim.infrastructure.assets_sqlite import (
+    SQLiteAssetRepository,
+    write_minimal_static_asset_database,
+)
 
 
 class ContributedActionInterpreter:
@@ -166,3 +175,97 @@ def skill_input_trace() -> list[dict[str, object]]:
         {"frame": 1, "events": [{"key": "keyboard.e", "phase": "press"}]},
         {"frame": 2, "events": [{"key": "keyboard.e", "phase": "release"}]},
     ]
+
+
+def static_asset_input_payload(
+    *,
+    meta_name: str = "static asset integration",
+    max_frames: int = 10,
+    input_trace: list[dict[str, object]] | None = None,
+    target_positions: tuple[float, ...] = (0.0,),
+    target_resistances: Mapping[str, float] | None = None,
+    include_weapon: bool = False,
+    include_artifact_set: bool = False,
+) -> dict[str, object]:
+    """面向静态资产库（write_minimal_static_asset_database）的单角色仿真输入。"""
+
+    team_member: dict[str, object] = {
+        "slot": 1,
+        "character": {
+            "asset_key": "character:test_character",
+            "level": 90,
+            "constellation": 0,
+            "talents": {"normal_attack": 1},
+        },
+        "artifacts": {"sets": [], "stats": {}},
+    }
+    if include_weapon:
+        team_member["weapon"] = {
+            "asset_key": "weapon:test_sword",
+            "level": 90,
+            "refinement": 1,
+        }
+    if include_artifact_set:
+        team_member["artifacts"] = {
+            "sets": [{"asset_key": "artifact_set:test_set", "pieces": 4}],
+            "stats": {},
+        }
+    return {
+        "schema_version": 2,
+        "kind": "simulation_input",
+        "meta": {"name": meta_name, "description": ""},
+        "team": [team_member],
+        "scene": {
+            "targets": [
+                {
+                    "id": f"target_{index}",
+                    "level": 90,
+                    "position": {"x": position_x, "y": 0, "z": 0},
+                    "resistance": dict(target_resistances or {}),
+                }
+                for index, position_x in enumerate(target_positions, start=1)
+            ]
+        },
+        "input_trace": input_trace
+        or [
+            {"frame": 1, "events": [{"key": "keyboard.e", "phase": "press"}]},
+            {"frame": 2, "events": [{"key": "keyboard.e", "phase": "release"}]},
+        ],
+        "rules": {"enabled": []},
+        "run_options": {"max_frames": max_frames},
+    }
+
+
+def build_reaction_assembled(
+    tmp_path: Path,
+    *,
+    meta_name: str = "reaction golden",
+    max_frames: int = 240,
+    target_positions: tuple[float, ...] = (0.0,),
+    target_resistances: Mapping[str, float] | None = None,
+    elemental_mastery: float | None = None,
+):
+    asset_db = tmp_path / "assets.db"
+    write_minimal_static_asset_database(asset_db)
+    if elemental_mastery is not None:
+        with sqlite3.connect(asset_db) as connection:
+            cursor = connection.execute(
+                """
+                UPDATE character_level_stats
+                SET ascension_stat = ?, ascension_value = ?
+                WHERE character_key = ? AND level = ?
+                """,
+                ("elemental_mastery", elemental_mastery, "character:test_character", 90),
+            )
+        assert cursor.rowcount == 1
+    return SimulationAssembler(SQLiteAssetRepository(asset_db)).assemble(
+        SimulationInput.from_mapping(
+            static_asset_input_payload(
+                meta_name=meta_name,
+                max_frames=max_frames,
+                input_trace=[],
+                target_positions=target_positions,
+                target_resistances=target_resistances,
+            )
+        )
+    )

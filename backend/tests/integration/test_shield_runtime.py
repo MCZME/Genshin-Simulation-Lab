@@ -39,6 +39,7 @@ from genshin_sim.infrastructure.results_sqlite import (
     SQLiteResultWriter,
 )
 from genshin_sim.infrastructure.results_sqlite.schema import RESULTS_SCHEMA_VERSION
+from tests.helpers.assembly import static_asset_input_payload
 
 
 class TestingShieldImpactFactory:
@@ -94,7 +95,9 @@ def test_action_impact_grants_shield_and_incoming_damage_reaches_health_runtime(
         RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
         _testing_shield_content_unit,
     )
-    config = SimulationInput.from_mapping(_input_payload())
+    config = SimulationInput.from_mapping(
+        static_asset_input_payload(meta_name="shield integration")
+    )
     assembled = SimulationAssembler(
         SQLiteAssetRepository(asset_db),
         content_unit_registry=unit_registry,
@@ -197,39 +200,3 @@ def _assert_result_database_round_trip(
     ]
     assert detail.events[0].data["result"]["remaining_after"] == 1_000
     assert detail.events[-1].data["record"]["health_result"]["hp_after"] == 9_500
-
-
-def _input_payload() -> dict[str, object]:
-    return {
-        "schema_version": 2,
-        "kind": "simulation_input",
-        "meta": {"name": "shield integration", "description": ""},
-        "team": [
-            {
-                "slot": 1,
-                "character": {
-                    "asset_key": "character:test_character",
-                    "level": 90,
-                    "constellation": 0,
-                    "talents": {"normal_attack": 1},
-                },
-                "artifacts": {"sets": [], "stats": {}},
-            }
-        ],
-        "scene": {
-            "targets": [
-                {
-                    "id": "target_1",
-                    "level": 90,
-                    "position": {"x": 0, "y": 0, "z": 0},
-                    "resistance": {},
-                }
-            ]
-        },
-        "input_trace": [
-            {"frame": 1, "events": [{"key": "keyboard.e", "phase": "press"}]},
-            {"frame": 2, "events": [{"key": "keyboard.e", "phase": "release"}]},
-        ],
-        "rules": {"enabled": []},
-        "run_options": {"max_frames": 10},
-    }

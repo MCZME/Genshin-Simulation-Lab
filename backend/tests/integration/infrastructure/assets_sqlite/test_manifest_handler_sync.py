@@ -1,8 +1,5 @@
 from __future__ import annotations
 
-import json
-from pathlib import Path
-
 import pytest
 
 from genshin_sim.assets import AssetValidationError, HandlerBinding
@@ -15,10 +12,11 @@ from genshin_sim.infrastructure.assets_sqlite import (
     sync_asset_manifest_handler_bindings,
     validate_handler_binding_in_manifest,
 )
+from tests.helpers.asset_manifest import asset_manifest_handler_sync_payload, write_asset_manifest
 
 
 def test_apply_handler_binding_to_manifest_updates_character(tmp_path):
-    manifest_path = _write_manifest(tmp_path)
+    manifest_path = write_asset_manifest(tmp_path, asset_manifest_handler_sync_payload())
 
     apply_handler_binding_to_manifest(
         manifest_path,
@@ -36,7 +34,7 @@ def test_apply_handler_binding_to_manifest_updates_character(tmp_path):
 
 
 def test_apply_handler_binding_to_manifest_supports_effect_and_bonus(tmp_path):
-    manifest_path = _write_manifest(tmp_path)
+    manifest_path = write_asset_manifest(tmp_path, asset_manifest_handler_sync_payload())
 
     apply_handler_binding_to_manifest(
         manifest_path,
@@ -62,7 +60,7 @@ def test_apply_handler_binding_to_manifest_supports_effect_and_bonus(tmp_path):
 
 
 def test_apply_handler_binding_to_manifest_resets_character_to_null(tmp_path):
-    manifest_path = _write_manifest(tmp_path)
+    manifest_path = write_asset_manifest(tmp_path, asset_manifest_handler_sync_payload())
     apply_handler_binding_to_manifest(
         manifest_path,
         HandlerBinding(kind="character", key="character:test", handler_key="character.test.real"),
@@ -78,7 +76,7 @@ def test_apply_handler_binding_to_manifest_resets_character_to_null(tmp_path):
 
 
 def test_validate_handler_binding_in_manifest_raises_for_missing_target(tmp_path):
-    manifest_path = _write_manifest(tmp_path)
+    manifest_path = write_asset_manifest(tmp_path, asset_manifest_handler_sync_payload())
 
     with pytest.raises(AssetValidationError, match="不存在"):
         validate_handler_binding_in_manifest(
@@ -92,7 +90,7 @@ def test_validate_handler_binding_in_manifest_raises_for_missing_target(tmp_path
 
 
 def test_sync_asset_manifest_handler_bindings_updates_batch(tmp_path):
-    manifest_path = _write_manifest(tmp_path)
+    manifest_path = write_asset_manifest(tmp_path, asset_manifest_handler_sync_payload())
     bindings = (
         HandlerBinding(
             kind="character",
@@ -133,7 +131,7 @@ def test_sync_asset_manifest_handler_bindings_updates_batch(tmp_path):
 
 
 def test_manifest_handler_sync_preserves_binding_across_rebuild(tmp_path):
-    manifest_path = _write_manifest(tmp_path)
+    manifest_path = write_asset_manifest(tmp_path, asset_manifest_handler_sync_payload())
     db_path = tmp_path / "first.db"
     rebuilt_path = tmp_path / "rebuilt.db"
     build_asset_database_from_manifest(db_path, manifest_path)
@@ -154,67 +152,3 @@ def test_manifest_handler_sync_preserves_binding_across_rebuild(tmp_path):
         SQLiteAssetRepository(rebuilt_path).get_character("character:test").handler_key
         == "character.test.real"
     )
-
-
-def _write_manifest(tmp_path: Path) -> Path:
-    manifest_path = tmp_path / "assets.json"
-    manifest_path.write_text(json.dumps(_manifest_payload()), encoding="utf-8")
-    return manifest_path
-
-
-def _manifest_payload() -> dict:
-    return {
-        "schema_version": 1,
-        "kind": "asset_manifest",
-        "meta": {
-            "schema_version": "2",
-            "data_version": "sync-fixture-1",
-            "source_name": "pytest-manifest",
-        },
-        "characters": [
-            {
-                "asset_key": "character:test",
-                "source_id": "test",
-                "name": "Test",
-                "element": "anemo",
-                "weapon_type": "sword",
-                "rarity": 4,
-                "burst_energy_cost": 40.0,
-            }
-        ],
-        "weapons": [
-            {
-                "asset_key": "weapon:test",
-                "source_id": "test",
-                "name": "Test",
-                "weapon_type": "sword",
-                "rarity": 4,
-            }
-        ],
-        "artifact_sets": [
-            {
-                "asset_key": "artifact_set:test",
-                "source_id": "test",
-                "name": "Test",
-            }
-        ],
-        "artifact_set_bonuses": [
-            {
-                "artifact_set_key": "artifact_set:test",
-                "piece_count": 2,
-                "handler_key": "artifact.unimplemented_set_bonus",
-                "params": {"schema_version": 1},
-            }
-        ],
-        "effect_payloads": [
-            {
-                "effect_key": "character:test:passive:1",
-                "owner_type": "character",
-                "owner_key": "character:test",
-                "effect_kind": "passive",
-                "unlock_key": "passive:1",
-                "handler_key": "character.unimplemented_passive",
-                "params": {"schema_version": 1},
-            }
-        ],
-    }

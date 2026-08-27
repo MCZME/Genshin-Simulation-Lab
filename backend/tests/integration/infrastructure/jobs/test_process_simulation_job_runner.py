@@ -1,3 +1,5 @@
+"""进程仿真任务 runner（ProcessSimulationJobRunner）的纵向集成。"""
+
 from __future__ import annotations
 
 import json
@@ -13,6 +15,7 @@ from genshin_sim.application.input import SimulationInput
 from genshin_sim.infrastructure.assets_sqlite import write_minimal_static_asset_database
 from genshin_sim.infrastructure.jobs import ProcessSimulationJobRunner
 from genshin_sim.infrastructure.results_sqlite import SQLiteResultRepository
+from tests.helpers.assembly import static_asset_input_payload
 
 
 class _PassthroughValidator:
@@ -32,7 +35,14 @@ def test_process_runner_runs_file_and_persists_result(tmp_path: Path):
     input_path = tmp_path / "config.json"
     write_minimal_static_asset_database(asset_db)
     input_path.write_text(
-        json.dumps(_minimal_input_payload(), ensure_ascii=False),
+        json.dumps(
+            static_asset_input_payload(
+                meta_name="process runner integration run",
+                include_weapon=True,
+                include_artifact_set=True,
+            ),
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
 
@@ -70,7 +80,14 @@ def test_process_runner_records_missing_asset_database_failure(tmp_path: Path):
     result_db = tmp_path / "results.db"
     input_path = tmp_path / "config.json"
     input_path.write_text(
-        json.dumps(_minimal_input_payload(), ensure_ascii=False),
+        json.dumps(
+            static_asset_input_payload(
+                meta_name="process runner integration run",
+                include_weapon=True,
+                include_artifact_set=True,
+            ),
+            ensure_ascii=False,
+        ),
         encoding="utf-8",
     )
 
@@ -96,52 +113,3 @@ def test_process_runner_records_missing_asset_database_failure(tmp_path: Path):
 
     assert result.error_message is not None
     assert "asset database does not exist" in result.error_message
-
-
-def _minimal_input_payload() -> dict[str, object]:
-    return {
-        "schema_version": 2,
-        "kind": "simulation_input",
-        "meta": {"name": "process runner integration run", "description": ""},
-        "team": [
-            {
-                "slot": 1,
-                "character": {
-                    "asset_key": "character:test_character",
-                    "level": 90,
-                    "constellation": 0,
-                    "talents": {"normal_attack": 1},
-                },
-                "weapon": {
-                    "asset_key": "weapon:test_sword",
-                    "level": 90,
-                    "refinement": 1,
-                },
-                "artifacts": {
-                    "sets": [
-                        {
-                            "asset_key": "artifact_set:test_set",
-                            "pieces": 4,
-                        }
-                    ],
-                    "stats": {},
-                },
-            }
-        ],
-        "scene": {
-            "targets": [
-                {
-                    "id": "target_1",
-                    "level": 90,
-                    "position": {"x": 0, "y": 0, "z": 0},
-                    "resistance": {},
-                }
-            ]
-        },
-        "input_trace": [
-            {"frame": 1, "events": [{"key": "keyboard.e", "phase": "press"}]},
-            {"frame": 2, "events": [{"key": "keyboard.e", "phase": "release"}]},
-        ],
-        "rules": {"enabled": []},
-        "run_options": {"max_frames": 10},
-    }

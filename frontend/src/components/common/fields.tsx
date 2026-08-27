@@ -10,6 +10,7 @@ interface TextFieldProps {
 
 export function TextField({ value, onChange, placeholder, mono = false }: TextFieldProps) {
   const [draft, setDraft] = useState(value);
+  const [composing, setComposing] = useState(false);
   function commit() {
     if (draft !== value) {
       onChange(draft);
@@ -23,8 +24,13 @@ export function TextField({ value, onChange, placeholder, mono = false }: TextFi
       value={draft}
       placeholder={placeholder}
       onChange={(event) => setDraft(event.target.value)}
+      onCompositionStart={() => setComposing(true)}
+      onCompositionEnd={() => setComposing(false)}
       onBlur={commit}
       onKeyDown={(event) => {
+        if (composing || event.nativeEvent.isComposing) {
+          return;
+        }
         if (event.key === "Enter") {
           commit();
           event.currentTarget.blur();

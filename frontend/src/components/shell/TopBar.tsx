@@ -55,6 +55,7 @@ export function TopBar({
   const [pending, setPending] = useState<PendingAction | null>(null);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editingName, setEditingName] = useState("");
+  const [renameComposing, setRenameComposing] = useState(false);
   const [deletingId, setDeletingId] = useState<string | null>(null);
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -267,7 +268,12 @@ export function TopBar({
                             value={editingName}
                             aria-label="重命名工作流"
                             onChange={(event) => setEditingName(event.target.value)}
+                            onCompositionStart={() => setRenameComposing(true)}
+                            onCompositionEnd={() => setRenameComposing(false)}
                             onKeyDown={(event) => {
+                              if (renameComposing || event.nativeEvent.isComposing) {
+                                return;
+                              }
                               if (event.key === "Enter") {
                                 event.preventDefault();
                                 commitRename();

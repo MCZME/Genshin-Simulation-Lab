@@ -13,6 +13,7 @@ import {
   type EditorProps,
   type EditorRow,
 } from "./context";
+import { ImeSafeInput } from "./imeInput";
 
 export function ComputeEditor({ node, onChange }: EditorProps) {
   const shape = upstreamShape(node.id);
@@ -91,6 +92,7 @@ function ComputeRow({
   const [draft, setDraft] = useState<string>(() =>
     exprToFormula(row.expr as ComputeExpr | null | undefined),
   );
+  const [composing, setComposing] = useState(false);
   const inputRef = useRef<HTMLInputElement | null>(null);
   const lastExprKey = useRef<string>(JSON.stringify(row.expr ?? null));
   useEffect(() => {
@@ -100,8 +102,11 @@ function ComputeRow({
       setDraft(exprToFormula(row.expr as ComputeExpr | null | undefined));
     }
   }, [row.expr]);
-  const commitFormula = (next: string) => {
+  const commitFormula = (next: string, allowCommit = true) => {
     setDraft(next);
+    if (!allowCommit) {
+      return;
+    }
     const parsed = parseFormula(next, types);
     if (parsed.error === null && parsed.ast !== null) {
       lastExprKey.current = JSON.stringify(parsed.ast);
@@ -137,11 +142,11 @@ function ComputeRow({
   return (
     <div className="compute-row">
       <div className="compute-head">
-        <input
+        <ImeSafeInput
           className="compute-name-input"
           placeholder="结果列名"
           value={name}
-          onChange={(event) => onChange({ name: event.target.value.trim() })}
+          onChange={(value) => onChange({ name: value.trim() })}
         />
         <select
           className="compute-insert-select"
@@ -168,7 +173,9 @@ function ComputeRow({
         className="compute-formula-input"
         placeholder="公式，如 total_damage / (frames_run / 60)"
         value={draft}
-        onChange={(event) => commitFormula(event.target.value)}
+        onChange={(event) => commitFormula(event.target.value, !composing)}
+        onCompositionStart={() => setComposing(true)}
+        onCompositionEnd={() => setComposing(false)}
       />
       {errors.map((message) => (
         <p key={message} className="filter-row-error">

@@ -156,6 +156,50 @@ describe("分组聚合节点编辑器（卡片直编）", () => {
     });
   });
 
+  it("结果列名支持中文", () => {
+    withUpstream();
+    const onChange = vi.fn();
+    render(
+      <Harness
+        node={aggregateNode({
+          aggregates: [{ fn: "sum", column: "dps", as: "sum_dps" }],
+        })}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.change(screen.getByPlaceholderText("默认：sum_dps"), {
+      target: { value: "伤害总和" },
+    });
+
+    expect(onChange).toHaveBeenLastCalledWith({
+      aggregates: [{ fn: "sum", column: "dps", as: "伤害总和" }],
+    });
+  });
+
+  it("输入法组合期间不写回结果列名，组合结束写回最终值", () => {
+    withUpstream();
+    const onChange = vi.fn();
+    render(
+      <Harness
+        node={aggregateNode({
+          aggregates: [{ fn: "sum", column: "dps", as: "sum_dps" }],
+        })}
+        onChange={onChange}
+      />,
+    );
+    const input = screen.getByPlaceholderText("默认：sum_dps");
+
+    fireEvent.compositionStart(input);
+    fireEvent.change(input, { target: { value: "伤" } });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: "伤害总和" } });
+    fireEvent.compositionEnd(input);
+
+    expect(onChange).toHaveBeenLastCalledWith({
+      aggregates: [{ fn: "sum", column: "dps", as: "伤害总和" }],
+    });
+  });
+
   it("非数值列使用求和时行内提示", () => {
     withUpstream();
     render(

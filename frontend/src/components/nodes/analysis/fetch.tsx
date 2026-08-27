@@ -15,6 +15,7 @@ import {
   type EditorProps,
   type EditorRow,
 } from "./context";
+import { ImeSafeInput } from "./imeInput";
 
 /** 输出列类型选项（与后端类型词表一致）。 */
 const EXTRACT_TYPES = ["string", "int", "float", "bool"] as const;
@@ -450,10 +451,10 @@ function SnapshotColumnCatalog({
             <span className="fetch-selected-source" title={asString(row.path) ?? ""}>
               {describeSelectedSource(leaves, row)}
             </span>
-            <input
+            <ImeSafeInput
               aria-label={`输入条件列名 ${index + 1}`}
               value={asString(row.name) ?? ""}
-              onChange={(event) => updateName(index, event.target.value)}
+              onChange={(value) => updateName(index, value)}
             />
             <span className="snapshot-type">{asString(row.type) ?? ""}</span>
             <button
@@ -781,10 +782,10 @@ function EventColumnCatalog({
             <span className="fetch-selected-source" title={asString(row.path) ?? ""}>
               {asString(row.event_type) ?? "?"}
             </span>
-            <input
+            <ImeSafeInput
               aria-label={`事件数据列名 ${index + 1}`}
               value={asString(row.name) ?? ""}
-              onChange={(event) => updateName(index, event.target.value)}
+              onChange={(value) => updateName(index, value)}
             />
             <span className="snapshot-type">{asString(row.type) ?? ""}</span>
             <button

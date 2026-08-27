@@ -8,6 +8,7 @@ import {
   type EditorProps,
   type EditorRow,
 } from "./context";
+import { ImeSafeInput } from "./imeInput";
 
 const AGGREGATE_FUNCTION_LABELS: Record<string, string> = {
   sum: "求和",
@@ -233,10 +234,10 @@ function AggregateRow({
             </option>
           ))}
         </select>
-        <input
-          value={as}
+        <ImeSafeInput
           placeholder={defaultName === "" ? "结果列名" : `默认：${defaultName}`}
-          onChange={(event) => onChange({ as: event.target.value })}
+          value={as}
+          onChange={(value) => onChange({ as: value })}
         />
         <button type="button" className="filter-row-remove" title="移除指标" onClick={onRemove}>
           ×

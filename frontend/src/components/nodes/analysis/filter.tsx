@@ -341,6 +341,7 @@ function FilterMultiValue({
   onChange: (value: unknown) => void;
 }) {
   const [text, setText] = useState("");
+  const [composing, setComposing] = useState(false);
   const commitText = (raw: string) => {
     const parts = raw
       .split(/[,，]/)
@@ -383,7 +384,12 @@ function FilterMultiValue({
         value={text}
         placeholder={placeholder}
         onChange={(event) => setText(event.target.value)}
+        onCompositionStart={() => setComposing(true)}
+        onCompositionEnd={() => setComposing(false)}
         onKeyDown={(event) => {
+          if (composing || event.nativeEvent.isComposing) {
+            return;
+          }
           if (event.key === "Enter" || event.key === "," || event.key === "，") {
             event.preventDefault();
             commitText(text);

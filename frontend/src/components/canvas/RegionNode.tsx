@@ -92,6 +92,7 @@ export function RegionNode({
   const [moving, setMoving] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [draftName, setDraftName] = useState("");
+  const [nameComposing, setNameComposing] = useState(false);
   const editingNameRef = useRef(false);
   const handledRenameRequestRef = useRef(false);
   const nameInputRef = useRef<HTMLInputElement>(null);
@@ -302,7 +303,12 @@ export function RegionNode({
             maxLength={60}
             aria-label="区域名称"
             onChange={(event) => setDraftName(event.target.value)}
+            onCompositionStart={() => setNameComposing(true)}
+            onCompositionEnd={() => setNameComposing(false)}
             onKeyDown={(event) => {
+              if (nameComposing || event.nativeEvent.isComposing) {
+                return;
+              }
               if (event.key === "Enter") {
                 event.preventDefault();
                 commitRename();

@@ -7,6 +7,7 @@ import {
   type EditorProps,
   type EditorRow,
 } from "./context";
+import { ImeSafeInput } from "./imeInput";
 
 function normalizeProjectRow(row: EditorRow): EditorRow {
   const next = { ...row };
@@ -124,10 +125,10 @@ function ProjectRow({
             </option>
           ))}
         </select>
-        <input
-          value={as}
+        <ImeSafeInput
           placeholder={name === "" ? "输出列名" : `默认：${name}`}
-          onChange={(event) => onChange({ as: event.target.value })}
+          value={as}
+          onChange={(value) => onChange({ as: value })}
         />
         <button type="button" className="filter-row-remove" title="移除列" onClick={onRemove}>
           ×

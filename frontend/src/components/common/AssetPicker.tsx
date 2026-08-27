@@ -223,6 +223,9 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
   }
 
   function handleKeyDown(event: React.KeyboardEvent<HTMLInputElement>) {
+    if (event.nativeEvent.isComposing) {
+      return;
+    }
     if (event.key === "ArrowDown") {
       event.preventDefault();
       setActiveIndex((current) =>

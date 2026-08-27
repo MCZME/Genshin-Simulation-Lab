@@ -15,6 +15,7 @@ const SHAPE: TableShape[] = [
   { name: "total_damage", type: "float" },
   { name: "frames_run", type: "int" },
   { name: "element", type: "string" },
+  { name: "总伤害", type: "float" },
 ];
 
 function withUpstream() {
@@ -155,6 +156,55 @@ describe("计算列节点编辑器", () => {
     });
 
     expect(onChange).toHaveBeenLastCalledWith({ columns: [{ name: "dps" }] });
+  });
+
+  it("结果列名与公式支持中文", () => {
+    withUpstream();
+    const onChange = vi.fn();
+    render(<Harness node={computeNode({ columns: [{}] })} onChange={onChange} />);
+    fireEvent.change(screen.getByPlaceholderText("结果列名"), {
+      target: { value: "每秒伤害" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("公式，如 total_damage / (frames_run / 60)"), {
+      target: { value: "总伤害 / 2" },
+    });
+
+    expect(onChange).toHaveBeenLastCalledWith({
+      columns: [
+        { name: "每秒伤害", expr: { op: "/", left: { col: "总伤害" }, right: { lit: 2 } } },
+      ],
+    });
+  });
+
+  it("输入法组合期间结果列名不写回，组合结束写最终值", () => {
+    withUpstream();
+    const onChange = vi.fn();
+    render(<Harness node={computeNode({ columns: [{}] })} onChange={onChange} />);
+    const nameInput = screen.getByPlaceholderText("结果列名");
+
+    fireEvent.compositionStart(nameInput);
+    fireEvent.change(nameInput, { target: { value: "角色 " } });
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.compositionEnd(nameInput);
+    expect(onChange).toHaveBeenLastCalledWith({ columns: [{ name: "角色" }] });
+  });
+
+  it("输入法组合期间公式不写回 AST", () => {
+    withUpstream();
+    const onChange = vi.fn();
+    render(<Harness node={computeNode({ columns: [{}] })} onChange={onChange} />);
+    const formulaInput = screen.getByPlaceholderText("公式，如 total_damage / (frames_run / 60)");
+
+    fireEvent.compositionStart(formulaInput);
+    fireEvent.change(formulaInput, { target: { value: "1" } });
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.compositionEnd(formulaInput);
+    fireEvent.change(formulaInput, { target: { value: "总伤害 / 2" } });
+    expect(onChange).toHaveBeenLastCalledWith({
+      columns: [{ expr: { op: "/", left: { col: "总伤害" }, right: { lit: 2 } } }],
+    });
   });
 
   it("结果列名与已有列重名时提示", () => {

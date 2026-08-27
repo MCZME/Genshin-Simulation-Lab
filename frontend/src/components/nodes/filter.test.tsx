@@ -165,6 +165,34 @@ describe("过滤节点编辑器（卡片直编）", () => {
     });
   });
 
+  it("输入法组合期间回车不提交 chip", () => {
+    withUpstream();
+    const onChange = vi.fn();
+    render(
+      <Harness
+        node={filterNode({
+          mode: "all",
+          conditions: [{ column: "element", op: "in", value: [] }],
+        })}
+        onChange={onChange}
+      />,
+    );
+    const chipsInput = screen.getByPlaceholderText("输入值后回车");
+
+    fireEvent.compositionStart(chipsInput);
+    fireEvent.change(chipsInput, { target: { value: "水" } });
+    fireEvent.keyDown(chipsInput, { key: "Enter" });
+    expect(onChange).not.toHaveBeenCalled();
+    expect(screen.queryByText("水")).toBeNull();
+
+    fireEvent.compositionEnd(chipsInput);
+    fireEvent.keyDown(chipsInput, { key: "Enter" });
+    expect(onChange).toHaveBeenLastCalledWith({
+      mode: "all",
+      conditions: [{ column: "element", op: "in", value: ["水"] }],
+    });
+  });
+
   it("为空：不出现值输入且写回不含 value", () => {
     withUpstream();
     const onChange = vi.fn();

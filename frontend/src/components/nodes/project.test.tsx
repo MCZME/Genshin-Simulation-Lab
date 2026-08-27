@@ -127,6 +127,40 @@ describe("投影节点编辑器（卡片直编）", () => {
     });
   });
 
+  it("输出列名支持中文并写回 as", () => {
+    withUpstream();
+    const onChange = vi.fn();
+    render(
+      <Harness node={projectNode({ columns: [{ name: "dps" }] })} onChange={onChange} />,
+    );
+    fireEvent.change(screen.getByPlaceholderText("默认：dps"), {
+      target: { value: "总伤害" },
+    });
+
+    expect(onChange).toHaveBeenLastCalledWith({
+      columns: [{ name: "dps", as: "总伤害" }],
+    });
+  });
+
+  it("输入法组合期间不写回 as，组合结束写回最终值", () => {
+    withUpstream();
+    const onChange = vi.fn();
+    render(
+      <Harness node={projectNode({ columns: [{ name: "dps" }] })} onChange={onChange} />,
+    );
+    const input = screen.getByPlaceholderText("默认：dps");
+
+    fireEvent.compositionStart(input);
+    fireEvent.change(input, { target: { value: "角" } });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.change(input, { target: { value: "角色" } });
+    fireEvent.compositionEnd(input);
+
+    expect(onChange).toHaveBeenLastCalledWith({
+      columns: [{ name: "dps", as: "角色" }],
+    });
+  });
+
   it("输出列名是旧列默认名时切换列自动跟随", () => {
     withUpstream();
     const onChange = vi.fn();

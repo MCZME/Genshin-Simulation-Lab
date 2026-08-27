@@ -1,5 +1,5 @@
 import { useMemo } from "react";
-import { COLORS } from "../../theme/tokens";
+import { COLORS, type NodeCategory } from "../../theme/tokens";
 import {
   AggregateEditor,
   ComputeEditor,
@@ -105,9 +105,51 @@ export function NodeEditorHost({
   }
 }
 
+/** 节点 -> 类别映射：颜色按类别共享，不按具体节点类型（决策 2.34）。 */
+const NODE_CATEGORY_OF: Record<string, NodeCategory> = {
+  root: "runSettings",
+  meta: "runSettings",
+  run_options: "runSettings",
+  character: "teamConfig",
+  weapon: "teamConfig",
+  artifact: "teamConfig",
+  target: "targetConfig",
+  input_trace: "inputSequence",
+  enum: "variantScan",
+  range: "variantScan",
+  simulation: "simulation",
+  data_provider: "dataSource",
+  fetch: "dataSource",
+  filter: "dataProcessing",
+  project: "dataProcessing",
+  sort: "dataProcessing",
+  aggregate: "dataProcessing",
+  limit: "dataProcessing",
+  join: "dataProcessing",
+  compute: "dataProcessing",
+  table_config: "displayConfig",
+  timeline_config: "displayConfig",
+  pie_config: "displayConfig",
+  bar_config: "displayConfig",
+  member_table: "displayView",
+  timeline: "displayView",
+  pie: "displayView",
+  bar: "displayView",
+};
+
+export function nodeCategoryOf(kind: string): NodeCategory | null {
+  return NODE_CATEGORY_OF[kind] ?? null;
+}
+
 export function nodeKindColor(kind: string): string {
-  const colors = COLORS.node as Record<string, string>;
-  return colors[kind] ?? "#64748b";
+  if (kind === "region") {
+    return COLORS.region.configuration;
+  }
+  if (kind === "analysis_region") {
+    return COLORS.region.analysis;
+  }
+  const category = nodeCategoryOf(kind);
+  return category === null ? "#64748b" : COLORS.nodeCategory[category];
 }
 
 export const CONFIG_NODE_KINDS = [
@@ -134,11 +176,11 @@ export const ANALYSIS_NODE_KINDS = [
   "join",
   "compute",
   "table_config",
-  "timeline_config",
-  "pie_config",
-  "bar_config",
   "member_table",
+  "timeline_config",
   "timeline",
+  "pie_config",
   "pie",
+  "bar_config",
   "bar",
 ] as const;

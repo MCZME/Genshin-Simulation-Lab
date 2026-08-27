@@ -14,4 +14,31 @@ describe("ObjectPanel", () => {
 
     expect(onCollapse).toHaveBeenCalledTimes(1);
   });
+
+  it("分析节点面板中展示配置与对应视图相邻", () => {
+    render(<ObjectPanel onDragStart={vi.fn()} onCollapse={vi.fn()} />);
+    const sections = Array.from(document.querySelectorAll(".panel-section"));
+    const analysisSection = sections[sections.length - 1];
+    const labels = Array.from(
+      analysisSection.querySelectorAll(".panel-action-label"),
+    ).map((item) => item.textContent);
+    expect(labels).toEqual([
+      "获取数据",
+      "过滤",
+      "投影",
+      "排序",
+      "分组聚合",
+      "限制行数",
+      "合并表",
+      "计算列",
+      "表格配置",
+      "表格",
+      "时间轴配置",
+      "单场时间轴",
+      "饼图配置",
+      "占比饼图",
+      "柱状图配置",
+      "指标柱状图",
+    ]);
+  });
 });

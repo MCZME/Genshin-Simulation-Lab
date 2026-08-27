@@ -10,18 +10,18 @@ export const COLORS = {
     configuration: "#2563eb",
     analysis: "#7c3aed",
   },
-  node: {
-    root: "#64748b",
-    meta: "#0ea5e9",
-    character: "#f59e0b",
-    weapon: "#ef4444",
-    artifact: "#a855f7",
-    target: "#22c55e",
-    input_trace: "#14b8a6",
-    run_options: "#eab308",
-    enum: "#f97316",
-    range: "#f43f5e",
+  /** 节点类别色：同类节点共享一个主色（决策 2.34，2026-08-27）。 */
+  nodeCategory: {
+    runSettings: "#0ea5e9",
+    teamConfig: "#f59e0b",
+    targetConfig: "#22c55e",
+    inputSequence: "#14b8a6",
+    variantScan: "#f97316",
     simulation: "#6366f1",
+    dataSource: "#3b82f6",
+    dataProcessing: "#a855f7",
+    displayConfig: "#ec4899",
+    displayView: "#ef4444",
   },
   severity: {
     error: "#ef4444",
@@ -37,6 +37,8 @@ export const COLORS = {
     cancelled: "#64748b",
   },
 } as const;
+
+export type NodeCategory = keyof typeof COLORS.nodeCategory;
 
 export const SPACING = {
   xs: 4,

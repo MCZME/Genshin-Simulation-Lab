@@ -39,6 +39,7 @@ import type { IncomingOrderGroup } from "./InputOrderPopover";
 import { nodeKindColor } from "../nodes/registry";
 import { NodeCard } from "./NodeCard";
 import type { MemberPortInfo, WorkflowNodeData } from "./NodeCard";
+import { COLORS } from "../../theme/tokens";
 import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
 import { RegionNode } from "./RegionNode";
 import type { AnalysisRunPhase, RegionNodeData } from "./RegionNode";
@@ -464,7 +465,11 @@ export function CanvasView({
           pannable
           zoomable
           nodeColor={(node) =>
-            node.type === "region" ? "#2563eb" : "#64748b"
+            node.type === "region"
+              ? (node.data as RegionNodeData).region.kind === "configuration"
+                ? COLORS.region.configuration
+                : COLORS.region.analysis
+              : nodeKindColor((node.data as WorkflowNodeData).node.kind)
           }
         />
       </ReactFlow>

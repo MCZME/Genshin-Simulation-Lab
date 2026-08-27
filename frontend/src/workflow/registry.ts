@@ -665,6 +665,10 @@ function validateTableConfig(node: WorkflowNode): Diagnostic[] {
   if (conditionCount + dataCount === 0) {
     diagnostics.push(paramError(node, "condition_columns", "至少需要一个条件列或数据列"));
   }
+  const widthMode = node.params.width_mode;
+  if (widthMode !== undefined && widthMode !== "auto" && widthMode !== "fixed") {
+    diagnostics.push(paramError(node, "width_mode", "宽度模式必须是 auto 或 fixed"));
+  }
   return diagnostics;
 }
 
@@ -977,8 +981,13 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     paramFields: {
       condition_columns: { type: "list" },
       data_columns: { type: "list" },
+      width_mode: { type: "list" },
     },
-    defaultParams: { condition_columns: [], data_columns: [] },
+    defaultParams: {
+      condition_columns: [],
+      data_columns: [],
+      width_mode: "auto",
+    },
     fragment: () => null,
     validate: validateTableConfig,
   },
@@ -1037,7 +1046,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
   },
   member_table: {
     kind: "member_table",
-    displayName: "成员指标表",
+    displayName: "表格",
     region: "analysis",
     ports: {
       inputs: [

@@ -28,7 +28,13 @@ import {
   memberItemIds,
   singleFragment,
 } from "../../workflow/registry";
-import type { Diagnostic, EnumValue, WorkflowDefinition, WorkflowNode } from "../../workflow/types";
+import type {
+  Diagnostic,
+  EnumValue,
+  NodeSize,
+  WorkflowDefinition,
+  WorkflowNode,
+} from "../../workflow/types";
 import type { IncomingOrderGroup } from "./InputOrderPopover";
 import { nodeKindColor } from "../nodes/registry";
 import { NodeCard } from "./NodeCard";
@@ -65,6 +71,8 @@ export interface CanvasViewProps {
     position: { x: number; y: number },
     regionId: string | null,
   ) => void;
+  onResizeNode: (nodeId: string, size: NodeSize) => void;
+  onResizeNodeWithFixedWidth: (nodeId: string, size: NodeSize, configNodeId: string) => void;
   onMoveRegion: (regionId: string, position: { x: number; y: number }) => void;
   onResizeRegion: (
     regionId: string,
@@ -113,6 +121,8 @@ interface CallbackSnapshot {
   onViewportCommandHandled: CanvasViewProps["onViewportCommandHandled"];
   onRenameRegionRequestHandled: CanvasViewProps["onRenameRegionRequestHandled"];
   onMoveNode: CanvasViewProps["onMoveNode"];
+  onResizeNode: CanvasViewProps["onResizeNode"];
+  onResizeNodeWithFixedWidth: CanvasViewProps["onResizeNodeWithFixedWidth"];
   onMoveRegion: CanvasViewProps["onMoveRegion"];
   onResizeRegion: CanvasViewProps["onResizeRegion"];
   onRenameRegion: CanvasViewProps["onRenameRegion"];
@@ -149,6 +159,8 @@ export function CanvasView({
   onViewportCommandHandled,
   onRenameRegionRequestHandled,
   onMoveNode,
+  onResizeNode,
+  onResizeNodeWithFixedWidth,
   onMoveRegion,
   onResizeRegion,
   onRenameRegion,
@@ -171,6 +183,8 @@ export function CanvasView({
     onViewportCommandHandled,
     onRenameRegionRequestHandled,
     onMoveNode,
+    onResizeNode,
+    onResizeNodeWithFixedWidth,
     onMoveRegion,
     onResizeRegion,
     onRenameRegion,
@@ -192,6 +206,8 @@ export function CanvasView({
       onViewportCommandHandled,
       onRenameRegionRequestHandled,
       onMoveNode,
+      onResizeNode,
+      onResizeNodeWithFixedWidth,
       onMoveRegion,
       onResizeRegion,
       onRenameRegion,
@@ -538,6 +554,8 @@ function buildNodes(
       definition,
       analysisResult: analysisResults?.get(node.id),
       onParamsChange: callbacks.onParamsChange,
+      onResizeNode: callbacks.onResizeNode,
+      onResizeNodeWithFixedWidth: callbacks.onResizeNodeWithFixedWidth,
       onDeleteNode: callbacks.onDeleteNode,
       onMoveEdgeOrder: callbacks.onMoveEdgeOrder,
       onLocateNode: callbacks.onLocateNode,
@@ -558,6 +576,8 @@ function buildNodes(
       data,
       zIndex: 1,
       selected: false,
+      width: node.size?.width,
+      height: node.size?.height,
     });
   }
   return nodes;

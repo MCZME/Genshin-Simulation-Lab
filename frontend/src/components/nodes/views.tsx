@@ -18,12 +18,17 @@ import {
 } from "../../theme/elements";
 import { useAnalysisSchemaCatalog } from "../analysis_context";
 import { useAssetNames } from "./useAssetNames";
+import { MIN_VIEW_WIDTH } from "../../workflow/view_size";
 
 const ROW_HEIGHT = 28;
 /** 超过该行数启用窗口化渲染，避免大批量一次性铺 DOM。 */
 const VIRTUALIZE_THRESHOLD = 200;
 const MAX_RENDERED_ROWS = 10000;
 const SORT_ORDERS = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
+/** 列宽估算：单元格左右内边距合计（px）。 */
+const CELL_PADDING = 16;
+const MIN_COLUMN_WIDTH = 72;
+const MAX_COLUMN_WIDTH = 240;
 
 type SortDirection = "asc" | "desc";
 interface SortKey {
@@ -45,11 +50,17 @@ export function AnalysisViewBody({
   result,
   definition,
   onLocateNode,
+  viewWidth,
+  onFitChange,
 }: {
   node: WorkflowNode;
   result: AnalysisNodeResult | undefined;
   definition: WorkflowDefinition;
   onLocateNode?: (nodeId: string) => void;
+  /** 节点内容区可用宽度（px）；供表格视图计算裁剪提示。 */
+  viewWidth?: number;
+  /** 表格视图布局变化时上报：内容自然宽与被隐藏列数。 */
+  onFitChange?: (info: MemberTableFitInfo) => void;
 }) {
   const hasDataInput = definition.edges.some(
     (edge) => edge.target_node_id === node.id && edge.target_port_id === "in",
@@ -109,17 +120,27 @@ export function AnalysisViewBody({
   if (table === undefined || table.rows.length === 0) {
     return <div className="analysis-view-state">上游为空（无匹配数据）</div>;
   }
-  return renderAnalysisTable(node, definition, table);
+  return renderAnalysisTable(node, definition, table, viewWidth, onFitChange);
 }
 
 function renderAnalysisTable(
   node: WorkflowNode,
   definition: WorkflowDefinition,
   table: AnalysisTableResult,
+  viewWidth?: number,
+  onFitChange?: (info: MemberTableFitInfo) => void,
 ) {
   switch (node.kind) {
     case "member_table":
-      return <MemberTable node={node} definition={definition} table={table} />;
+      return (
+        <MemberTable
+          node={node}
+          definition={definition}
+          table={table}
+          viewWidth={viewWidth}
+          onFitChange={onFitChange}
+        />
+      );
     case "timeline":
       return <div className="analysis-view-state">单场时间轴（后续实现）</div>;
     case "pie":
@@ -135,10 +156,14 @@ function MemberTable({
   node,
   definition,
   table,
+  viewWidth,
+  onFitChange,
 }: {
   node: WorkflowNode;
   definition: WorkflowDefinition;
   table: AnalysisTableResult;
+  viewWidth?: number;
+  onFitChange?: (info: MemberTableFitInfo) => void;
 }) {
   const config = useMemo(
     () => connectedConfigNode(definition, node.id, "table_config"),
@@ -255,6 +280,34 @@ function MemberTable({
   }, [conditionColumns, valueKinds, columnIndex, table.rows]);
   const assetNames = useAssetNames(assetKeys);
 
+  const layout = useMemo(
+    () =>
+      estimateMemberTableLayout({
+        order,
+        rows: table.rows,
+        columnIndex,
+        typeOf,
+        valueKinds,
+        assetNames,
+        dataColumns,
+      }),
+    [order, table.rows, columnIndex, typeOf, valueKinds, assetNames, dataColumns],
+  );
+  // 卡片为 border-box：内容自然宽与卡片宽相等时视为恰好容纳，不显示渐隐。
+  const contentWidth = Math.max(0, viewWidth ?? MIN_VIEW_WIDTH);
+  const hiddenColumns = useMemo(
+    () => countHiddenColumns(layout.widths, contentWidth),
+    [layout.widths, contentWidth],
+  );
+  const clipped = layout.fitWidth > contentWidth;
+  const fitInfo = useMemo(
+    () => ({ fitWidth: layout.fitWidth, hiddenColumns }),
+    [layout.fitWidth, hiddenColumns],
+  );
+  useEffect(() => {
+    onFitChange?.(fitInfo);
+  }, [fitInfo, onFitChange]);
+
   const highlightValues = useMemo(() => {
     const result = new Map<string, number>();
     for (const [column, mode] of Object.entries(highlights)) {
@@ -352,7 +405,7 @@ function MemberTable({
         )}
       </div>
       <div className="analysis-member-scroll" ref={scrollRef}>
-        <table>
+        <table style={{ width: layout.fitWidth }}>
           <thead>
             <tr>
               {order.map((column, index) => {
@@ -370,10 +423,14 @@ function MemberTable({
                       : undefined;
                 const isDataStart =
                   isData && (index === 0 || !dataSet.has(order[index - 1]));
+                const sorted = isData
+                  ? dataSort?.column === column
+                  : conditionOrder >= 0;
                 const classNames = [
                   "member-th",
                   isData ? "data" : "condition",
                   isDataStart ? "data-start" : "",
+                  sorted ? "sorted" : "",
                   dragIndex !== null && dragIndex !== index ? "drop-target" : "",
                 ]
                   .filter((item) => item !== "")
@@ -384,6 +441,7 @@ function MemberTable({
                     draggable
                     title={`${column}（${type}）`}
                     className={classNames}
+                    style={{ width: layout.widths[index] }}
                     onDragStart={() => setDragIndex(index)}
                     onDragOver={(event) => event.preventDefault()}
                     onDrop={() => moveColumn(dragIndex ?? index, index)}
@@ -445,43 +503,68 @@ function MemberTable({
             </tr>
           </thead>
           <tbody>
-            {visibleRows.map((row, rowIndex) => (
-              <tr key={rowIndex}>
-                {order.map((column, cellIndex) => {
-                  const index = columnIndex.get(column);
-                  const value = index === undefined ? null : row[index];
-                  const isData = dataSet.has(column);
-                  const isDataStart =
-                    isData && (cellIndex === 0 || !dataSet.has(order[cellIndex - 1]));
-                  const highlightClass =
-                    dataSet.has(column) &&
-                    highlights[column] !== undefined &&
-                    highlightValues.get(column) === value
-                      ? `hl-${highlights[column]}`
-                      : "";
-                  const cellClass = [
-                    isData ? "data" : "condition",
-                    isDataStart ? "data-start" : "",
-                    highlightClass,
-                  ]
-                    .filter((item) => item !== "")
-                    .join(" ");
-                  return (
-                    <td key={column} className={cellClass}>
-                      {formatCell(
-                        value,
-                        typeOf.get(column),
-                        valueKinds.get(column),
-                        assetNames,
-                      )}
-                    </td>
-                  );
-                })}
-              </tr>
-            ))}
+            {visibleRows.map((row, rowIndex) => {
+              // 窗口化渲染时 tbody 只含可见切片，斑马纹必须用绝对行号，
+              // 避免滚动时同一行的明暗翻转。
+              const absoluteRowIndex = virtualizing
+                ? windowRange.start + rowIndex
+                : rowIndex;
+              return (
+                <tr
+                  key={rowIndex}
+                  className={absoluteRowIndex % 2 === 1 ? "stripe" : ""}
+                >
+                  {order.map((column, cellIndex) => {
+                    const index = columnIndex.get(column);
+                    const value = index === undefined ? null : row[index];
+                    const isData = dataSet.has(column);
+                    const isNull =
+                      value === null ||
+                      value === undefined ||
+                      (typeof value === "number" && !Number.isFinite(value));
+                    const isDataStart =
+                      isData && (cellIndex === 0 || !dataSet.has(order[cellIndex - 1]));
+                    const highlightClass =
+                      dataSet.has(column) &&
+                      highlights[column] !== undefined &&
+                      highlightValues.get(column) === value
+                        ? `hl-${highlights[column]}`
+                        : "";
+                    const cellClass = [
+                      isData ? "data" : "condition",
+                      isDataStart ? "data-start" : "",
+                      isNull ? "cell-null" : "",
+                      highlightClass,
+                    ]
+                      .filter((item) => item !== "")
+                      .join(" ");
+                    return (
+                      <td
+                        key={column}
+                        className={cellClass}
+                        style={{ width: layout.widths[cellIndex] }}
+                      >
+                        {formatCell(
+                          value,
+                          typeOf.get(column),
+                          valueKinds.get(column),
+                          assetNames,
+                        )}
+                      </td>
+                    );
+                  })}
+                </tr>
+              );
+            })}
           </tbody>
         </table>
       </div>
+      {clipped && (
+        <div
+          className="analysis-member-fade"
+          aria-label={`还有 ${hiddenColumns} 列被隐藏，拖宽查看`}
+        />
+      )}
       <div className="analysis-member-footer">
         <span>共 {table.rows.length} 行</span>
         {table.truncated && (
@@ -498,6 +581,93 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+export interface MemberTableFitInfo {
+  /** 全部绑定列完整显示所需的内容自然宽（px）。 */
+  fitWidth: number;
+  /** 当前内容区内被裁剪隐藏的列数（含部分可见列之外的列）。 */
+  hiddenColumns: number;
+}
+
+/** 按 12px 字号粗略估算文本像素宽：CJK 全宽、数字窄、其余按字母宽度。 */
+export function estimateTextWidth(text: string): number {
+  let width = 0;
+  for (const ch of text) {
+    const code = ch.codePointAt(0) ?? 0;
+    if (ch === " ") {
+      width += 4;
+    } else if (
+      (code >= 0x2e80 && code <= 0x9fff) ||
+      (code >= 0xf900 && code <= 0xfaff) ||
+      (code >= 0xff00 && code <= 0xffef)
+    ) {
+      width += 12;
+    } else if (
+      (code >= 0x30 && code <= 0x39) ||
+      ch === "," ||
+      ch === "." ||
+      ch === "-"
+    ) {
+      width += 7;
+    } else {
+      width += 7.5;
+    }
+  }
+  return Math.ceil(width);
+}
+
+/**
+ * 估算表格视图各列宽度：表头文本与全部单元格格式化文本取宽者，
+ * 数据列额外预留排序/下拉图标空间；每列夹持在上下限内。
+ */
+export function estimateMemberTableLayout(input: {
+  order: string[];
+  rows: unknown[][];
+  columnIndex: Map<string, number>;
+  typeOf: Map<string, string>;
+  valueKinds: Map<string, string>;
+  assetNames: Map<string, string>;
+  dataColumns: string[];
+}): { widths: number[]; fitWidth: number } {
+  const dataSet = new Set(input.dataColumns);
+  const widths = input.order.map((column) => {
+    const index = input.columnIndex.get(column);
+    const type = input.typeOf.get(column);
+    const valueKind = input.valueKinds.get(column) ?? "";
+    const headerWidth =
+      estimateTextWidth(column) + (dataSet.has(column) ? 28 : 8);
+    let cellWidth = 0;
+    if (index !== undefined) {
+      for (const row of input.rows) {
+        const text = formatCell(row[index], type, valueKind, input.assetNames);
+        cellWidth = Math.max(cellWidth, estimateTextWidth(text));
+      }
+    }
+    const raw = Math.max(headerWidth, cellWidth) + CELL_PADDING;
+    return clampWidth(raw);
+  });
+  return {
+    widths,
+    fitWidth: widths.reduce((sum, width) => sum + width, 0),
+  };
+}
+
+function clampWidth(width: number): number {
+  return Math.min(MAX_COLUMN_WIDTH, Math.max(MIN_COLUMN_WIDTH, width));
+}
+
+/** 计算超出内容宽被裁剪隐藏的列数：整列起点已超出可见区即计入隐藏。 */
+export function countHiddenColumns(widths: number[], contentWidth: number): number {
+  let used = 0;
+  let hidden = 0;
+  for (const width of widths) {
+    if (used + width > contentWidth) {
+      hidden += 1;
+    }
+    used += width;
+  }
+  return hidden;
 }
 
 /**

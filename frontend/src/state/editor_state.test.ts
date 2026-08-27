@@ -19,6 +19,8 @@ import {
   redo,
   renameRegion,
   renameWorkflow,
+  resizeNode,
+  resizeNodeWithFixedMode,
   resizeRegion,
   setNodeParams,
   setNodeRegion,
@@ -195,6 +197,27 @@ describe("editor state mutations", () => {
       height: 700,
     });
     expect(state.definition.nodes[0].position).toEqual({ x: 40, y: 60 });
+  });
+
+  it("resizeNode 写入节点画布几何", () => {
+    let state = createEmptyEditorState();
+    state = addNode(state, "member_table", { x: 0, y: 0 }, null);
+    state = resizeNode(state, "node-1", { width: 800, height: 500 });
+    expect(state.definition.nodes[0].size).toEqual({ width: 800, height: 500 });
+  });
+
+  it("resizeNodeWithFixedMode 原子写入尺寸并切换表格配置为固定宽度", () => {
+    let state = createEmptyEditorState();
+    state = addNode(state, "member_table", { x: 0, y: 0 }, null);
+    state = addNode(state, "table_config", { x: 0, y: 200 }, null);
+    state = resizeNodeWithFixedMode(
+      state,
+      "node-1",
+      { width: 900, height: 360 },
+      "node-2",
+    );
+    expect(state.definition.nodes[0].size).toEqual({ width: 900, height: 360 });
+    expect(state.definition.nodes[1].params.width_mode).toBe("fixed");
   });
 });
 

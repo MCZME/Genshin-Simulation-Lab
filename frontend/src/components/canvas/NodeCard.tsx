@@ -1,14 +1,28 @@
 import { Handle, Position } from "@xyflow/react";
 import type { NodeProps } from "@xyflow/react";
-import { useState } from "react";
+import { useReactFlow } from "@xyflow/react";
+import { useCallback, useRef, useState } from "react";
 import { InputOrderPopover } from "./InputOrderPopover";
 import type { IncomingOrderGroup } from "./InputOrderPopover";
 import { nodeKindColor } from "../nodes/registry";
 import { NodeEditorHost } from "../nodes/registry";
 import { useAnalysisSchemaCatalog } from "../analysis_context";
-import { AnalysisViewBody } from "../nodes/views";
+import { AnalysisViewBody, type MemberTableFitInfo } from "../nodes/views";
 import { getNodeKindSpec } from "../../workflow/registry";
-import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
+import { connectedConfigNode } from "../../workflow/templates";
+import type { NodeSize, WorkflowDefinition, WorkflowNode } from "../../workflow/types";
+import {
+  DEFAULT_VIEW_HEIGHT,
+  MAX_VIEW_HEIGHT,
+  MIN_VIEW_HEIGHT,
+  MIN_VIEW_WIDTH,
+  VIEW_SOFT_CAP_WIDTH,
+  clamp,
+  normalizeWidthMode,
+  resolveDragMaxWidth,
+  resolveViewHeight,
+  resolveViewWidth,
+} from "../../workflow/view_size";
 import type { Diagnostic } from "../../workflow/types";
 import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
 
@@ -36,6 +50,10 @@ export type WorkflowNodeData = {
   interactionLocked: boolean;
   /** 分析执行结果（表节点 = 查询结果；视图节点 = 拼接后的输入表）。 */
   analysisResult?: AnalysisNodeResult;
+  /** 提交节点画布几何（宽高）。 */
+  onResizeNode: (nodeId: string, size: NodeSize) => void;
+  /** 自适应宽度拖宽结束时：一次提交节点尺寸并把表格配置切到固定模式。 */
+  onResizeNodeWithFixedWidth: (nodeId: string, size: NodeSize, configNodeId: string) => void;
 } & Record<string, unknown>;
 
 export interface MemberPortInfo {
@@ -61,18 +79,139 @@ export function NodeCard({ data, selected }: NodeProps) {
     stepRunning,
     interactionLocked,
     analysisResult,
+    onResizeNode,
+    onResizeNodeWithFixedWidth,
   } = data as WorkflowNodeData;
   const spec = getNodeKindSpec(node.kind);
   const isDraft = node.region_id === null && spec?.region !== null;
+  const isView = isAnalysisView(node.kind);
+  const rf = useReactFlow();
   const catalog = useAnalysisSchemaCatalog();
   const fieldErrors = collectFieldErrors(diagnostics, node.id);
   const [membersOpen, setMembersOpen] = useState(false);
+  const [fitInfo, setFitInfo] = useState<MemberTableFitInfo | null>(null);
+  const [previewSize, setPreviewSize] = useState<Partial<NodeSize> | null>(null);
+  const resizeDragRef = useRef<{
+    axis: "width" | "height";
+    startFlow: { x: number; y: number };
+    startWidth: number;
+    startHeight: number;
+  } | null>(null);
+  const handleFitChange = useCallback((info: MemberTableFitInfo) => {
+    setFitInfo(info);
+  }, []);
+  const tableConfig =
+    node.kind === "member_table"
+      ? connectedConfigNode(definition, node.id, "table_config")
+      : null;
+  const widthMode =
+    tableConfig === null ? "auto" : normalizeWidthMode(tableConfig.params.width_mode);
+  const resolvedWidth = isView
+    ? resolveViewWidth(widthMode, fitInfo?.fitWidth ?? null, node.size?.width)
+    : undefined;
+  const resolvedHeight = isView ? resolveViewHeight(node.size?.height) : undefined;
+  const isClipped =
+    node.kind === "member_table" &&
+    widthMode === "auto" &&
+    fitInfo !== null &&
+    fitInfo.fitWidth > VIEW_SOFT_CAP_WIDTH;
+  const dragMaxWidth = resolveDragMaxWidth(fitInfo?.fitWidth ?? null);
+  const displayWidth = previewSize?.width ?? resolvedWidth;
+  const displayHeight = previewSize?.height ?? resolvedHeight;
   const hasMemberPorts = memberPorts.length > 0;
   const connectedMembers = memberPorts.filter((port) => port.connected);
+
+  function clampDragSize(
+    axis: "width" | "height",
+    dx: number,
+    dy: number,
+    startWidth: number,
+    startHeight: number,
+  ): Partial<NodeSize> {
+    if (axis === "width") {
+      return { width: clamp(Math.round(startWidth + dx), MIN_VIEW_WIDTH, dragMaxWidth) };
+    }
+    return { height: clamp(Math.round(startHeight + dy), MIN_VIEW_HEIGHT, MAX_VIEW_HEIGHT) };
+  }
+
+  function startResize(
+    event: React.PointerEvent<HTMLDivElement>,
+    axis: "width" | "height",
+  ) {
+    if (event.button !== 0 || interactionLocked) {
+      return;
+    }
+    event.preventDefault();
+    event.stopPropagation();
+    resizeDragRef.current = {
+      axis,
+      startFlow: rf.screenToFlowPosition({ x: event.clientX, y: event.clientY }),
+      startWidth: displayWidth ?? MIN_VIEW_WIDTH,
+      startHeight: displayHeight ?? DEFAULT_VIEW_HEIGHT,
+    };
+    event.currentTarget.setPointerCapture(event.pointerId);
+  }
+
+  function handleResizeMove(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = resizeDragRef.current;
+    if (drag === null) {
+      return;
+    }
+    const current = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    setPreviewSize(
+      clampDragSize(
+        drag.axis,
+        current.x - drag.startFlow.x,
+        current.y - drag.startFlow.y,
+        drag.startWidth,
+        drag.startHeight,
+      ),
+    );
+  }
+
+  function handleResizeUp(event: React.PointerEvent<HTMLDivElement>) {
+    const drag = resizeDragRef.current;
+    if (drag === null) {
+      return;
+    }
+    resizeDragRef.current = null;
+    const current = rf.screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const size = clampDragSize(
+      drag.axis,
+      current.x - drag.startFlow.x,
+      current.y - drag.startFlow.y,
+      drag.startWidth,
+      drag.startHeight,
+    );
+    setPreviewSize(null);
+    if (drag.axis === "width" && widthMode === "auto" && tableConfig !== null) {
+      onResizeNodeWithFixedWidth(
+        node.id,
+        { width: size.width ?? drag.startWidth, height: drag.startHeight },
+        tableConfig.id,
+      );
+    } else if (drag.axis === "width") {
+      onResizeNode(node.id, { width: size.width ?? drag.startWidth, height: drag.startHeight });
+    } else {
+      onResizeNode(node.id, { width: drag.startWidth, height: size.height ?? drag.startHeight });
+    }
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
+
+  function cancelResize(event: React.PointerEvent<HTMLDivElement>) {
+    resizeDragRef.current = null;
+    setPreviewSize(null);
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId);
+    }
+  }
 
   return (
     <div
       className={`node-card ${isAnalysisView(node.kind) ? "node-card-view" : ""} ${node.kind === "input_trace" ? "node-card-trace" : ""} ${node.kind === "fetch" ? "node-card-fetch" : ""} ${node.kind === "filter" ? "node-card-filter" : ""} ${node.kind === "aggregate" ? "node-card-aggregate" : ""} ${node.kind === "project" ? "node-card-project" : ""} ${node.kind === "sort" ? "node-card-sort" : ""} ${node.kind === "join" ? "node-card-join" : ""} ${node.kind === "compute" ? "node-card-compute" : ""} ${selected ? "selected" : ""} ${isDraft ? "draft" : ""} ${dimmed ? "dimmed" : ""} ${stepRunning ? "step-running" : ""}`}
+      style={isView ? { width: displayWidth, height: displayHeight } : undefined}
     >
       <header className="node-card-header">
         <span className="node-dot" style={{ background: nodeKindColor(node.kind) }} />
@@ -95,6 +234,8 @@ export function NodeCard({ data, selected }: NodeProps) {
             result={analysisResult}
             definition={definition}
             onLocateNode={onLocateNode}
+            viewWidth={isView ? resolvedWidth : undefined}
+            onFitChange={node.kind === "member_table" ? handleFitChange : undefined}
           />
         ) : (
           <NodeEditorHost
@@ -169,6 +310,32 @@ export function NodeCard({ data, selected }: NodeProps) {
         groups={incomingGroups}
         onMoveEdgeOrder={onMoveEdgeOrder}
       />
+      {isView && (
+        <>
+          <div
+            className="node-resize-handle node-resize-handle-bottom nodrag"
+            title="拖拽调整高度"
+            onPointerDown={(event) => startResize(event, "height")}
+            onPointerMove={handleResizeMove}
+            onPointerUp={handleResizeUp}
+            onPointerCancel={cancelResize}
+          />
+          {node.kind === "member_table" && (widthMode === "fixed" || isClipped) && (
+            <div
+              className="node-resize-handle node-resize-handle-right nodrag visible"
+              title={
+                fitInfo !== null && fitInfo.hiddenColumns > 0
+                  ? `还有 ${fitInfo.hiddenColumns} 列被隐藏，拖宽查看`
+                  : "拖拽调整宽度"
+              }
+              onPointerDown={(event) => startResize(event, "width")}
+              onPointerMove={handleResizeMove}
+              onPointerUp={handleResizeUp}
+              onPointerCancel={cancelResize}
+            />
+          )}
+        </>
+      )}
     </div>
   );
 }

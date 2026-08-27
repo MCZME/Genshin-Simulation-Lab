@@ -2641,16 +2641,20 @@ body {
   border-top: 1px solid #334155;
 }
 
-/* ── 分析视图：成员指标表 ── */
+/* ── 分析视图：表格 ── */
 
 .node-card.node-card-view {
-  width: 560px;
-  min-width: 560px;
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
 }
 
 .node-card.node-card-view .node-card-body {
   max-height: none;
   padding: 0;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .analysis-view-state {
@@ -2691,7 +2695,9 @@ body {
 .analysis-member-table {
   display: flex;
   flex-direction: column;
-  min-height: 300px;
+  position: relative;
+  flex: 1;
+  min-height: 0;
 }
 
 .analysis-member-toolbar {
@@ -2705,20 +2711,34 @@ body {
 
 .analysis-member-scroll {
   flex: 1;
-  min-height: 240px;
-  max-height: 480px;
-  overflow: auto;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .analysis-member-table table {
   border-collapse: collapse;
-  width: 100%;
+  width: max-content;
+  min-width: 100%;
   font-size: 12px;
+}
+
+.analysis-member-fade {
+  position: absolute;
+  top: 29px;
+  right: 0;
+  bottom: 29px;
+  width: 30px;
+  pointer-events: none;
+  z-index: 2;
+  background: linear-gradient(to right, rgba(30, 41, 59, 0), #1e293b);
 }
 
 .analysis-member-table th,
 .analysis-member-table td {
   padding: 4px 8px;
+  line-height: 20px;
   border-bottom: 1px solid #263449;
   white-space: nowrap;
   text-align: right;
@@ -2733,11 +2753,35 @@ body {
   font-weight: 600;
   user-select: none;
   cursor: pointer;
+  border-bottom: 1px solid #475569;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.25);
+}
+
+/* 表头排序状态与悬停：半透明叠加层，不改动条件/数据分区底色。 */
+.analysis-member-table th::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: rgba(59, 130, 246, 0.16);
+  opacity: 0;
+}
+
+.analysis-member-table th:hover::after {
+  opacity: 0.55;
+}
+
+.analysis-member-table th.sorted::after {
+  opacity: 1;
 }
 
 .analysis-member-table th.condition,
 .analysis-member-table td.condition {
   text-align: left;
+}
+
+.analysis-member-table td.condition {
+  color: #94a3b8;
 }
 
 .analysis-member-table th.data {
@@ -2746,11 +2790,57 @@ body {
 
 .analysis-member-table td.data {
   background: rgba(148, 163, 184, 0.06);
+  font-variant-numeric: tabular-nums;
 }
 
 .analysis-member-table th.data-start,
 .analysis-member-table td.data-start {
-  border-left: 1px solid #475569;
+  border-left: 2px solid #64748b;
+}
+
+.analysis-member-table td.cell-null {
+  color: #64748b;
+}
+
+/* 轻斑马纹：偶数行（绝对行号）叠加淡亮色；悬停用 inset 阴影叠加，保留分区底色与高亮。 */
+.analysis-member-table tbody tr.stripe td {
+  box-shadow: inset 0 0 0 999px rgba(148, 163, 184, 0.04);
+}
+
+.analysis-member-table tbody tr:hover td {
+  box-shadow: inset 0 0 0 999px rgba(148, 163, 184, 0.08);
+}
+
+.analysis-member-table tbody tr.stripe:hover td {
+  box-shadow:
+    inset 0 0 0 999px rgba(148, 163, 184, 0.04),
+    inset 0 0 0 999px rgba(148, 163, 184, 0.08);
+}
+
+/* 暗色细滚动条。 */
+.analysis-member-scroll {
+  scrollbar-width: thin;
+  scrollbar-color: #475569 transparent;
+}
+
+.analysis-member-scroll::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.analysis-member-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.analysis-member-scroll::-webkit-scrollbar-thumb {
+  background: #475569;
+  border: 2px solid transparent;
+  border-radius: 4px;
+  background-clip: content-box;
+}
+
+.analysis-member-scroll::-webkit-scrollbar-thumb:hover {
+  background-color: #64748b;
 }
 
 .analysis-member-table .member-th-name {
@@ -2776,11 +2866,16 @@ body {
   border-radius: 3px;
   color: #94a3b8;
   cursor: pointer;
+  opacity: 0.7;
 }
 
 .member-th-menu:hover {
   background: #475569;
   color: #e2e8f0;
+}
+
+.member-th:hover .member-th-menu {
+  opacity: 1;
 }
 
 .member-th {
@@ -2842,7 +2937,14 @@ body {
 }
 
 .analysis-member-truncated {
+  display: inline-flex;
+  align-items: center;
+  padding: 1px 8px;
+  border-radius: 999px;
+  background: rgba(245, 158, 11, 0.12);
   color: #f59e0b;
+  font-size: 10px;
+  font-weight: 500;
 }
 
 /* ── 表格配置节点：条件列 / 数据列绑定 ── */
@@ -2902,6 +3004,87 @@ body {
 
 .table-binding-add {
   width: 100%;
+}
+
+.table-size-row {
+  display: flex;
+  gap: 8px;
+}
+
+.table-size-field {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-width: 0;
+  gap: 4px;
+  font-size: 12px;
+  color: #94a3b8;
+}
+
+.table-size-field select,
+.table-size-field input {
+  width: 100%;
+  min-width: 0;
+}
+
+/* ── 视图节点缩放手柄：高度始终手动，宽度仅在固定/裁剪时出现 ── */
+
+.node-resize-handle {
+  position: absolute;
+  z-index: 6;
+  opacity: 0;
+  touch-action: none;
+}
+
+.node-card:hover .node-resize-handle,
+.node-card.selected .node-resize-handle,
+.node-resize-handle.visible {
+  opacity: 1;
+}
+
+.node-resize-handle-bottom {
+  left: 0;
+  right: 0;
+  bottom: 0;
+  height: 7px;
+  cursor: ns-resize;
+}
+
+.node-resize-handle-right {
+  top: 0;
+  right: 0;
+  bottom: 0;
+  width: 7px;
+  cursor: ew-resize;
+}
+
+.node-resize-handle-bottom::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: 1px;
+  width: 40px;
+  height: 3px;
+  border-radius: 2px;
+  background: #475569;
+  transform: translateX(-50%);
+}
+
+.node-resize-handle-right::after {
+  content: "";
+  position: absolute;
+  top: 50%;
+  right: 1px;
+  width: 3px;
+  height: 36px;
+  border-radius: 2px;
+  background: #475569;
+  transform: translateY(-50%);
+}
+
+.node-resize-handle-bottom:hover::after,
+.node-resize-handle-right:hover::after {
+  background: #3b82f6;
 }
 
 .analysis-editor-empty {

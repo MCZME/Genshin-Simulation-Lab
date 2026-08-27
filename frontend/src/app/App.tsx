@@ -43,6 +43,8 @@ import {
   redo,
   renameRegion,
   renameWorkflow,
+  resizeNode,
+  resizeNodeWithFixedMode,
   resizeRegion,
   setNodeParams,
   setSelection,
@@ -1425,6 +1427,14 @@ export function App() {
                 onViewportCommandHandled={() => setViewportCommand(null)}
                 onMoveNode={(nodeId, position, regionId) =>
                   updateEditor((state) => moveNodeWithRegion(state, nodeId, position, regionId))
+                }
+                onResizeNode={(nodeId, size) =>
+                  updateEditor((state) => resizeNode(state, nodeId, size))
+                }
+                onResizeNodeWithFixedWidth={(nodeId, size, configNodeId) =>
+                  updateEditor((state) =>
+                    resizeNodeWithFixedMode(state, nodeId, size, configNodeId),
+                  )
                 }
                 onMoveRegion={(regionId, position) =>
                   updateEditor((state) => moveRegionWithChildren(state, regionId, position))

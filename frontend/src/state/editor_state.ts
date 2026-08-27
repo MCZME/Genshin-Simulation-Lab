@@ -1,4 +1,9 @@
-import type { Rect, WorkflowDefinition, WorkflowRegion } from "../workflow/types";
+import type {
+  NodeSize,
+  Rect,
+  WorkflowDefinition,
+  WorkflowRegion,
+} from "../workflow/types";
 import { createDefaultParams, getNodeKindSpec } from "../workflow/registry";
 
 export interface EditorSelection {
@@ -152,6 +157,44 @@ export function moveNode(
     nodes: state.definition.nodes.map((node) =>
       node.id === nodeId ? { ...node, position } : node,
     ),
+  });
+}
+
+/** 更新节点画布几何（宽高）；与位置同类，作为一个原子编辑步骤。 */
+export function resizeNode(
+  state: EditorState,
+  nodeId: string,
+  size: NodeSize,
+): EditorState {
+  return performEdit(state, {
+    ...state.definition,
+    nodes: state.definition.nodes.map((node) =>
+      node.id === nodeId ? { ...node, size } : node,
+    ),
+  });
+}
+
+/**
+ * 视图节点从「自适应宽度」拖宽结束时的一次原子提交：
+ * 同时写入节点尺寸并把表格配置切到固定模式，避免拆成两步历史。
+ */
+export function resizeNodeWithFixedMode(
+  state: EditorState,
+  nodeId: string,
+  size: NodeSize,
+  configNodeId: string,
+): EditorState {
+  return performEdit(state, {
+    ...state.definition,
+    nodes: state.definition.nodes.map((node) => {
+      if (node.id === nodeId) {
+        return { ...node, size };
+      }
+      if (node.id === configNodeId && node.kind === "table_config") {
+        return { ...node, params: { ...node.params, width_mode: "fixed" } };
+      }
+      return node;
+    }),
   });
 }
 

@@ -107,6 +107,7 @@ describe("表格配置节点编辑器", () => {
     expect(onChange).toHaveBeenCalledWith({
       condition_columns: ["weapon_key"],
       data_columns: ["frames_run"],
+      width_mode: "auto",
     });
   });
 
@@ -119,11 +120,28 @@ describe("表格配置节点编辑器", () => {
     expect(onChange).toHaveBeenLastCalledWith({
       condition_columns: ["weapon_key", "char_key"],
       data_columns: [],
+      width_mode: "auto",
     });
     fireEvent.click(screen.getByRole("button", { name: "移除 weapon_key" }));
     expect(onChange).toHaveBeenLastCalledWith({
       condition_columns: ["char_key"],
       data_columns: [],
+      width_mode: "auto",
+    });
+  });
+
+  it("宽度模式写入表格配置参数", () => {
+    const onChange = renderEditor({
+      condition_columns: ["weapon_key"],
+      data_columns: [],
+    });
+    fireEvent.change(screen.getByLabelText("宽度模式"), {
+      target: { value: "fixed" },
+    });
+    expect(onChange).toHaveBeenLastCalledWith({
+      condition_columns: ["weapon_key"],
+      data_columns: [],
+      width_mode: "fixed",
     });
   });
 

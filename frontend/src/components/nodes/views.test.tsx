@@ -4,7 +4,16 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
 import type { AnalysisTableResult } from "../../workflow/templates";
 import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
-import { AnalysisViewBody, compareCells, formatCell, sortRows } from "./views";
+import {
+  AnalysisViewBody,
+  compareCells,
+  countHiddenColumns,
+  estimateMemberTableLayout,
+  estimateTextWidth,
+  formatCell,
+  sortRows,
+  type MemberTableFitInfo,
+} from "./views";
 
 afterEach(() => {
   cleanup();
@@ -114,6 +123,7 @@ function renderView(
   result: AnalysisNodeResult | undefined,
   options: { withDataEdge?: boolean; withConfigEdge?: boolean } = {},
   onLocateNode: (nodeId: string) => void = vi.fn(),
+  viewOptions: { viewWidth?: number; onFitChange?: (info: MemberTableFitInfo) => void } = {},
 ) {
   const definition = definitionWith(
     { condition_columns: ["weapon"], data_columns: ["total_damage", "dps"] },
@@ -125,11 +135,13 @@ function renderView(
       result={result}
       definition={definition}
       onLocateNode={onLocateNode}
+      viewWidth={viewOptions.viewWidth}
+      onFitChange={viewOptions.onFitChange}
     />,
   );
 }
 
-describe("成员指标表视图", () => {
+describe("表格视图", () => {
   it("未连接数据源时显示提示", () => {
     renderView(readyResult(), { withDataEdge: false });
     expect(screen.getByText(/未连接数据源/)).not.toBeNull();
@@ -196,10 +208,32 @@ describe("成员指标表视图", () => {
     expect(screen.getByText(/共 3 行/)).not.toBeNull();
   });
 
+  it("空值单元格带 cell-null 标记", () => {
+    renderView(
+      readyResult({
+        rows: [
+          ["s-1", "sword", null, 1025.0],
+          ["s-2", "claymore", 82000, 1366.666],
+        ],
+      }),
+    );
+    const nullCell = screen.getByText("—");
+    expect(nullCell.className).toContain("cell-null");
+  });
+
+  it("交替行带 stripe 标记（按绝对行号）", () => {
+    renderView(readyResult());
+    const rows = screen.getAllByRole("row").slice(1);
+    expect(rows[0].className).not.toContain("stripe");
+    expect(rows[1].className).toContain("stripe");
+    expect(rows[2].className).not.toContain("stripe");
+  });
+
   it("数据列点击表头单列升降排序并可清除", () => {
     renderView(readyResult());
     const damageHeader = screen.getByRole("columnheader", { name: /total_damage/ });
     fireEvent.click(damageHeader);
+    expect(damageHeader.className).toContain("sorted");
     const rows = screen.getAllByRole("row").slice(1);
     expect(rows[0].textContent).toContain("polearm");
     expect(rows[2].textContent).toContain("claymore");
@@ -287,6 +321,45 @@ describe("成员指标表视图", () => {
     renderView(readyResult({ truncated: true }));
     expect(screen.getByText(/仅显示前 10000 行/)).not.toBeNull();
   });
+
+  it("内容宽超过可用宽度时显示右缘渐隐并上报被隐藏列数", () => {
+    const onFitChange = vi.fn();
+    renderView(readyResult(), {}, vi.fn(), {
+      viewWidth: 200,
+      onFitChange,
+    });
+    expect(onFitChange).toHaveBeenCalled();
+    const info = onFitChange.mock.calls[0][0] as MemberTableFitInfo;
+    expect(info.fitWidth).toBeGreaterThan(200);
+    expect(info.hiddenColumns).toBeGreaterThan(0);
+    expect(
+      screen.getByLabelText(new RegExp(`还有 ${info.hiddenColumns} 列被隐藏`)),
+    ).not.toBeNull();
+  });
+
+  it("宽度充足时不显示渐隐遮罩", () => {
+    renderView(readyResult(), {}, vi.fn(), { viewWidth: 560 });
+    expect(document.querySelector(".analysis-member-fade")).toBeNull();
+  });
+
+  it("内容自然宽等于卡片宽时不算超出，不显示渐隐", () => {
+    const table = sampleTable();
+    const layout = estimateMemberTableLayout({
+      order: ["weapon", "total_damage", "dps"],
+      rows: table.rows,
+      columnIndex: new Map(table.columns.map((column, index) => [column.name, index])),
+      typeOf: new Map(table.columns.map((column) => [column.name, column.type])),
+      valueKinds: new Map(),
+      assetNames: new Map(),
+      dataColumns: ["total_damage", "dps"],
+    });
+    renderView(readyResult(), {}, vi.fn(), { viewWidth: layout.fitWidth });
+    expect(document.querySelector(".analysis-member-fade")).toBeNull();
+
+    cleanup();
+    renderView(readyResult(), {}, vi.fn(), { viewWidth: layout.fitWidth - 1 });
+    expect(document.querySelector(".analysis-member-fade")).not.toBeNull();
+  });
 });
 
 describe("表格纯逻辑", () => {
@@ -343,5 +416,44 @@ describe("表格纯逻辑", () => {
       ["b", 2],
       ["b", 1],
     ]);
+  });
+
+  it("estimateTextWidth 对中文与数字采用不同宽度", () => {
+    expect(estimateTextWidth("测试")).toBeGreaterThan(estimateTextWidth("123"));
+    expect(estimateTextWidth("abc")).toBeGreaterThan(0);
+  });
+
+  it("estimateMemberTableLayout 按表头与单元格内容取宽并夹持", () => {
+    const columnIndex = new Map([
+      ["weapon", 0],
+      ["damage", 1],
+    ]);
+    const typeOf = new Map([
+      ["weapon", "string"],
+      ["damage", "int"],
+    ]);
+    const layout = estimateMemberTableLayout({
+      order: ["weapon", "damage"],
+      rows: [
+        ["sword", 61500],
+        ["claymore", 82000],
+      ],
+      columnIndex,
+      typeOf,
+      valueKinds: new Map(),
+      assetNames: new Map(),
+      dataColumns: ["damage"],
+    });
+    expect(layout.widths).toHaveLength(2);
+    expect(layout.fitWidth).toBe(layout.widths[0] + layout.widths[1]);
+    expect(layout.widths[1]).toBeGreaterThan(layout.widths[0]);
+    expect(layout.widths[0]).toBeGreaterThanOrEqual(72);
+    expect(layout.widths[0]).toBeLessThanOrEqual(240);
+  });
+
+  it("countHiddenColumns 按累计宽度统计被隐藏列", () => {
+    expect(countHiddenColumns([100, 100, 100], 250)).toBe(1);
+    expect(countHiddenColumns([100, 100], 250)).toBe(0);
+    expect(countHiddenColumns([], 100)).toBe(0);
   });
 });

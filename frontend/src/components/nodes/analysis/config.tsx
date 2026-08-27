@@ -1,6 +1,7 @@
 /** 展示配置节点：表格 / 时间轴 / 饼图 / 柱状图绑定编辑。 */
 
 import { configTargetView, viewInputShape } from "../../../workflow/templates";
+import { normalizeWidthMode } from "../../../workflow/view_size";
 import { asString } from "../common";
 import { useContextEnv, type EditorProps } from "./context";
 
@@ -36,6 +37,14 @@ function asStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
+}
+
+/** 表格配置参数统一归一化：存量节点缺省宽度参数时按默认值补齐。 */
+function normalizeTableParams(params: Record<string, unknown>): Record<string, unknown> {
+  return {
+    ...params,
+    width_mode: normalizeWidthMode(params.width_mode),
+  };
 }
 
 function moveBinding(columns: string[], index: number, delta: -1 | 1): string[] {
@@ -157,6 +166,7 @@ export function TableConfigEditor({ node, onChange }: EditorProps) {
   const condition = asStringArray(node.params.condition_columns);
   const data = asStringArray(node.params.data_columns);
   const taken = new Set([...condition, ...data]);
+  const widthMode = node.params.width_mode === "fixed" ? "fixed" : "auto";
   return (
     <div className="analysis-editor table-config-editor">
       {available.length === 0 && (
@@ -168,7 +178,9 @@ export function TableConfigEditor({ node, onChange }: EditorProps) {
         columns={condition}
         available={available}
         taken={taken}
-        onChange={(next) => onChange({ ...node.params, condition_columns: next })}
+        onChange={(next) =>
+          onChange(normalizeTableParams({ ...node.params, condition_columns: next }))
+        }
       />
       <BindingList
         title="数据列"
@@ -176,8 +188,35 @@ export function TableConfigEditor({ node, onChange }: EditorProps) {
         columns={data}
         available={available}
         taken={taken}
-        onChange={(next) => onChange({ ...node.params, data_columns: next })}
+        onChange={(next) =>
+          onChange(normalizeTableParams({ ...node.params, data_columns: next }))
+        }
       />
+      <div className="table-binding-zone">
+        <div className="table-binding-title">
+          <span>宽度</span>
+          <span className="table-binding-hint">
+            自适应模式内容超出上限时裁剪，拖宽查看
+          </span>
+        </div>
+        <label className="table-size-field">
+          <span>宽度模式</span>
+          <select
+            value={widthMode}
+            onChange={(event) =>
+              onChange(
+                normalizeTableParams({ ...node.params, width_mode: event.target.value }),
+              )
+            }
+          >
+            <option value="auto">自适应</option>
+            <option value="fixed">固定</option>
+          </select>
+        </label>
+        <p className="analysis-editor-empty">
+          高度始终手动调节；自适应内容超过上限时裁剪，固定模式可拖宽显示全部列。
+        </p>
+      </div>
     </div>
   );
 }

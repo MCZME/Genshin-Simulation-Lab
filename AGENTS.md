@@ -5,7 +5,7 @@
 ## 仓库结构
 
 - `backend/`：Python 后端。包含 `src/genshin_sim/` 包、`tests/`、`pyproject.toml`、`uv.lock`、`.python-version`、配置模板与本地数据目录。
-- `frontend/`：Web 前端工程（计划中）。只通过 HTTP API 调用后端能力，不 import 任何 Python 代码；具体规范见 `docs/工程/前端工程规范.md`。
+- `frontend/`：独立 Web 前端工程。只通过 HTTP API 调用后端能力，不 import 任何 Python 代码；具体规范见 `docs/工程/前端工程规范.md`。
 - `docs/`：正式文档，按 `架构/`、`契约/`、`决策/`、`工程/` 分区。
 - `prototypes/`：本地 UI 原型，不提交，计划删除。
 
@@ -40,7 +40,7 @@ Git、分支、Issue、PR 与合并规则统一使用仓库 skill：`.codex/skil
 
 ## 架构硬规则
 
-- Python 顶层模块（位于 `backend/src/genshin_sim/`）：`core/`、`content/`、`assets/`、`infrastructure/`、`application/`、`analysis/`、`cli/`、`server/`。
+- Python 顶层模块（位于 `backend/src/genshin_sim/`）：`core/`、`content/`、`assets/`、`infrastructure/`、`application/`、`cli/`、`server/`。
 - `frontend/` 是独立的前端工程，不属于 Python 顶层模块，不参与 Python 模块依赖规则。
 - `core/` 是纯仿真运行时核心，不依赖数据库、UI、应用层或具体内容实现。
 - `core/` 不能 import `assets`、`infrastructure`、`application`、`ui`、`content`。
@@ -48,11 +48,10 @@ Git、分支、Issue、PR 与合并规则统一使用仓库 skill：`.codex/skil
 - `content/` 保存具体角色、武器、圣遗物和 handler 实现，可以依赖 `core/` 与 `assets/` 数据对象。
 - `application/` 是 Python 后端唯一公开能力出口，负责编排用例与组装，不直接编写具体 SQLite 查询；`cli/` 与 `server/` 只能通过其公开接口调用能力。
 - `infrastructure/` 保存 SQLite、文件存储、日志、任务执行等具体技术实现。
-- `analysis/` 只做结果加工、聚合、对比和报告模型，不写库、不画 UI。
+- 分析能力由三处组成：查询计划编译执行器在 `infrastructure/results_sqlite/analysis_query.py`，用例门面在 `application/services/analysis_query.py`，HTTP 端点由 `server/` 提供。
 - `cli/` 通过 `application/` 调用能力，不直接访问 SQLite 或组装仿真核心对象。
 - `server/` 是与 `cli/` 同级的网页服务入口，通过 `application/` 调用能力；不直接访问 SQLite 或组装仿真核心对象。
 - `frontend/` 只通过 `server/` 暴露的 HTTP API 调用应用能力，不直接访问 SQLite，不组装仿真核心对象。
-- 旧 Flet 壳已移除（2026-08-17）。
 - `core/systems/<domain>/` 实行系统自治：每个系统只拥有本领域的状态、公式、计划、写入口和领域事实。
 - 一个领域系统不能 import 另一个领域系统的具体 Runtime 或 Store，也不能直接修改另一个系统的状态；只读依赖必须通过中立共享模型或窄协议表达。
 - 跨系统仿真流程统一放在 `core/coordination/`；写协调器负责编排准备、校验、无回调提交和事实顺序，只读条件协调器只组合领域条件证据且不得推进时间、修改状态、发布事实或提供预留。
@@ -111,7 +110,7 @@ uv run ruff format
 uv run pyright
 ```
 
-前端质量工具进入实现阶段后启用（在 `frontend/` 目录下执行）：
+前端质量工具（在 `frontend/` 目录下执行）：
 
 ```powershell
 pnpm lint
@@ -126,5 +125,7 @@ uv run pytest tests/unit
 uv run pytest tests/integration
 uv run pytest tests/golden
 ```
+
+测试用例较多，小修改只运行与改动对应的测试路径即可，不需要全量运行；全量 `pytest` 仅在大改动或改动横跨多个模块时运行。
 
 如果命令不可用，不要伪造结果；在最终回复中说明未运行或失败原因。

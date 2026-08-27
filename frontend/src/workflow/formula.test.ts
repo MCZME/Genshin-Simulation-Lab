@@ -6,6 +6,7 @@ const types = new Map([
   ["frames_run", "int"],
   ["dps", "float"],
   ["element", "string"],
+  ["总伤害", "float"],
 ]);
 
 describe("计算列公式解析", () => {
@@ -92,5 +93,16 @@ describe("计算列公式解析", () => {
   it("AST 反解回公式文本", () => {
     const { ast } = parseFormula("total_damage / (frames_run / 60)", types);
     expect(exprToFormula(ast)).toBe("total_damage / (frames_run / 60)");
+  });
+
+  it("支持中文列名标识符", () => {
+    const { ast, error } = parseFormula("总伤害 / 2", types);
+    expect(error).toBeNull();
+    expect(ast).toEqual({
+      op: "/",
+      left: { col: "总伤害" },
+      right: { lit: 2 },
+    });
+    expect(exprToFormula(ast)).toBe("总伤害 / 2");
   });
 });

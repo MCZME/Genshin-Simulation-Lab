@@ -262,6 +262,28 @@ describe("获取数据节点编辑器", () => {
     });
   });
 
+  it("手动添加列支持中文列名", () => {
+    withCatalog();
+    const onChange = vi.fn();
+    render(<Harness node={fetchNode({ source: "runs" })} onChange={onChange} />);
+    fireEvent.click(screen.getByRole("button", { name: "编辑数据…" }));
+
+    fireEvent.click(screen.getByRole("button", { name: "＋ 手动添加列" }));
+    fireEvent.change(screen.getByPlaceholderText("路径（目录外）"), {
+      target: { value: "custom.path" },
+    });
+    fireEvent.change(screen.getByPlaceholderText("列名"), {
+      target: { value: "角色等级" },
+    });
+    fireEvent.click(screen.getByRole("button", { name: "添加" }));
+    fireEvent.click(screen.getByRole("button", { name: "完成" }));
+
+    expect(onChange).toHaveBeenLastCalledWith({
+      source: "runs",
+      snapshot_columns: [{ path: "custom.path", name: "角色等级", type: "string" }],
+    });
+  });
+
   it("输出列名重复时弹层内提示", () => {
     withCatalog();
     const onChange = vi.fn();

@@ -424,6 +424,63 @@ def test_compute_rejects_empty_columns(tmp_path) -> None:
     assert any(item.get("node_id") == "c1" and "至少" in item.get("reason", "") for item in details)
 
 
+def test_chinese_column_names_roundtrip(tmp_path) -> None:
+    """中文列名可读名即列名：取数/过滤/聚合/投影全链路可用。"""
+
+    executor = _executor(tmp_path)
+    plan = _plan(
+        (
+            AnalysisPlanNode(
+                id="ev1",
+                kind="fetch",
+                params={
+                    "source": "events",
+                    "event_types": ["DAMAGE_RESOLVED"],
+                    "payload_columns": [
+                        {
+                            "event_type": "DAMAGE_RESOLVED",
+                            "path": "result.final_damage",
+                            "name": "伤害值",
+                            "type": "float",
+                        }
+                    ],
+                },
+            ),
+            AnalysisPlanNode(
+                id="f1",
+                kind="filter",
+                params={
+                    "mode": "all",
+                    "conditions": [{"column": "伤害值", "op": "gte", "value": 400.0}],
+                },
+                inputs=("ev1",),
+            ),
+            AnalysisPlanNode(
+                id="a1",
+                kind="aggregate",
+                params={
+                    "group_by": [],
+                    "aggregates": [{"fn": "sum", "column": "伤害值", "as": "伤害总和"}],
+                },
+                inputs=("f1",),
+            ),
+            AnalysisPlanNode(
+                id="p1",
+                kind="project",
+                params={"columns": [{"name": "伤害总和", "as": "总伤害"}]},
+                inputs=("a1",),
+            ),
+        ),
+        ("p1",),
+    )
+
+    tables = executor.execute_plan(plan)
+
+    table = tables["p1"]
+    assert [column.name for column in table.columns] == ["总伤害"]
+    assert table.rows == ((1200.0,),)
+
+
 @pytest.mark.parametrize(
     ("params", "reason"),
     [

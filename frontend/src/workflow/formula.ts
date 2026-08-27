@@ -47,9 +47,9 @@ function tokenize(input: string): { tokens: Token[]; error: string | null } {
       tokens.push({ kind: "number", value, text });
       continue;
     }
-    if (/[A-Za-z_]/.test(char)) {
+    if (/[A-Za-z_\u4e00-\u9fff]/.test(char)) {
       const start = index;
-      while (index < input.length && /[A-Za-z0-9_]/.test(input[index])) {
+      while (index < input.length && /[A-Za-z0-9_\u4e00-\u9fff]/.test(input[index])) {
         index += 1;
       }
       tokens.push({ kind: "ident", value: input.slice(start, index) });

@@ -36,7 +36,7 @@ function projectErrors(rows: EditorRow[], shape: TableShape[]): (string | null)[
     }
     const output = projectOutputName(row);
     if (!COLUMN_NAME_PATTERN.test(output)) {
-      return `${prefix}输出列名不合法（字母/数字/下划线，≤64 位）`;
+      return `${prefix}输出列名不合法（中文/字母/数字/下划线，≤64 位）`;
     }
     if (seen.has(output)) {
       return `${prefix}输出列名重复：${output}`;

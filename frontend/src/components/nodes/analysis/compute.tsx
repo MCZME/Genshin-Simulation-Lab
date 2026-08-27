@@ -126,7 +126,7 @@ function ComputeRow({
   if (trimmedName === "") {
     errors.push("请填写结果列名");
   } else if (!COLUMN_NAME_PATTERN.test(trimmedName)) {
-    errors.push("结果列名不合法（字母/数字/下划线，≤64 位）");
+    errors.push("结果列名不合法（中文/字母/数字/下划线，≤64 位）");
   } else if (taken.has(trimmedName)) {
     errors.push(`结果列名重复：${trimmedName}`);
   }

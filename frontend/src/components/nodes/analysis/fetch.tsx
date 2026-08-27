@@ -84,7 +84,7 @@ function draftErrors(draft: FetchDraft): string[] {
   rows.forEach((row, index) => {
     const name = row.name;
     if (typeof name !== "string" || !COLUMN_NAME_PATTERN.test(name)) {
-      errors.push(`第 ${index + 1} 个输出列名不合法（字母/数字/下划线，≤64 位）`);
+      errors.push(`第 ${index + 1} 个输出列名不合法（中文/字母/数字/下划线，≤64 位）`);
     } else if (seen.has(name)) {
       errors.push(`输出列名重复：${name}`);
     } else {

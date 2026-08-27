@@ -179,7 +179,7 @@ export const CONDITION_OPERATORS = [
 
 export const TYPE_VOCABULARY = new Set(["string", "int", "float", "bool"]);
 const NUMERIC_TYPES = new Set(["int", "float"]);
-export const COLUMN_NAME_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
+export const COLUMN_NAME_PATTERN = /^[A-Za-z0-9_\u4e00-\u9fff]{1,64}$/;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === "object" && !Array.isArray(value);

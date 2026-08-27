@@ -33,7 +33,7 @@ _MAX_EXTRACT_COLUMNS = 64
 _MAX_LIMIT_COUNT = 10_000
 
 _IDENTIFIER_PATTERN = re.compile("^[A-Za-z0-9_-]{1,64}$")
-_COLUMN_NAME_PATTERN = re.compile("^[A-Za-z0-9_]{1,64}$")
+_COLUMN_NAME_PATTERN = re.compile("^[A-Za-z0-9_\u4e00-\u9fff]{1,64}$")
 
 _NUMERIC_TYPES = frozenset({"int", "float"})
 _TYPE_VOCABULARY = frozenset({"string", "int", "float", "bool"})

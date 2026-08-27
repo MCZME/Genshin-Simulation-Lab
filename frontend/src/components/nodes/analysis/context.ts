@@ -62,4 +62,4 @@ export function upstreamShape(nodeId: string): TableShape[] {
 }
 
 
-export const COLUMN_NAME_PATTERN = /^[A-Za-z0-9_]{1,64}$/;
+export const COLUMN_NAME_PATTERN = /^[A-Za-z0-9_\u4e00-\u9fff]{1,64}$/;

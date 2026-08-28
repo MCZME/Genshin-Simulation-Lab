@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -25,6 +26,32 @@ from genshin_sim.core.simulation import (
 
 SUPPORTED_SCHEMA_VERSION = 2
 SIMULATION_INPUT_KIND = "simulation_input"
+
+ARTIFACT_PIECE_COUNTS = (1, 2, 4)
+
+ARTIFACT_STAT_KEYS = frozenset(
+    {
+        "hp_percent",
+        "atk_percent",
+        "def_percent",
+        "flat_hp",
+        "flat_atk",
+        "flat_def",
+        "crit_rate",
+        "crit_damage",
+        "elemental_mastery",
+        "energy_recharge",
+        "healing_bonus",
+        "physical_damage_bonus",
+        "pyro_damage_bonus",
+        "hydro_damage_bonus",
+        "electro_damage_bonus",
+        "cryo_damage_bonus",
+        "anemo_damage_bonus",
+        "geo_damage_bonus",
+        "dendro_damage_bonus",
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -128,8 +155,8 @@ class ArtifactSetConfig:
             f"{path}.asset_key",
         )
         pieces = _require_int(raw.get("pieces"), f"{path}.pieces")
-        if pieces <= 0:
-            raise ConfigError(f"{path}.pieces 必须是正整数")
+        if pieces not in ARTIFACT_PIECE_COUNTS:
+            raise ConfigError(f"{path}.pieces 必须是 1、2 或 4")
         return cls(asset_key=asset_key, pieces=pieces)
 
     def to_dict(self) -> dict[str, Any]:
@@ -150,7 +177,16 @@ class ArtifactConfig:
             )
             for index, item in enumerate(_require_sequence(raw.get("sets", []), f"{path}.sets"))
         )
-        stats = dict(_require_mapping(raw.get("stats", {}), f"{path}.stats"))
+        stats_raw = _require_mapping(raw.get("stats", {}), f"{path}.stats")
+        stats: dict[str, Any] = {}
+        for stat_key, stat_value in stats_raw.items():
+            stat_key = _require_string(stat_key, f"{path}.stats key")
+            if stat_key not in ARTIFACT_STAT_KEYS:
+                raise ConfigError(f"{path}.stats.{stat_key} 不是支持的圣遗物词条")
+            value = _require_number(stat_value, f"{path}.stats.{stat_key}")
+            if not math.isfinite(value) or value < 0:
+                raise ConfigError(f"{path}.stats.{stat_key} 必须是有限非负数")
+            stats[stat_key] = value
         return cls(sets=sets, stats=stats)
 
     def to_dict(self) -> dict[str, Any]:

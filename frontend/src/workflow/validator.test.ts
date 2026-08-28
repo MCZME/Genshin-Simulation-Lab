@@ -529,4 +529,87 @@ describe("validateWorkflowNodes", () => {
     const codes = validateWorkflowNodes(definition).map((item) => item.code);
     expect(codes).toContain("UNKNOWN_NODE_KIND");
   });
+
+  it("圣遗物节点只配置属性或只配置套装均合法", () => {
+    const definition = makeDefinition(
+      [makeRegion()],
+      [
+        makeNode("stats-only", "artifact", {
+          slot: 1,
+          sets: [],
+          stats: { crit_rate: 0.311 },
+        }),
+        makeNode("sets-only", "artifact", {
+          slot: 1,
+          sets: [{ asset_key: "artifact_set:15032", pieces: 4 }],
+          stats: {},
+        }),
+      ],
+      [],
+    );
+    const params = validateWorkflowNodes(definition).filter(
+      (item) => item.code === "PARAM_INVALID",
+    );
+    expect(params).toEqual([]);
+  });
+
+  it("圣遗物节点套装与属性均为空时报错", () => {
+    const definition = makeDefinition(
+      [makeRegion()],
+      [makeNode("empty", "artifact", { slot: 1, sets: [], stats: {} })],
+      [],
+    );
+    const errors = validateWorkflowNodes(definition).filter(
+      (item) => item.code === "PARAM_INVALID",
+    );
+    expect(errors).toHaveLength(1);
+    expect(errors[0]?.message).toContain("套装效果与属性至少配置一项");
+  });
+
+  it("圣遗物词条非法时报参数错误", () => {
+    const definition = makeDefinition(
+      [makeRegion()],
+      [
+        makeNode("bad-stats", "artifact", {
+          slot: 1,
+          sets: [],
+          stats: { bogus: 1, crit_rate: -0.1, atk_percent: "20" },
+        }),
+      ],
+      [],
+    );
+    const paths = validateWorkflowNodes(definition)
+      .filter((item) => item.code === "PARAM_INVALID")
+      .map((item) => item.path)
+      .sort();
+    expect(paths).toEqual(["stats.atk_percent", "stats.bogus", "stats.crit_rate"]);
+  });
+
+  it("圣遗物件数与套装行数越界时报参数错误", () => {
+    const definition = makeDefinition(
+      [makeRegion()],
+      [
+        makeNode("bad-pieces", "artifact", {
+          slot: 1,
+          sets: [{ asset_key: "artifact_set:15032", pieces: 3 }],
+          stats: {},
+        }),
+        makeNode("too-many-sets", "artifact", {
+          slot: 1,
+          sets: [
+            { asset_key: "artifact_set:15032", pieces: 2 },
+            { asset_key: "artifact_set:15033", pieces: 2 },
+            { asset_key: "artifact_set:15034", pieces: 2 },
+          ],
+          stats: {},
+        }),
+      ],
+      [],
+    );
+    const paths = validateWorkflowNodes(definition)
+      .filter((item) => item.code === "PARAM_INVALID")
+      .map((item) => item.path)
+      .sort();
+    expect(paths).toEqual(["sets", "sets[0].pieces"]);
+  });
 });

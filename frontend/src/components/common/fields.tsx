@@ -52,6 +52,10 @@ interface NumberFieldProps {
   options?: number[];
   /** 空值显示文案；缺省「未设置」。 */
   emptyLabel?: string;
+  /** 非编辑态显示格式化；缺省直接显示数值。 */
+  format?: (value: number) => string;
+  /** 非编辑态按钮的可访问名称；缺省使用按钮文本。 */
+  ariaLabel?: string;
 }
 
 export function NumberField({
@@ -61,6 +65,8 @@ export function NumberField({
   max,
   options = [],
   emptyLabel = "未设置",
+  format,
+  ariaLabel,
 }: NumberFieldProps) {
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState<number | null>(value);
@@ -112,9 +118,14 @@ export function NumberField({
       <button
         type="button"
         className="number-display nowheel nodrag"
+        aria-label={ariaLabel}
         onClick={startEdit}
       >
-        {value === null ? emptyLabel : String(value)}
+        {value === null
+          ? emptyLabel
+          : format === undefined
+            ? String(value)
+            : format(value)}
       </button>
     );
   }
@@ -124,7 +135,11 @@ export function NumberField({
     return (
       <div className="number-field-edit nowheel nodrag">
         <span className="number-slider-value">
-          {sliderValues[index] === undefined ? emptyLabel : String(sliderValues[index])}
+          {sliderValues[index] === undefined
+            ? emptyLabel
+            : format === undefined
+              ? String(sliderValues[index])
+              : format(sliderValues[index])}
         </span>
         <input
           ref={controlRef}

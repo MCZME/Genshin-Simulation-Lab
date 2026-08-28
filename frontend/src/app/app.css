@@ -703,6 +703,10 @@ body {
   overflow: visible;
 }
 
+.node-card.node-card-artifact {
+  width: 360px;
+}
+
 .node-card.draft {
   border-style: dashed;
   opacity: 0.92;
@@ -1108,20 +1112,129 @@ body {
 
 .artifact-set-row {
   display: flex;
-  align-items: flex-start;
-  gap: 6px;
+  align-items: center;
+  gap: 8px;
 }
 
-.artifact-set-row-fields {
+.artifact-set-row-main {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 6px;
+  gap: 2px;
 }
 
-.artifact-set-remove {
-  margin-top: 4px;
+.artifact-piece-toggle {
+  flex: none;
+  display: flex;
+  gap: 2px;
+  padding: 2px;
+  background: #0f172a;
+  border: 1px solid #334155;
+  border-radius: 4px;
+}
+
+.artifact-piece-option {
+  min-width: 34px;
+  height: 22px;
+  padding: 0 4px;
+  border: none;
+  border-radius: 3px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.artifact-piece-option:hover {
+  color: #e2e8f0;
+}
+
+.artifact-piece-option.active {
+  background: #3b82f6;
+  color: #0f172a;
+  font-weight: 600;
+}
+
+.artifact-set-row .artifact-set-remove,
+.artifact-stat-cell .artifact-stat-remove {
+  opacity: 0;
+}
+
+.artifact-set-row:hover .artifact-set-remove,
+.artifact-set-row:focus-within .artifact-set-remove,
+.artifact-stat-cell:hover .artifact-stat-remove,
+.artifact-stat-cell:focus-within .artifact-stat-remove {
+  opacity: 1;
+}
+
+.artifact-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.artifact-stat-cell {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  min-width: 0;
+  padding: 6px 8px;
+  background: #16243a;
+  border: 1px solid #334155;
+  border-radius: 4px;
+}
+
+.artifact-stat-label {
+  font-size: 11px;
+  color: #94a3b8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.artifact-stat-value {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+}
+
+.artifact-stat-value .number-display {
+  flex: 1;
+  min-width: 0;
+  height: 26px;
+}
+
+.artifact-stat-cell .inline-error {
+  font-size: 11px;
+}
+
+.artifact-stat-add {
+  display: flex;
+  min-width: 0;
+}
+
+.artifact-stat-add-button {
+  flex: 1;
+  min-height: 54px;
+  border: 1px dashed #334155;
+  border-radius: 4px;
+  background: transparent;
+  color: #94a3b8;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.artifact-stat-add-button:hover {
+  border-color: #3b82f6;
+  color: #e2e8f0;
+}
+
+.artifact-stat-add-select {
+  width: 100%;
+  min-height: 54px;
 }
 
 .node-add-row {

@@ -147,7 +147,8 @@ function artifactFragment(
           pieces: asInteger(entry.pieces) ?? 4,
         }))
     : [];
-  if (sets.length === 0) {
+  const stats = isPlainObject(params.stats) ? params.stats : {};
+  if (sets.length === 0 && Object.keys(stats).length === 0) {
     return null;
   }
   return {
@@ -155,7 +156,7 @@ function artifactFragment(
     path: asString(params.path) ?? `team[${slot - 1}].artifacts`,
     value: {
       sets,
-      stats: {},
+      stats,
     },
   };
 }
@@ -170,6 +171,37 @@ export const RESISTANCE_ELEMENT_KEYS: readonly string[] = [
   "anemo",
   "geo",
   "dendro",
+];
+
+/** 圣遗物总词条配置词汇表；与后端 ARTIFACT_STAT_KEYS 保持一致。 */
+export const ARTIFACT_STAT_KEYS: readonly string[] = [
+  "hp_percent",
+  "atk_percent",
+  "def_percent",
+  "flat_hp",
+  "flat_atk",
+  "flat_def",
+  "crit_rate",
+  "crit_damage",
+  "elemental_mastery",
+  "energy_recharge",
+  "healing_bonus",
+  "physical_damage_bonus",
+  "pyro_damage_bonus",
+  "hydro_damage_bonus",
+  "electro_damage_bonus",
+  "cryo_damage_bonus",
+  "anemo_damage_bonus",
+  "geo_damage_bonus",
+  "dendro_damage_bonus",
+];
+
+/** 按原值输入、不做百分比换算的圣遗物词条。 */
+export const ARTIFACT_RAW_STAT_KEYS: readonly string[] = [
+  "flat_hp",
+  "flat_atk",
+  "flat_def",
+  "elemental_mastery",
 ];
 
 const DEFAULT_TARGET_POSITION: Record<string, number> = { x: 0, y: 0, z: 5 };
@@ -352,30 +384,44 @@ function validateArtifact(node: WorkflowNode): Diagnostic[] {
   const sets = params.sets;
   if (!Array.isArray(sets)) {
     diagnostics.push(paramError(node, "sets", "sets 必须是数组"));
-    return diagnostics;
-  }
-  if (sets.length < 1) {
-    diagnostics.push(paramError(node, "sets", "至少需要一条套装"));
-  }
-  if (sets.length > 2) {
-    diagnostics.push(paramError(node, "sets", "圣遗物套装最多 2 条"));
-  }
-  sets.forEach((raw, index) => {
-    const prefix = `sets[${index}]`;
-    const entry = raw as Record<string, unknown> | null;
-    if (!isPlainObject(entry)) {
-      diagnostics.push(paramError(node, prefix, "套装条目必须是对象"));
-      return;
+  } else {
+    if (sets.length > 2) {
+      diagnostics.push(paramError(node, "sets", "圣遗物套装最多 2 条"));
     }
-    if (asString(entry.asset_key) === null) {
-      diagnostics.push(paramError(node, `${prefix}.asset_key`, "缺少资产引用"));
+    sets.forEach((raw, index) => {
+      const prefix = `sets[${index}]`;
+      const entry = raw as Record<string, unknown> | null;
+      if (!isPlainObject(entry)) {
+        diagnostics.push(paramError(node, prefix, "套装条目必须是对象"));
+        return;
+      }
+      if (asString(entry.asset_key) === null) {
+        diagnostics.push(paramError(node, `${prefix}.asset_key`, "缺少资产引用"));
+      }
+      if (entry.pieces !== undefined && ![1, 2, 4].includes(entry.pieces as number)) {
+        diagnostics.push(paramError(node, `${prefix}.pieces`, "件数必须是 1、2 或 4"));
+      }
+    });
+  }
+  const stats = params.stats;
+  if (stats !== undefined && !isPlainObject(stats)) {
+    diagnostics.push(paramError(node, "stats", "stats 必须是对象"));
+  } else {
+    const statsObject = isPlainObject(stats) ? stats : {};
+    for (const [key, value] of Object.entries(statsObject)) {
+      if (!ARTIFACT_STAT_KEYS.includes(key)) {
+        diagnostics.push(paramError(node, `stats.${key}`, `不支持的圣遗物词条：${key}`));
+      } else if (typeof value !== "number" || !Number.isFinite(value) || value < 0) {
+        diagnostics.push(paramError(node, `stats.${key}`, "词条数值必须是有限非负数"));
+      }
     }
-    if (entry.pieces !== undefined && ![1, 2, 4].includes(entry.pieces as number)) {
-      diagnostics.push(paramError(node, `${prefix}.pieces`, "件数必须是 1、2 或 4"));
-    }
-  });
-  if (!sets.some((raw) => asString((raw as Record<string, unknown> | null)?.asset_key) !== null)) {
-    diagnostics.push(paramError(node, "sets", "至少需要一条已选套装的配置"));
+  }
+  const hasSet = Array.isArray(sets) && sets.some(
+    (raw) => asString((raw as Record<string, unknown> | null)?.asset_key) !== null,
+  );
+  const hasStat = isPlainObject(stats) && Object.keys(stats).length > 0;
+  if (!hasSet && !hasStat) {
+    diagnostics.push(paramError(node, "sets", "套装效果与属性至少配置一项"));
   }
   return diagnostics;
 }
@@ -789,8 +835,9 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     paramFields: {
       slot: { type: "integer", required: true },
       sets: { type: "list", required: true },
+      stats: { type: "object" },
     },
-    defaultParams: { slot: 1, sets: [{ asset_key: "", pieces: 4 }] },
+    defaultParams: { slot: 1, sets: [{ asset_key: "", pieces: 4 }], stats: {} },
     fragment: artifactFragment,
     validate: validateArtifact,
   },

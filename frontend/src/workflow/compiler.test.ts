@@ -148,6 +148,31 @@ describe("compileConfigurationRegion", () => {
     });
   });
 
+  it("圣遗物节点输出套装与总词条，允许只配置属性", () => {
+    const artifact = makeNode("artifact", "artifact", {
+      slot: 1,
+      sets: [],
+      stats: { crit_rate: 0.311, flat_atk: 311 },
+    });
+    const edges = [
+      makeEdge("e1", "artifact", "out", "region-1", "out"),
+      makeEdge("e2", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [artifact, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    const team = result.members[0].input.team as Array<Record<string, unknown>>;
+    expect(team[0].artifacts).toEqual({
+      sets: [],
+      stats: { crit_rate: 0.311, flat_atk: 311 },
+    });
+  });
+
   it("普通节点自定义路径覆盖默认路径", () => {
     const char = makeNode("char", "character", {
       slot: 1,

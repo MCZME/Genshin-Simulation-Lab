@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import cast
 
 import pytest
 
@@ -217,3 +218,64 @@ def test_input_frame_config_to_core():
     )
 
     assert frame.to_core().frame == 3
+
+
+def test_simulation_input_accepts_artifact_stats_and_empty_sets():
+    payload = _minimal_input_payload()
+    team = cast(list[object], payload["team"])
+    team_entry = cast(dict[str, object], team[0])
+    team_entry["artifacts"] = {
+        "sets": [],
+        "stats": {
+            "crit_rate": 0.311,
+            "atk_percent": 0.466,
+            "flat_atk": 311.0,
+            "elemental_mastery": 80.0,
+        },
+    }
+
+    config = SimulationInput.from_mapping(payload)
+
+    assert config.team[0].artifacts.sets == ()
+    assert config.team[0].artifacts.stats == {
+        "crit_rate": 0.311,
+        "atk_percent": 0.466,
+        "flat_atk": 311.0,
+        "elemental_mastery": 80.0,
+    }
+    assert config.to_dict()["team"][0]["artifacts"]["stats"]["crit_rate"] == 0.311
+
+
+@pytest.mark.parametrize(
+    ("stat_key", "stat_value"),
+    [
+        ("unknown_stat", 1.0),
+        ("crit_rate", -0.1),
+        ("crit_rate", float("nan")),
+        ("crit_rate", float("inf")),
+        ("crit_rate", "0.2"),
+    ],
+    ids=("unknown-key", "negative", "nan", "infinity", "non-number"),
+)
+def test_simulation_input_rejects_invalid_artifact_stat(stat_key, stat_value):
+    payload = _minimal_input_payload()
+    team = cast(list[object], payload["team"])
+    team_entry = cast(dict[str, object], team[0])
+    team_entry["artifacts"] = {"sets": [], "stats": {stat_key: stat_value}}
+
+    with pytest.raises(ConfigError, match="artifacts\\.stats"):
+        SimulationInput.from_mapping(payload)
+
+
+@pytest.mark.parametrize("pieces", [0, 3, 5], ids=("zero", "three", "five"))
+def test_simulation_input_rejects_artifact_pieces_outside_1_2_4(pieces):
+    payload = _minimal_input_payload()
+    team = cast(list[object], payload["team"])
+    team_entry = cast(dict[str, object], team[0])
+    team_entry["artifacts"] = {
+        "sets": [{"asset_key": "artifact_set:15032", "pieces": pieces}],
+        "stats": {},
+    }
+
+    with pytest.raises(ConfigError, match="pieces 必须是 1、2 或 4"):
+        SimulationInput.from_mapping(payload)

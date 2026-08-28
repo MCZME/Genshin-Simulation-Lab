@@ -11,6 +11,7 @@ interface AssetPickerProps {
   assetType: "characters" | "weapons" | "artifact-sets";
   value: string;
   onChange: (assetKey: string) => void;
+  ariaLabel?: string;
 }
 
 type AssetFilters = {
@@ -50,7 +51,7 @@ function fetchAssetDetail(
   return promise;
 }
 
-export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
+export function AssetPicker({ assetType, value, onChange, ariaLabel }: AssetPickerProps) {
   const [query, setQuery] = useState("");
   const [items, setItems] = useState<AssetResponse[]>([]);
   const [open, setOpen] = useState(false);
@@ -261,6 +262,7 @@ export function AssetPicker({ assetType, value, onChange }: AssetPickerProps) {
       <button
         type="button"
         className="asset-trigger"
+        aria-label={ariaLabel}
         title={selected?.status ?? undefined}
         style={
           elementColor !== null

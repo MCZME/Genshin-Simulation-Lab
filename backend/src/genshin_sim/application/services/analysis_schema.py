@@ -33,9 +33,7 @@ _KNOWN_PAYLOAD_FIELDS: dict[str, tuple[AnalysisEventField, ...]] = {
         AnalysisEventField("result.instance_ref", "string", "Buff 实例引用"),
         AnalysisEventField("result.definition_key", "string", "Buff 定义 key"),
     ),
-    "BUFF_REMOVED": (
-        AnalysisEventField("result.instance_ref", "string", "Buff 实例引用"),
-    ),
+    "BUFF_REMOVED": (AnalysisEventField("result.instance_ref", "string", "Buff 实例引用"),),
 }
 
 
@@ -60,6 +58,28 @@ _ELEMENT_LABELS: dict[str, str] = {
     "anemo": "风元素",
     "geo": "岩元素",
     "dendro": "草元素",
+}
+
+_ARTIFACT_STAT_LABELS: dict[str, str] = {
+    "hp_percent": "生命值%",
+    "atk_percent": "攻击力%",
+    "def_percent": "防御力%",
+    "flat_hp": "固定生命值",
+    "flat_atk": "固定攻击力",
+    "flat_def": "固定防御力",
+    "crit_rate": "暴击率",
+    "crit_damage": "暴击伤害",
+    "elemental_mastery": "元素精通",
+    "energy_recharge": "元素充能效率",
+    "healing_bonus": "治疗加成",
+    "physical_damage_bonus": "物理伤害加成",
+    "pyro_damage_bonus": "火元素伤害加成",
+    "hydro_damage_bonus": "水元素伤害加成",
+    "electro_damage_bonus": "雷元素伤害加成",
+    "cryo_damage_bonus": "冰元素伤害加成",
+    "anemo_damage_bonus": "风元素伤害加成",
+    "geo_damage_bonus": "岩元素伤害加成",
+    "dendro_damage_bonus": "草元素伤害加成",
 }
 
 
@@ -95,9 +115,7 @@ def build_snapshot_tree() -> AnalysisSchemaNode:
     ) -> AnalysisSchemaNode:
         return AnalysisSchemaNode(key=key, label=label, kind="object", children=children)
 
-    def list_(
-        key: str, label: str, children: tuple[AnalysisSchemaNode, ...]
-    ) -> AnalysisSchemaNode:
+    def list_(key: str, label: str, children: tuple[AnalysisSchemaNode, ...]) -> AnalysisSchemaNode:
         return AnalysisSchemaNode(key=key, label=label, kind="list", children=children)
 
     character = object_(
@@ -168,10 +186,23 @@ def build_snapshot_tree() -> AnalysisSchemaNode:
             scalar("pieces", "件数", "int", template="set_{0}_{1}_pieces"),
         ),
     )
+    stats = object_(
+        "stats",
+        "属性",
+        tuple(
+            scalar(
+                stat_key,
+                stat_label,
+                "float",
+                template=f"artifact_{{{0}}}_{stat_key}",
+            )
+            for stat_key, stat_label in _ARTIFACT_STAT_LABELS.items()
+        ),
+    )
     team = list_(
         "team",
         "队伍",
-        (character, weapon, object_("artifacts", "圣遗物", (sets,))),
+        (character, weapon, object_("artifacts", "圣遗物", (sets, stats))),
     )
     target = object_(
         "target",

@@ -42,7 +42,7 @@ function artifactNode(overrides: Partial<WorkflowNode> = {}): WorkflowNode {
     kind: "artifact",
     region_id: "region-1",
     position: { x: 0, y: 0 },
-    params: { slot: 1, sets: [{ asset_key: "", pieces: 4 }] },
+    params: { slot: 1, sets: [{ asset_key: "", pieces: 4 }], stats: {} },
     ...overrides,
   };
 }
@@ -57,12 +57,21 @@ function TraceHarness({ node }: { node: WorkflowNode }) {
   );
 }
 
-function ArtifactHarness({ node }: { node: WorkflowNode }) {
+function ArtifactHarness({
+  node,
+  onChange,
+}: {
+  node: WorkflowNode;
+  onChange?: (params: Record<string, unknown>) => void;
+}) {
   const [current, setCurrent] = useState(node);
   return (
     <ArtifactEditor
       node={current}
-      onChange={(params) => setCurrent({ ...current, params })}
+      onChange={(params) => {
+        onChange?.(params);
+        setCurrent({ ...current, params });
+      }}
     />
   );
 }
@@ -120,14 +129,10 @@ describe("固定路径节点的编辑器", () => {
     expect(slider.getAttribute("max")).toBe("3");
   });
 
-  it("圣遗物件数滑块只提供 1/2/4 三档并提交修改", () => {
+  it("圣遗物件数用 1/2/4 分段按钮提交修改", () => {
     const onChange = vi.fn();
     render(<ArtifactEditor node={artifactNode()} onChange={onChange} />);
-    fireEvent.click(screen.getByLabelText("件数"));
-    const slider = screen.getByRole("slider");
-    expect(slider.getAttribute("max")).toBe("2");
-    fireEvent.change(slider, { target: { value: "0" } });
-    fireEvent.blur(slider);
+    fireEvent.click(screen.getByRole("button", { name: "1件" }));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         sets: [expect.objectContaining({ asset_key: "", pieces: 1 })],
@@ -135,11 +140,11 @@ describe("固定路径节点的编辑器", () => {
     );
   });
 
-  it("圣遗物编辑器默认一条套装，可添加并删除第二行", () => {
+  it("圣遗物编辑器默认一条套装，可添加、删除到空并重新添加", () => {
     const { container } = render(<ArtifactHarness node={artifactNode()} />);
     expect(screen.getByLabelText("套装 1")).toBeTruthy();
     expect(screen.queryByLabelText("套装 2")).toBeNull();
-    expect(container.querySelector(".artifact-set-remove")).toBeNull();
+    expect(container.querySelectorAll(".artifact-set-remove")).toHaveLength(1);
 
     fireEvent.click(screen.getByRole("button", { name: "+ 添加套装" }));
     expect(screen.getByLabelText("套装 2")).toBeTruthy();
@@ -147,12 +152,82 @@ describe("固定路径节点的编辑器", () => {
 
     fireEvent.click(screen.getByTitle("删除套装 2"));
     expect(screen.queryByLabelText("套装 2")).toBeNull();
-    expect(container.querySelector(".artifact-set-remove")).toBeNull();
+    expect(container.querySelectorAll(".artifact-set-remove")).toHaveLength(1);
+
+    fireEvent.click(screen.getByTitle("删除套装 1"));
+    expect(screen.queryByLabelText("套装 1")).toBeNull();
+    expect(screen.getByRole("button", { name: "+ 添加套装" })).toBeTruthy();
   });
 
-  it("圣遗物编辑器显示属性占位提示且不提供路径编辑", () => {
+  it("圣遗物编辑器添加词条行：百分比按百分比输入并提交小数", () => {
+    const onChange = vi.fn();
+    render(
+      <ArtifactHarness
+        node={artifactNode({ params: { slot: 1, sets: [], stats: {} } })}
+        onChange={onChange}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "+ 添加词条" }));
+    fireEvent.change(screen.getByLabelText("选择要添加的词条"), {
+      target: { value: "crit_rate" },
+    });
+
+    const valueButton = screen.getByLabelText("暴击率");
+    expect(valueButton.textContent).toBe("0%");
+    fireEvent.click(valueButton);
+    const input = screen.getByRole("spinbutton");
+    fireEvent.change(input, { target: { value: "31.1" } });
+    fireEvent.blur(input);
+
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ stats: { crit_rate: 0.311 } }),
+    );
+  });
+
+  it("圣遗物编辑器元素精通按原值输入不做百分比换算", () => {
+    const onChange = vi.fn();
+    render(
+      <ArtifactHarness
+        node={artifactNode({
+          params: { slot: 1, sets: [], stats: { elemental_mastery: 80 } },
+        })}
+        onChange={onChange}
+      />,
+    );
+
+    expect(screen.getByLabelText("元素精通").textContent).toBe("80");
+    fireEvent.click(screen.getByLabelText("元素精通"));
+    const input = screen.getByRole("spinbutton");
+    fireEvent.change(input, { target: { value: "100" } });
+    fireEvent.blur(input);
+
+    expect(onChange).toHaveBeenLastCalledWith(
+      expect.objectContaining({ stats: { elemental_mastery: 100 } }),
+    );
+  });
+
+  it("圣遗物编辑器已选词条不再出现在添加选项中，可删除词条行", () => {
+    render(
+      <ArtifactHarness
+        node={artifactNode({
+          params: { slot: 1, sets: [], stats: { crit_rate: 0.311 } },
+        })}
+      />,
+    );
+    fireEvent.click(screen.getByRole("button", { name: "+ 添加词条" }));
+    const addSelect = screen.getByLabelText("选择要添加的词条") as HTMLSelectElement;
+    expect(Array.from(addSelect.options).some((option) => option.value === "crit_rate")).toBe(
+      false,
+    );
+    fireEvent.blur(addSelect);
+
+    fireEvent.click(screen.getByTitle("删除词条 暴击率"));
+    expect(screen.queryByLabelText("暴击率")).toBeNull();
+    expect(screen.getByRole("button", { name: "+ 添加词条" })).toBeTruthy();
+  });
+
+  it("圣遗物编辑器不提供路径编辑", () => {
     render(<ArtifactEditor node={artifactNode()} onChange={vi.fn()} />);
-    expect(screen.getByText("圣遗物属性：暂不影响仿真")).toBeTruthy();
     expect(screen.queryByText("目标路径")).toBeNull();
     expect(screen.queryByText("高级")).toBeNull();
   });

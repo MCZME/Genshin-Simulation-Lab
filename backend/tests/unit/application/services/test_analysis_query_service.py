@@ -148,9 +148,7 @@ def test_read_schema_exposes_full_catalog() -> None:
     assert {column.name: column.value_kind for column in runs.columns}["state"] == (
         "enum:run_state"
     )
-    events_table = next(
-        table for table in schema.tables if table.name == "simulation_events"
-    )
+    events_table = next(table for table in schema.tables if table.name == "simulation_events")
     assert {column.name: column.value_kind for column in events_table.columns}["event_type"] == (
         "enum:event_type"
     )
@@ -168,29 +166,25 @@ def test_read_schema_exposes_full_catalog() -> None:
     }
     element_field = next(field for field in damage.fields if field.path == "result.element")
     assert element_field.value_kind == "enum:element"
-    empty_fields = next(
-        item for item in schema.event_types if item.name == "TEAM_SWITCHED"
-    )
+    empty_fields = next(item for item in schema.event_types if item.name == "TEAM_SWITCHED")
     assert empty_fields.fields == ()
     tree = schema.snapshot_tree
     assert tree is not None
     assert tree.kind == "object"
-    leaves = {
-        path: node
-        for path, node in _walk_paths(tree)
-        if node.kind == "scalar"
-    }
+    leaves = {path: node for path, node in _walk_paths(tree) if node.kind == "scalar"}
     assert (
-        leaves[("root", "team", "character", "asset_key")].default_name_template
-        == "char_{0}_key"
+        leaves[("root", "team", "character", "asset_key")].default_name_template == "char_{0}_key"
     )
-    assert leaves[("root", "team", "character", "asset_key")].value_kind == (
-        "asset:characters"
-    )
+    assert leaves[("root", "team", "character", "asset_key")].value_kind == ("asset:characters")
     assert (
         leaves[("root", "team", "weapon", "refinement")].default_name_template
         == "weapon_{0}_refinement"
     )
+    assert (
+        leaves[("root", "team", "artifacts", "stats", "crit_rate")].default_name_template
+        == "artifact_{0}_crit_rate"
+    )
+    assert leaves[("root", "team", "artifacts", "stats", "crit_rate")].type == "float"
     assert (
         leaves[
             ("root", "scene", "targets", "target", "resistance", "physical")

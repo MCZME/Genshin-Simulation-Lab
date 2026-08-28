@@ -93,7 +93,9 @@ def build_attribute_runtime(
         _register_content_attribute_definitions(definitions, content_units)
         _register_content_attribute_stacking_groups(definitions, content_units)
         base_contributions = tuple(_iter_base_contributions(config=config, assets=assets))
-        static_providers = tuple(_iter_static_asset_modifier_providers(assets))
+        static_providers = tuple(_iter_static_asset_modifier_providers(assets)) + tuple(
+            _iter_config_artifact_modifier_providers(config)
+        )
         content_providers = tuple(_iter_content_attribute_providers(content_units, definitions))
         base_attributes = BaseAttributeSet(base_contributions)
         modifier_index = ModifierProviderIndex(
@@ -274,6 +276,47 @@ def _append_asset_stat_modifier(
     )
 
 
+def _iter_config_artifact_modifier_providers(
+    config: SimulationInput,
+) -> Iterable[StaticModifierProvider]:
+    for team_index, slot in enumerate(config.team):
+        terms: list[ModifierTerm] = []
+        for stat_key, stat_value in slot.artifacts.stats.items():
+            try:
+                target_key, stage = _ARTIFACT_STAT_TO_MODIFIER[stat_key]
+            except KeyError as exc:
+                raise InvalidRuntimePayloadError(f"不支持的圣遗物词条：{stat_key}") from exc
+            terms.append(
+                ModifierTerm(
+                    target_key=target_key,
+                    stage=stage,
+                    value=validate_finite_float(
+                        cast(float | int, stat_value),
+                        f"team[{team_index}].artifacts.stats.{stat_key}",
+                    ),
+                    provider_key=f"assembly.config.artifact_stats.{slot.slot}",
+                    source_ref=RuntimeSourceRef(
+                        RuntimeSourceKind.CONFIG,
+                        f"config:team[{team_index}].artifacts.stats.{stat_key}",
+                    ),
+                    audit_tags=(stat_key,),
+                )
+            )
+        if not terms:
+            continue
+        subject_ref = AttributeSubjectRef.character(_character_entity_id(slot.slot))
+        provider_key = f"assembly.config.artifact_stats.{slot.slot}"
+        yield StaticModifierProvider(
+            ModifierProviderSpec(
+                provider_key=provider_key,
+                writes=frozenset(term.target_key for term in terms),
+                owner_ref=subject_ref,
+            ),
+            tuple(terms),
+            subject_ref=subject_ref,
+        )
+
+
 def _iter_content_attribute_providers(
     content_units: Sequence[ContentUnit],
     definitions: AttributeDefinitionRegistry,
@@ -396,4 +439,11 @@ _ASSET_STAT_TO_MODIFIER: Mapping[str, tuple[AttributeKey, ModifierStage]] = {
     "anemo_damage_bonus": (BONUS_DAMAGE_ANEMO, ModifierStage.FLAT_ADD),
     "geo_damage_bonus": (BONUS_DAMAGE_GEO, ModifierStage.FLAT_ADD),
     "dendro_damage_bonus": (BONUS_DAMAGE_DENDRO, ModifierStage.FLAT_ADD),
+}
+
+_ARTIFACT_STAT_TO_MODIFIER: Mapping[str, tuple[AttributeKey, ModifierStage]] = {
+    **_ASSET_STAT_TO_MODIFIER,
+    "flat_hp": (STAT_HP_MAX, ModifierStage.FLAT_ADD),
+    "flat_atk": (STAT_ATK_TOTAL, ModifierStage.FLAT_ADD),
+    "flat_def": (STAT_DEF_TOTAL, ModifierStage.FLAT_ADD),
 }

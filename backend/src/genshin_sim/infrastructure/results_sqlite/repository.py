@@ -220,9 +220,7 @@ class SQLiteResultRepository:
                 conditions.append("created_at <= ?")
                 params.append(created_to)
             if session_ids is not None:
-                conditions.append(
-                    f"session_id IN ({','.join('?' for _ in session_ids)})"
-                )
+                conditions.append(f"session_id IN ({','.join('?' for _ in session_ids)})")
                 params.extend(session_ids)
             if conditions:
                 sql += " WHERE " + " AND ".join(conditions)

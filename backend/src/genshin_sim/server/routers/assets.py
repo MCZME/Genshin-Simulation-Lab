@@ -24,9 +24,7 @@ router = APIRouter(
 @router.post("/resolve", response_model=AssetListResponse)
 def resolve_assets(payload: ResolveAssetsRequest, request: Request) -> AssetListResponse:
     facade = cast(ApplicationFacade, request.app.state.application)
-    unique = tuple(
-        dict.fromkeys(key.strip() for key in payload.keys if key and key.strip())
-    )
+    unique = tuple(dict.fromkeys(key.strip() for key in payload.keys if key and key.strip()))
     items = facade.resolve_assets(unique)
     return AssetListResponse(items=[_asset_to_dto(item) for item in items])
 

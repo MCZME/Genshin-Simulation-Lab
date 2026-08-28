@@ -117,7 +117,7 @@ class AssetsService:
         for key in dict.fromkeys(keys):
             try:
                 asset = self.inspect_asset(key)
-            except (KeyError, LookupError, ValueError):
+            except KeyError, LookupError, ValueError:
                 continue
             items.append(self._to_list_item(asset, _asset_list_kind(key)))
         return tuple(items)
@@ -131,7 +131,6 @@ class AssetsService:
         if asset_key.startswith("artifact_set:"):
             return self.repository.get_artifact_set(asset_key)
         raise ValueError(f"不支持的 asset_key 类型：{asset_key}")
-
 
     def inspect_asset_dict(self, asset_key: str) -> dict[str, Any]:
         item = self.inspect_asset(asset_key)

@@ -162,7 +162,7 @@ def test_fetch_runs_source_exposes_snapshot_condition_columns(tmp_path) -> None:
                             "name": "char_1_key",
                             "type": "string",
                         }
-                    ]
+                    ],
                 },
             ),
         ),
@@ -323,7 +323,7 @@ def test_global_aggregate_statistics_golden(tmp_path) -> None:
                             "name": "damage",
                             "type": "float",
                         }
-                    ]
+                    ],
                 },
             ),
             AnalysisPlanNode(
@@ -540,8 +540,7 @@ def test_fetch_events_source_rejects_invalid_parameters(tmp_path, params, reason
 
     details = list(exc_info.value.details)
     assert any(
-        item.get("node_id") == "ev1" and reason in item.get("reason", "")
-        for item in details
+        item.get("node_id") == "ev1" and reason in item.get("reason", "") for item in details
     )
 
 
@@ -570,8 +569,7 @@ def test_fetch_events_source_requires_payload_event_type(tmp_path) -> None:
 
     details = list(exc_info.value.details)
     assert any(
-        item.get("node_id") == "ev1" and "事件类型" in item.get("reason", "")
-        for item in details
+        item.get("node_id") == "ev1" and "事件类型" in item.get("reason", "") for item in details
     )
 
 
@@ -635,8 +633,7 @@ def test_fetch_rejects_missing_or_invalid_source(tmp_path) -> None:
 
     details = list(exc_info.value.details)
     assert any(
-        item.get("node_id") == "f1" and "source" in item.get("reason", "")
-        for item in details
+        item.get("node_id") == "f1" and "source" in item.get("reason", "") for item in details
     )
 
 
@@ -692,9 +689,7 @@ def test_unknown_column_reports_node_detail(tmp_path) -> None:
             AnalysisPlanNode(
                 id="f1",
                 kind="filter",
-                params={
-                    "conditions": [{"column": "nope", "op": "eq", "value": 1}]
-                },
+                params={"conditions": [{"column": "nope", "op": "eq", "value": 1}]},
             ),
         ),
         ("f1",),

@@ -166,9 +166,7 @@ def test_results_list_filters_by_name_state_and_time(application_facade) -> None
         "session-3",
         "session-1",
     ]
-    assert [item["session_id"] for item in by_name_and_state.json()["items"]] == [
-        "session-1"
-    ]
+    assert [item["session_id"] for item in by_name_and_state.json()["items"]] == ["session-1"]
     assert [item["session_id"] for item in by_time.json()["items"]] == [
         "session-3",
         "session-2",

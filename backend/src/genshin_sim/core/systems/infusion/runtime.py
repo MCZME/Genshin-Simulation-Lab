@@ -503,8 +503,6 @@ def _with_instance_after(
     if result.instance_after is not None:
         return result
     record = next(
-        item
-        for item in runtime.infusion_store.records
-        if item.instance_ref == result.instance_ref
+        item for item in runtime.infusion_store.records if item.instance_ref == result.instance_ref
     )
     return replace(result, instance_after=InfusionInstanceSnapshot.from_record(record))

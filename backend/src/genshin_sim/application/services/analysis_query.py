@@ -72,9 +72,7 @@ def _validate_plan_structure(plan: AnalysisPlan) -> None:
     details: list[dict[str, Any]] = []
 
     if len(plan.session_ids) > MAX_SESSION_IDS:
-        raise AnalysisPlanValidationError(
-            f"会话数超过上限 {MAX_SESSION_IDS}"
-        )
+        raise AnalysisPlanValidationError(f"会话数超过上限 {MAX_SESSION_IDS}")
     for session_id in plan.session_ids:
         if not isinstance(session_id, str) or not session_id:
             raise AnalysisPlanValidationError("session_ids 必须是非空字符串列表")
@@ -82,9 +80,7 @@ def _validate_plan_structure(plan: AnalysisPlan) -> None:
     if not plan.nodes:
         raise AnalysisPlanValidationError("查询计划至少需要一个节点")
     if len(plan.nodes) > MAX_PLAN_NODES:
-        raise AnalysisPlanValidationError(
-            f"查询计划节点数超过上限 {MAX_PLAN_NODES}"
-        )
+        raise AnalysisPlanValidationError(f"查询计划节点数超过上限 {MAX_PLAN_NODES}")
 
     seen: set[str] = set()
     for node in plan.nodes:
@@ -107,7 +103,6 @@ def _validate_plan_structure(plan: AnalysisPlan) -> None:
     unknown_outputs = [item for item in outputs if item not in known]
     if unknown_outputs:
         details.extend(
-            {"node_id": item, "reason": "outputs 引用了计划外的节点"}
-            for item in unknown_outputs
+            {"node_id": item, "reason": "outputs 引用了计划外的节点"} for item in unknown_outputs
         )
         raise AnalysisPlanValidationError("outputs 引用了计划外的节点", details)

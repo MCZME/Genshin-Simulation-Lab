@@ -257,18 +257,11 @@ class FakeApplicationFacade:
             _filter_events(self.get_run(session_id).events, frame_min, frame_max, event_type)
         )
 
-    def execute_analysis_plan(
-        self, plan: AnalysisPlan
-    ) -> dict[str, AnalysisTableResult]:
+    def execute_analysis_plan(self, plan: AnalysisPlan) -> dict[str, AnalysisTableResult]:
         try:
-            return {
-                node_id: self._analysis_plan_results[node_id]
-                for node_id in plan.outputs
-            }
+            return {node_id: self._analysis_plan_results[node_id] for node_id in plan.outputs}
         except KeyError as exc:
-            raise ApplicationError(
-                "validation_failed", "outputs 引用了计划外的节点"
-            ) from exc
+            raise ApplicationError("validation_failed", "outputs 引用了计划外的节点") from exc
 
     def analysis_schema(self) -> AnalysisReadSchema:
         if self._analysis_schema is None:

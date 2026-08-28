@@ -53,9 +53,7 @@ class ResultsService:
             return items
         by_id = {item.session_id: item for item in items}
         return tuple(
-            by_id[session_id]
-            for session_id in dict.fromkeys(session_ids)
-            if session_id in by_id
+            by_id[session_id] for session_id in dict.fromkeys(session_ids) if session_id in by_id
         )
 
     def inspect_run(self, session_id: str, *, include_events: bool = True) -> RunDetail:

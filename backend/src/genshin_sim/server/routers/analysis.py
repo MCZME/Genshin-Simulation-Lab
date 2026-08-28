@@ -64,9 +64,7 @@ def read_schema(request: Request) -> AnalysisSchemaResponse:
 def _table_to_dto(result: Any) -> TableResponse:
     rows: list[list[Any]] = [list(row) for row in result.rows]
     return TableResponse(
-        columns=[
-            TableColumnDto(name=column.name, type=column.type) for column in result.columns
-        ],
+        columns=[TableColumnDto(name=column.name, type=column.type) for column in result.columns],
         rows=rows,
         truncated=result.truncated,
     )

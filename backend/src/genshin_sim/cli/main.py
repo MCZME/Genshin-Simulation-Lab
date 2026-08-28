@@ -33,9 +33,7 @@ from genshin_sim.infrastructure.logging import (
 
 DEFAULT_ASSET_DB = Path("data") / "assets" / "assets.db"
 DEFAULT_ASSET_MANIFEST = Path("data") / "assets" / "manifests" / "project_amber_yatta.json"
-DEFAULT_ASSET_SOURCE_CACHE = (
-    Path("data") / "assets" / "sources" / "project_amber_yatta" / "default"
-)
+DEFAULT_ASSET_SOURCE_CACHE = Path("data") / "assets" / "sources" / "project_amber_yatta" / "default"
 ENV_LOG_FILE = "GENSHIN_SIM_LOG_FILE"
 ENV_LOG_LEVEL = "GENSHIN_SIM_LOG_LEVEL"
 LOG_LEVEL_CHOICES = ("DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL")

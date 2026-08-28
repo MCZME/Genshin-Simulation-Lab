@@ -170,8 +170,7 @@ def test_state_patch_intent_handler_skips_publish_when_patch_unchanged():
     handler.handle(context, intent)
 
     assert not any(
-        event.event_type is EventType.CONTENT_STATE_CHANGED
-        for event in context.events.frame_events
+        event.event_type is EventType.CONTENT_STATE_CHANGED for event in context.events.frame_events
     )
 
 

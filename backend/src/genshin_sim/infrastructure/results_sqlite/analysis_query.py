@@ -50,9 +50,7 @@ _INPUT_ARITY: dict[str, int] = {
 }
 
 _FETCH_PARAM_KEYS: dict[str, frozenset[str]] = {
-    "fetch": frozenset(
-        {"source", "snapshot_columns", "event_types", "payload_columns"}
-    ),
+    "fetch": frozenset({"source", "snapshot_columns", "event_types", "payload_columns"}),
     "filter": frozenset({"mode", "conditions"}),
     "project": frozenset({"columns"}),
     "sort": frozenset({"keys"}),
@@ -98,6 +96,7 @@ _EVENT_TABLE_SCHEMA: tuple[AnalysisSchemaColumn, ...] = (
     AnalysisSchemaColumn("frame", "int", "事件帧号"),
     AnalysisSchemaColumn("event_type", "string", "事件类型名", "enum:event_type"),
 )
+
 
 class SQLiteAnalysisQueryExecutor:
     """结果库查询计划编译执行器（实现 application 的稳定读取协议）。"""
@@ -234,15 +233,19 @@ def _typed_json_extract(probe: str, extracted: str, type_: str) -> str:
     if type_ == "string":
         return "CASE WHEN " + probe + " = 'text' THEN " + extracted + " END"
     if type_ == "bool":
-        return (
-            "CASE WHEN " + probe + " = 'true' THEN 1"
-            " WHEN " + probe + " = 'false' THEN 0 END"
-        )
+        return "CASE WHEN " + probe + " = 'true' THEN 1 WHEN " + probe + " = 'false' THEN 0 END"
     cast_to = "INTEGER" if type_ == "int" else "REAL"
     numeric = "('integer', 'real')" if type_ == "float" else "('integer')"
     return (
-        "CASE WHEN " + probe + " IN " + numeric
-        + " THEN CAST(" + extracted + " AS " + cast_to + ") END"
+        "CASE WHEN "
+        + probe
+        + " IN "
+        + numeric
+        + " THEN CAST("
+        + extracted
+        + " AS "
+        + cast_to
+        + ") END"
     )
 
 
@@ -505,9 +508,12 @@ class _PlanCompiler:
                 )
             select_items.append(typed + " AS " + _quoted(str(item["name"])))
         return (
-            "SELECT " + ", ".join(select_items)
-            + " FROM " + table
-            + " WHERE " + " AND ".join(conditions)
+            "SELECT "
+            + ", ".join(select_items)
+            + " FROM "
+            + table
+            + " WHERE "
+            + " AND ".join(conditions)
         )
 
     def _compile_filter(self, node: AnalysisPlanNode, binder: _Binder, source_sql: str) -> str:
@@ -614,9 +620,7 @@ class _PlanCompiler:
         left_names = {column.name for column in left_columns}
         select_items = ["L." + _quoted(column.name) for column in left_columns]
         select_items.extend(
-            "R." + _quoted(column.name)
-            for column in right_columns
-            if column.name not in left_names
+            "R." + _quoted(column.name) for column in right_columns if column.name not in left_names
         )
         mode = "LEFT JOIN" if node.params.get("mode") == "left" else "JOIN"
         on_clause = (
@@ -626,7 +630,8 @@ class _PlanCompiler:
             + _quoted(str(node.params["right_key"]))
         )
         return (
-            "SELECT " + ", ".join(select_items)
+            "SELECT "
+            + ", ".join(select_items)
             + " FROM "
             + left_alias
             + " L "
@@ -654,9 +659,7 @@ class _PlanCompiler:
 
     def _compile_expr(self, expr: Any, binder: _Binder, *, depth: int) -> str:
         if depth > _MAX_EXPR_DEPTH:
-            raise AnalysisPlanValidationError(
-                "查询计划校验失败", [{"reason": "计算列表达式过深"}]
-            )
+            raise AnalysisPlanValidationError("查询计划校验失败", [{"reason": "计算列表达式过深"}])
         if "col" in expr:
             return _quoted(str(expr["col"]))
         if "lit" in expr:
@@ -705,9 +708,7 @@ class _ShapeChecker:
             if require_event_type:
                 event_type = item.get("event_type") if isinstance(item, dict) else None
                 if not isinstance(event_type, str) or not event_type:
-                    self.compiler._issue(
-                        self.node.id, "载荷提取列缺少事件类型 event_type"
-                    )
+                    self.compiler._issue(self.node.id, "载荷提取列缺少事件类型 event_type")
                     continue
             if not isinstance(path, str) or not path or "'" in path or path.startswith("."):
                 self.compiler._issue(self.node.id, "提取路径不合法：" + str(path))
@@ -745,6 +746,7 @@ class _ShapeChecker:
             or any(not isinstance(item, str) for item in event_types)
         ):
             self.compiler._issue(self.node.id, "event_types 必须是字符串数组")
+
     def project_shape(self, params: Mapping[str, Any]) -> tuple[AnalysisColumn, ...]:
         output: list[AnalysisColumn] = []
         seen: set[str] = set()
@@ -888,9 +890,7 @@ class _ShapeChecker:
                     item for item in value if not _literal_matches(self.types[column], item)
                 ]
                 if mismatched:
-                    self.compiler._issue(
-                        self.node.id, "in/not_in 元素类型与列不符：" + column
-                    )
+                    self.compiler._issue(self.node.id, "in/not_in 元素类型与列不符：" + column)
                 continue
             if not _literal_matches(self.types[column], value):
                 self.compiler._issue(self.node.id, "条件字面量类型与列不符：" + column)

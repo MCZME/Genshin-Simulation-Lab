@@ -31,9 +31,7 @@ router = APIRouter(
     dependencies=[Depends(require_initialized)],
 )
 
-_UTC_ISO_DATETIME_PATTERN = (
-    r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?\+00:00$"
-)
+_UTC_ISO_DATETIME_PATTERN = r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?\+00:00$"
 MAX_SESSION_IDS = 200
 
 
@@ -65,9 +63,7 @@ def list_results(
             created_from=created_from,
             created_to=created_to,
         )
-    return RunListResponse(
-        items=[_list_item_to_dto(item) for item in items]
-    )
+    return RunListResponse(items=[_list_item_to_dto(item) for item in items])
 
 
 @router.get("/{session_id}", response_model=RunDetailResponse)

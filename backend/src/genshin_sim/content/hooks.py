@@ -23,6 +23,7 @@ from genshin_sim.core.impacts.models import ImpactRequest
 from genshin_sim.core.simulation.context import SimulationContext
 from genshin_sim.core.simulation.intent_queue import IntentQueue
 from genshin_sim.core.simulation.team import TeamRuntimeState
+from genshin_sim.core.systems.buff.models import ApplyBuffRequest
 
 
 class HookDispatcherError(Exception):
@@ -310,5 +311,25 @@ class HookDispatcher:
                     round=next_round,
                     source_ref=hook.hook_key,
                     payload=patch,
+                )
+            )
+        for index, request in enumerate(result.buff_requests):
+            if not isinstance(request, ApplyBuffRequest):
+                raise UnsupportedHookOutputError(
+                    f"hook {hook.hook_key!r} 的 buff_requests 必须是 "
+                    f"ApplyBuffRequest，实际 {type(request).__name__}"
+                )
+            self._queue.enqueue(
+                IntentEnvelope(
+                    intent_id=(
+                        f"hook:{hook.hook_key}:{frame}:{next_round}:"
+                        f"{event_type.name}:{event_index}:buff:{index}"
+                    ),
+                    kind=IntentKind.BUFF,
+                    frame=frame,
+                    phase=FramePhase.SETTLEMENT,
+                    round=next_round,
+                    source_ref=hook.hook_key,
+                    payload=request,
                 )
             )

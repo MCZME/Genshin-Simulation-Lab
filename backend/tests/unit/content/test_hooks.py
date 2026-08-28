@@ -14,6 +14,11 @@ from genshin_sim.content import (
     UnsupportedHookOutputError,
 )
 from genshin_sim.content.definitions.effects import UnlockKind, UnlockSpec
+from genshin_sim.core.attributes import (
+    AttributeSubjectRef,
+    RuntimeSourceKind,
+    RuntimeSourceRef,
+)
 from genshin_sim.core.contracts.intents import IntentKind
 from genshin_sim.core.contracts.state_schema import (
     StateField,
@@ -26,6 +31,7 @@ from genshin_sim.core.impacts.models import ImpactKind, ImpactRequest
 from genshin_sim.core.simulation.context import SimulationContext
 from genshin_sim.core.simulation.intent_queue import IntentQueue
 from genshin_sim.core.simulation.team import TeamRuntimeState
+from genshin_sim.core.systems.buff import ApplyBuffRequest, BuffModifierValue
 
 
 @dataclass
@@ -234,6 +240,51 @@ def test_hook_dispatcher_rejects_wrong_impact_payload_type():
     context.events.publish(_game_event())
 
     with pytest.raises(UnsupportedHookOutputError, match="ImpactRequest"):
+        dispatcher.update_frame(context, frame=1)
+
+
+def test_hook_dispatcher_converts_buff_request_to_next_round_intent():
+    request = ApplyBuffRequest(
+        request_id="buff.test",
+        frame=1,
+        order=0,
+        definition_key="buff.test.definition",
+        target_ref=AttributeSubjectRef.character("character:slot_1"),
+        source_context=RuntimeSourceRef(RuntimeSourceKind.CONTENT, "buff.test"),
+        duration_frames=60,
+        modifier_values=(BuffModifierValue(term_key="term", value=0.2),),
+    )
+    hook = RecordingHook(
+        "hook.test",
+        ("FRAME_STARTED",),
+        result=HookResult(buff_requests=[request]),
+    )
+    dispatcher, queue = _impact_patch_queue(hook)
+    context = SimulationContext()
+    context.settlement_round = 2
+    context.events.publish(_game_event())
+
+    dispatcher.update_frame(context, frame=1)
+
+    intent = queue.drain_sorted()[0]
+    assert intent.kind is IntentKind.BUFF
+    assert intent.frame == 1
+    assert intent.round == 3
+    assert intent.source_ref == "hook.test"
+    assert intent.payload is request
+
+
+def test_hook_dispatcher_rejects_wrong_buff_payload_type():
+    hook = RecordingHook(
+        "hook.test",
+        ("FRAME_STARTED",),
+        result=HookResult(buff_requests=[object()]),
+    )
+    dispatcher, _ = _impact_patch_queue(hook)
+    context = SimulationContext()
+    context.events.publish(_game_event())
+
+    with pytest.raises(UnsupportedHookOutputError, match="ApplyBuffRequest"):
         dispatcher.update_frame(context, frame=1)
 
 

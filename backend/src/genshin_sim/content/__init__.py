@@ -1,5 +1,14 @@
 """内置内容实现与新模型注册入口。"""
 
+from genshin_sim.content.artifacts.maiden_beloved import (
+    MAIDEN_BELOVED_4P_TERM_KEY,
+    MAIDEN_BELOVED_ASSET_KEY,
+    MAIDEN_BELOVED_CONTENT_VERSION,
+    MAIDEN_BELOVED_HANDLER_KEY,
+    create_maiden_beloved_content_unit,
+    maiden_beloved_4p_conflict_key,
+    maiden_beloved_4p_definition_key,
+)
 from genshin_sim.content.bootstrap_content_units import (
     BUILTIN_NOOP_CONTENT_HANDLER_KEYS,
     create_default_content_unit_registry,
@@ -197,6 +206,10 @@ __all__ = [
     "HUNTER_BOW_ASSET_KEY",
     "HUNTER_BOW_HANDLER_KEY",
     "JSONValue",
+    "MAIDEN_BELOVED_4P_TERM_KEY",
+    "MAIDEN_BELOVED_ASSET_KEY",
+    "MAIDEN_BELOVED_CONTENT_VERSION",
+    "MAIDEN_BELOVED_HANDLER_KEY",
     "Modifier",
     "RUNTIME_PROBE_ACTION_KEY",
     "RUNTIME_PROBE_CHARACTER_HANDLER_KEY",
@@ -228,9 +241,12 @@ __all__ = [
     "create_default_content_unit_registry",
     "create_dull_blade_content_unit",
     "create_hunter_bow_content_unit",
+    "create_maiden_beloved_content_unit",
     "create_resonance_buff_definitions",
     "create_resonance_definitions",
     "create_waster_greatsword_content_unit",
+    "maiden_beloved_4p_conflict_key",
+    "maiden_beloved_4p_definition_key",
     "MOONSIGN_BONUS_CAP",
     "MOONSIGN_BONUS_DURATION_FRAMES",
     "MOONSIGN_SCALING_BY_ELEMENT",

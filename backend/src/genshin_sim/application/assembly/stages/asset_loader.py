@@ -41,9 +41,15 @@ class AssetBundleLoader:
                 asset = self.asset_repository.get_artifact_set(artifact_set.asset_key)
                 artifact_sets.append(asset)
                 artifact_bonuses.extend(
-                    self.asset_repository.get_artifact_set_bonuses(
-                        artifact_set.asset_key,
-                        artifact_set.pieces,
+                    sorted(
+                        (
+                            bonus
+                            for bonus in self.asset_repository.get_artifact_set_bonuses(
+                                artifact_set.asset_key
+                            )
+                            if bonus.piece_count <= artifact_set.pieces
+                        ),
+                        key=lambda bonus: bonus.piece_count,
                     )
                 )
 

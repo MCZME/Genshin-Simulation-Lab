@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from genshin_sim.content.artifacts.maiden_beloved import (
+    MAIDEN_BELOVED_HANDLER_KEY,
+    create_maiden_beloved_content_unit,
+)
 from genshin_sim.content.characters.mondstadt.barbara import (
     BARBARA_CHARACTER_HANDLER_KEY,
     BARBARA_CONSTELLATION_C1_HANDLER_KEY,
@@ -100,6 +104,10 @@ def create_default_content_unit_registry() -> ContentUnitRegistry:
     registry.register_weapon_factory(
         HUNTER_BOW_HANDLER_KEY,
         create_hunter_bow_content_unit,
+    )
+    registry.register_artifact_factory(
+        MAIDEN_BELOVED_HANDLER_KEY,
+        create_maiden_beloved_content_unit,
     )
     registry.register_effect_factory(
         BARBARA_CONSTELLATION_C1_HANDLER_KEY,

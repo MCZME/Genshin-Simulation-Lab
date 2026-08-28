@@ -260,7 +260,7 @@ class BatchInputValidationService:
                         )
                     )
                 try:
-                    bonuses = repository.get_artifact_set_bonuses(
+                    repository.get_artifact_set_bonuses(
                         artifact_set.asset_key,
                         artifact_config.pieces,
                     )
@@ -274,7 +274,10 @@ class BatchInputValidationService:
                         )
                     )
                 else:
-                    for bonus in bonuses:
+                    all_bonuses = repository.get_artifact_set_bonuses(artifact_set.asset_key)
+                    for bonus in all_bonuses:
+                        if bonus.piece_count > artifact_config.pieces:
+                            continue
                         if not registry.has_artifact_handler(bonus.handler_key):
                             details.append(
                                 BatchDiagnostic(

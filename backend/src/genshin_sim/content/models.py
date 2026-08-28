@@ -38,12 +38,14 @@ class HookResult:
     impact_requests: Sequence[object] = field(default_factory=tuple)
     modifier_commands: Sequence[object] = field(default_factory=tuple)
     state_patches: Sequence[object] = field(default_factory=tuple)
+    buff_requests: Sequence[object] = field(default_factory=tuple)
     audit_notes: Sequence[str] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
         object.__setattr__(self, "impact_requests", tuple(self.impact_requests))
         object.__setattr__(self, "modifier_commands", tuple(self.modifier_commands))
         object.__setattr__(self, "state_patches", tuple(self.state_patches))
+        object.__setattr__(self, "buff_requests", tuple(self.buff_requests))
         object.__setattr__(self, "audit_notes", tuple(self.audit_notes))
 
 

@@ -93,6 +93,15 @@ class ResultsService:
             limit=limit,
         )
 
+    def get_event(self, session_id: str, ordinal: int) -> RecordedEvent | None:
+        """按会话内事实顺序读取单条事件；事件不存在返回 None。"""
+
+        logger.debug(
+            "查询单条仿真事件",
+            extra={"session_id": session_id, "ordinal": ordinal},
+        )
+        return self.repository.get_event(session_id, ordinal)
+
     def count_events(
         self,
         session_id: str,

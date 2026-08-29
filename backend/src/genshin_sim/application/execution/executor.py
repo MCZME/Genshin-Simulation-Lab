@@ -95,6 +95,7 @@ class SynchronousSimulationExecutor:
                     frame=event.frame,
                     event_type=event.event_type.name,
                     data=event.payload.to_dict(),
+                    ordinal=len(collected_events),
                 )
             )
 

@@ -126,6 +126,15 @@ class _FakeResultRepository:
             events = tuple(event for event in events if event.event_type == event_type)
         return len(events)
 
+    def get_event(self, session_id: str, ordinal: int) -> RecordedEvent | None:
+        run = self.details[session_id]
+        if ordinal < 0 or ordinal >= len(run.events):
+            return None
+        return run.events[ordinal]
+
+    def get_initial_snapshot(self, session_id: str) -> dict[str, object] | None:
+        return self.details[session_id].initial_snapshot
+
 
 class _FakeResultWriter:
     db_path = Path("results.db")

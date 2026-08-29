@@ -23,15 +23,19 @@ class RunState(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class RecordedEvent:
+    """一次已记录的仿真事件；``ordinal`` 是会话内全局事实顺序。"""
+
     frame: int
     event_type: str
     data: dict[str, Any] = field(default_factory=dict)
+    ordinal: int = -1
 
     def to_dict(self) -> dict[str, Any]:
         return {
             "frame": self.frame,
             "event_type": self.event_type,
             "data": dict(self.data),
+            "ordinal": self.ordinal,
         }
 
 

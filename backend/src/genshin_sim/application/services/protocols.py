@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from pathlib import Path
-from typing import Protocol
+from typing import Any, Protocol
 
 from genshin_sim.application.config import ProjectConfig
 from genshin_sim.application.execution.models import RecordedEvent
@@ -42,6 +42,10 @@ class ResultRepository(Protocol):
         offset: int | None = None,
         limit: int | None = None,
     ) -> tuple[RecordedEvent, ...]: ...
+
+    def get_event(self, session_id: str, ordinal: int) -> RecordedEvent | None: ...
+
+    def get_initial_snapshot(self, session_id: str) -> dict[str, Any] | None: ...
 
     def count_events(
         self,

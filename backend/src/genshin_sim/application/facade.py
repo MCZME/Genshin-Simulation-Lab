@@ -625,6 +625,14 @@ class DefaultApplicationFacade:
         except LookupError as exc:
             raise _result_not_found(session_id) from exc
 
+    def get_run_event(self, session_id: str, ordinal: int) -> RecordedEvent | None:
+        """按会话内事实顺序读取单条事件；事件不存在返回 None。"""
+
+        try:
+            return self._results_service.get_event(session_id, ordinal)
+        except LookupError as exc:
+            raise _result_not_found(session_id) from exc
+
     def execute_analysis_plan(self, plan: AnalysisPlan) -> Mapping[str, AnalysisTableResult]:
         try:
             return self._analysis_query_service().execute(plan)

@@ -1,7 +1,8 @@
 # UI API 契约
 
-> 状态：已确认（2026-08-17）；字段在实现时按 OpenAPI 定稿，本文固定端点、语义与响应形状。
-> 关联：[模块边界设计](../../架构/模块边界设计.md)、[前端工程规范](../../工程/前端工程规范.md)、[模拟输入契约](../模拟输入契约.md)、[工作流定义契约](./工作流定义契约.md)、[项目决策记录](../../决策/项目决策记录.md) 2.28。
+> 状态：正式规范。
+> 本文固定前端与后端之间的 HTTP 端点、语义与响应形状；字段细节在实现时按 OpenAPI 定稿。
+> 最后更新：2026-08-29。
 
 ## 1. 总则
 
@@ -56,6 +57,8 @@
 | GET | `/api/v1/results` | 历史运行列表 |
 | GET | `/api/v1/results/{session_id}` | 运行详情（不含事件流） |
 | GET | `/api/v1/results/{session_id}/events` | 事件分页（摘要面板不依赖） |
+| GET | `/api/v1/results/{session_id}/events/{ordinal}` | 单条事件详情 |
+| GET | `/api/v1/results/{session_id}/frames/{frame}` | 指定帧角色状态 |
 | POST | `/api/v1/analysis/query` | 执行分析查询计划，返回输出表集合 |
 | GET | `/api/v1/analysis/schema` | 取数节点可读 schema（表列、事件类型与载荷字段） |
 | GET | `/api/v1/assets/{asset_type}` | 按类型搜索/列表 |
@@ -81,7 +84,7 @@
 
 ## 4. 界面偏好设置
 
-设置持久化在项目配置（`config.toml` 的 `ui` 节），不落在浏览器存储；字段语义由前端定义，后端只做类型校验，详见[UI 结构与状态设计](../../架构/UI/UI结构与状态设计.md) 9.2。未初始化时与其它端点一致返回 `409`。
+设置持久化在项目配置（`config.toml` 的 `ui` 节），不落在浏览器存储；字段语义由前端定义，后端只做类型校验，详见[前端工程规范](../../工程/前端工程规范.md) 8.2。未初始化时与其它端点一致返回 `409`。
 
 响应同时携带 `workspace.data_dir` 供配置面板只读展示（用户自配项，不视为内部路径泄漏；`/workspace` 端点仍不返回它）。
 
@@ -348,15 +351,148 @@
 
 ```json
 {
-  "items": [{ "frame": 12, "event_type": "DAMAGE_DEALT", "data": {} }],
+  "items": [
+    {
+      "ordinal": 123,
+      "frame": 12,
+      "event_type": "DAMAGE_RESOLVED",
+      "data": {}
+    }
+  ],
   "offset": 0,
   "limit": 100,
   "total": 128
 }
 ```
 
-MVP 摘要面板不依赖本端点；时间轴与分析区域再接。
+- `ordinal` 是事件详情入口，必含。
+- MVP 摘要面板不依赖本端点；帧状态与伤害事件详情依赖本端点。
 
+### `GET /api/v1/results/{session_id}/events/{ordinal}`
+
+按会话内 `ordinal` 读取单条事件。对 `DAMAGE_RESOLVED` 返回规范化伤害视图：
+
+```json
+{
+  "session_id": "...",
+  "ordinal": 123,
+  "frame": 120,
+  "event_type": "DAMAGE_RESOLVED",
+  "data": {
+    "result": {},
+    "audit": {}
+  },
+  "damage": {
+    "summary": {
+      "request_id": "...",
+      "frame": 120,
+      "damage_type": "general",
+      "element": "pyro",
+      "source_ref": "...",
+      "target_ref": "...",
+      "base_damage": 1200.0,
+      "damage_bonus_multiplier": 1.5,
+      "crit_outcome": "crit",
+      "crit_rate": 0.8,
+      "crit_damage": 1.5,
+      "crit_multiplier": 2.5,
+      "reaction_multiplier": 1.0,
+      "defense_multiplier": 0.5,
+      "resistance_multiplier": 0.9,
+      "official_damage": 2025.0,
+      "final_multiplier": 1.0,
+      "final_damage": 2025.0
+    },
+    "audit": {}
+  }
+}
+```
+
+- 非 `DAMAGE_RESOLVED` 事件返回 `damage: null`。
+- `damage.summary` 与 `damage.audit` 从 `data` 规范化派生，不改变原始 `data` 存储。
+- `damage.audit` 完整形状见[结果库契约](../结果库契约.md)第 5.3 节，序列化来源见[伤害系统设计](../../架构/系统/伤害系统设计.md)第 9 节。
+- 事件不存在或 `ordinal` 越界返回 `404 not_found`。
+
+### `GET /api/v1/results/{session_id}/frames/{frame}`
+
+返回指定帧的帧末角色状态。语义为应用 `frame <= 目标帧` 的全部事件后的帧末状态：
+
+```json
+{
+  "session_id": "...",
+  "frame": 120,
+  "time_seconds": 2.0,
+  "team": {
+    "active_slot": 1,
+    "slots": [1, 2, 3, 4],
+    "characters": [
+      {
+        "slot": 1,
+        "character_key": "...",
+        "combat_entity_id": "character:slot_1"
+      }
+    ]
+  },
+  "characters": [
+    {
+      "slot": 1,
+      "character_key": "...",
+      "combat_entity_id": "character:slot_1",
+      "active": true,
+      "health": {
+        "current_hp": 12000.0,
+        "max_hp": 15000.0,
+        "hp_ratio": 0.8
+      },
+      "energy": {
+        "current_energy": 45.0,
+        "capacity": 60.0,
+        "burst_ready": false
+      },
+      "attributes": {
+        "stat.atk.total": {
+          "value": 1800.0,
+          "applied_terms": []
+        }
+      },
+      "buffs": [],
+      "shields": [],
+      "infusion": [],
+      "cooldowns": [],
+      "content_states": []
+    }
+  ],
+  "resonance": {
+    "active_keys": []
+  },
+  "moonsign": {
+    "level": "",
+    "moonsign_character_refs": []
+  },
+  "coverage": {
+    "team": "folded",
+    "characters.health": "folded",
+    "characters.energy": "folded",
+    "characters.attributes": "folded",
+    "characters.buffs": "folded",
+    "characters.shields": "folded",
+    "characters.infusion": "folded",
+    "characters.cooldowns": "folded",
+    "characters.content_states": "folded",
+    "aura": "baseline_only",
+    "aura_icd": "baseline_only",
+    "reaction": "baseline_only",
+    "space": "baseline_only"
+  }
+}
+```
+
+- `team.characters` 只放角色身份，不放生命和能量。
+- `characters[].health` 与 `characters[].energy` 是角色状态。
+- `characters[].attributes` 的每一项为公开属性 key -> `{ value, applied_terms }`。
+- `coverage` 是必填字段，逐组说明折叠状态；语义见[结果存储系统设计](../../架构/结果存储系统设计.md)第 8 节。
+- 会话不存在：`404 not_found`。
+- `frame` 为负或超出运行范围：`404 frame_out_of_range`。
 ## 9. 分析查询
 
 分析区域的查询计划执行端点；SQL 由后端拥有，前端只提交结构化查询计划（节点清单 + 参数 + 输入关系），不传 SQL 文本。节点种类、表达式语言、形状推导与校验规则见[分析系统契约](../分析系统契约.md)。
@@ -442,14 +578,14 @@ MVP 摘要面板不依赖本端点；时间轴与分析区域再接。
 | 204 | 删除工作流 |
 | 400 | 请求或 `SimulationInput` 校验失败、成员超限、`item_id` 重复 |
 | 401 | 网页服务模式令牌无效 |
-| 404 | 工作流 / 批次 / 结果 / 资产不存在 |
+| 404 | 工作流 / 批次 / 结果 / 资产 / 事件 / 帧不存在（帧越界为 `frame_out_of_range`） |
 | 409 | 工作区未初始化，或资源已存在 |
 | 500 | 未预期错误；`message` 不泄漏内部路径 |
 
 ## 12. 后置能力
 
-- 分析算子扩展：文本匹配条件、嵌套条件 AST、跨列比较，以及专门处理节点（时间轴持续段配对等非关系代数逻辑）。
-- 分析区域视图补齐：时间轴、饼图、柱状图渲染与表格视图的排序/高亮、条件列/数据列分区（节点注册与查询计划执行已落地第一版，见[节点类型与编辑器数据契约](./节点类型与编辑器数据契约.md)）。
+- 分析算子扩展：文本匹配条件、嵌套条件 AST、跨列比较，以及专门处理节点（区间配对、曲线等非关系代数逻辑）。
+- 分析区域视图补齐：饼图、柱状图、区间、曲线与单项详情节点渲染（节点注册与查询计划执行已落地第一版，见[节点与区域契约](./节点与区域契约.md)）。
 - 结果详情中的输入快照与初始快照（含成员/变体标签；前端成员标签链路已随决策 2.29 移除，落地后此处是历史结果变体身份的唯一出口，见[项目决策记录](../../决策/项目决策记录.md) 2.29）。
 - 资产图像。
 - 文件上传/下载（输入 JSON、结果导出）。

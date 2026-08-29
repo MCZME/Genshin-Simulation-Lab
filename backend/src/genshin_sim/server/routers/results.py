@@ -15,8 +15,11 @@ from genshin_sim.application import (
 )
 from genshin_sim.server.dependencies import require_initialized
 from genshin_sim.server.dto.results import (
+    DamageEventView,
+    EventDetailResponse,
     EventItem,
     EventPageResponse,
+    FrameStateResponse,
     RunDetailResponse,
     RunListResponse,
     RunSummary,
@@ -107,6 +110,50 @@ def get_run_events(
     )
 
 
+@router.get("/{session_id}/events/{ordinal}", response_model=EventDetailResponse)
+def get_run_event_detail(
+    session_id: str,
+    ordinal: int,
+    request: Request,
+) -> EventDetailResponse:
+    facade = cast(ApplicationFacade, request.app.state.application)
+    event = facade.get_run_event(session_id, ordinal)
+    if event is None:
+        raise ApplicationError(
+            "not_found",
+            f"事件 {session_id}/{ordinal} 不存在",
+        )
+    return EventDetailResponse(
+        session_id=session_id,
+        ordinal=event.ordinal,
+        frame=event.frame,
+        event_type=event.event_type,
+        data=event.data,
+        damage=_damage_view(event),
+    )
+
+
+@router.get("/{session_id}/frames/{frame}", response_model=FrameStateResponse)
+def get_frame_state(
+    session_id: str,
+    frame: int,
+    request: Request,
+) -> FrameStateResponse:
+    facade = cast(ApplicationFacade, request.app.state.application)
+    return FrameStateResponse.model_validate(facade.get_frame_state(session_id, frame))
+
+
+def _damage_view(event: RecordedEvent) -> DamageEventView | None:
+    """从 DAMAGE_RESOLVED 存储数据规范化伤害视图；其余事件返回 None。"""
+
+    if event.event_type != "DAMAGE_RESOLVED":
+        return None
+    result = event.data.get("result")
+    if not isinstance(result, dict):
+        return None
+    return DamageEventView(summary=result, audit=event.data.get("audit"))
+
+
 def _list_item_to_dto(item: RunListItem) -> RunListItemDto:
     return RunListItemDto(
         session_id=item.session_id,
@@ -158,6 +205,7 @@ def _run_name(detail: RunDetail) -> str:
 
 def _event_to_dto(event: RecordedEvent) -> EventItem:
     return EventItem(
+        ordinal=event.ordinal,
         frame=event.frame,
         event_type=event.event_type,
         data=event.data,

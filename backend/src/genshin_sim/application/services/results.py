@@ -3,12 +3,18 @@ from __future__ import annotations
 import logging
 from collections.abc import Callable
 from pathlib import Path
+from typing import Any
 
 from genshin_sim.application.execution.models import RecordedEvent
 from genshin_sim.application.models import RunDetail, RunListItem
+from genshin_sim.application.services.frame_state import fold_frame_state
 from genshin_sim.application.services.protocols import ResultRepository
 
 logger = logging.getLogger(__name__)
+
+
+class FrameOutOfRangeError(ValueError):
+    """请求帧超出会话运行范围或会话没有可投影的状态。"""
 
 
 class ResultsService:
@@ -101,6 +107,31 @@ class ResultsService:
             extra={"session_id": session_id, "ordinal": ordinal},
         )
         return self.repository.get_event(session_id, ordinal)
+
+    def get_frame_state(self, session_id: str, frame: int) -> dict[str, Any]:
+        """读取指定帧的帧末角色状态（初始快照基线 + 事件折叠）。"""
+
+        logger.debug(
+            "查询帧状态投影",
+            extra={"session_id": session_id, "frame": frame},
+        )
+        detail = self.repository.get_run(session_id, include_events=False)
+        summary = detail.summary
+        end_frame = None if summary is None else summary.end_frame
+        if end_frame is None or frame < 0 or frame > end_frame:
+            raise FrameOutOfRangeError(
+                f"frame {frame} 超出会话 {session_id} 的运行范围 [0, {end_frame}]"
+            )
+        initial_snapshot = self.repository.get_initial_snapshot(session_id)
+        if initial_snapshot is None:
+            raise FrameOutOfRangeError(f"会话 {session_id} 没有可用的初始快照")
+        events = self.repository.get_events(session_id, frame_max=frame)
+        return fold_frame_state(
+            session_id=session_id,
+            frame=frame,
+            initial_snapshot=initial_snapshot,
+            events=events,
+        )
 
     def count_events(
         self,

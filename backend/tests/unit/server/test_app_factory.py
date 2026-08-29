@@ -40,6 +40,8 @@ def test_openapi_exposes_all_mvp_endpoints(application_facade) -> None:
         "/api/v1/results": {"get"},
         "/api/v1/results/{session_id}": {"get"},
         "/api/v1/results/{session_id}/events": {"get"},
+        "/api/v1/results/{session_id}/events/{ordinal}": {"get"},
+        "/api/v1/results/{session_id}/frames/{frame}": {"get"},
         "/api/v1/assets/{asset_type}": {"get"},
         "/api/v1/assets/{asset_type}/{source_id}": {"get"},
         "/api/v1/assets/resolve": {"post"},

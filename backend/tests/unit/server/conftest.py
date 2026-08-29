@@ -27,6 +27,7 @@ from genshin_sim.application import (
     WorkflowSummary,
     WorkspaceInfo,
 )
+from genshin_sim.application.services.frame_state import fold_frame_state
 
 ApplicationFacadeFactory = Callable[..., ApplicationFacade]
 
@@ -255,6 +256,30 @@ class FakeApplicationFacade:
     ) -> int:
         return len(
             _filter_events(self.get_run(session_id).events, frame_min, frame_max, event_type)
+        )
+
+    def get_run_event(self, session_id: str, ordinal: int) -> RecordedEvent | None:
+        events = self.get_run(session_id).events
+        if ordinal < 0 or ordinal >= len(events):
+            return None
+        return events[ordinal]
+
+    def get_frame_state(self, session_id: str, frame: int) -> dict[str, Any]:
+        try:
+            run = self._results[session_id]
+        except KeyError as exc:
+            raise ApplicationError("not_found", f"运行结果不存在：{session_id}") from exc
+        end_frame = None if run.summary is None else run.summary.end_frame
+        if end_frame is None or frame < 0 or frame > end_frame:
+            raise ApplicationError(
+                "frame_out_of_range",
+                f"frame {frame} 超出会话 {session_id} 的运行范围",
+            )
+        return fold_frame_state(
+            session_id=session_id,
+            frame=frame,
+            initial_snapshot=run.initial_snapshot or {},
+            events=tuple(event for event in run.events if event.frame <= frame),
         )
 
     def execute_analysis_plan(self, plan: AnalysisPlan) -> dict[str, AnalysisTableResult]:

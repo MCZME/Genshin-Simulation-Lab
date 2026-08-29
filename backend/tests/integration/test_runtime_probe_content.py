@@ -171,3 +171,92 @@ def _extract_session_id(output: str) -> str:
         if line.startswith("session_id: "):
             return line.removeprefix("session_id: ").strip()
     raise AssertionError(f"session id not found in output: {output}")
+
+
+def test_frame_state_and_event_detail_from_persisted_results(
+    tmp_path: Path,
+    capsys,
+    monkeypatch,
+):
+    """端到端：仿真写入结果库后，帧状态投影与单事件详情可直接读取。"""
+
+    import pytest
+
+    from genshin_sim.application.services.results import (
+        FrameOutOfRangeError,
+        ResultsService,
+    )
+    from genshin_sim.infrastructure.results_sqlite.repository import ResultNotFoundError
+
+    asset_db = tmp_path / "assets.db"
+    result_db = tmp_path / "results.db"
+    input_path = tmp_path / "config.json"
+    (tmp_path / "config.toml").write_text(
+        'schema_version = 1\n\n[workspace]\ndata_dir = "data"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+    write_minimal_static_asset_database(asset_db)
+    input_path.write_text(
+        json.dumps(
+            static_asset_input_payload(meta_name="frame state integration"),
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    exit_code = main(
+        [
+            "run",
+            str(input_path),
+            "--db",
+            str(asset_db),
+            "--results-db",
+            str(result_db),
+        ]
+    )
+    assert exit_code == 0
+    session_id = _extract_session_id(capsys.readouterr().out)
+
+    service = ResultsService(SQLiteResultRepository(result_db))
+    frame_state = service.get_frame_state(session_id, 3)
+
+    assert frame_state["session_id"] == session_id
+    assert frame_state["frame"] == 3
+    assert frame_state["coverage"]["team"] == "folded"
+    assert frame_state["coverage"]["aura"] == "baseline_only"
+    assert frame_state["team"]["active_slot"] == 1
+    assert len(frame_state["characters"]) == 1
+    character = frame_state["characters"][0]
+    assert character["character_key"] == "character:test_character"
+    assert character["health"]["max_hp"] is not None
+    assert character["health"]["current_hp"] > 0
+
+    events = service.get_events(session_id, event_type="DAMAGE_RESOLVED")
+    assert len(events) == 1
+    damage_ordinal = events[0].ordinal
+    event = service.get_event(session_id, damage_ordinal)
+    assert event is not None
+    assert event.ordinal == damage_ordinal
+    assert set(event.data) == {"result", "audit"}
+    audit = event.data["audit"]
+    assert set(audit) >= {
+        "component_results",
+        "damage_bonus",
+        "critical",
+        "defense",
+        "resistance",
+        "reaction",
+        "applied_terms",
+        "rejected_terms",
+        "source_attribute_trace",
+        "target_attribute_trace",
+        "trace_metadata",
+    }
+    assert audit["critical"]["outcome"] == event.data["result"]["crit_outcome"]
+
+    assert service.get_event(session_id, 9999) is None
+    with pytest.raises(FrameOutOfRangeError):
+        service.get_frame_state(session_id, 4)
+    with pytest.raises(ResultNotFoundError):
+        service.get_frame_state("missing-session", 0)

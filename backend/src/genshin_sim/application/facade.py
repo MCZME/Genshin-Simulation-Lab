@@ -57,7 +57,11 @@ from genshin_sim.application.services.project_initialization import (
     ProjectInitializationResult,
     ProjectInitializationService,
 )
-from genshin_sim.application.services.results import ResultDatabaseService, ResultsService
+from genshin_sim.application.services.results import (
+    FrameOutOfRangeError,
+    ResultDatabaseService,
+    ResultsService,
+)
 from genshin_sim.application.services.workflows import (
     DEFAULT_WORKFLOW_NAME,
     WorkflowDetail,
@@ -238,6 +242,10 @@ class ApplicationFacade(Protocol):
         offset: int | None = None,
         limit: int | None = None,
     ) -> tuple[RecordedEvent, ...]: ...
+
+    def get_run_event(self, session_id: str, ordinal: int) -> RecordedEvent | None: ...
+
+    def get_frame_state(self, session_id: str, frame: int) -> dict[str, Any]: ...
 
     def execute_analysis_plan(self, plan: AnalysisPlan) -> Mapping[str, AnalysisTableResult]: ...
 
@@ -630,6 +638,16 @@ class DefaultApplicationFacade:
 
         try:
             return self._results_service.get_event(session_id, ordinal)
+        except LookupError as exc:
+            raise _result_not_found(session_id) from exc
+
+    def get_frame_state(self, session_id: str, frame: int) -> dict[str, Any]:
+        """读取指定帧的帧末角色状态。"""
+
+        try:
+            return self._results_service.get_frame_state(session_id, frame)
+        except FrameOutOfRangeError as exc:
+            raise ApplicationError("frame_out_of_range", str(exc)) from exc
         except LookupError as exc:
             raise _result_not_found(session_id) from exc
 

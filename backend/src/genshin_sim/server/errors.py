@@ -13,7 +13,7 @@ from genshin_sim.application import ApplicationError
 
 logger = logging.getLogger(__name__)
 
-_NOT_FOUND_CODES = {"not_found"}
+_NOT_FOUND_CODES = {"not_found", "frame_out_of_range"}
 _CONFLICT_CODES = {"workspace_not_initialized", "already_exists"}
 _VALIDATION_CODES = {
     "validation_failed",

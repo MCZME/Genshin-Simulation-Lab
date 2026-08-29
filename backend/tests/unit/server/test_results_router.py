@@ -215,3 +215,165 @@ def test_results_list_ids_rejects_more_than_200(application_facade) -> None:
 
     assert response.status_code == 400
     assert response.json()["code"] == "validation_failed"
+
+
+def test_results_event_detail_normalizes_damage_view(application_facade) -> None:
+    run = _run(
+        "session-1",
+        events=(
+            RecordedEvent(
+                ordinal=0,
+                frame=1,
+                event_type="SIMULATION_STARTED",
+                data={"ok": True},
+            ),
+            RecordedEvent(
+                ordinal=1,
+                frame=120,
+                event_type="DAMAGE_RESOLVED",
+                data={
+                    "result": {
+                        "request_id": "damage:1",
+                        "final_damage": 2025.0,
+                    },
+                    "audit": {
+                        "component_results": [],
+                        "critical": {"outcome": "critical", "multiplier": 2.5},
+                    },
+                },
+            ),
+        ),
+    )
+    app = create_app(application_facade(results=(run,)))
+
+    with TestClient(app) as client:
+        listed = client.get("/api/v1/results/session-1/events")
+        damage_detail = client.get("/api/v1/results/session-1/events/1")
+        plain_detail = client.get("/api/v1/results/session-1/events/0")
+        missing = client.get("/api/v1/results/session-1/events/9")
+
+    assert listed.status_code == 200
+    assert [item["ordinal"] for item in listed.json()["items"]] == [0, 1]
+
+    assert damage_detail.status_code == 200
+    body = damage_detail.json()
+    assert body["ordinal"] == 1
+    assert body["frame"] == 120
+    assert body["damage"]["summary"]["request_id"] == "damage:1"
+    assert body["damage"]["audit"]["critical"]["outcome"] == "critical"
+
+    assert plain_detail.status_code == 200
+    assert plain_detail.json()["damage"] is None
+
+    assert missing.status_code == 404
+    assert missing.json()["code"] == "not_found"
+
+
+def test_results_event_detail_missing_session_returns_not_found(application_facade) -> None:
+    app = create_app(application_facade())
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/results/missing-session/events/0")
+
+    assert response.status_code == 404
+    assert response.json()["code"] == "not_found"
+
+
+def test_results_frame_state_returns_projection(application_facade) -> None:
+    run = _run("session-1")
+    run_details = RunDetail(
+        session_id="session-2",
+        state="completed",
+        input_snapshot={"meta": {"name": "帧状态"}},
+        initial_snapshot=_frame_snapshot(),
+        summary=SimulationRunSummary(
+            stop_reason="INPUT_EXHAUSTED",
+            end_frame=600,
+            frames_run=600,
+        ),
+        events=(
+            RecordedEvent(
+                ordinal=0,
+                frame=30,
+                event_type="CHARACTER_HEALTH_CHANGED",
+                data={
+                    "result": {
+                        "target_ref": {
+                            "kind": "character",
+                            "entity_id": "character:slot_1",
+                        },
+                        "hp_before": 12000.0,
+                        "hp_after": 7500.0,
+                        "max_hp": 15000.0,
+                    }
+                },
+            ),
+        ),
+        error_code=None,
+        error_message=None,
+        created_at="2026-08-17T12:00:00+00:00",
+        started_at=None,
+        finished_at=None,
+    )
+    app = create_app(application_facade(results=(run, run_details)))
+
+    with TestClient(app) as client:
+        response = client.get("/api/v1/results/session-2/frames/30")
+        out_of_range = client.get("/api/v1/results/session-2/frames/601")
+        negative = client.get("/api/v1/results/session-2/frames/-1")
+        missing_session = client.get("/api/v1/results/missing-session/frames/1")
+
+    assert response.status_code == 200
+    body = response.json()
+    assert body["session_id"] == "session-2"
+    assert body["frame"] == 30
+    assert body["time_seconds"] == 0.5
+    assert body["team"]["active_slot"] == 1
+    assert body["coverage"]["team"] == "folded"
+    assert body["coverage"]["aura"] == "baseline_only"
+    character = body["characters"][0]
+    assert character["health"] == {
+        "current_hp": 7500.0,
+        "max_hp": 15000.0,
+        "hp_ratio": 0.5,
+    }
+    assert character["active"] is True
+
+    assert out_of_range.status_code == 404
+    assert out_of_range.json()["code"] == "frame_out_of_range"
+    assert negative.status_code == 404
+    assert negative.json()["code"] == "frame_out_of_range"
+    assert missing_session.status_code == 404
+    assert missing_session.json()["code"] == "not_found"
+
+
+def _frame_snapshot() -> dict[str, object]:
+    return {
+        "frame": 0,
+        "providers": {
+            "team": {
+                "frame": 0,
+                "active_slot": 1,
+                "characters": [
+                    {
+                        "slot": 1,
+                        "character_key": "character:test_a",
+                        "combat_entity_id": "character:slot_1",
+                        "current_hp": 12000.0,
+                        "current_energy": 0.0,
+                    }
+                ],
+            },
+            "attributes": {
+                "frame": 0,
+                "subjects": {
+                    "character:slot_1": {
+                        "stat.hp.max": {"value": 15000.0, "applied_terms": []},
+                    }
+                },
+            },
+            "resonance": {"active_keys": ()},
+            "moonsign": {"level": "", "moonsign_character_refs": ()},
+            "buff": {"frame": 0, "instances": []},
+        },
+    }

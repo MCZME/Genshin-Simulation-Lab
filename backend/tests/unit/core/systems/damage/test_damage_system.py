@@ -1,6 +1,8 @@
 # 单一关注点：伤害系统公式、策略与注册表。
 from __future__ import annotations
 
+from typing import Any, cast
+
 import pytest
 
 from genshin_sim.core.attributes import (
@@ -32,6 +34,8 @@ from genshin_sim.core.simulation import SimulationContext, TeamRuntimeState
 from genshin_sim.core.space.runtime import SpaceRuntime
 from genshin_sim.core.systems.damage import (
     AmplifyingReactionInput,
+    BaseDamageAddition,
+    CatalyzeReactionResolution,
     CritOutcome,
     DamageFormulaContext,
     DamageFormulaRegistry,
@@ -51,10 +55,12 @@ from genshin_sim.core.systems.damage import (
     DamageRequest,
     DamageRequestHandler,
     DamageResolver,
+    DamageResult,
     DamageScalingTerm,
     DamageType,
     DamageValidationError,
     DebugDamageAdjustment,
+    DefenseResolution,
     DuplicateDamageFormulaError,
     FixedCriticalDecisionProvider,
     GeneralDamageFormula,
@@ -63,6 +69,7 @@ from genshin_sim.core.systems.damage import (
     LunarReactionDamageInput,
     LunarReactionDamageMode,
     LunarReactionParticipantInput,
+    ResistanceResolution,
     SecondaryAmplifyingReactionInput,
     StandardCriticalZonePolicy,
     StandardDefensePolicy,
@@ -783,3 +790,202 @@ def test_lunar_composite_sorts_complete_components_before_weighting():
     assert [item.weight for item in resolution.components] == [0.6, 0.3, 0.05]
     assert result.final_damage == pytest.approx(86.0)
     assert result.to_dict()["lunar_reaction"] == resolution.to_dict()
+
+
+def test_general_result_audit_dict_exposes_zone_resolutions_and_traces():
+    result = DamageResolver(_attribute_resolver()).resolve(_query(can_crit=True))
+
+    audit = cast(dict[str, Any], result.to_audit_dict())
+    assert set(audit) == {
+        "component_results",
+        "base_damage_additions",
+        "damage_bonus",
+        "critical",
+        "defense",
+        "resistance",
+        "reaction",
+        "applied_terms",
+        "rejected_terms",
+        "source_attribute_trace",
+        "target_attribute_trace",
+        "trace_metadata",
+    }
+    assert audit["damage_bonus"] == {
+        "element_bonus": 0.2,
+        "modifier_bonus": 0.0,
+        "multiplier": 1.2,
+    }
+    critical = audit["critical"]
+    assert critical["can_crit"] is True
+    assert critical["outcome"] == result.crit_outcome.value
+    assert critical["multiplier"] == result.crit_multiplier
+    assert critical["crit_damage"] == result.crit_damage
+    assert critical["effective_crit_rate"] == result.trace_metadata["effective_crit_rate"]
+    assert audit["defense"] == result.defense.to_dict()
+    assert audit["resistance"] == result.resistance.to_dict()
+    assert audit["reaction"] is None
+    assert audit["component_results"] == tuple(item.to_dict() for item in result.component_results)
+    assert audit["trace_metadata"] == {"effective_crit_rate": critical["effective_crit_rate"]}
+    assert audit["source_attribute_trace"]
+    trace_entry = audit["source_attribute_trace"][0]
+    assert set(trace_entry) == {
+        "attribute_key",
+        "subject_ref",
+        "final_value",
+        "base_value",
+        "applied_terms",
+        "rejected_terms",
+        "dependency_resolutions",
+        "policy_key",
+        "trace_metadata",
+    }
+    assert trace_entry["dependency_resolutions"] == tuple(
+        item.to_dict() for item in result.source_attribute_trace[0].dependency_resolutions
+    )
+
+
+def test_general_result_audit_reaction_reports_amplifying_details():
+    reaction = AmplifyingReactionInput(
+        "occurrence:1",
+        "reaction_profile:test",
+        Element.PYRO,
+        1.5,
+    )
+    result = DamageResolver(_attribute_resolver()).resolve(_query(amplifying_reaction=reaction))
+
+    audit = cast(dict[str, Any], result.to_audit_dict())
+    assert audit["reaction"]["kind"] == "amplifying"
+    assert audit["reaction"]["occurrence_ref"] == "occurrence:1"
+    assert audit["reaction"]["multiplier"] == result.reaction_multiplier
+
+
+def test_transformative_result_audit_includes_secondary_amplifying():
+    secondary = SecondaryAmplifyingReactionInput(
+        target_impact_ref="impact:swirl:target:1",
+        occurrence_ref="occurrence:vaporize",
+        reaction_profile_key="reaction_profile.vaporize.incoming_pyro_on_hydro",
+        trigger_element=Element.PYRO,
+        base_multiplier=1.5,
+        captured_elemental_mastery=180.0,
+        reaction_bonus=0.0,
+    )
+    result = DamageResolver(_attribute_resolver(hydro_resistance=0.0)).resolve(
+        _transformative_query(secondary)
+    )
+
+    audit = cast(dict[str, Any], result.to_audit_dict())
+    reaction = audit["reaction"]
+    assert reaction["kind"] == "transformative"
+    expected_mastery_bonus = 2.78 * 180 / (180 + 1400)
+    assert reaction["secondary_amplifying"]["multiplier"] == pytest.approx(
+        1.5 * (1 + expected_mastery_bonus)
+    )
+    assert audit["critical"] == {
+        "can_crit": False,
+        "crit_rate": 0.0,
+        "effective_crit_rate": 0.0,
+        "crit_damage": 0.0,
+        "outcome": "not_applicable",
+        "multiplier": 1.0,
+    }
+    assert audit["damage_bonus"] == {
+        "element_bonus": 0.0,
+        "modifier_bonus": 0.0,
+        "multiplier": 1.0,
+    }
+
+
+def test_catalyze_result_audit_reaction_uses_catalyze_detail():
+    resolution = CatalyzeReactionResolution(
+        target_impact_ref="impact:1",
+        occurrence_ref="occurrence:quicken",
+        reaction_profile_key="reaction_profile.quicken.spread",
+        trigger_element=Element.DENDRO,
+        source_level=90,
+        level_multiplier_table_key="character.level_multiplier.test",
+        level_multiplier=100.0,
+        elemental_mastery=0.0,
+        mastery_bonus=0.0,
+        reaction_multiplier=1.0,
+        reaction_bonus=0.0,
+        base_damage_addition=BaseDamageAddition(
+            "catalyze.test",
+            100.0,
+            CONFIG_SOURCE,
+        ),
+    )
+    result = DamageResult(
+        request_id="damage:test:1",
+        frame=10,
+        damage_type=DamageType.CATALYZE_REACTION,
+        source_ref=SOURCE,
+        target_ref=TARGET,
+        element=Element.DENDRO,
+        base_damage=100.0,
+        base_damage_additions=(),
+        damage_bonus_multiplier=1.0,
+        crit_outcome=CritOutcome.NOT_APPLICABLE,
+        crit_rate=0.0,
+        crit_damage=0.0,
+        crit_multiplier=1.0,
+        reaction_multiplier=1.0,
+        defense=DefenseResolution(90, 90, 0.0, 0.0, 0.5),
+        resistance=ResistanceResolution(0.1, 0.9),
+        official_damage=45.0,
+        debug_multiplier=1.0,
+        final_damage=45.0,
+        catalyze_reaction_resolution=resolution,
+    )
+
+    audit = cast(dict[str, Any], result.to_audit_dict())
+    assert audit["reaction"]["kind"] == "catalyze"
+    assert audit["reaction"]["base_damage_addition"] == 100.0
+    assert audit["critical"]["can_crit"] is False
+
+
+def test_lunar_result_audit_reaction_uses_lunar_resolution():
+    lunar = LunarReactionDamageInput(
+        reaction_profile_key="reaction_profile.lunar.direct",
+        mode=LunarReactionDamageMode.CHARACTER_DIRECT,
+        participants=(
+            LunarReactionParticipantInput(
+                participant_ref=SOURCE,
+                source_level=90,
+                scaling_terms=(DamageScalingTerm("hp", STAT_HP_MAX, 1.0),),
+                can_crit=True,
+                ascension_multiplier=1.1,
+            ),
+        ),
+        reaction_multiplier=2.0,
+    )
+    result = DamageResolver(
+        _attribute_resolver(hp=1000.0, hydro_resistance=0.0),
+        formula_registry=DamageFormulaRegistry(
+            (
+                LunarReactionDamageFormula(
+                    level_base_damage={90: 100.0},
+                    mastery_numerator=0.0,
+                    mastery_denominator=1.0,
+                ),
+            )
+        ),
+    ).resolve(
+        _query(
+            damage_type=DamageType.LUNAR_REACTION,
+            scaling_terms=(),
+            lunar_reaction=lunar,
+        )
+    )
+
+    audit = cast(dict[str, Any], result.to_audit_dict())
+    assert audit["reaction"]["kind"] == "lunar"
+    assert audit["reaction"]["components"][0]["participant_ref"] == SOURCE.entity_id
+    assert audit["damage_bonus"] == {
+        "element_bonus": 0.0,
+        "modifier_bonus": 0.0,
+        "multiplier": 1.0,
+    }
+    assert audit["critical"]["can_crit"] is False
+    assert audit["source_attribute_trace"] == tuple(
+        item.to_dict() for item in result.source_attribute_trace
+    )

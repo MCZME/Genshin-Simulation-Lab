@@ -587,6 +587,19 @@ class DamageModifierTerm:
             _validate_non_empty_text(tag, "audit_tag")
         object.__setattr__(self, "audit_tags", tuple(self.audit_tags))
 
+    def to_dict(self) -> dict[str, object]:
+        """返回伤害修饰项的稳定审计序列化。"""
+
+        return {
+            "stage": self.stage.value,
+            "value": self.value,
+            "provider_key": self.provider_key,
+            "source_ref": self.source_ref.to_dict(),
+            "component_key": self.component_key,
+            "stacking_group": self.stacking_group,
+            "audit_tags": tuple(self.audit_tags),
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class DamageComponentResult:
@@ -615,6 +628,18 @@ class DamageComponentResult:
                 validate_damage_float(getattr(self, field_name), field_name),
             )
 
+    def to_dict(self) -> dict[str, object]:
+        """返回倍率组件的审计序列化。"""
+
+        return {
+            "component_key": self.component_key,
+            "attribute_key": self.attribute_key.value,
+            "attribute_value": self.attribute_value,
+            "original_coefficient": self.original_coefficient,
+            "final_coefficient": self.final_coefficient,
+            "damage": self.damage,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class BaseDamageAddition:
@@ -635,6 +660,16 @@ class BaseDamageAddition:
         for tag in self.audit_tags:
             _validate_non_empty_text(tag, "audit_tag")
         object.__setattr__(self, "audit_tags", tuple(self.audit_tags))
+
+    def to_dict(self) -> dict[str, object]:
+        """返回固定基础伤害加值的审计序列化。"""
+
+        return {
+            "addition_key": self.addition_key,
+            "value": self.value,
+            "source_ref": self.source_ref.to_dict(),
+            "audit_tags": tuple(self.audit_tags),
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -671,6 +706,15 @@ class DamageBonusZoneResolution:
                 validate_damage_float(getattr(self, field_name), field_name),
             )
 
+    def to_dict(self) -> dict[str, object]:
+        """返回增伤区的审计序列化。"""
+
+        return {
+            "element_bonus": self.element_bonus,
+            "modifier_bonus": self.modifier_bonus,
+            "multiplier": self.multiplier,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class CriticalZoneResolution:
@@ -696,6 +740,18 @@ class CriticalZoneResolution:
                 field_name,
                 validate_damage_float(getattr(self, field_name), field_name),
             )
+
+    def to_dict(self) -> dict[str, object]:
+        """返回暴击区的审计序列化。"""
+
+        return {
+            "can_crit": self.can_crit,
+            "crit_rate": self.crit_rate,
+            "effective_crit_rate": self.effective_crit_rate,
+            "crit_damage": self.crit_damage,
+            "outcome": self.outcome.value,
+            "multiplier": self.multiplier,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -760,6 +816,17 @@ class DefenseResolution:
                 validate_damage_float(getattr(self, field_name), field_name),
             )
 
+    def to_dict(self) -> dict[str, object]:
+        """返回防御区的审计序列化。"""
+
+        return {
+            "source_level": self.source_level,
+            "target_level": self.target_level,
+            "defense_reduction": self.defense_reduction,
+            "defense_ignore": self.defense_ignore,
+            "multiplier": self.multiplier,
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class ResistanceResolution:
@@ -773,6 +840,14 @@ class ResistanceResolution:
 
         object.__setattr__(self, "resistance", validate_damage_float(self.resistance, "resistance"))
         object.__setattr__(self, "multiplier", validate_damage_float(self.multiplier, "multiplier"))
+
+    def to_dict(self) -> dict[str, object]:
+        """返回抗性区的审计序列化。"""
+
+        return {
+            "resistance": self.resistance,
+            "multiplier": self.multiplier,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -1188,6 +1263,8 @@ class DamageResult:
     rejected_terms: tuple[DamageModifierTerm, ...] = ()
     trace_level: TraceLevel = TraceLevel.FULL
     trace_metadata: Mapping[str, object] = field(default_factory=dict)
+    damage_bonus_zone: DamageBonusZoneResolution | None = None
+    critical_zone: CriticalZoneResolution | None = None
 
     def __post_init__(self) -> None:
         """规范化结果集合，保证最终伤害是有限非负值。"""
@@ -1236,6 +1313,16 @@ class DamageResult:
             LunarReactionDamageResolution,
         ):
             raise DamageValidationError("lunar_reaction_resolution 不受支持")
+        if self.damage_bonus_zone is not None and not isinstance(
+            self.damage_bonus_zone,
+            DamageBonusZoneResolution,
+        ):
+            raise DamageValidationError("damage_bonus_zone 不受支持")
+        if self.critical_zone is not None and not isinstance(
+            self.critical_zone,
+            CriticalZoneResolution,
+        ):
+            raise DamageValidationError("critical_zone 不受支持")
         if (
             self.lunar_reaction_resolution is not None
             and self.damage_type is not DamageType.LUNAR_REACTION
@@ -1285,6 +1372,85 @@ class DamageResult:
             "debug_multiplier": self.debug_multiplier,
             "final_damage": self.final_damage,
         }
+
+    def to_audit_dict(self) -> dict[str, object]:
+        """返回完整伤害公式审计；字段只增不改，供 DAMAGE_RESOLVED 的 audit 载荷使用。"""
+
+        return {
+            "component_results": tuple(item.to_dict() for item in self.component_results),
+            "base_damage_additions": tuple(item.to_dict() for item in self.base_damage_additions),
+            "damage_bonus": _damage_bonus_audit_to_dict(self),
+            "critical": _critical_audit_to_dict(self),
+            "defense": self.defense.to_dict(),
+            "resistance": self.resistance.to_dict(),
+            "reaction": _audit_reaction_to_dict(self),
+            "applied_terms": tuple(item.to_dict() for item in self.applied_terms),
+            "rejected_terms": tuple(item.to_dict() for item in self.rejected_terms),
+            "source_attribute_trace": tuple(item.to_dict() for item in self.source_attribute_trace),
+            "target_attribute_trace": tuple(item.to_dict() for item in self.target_attribute_trace),
+            "trace_metadata": dict(self.trace_metadata),
+        }
+
+
+def _damage_bonus_audit_to_dict(result: DamageResult) -> dict[str, object]:
+    zone = result.damage_bonus_zone
+    if zone is not None:
+        return zone.to_dict()
+    return {
+        "element_bonus": 0.0,
+        "modifier_bonus": 0.0,
+        "multiplier": result.damage_bonus_multiplier,
+    }
+
+
+def _critical_audit_to_dict(result: DamageResult) -> dict[str, object]:
+    zone = result.critical_zone
+    if zone is not None:
+        return zone.to_dict()
+    effective_crit_rate = result.trace_metadata.get("effective_crit_rate", 0.0)
+    if isinstance(effective_crit_rate, bool) or not isinstance(effective_crit_rate, int | float):
+        effective_crit_rate = 0.0
+    return {
+        "can_crit": result.crit_outcome is not CritOutcome.NOT_APPLICABLE,
+        "crit_rate": result.crit_rate,
+        "effective_crit_rate": float(effective_crit_rate),
+        "crit_damage": result.crit_damage,
+        "outcome": result.crit_outcome.value,
+        "multiplier": result.crit_multiplier,
+    }
+
+
+def _audit_reaction_to_dict(result: DamageResult) -> dict[str, object] | None:
+    if (
+        result.damage_type is DamageType.LUNAR_REACTION
+        and result.lunar_reaction_resolution is not None
+    ):
+        lunar_payload = _lunar_reaction_to_dict(result.lunar_reaction_resolution)
+        if lunar_payload is not None:
+            return {"kind": "lunar", **lunar_payload}
+        return None
+    if result.catalyze_reaction_resolution is not None:
+        catalyze_payload = _catalyze_reaction_to_dict(result.catalyze_reaction_resolution)
+        if catalyze_payload is not None:
+            return {"kind": "catalyze", **catalyze_payload}
+        return None
+    if isinstance(result.reaction_details, TransformativeReactionInput):
+        payload = _reaction_details_to_dict(result.reaction_details)
+        if payload is not None and result.secondary_amplifying_resolution is not None:
+            payload["secondary_amplifying"] = _secondary_amplifying_to_dict(
+                result.secondary_amplifying_resolution
+            )
+        return payload
+    if isinstance(result.reaction_details, GeneralReactionZoneResolution):
+        if result.reaction_details.occurrence_ref is None:
+            return None
+        payload = _reaction_details_to_dict(result.reaction_details)
+        if payload is not None and result.secondary_amplifying_resolution is not None:
+            payload["secondary_amplifying"] = _secondary_amplifying_to_dict(
+                result.secondary_amplifying_resolution
+            )
+        return payload
+    return None
 
 
 def _reaction_details_to_dict(

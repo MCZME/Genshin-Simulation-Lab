@@ -306,6 +306,8 @@ def _build_damage_result(
             rejected_terms=rejected_terms,
             trace_level=trace_level,
             trace_metadata={"effective_crit_rate": resolution.critical.effective_crit_rate},
+            damage_bonus_zone=resolution.damage_bonus,
+            critical_zone=resolution.critical,
         )
 
     applied_terms = () if trace_level is TraceLevel.NONE else modifiers.applied_terms
@@ -340,4 +342,6 @@ def _build_damage_result(
         rejected_terms=rejected_terms,
         trace_level=trace_level,
         trace_metadata={"effective_crit_rate": resolution.critical.effective_crit_rate},
+        damage_bonus_zone=resolution.damage_bonus,
+        critical_zone=resolution.critical,
     )

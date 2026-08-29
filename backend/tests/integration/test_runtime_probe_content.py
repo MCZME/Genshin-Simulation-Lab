@@ -103,6 +103,27 @@ def test_cli_and_assembler_runtime_probe_closed_loop(
     assert detail.events[6].data["held_frames"] == 1
     assert detail.events[7].data["action_key"] == "character.testing.runtime_probe.action"
     assert detail.events[10].data["result"]["final_damage"] > 0
+    assert set(detail.events[10].data) == {"result", "audit"}
+    audit = detail.events[10].data["audit"]
+    assert set(audit) == {
+        "component_results",
+        "base_damage_additions",
+        "damage_bonus",
+        "critical",
+        "defense",
+        "resistance",
+        "reaction",
+        "applied_terms",
+        "rejected_terms",
+        "source_attribute_trace",
+        "target_attribute_trace",
+        "trace_metadata",
+    }
+    assert audit["defense"]["multiplier"] > 0
+    assert (
+        audit["damage_bonus"]["multiplier"]
+        == (detail.events[10].data["result"]["damage_bonus_multiplier"])
+    )
     assert detail.events[12].data == {
         "stop_reason": "COMPLETED",
         "end_frame": 3,

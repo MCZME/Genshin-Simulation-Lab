@@ -235,6 +235,23 @@ class AttributeResolution:
         object.__setattr__(self, "dependency_resolutions", tuple(self.dependency_resolutions))
         object.__setattr__(self, "trace_metadata", MappingProxyType(dict(self.trace_metadata)))
 
+    def to_dict(self) -> dict[str, object]:
+        """返回完整属性解析审计；递归依赖完整保存，不截断。"""
+
+        return {
+            "attribute_key": self.attribute_key.value,
+            "subject_ref": self.subject_ref.to_dict(),
+            "final_value": self.final_value,
+            "base_value": self.base_value,
+            "applied_terms": tuple(term.to_dict() for term in self.applied_terms),
+            "rejected_terms": tuple(term.to_dict() for term in self.rejected_terms),
+            "dependency_resolutions": tuple(
+                resolution.to_dict() for resolution in self.dependency_resolutions
+            ),
+            "policy_key": self.policy_key,
+            "trace_metadata": dict(self.trace_metadata),
+        }
+
 
 @dataclass(frozen=True, slots=True)
 class AttributeSnapshotEntry:

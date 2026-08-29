@@ -44,12 +44,30 @@ class UiConfig:
 
 
 @dataclass(frozen=True, slots=True)
+class DeveloperConfig:
+    """开发者模式配置；开启后注册并可见 content/test 测试内容。"""
+
+    enabled: bool = False
+
+    @classmethod
+    def from_mapping(cls, raw: Mapping[str, Any]) -> DeveloperConfig:
+        value = raw.get("enabled", False)
+        if not isinstance(value, bool):
+            raise ConfigError("developer.enabled 必须是布尔值")
+        return cls(enabled=value)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"enabled": self.enabled}
+
+
+@dataclass(frozen=True, slots=True)
 class ProjectConfig:
     """项目配置（config.toml）。"""
 
     schema_version: int = PROJECT_CONFIG_SCHEMA_VERSION
     workspace: WorkspaceConfig = field(default_factory=WorkspaceConfig)
     ui: UiConfig = field(default_factory=UiConfig)
+    developer: DeveloperConfig = field(default_factory=DeveloperConfig)
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any]) -> ProjectConfig:
@@ -62,6 +80,9 @@ class ProjectConfig:
                 _require_mapping(raw.get("workspace", {}), "workspace")
             ),
             ui=UiConfig.from_mapping(_require_mapping(raw.get("ui", {}), "ui")),
+            developer=DeveloperConfig.from_mapping(
+                _require_mapping(raw.get("developer", {}), "developer")
+            ),
         )
 
     def to_dict(self) -> dict[str, Any]:
@@ -69,6 +90,7 @@ class ProjectConfig:
             "schema_version": self.schema_version,
             "workspace": self.workspace.to_dict(),
             "ui": self.ui.to_dict(),
+            "developer": self.developer.to_dict(),
         }
 
     def _data_dir_path(self, project_root: str | Path) -> Path:

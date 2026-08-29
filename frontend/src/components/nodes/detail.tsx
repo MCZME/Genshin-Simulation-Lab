@@ -111,7 +111,7 @@ function DamageDetailView({ item }: { item: Record<string, unknown> }) {
       <div className="detail-section-title">
         伤害 #{detail.ordinal}（帧 {detail.frame}）
       </div>
-      {damage === null ? (
+      {damage === null || damage === undefined ? (
         <div className="analysis-view-state">该事件没有伤害摘要</div>
       ) : (
         <>
@@ -154,11 +154,11 @@ function FrameStateView({ item }: { item: Record<string, unknown> }) {
           data={{
             health: character.health,
             energy: character.energy,
-            buffs: character.buffs.length,
-            shields: character.shields.length,
-            infusion: character.infusion.length,
-            cooldowns: character.cooldowns.length,
-            content_states: character.content_states.length,
+            buffs: character.buffs?.length ?? 0,
+            shields: character.shields?.length ?? 0,
+            infusion: character.infusion?.length ?? 0,
+            cooldowns: character.cooldowns?.length ?? 0,
+            content_states: character.content_states?.length ?? 0,
             attributes: character.attributes,
           }}
         />

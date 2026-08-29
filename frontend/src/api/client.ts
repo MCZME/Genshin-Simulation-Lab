@@ -221,78 +221,12 @@ export async function getResultDetail(sessionId: string): Promise<RunDetailRespo
   return request<RunDetailResponse>(`/results/${encodeURIComponent(sessionId)}`);
 }
 
-/** 单条事件（事件分页项）。 */
-export interface EventItemDto {
-  ordinal: number;
-  frame: number;
-  event_type: string;
-  data: Record<string, unknown>;
-}
-
-export interface EventPageResponseDto {
-  items: EventItemDto[];
-  offset: number;
-  limit: number;
-  total: number;
-}
-
-/** DAMAGE_RESOLVED 的规范化伤害视图（summary 与完整 audit）。 */
-export interface DamageEventViewDto {
-  summary: Record<string, unknown>;
-  audit?: unknown;
-}
-
-export interface EventDetailDto {
-  session_id: string;
-  ordinal: number;
-  frame: number;
-  event_type: string;
-  data: Record<string, unknown>;
-  damage: DamageEventViewDto | null;
-}
-
-/** 帧状态投影响应（契约形状见 UI API 契约第 8 节）。 */
-export interface FrameHealthDto {
-  current_hp: number;
-  max_hp: number | null;
-  hp_ratio: number | null;
-}
-
-export interface FrameEnergyDto {
-  current_energy: number;
-  capacity: number | null;
-  burst_ready: boolean;
-}
-
-export interface FrameCharacterStateDto {
-  slot: number;
-  character_key: string;
-  combat_entity_id: string;
-  active: boolean;
-  health: FrameHealthDto;
-  energy: FrameEnergyDto;
-  attributes: Record<string, { value: unknown; applied_terms: unknown[] }>;
-  buffs: Record<string, unknown>[];
-  shields: Record<string, unknown>[];
-  infusion: Record<string, unknown>[];
-  cooldowns: Record<string, unknown>[];
-  content_states: Record<string, unknown>[];
-}
-
-export interface FrameStateDto {
-  session_id: string;
-  frame: number;
-  time_seconds: number;
-  team: {
-    active_slot: number | null;
-    slots: number[];
-    characters: { slot: number; character_key: string; combat_entity_id: string }[];
-  };
-  characters: FrameCharacterStateDto[];
-  resonance: { active_keys: string[] };
-  moonsign: { level: string; moonsign_character_refs: string[] };
-  coverage: Record<string, string>;
-}
+export type EventItem = Schema["EventItem"];
+export type EventPageResponse = Schema["EventPageResponse"];
+export type DamageEventView = Schema["DamageEventView"];
+export type EventDetailResponse = Schema["EventDetailResponse"];
+export type FrameStateResponse = Schema["FrameStateResponse"];
+export type FrameCharacterState = Schema["FrameCharacterState"];
 
 /** 事件分页（帧状态与伤害事件详情的 ordinal 入口）。 */
 export async function getResultEvents(
@@ -304,7 +238,7 @@ export async function getResultEvents(
     offset?: number;
     limit?: number;
   } = {},
-): Promise<EventPageResponseDto> {
+): Promise<EventPageResponse> {
   const params = new URLSearchParams();
   if (options.frameMin !== undefined) params.set("frame_min", String(options.frameMin));
   if (options.frameMax !== undefined) params.set("frame_max", String(options.frameMax));
@@ -312,7 +246,7 @@ export async function getResultEvents(
   if (options.offset !== undefined) params.set("offset", String(options.offset));
   if (options.limit !== undefined) params.set("limit", String(options.limit));
   const query = params.toString();
-  return request<EventPageResponseDto>(
+  return request<EventPageResponse>(
     `/results/${encodeURIComponent(sessionId)}/events${query === "" ? "" : `?${query}`}`,
   );
 }
@@ -321,8 +255,8 @@ export async function getResultEvents(
 export async function getResultEvent(
   sessionId: string,
   ordinal: number,
-): Promise<EventDetailDto> {
-  return request<EventDetailDto>(
+): Promise<EventDetailResponse> {
+  return request<EventDetailResponse>(
     `/results/${encodeURIComponent(sessionId)}/events/${encodeURIComponent(String(ordinal))}`,
   );
 }
@@ -331,8 +265,8 @@ export async function getResultEvent(
 export async function getFrameState(
   sessionId: string,
   frame: number,
-): Promise<FrameStateDto> {
-  return request<FrameStateDto>(
+): Promise<FrameStateResponse> {
+  return request<FrameStateResponse>(
     `/results/${encodeURIComponent(sessionId)}/frames/${encodeURIComponent(String(frame))}`,
   );
 }

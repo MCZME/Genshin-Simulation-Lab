@@ -105,8 +105,9 @@ export function NodeCard({ data, selected }: NodeProps) {
     node.kind === "member_table"
       ? connectedConfigNode(definition, node.id, "table_config")
       : null;
+  // 柱状图/饼图等没有展示配置节点，宽度即手动画布几何（等同固定模式）。
   const widthMode =
-    tableConfig === null ? "auto" : normalizeWidthMode(tableConfig.params.width_mode);
+    tableConfig === null ? "fixed" : normalizeWidthMode(tableConfig.params.width_mode);
   const resolvedWidth = isView
     ? resolveViewWidth(widthMode, fitInfo?.fitWidth ?? null, node.size?.width)
     : undefined;

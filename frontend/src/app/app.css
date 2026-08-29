@@ -2763,6 +2763,8 @@ body {
 }
 
 .node-card.node-card-view .node-card-body {
+  display: flex;
+  flex-direction: column;
   max-height: none;
   padding: 0;
   flex: 1;
@@ -3058,6 +3060,29 @@ body {
   color: #f59e0b;
   font-size: 10px;
   font-weight: 500;
+}
+
+/* ── 分析图表视图（柱状图 / 饼图）── */
+
+.analysis-chart-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.analysis-chart {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.analysis-chart svg {
+  display: block;
+}
+
+.analysis-bar-sort[aria-pressed="true"] {
+  color: #f87171;
 }
 
 /* ── 表格配置节点：条件列 / 数据列绑定 ── */

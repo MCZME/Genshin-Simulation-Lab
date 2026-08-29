@@ -18,12 +18,15 @@ import {
 } from "../../theme/elements";
 import { useAnalysisSchemaCatalog, useAnalysisSelection } from "../analysis_context";
 import { useAssetNames } from "./useAssetNames";
+import { BarChartView } from "./barView";
+import { PieChartView } from "./pieView";
+import { asString } from "./common";
 import { MIN_VIEW_WIDTH } from "../../workflow/view_size";
 
 const ROW_HEIGHT = 28;
 /** 超过该行数启用窗口化渲染，避免大批量一次性铺 DOM。 */
 const VIRTUALIZE_THRESHOLD = 200;
-const MAX_RENDERED_ROWS = 10000;
+export const MAX_RENDERED_ROWS = 10000;
 const SORT_ORDERS = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
 /** 列宽估算：单元格左右内边距合计（px）。 */
 const CELL_PADDING = 16;
@@ -92,6 +95,54 @@ export function AnalysisViewBody({
       );
     }
   }
+  if (node.kind === "bar") {
+    const config = connectedConfigNode(definition, node.id, "bar_config");
+    if (config === null) {
+      return <div className="analysis-view-state">缺少柱状图配置（连接柱状图配置节点）</div>;
+    }
+    const x = asString(config.params.x) ?? "";
+    const y = asString(config.params.y) ?? "";
+    if (x === "" || y === "") {
+      return (
+        <div className="analysis-view-state">
+          <span>柱状图配置未绑定列</span>
+          {onLocateNode !== undefined && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => onLocateNode(config.id)}
+            >
+              打开柱状图配置
+            </button>
+          )}
+        </div>
+      );
+    }
+  }
+  if (node.kind === "pie") {
+    const config = connectedConfigNode(definition, node.id, "pie_config");
+    if (config === null) {
+      return <div className="analysis-view-state">缺少饼图配置（连接饼图配置节点）</div>;
+    }
+    const group = asString(config.params.group) ?? "";
+    const value = asString(config.params.value) ?? "";
+    if (group === "" || value === "") {
+      return (
+        <div className="analysis-view-state">
+          <span>饼图配置未绑定列</span>
+          {onLocateNode !== undefined && (
+            <button
+              type="button"
+              className="text-button"
+              onClick={() => onLocateNode(config.id)}
+            >
+              打开饼图配置
+            </button>
+          )}
+        </div>
+      );
+    }
+  }
   if (result === undefined || result.status === "idle") {
     return <div className="analysis-view-state">未执行（连接数据后运行工作流）</div>;
   }
@@ -142,9 +193,9 @@ function renderAnalysisTable(
         />
       );
     case "pie":
-      return <div className="analysis-view-state">占比饼图（后续实现）</div>;
+      return <PieChartView node={node} definition={definition} table={table} />;
     case "bar":
-      return <div className="analysis-view-state">指标柱状图（后续实现）</div>;
+      return <BarChartView node={node} definition={definition} table={table} />;
     default:
       return null;
   }

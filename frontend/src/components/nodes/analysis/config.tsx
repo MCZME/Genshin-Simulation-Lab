@@ -34,6 +34,19 @@ const ROLE_CONFIGS: Record<string, RoleConfig[]> = {
   ],
 };
 
+/** 绑定角色的可读名：列名即显示名，角色标签统一用业务语义。 */
+const ROLE_LABELS: Record<string, string> = {
+  track: "轨道",
+  start: "起点",
+  end: "终点",
+  value: "值列",
+  label: "标签列",
+  group: "分组列",
+  x: "X 轴列",
+  y: "Y 轴列",
+  series: "系列列",
+};
+
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
@@ -388,44 +401,67 @@ export function TableConfigEditor({ node, onChange }: EditorProps) {
   );
 }
 
+/** 展示配置编辑器：单值角色用列下拉（列选项沿「配置 → 视图 → 上游」解析）。 */
 export function DisplayConfigEditor({ node, onChange }: EditorProps) {
+  const env = useContextEnv();
+  const view = configTargetView(env.definition, node.id);
+  const shape = view === null ? [] : viewInputShape(env.shapes, env.definition, view.id);
+  const available = shape.map((column) => column.name);
   const roles = ROLE_CONFIGS[node.kind] ?? [];
   return (
     <div className="analysis-editor">
-      {roles.map((config) => (
-        <label key={config.role} className="analysis-field">
-          <span>
-            {config.role}
-            {config.required ? "（必选）" : ""}
-          </span>
-          {config.list ? (
-            <input
-              value={
-                Array.isArray(node.params[config.role])
-                  ? (node.params[config.role] as unknown[]).join(",")
-                  : ""
-              }
-              placeholder="列名，逗号分隔"
-              onChange={(event) =>
-                onChange({
-                  ...node.params,
-                  [config.role]: event.target.value
-                    .split(",")
-                    .map((item) => item.trim())
-                    .filter((item) => item !== ""),
-                })
-              }
-            />
-          ) : (
-            <input
-              value={asString(node.params[config.role]) ?? ""}
-              onChange={(event) =>
-                onChange({ ...node.params, [config.role]: event.target.value })
-              }
-            />
-          )}
-        </label>
-      ))}
+      {available.length === 0 && (
+        <p className="analysis-editor-empty">
+          连接视图并接通数据源后，这里会出现可绑定的列。
+        </p>
+      )}
+      {roles.map((config) => {
+        const current = asString(node.params[config.role]) ?? "";
+        return (
+          <label key={config.role} className="analysis-field">
+            <span>
+              {ROLE_LABELS[config.role] ?? config.role}
+              {config.required ? "（必选）" : ""}
+            </span>
+            {config.list ? (
+              <input
+                value={
+                  Array.isArray(node.params[config.role])
+                    ? (node.params[config.role] as unknown[]).join(",")
+                    : ""
+                }
+                placeholder="列名，逗号分隔"
+                onChange={(event) =>
+                  onChange({
+                    ...node.params,
+                    [config.role]: event.target.value
+                      .split(",")
+                      .map((item) => item.trim())
+                      .filter((item) => item !== ""),
+                  })
+                }
+              />
+            ) : (
+              <select
+                value={current}
+                onChange={(event) =>
+                  onChange({ ...node.params, [config.role]: event.target.value })
+                }
+              >
+                <option value="">列…</option>
+                {available.map((name) => (
+                  <option key={name} value={name}>
+                    {name}
+                  </option>
+                ))}
+                {current !== "" && !available.includes(current) && (
+                  <option value={current}>{current}</option>
+                )}
+              </select>
+            )}
+          </label>
+        );
+      })}
     </div>
   );
 }

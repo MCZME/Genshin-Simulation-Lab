@@ -94,12 +94,18 @@ export function NodeEditorHost({
       return <JoinEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "compute":
       return <ComputeEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
-    case "timeline_config":
     case "pie_config":
     case "bar_config":
       return <DisplayConfigEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "table_config":
       return <TableConfigEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "single":
+    case "frame_state":
+    case "damage_detail":
+    case "state_detail":
+    case "attribute_detail":
+      // 取单项与单项详情节点没有参数编辑区，数据在节点卡内容区呈现。
+      return null;
     default:
       return <UnknownEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
   }
@@ -128,13 +134,16 @@ const NODE_CATEGORY_OF: Record<string, NodeCategory> = {
   join: "dataProcessing",
   compute: "dataProcessing",
   table_config: "displayConfig",
-  timeline_config: "displayConfig",
   pie_config: "displayConfig",
   bar_config: "displayConfig",
   member_table: "displayView",
-  timeline: "displayView",
   pie: "displayView",
   bar: "displayView",
+  single: "dataProcessing",
+  frame_state: "displayView",
+  damage_detail: "displayView",
+  state_detail: "displayView",
+  attribute_detail: "displayView",
 };
 
 export function nodeCategoryOf(kind: string): NodeCategory | null {
@@ -175,12 +184,15 @@ export const ANALYSIS_NODE_KINDS = [
   "limit",
   "join",
   "compute",
+  "single",
   "table_config",
   "member_table",
-  "timeline_config",
-  "timeline",
   "pie_config",
   "pie",
   "bar_config",
   "bar",
+  "frame_state",
+  "damage_detail",
+  "state_detail",
+  "attribute_detail",
 ] as const;

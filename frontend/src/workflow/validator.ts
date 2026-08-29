@@ -799,7 +799,18 @@ function warnNodesOutsideRegions(
   }
 }
 
-const ANALYSIS_VIEW_KINDS = new Set(["member_table", "timeline", "pie", "bar"]);
+const ANALYSIS_VIEW_KINDS = new Set(["member_table", "pie", "bar"]);
+/** 取单项：table -> item 的唯一显式转换（分析区域设计 6.3）。 */
+const ANALYSIS_SINGLE_KINDS = new Set(["single"]);
+/** 单项详情节点：接收 item，输出为空（分析区域设计 6.4）。 */
+const ANALYSIS_DETAIL_KINDS = new Set([
+  "frame_state",
+  "damage_detail",
+  "state_detail",
+  "attribute_detail",
+]);
+/** 视图 selection 输出端口 id。 */
+const ANALYSIS_SELECTION_PORT = "selection";
 const ANALYSIS_CONFIG_PORT = "config";
 const ANALYSIS_DATA_PORT = "in";
 
@@ -872,6 +883,87 @@ function validateAnalysisGraph(
       continue;
     }
     validateViewInputs(node, edgesByTarget, shapes, diagnostics);
+  }
+
+  // item 语言流：single 只接收表输入；详情节点只接收 item 输入；
+  // 视图 selection 端口只能流向详情节点（item 只能进单项详情节点）。
+  const itemSourceIds = new Set<string>();
+  for (const node of nodeById.values()) {
+    if (ANALYSIS_SINGLE_KINDS.has(node.kind)) {
+      itemSourceIds.add(node.id);
+      continue;
+    }
+    if (ANALYSIS_VIEW_KINDS.has(node.kind)) {
+      const hasSelectionOutput = definition.edges.some(
+        (edge) => edge.source_node_id === node.id && edge.source_port_id === ANALYSIS_SELECTION_PORT,
+      );
+      if (hasSelectionOutput) {
+        itemSourceIds.add(node.id);
+      }
+    }
+  }
+  for (const edge of definition.edges) {
+    const target = nodeById.get(edge.target_node_id);
+    const source = nodeById.get(edge.source_node_id);
+    if (target === undefined || source === undefined) {
+      continue;
+    }
+    if (ANALYSIS_DETAIL_KINDS.has(target.kind) && edge.target_port_id === ANALYSIS_DATA_PORT) {
+      if (!itemSourceIds.has(source.id)) {
+        diagnostics.push(
+          diagnostic("error", "ITEM_INPUT_INVALID", "单项详情节点只能接收 item 输入（视图选择或取单项）", {
+            edge_id: edge.id,
+            node_id: target.id,
+          }),
+        );
+      }
+    }
+    if (source.kind === "single" && edge.source_port_id === "out") {
+      if (!ANALYSIS_DETAIL_KINDS.has(target.kind)) {
+        diagnostics.push(
+          diagnostic("error", "ITEM_OUTPUT_INVALID", "取单项的输出只能连接单项详情节点", {
+            edge_id: edge.id,
+            node_id: source.id,
+          }),
+        );
+      }
+    }
+  }
+  for (const node of nodeById.values()) {
+    if (!ANALYSIS_SINGLE_KINDS.has(node.kind) && !ANALYSIS_DETAIL_KINDS.has(node.kind)) {
+      continue;
+    }
+    const incoming = edgesByTarget.get(node.id) ?? [];
+    const dataEdges = incoming.filter((edge) => edge.target_port_id === ANALYSIS_DATA_PORT);
+    if (dataEdges.length === 0) {
+      if (ANALYSIS_SINGLE_KINDS.has(node.kind)) {
+        diagnostics.push(
+          diagnostic("error", "SINGLE_INPUT_MISSING", "取单项缺少上游表输入", {
+            node_id: node.id,
+          }),
+        );
+      } else {
+        diagnostics.push(
+          diagnostic("error", "ITEM_INPUT_MISSING", "单项详情节点缺少 item 输入连线", {
+            node_id: node.id,
+          }),
+        );
+      }
+      continue;
+    }
+    if (ANALYSIS_SINGLE_KINDS.has(node.kind)) {
+      const tableFed = dataEdges.some((edge) => {
+        const source = nodeById.get(edge.source_node_id);
+        return source !== undefined && ANALYSIS_TABLE_NODE_KINDS.has(source.kind);
+      });
+      if (!tableFed) {
+        diagnostics.push(
+          diagnostic("error", "SINGLE_INPUT_INVALID", "取单项只能接收表输入", {
+            node_id: node.id,
+          }),
+        );
+      }
+    }
   }
 }
 

@@ -14,6 +14,8 @@ import type { WorkflowDefinition, WorkflowEdge, WorkflowNode } from "./types";
 export interface AnalysisNodeResult {
   status: "idle" | "loading" | "ready" | "error" | "stale";
   table?: AnalysisTableResult;
+  /** 取单项节点计算的 item（上游表第一行）。 */
+  item?: unknown;
   error?: string;
 }
 
@@ -307,6 +309,18 @@ function toAnalysisTableResult(table: AnalysisTableResponse): AnalysisTableResul
     rows: table.rows,
     truncated: table.truncated,
   };
+}
+
+/** 表行转 item 对象：列名 -> 单元格值。 */
+export function rowItem(
+  table: { columns: { name: string }[] },
+  row: unknown[],
+): Record<string, unknown> {
+  const item: Record<string, unknown> = {};
+  table.columns.forEach((column, index) => {
+    item[column.name] = row[index] ?? null;
+  });
+  return item;
 }
 
 /** 视图数据输入：多条同结构入线的行拼接（单表语义）。 */

@@ -18,8 +18,8 @@ describe("节点类别配色", () => {
       ["enum", "range"],
       ["data_provider", "fetch"],
       ["filter", "project", "sort", "aggregate", "limit", "join", "compute"],
-      ["table_config", "timeline_config", "pie_config", "bar_config"],
-      ["member_table", "timeline", "pie", "bar"],
+      ["table_config", "pie_config", "bar_config"],
+      ["member_table", "pie", "bar"],
     ];
     const seen = new Set<string>();
     for (const group of groups) {

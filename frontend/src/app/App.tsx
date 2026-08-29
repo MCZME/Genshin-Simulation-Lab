@@ -16,7 +16,12 @@ import {
 import type { ValidateInputsResponse, WorkflowListItem } from "../api/client";
 import { pollRun } from "../api/runtime_subscription";
 import { CanvasView } from "../components/canvas/CanvasView";
-import { AnalysisSchemaCatalogContext } from "../components/analysis_context";
+import {
+  AnalysisResultsContext,
+  AnalysisSchemaCatalogContext,
+  AnalysisSelectionContext,
+  type AnalysisSelectionStore,
+} from "../components/analysis_context";
 import { createAnalysisSchemaCatalog } from "../workflow/templates";
 import type { AnalysisSchemaCatalog } from "../workflow/templates";
 import { ObjectPanel } from "../components/panels/ObjectPanel";
@@ -78,6 +83,7 @@ import type { RunState } from "../state/run_state";
 import {
   executeAnalysisRegion,
   planFetchNodes,
+  rowItem,
   viewInputTable,
 } from "../workflow/analysis_runner";
 import type { AnalysisNodeResult } from "../workflow/analysis_runner";
@@ -150,6 +156,26 @@ export function App() {
   const [workflowList, setWorkflowList] = useState<WorkflowListItem[]>([]);
   const [runState, setRunState] = useState<RunState>(() => createEmptyRunState());
   const [schemaCatalog, setSchemaCatalog] = useState<AnalysisSchemaCatalog | null>(null);
+  const [analysisSelections, setAnalysisSelections] = useState<Map<string, unknown>>(
+    new Map(),
+  );
+  const analysisSelectionStore = useMemo<AnalysisSelectionStore>(
+    () => ({
+      selections: analysisSelections,
+      select: (nodeId, item) => {
+        setAnalysisSelections((current) => {
+          const next = new Map(current);
+          if (item === null || item === undefined) {
+            next.delete(nodeId);
+          } else {
+            next.set(nodeId, item);
+          }
+          return next;
+        });
+      },
+    }),
+    [analysisSelections],
+  );
   const [analysisResults, setAnalysisResults] = useState<Map<string, AnalysisNodeResult>>(
     () => new Map(),
   );
@@ -1070,6 +1096,20 @@ export function App() {
           table === null ? { status: "stale" } : { status: "ready", table },
         );
       }
+      for (const single of definition.nodes) {
+        if (single.region_id !== region.id || !isAnalysisSingleKind(single.kind)) {
+          continue;
+        }
+        const table = viewInputTable(single.id, definition, results);
+        updates.set(
+          single.id,
+          table === null
+            ? { status: "stale" }
+            : table.rows.length === 0
+              ? { status: "ready" }
+              : { status: "ready", item: rowItem(table, table.rows[0]) },
+        );
+      }
     }
     setAnalysisResults((current) => new Map([...current, ...updates]));
   }
@@ -1319,6 +1359,8 @@ export function App() {
 
   return (
     <RunStateContext.Provider value={runContextValue}>
+      <AnalysisSelectionContext.Provider value={analysisSelectionStore}>
+      <AnalysisResultsContext.Provider value={analysisResults}>
       <AnalysisSchemaCatalogContext.Provider value={schemaCatalog}>
         <div className="app-shell">
         <TopBar
@@ -1476,6 +1518,8 @@ export function App() {
         )}
         </div>
       </AnalysisSchemaCatalogContext.Provider>
+      </AnalysisResultsContext.Provider>
+      </AnalysisSelectionContext.Provider>
     </RunStateContext.Provider>
   );
 }
@@ -1500,5 +1544,9 @@ function sameStringList(left: string[], right: string[]): boolean {
 }
 
 function isAnalysisViewKind(kind: string): boolean {
-  return kind === "member_table" || kind === "timeline" || kind === "pie" || kind === "bar";
+  return kind === "member_table" || kind === "pie" || kind === "bar";
+}
+
+function isAnalysisSingleKind(kind: string): boolean {
+  return kind === "single";
 }

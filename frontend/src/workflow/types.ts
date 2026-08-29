@@ -36,14 +36,17 @@ export const NODE_KINDS = [
   "limit",
   "join",
   "compute",
+  "single",
   "table_config",
-  "timeline_config",
   "pie_config",
   "bar_config",
   "member_table",
-  "timeline",
   "pie",
   "bar",
+  "frame_state",
+  "damage_detail",
+  "state_detail",
+  "attribute_detail",
 ] as const;
 
 export type NodeKind = (typeof NODE_KINDS)[number];
@@ -56,8 +59,8 @@ export type DataLanguage =
   | "session"
   | "session_group"
   | "table"
+  | "item"
   | "table_config"
-  | "timeline_config"
   | "pie_config"
   | "bar_config";
 

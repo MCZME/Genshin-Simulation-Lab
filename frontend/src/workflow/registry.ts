@@ -732,10 +732,6 @@ function validateRoleColumns(
   return diagnostics;
 }
 
-function validateTimelineConfig(node: WorkflowNode): Diagnostic[] {
-  return validateRoleColumns(node, ["track", "start"]);
-}
-
 function validatePieConfig(node: WorkflowNode): Diagnostic[] {
   return validateRoleColumns(node, ["group", "value"]);
 }
@@ -745,6 +741,11 @@ function validateBarConfig(node: WorkflowNode): Diagnostic[] {
 }
 
 function validateView(): Diagnostic[] {
+  return [];
+}
+
+/** 单项详情节点：参数为空，数据合法性由图校验器按 item 语言检查。 */
+function validateDetail(): Diagnostic[] {
   return [];
 }
 
@@ -1038,25 +1039,6 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     fragment: () => null,
     validate: validateTableConfig,
   },
-  timeline_config: {
-    kind: "timeline_config",
-    displayName: "时间轴配置",
-    region: "analysis",
-    ports: {
-      inputs: [],
-      outputs: [analysisPort("out", "timeline_config", "single", 1)],
-    },
-    paramFields: {
-      track: { type: "string", required: true },
-      start: { type: "string", required: true },
-      end: { type: "string" },
-      value: { type: "string" },
-      label: { type: "string" },
-    },
-    defaultParams: { track: "", start: "", end: "", value: "", label: "" },
-    fragment: () => null,
-    validate: validateTimelineConfig,
-  },
   pie_config: {
     kind: "pie_config",
     displayName: "饼图配置",
@@ -1100,23 +1082,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
         analysisPort("in", "table", "single", Number.POSITIVE_INFINITY),
         analysisPort("config", "table_config", "single", 1),
       ],
-      outputs: [],
-    },
-    paramFields: {},
-    defaultParams: {},
-    fragment: () => null,
-    validate: validateView,
-  },
-  timeline: {
-    kind: "timeline",
-    displayName: "单场时间轴",
-    region: "analysis",
-    ports: {
-      inputs: [
-        analysisPort("in", "table", "single", Number.POSITIVE_INFINITY),
-        analysisPort("config", "timeline_config", "single", 1),
-      ],
-      outputs: [],
+      outputs: [analysisPort("selection", "item")],
     },
     paramFields: {},
     defaultParams: {},
@@ -1132,7 +1098,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
         analysisPort("in", "table", "single", Number.POSITIVE_INFINITY),
         analysisPort("config", "pie_config", "single", 1),
       ],
-      outputs: [],
+      outputs: [analysisPort("selection", "item")],
     },
     paramFields: {},
     defaultParams: {},
@@ -1148,12 +1114,77 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
         analysisPort("in", "table", "single", Number.POSITIVE_INFINITY),
         analysisPort("config", "bar_config", "single", 1),
       ],
-      outputs: [],
+      outputs: [analysisPort("selection", "item")],
     },
     paramFields: {},
     defaultParams: {},
     fragment: () => null,
     validate: validateView,
+  },
+  single: {
+    kind: "single",
+    displayName: "取单项",
+    region: "analysis",
+    ports: {
+      inputs: [analysisPort("in", "table", "single", 1)],
+      outputs: [analysisPort("out", "item")],
+    },
+    paramFields: {},
+    defaultParams: {},
+    fragment: () => null,
+    validate: () => [],
+  },
+  frame_state: {
+    kind: "frame_state",
+    displayName: "帧状态详情",
+    region: "analysis",
+    ports: {
+      inputs: [analysisPort("in", "item", "single", 1)],
+      outputs: [],
+    },
+    paramFields: {},
+    defaultParams: {},
+    fragment: () => null,
+    validate: validateDetail,
+  },
+  damage_detail: {
+    kind: "damage_detail",
+    displayName: "伤害详情",
+    region: "analysis",
+    ports: {
+      inputs: [analysisPort("in", "item", "single", 1)],
+      outputs: [],
+    },
+    paramFields: {},
+    defaultParams: {},
+    fragment: () => null,
+    validate: validateDetail,
+  },
+  state_detail: {
+    kind: "state_detail",
+    displayName: "状态详情",
+    region: "analysis",
+    ports: {
+      inputs: [analysisPort("in", "item", "single", 1)],
+      outputs: [],
+    },
+    paramFields: {},
+    defaultParams: {},
+    fragment: () => null,
+    validate: validateDetail,
+  },
+  attribute_detail: {
+    kind: "attribute_detail",
+    displayName: "属性详情",
+    region: "analysis",
+    ports: {
+      inputs: [analysisPort("in", "item", "single", 1)],
+      outputs: [],
+    },
+    paramFields: {},
+    defaultParams: {},
+    fragment: () => null,
+    validate: validateDetail,
   },
 };
 

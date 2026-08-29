@@ -7,6 +7,7 @@ import type { IncomingOrderGroup } from "./InputOrderPopover";
 import { nodeKindColor } from "../nodes/registry";
 import { NodeEditorHost } from "../nodes/registry";
 import { useAnalysisSchemaCatalog } from "../analysis_context";
+import { AnalysisDetailBody, isAnalysisDetailKind, SingleItemBody } from "../nodes/detail";
 import { AnalysisViewBody, type MemberTableFitInfo } from "../nodes/views";
 import { getNodeKindSpec } from "../../workflow/registry";
 import { connectedConfigNode } from "../../workflow/templates";
@@ -237,6 +238,10 @@ export function NodeCard({ data, selected }: NodeProps) {
             viewWidth={isView ? resolvedWidth : undefined}
             onFitChange={node.kind === "member_table" ? handleFitChange : undefined}
           />
+        ) : isAnalysisDetailKind(node.kind) ? (
+          <AnalysisDetailBody node={node} definition={definition} />
+        ) : node.kind === "single" ? (
+          <SingleItemBody result={analysisResult} />
         ) : (
           <NodeEditorHost
             kind={node.kind}
@@ -341,7 +346,7 @@ export function NodeCard({ data, selected }: NodeProps) {
 }
 
 function isAnalysisView(kind: string): boolean {
-  return kind === "member_table" || kind === "timeline" || kind === "pie" || kind === "bar";
+  return kind === "member_table" || kind === "pie" || kind === "bar";
 }
 
 function collectFieldErrors(

@@ -1,7 +1,7 @@
 /** 分析视图节点内容区：消费处理节点结果表并渲染。 */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
+import { rowItem, type AnalysisNodeResult } from "../../workflow/analysis_runner";
 import {
   computeAnalysisShapes,
   connectedConfigNode,
@@ -16,7 +16,7 @@ import {
   RUN_STATE_LABELS,
   WEAPON_LABELS,
 } from "../../theme/elements";
-import { useAnalysisSchemaCatalog } from "../analysis_context";
+import { useAnalysisSchemaCatalog, useAnalysisSelection } from "../analysis_context";
 import { useAssetNames } from "./useAssetNames";
 import { MIN_VIEW_WIDTH } from "../../workflow/view_size";
 
@@ -141,8 +141,6 @@ function renderAnalysisTable(
           onFitChange={onFitChange}
         />
       );
-    case "timeline":
-      return <div className="analysis-view-state">单场时间轴（后续实现）</div>;
     case "pie":
       return <div className="analysis-view-state">占比饼图（后续实现）</div>;
     case "bar":
@@ -339,6 +337,28 @@ function MemberTable({
     setDataSort(null);
   };
 
+  const selection = useAnalysisSelection();
+  const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
+  // 绑定或排序变化后选中行可能已不对应同一数据行，这里随排序结果重置。
+  const [prevSortCount, setPrevSortCount] = useState(sortKeys.length);
+  if (sortKeys.length !== prevSortCount) {
+    setPrevSortCount(sortKeys.length);
+    setSelectedRowIndex(null);
+  }
+
+  const handleRowClick = (rowIndex: number, row: unknown[]) => {
+    const isSelected = selectedRowIndex === rowIndex;
+    setSelectedRowIndex(isSelected ? null : rowIndex);
+    if (selection === null) {
+      return;
+    }
+    if (isSelected) {
+      selection.select(node.id, null);
+      return;
+    }
+    selection.select(node.id, rowItem(table, row));
+  };
+
   const handleConditionHeaderClick = (column: string) => {
     setMenuColumn(null);
     setConditionSort((current) => {
@@ -513,7 +533,13 @@ function MemberTable({
               return (
                 <tr
                   key={rowIndex}
-                  className={absoluteRowIndex % 2 === 1 ? "stripe" : ""}
+                  className={[
+                    absoluteRowIndex % 2 === 1 ? "stripe" : "",
+                    selectedRowIndex === absoluteRowIndex ? "row-selected" : "",
+                  ]
+                    .filter((item) => item !== "")
+                    .join(" ")}
+                  onClick={() => handleRowClick(absoluteRowIndex, row)}
                 >
                   {order.map((column, cellIndex) => {
                     const index = columnIndex.get(column);

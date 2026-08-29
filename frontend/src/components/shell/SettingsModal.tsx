@@ -56,6 +56,23 @@ export function SettingsModal({ settings, onChange, onClose }: SettingsModalProp
             构建阶段逐节点限速推进（每步至少 150ms），运行过程按节点顺序可见
           </p>
         </div>
+        <div className="settings-group">
+          <h3 className="settings-group-title">开发者</h3>
+          <label className="settings-row">
+            <span className="settings-row-label">开发者模式</span>
+            <input
+              type="checkbox"
+              className="settings-toggle"
+              checked={settings.developerEnabled}
+              onChange={(event) =>
+                onChange({ ...settings, developerEnabled: event.target.checked })
+              }
+            />
+          </label>
+          <p className="settings-row-hint">
+            注册并可见 content/test 测试内容与测试资产；写入 config.toml，重启服务后生效
+          </p>
+        </div>
       </div>
     </div>
   );

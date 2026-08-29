@@ -1,18 +1,20 @@
 import { getUiSettings, saveUiSettings } from "../api/client";
 
 /**
- * 界面偏好设置：持久化在后端项目配置（config.toml 的 `ui` 节，见 UI API 契约
- * GET/PUT /api/v1/settings）；默认值在前端定义，后端缺节时回退默认。
+ * 界面偏好与开发者设置：持久化在后端项目配置（config.toml 的 `ui` / `developer`
+ * 节，见 UI API 契约 GET/PUT /api/v1/settings）；默认值在前端定义，后端缺节时回退默认。
  */
 export interface AppSettings {
   /** 运行动画：构建阶段逐节点限速推进，保留最小执行时长（默认启用）。 */
   runAnimation: boolean;
+  /** 开发者模式：注册并可见 content/test 测试内容，重启后端服务后生效（默认关闭）。 */
+  developerEnabled: boolean;
   /** 工作区数据目录（config.toml 的 workspace 节）；只读展示，加载失败为 null。 */
   workspaceDataDir: string | null;
 }
 
 export function createAppSettings(): AppSettings {
-  return { runAnimation: true, workspaceDataDir: null };
+  return { runAnimation: true, developerEnabled: false, workspaceDataDir: null };
 }
 
 /** 把后端设置视图合并到默认值上；字段缺失或非法时回退默认。 */
@@ -26,9 +28,15 @@ export function coerceAppSettings(raw: unknown): AppSettings {
     typeof record.workspace === "object" && record.workspace !== null
       ? (record.workspace as Record<string, unknown>)
       : {};
+  const developer =
+    typeof record.developer === "object" && record.developer !== null
+      ? (record.developer as Record<string, unknown>)
+      : {};
   return {
     runAnimation:
       typeof record.run_animation === "boolean" ? record.run_animation : defaults.runAnimation,
+    developerEnabled:
+      typeof developer.enabled === "boolean" ? developer.enabled : defaults.developerEnabled,
     workspaceDataDir:
       typeof workspace.data_dir === "string" && workspace.data_dir !== ""
         ? workspace.data_dir
@@ -36,8 +44,14 @@ export function coerceAppSettings(raw: unknown): AppSettings {
   };
 }
 
-export function toSettingsPayload(settings: AppSettings): { run_animation: boolean } {
-  return { run_animation: settings.runAnimation };
+export function toSettingsPayload(settings: AppSettings): {
+  run_animation: boolean;
+  developer_enabled: boolean;
+} {
+  return {
+    run_animation: settings.runAnimation,
+    developer_enabled: settings.developerEnabled,
+  };
 }
 
 /** 从后端读取设置；请求失败或工作区未初始化时回退默认值。 */
@@ -51,5 +65,5 @@ export async function loadAppSettingsFromApi(): Promise<AppSettings> {
 
 /** 保存设置到后端项目配置；失败时抛出，由调用方提示。 */
 export async function saveAppSettingsToApi(settings: AppSettings): Promise<void> {
-  await saveUiSettings(settings.runAnimation);
+  await saveUiSettings(settings.runAnimation, settings.developerEnabled);
 }

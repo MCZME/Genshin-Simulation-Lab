@@ -381,6 +381,14 @@ export interface components {
             audit?: unknown;
         };
         /**
+         * DeveloperSettingsView
+         * @description 开发者模式开关；修改写入 config.toml，重启服务后生效。
+         */
+        DeveloperSettingsView: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /**
          * Diagnostic
          * @description 面向输入的诊断项；item_id/path 可空。
          */
@@ -884,15 +892,21 @@ export interface components {
         UiSettingsResponse: {
             /** Run Animation */
             run_animation: boolean;
+            developer: components["schemas"]["DeveloperSettingsView"];
             workspace: components["schemas"]["WorkspaceSettingsView"];
         };
         /**
          * UiSettingsUpdateRequest
          * @description PUT /api/v1/settings 的请求模型；工作区节不可经此修改。
+         *
+         *     ``developer_enabled`` 可选：缺省时保持当前开发者模式不变，
+         *     兼容只发送 ``run_animation`` 的既有前端。
          */
         UiSettingsUpdateRequest: {
             /** Run Animation */
             run_animation: boolean;
+            /** Developer Enabled */
+            developer_enabled?: boolean | null;
         };
         /**
          * ValidateInputsRequest

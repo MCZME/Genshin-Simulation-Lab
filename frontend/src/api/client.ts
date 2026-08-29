@@ -99,15 +99,18 @@ export async function getWorkspace(): Promise<WorkspaceResponse> {
   return request<WorkspaceResponse>("/workspace");
 }
 
-/** 界面偏好设置持久化在后端项目配置（config.toml 的 ui 节）。 */
+/** 界面偏好与开发者设置持久化在后端项目配置（config.toml 的 ui / developer 节）。 */
 export async function getUiSettings(): Promise<UiSettingsResponse> {
   return request<UiSettingsResponse>("/settings");
 }
 
-export async function saveUiSettings(runAnimation: boolean): Promise<UiSettingsResponse> {
+export async function saveUiSettings(
+  runAnimation: boolean,
+  developerEnabled: boolean,
+): Promise<UiSettingsResponse> {
   return request<UiSettingsResponse>("/settings", {
     method: "PUT",
-    body: JSON.stringify({ run_animation: runAnimation }),
+    body: JSON.stringify({ run_animation: runAnimation, developer_enabled: developerEnabled }),
   });
 }
 

@@ -1,4 +1,4 @@
-/** 饼图视图：ECharts 占比饼图渲染 + 悬停数值占比 + 点击选择输出。 */
+/** 饼图视图：ECharts 饼图渲染 + 悬停数值占比 + 点击选择输出。 */
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { rowItem } from "../../workflow/analysis_runner";
@@ -300,14 +300,15 @@ export function PieChartView({
         className="analysis-chart"
         ref={containerRef}
         role="img"
-        aria-label={`占比饼图：分组=${group}，值=${value}`}
+        aria-label={`饼图：分组=${group}，值=${value}`}
       />
-      <div className="analysis-member-footer">
-        <span>共 {table.rows.length} 行</span>
-        {table.truncated && (
-          <span className="analysis-member-truncated">仅显示前 {MAX_RENDERED_ROWS} 行</span>
-        )}
-      </div>
+      {table.truncated && (
+        <div className="analysis-member-footer">
+          <span className="analysis-member-truncated">
+            仅显示前 {MAX_RENDERED_ROWS} 行
+          </span>
+        </div>
+      )}
     </div>
   );
 }

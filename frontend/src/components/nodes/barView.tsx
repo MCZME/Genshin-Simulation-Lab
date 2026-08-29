@@ -1,4 +1,4 @@
-/** 柱状图视图：ECharts 柱状渲染 + 悬停柱值 + 按 Y 排序 + 点击选择输出。 */
+/** 柱状图视图：ECharts 柱状渲染 + 悬停柱值 + 点击选择输出。 */
 
 import { useCallback, useMemo, useRef, useState } from "react";
 import { rowItem } from "../../workflow/analysis_runner";
@@ -52,7 +52,6 @@ export function buildBarChartData(
   table: AnalysisTableResult,
   binding: BarViewBinding,
   formatValue: (column: string, value: unknown) => string,
-  sortByY: boolean,
 ): BarChartData | null {
   const columnIndex = new Map(table.columns.map((column, index) => [column.name, index]));
   const xIndex = columnIndex.get(binding.x);
@@ -67,7 +66,6 @@ export function buildBarChartData(
 
   interface Group {
     label: string;
-    order: number;
     rows: Map<string, { sum: number | null; rowIndex: number }>;
   }
   const groups = new Map<string, Group>();
@@ -77,7 +75,7 @@ export function buildBarChartData(
     const xKey = String(xRaw);
     let group = groups.get(xKey);
     if (group === undefined) {
-      group = { label: formatValue(binding.x, xRaw), order: groups.size, rows: new Map() };
+      group = { label: formatValue(binding.x, xRaw), rows: new Map() };
       groups.set(xKey, group);
     }
     const sRaw = seriesIndex === undefined ? null : row[seriesIndex];
@@ -95,35 +93,7 @@ export function buildBarChartData(
     }
   });
 
-  const totals = new Map<string, number>();
-  for (const [key, group] of groups) {
-    let total: number | null = null;
-    for (const entry of group.rows.values()) {
-      if (entry.sum !== null) {
-        total = (total ?? 0) + entry.sum;
-      }
-    }
-    if (total !== null) {
-      totals.set(key, total);
-    }
-  }
   const orderedKeys = [...groups.keys()];
-  if (sortByY) {
-    orderedKeys.sort((left, right) => {
-      const leftTotal = totals.get(left);
-      const rightTotal = totals.get(right);
-      if (leftTotal === undefined && rightTotal === undefined) {
-        return (groups.get(left)?.order ?? 0) - (groups.get(right)?.order ?? 0);
-      }
-      if (leftTotal === undefined) {
-        return 1;
-      }
-      if (rightTotal === undefined) {
-        return -1;
-      }
-      return rightTotal - leftTotal;
-    });
-  }
 
   const seriesList =
     seriesIndex === undefined
@@ -289,14 +259,12 @@ export function BarChartView({
 
   const selection = useAnalysisSelection();
 
-  const [sortByY, setSortByY] = useState(false);
   const [selected, setSelected] = useState<SelectedBar | null>(null);
-  // 绑定变化时重置瞬态查看状态（排序方向与选择不随工作流保存）。
+  // 绑定变化时重置瞬态选择（不随工作流保存）。
   const bindingKey = [x, y, seriesColumn].join("|");
   const [prevBindingKey, setPrevBindingKey] = useState(bindingKey);
   if (bindingKey !== prevBindingKey) {
     setPrevBindingKey(bindingKey);
-    setSortByY(false);
     setSelected(null);
   }
 
@@ -324,10 +292,9 @@ export function BarChartView({
             table,
             { x, y, series: seriesColumn === "" ? null : seriesColumn },
             formatValue,
-            sortByY,
           )
         : null,
-    [missingColumn, yType, table, x, y, seriesColumn, formatValue, sortByY],
+    [missingColumn, yType, table, x, y, seriesColumn, formatValue],
   );
 
   const handleBarClick = useCallback(
@@ -382,31 +349,19 @@ export function BarChartView({
 
   return (
     <div className="analysis-chart-view">
-      <div className="analysis-member-toolbar">
-        <button
-          type="button"
-          className="text-button analysis-bar-sort"
-          aria-pressed={sortByY}
-          onClick={() => {
-            setSortByY((current) => !current);
-            setSelected(null);
-          }}
-        >
-          按 Y 排序
-        </button>
-      </div>
       <div
         className="analysis-chart"
         ref={containerRef}
         role="img"
         aria-label={`指标柱状图：X=${x}，Y=${y}`}
       />
-      <div className="analysis-member-footer">
-        <span>共 {table.rows.length} 行</span>
-        {table.truncated && (
-          <span className="analysis-member-truncated">仅显示前 {MAX_RENDERED_ROWS} 行</span>
-        )}
-      </div>
+      {table.truncated && (
+        <div className="analysis-member-footer">
+          <span className="analysis-member-truncated">
+            仅显示前 {MAX_RENDERED_ROWS} 行
+          </span>
+        </div>
+      )}
     </div>
   );
 }

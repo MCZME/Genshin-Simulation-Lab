@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { act, cleanup, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
 import type { AnalysisTableResult } from "../../workflow/templates";
@@ -151,7 +151,6 @@ describe("buildBarChartData", () => {
       TABLE,
       { x: "角色", y: "伤害", series: "来源" },
       identityFormat,
-      false,
     );
     expect(data).not.toBeNull();
     expect(data?.categories).toEqual(["钟离", "雷电将军"]);
@@ -169,27 +168,11 @@ describe("buildBarChartData", () => {
       TABLE,
       { x: "角色", y: "伤害", series: null },
       identityFormat,
-      false,
     );
     expect(data?.series).toHaveLength(1);
     expect(data?.series[0]?.name).toBe(DEFAULT_SERIES_NAME);
     expect(data?.series[0]?.values).toEqual([150, 900]);
     expect(data?.series[0]?.rowIndexes).toEqual([0, 1]);
-  });
-
-  it("按 Y 排序时类目按合计值降序，无数值类目排在最后", () => {
-    const table: AnalysisTableResult = {
-      columns: TABLE.columns,
-      rows: [...TABLE.rows, ["纳西妲", null, "普攻"]],
-      truncated: false,
-    };
-    const data = buildBarChartData(
-      table,
-      { x: "角色", y: "伤害", series: "来源" },
-      identityFormat,
-      true,
-    );
-    expect(data?.categories).toEqual(["雷电将军", "钟离", "纳西妲"]);
   });
 
   it("绑定列缺失时返回 null", () => {
@@ -198,7 +181,6 @@ describe("buildBarChartData", () => {
         TABLE,
         { x: "不存在", y: "伤害", series: null },
         identityFormat,
-        false,
       ),
     ).toBeNull();
     expect(
@@ -206,7 +188,6 @@ describe("buildBarChartData", () => {
         TABLE,
         { x: "角色", y: "伤害", series: "不存在" },
         identityFormat,
-        false,
       ),
     ).toBeNull();
   });
@@ -216,7 +197,6 @@ describe("buildBarChartData", () => {
       TABLE,
       { x: "角色", y: "伤害", series: null },
       (column, value) => (column === "角色" ? `显示:${String(value)}` : String(value)),
-      false,
     );
     expect(data?.categories).toEqual(["显示:钟离", "显示:雷电将军"]);
   });
@@ -230,7 +210,6 @@ describe("buildBarChartOption", () => {
       TABLE,
       { x: "角色", y: "伤害", series: null },
       identityFormat,
-      false,
     );
     const option = buildBarChartOption(data!, {
       selected: { seriesIndex: 0, dataIndex: 1 },
@@ -249,7 +228,6 @@ describe("buildBarChartOption", () => {
       TABLE,
       { x: "角色", y: "伤害", series: null },
       identityFormat,
-      false,
     );
     const option = buildBarChartOption(data!, {
       selected: null,
@@ -287,7 +265,6 @@ describe("BarChartView 集成", () => {
     renderView(BAR_NODE, definition, TABLE, select);
 
     expect(screen.getByRole("img", { name: "指标柱状图：X=角色，Y=伤害" })).toBeTruthy();
-    expect(screen.getByText("共 3 行")).toBeTruthy();
     const option = echartsStub.lastOption as {
       xAxis: { data: string[] };
       series: { name: string; data: unknown[] }[];
@@ -316,19 +293,6 @@ describe("BarChartView 集成", () => {
     renderView(BAR_NODE, definition, TABLE, select);
     echartsStub.lastClick?.(0, 1);
     expect(select).not.toHaveBeenCalled();
-  });
-
-  it("按 Y 排序切换后重新装配类目顺序", () => {
-    const definition = definitionWith({ x: "角色", y: "伤害", series: "来源" });
-    renderView(BAR_NODE, definition, TABLE);
-    fireEvent.click(screen.getByRole("button", { name: "按 Y 排序" }));
-    const option = echartsStub.lastOption as {
-      xAxis: { data: string[] };
-      series: { name: string; data: (number | null)[] }[];
-    };
-    expect(option.xAxis.data).toEqual(["雷电将军", "钟离"]);
-    const daZhao = option.series.find((series) => series.name === "大招");
-    expect(daZhao?.data).toEqual([900, null]);
   });
 
   it("Y 轴列不是数值列时显示错误", () => {

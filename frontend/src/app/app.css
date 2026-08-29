@@ -3081,14 +3081,84 @@ body {
   display: block;
 }
 
-.analysis-bar-sort[aria-pressed="true"] {
-  color: #f87171;
-}
-
 /* ── 表格配置节点：条件列 / 数据列绑定 ── */
 
 .node-card.node-card-table-config {
   width: 420px;
+}
+
+/* ── 展示配置节点（饼图配置 / 柱状图配置）：摘要行 + 行级绑定状态 ── */
+
+.node-card.node-card-display-config {
+  width: 300px;
+}
+
+.display-config-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #334155;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.display-config-summary-item + .display-config-summary-item::before {
+  content: "·";
+  margin: 0 6px;
+  color: #475569;
+}
+
+.display-config-summary-key {
+  color: #64748b;
+}
+
+.display-config-summary-value {
+  color: #cbd5e1;
+}
+
+.display-config-summary-empty {
+  color: #475569;
+}
+
+.display-config-row + .display-config-row {
+  margin-top: 6px;
+}
+
+.display-config-row select,
+.display-config-row input {
+  width: 100%;
+  min-width: 0;
+}
+
+/* 必选标记走伪元素：标签文本保持纯净，星号不进入可访问名与测试文本。 */
+.display-config-required-label::before {
+  content: "✱";
+  margin-right: 4px;
+  color: #f87171;
+}
+
+.display-config-optional {
+  color: #64748b;
+}
+
+.display-config-row-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.display-config-row-hint.warn {
+  color: #f59e0b;
+}
+
+.display-config-row-hint.error {
+  color: #f87171;
+}
+
+.display-config-row select.field-invalid {
+  border-color: #ef4444;
 }
 
 .table-config-editor {
@@ -4251,6 +4321,8 @@ body {
 
 .filter-condition-line > select,
 .filter-condition-line > input,
+.display-config-row select,
+.display-config-row input,
 .aggregate-line > select,
 .aggregate-line > input,
 .project-line > select,

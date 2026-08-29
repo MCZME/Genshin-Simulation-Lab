@@ -47,6 +47,19 @@ const ROLE_LABELS: Record<string, string> = {
   series: "系列列",
 };
 
+/** 摘要行字段短名：卡顶一行读出当前绑定，未绑定显示「—」。 */
+const SUMMARY_LABELS: Record<string, string> = {
+  track: "轨道",
+  start: "起点",
+  end: "终点",
+  value: "值",
+  label: "标签",
+  group: "分组",
+  x: "X",
+  y: "Y",
+  series: "系列",
+};
+
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
@@ -401,65 +414,108 @@ export function TableConfigEditor({ node, onChange }: EditorProps) {
   );
 }
 
-/** 展示配置编辑器：单值角色用列下拉（列选项沿「配置 → 视图 → 上游」解析）。 */
-export function DisplayConfigEditor({ node, onChange }: EditorProps) {
+/** 展示配置编辑器：绑定摘要行 + 行级绑定状态的列下拉表单（列选项沿「配置 → 视图 → 上游」解析）。 */
+export function DisplayConfigEditor({ node, onChange, fieldErrors }: EditorProps) {
   const env = useContextEnv();
   const view = configTargetView(env.definition, node.id);
   const shape = view === null ? [] : viewInputShape(env.shapes, env.definition, view.id);
   const available = shape.map((column) => column.name);
   const roles = ROLE_CONFIGS[node.kind] ?? [];
+  const emptyMessage =
+    view === null
+      ? `连接${node.kind === "pie_config" ? "饼图" : "柱状图"}视图后可绑定列`
+      : "视图未接通数据源，接通后出现可绑定列";
   return (
-    <div className="analysis-editor">
-      {available.length === 0 && (
-        <p className="analysis-editor-empty">
-          连接视图并接通数据源后，这里会出现可绑定的列。
-        </p>
-      )}
-      {roles.map((config) => {
-        const current = asString(node.params[config.role]) ?? "";
-        return (
-          <label key={config.role} className="analysis-field">
-            <span>
-              {ROLE_LABELS[config.role] ?? config.role}
-              {config.required ? "（必选）" : ""}
+    <div className="analysis-editor display-config-editor">
+      <div className="display-config-summary">
+        {roles.map((config) => {
+          const current = asString(node.params[config.role]) ?? "";
+          return (
+            <span key={config.role} className="display-config-summary-item">
+              <span className="display-config-summary-key">
+                {SUMMARY_LABELS[config.role] ?? config.role}
+              </span>
+              =
+              {current === "" ? (
+                <span className="display-config-summary-empty">—</span>
+              ) : (
+                <span className="display-config-summary-value">{current}</span>
+              )}
             </span>
-            {config.list ? (
-              <input
-                value={
-                  Array.isArray(node.params[config.role])
-                    ? (node.params[config.role] as unknown[]).join(",")
-                    : ""
-                }
-                placeholder="列名，逗号分隔"
-                onChange={(event) =>
-                  onChange({
-                    ...node.params,
-                    [config.role]: event.target.value
-                      .split(",")
-                      .map((item) => item.trim())
-                      .filter((item) => item !== ""),
-                  })
-                }
-              />
-            ) : (
-              <select
-                value={current}
-                onChange={(event) =>
-                  onChange({ ...node.params, [config.role]: event.target.value })
-                }
+          );
+        })}
+      </div>
+      {available.length === 0 && <p className="analysis-editor-empty">{emptyMessage}</p>}
+      {available.length > 0 &&
+        roles.map((config) => {
+        const current = asString(node.params[config.role]) ?? "";
+        const fieldError = fieldErrors?.[config.role]?.[0];
+        const missing = current !== "" && !available.includes(current);
+        const hint = (() => {
+          if (fieldError !== undefined) {
+            return { text: fieldError, tone: "error" };
+          }
+          if (missing) {
+            return { text: "列不在上游表中", tone: "error" };
+          }
+          if (config.required && current === "") {
+            return { text: "必选，尚未绑定", tone: "warn" };
+          }
+          return null;
+        })();
+        const invalid = fieldError !== undefined || missing;
+        return (
+          <div key={config.role} className="display-config-row">
+            <label className="field-row">
+              <span
+                className={`field-label ${
+                  config.required ? "display-config-required-label" : "display-config-optional"
+                }`}
               >
-                <option value="">列…</option>
-                {available.map((name) => (
-                  <option key={name} value={name}>
-                    {name}
-                  </option>
-                ))}
-                {current !== "" && !available.includes(current) && (
-                  <option value={current}>{current}</option>
-                )}
-              </select>
+                {ROLE_LABELS[config.role] ?? config.role}
+              </span>
+              {config.list ? (
+                <input
+                  value={
+                    Array.isArray(node.params[config.role])
+                      ? (node.params[config.role] as unknown[]).join(",")
+                      : ""
+                  }
+                  placeholder="列名，逗号分隔"
+                  onChange={(event) =>
+                    onChange({
+                      ...node.params,
+                      [config.role]: event.target.value
+                        .split(",")
+                        .map((item) => item.trim())
+                        .filter((item) => item !== ""),
+                    })
+                  }
+                />
+              ) : (
+                <select
+                  className={invalid ? "field-invalid" : undefined}
+                  value={current}
+                  onChange={(event) =>
+                    onChange({ ...node.params, [config.role]: event.target.value })
+                  }
+                >
+                  <option value="">列…</option>
+                  {available.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                  {current !== "" && !available.includes(current) && (
+                    <option value={current}>{current}</option>
+                  )}
+                </select>
+              )}
+            </label>
+            {hint !== null && (
+              <p className={`display-config-row-hint ${hint.tone}`}>{hint.text}</p>
             )}
-          </label>
+          </div>
         );
       })}
     </div>

@@ -1091,7 +1091,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
   },
   pie: {
     kind: "pie",
-    displayName: "占比饼图",
+    displayName: "饼图",
     region: "analysis",
     ports: {
       inputs: [

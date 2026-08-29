@@ -258,8 +258,7 @@ describe("PieChartView 集成", () => {
     const definition = definitionWith({ group: "角色", value: "伤害", label: "标签" });
     renderView(PIE_NODE, definition, TABLE, select);
 
-    expect(screen.getByRole("img", { name: "占比饼图：分组=角色，值=伤害" })).toBeTruthy();
-    expect(screen.getByText("共 3 行")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "饼图：分组=角色，值=伤害" })).toBeTruthy();
     const option = echartsStub.lastOption as {
       series: { data: { name: string; value: number | null }[] }[];
     };

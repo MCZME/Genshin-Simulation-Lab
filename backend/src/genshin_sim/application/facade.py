@@ -18,7 +18,7 @@ from genshin_sim.application.batch import (
     BatchValidationResult,
     SingleBatchResult,
 )
-from genshin_sim.application.config import ProjectConfig, UiConfig
+from genshin_sim.application.config import DeveloperConfig, ProjectConfig, UiConfig
 from genshin_sim.application.context import ApplicationContext
 from genshin_sim.application.errors import ApplicationError
 from genshin_sim.application.input import SimulationInput
@@ -268,6 +268,10 @@ class ApplicationFacade(Protocol):
     def get_ui_settings(self) -> UiConfig: ...
 
     def save_ui_settings(self, *, run_animation: bool) -> UiConfig: ...
+
+    def get_developer_settings(self) -> DeveloperConfig: ...
+
+    def save_developer_settings(self, *, enabled: bool) -> DeveloperConfig: ...
 
 
 class DefaultApplicationFacade:
@@ -692,6 +696,16 @@ class DefaultApplicationFacade:
         updated = replace(config, ui=UiConfig(run_animation=run_animation))
         self._context.config_store.save(root, updated)
         return updated.ui
+
+    def get_developer_settings(self) -> DeveloperConfig:
+        return self._project_service.load_project(self._context.project_root).developer
+
+    def save_developer_settings(self, *, enabled: bool) -> DeveloperConfig:
+        root = self._context.project_root
+        config = self._project_service.load_project(root)
+        updated = replace(config, developer=DeveloperConfig(enabled=enabled))
+        self._context.config_store.save(root, updated)
+        return updated.developer
 
     def _asset_database_service(
         self,

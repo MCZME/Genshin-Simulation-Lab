@@ -27,6 +27,7 @@ from genshin_sim.application import (
     WorkflowSummary,
     WorkspaceInfo,
 )
+from genshin_sim.application.config import DeveloperConfig
 from genshin_sim.application.services.frame_state import fold_frame_state
 
 ApplicationFacadeFactory = Callable[..., ApplicationFacade]
@@ -40,6 +41,7 @@ class FakeApplicationFacade:
         *,
         workspace: WorkspaceInfo | None = None,
         ui_settings: UiConfig | None = None,
+        developer_settings: DeveloperConfig | None = None,
         workflows: tuple[WorkflowDetail, ...] = (),
         results: tuple[RunDetail, ...] = (),
         assets: tuple[AssetListItem, ...] = (),
@@ -49,7 +51,9 @@ class FakeApplicationFacade:
     ) -> None:
         self.workspace = workspace or WorkspaceInfo("data", "2026.08.17", True)
         self.ui_settings = ui_settings or UiConfig()
+        self.developer_settings = developer_settings or DeveloperConfig()
         self.saved_ui_settings: list[bool] = []
+        self.saved_developer_settings: list[bool] = []
         self._workflows = {workflow.id: workflow for workflow in workflows}
         self._results = {run.session_id: run for run in results}
         self._assets = list(assets)
@@ -119,6 +123,14 @@ class FakeApplicationFacade:
         self.saved_ui_settings.append(run_animation)
         self.ui_settings = UiConfig(run_animation=run_animation)
         return self.ui_settings
+
+    def get_developer_settings(self) -> DeveloperConfig:
+        return self.developer_settings
+
+    def save_developer_settings(self, *, enabled: bool) -> DeveloperConfig:
+        self.saved_developer_settings.append(enabled)
+        self.developer_settings = DeveloperConfig(enabled=enabled)
+        return self.developer_settings
 
     def validate_batch_inputs(self, members: list[BatchMember]) -> BatchValidationResult:
         if len(members) > 200:

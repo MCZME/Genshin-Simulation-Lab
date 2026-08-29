@@ -43,8 +43,8 @@
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/v1/workspace` | 初始化状态与资产库版本 |
-| GET | `/api/v1/settings` | 读取界面偏好设置（config.toml `ui` 节） |
-| PUT | `/api/v1/settings` | 保存界面偏好设置 |
+| GET | `/api/v1/settings` | 读取界面偏好与开发者设置（config.toml `ui` / `developer` 节） |
+| PUT | `/api/v1/settings` | 保存界面偏好与开发者设置 |
 | GET | `/api/v1/workflows` | 工作流存档列表 |
 | POST | `/api/v1/workflows` | 创建空工作流存档 |
 | GET | `/api/v1/workflows/{id}` | 读取工作流 JSON |
@@ -91,12 +91,14 @@
 ### `GET /api/v1/settings`
 
 ```json
-{ "run_animation": true, "workspace": { "data_dir": "data" } }
+{ "run_animation": true, "developer": { "enabled": false }, "workspace": { "data_dir": "data" } }
 ```
 
 ### `PUT /api/v1/settings`
 
-请求体只含界面偏好字段：`run_animation` 必填布尔值，非法值 `400` / `validation_failed`；工作区节不可经此修改。响应为保存后的完整设置视图。写入经 tomlkit 保留 config.toml 用户注释。
+请求体含必填布尔值 `run_animation` 与可选布尔值 `developer_enabled`（缺省时保持当前开发者模式不变，兼容既有前端），非法值 `400` / `validation_failed`；工作区节不可经此修改。响应为保存后的完整设置视图。写入经 tomlkit 保留 config.toml 用户注释。
+
+`developer.enabled` 开启开发者模式：注册并可见 `content/test` 包测试内容（含测试资产），修改写入 config.toml，**重启服务后生效**（组装期重建内容注册表与资产仓库组合）。
 
 ## 5. 工作流存档
 

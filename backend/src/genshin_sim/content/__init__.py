@@ -53,11 +53,6 @@ from genshin_sim.content.characters.mondstadt.barbara.data import (
 from genshin_sim.content.characters.mondstadt.barbara.effects import (
     create_barbara_encore_effect,
 )
-from genshin_sim.content.characters.testing.runtime_probe import (
-    RUNTIME_PROBE_ACTION_KEY,
-    RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-    RUNTIME_PROBE_IMPACT_KEY,
-)
 from genshin_sim.content.hooks import (
     HookContext,
     HookDispatcher,
@@ -114,6 +109,11 @@ from genshin_sim.content.team import (
     RESONANCE_PYRO,
     create_resonance_buff_definitions,
     create_resonance_definitions,
+)
+from genshin_sim.content.test.characters.runtime_probe import (
+    RUNTIME_PROBE_ACTION_KEY,
+    RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
+    RUNTIME_PROBE_IMPACT_KEY,
 )
 from genshin_sim.content.weapons.bow.hunter_bow import (
     HUNTER_BOW_ASSET_KEY,

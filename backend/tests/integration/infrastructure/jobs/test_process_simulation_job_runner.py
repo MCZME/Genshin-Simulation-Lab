@@ -50,6 +50,7 @@ def test_process_runner_runs_file_and_persists_result(tmp_path: Path):
         asset_db_path=asset_db,
         result_db_path=result_db,
         max_workers=1,
+        developer_mode=True,
         job_id_factory=lambda: "job-1",
     ) as runner:
         service = BatchRunService(

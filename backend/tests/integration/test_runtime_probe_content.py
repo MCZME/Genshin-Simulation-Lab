@@ -12,6 +12,7 @@ from genshin_sim.content import (
     RUNTIME_PROBE_ACTION_KEY,
     RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
     RUNTIME_PROBE_IMPACT_KEY,
+    create_default_content_unit_registry,
 )
 from genshin_sim.core.events import EventType
 from genshin_sim.infrastructure.assets_sqlite import (
@@ -31,7 +32,7 @@ def test_cli_and_assembler_runtime_probe_closed_loop(
     result_db = tmp_path / "results.db"
     input_path = tmp_path / "config.json"
     (tmp_path / "config.toml").write_text(
-        'schema_version = 1\n\n[workspace]\ndata_dir = "data"\n',
+        'schema_version = 1\n\n[workspace]\ndata_dir = "data"\n\n[developer]\nenabled = true\n',
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)
@@ -133,7 +134,10 @@ def test_cli_and_assembler_runtime_probe_closed_loop(
         "character:test_character"
     )
 
-    assembled = SimulationAssembler(SQLiteAssetRepository(asset_db)).assemble(
+    assembled = SimulationAssembler(
+        SQLiteAssetRepository(asset_db),
+        content_unit_registry=create_default_content_unit_registry(developer_mode=True),
+    ).assemble(
         SimulationInput.from_mapping(
             static_asset_input_payload(meta_name="runtime probe integration")
         )
@@ -192,7 +196,7 @@ def test_frame_state_and_event_detail_from_persisted_results(
     result_db = tmp_path / "results.db"
     input_path = tmp_path / "config.json"
     (tmp_path / "config.toml").write_text(
-        'schema_version = 1\n\n[workspace]\ndata_dir = "data"\n',
+        'schema_version = 1\n\n[workspace]\ndata_dir = "data"\n\n[developer]\nenabled = true\n',
         encoding="utf-8",
     )
     monkeypatch.chdir(tmp_path)

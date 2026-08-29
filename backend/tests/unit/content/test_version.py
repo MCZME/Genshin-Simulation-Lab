@@ -10,20 +10,20 @@ from genshin_sim.content.characters.mondstadt.barbara.data import (
 from genshin_sim.content.characters.mondstadt.barbara.data import (
     BARBARA_CONTENT_VERSION as BARBARA_VERSION,
 )
-from genshin_sim.content.characters.testing.runtime_probe.constants import (
-    RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-)
-from genshin_sim.content.characters.testing.runtime_probe.constants import (
-    RUNTIME_PROBE_CONTENT_VERSION as RUNTIME_PROBE_VERSION,
-)
-from genshin_sim.content.characters.testing.runtime_probe.content import (
-    create_runtime_probe_content_unit,
-)
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
 )
 from genshin_sim.content.registries import CharacterContentUnitRequest
+from genshin_sim.content.test.characters.runtime_probe.constants import (
+    RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
+)
+from genshin_sim.content.test.characters.runtime_probe.constants import (
+    RUNTIME_PROBE_CONTENT_VERSION as RUNTIME_PROBE_VERSION,
+)
+from genshin_sim.content.test.characters.runtime_probe.content import (
+    create_runtime_probe_content_unit,
+)
 
 
 def test_content_unit_requires_non_empty_version():

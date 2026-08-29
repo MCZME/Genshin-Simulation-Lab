@@ -48,7 +48,32 @@ def test_default_content_unit_registry_exposes_builtin_characters():
     registry = create_default_content_unit_registry()
 
     assert registry.has_character_handler(BARBARA_CHARACTER_HANDLER_KEY)
-    assert registry.has_character_handler(RUNTIME_PROBE_CHARACTER_HANDLER_KEY)
+
+
+def test_default_content_unit_registry_gates_test_content_behind_developer_mode():
+    normal = create_default_content_unit_registry()
+    developer = create_default_content_unit_registry(developer_mode=True)
+
+    assert not normal.has_character_handler(RUNTIME_PROBE_CHARACTER_HANDLER_KEY)
+    assert developer.has_character_handler(RUNTIME_PROBE_CHARACTER_HANDLER_KEY)
+    assert developer.handler_status(RUNTIME_PROBE_CHARACTER_HANDLER_KEY) is (
+        HandlerImplementationStatus.IMPLEMENTED
+    )
+
+
+def test_developer_mode_registry_can_compile_runtime_probe_unit():
+    registry = create_default_content_unit_registry(developer_mode=True)
+
+    unit = registry.create_character(
+        CharacterContentUnitRequest(
+            handler_key=RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
+            character_key="character:test_character",
+            slot=1,
+        )
+    )
+
+    assert unit is not None
+    assert unit.handler_key == RUNTIME_PROBE_CHARACTER_HANDLER_KEY
 
 
 def test_default_content_unit_registry_exposes_starter_weapons():

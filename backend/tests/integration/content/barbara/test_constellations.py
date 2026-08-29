@@ -8,6 +8,7 @@ import pytest
 
 from genshin_sim.application.assembly import SimulationAssembler
 from genshin_sim.application.input import SimulationInput
+from genshin_sim.content import create_default_content_unit_registry
 from genshin_sim.core.attributes import (
     BONUS_DAMAGE_HYDRO,
     AttributeQuery,
@@ -85,9 +86,11 @@ def test_barbara_c2_hydro_bonus_follows_active_character_on_switch(tmp_path: Pat
             {"frame": 111, "events": [{"key": "keyboard.1", "phase": "release"}]},
         ],
     )
-    assembled = SimulationAssembler(SQLiteAssetRepository(asset_db)).assemble(
-        SimulationInput.from_mapping(payload)
-    )
+    assembled = SimulationAssembler(
+        SQLiteAssetRepository(asset_db),
+        # 探针库绑定 runtime_probe handler，需要开发者模式注册表。
+        content_unit_registry=create_default_content_unit_registry(developer_mode=True),
+    ).assemble(SimulationInput.from_mapping(payload))
 
     resolver = assembled.attribute_runtime.resolver
     slot_1 = AttributeSubjectRef.character("character:slot_1")

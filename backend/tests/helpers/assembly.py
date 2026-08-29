@@ -8,6 +8,7 @@ from pathlib import Path
 
 from genshin_sim.application.assembly import SimulationAssembler
 from genshin_sim.application.input import SimulationInput
+from genshin_sim.content import create_default_content_unit_registry
 from genshin_sim.core.actions import (
     ActionInterpretationResult,
     ActionInterpretationTrigger,
@@ -258,7 +259,11 @@ def build_reaction_assembled(
                 ("elemental_mastery", elemental_mastery, "character:test_character", 90),
             )
         assert cursor.rowcount == 1
-    return SimulationAssembler(SQLiteAssetRepository(asset_db)).assemble(
+    return SimulationAssembler(
+        SQLiteAssetRepository(asset_db),
+        # 测试角色绑定 runtime_probe handler，需要开发者模式注册表。
+        content_unit_registry=create_default_content_unit_registry(developer_mode=True),
+    ).assemble(
         SimulationInput.from_mapping(
             static_asset_input_payload(
                 meta_name=meta_name,

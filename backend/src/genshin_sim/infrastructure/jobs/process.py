@@ -21,6 +21,7 @@ from genshin_sim.application.jobs import (
     run_simulation_worker,
 )
 from genshin_sim.application.jobs.models import _utc_now
+from genshin_sim.assets import CompositeAssetRepository
 from genshin_sim.infrastructure.assets_sqlite import SQLiteAssetRepository
 from genshin_sim.infrastructure.results_sqlite import SQLiteResultWriter
 
@@ -43,12 +44,14 @@ class ProcessSimulationJobRunner:
         asset_db_path: str | Path,
         result_db_path: str | Path,
         max_workers: int = 1,
+        developer_mode: bool = False,
         job_id_factory: Callable[[], str] | None = None,
     ) -> None:
         if max_workers <= 0:
             raise ValueError("max_workers 必须大于 0")
         self.asset_db_path = Path(asset_db_path)
         self.result_db_path = Path(result_db_path)
+        self.developer_mode = developer_mode
         self._job_id_factory = job_id_factory or (lambda: uuid.uuid4().hex)
         self._pool = ProcessPoolExecutor(max_workers=max_workers)
         self._jobs: dict[str, _ProcessJobRecord] = {}
@@ -61,6 +64,7 @@ class ProcessSimulationJobRunner:
             simulation_input=config,
             asset_db_path=str(self.asset_db_path),
             result_db_path=str(self.result_db_path),
+            developer_mode=self.developer_mode,
             created_at=status.created_at,
         )
         logger.info(
@@ -76,6 +80,7 @@ class ProcessSimulationJobRunner:
             input_path=str(path),
             asset_db_path=str(self.asset_db_path),
             result_db_path=str(self.result_db_path),
+            developer_mode=self.developer_mode,
             created_at=status.created_at,
         )
         logger.info(
@@ -232,9 +237,19 @@ def run_sqlite_simulation_worker(payload: SimulationWorkerPayload) -> Simulation
     if not payload.result_db_path:
         raise SimulationJobPayloadError("result_db_path 不能为空")
 
+    asset_repository: SQLiteAssetRepository | CompositeAssetRepository = SQLiteAssetRepository(
+        payload.asset_db_path
+    )
+    if payload.developer_mode:
+        # 开发者模式下叠加代码定义的测试资产；测试内容随代码重建，无需传递路径。
+        from genshin_sim.content.test.asset_repository import TestAssetRepository
+
+        asset_repository = CompositeAssetRepository(asset_repository, TestAssetRepository())
+
     executor = SynchronousSimulationExecutor.create(
-        asset_repository=SQLiteAssetRepository(payload.asset_db_path),
+        asset_repository=asset_repository,
         result_writer=SQLiteResultWriter(payload.result_db_path),
+        developer_mode=payload.developer_mode,
     )
     return run_simulation_worker(payload, executor)
 

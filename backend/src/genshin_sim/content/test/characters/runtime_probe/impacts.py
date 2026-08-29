@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from genshin_sim.content.characters.testing.runtime_probe.constants import (
+from genshin_sim.content.test.characters.runtime_probe.constants import (
     RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
 )
 from genshin_sim.core.attributes import STAT_ATK_TOTAL

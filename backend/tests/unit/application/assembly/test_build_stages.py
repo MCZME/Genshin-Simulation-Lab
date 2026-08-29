@@ -245,7 +245,7 @@ def test_content_compiler_uses_default_content_unit_registry_path():
                 handler_key="character.testing.runtime_probe",
             )
 
-    compiler = ContentCompiler(create_default_content_unit_registry())
+    compiler = ContentCompiler(create_default_content_unit_registry(developer_mode=True))
     assets = AssetBundleLoader(RuntimeProbeRepository()).load(_single_character_config())
 
     bundle = compiler.compile(_single_character_config(), assets)

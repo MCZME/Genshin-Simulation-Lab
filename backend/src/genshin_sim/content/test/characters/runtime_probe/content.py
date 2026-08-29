@@ -1,21 +1,21 @@
 from __future__ import annotations
 
-from genshin_sim.content.characters.testing.runtime_probe.actions import (
-    RuntimeProbeActionInterpreter,
-    create_runtime_probe_action,
-)
-from genshin_sim.content.characters.testing.runtime_probe.constants import (
-    RUNTIME_PROBE_CONTENT_VERSION,
-    RUNTIME_PROBE_IMPACT_KEY,
-)
-from genshin_sim.content.characters.testing.runtime_probe.impacts import (
-    RuntimeProbeImpactFactory,
-)
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
 )
 from genshin_sim.content.registries import CharacterContentUnitRequest
+from genshin_sim.content.test.characters.runtime_probe.actions import (
+    RuntimeProbeActionInterpreter,
+    create_runtime_probe_action,
+)
+from genshin_sim.content.test.characters.runtime_probe.constants import (
+    RUNTIME_PROBE_CONTENT_VERSION,
+    RUNTIME_PROBE_IMPACT_KEY,
+)
+from genshin_sim.content.test.characters.runtime_probe.impacts import (
+    RuntimeProbeImpactFactory,
+)
 
 
 def create_runtime_probe_content_unit(

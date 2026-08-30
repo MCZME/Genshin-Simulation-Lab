@@ -276,6 +276,47 @@ class FakeApplicationFacade:
             return None
         return events[ordinal]
 
+    def get_run_entities(self, session_id: str) -> dict[str, Any]:
+        run = self.get_run(session_id, include_events=False)
+        snapshot = run.input_snapshot
+        characters: list[dict[str, Any]] = []
+        asset_keys: list[str] = []
+        slots: list[int] = []
+        team = snapshot.get("team")
+        if isinstance(team, list):
+            for entry in team:
+                if not isinstance(entry, dict):
+                    continue
+                slot = entry.get("slot")
+                character = entry.get("character")
+                if not isinstance(slot, int) or not isinstance(character, dict):
+                    continue
+                asset_key = character.get("asset_key")
+                if not isinstance(asset_key, str) or not asset_key:
+                    continue
+                slots.append(slot)
+                asset_keys.append(asset_key)
+        names = {item.asset_key: item.name for item in self.resolve_assets(tuple(asset_keys))}
+        characters = [
+            {"slot": slot, "asset_key": asset_key, "name": names.get(asset_key, "")}
+            for slot, asset_key in zip(slots, asset_keys, strict=True)
+        ]
+        scene = snapshot.get("scene")
+        targets: list[dict[str, Any]] = []
+        if isinstance(scene, dict) and isinstance(scene.get("targets"), list):
+            for target in scene["targets"]:
+                if not isinstance(target, dict) or not isinstance(target.get("id"), str):
+                    continue
+                targets.append(
+                    {
+                        "id": target["id"],
+                        "label": target.get("label")
+                        if isinstance(target.get("label"), str)
+                        else "",
+                    }
+                )
+        return {"characters": characters, "targets": targets}
+
     def get_frame_state(self, session_id: str, frame: int) -> dict[str, Any]:
         try:
             run = self._results[session_id]

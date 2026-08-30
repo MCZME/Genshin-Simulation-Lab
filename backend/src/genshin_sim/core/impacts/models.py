@@ -51,6 +51,8 @@ class DamageImpactSpec:
     icd_tag_key: str | None = None
     icd_sequence_key: str | None = None
     area: ImpactAreaSpec | None = None
+    # 这一次伤害的显示名称（如"重击"）；由内容定义提供，进入 DAMAGE_RESOLVED 审计。
+    display_name: str | None = None
 
     def __post_init__(self) -> None:
         for value, name in (
@@ -101,6 +103,10 @@ class DamageImpactSpec:
         ):
             if value is not None and (not isinstance(value, str) or not value.strip()):
                 raise ValueError(f"{name} 提供时必须是非空字符串")
+        if self.display_name is not None and (
+            not isinstance(self.display_name, str) or not self.display_name.strip()
+        ):
+            raise ValueError("display_name 提供时必须是非空字符串")
         if self.area is not None and not isinstance(self.area, ImpactAreaSpec):
             raise ValueError("area 提供时必须是非空 ImpactAreaSpec")
         object.__setattr__(self, "scaling_terms", terms)

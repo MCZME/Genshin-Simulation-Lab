@@ -567,3 +567,87 @@ def test_facade_default_workflow_store_follows_config_data_dir_changes(tmp_path)
 
     assert (project_root / "lab" / "workflows" / f"{second.id}.json").is_file()
     assert not (project_root / "data" / "workflows" / f"{second.id}.json").exists()
+
+
+def _run_entities_detail() -> RunDetail:
+    return RunDetail(
+        session_id="session-entities",
+        state="completed",
+        input_snapshot={
+            "meta": {"name": "entities"},
+            "team": [
+                {
+                    "slot": 1,
+                    "character": {"asset_key": "character:75", "level": 90},
+                    "artifacts": {"sets": [], "stats": {}},
+                },
+                {
+                    "slot": 2,
+                    "character": {"asset_key": "character:missing", "level": 90},
+                    "artifacts": {"sets": [], "stats": {}},
+                },
+            ],
+            "scene": {
+                "player": {},
+                "targets": [
+                    {"id": "target_1", "label": "试炼桩", "level": 90},
+                    {"id": "target_2", "label": "", "level": 90},
+                ],
+            },
+        },
+        initial_snapshot=None,
+        summary=SimulationRunSummary(
+            stop_reason="INPUT_EXHAUSTED",
+            end_frame=10,
+            frames_run=10,
+        ),
+        events=(),
+        error_code=None,
+        error_message=None,
+        created_at="2026-01-01T00:00:00+00:00",
+        started_at=None,
+        finished_at=None,
+    )
+
+
+def test_facade_get_run_entities_resolves_names_from_snapshot_and_assets() -> None:
+    from genshin_sim.assets import CharacterAsset
+
+    detail = _run_entities_detail()
+    asset_repository = FakeAssetRepository(
+        characters=(
+            CharacterAsset(
+                asset_key="character:75",
+                source_id="75",
+                name="测试角色",
+                element="hydro",
+                weapon_type="sword",
+                rarity=5,
+                handler_key="generic.test_character",
+            ),
+        )
+    )
+    facade = _make_facade(
+        result_repository=_FakeResultRepository(details={"session-entities": detail}),
+        asset_repository=asset_repository,
+    )
+
+    entities = facade.get_run_entities("session-entities")
+
+    assert entities["characters"] == [
+        {"slot": 1, "asset_key": "character:75", "name": "测试角色"},
+        {"slot": 2, "asset_key": "character:missing", "name": ""},
+    ]
+    assert entities["targets"] == [
+        {"id": "target_1", "label": "试炼桩"},
+        {"id": "target_2", "label": ""},
+    ]
+
+
+def test_facade_get_run_entities_missing_session_raises_not_found() -> None:
+    facade = _make_facade()
+
+    with pytest.raises(ApplicationError) as exc_info:
+        facade.get_run_entities("no-such-session")
+
+    assert exc_info.value.code == "not_found"

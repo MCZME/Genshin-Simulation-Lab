@@ -221,6 +221,7 @@ def _build_damage_result(
             official_damage=resolution.official_damage,
             debug_multiplier=resolution.debug_multiplier,
             final_damage=resolution.final_damage,
+            damage_name=query.request.damage_name,
             lunar_reaction_resolution=resolution,
             source_attribute_trace=(
                 () if trace_level is TraceLevel.NONE else resolution.source_attribute_trace
@@ -260,6 +261,7 @@ def _build_damage_result(
             official_damage=resolution.official_damage,
             debug_multiplier=resolution.debug_multiplier,
             final_damage=resolution.final_damage,
+            damage_name=query.request.damage_name,
             reaction_details=resolution.reaction,
             secondary_amplifying_resolution=resolution.secondary_amplifying_resolution,
             source_attribute_trace=(),
@@ -297,6 +299,7 @@ def _build_damage_result(
             official_damage=resolution.official_damage,
             debug_multiplier=resolution.debug_multiplier,
             final_damage=resolution.final_damage,
+            damage_name=query.request.damage_name,
             reaction_details=resolution.reaction,
             catalyze_reaction_resolution=resolution.catalyze,
             component_results=resolution.scaling.component_results,
@@ -334,6 +337,7 @@ def _build_damage_result(
         official_damage=resolution.official_damage,
         debug_multiplier=resolution.debug_multiplier,
         final_damage=resolution.final_damage,
+        damage_name=query.request.damage_name,
         reaction_details=resolution.reaction,
         component_results=resolution.scaling.component_results,
         source_attribute_trace=source_trace,

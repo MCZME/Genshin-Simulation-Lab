@@ -74,6 +74,28 @@ class DamageEventView(BaseModel):
     audit: Any = None
 
 
+class SessionEntityCharacter(BaseModel):
+    """会话输入快照中的角色槽位身份与显示名。"""
+
+    slot: int
+    asset_key: str
+    name: str
+
+
+class SessionEntityTarget(BaseModel):
+    """会话输入快照中的目标身份与显示标签。"""
+
+    id: str
+    label: str
+
+
+class SessionEntitiesView(BaseModel):
+    """会话级实体显示表；以运行输入快照为权威，供详情视图解析实体引用。"""
+
+    characters: list[SessionEntityCharacter] = Field(default_factory=list)
+    targets: list[SessionEntityTarget] = Field(default_factory=list)
+
+
 class EventDetailResponse(BaseModel):
     """单条事件详情。"""
 
@@ -83,6 +105,7 @@ class EventDetailResponse(BaseModel):
     event_type: str
     data: dict[str, Any] = Field(default_factory=dict)
     damage: DamageEventView | None = None
+    entities: SessionEntitiesView = Field(default_factory=SessionEntitiesView)
 
 
 class FrameTeamCharacter(BaseModel):

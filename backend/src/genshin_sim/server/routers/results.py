@@ -23,6 +23,9 @@ from genshin_sim.server.dto.results import (
     RunDetailResponse,
     RunListResponse,
     RunSummary,
+    SessionEntitiesView,
+    SessionEntityCharacter,
+    SessionEntityTarget,
 )
 from genshin_sim.server.dto.results import (
     RunListItem as RunListItemDto,
@@ -123,6 +126,13 @@ def get_run_event_detail(
             "not_found",
             f"事件 {session_id}/{ordinal} 不存在",
         )
+    raw_entities = facade.get_run_entities(session_id)
+    entities = SessionEntitiesView(
+        characters=[
+            SessionEntityCharacter.model_validate(item) for item in raw_entities["characters"]
+        ],
+        targets=[SessionEntityTarget.model_validate(item) for item in raw_entities["targets"]],
+    )
     return EventDetailResponse(
         session_id=session_id,
         ordinal=event.ordinal,
@@ -130,6 +140,7 @@ def get_run_event_detail(
         event_type=event.event_type,
         data=event.data,
         damage=_damage_view(event),
+        entities=entities,
     )
 
 

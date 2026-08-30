@@ -223,6 +223,8 @@ class ApplicationFacade(Protocol):
 
     def get_run(self, session_id: str, *, include_events: bool = True) -> RunDetail: ...
 
+    def get_run_entities(self, session_id: str) -> dict[str, Any]: ...
+
     def count_run_events(
         self,
         session_id: str,
@@ -596,6 +598,73 @@ class DefaultApplicationFacade:
             )
         except LookupError as exc:
             raise _result_not_found(session_id) from exc
+
+    def get_run_entities(self, session_id: str) -> dict[str, Any]:
+        """读取会话的运行时实体显示表（角色槽位名、目标标签），供详情视图解析引用。
+
+        实体身份以运行输入快照为准（结果库固化），角色显示名来自资产库；
+        快照缺失或字段异常时返回空表，不视为错误。
+        """
+
+        try:
+            run = self._results_service.inspect_run(session_id, include_events=False)
+        except LookupError as exc:
+            raise _result_not_found(session_id) from exc
+
+        snapshot = run.input_snapshot
+        if not isinstance(snapshot, Mapping):
+            return {"characters": (), "targets": ()}
+
+        characters: list[dict[str, Any]] = []
+        asset_keys: list[str] = []
+        slots: list[int] = []
+        team = snapshot.get("team")
+        if isinstance(team, Sequence) and not isinstance(team, (str, bytes)):
+            for entry in team:
+                if not isinstance(entry, Mapping):
+                    continue
+                slot = entry.get("slot")
+                character = entry.get("character")
+                if not isinstance(slot, int) or isinstance(slot, bool):
+                    continue
+                if not isinstance(character, Mapping):
+                    continue
+                asset_key = character.get("asset_key")
+                if not isinstance(asset_key, str) or not asset_key:
+                    continue
+                slots.append(slot)
+                asset_keys.append(asset_key)
+
+        names: dict[str, str] = {}
+        if asset_keys:
+            for item in self.resolve_assets(tuple(asset_keys)):
+                names[item.asset_key] = item.name
+
+        characters = [
+            {"slot": slot, "asset_key": asset_key, "name": names.get(asset_key, "")}
+            for slot, asset_key in zip(slots, asset_keys, strict=True)
+        ]
+
+        targets: list[dict[str, Any]] = []
+        scene = snapshot.get("scene")
+        if isinstance(scene, Mapping):
+            scene_targets = scene.get("targets")
+            if isinstance(scene_targets, Sequence) and not isinstance(scene_targets, (str, bytes)):
+                for target in scene_targets:
+                    if not isinstance(target, Mapping):
+                        continue
+                    target_id = target.get("id")
+                    if not isinstance(target_id, str) or not target_id:
+                        continue
+                    label = target.get("label")
+                    targets.append(
+                        {
+                            "id": target_id,
+                            "label": label if isinstance(label, str) else "",
+                        }
+                    )
+
+        return {"characters": characters, "targets": targets}
 
     def count_run_events(
         self,

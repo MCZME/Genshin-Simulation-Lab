@@ -425,6 +425,7 @@ export interface components {
                 [key: string]: unknown;
             };
             damage?: components["schemas"]["DamageEventView"] | null;
+            entities?: components["schemas"]["SessionEntitiesView"];
         };
         /** EventFieldDto */
         EventFieldDto: {
@@ -846,6 +847,38 @@ export interface components {
             value_kind: string;
             /** Children */
             children?: components["schemas"]["SchemaNodeDto"][];
+        };
+        /**
+         * SessionEntitiesView
+         * @description 会话级实体显示表；以运行输入快照为权威，供详情视图解析实体引用。
+         */
+        SessionEntitiesView: {
+            /** Characters */
+            characters?: components["schemas"]["SessionEntityCharacter"][];
+            /** Targets */
+            targets?: components["schemas"]["SessionEntityTarget"][];
+        };
+        /**
+         * SessionEntityCharacter
+         * @description 会话输入快照中的角色槽位身份与显示名。
+         */
+        SessionEntityCharacter: {
+            /** Slot */
+            slot: number;
+            /** Asset Key */
+            asset_key: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * SessionEntityTarget
+         * @description 会话输入快照中的目标身份与显示标签。
+         */
+        SessionEntityTarget: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
         };
         /**
          * SubmitRunRequest

@@ -425,6 +425,8 @@ class DamageRequest:
     tags: frozenset[str] = frozenset()
     can_crit: bool = True
     profile_key: str | None = None
+    # 这一次伤害的显示名称，来自 DamageImpactSpec.display_name；缺失时审计回退 action_key。
+    damage_name: str | None = None
     reaction_capabilities: frozenset[DamageReactionCapability] = frozenset()
     amplifying_reaction: AmplifyingReactionInput | None = None
     secondary_amplifying_reaction: SecondaryAmplifyingReactionInput | None = None
@@ -563,6 +565,8 @@ class DamageModifierTerm:
     component_key: str | None = None
     stacking_group: str | None = None
     audit_tags: tuple[str, ...] = ()
+    # provider 显示名：由收集器从 ProviderSpec.display_name 注入，内容未提供时为 None。
+    provider_display_name: str | None = None
 
     def __post_init__(self) -> None:
         """校验修饰阶段、component 绑定和审计标签。"""
@@ -594,6 +598,7 @@ class DamageModifierTerm:
             "stage": self.stage.value,
             "value": self.value,
             "provider_key": self.provider_key,
+            "provider_display_name": self.provider_display_name,
             "source_ref": self.source_ref.to_dict(),
             "component_key": self.component_key,
             "stacking_group": self.stacking_group,
@@ -1252,6 +1257,7 @@ class DamageResult:
     official_damage: float
     debug_multiplier: float
     final_damage: float
+    damage_name: str | None = None
     reaction_details: GeneralReactionZoneResolution | TransformativeReactionInput | None = None
     secondary_amplifying_resolution: SecondaryAmplifyingReactionResolution | None = None
     catalyze_reaction_resolution: CatalyzeReactionResolution | None = None
@@ -1352,6 +1358,7 @@ class DamageResult:
             "source_ref": self.source_ref.entity_id,
             "target_ref": self.target_ref.entity_id,
             "element": self.element.value,
+            "damage_name": self.damage_name,
             "base_damage": self.base_damage,
             "damage_bonus_multiplier": self.damage_bonus_multiplier,
             "crit_outcome": self.crit_outcome.value,

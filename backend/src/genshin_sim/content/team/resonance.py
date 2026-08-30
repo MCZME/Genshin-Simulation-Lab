@@ -231,6 +231,7 @@ def create_resonance_buff_definitions() -> tuple[BuffDefinition, ...]:
             max_stacks=1,
             attribute_modifiers=(em_template,),
             tags=frozenset({"resonance.dendro", "em_30"}),
+            display_name="元素共鸣（双草）精通提升",
         ),
         BuffDefinition(
             definition_key=RESONANCE_DENDRO_EM_20_BUFF_KEY,
@@ -243,6 +244,7 @@ def create_resonance_buff_definitions() -> tuple[BuffDefinition, ...]:
             max_stacks=1,
             attribute_modifiers=(em_template,),
             tags=frozenset({"resonance.dendro", "em_20"}),
+            display_name="元素共鸣（双草）精通提升（较少）",
         ),
         BuffDefinition(
             definition_key=RESONANCE_GEO_RES_SHRED_BUFF_KEY,
@@ -255,5 +257,6 @@ def create_resonance_buff_definitions() -> tuple[BuffDefinition, ...]:
             max_stacks=1,
             attribute_modifiers=(res_shred_template,),
             tags=frozenset({"resonance.geo", "res_shred"}),
+            display_name="元素共鸣（双岩）岩抗降低",
         ),
     )

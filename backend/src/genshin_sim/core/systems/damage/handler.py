@@ -160,6 +160,12 @@ class DamageRequestHandler:
                 "flat_base_damage",
             )
             can_crit = _boolean(damage_payload.get("can_crit", True), "can_crit")
+            raw_damage_name = damage_payload.get("damage_name")
+            damage_name = (
+                raw_damage_name
+                if isinstance(raw_damage_name, str) and raw_damage_name.strip()
+                else None
+            )
             tags = frozenset(
                 (*request.tags, *_string_sequence(damage_payload.get("tags", ()), "tags"))
             )
@@ -176,6 +182,7 @@ class DamageRequestHandler:
             scaling_terms = damage_spec.scaling_terms
             flat_base_damage = float(damage_spec.flat_base_damage)
             can_crit = damage_spec.can_crit
+            damage_name = damage_spec.display_name
             tags = frozenset(
                 (
                     *request.tags,
@@ -295,6 +302,7 @@ class DamageRequestHandler:
                 can_crit=can_crit,
                 source_context=source_context,
                 profile_key=profile_key,
+                damage_name=damage_name,
                 reaction_capabilities=(
                     frozenset() if profile is None else profile.reaction_capabilities
                 ),

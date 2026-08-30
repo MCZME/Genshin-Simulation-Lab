@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 from genshin_sim.core.attributes.definitions import (
     AttributeDefinitionRegistry,
@@ -220,6 +220,8 @@ class AttributeResolver:
                         f"provider {spec.provider_key!r} 返回了不匹配的 provider_key"
                     )
                 self.modifier_index.validate_term(spec.provider_key, term)
+                if spec.display_name is not None and term.provider_display_name is None:
+                    term = replace(term, provider_display_name=spec.display_name)
                 if term.target_key == query.attribute_key:
                     terms.append(term)
         return tuple(sorted(terms, key=_term_sort_key))

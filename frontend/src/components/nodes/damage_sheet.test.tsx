@@ -239,4 +239,24 @@ describe("DamageSheet", () => {
     ).toBeDefined();
     expect(screen.getByText(/抗性来自目标属性/)).toBeDefined();
   });
+
+  it("抗性区公式直接代入抗性值，不重复标注符号名", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: { ...base.damage.summary, resistance_multiplier: 0.9 },
+        audit: { ...base.damage.audit, resistance: { resistance: 0.1, multiplier: 0.9 } },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    clickSegment("抗性");
+    expect(screen.getByText("1 − 10.0%", { selector: ".damage-sheet-formula-text" })).toBeDefined();
+    // 不再重复"· 抗性 +10.0%"标注；结果仍由公式得出。
+    expect(screen.queryByText(/· 抗性/)).toBeNull();
+    expect(screen.getByText(/0\.900/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
+  });
 });

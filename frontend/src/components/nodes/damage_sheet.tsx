@@ -763,15 +763,20 @@ function buildResistanceZone(
   const value = resistance === null ? null : readNumber(resistance, "resistance");
   let line: FormulaToken[];
   if (value !== null) {
-    const branch =
-      value < 0
-        ? "1 − 抗性÷2"
-        : value > 0.75
-          ? "1 ÷ (1 + 4×抗性)"
-          : "1 − 抗性";
+    // 公式直接代入抗性值，不重复标注符号名；负抗是增益（1 + |R|÷2），另行标注原值避免歧义。
     line = [
-      { kind: "text", text: branch },
-      { kind: "muted", text: ` · 抗性 ${formatSignedPercent(value)}` },
+      {
+        kind: "text",
+        text:
+          value < 0
+            ? `1 + ${formatPercent(-value / 2)}`
+            : value > 0.75
+              ? `1 ÷ (1 + 4×${formatPercent(value)})`
+              : `1 − ${formatPercent(value)}`,
+      },
+      ...(value < 0
+        ? [{ kind: "muted" as const, text: ` · 抗性 ${formatPercent(value)}` }]
+        : []),
       ...(multiplier !== null
         ? [{ kind: "result" as const, text: ` = ${formatFactor(multiplier)}` }]
         : []),

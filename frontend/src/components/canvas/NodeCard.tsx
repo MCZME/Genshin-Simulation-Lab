@@ -13,8 +13,11 @@ import { getNodeKindSpec } from "../../workflow/registry";
 import { connectedConfigNode } from "../../workflow/templates";
 import type { NodeSize, WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 import {
+  DEFAULT_DETAIL_WIDTH,
   DEFAULT_VIEW_HEIGHT,
+  MAX_DETAIL_WIDTH,
   MAX_VIEW_HEIGHT,
+  MIN_DETAIL_WIDTH,
   MIN_VIEW_HEIGHT,
   MIN_VIEW_WIDTH,
   VIEW_SOFT_CAP_WIDTH,
@@ -86,6 +89,8 @@ export function NodeCard({ data, selected }: NodeProps) {
   const spec = getNodeKindSpec(node.kind);
   const isDraft = node.region_id === null && spec?.region !== null;
   const isView = isAnalysisView(node.kind);
+  // 伤害详情卡支持手动调宽（高度随内容），其余详情节点维持固定宽度。
+  const isDetailResizable = node.kind === "damage_detail";
   const rf = useReactFlow();
   const catalog = useAnalysisSchemaCatalog();
   const fieldErrors = collectFieldErrors(diagnostics, node.id);
@@ -110,7 +115,13 @@ export function NodeCard({ data, selected }: NodeProps) {
     tableConfig === null ? "fixed" : normalizeWidthMode(tableConfig.params.width_mode);
   const resolvedWidth = isView
     ? resolveViewWidth(widthMode, fitInfo?.fitWidth ?? null, node.size?.width)
-    : undefined;
+    : isDetailResizable
+      ? clamp(
+          Math.round(node.size?.width ?? DEFAULT_DETAIL_WIDTH),
+          MIN_DETAIL_WIDTH,
+          MAX_DETAIL_WIDTH,
+        )
+      : undefined;
   const resolvedHeight = isView ? resolveViewHeight(node.size?.height) : undefined;
   const isClipped =
     node.kind === "member_table" &&
@@ -131,7 +142,10 @@ export function NodeCard({ data, selected }: NodeProps) {
     startHeight: number,
   ): Partial<NodeSize> {
     if (axis === "width") {
-      return { width: clamp(Math.round(startWidth + dx), MIN_VIEW_WIDTH, dragMaxWidth) };
+      const [minWidth, maxWidth] = isDetailResizable
+        ? [MIN_DETAIL_WIDTH, MAX_DETAIL_WIDTH]
+        : [MIN_VIEW_WIDTH, dragMaxWidth];
+      return { width: clamp(Math.round(startWidth + dx), minWidth, maxWidth) };
     }
     return { height: clamp(Math.round(startHeight + dy), MIN_VIEW_HEIGHT, MAX_VIEW_HEIGHT) };
   }
@@ -148,7 +162,7 @@ export function NodeCard({ data, selected }: NodeProps) {
     resizeDragRef.current = {
       axis,
       startFlow: rf.screenToFlowPosition({ x: event.clientX, y: event.clientY }),
-      startWidth: displayWidth ?? MIN_VIEW_WIDTH,
+      startWidth: displayWidth ?? (isDetailResizable ? DEFAULT_DETAIL_WIDTH : MIN_VIEW_WIDTH),
       startHeight: displayHeight ?? DEFAULT_VIEW_HEIGHT,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -213,7 +227,13 @@ export function NodeCard({ data, selected }: NodeProps) {
   return (
     <div
       className={`node-card ${isAnalysisView(node.kind) ? "node-card-view" : ""} ${node.kind === "input_trace" ? "node-card-trace" : ""} ${node.kind === "artifact" ? "node-card-artifact" : ""} ${node.kind === "fetch" ? "node-card-fetch" : ""} ${node.kind === "table_config" ? "node-card-table-config" : ""} ${node.kind === "pie_config" || node.kind === "bar_config" ? "node-card-display-config" : ""} ${node.kind === "filter" ? "node-card-filter" : ""} ${node.kind === "aggregate" ? "node-card-aggregate" : ""} ${node.kind === "project" ? "node-card-project" : ""} ${node.kind === "sort" ? "node-card-sort" : ""} ${node.kind === "join" ? "node-card-join" : ""} ${node.kind === "compute" ? "node-card-compute" : ""} ${selected ? "selected" : ""} ${isDraft ? "draft" : ""} ${dimmed ? "dimmed" : ""} ${stepRunning ? "step-running" : ""}`}
-      style={isView ? { width: displayWidth, height: displayHeight } : undefined}
+      style={
+        isView
+          ? { width: displayWidth, height: displayHeight }
+          : isDetailResizable
+            ? { width: displayWidth }
+            : undefined
+      }
     >
       <header className="node-card-header">
         <span className="node-dot" style={{ background: nodeKindColor(node.kind) }} />
@@ -316,6 +336,16 @@ export function NodeCard({ data, selected }: NodeProps) {
         groups={incomingGroups}
         onMoveEdgeOrder={onMoveEdgeOrder}
       />
+      {isDetailResizable && (
+        <div
+          className="node-resize-handle node-resize-handle-right nodrag visible"
+          title="拖拽调整宽度"
+          onPointerDown={(event) => startResize(event, "width")}
+          onPointerMove={handleResizeMove}
+          onPointerUp={handleResizeUp}
+          onPointerCancel={cancelResize}
+        />
+      )}
       {isView && (
         <>
           <div

@@ -17,6 +17,14 @@ export const VIEW_SOFT_CAP_WIDTH = 960;
 
 export type TableWidthMode = "auto" | "fixed";
 
+/**
+ * 单项详情卡（伤害详情）宽度语义：宽度手动可调并随节点保存，高度随内容自适应。
+ * 与视图卡互不影响；上限沿用视图软上限。
+ */
+export const DEFAULT_DETAIL_WIDTH = 320;
+export const MIN_DETAIL_WIDTH = 280;
+export const MAX_DETAIL_WIDTH = VIEW_SOFT_CAP_WIDTH;
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }

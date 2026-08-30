@@ -5,6 +5,7 @@ import { getFrameState, getResultEvent } from "../../api/client";
 import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
 import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 import { useAnalysisResults, useAnalysisSelection } from "../analysis_context";
+import { DamageSheet } from "./damage_sheet";
 
 type DetailKind = "frame_state" | "damage_detail" | "state_detail" | "attribute_detail";
 
@@ -104,23 +105,7 @@ function DamageDetailView({ item }: { item: Record<string, unknown> }) {
   if (loaded.status === "error") {
     return <div className="analysis-view-state analysis-view-error">{loaded.error}</div>;
   }
-  const detail = loaded.data;
-  const damage = detail.damage;
-  return (
-    <div className="detail-body">
-      <div className="detail-section-title">
-        伤害 #{detail.ordinal}（帧 {detail.frame}）
-      </div>
-      {damage === null || damage === undefined ? (
-        <div className="analysis-view-state">该事件没有伤害摘要</div>
-      ) : (
-        <>
-          <KeyValueView title="摘要" data={damage.summary} />
-          <KeyValueView title="完整审计" data={damage.audit} />
-        </>
-      )}
-    </div>
-  );
+  return <DamageSheet event={loaded.data} />;
 }
 
 function FrameStateView({ item }: { item: Record<string, unknown> }) {

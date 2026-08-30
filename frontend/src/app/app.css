@@ -4712,3 +4712,238 @@ body {
   word-break: break-all;
   user-select: text;
 }
+
+/* 伤害结算单（damage_detail 节点卡内容区）：上下文条 + 乘法链 + 链段详情。 */
+.damage-sheet {
+  min-width: 0;
+}
+
+.damage-sheet-context {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 10px;
+}
+
+.damage-sheet-context-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.damage-sheet-context-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: #94a3b8;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 4px;
+  padding: 0 5px;
+  line-height: 16px;
+}
+
+.damage-sheet-element-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  flex: none;
+}
+
+.damage-sheet-context-refs {
+  font-size: 10px;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.damage-sheet-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  row-gap: 4px;
+  padding: 4px 10px 2px;
+}
+
+/* 乘号连接符与链段绑定为不可分割单元，换行时随链段移到下一行行首。 */
+.damage-sheet-step {
+  display: inline-flex;
+  align-items: center;
+}
+
+.damage-sheet-op {
+  color: #64748b;
+  font-size: 12px;
+  flex: none;
+}
+
+.damage-sheet-seg {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  margin-left: 4px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.damage-sheet-seg:hover {
+  border-color: rgba(148, 163, 184, 0.4);
+}
+
+.damage-sheet-seg.selected {
+  border-color: #38bdf8;
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.35);
+}
+
+.damage-sheet-seg-label {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.damage-sheet-seg-value {
+  font-size: 12px;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.damage-sheet-seg-value--crit {
+  color: #fbbf24;
+}
+
+.damage-sheet-seg-value--dim {
+  color: #8fa3bd;
+}
+
+.damage-sheet-total {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 10px 4px;
+}
+
+.damage-sheet-total-eq {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.damage-sheet-total-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+}
+
+.damage-sheet-total-value--crit {
+  color: #fbbf24;
+}
+
+.damage-sheet-total-badge {
+  font-size: 10px;
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 16px;
+}
+
+.damage-sheet-total-official {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.damage-sheet-detail {
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  padding: 4px 10px 8px;
+}
+
+.damage-sheet-damage-name {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+  padding: 3px 0 2px;
+}
+
+.damage-sheet-group {
+  padding: 4px 0;
+}
+
+.damage-sheet-group + .damage-sheet-group {
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
+}
+
+.damage-sheet-group-title {
+  font-size: 10px;
+  font-weight: 600;
+  color: #94a3b8;
+  padding: 2px 0;
+}
+
+.damage-sheet-rows {
+  display: flex;
+  flex-direction: column;
+}
+
+.damage-sheet-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 11px;
+  min-width: 0;
+}
+
+.damage-sheet-row-label {
+  color: #94a3b8;
+  flex: none;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.damage-sheet-row-value {
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 0;
+  word-break: break-all;
+}
+
+.damage-sheet-row--rejected .damage-sheet-row-label,
+.damage-sheet-row--rejected .damage-sheet-row-value {
+  color: #64748b;
+  text-decoration: line-through;
+}
+
+.damage-sheet-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+}
+
+.damage-sheet-table th {
+  text-align: left;
+  color: #94a3b8;
+  font-weight: 500;
+  padding: 2px 6px 2px 0;
+  white-space: nowrap;
+}
+
+.damage-sheet-table td {
+  padding: 2px 6px 2px 0;
+  color: #e2e8f0;
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
+  word-break: break-all;
+}

@@ -75,6 +75,7 @@ export function TargetEditor({ node, onChange, fieldErrors = {} }: NodeEditorPro
                 <NumberField
                   value={asNumber(resistance[key]) ?? 10}
                   onChange={(value) => updateResistance(key, value ?? 10)}
+                  format={(value) => `${value}%`}
                 />
               </div>
               {firstError(fieldErrors, `resistance.${key}`) !== undefined && (

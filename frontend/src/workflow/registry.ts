@@ -206,6 +206,7 @@ export const ARTIFACT_RAW_STAT_KEYS: readonly string[] = [
 
 const DEFAULT_TARGET_POSITION: Record<string, number> = { x: 0, y: 0, z: 5 };
 
+/** 编辑器内目标抗性默认值；单位为百分数（10 表示 10%），编译时换算为小数比例。 */
 const DEFAULT_TARGET_RESISTANCE: Record<string, number> = {
   physical: 10,
   pyro: 10,
@@ -224,9 +225,10 @@ function targetFragment(
   const index = asInteger(params.index) ?? 0;
   const position = isPlainObject(params.position) ? params.position : {};
   const resistance = isPlainObject(params.resistance) ? params.resistance : {};
+  // 编辑器按百分数输入（10 表示 10%）；仿真配置契约按小数比例表达（0.1 表示 10%）。
   const resistanceValues: Record<string, number> = {};
   for (const key of RESISTANCE_ELEMENT_KEYS) {
-    resistanceValues[key] = asNumber(resistance[key]) ?? DEFAULT_TARGET_RESISTANCE[key];
+    resistanceValues[key] = (asNumber(resistance[key]) ?? DEFAULT_TARGET_RESISTANCE[key]) / 100;
   }
   return {
     item_id: `node:${node.id}`,

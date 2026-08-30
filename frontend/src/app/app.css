@@ -4726,32 +4726,35 @@ body {
   padding: 4px 10px;
 }
 
-.damage-sheet-context-title {
+/* 元素徽标：对齐目标抗性网格的元素角标样式（实底元素色 + 深色文字）。 */
+.damage-sheet-element-badge {
+  flex: none;
+  padding: 0 4px;
+  color: #0f172a;
+  border: 1px solid #0f172a;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.damage-sheet-context-name {
   font-size: 11px;
   font-weight: 600;
-  color: #cbd5e1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
-.damage-sheet-context-tag {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  font-size: 10px;
-  color: #94a3b8;
-  border: 1px solid rgba(148, 163, 184, 0.24);
-  border-radius: 4px;
-  padding: 0 5px;
-  line-height: 16px;
-}
-
-.damage-sheet-element-dot {
-  width: 7px;
-  height: 7px;
-  border-radius: 50%;
+.damage-sheet-context-frame {
   flex: none;
+  font-size: 10px;
+  color: #64748b;
 }
 
 .damage-sheet-context-refs {
+  margin-left: auto;
   font-size: 10px;
   color: #64748b;
   overflow: hidden;
@@ -4764,19 +4767,23 @@ body {
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  row-gap: 4px;
+  justify-content: center;
+  gap: 4px 6px;
   padding: 4px 10px 2px;
 }
 
-/* 乘号连接符与链段绑定为不可分割单元，换行时随链段移到下一行行首。 */
+/* 乘号连接符与链段绑定为不可分割单元，换行时随链段移到下一行行首；
+   链内与链间 gap 相同，保证每个乘区之间的间隔一致。 */
 .damage-sheet-step {
   display: inline-flex;
   align-items: center;
+  gap: 6px;
 }
 
 .damage-sheet-op {
   color: #64748b;
   font-size: 12px;
+  line-height: 1;
   flex: none;
 }
 
@@ -4785,7 +4792,6 @@ body {
   flex-direction: column;
   align-items: stretch;
   gap: 1px;
-  margin-left: 4px;
   padding: 3px 8px;
   border-radius: 6px;
   background: rgba(15, 23, 42, 0.55);
@@ -4866,31 +4872,129 @@ body {
   padding: 4px 10px 8px;
 }
 
-.damage-sheet-damage-name {
+.damage-sheet-zone-title {
   font-size: 12px;
   font-weight: 600;
   color: #e2e8f0;
   padding: 3px 0 2px;
 }
 
-.damage-sheet-group {
-  padding: 4px 0;
+.damage-sheet-formula {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 4px;
+  padding: 3px 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
 }
 
-.damage-sheet-group + .damage-sheet-group {
-  border-top: 1px solid rgba(148, 163, 184, 0.08);
+.damage-sheet-formula-text {
+  color: #cbd5e1;
+  white-space: pre-wrap;
+  min-width: 0;
 }
 
-.damage-sheet-group-title {
-  font-size: 10px;
+.damage-sheet-formula-muted {
+  color: #64748b;
+}
+
+.damage-sheet-formula-result {
+  color: #e2e8f0;
   font-weight: 600;
-  color: #94a3b8;
-  padding: 2px 0;
+  white-space: nowrap;
 }
 
-.damage-sheet-rows {
+/* 公式中的可修饰槽位：虚线胶囊，点击与对应抽屉联动折叠。 */
+.damage-sheet-slot {
+  display: inline-flex;
+  align-items: center;
+  font: inherit;
+  font-size: 11px;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  border-radius: 5px;
+  padding: 0 6px;
+  line-height: 18px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.damage-sheet-slot:hover {
+  border-color: #38bdf8;
+}
+
+.damage-sheet-slot--collapsed {
+  opacity: 0.6;
+  border-style: solid;
+}
+
+/* 抽屉：卡中卡面板，展开时有背景、折叠时弱化，边界清晰可辨。 */
+.damage-sheet-drawer {
+  background: rgba(15, 23, 42, 0.45);
+  border-radius: 6px;
+  padding: 2px 8px;
+  margin-top: 6px;
+}
+
+.damage-sheet-formula + .damage-sheet-drawer {
+  margin-top: 8px;
+}
+
+.damage-sheet-drawer--collapsed {
+  background: transparent;
+}
+
+.damage-sheet-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  font: inherit;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.damage-sheet-drawer-head:hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.damage-sheet-drawer-arrow {
+  font-size: 9px;
+  color: #64748b;
+  flex: none;
+  width: 10px;
+}
+
+.damage-sheet-drawer-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.damage-sheet-drawer--collapsed .damage-sheet-drawer-title {
+  color: #94a3b8;
+}
+
+.damage-sheet-drawer-total {
+  margin-left: auto;
+  font-size: 11px;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+}
+
+.damage-sheet-drawer-body {
   display: flex;
   flex-direction: column;
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
+  margin-top: 1px;
+  padding: 1px 2px 2px;
 }
 
 .damage-sheet-row {
@@ -4920,30 +5024,17 @@ body {
   word-break: break-all;
 }
 
+/* 基础值行：属性/请求来源的合成起点，弱一档并与词条行区分。 */
+.damage-sheet-row--base .damage-sheet-row-label {
+  color: #64748b;
+}
+
+.damage-sheet-row--base .damage-sheet-row-label::before {
+  content: "· ";
+}
+
 .damage-sheet-row--rejected .damage-sheet-row-label,
 .damage-sheet-row--rejected .damage-sheet-row-value {
   color: #64748b;
   text-decoration: line-through;
-}
-
-.damage-sheet-table {
-  width: 100%;
-  border-collapse: collapse;
-  font-size: 11px;
-  font-variant-numeric: tabular-nums;
-}
-
-.damage-sheet-table th {
-  text-align: left;
-  color: #94a3b8;
-  font-weight: 500;
-  padding: 2px 6px 2px 0;
-  white-space: nowrap;
-}
-
-.damage-sheet-table td {
-  padding: 2px 6px 2px 0;
-  color: #e2e8f0;
-  border-top: 1px solid rgba(148, 163, 184, 0.08);
-  word-break: break-all;
 }

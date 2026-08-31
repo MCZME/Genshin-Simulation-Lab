@@ -13,6 +13,9 @@ from genshin_sim.application.assembly.buffs import (
     build_buff_definition_registry,
     validate_buff_definitions_for_assembly,
 )
+from genshin_sim.application.assembly.damage_profiles import (
+    create_default_damage_profile_registry,
+)
 from genshin_sim.application.assembly.errors import InvalidRuntimePayloadError
 from genshin_sim.application.assembly.models import (
     AssembledSimulation,
@@ -150,12 +153,10 @@ from genshin_sim.core.systems.cooldown import (
 from genshin_sim.core.systems.damage import (
     DamageFormulaRegistry,
     DamageModifierIndex,
-    DamageProfile,
     DamageProfileRegistry,
     DamageRequestHandler,
     DamageResolver,
     DamageSystemError,
-    DamageType,
     create_default_damage_formula_registry,
 )
 from genshin_sim.core.systems.energy import (
@@ -192,25 +193,12 @@ from genshin_sim.core.systems.movement import (
     MovementRuntime,
 )
 from genshin_sim.core.systems.reaction import create_default_reaction_bootstrap
-from genshin_sim.core.systems.reaction.mechanics.bloom import bloom_damage_profiles
 from genshin_sim.core.systems.reaction.mechanics.burning import (
-    burning_damage_profile,
     burning_pyro_aura_application_profile,
-)
-from genshin_sim.core.systems.reaction.mechanics.catalyze import catalyze_damage_profile
-from genshin_sim.core.systems.reaction.mechanics.lunar_bloom import (
-    lunar_bloom_damage_profiles,
-)
-from genshin_sim.core.systems.reaction.mechanics.lunar_crystallize import (
-    lunar_crystallize_damage_profiles,
-)
-from genshin_sim.core.systems.reaction.mechanics.lunar_electro_charged import (
-    lunar_electro_charged_damage_profiles,
 )
 from genshin_sim.core.systems.reaction.mechanics.swirl import (
     SwirlGeneratedImpactDamageInputAdapter,
     swirl_aura_application_profile,
-    swirl_damage_profile,
 )
 from genshin_sim.core.systems.resonance import ResonanceRuntime
 from genshin_sim.core.systems.shield import (
@@ -251,8 +239,14 @@ class RuntimeAssembler:
         self,
         *,
         damage_formula_registry: DamageFormulaRegistry | None = None,
+        damage_profile_registry: DamageProfileRegistry | None = None,
     ) -> None:
         self.damage_formula_registry = damage_formula_registry
+        self.damage_profile_registry = (
+            damage_profile_registry
+            if damage_profile_registry is not None
+            else create_default_damage_profile_registry()
+        )
 
     def assemble(
         self,
@@ -498,57 +492,7 @@ class RuntimeAssembler:
                         else create_default_damage_formula_registry()
                     ),
                 ),
-                profile_registry=DamageProfileRegistry(
-                    (
-                        DamageProfile(
-                            "damage_profile.character.barbara",
-                            DamageType.GENERAL,
-                            frozenset(
-                                {
-                                    "普通攻击1",
-                                    "普通攻击2",
-                                    "普通攻击3",
-                                    "普通攻击4",
-                                    "重击",
-                                    "元素战技",
-                                    "下落攻击",
-                                }
-                            ),
-                        ),
-                        DamageProfile(
-                            "damage_profile.testing.runtime_probe",
-                            DamageType.GENERAL,
-                            frozenset({"testing.runtime_probe.direct"}),
-                        ),
-                        DamageProfile(
-                            "damage_profile.reaction.overloaded",
-                            DamageType.TRANSFORMATIVE_REACTION,
-                            frozenset({"reaction.overloaded"}),
-                        ),
-                        DamageProfile(
-                            "damage_profile.reaction.superconduct",
-                            DamageType.TRANSFORMATIVE_REACTION,
-                            frozenset({"reaction.superconduct"}),
-                        ),
-                        DamageProfile(
-                            "damage_profile.reaction.shattered",
-                            DamageType.TRANSFORMATIVE_REACTION,
-                            frozenset({"reaction.shattered"}),
-                        ),
-                        DamageProfile(
-                            "damage_profile.reaction.electro_charged",
-                            DamageType.TRANSFORMATIVE_REACTION,
-                            frozenset({"reaction.electro_charged"}),
-                        ),
-                        swirl_damage_profile(),
-                        burning_damage_profile(),
-                        catalyze_damage_profile(),
-                        *bloom_damage_profiles(),
-                        *lunar_bloom_damage_profiles(),
-                        *lunar_electro_charged_damage_profiles(),
-                        *lunar_crystallize_damage_profiles(),
-                    )
-                ),
+                profile_registry=self.damage_profile_registry,
             )
         except DamageSystemError as exc:
             raise InvalidRuntimePayloadError(str(exc)) from exc

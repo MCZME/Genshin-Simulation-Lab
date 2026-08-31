@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from genshin_sim.core.elements import AuraAmount, AuraKind, Element
-from genshin_sim.core.systems.damage import DamageProfile, DamageType
+from genshin_sim.core.systems.damage import DamageProfile
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_TRANSFORMATIVE_REACTION
 from genshin_sim.core.systems.reaction.gates import ReactionDamageGateDefinition
 from genshin_sim.core.systems.reaction.models import (
     CapturedTransformativeScalingBasis,
@@ -185,8 +186,7 @@ def electro_charged_damage_profile() -> DamageProfile:
     """普通感电使用的生产剧变 Damage Profile。"""
 
     return DamageProfile(
-        profile_key=ELECTRO_CHARGED_DAMAGE_PROFILE_KEY,
-        damage_type=DamageType.TRANSFORMATIVE_REACTION,
+        formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
         main_attack_tags=frozenset({ELECTRO_CHARGED_REACTION_KEY}),
     )
 

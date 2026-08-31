@@ -21,20 +21,25 @@ from genshin_sim.core.systems.damage.enums import (
     CritOutcome,
     DamageModifierStage,
     DamageReactionCapability,
-    DamageType,
     LunarReactionDamageMode,
 )
 from genshin_sim.core.systems.damage.errors import (
     DamageValidationError,
     InvalidDamageScalingError,
 )
+from genshin_sim.core.systems.damage.keys import (
+    FORMULA_KEY_GENERAL,
+    FORMULA_KEY_LUNAR_REACTION,
+    FORMULA_KEY_TRANSFORMATIVE_REACTION,
+    KNOWN_FORMULA_KEYS,
+)
 
-_CHARACTER_TARGET_DAMAGE_PROFILE_KEYS = frozenset(
+_CHARACTER_TARGET_DAMAGE_TAGS = frozenset(
     {
-        "damage_profile.reaction.bloom_explosion",
-        "damage_profile.reaction.hyperbloom",
-        "damage_profile.reaction.burgeon",
-        "damage_profile.reaction.lunar_bloom",
+        "reaction.bloom_explosion",
+        "reaction.hyperbloom",
+        "reaction.burgeon",
+        "reaction.lunar_bloom",
     }
 )
 
@@ -79,20 +84,16 @@ class DamageScalingTerm:
 
 @dataclass(frozen=True, slots=True)
 class DamageProfile:
-    """主攻击标签映射到完整伤害公式的稳定定义。"""
+    """主攻击标签到完整公式的稳定映射条目。"""
 
-    profile_key: str
-    damage_type: DamageType
+    formula_key: str
     main_attack_tags: frozenset[str]
     reaction_capabilities: frozenset[DamageReactionCapability] = frozenset()
 
     def __post_init__(self) -> None:
-        _validate_non_empty_text(self.profile_key, "profile_key")
-        if not isinstance(self.damage_type, DamageType):
-            raise DamageValidationError("DamageProfile 的 damage_type 不受支持")
+        if self.formula_key not in KNOWN_FORMULA_KEYS:
+            raise DamageValidationError("DamageProfile 的 formula_key 不受支持")
         tags = frozenset(self.main_attack_tags)
-        if not tags:
-            raise DamageValidationError("DamageProfile 至少需要一个主攻击标签")
         for tag in tags:
             _validate_non_empty_text(tag, "main_attack_tag")
         object.__setattr__(self, "main_attack_tags", tags)
@@ -412,7 +413,8 @@ class DamageRequest:
 
     request_id: str
     frame: int
-    damage_type: DamageType
+    formula_key: str
+    main_attack_tag: str
     impact_key: str
     source_ref: AttributeSubjectRef
     target_ref: AttributeSubjectRef
@@ -424,7 +426,6 @@ class DamageRequest:
     flat_base_damage: float = 0.0
     tags: frozenset[str] = frozenset()
     can_crit: bool = True
-    profile_key: str | None = None
     # 这一次伤害的显示名称，来自 DamageImpactSpec.display_name；缺失时审计回退 action_key。
     damage_name: str | None = None
     reaction_capabilities: frozenset[DamageReactionCapability] = frozenset()
@@ -441,8 +442,9 @@ class DamageRequest:
         _validate_non_empty_text(self.impact_key, "impact_key")
         if isinstance(self.frame, bool) or not isinstance(self.frame, int) or self.frame < 0:
             raise DamageValidationError("frame 必须是非负整数")
-        if not isinstance(self.damage_type, DamageType):
-            raise DamageValidationError("damage_type 不受支持")
+        if self.formula_key not in KNOWN_FORMULA_KEYS:
+            raise DamageValidationError("formula_key 不受支持")
+        _validate_non_empty_text(self.main_attack_tag, "main_attack_tag")
         if self.source_ref.kind is not AttributeSubjectKind.CHARACTER:
             raise DamageValidationError("伤害来源第一版必须是角色主体")
         if self.target_ref.kind not in {
@@ -471,13 +473,11 @@ class DamageRequest:
             _validate_non_empty_text(tag, "damage tag")
         if not isinstance(self.can_crit, bool):
             raise DamageValidationError("can_crit 必须是布尔值")
-        if self.profile_key is not None:
-            _validate_non_empty_text(self.profile_key, "profile_key")
         if (
             self.target_ref.kind is AttributeSubjectKind.CHARACTER
-            and self.profile_key not in _CHARACTER_TARGET_DAMAGE_PROFILE_KEYS
+            and self.main_attack_tag not in _CHARACTER_TARGET_DAMAGE_TAGS
         ):
-            raise DamageValidationError("只有绽放系列 DamageProfile 可以指定角色受方")
+            raise DamageValidationError("只有绽放系列攻击标签可以指定角色受方")
         capabilities = frozenset(self.reaction_capabilities)
         if any(not isinstance(capability, DamageReactionCapability) for capability in capabilities):
             raise DamageValidationError("DamageRequest 包含不支持的 reaction capability")
@@ -491,7 +491,7 @@ class DamageRequest:
             LunarReactionDamageInput,
         ):
             raise DamageValidationError("lunar_reaction 不受支持")
-        if self.damage_type is DamageType.LUNAR_REACTION:
+        if self.formula_key is FORMULA_KEY_LUNAR_REACTION:
             if self.lunar_reaction is None:
                 raise DamageValidationError("月曜伤害必须提供 LunarReactionDamageInput")
             if self.transformative_reaction is not None:
@@ -504,18 +504,18 @@ class DamageRequest:
                 raise DamageValidationError("月曜伤害不能同时提供激化输入")
             if terms or flat_base_damage != 0:
                 raise DamageValidationError("月曜伤害不能携带普通倍率或 flat base")
-        elif self.damage_type is DamageType.TRANSFORMATIVE_REACTION:
+        elif self.formula_key is FORMULA_KEY_TRANSFORMATIVE_REACTION:
             if self.transformative_reaction is None:
                 raise DamageValidationError("剧变伤害必须提供 TransformativeReactionInput")
             if self.lunar_reaction is not None:
                 raise DamageValidationError("剧变伤害不能同时提供月曜反应输入")
             if self.amplifying_reaction is not None:
                 raise DamageValidationError("剧变伤害不能同时提供增幅反应输入")
-            if self.secondary_amplifying_reaction is not None:
-                if self.profile_key is None:
-                    raise DamageValidationError("二次增幅剧变伤害必须提供 DamageProfile")
-                if DamageReactionCapability.SECONDARY_AMPLIFYING not in capabilities:
-                    raise DamageValidationError("DamageProfile 未声明二次增幅 capability")
+            if (
+                self.secondary_amplifying_reaction is not None
+                and DamageReactionCapability.SECONDARY_AMPLIFYING not in capabilities
+            ):
+                raise DamageValidationError("DamageProfile 未声明二次增幅 capability")
             if terms or flat_base_damage != 0 or self.can_crit:
                 raise DamageValidationError("剧变伤害不能携带普通倍率、flat base 或暴击能力")
         else:
@@ -525,20 +525,17 @@ class DamageRequest:
                 raise DamageValidationError("非剧变伤害不能提供 TransformativeReactionInput")
             if self.secondary_amplifying_reaction is not None:
                 raise DamageValidationError("非剧变伤害不能提供二次增幅反应输入")
+            if self.amplifying_reaction is not None and self.catalyze_reaction is not None:
+                raise DamageValidationError("通用公式不能同时携带增幅与激化输入")
         if self.catalyze_reaction is not None:
             if not isinstance(self.catalyze_reaction, CatalyzeReactionInput):
                 raise DamageValidationError("catalyze_reaction 不受支持")
-            if self.damage_type is not DamageType.CATALYZE_REACTION:
-                raise DamageValidationError("只有激化完整公式可以接收 CatalyzeReactionInput")
+            if self.formula_key is not FORMULA_KEY_GENERAL:
+                raise DamageValidationError("只有通用公式可以接收 CatalyzeReactionInput")
             if self.amplifying_reaction is not None:
                 raise DamageValidationError("激化伤害不能同时提供增幅反应输入")
             if self.catalyze_reaction.trigger_element.value != self.element.value:
                 raise DamageValidationError("激化 trigger_element 必须匹配当前伤害元素")
-        elif (
-            self.damage_type is DamageType.CATALYZE_REACTION
-            and self.amplifying_reaction is not None
-        ):
-            raise DamageValidationError("激化伤害不能同时提供增幅反应输入")
         object.__setattr__(self, "scaling_terms", terms)
         object.__setattr__(self, "flat_base_damage", flat_base_damage)
         object.__setattr__(self, "tags", tags)
@@ -1109,6 +1106,7 @@ class GeneralDamageResolution:
     final_damage: float
     source_attribute_trace: tuple[AttributeResolution, ...] = ()
     target_attribute_trace: tuple[AttributeResolution, ...] = ()
+    catalyze: CatalyzeReactionResolution | None = None
 
     def __post_init__(self) -> None:
         """校验通用公式输出为有限非负数。"""
@@ -1120,6 +1118,11 @@ class GeneralDamageResolution:
             object.__setattr__(self, field_name, value)
         object.__setattr__(self, "source_attribute_trace", tuple(self.source_attribute_trace))
         object.__setattr__(self, "target_attribute_trace", tuple(self.target_attribute_trace))
+        if self.catalyze is not None and not isinstance(
+            self.catalyze,
+            CatalyzeReactionResolution,
+        ):
+            raise DamageValidationError("catalyze 必须是 CatalyzeReactionResolution")
 
 
 @dataclass(frozen=True, slots=True)
@@ -1218,38 +1221,8 @@ class CatalyzeReactionResolution:
             raise DamageValidationError("激化基础伤害附加值不能为负数")
 
 
-@dataclass(frozen=True, slots=True)
-class CatalyzeReactionDamageResolution:
-    """激化完整公式的各区审计与输出结果。"""
-
-    scaling: ScalingZoneResolution
-    damage_bonus: DamageBonusZoneResolution
-    critical: CriticalZoneResolution
-    reaction: GeneralReactionZoneResolution
-    defense: DefenseResolution
-    resistance: ResistanceResolution
-    official_damage: float
-    debug_multiplier: float
-    final_damage: float
-    catalyze: CatalyzeReactionResolution | None = None
-    source_attribute_trace: tuple[AttributeResolution, ...] = ()
-    target_attribute_trace: tuple[AttributeResolution, ...] = ()
-
-    def __post_init__(self) -> None:
-        for field_name in ("official_damage", "debug_multiplier", "final_damage"):
-            value = validate_damage_float(getattr(self, field_name), field_name)
-            if value < 0:
-                raise DamageValidationError(f"{field_name} 不能为负数")
-            object.__setattr__(self, field_name, value)
-        if self.catalyze is not None and not isinstance(self.catalyze, CatalyzeReactionResolution):
-            raise DamageValidationError("catalyze 必须是 CatalyzeReactionResolution")
-        object.__setattr__(self, "source_attribute_trace", tuple(self.source_attribute_trace))
-        object.__setattr__(self, "target_attribute_trace", tuple(self.target_attribute_trace))
-
-
 type DamageFormulaResolution = (
     GeneralDamageResolution
-    | CatalyzeReactionDamageResolution
     | TransformativeReactionResolution
     | LunarReactionDamageResolution
 )
@@ -1261,7 +1234,8 @@ class DamageResult:
 
     request_id: str
     frame: int
-    damage_type: DamageType
+    formula_key: str
+    main_attack_tag: str
     source_ref: AttributeSubjectRef
     target_ref: AttributeSubjectRef
     element: Element
@@ -1297,8 +1271,9 @@ class DamageResult:
         """规范化结果集合，保证最终伤害是有限非负值。"""
 
         _validate_non_empty_text(self.request_id, "request_id")
-        if not isinstance(self.damage_type, DamageType):
-            raise DamageValidationError("damage_type 不受支持")
+        if self.formula_key not in KNOWN_FORMULA_KEYS:
+            raise DamageValidationError("formula_key 不受支持")
+        _validate_non_empty_text(self.main_attack_tag, "main_attack_tag")
         if not isinstance(self.crit_outcome, CritOutcome):
             raise DamageValidationError("crit_outcome 不受支持")
         if not isinstance(self.trace_level, TraceLevel):
@@ -1352,7 +1327,7 @@ class DamageResult:
             raise DamageValidationError("critical_zone 不受支持")
         if (
             self.lunar_reaction_resolution is not None
-            and self.damage_type is not DamageType.LUNAR_REACTION
+            and self.formula_key is not FORMULA_KEY_LUNAR_REACTION
         ):
             raise DamageValidationError("只有月曜伤害可以携带 lunar_reaction_resolution")
         object.__setattr__(self, "base_damage_additions", tuple(self.base_damage_additions))
@@ -1375,7 +1350,8 @@ class DamageResult:
         return {
             "request_id": self.request_id,
             "frame": self.frame,
-            "damage_type": self.damage_type.value,
+            "formula_key": self.formula_key,
+            "main_attack_tag": self.main_attack_tag,
             "source_ref": self.source_ref.entity_id,
             "target_ref": self.target_ref.entity_id,
             "element": self.element.value,
@@ -1450,7 +1426,7 @@ def _critical_audit_to_dict(result: DamageResult) -> dict[str, object]:
 
 def _audit_reaction_to_dict(result: DamageResult) -> dict[str, object] | None:
     if (
-        result.damage_type is DamageType.LUNAR_REACTION
+        result.formula_key is FORMULA_KEY_LUNAR_REACTION
         and result.lunar_reaction_resolution is not None
     ):
         lunar_payload = _lunar_reaction_to_dict(result.lunar_reaction_resolution)

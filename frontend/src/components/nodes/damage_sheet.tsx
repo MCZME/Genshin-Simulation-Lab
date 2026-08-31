@@ -17,12 +17,11 @@ const ELEMENT_LABELS: Record<string, string> = {
   dendro: "草",
 };
 
-/** 伤害类型显示名；键与后端 DamageType 枚举值对应。 */
-const DAMAGE_TYPE_LABELS: Record<string, string> = {
-  general: "直伤",
-  catalyze_reaction: "激化",
-  transformative_reaction: "剧变",
-  lunar_reaction: "月曜反应",
+/** 伤害公式显示名；键与后端 formula_key 常量对应。 */
+const FORMULA_KEY_LABELS: Record<string, string> = {
+  "damage_formula.general": "直伤",
+  "damage_formula.transformative_reaction": "剧变",
+  "damage_formula.lunar_reaction": "月曜反应",
 };
 
 type ChainSegmentId =
@@ -75,7 +74,7 @@ function ContextBar({
   summary: Record<string, unknown>;
 }) {
   const element = readString(summary, "element");
-  const damageType = readString(summary, "damage_type");
+  const formulaKey = readString(summary, "formula_key");
   const damageName = readString(summary, "damage_name");
   const elementLabel = element === null ? null : ELEMENT_LABELS[element] ?? element;
   const elementColor =
@@ -100,7 +99,7 @@ function ContextBar({
       <span
         className="damage-sheet-context-name"
         style={{ color: elementColor }}
-        title={damageType !== null ? DAMAGE_TYPE_LABELS[damageType] ?? damageType : undefined}
+        title={formulaKey !== null ? FORMULA_KEY_LABELS[formulaKey] ?? formulaKey : undefined}
       >
         {damageName ?? "伤害"}
       </span>

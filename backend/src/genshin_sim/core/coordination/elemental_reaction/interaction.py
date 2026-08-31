@@ -97,7 +97,10 @@ from genshin_sim.core.systems.aura_icd import (
 from genshin_sim.core.systems.damage import (
     AmplifyingReactionInput,
     CatalyzeReactionInput,
-    DamageType,
+)
+from genshin_sim.core.systems.damage.errors import UnsupportedDamageFormulaError
+from genshin_sim.core.systems.damage.keys import (
+    FORMULA_KEY_GENERAL,
 )
 from genshin_sim.core.systems.reaction import (
     CatalyzeCurrentImpactDamageAdjustment,
@@ -859,11 +862,14 @@ def _catalyze_impact_qualification(
     if profile_registry is None:
         return None
     try:
-        profile = profile_registry.require_for_main_attack_tag(spec.main_attack_tag)
-    except KeyError:
-        # Damage 预检会在当前 batch 以既有错误类型报告缺失 Profile。
+        formula_key = profile_registry.resolve_for_main_attack_tag(
+            spec.main_attack_tag
+        ).formula_key
+    except UnsupportedDamageFormulaError:
+        # Damage 预检会在当前 batch 报告缺失反应标签映射。
         return None
-    if profile.damage_type is not DamageType.CATALYZE_REACTION:
+    if formula_key is not FORMULA_KEY_GENERAL:
+        # 只有走通用公式的关联伤害具备激化资格；剧变/月曜伤害不进入激化。
         return None
     return CatalyzeImpactQualification(
         target_impact_ref=target_impact_ref,

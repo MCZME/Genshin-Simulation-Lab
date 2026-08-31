@@ -13,9 +13,9 @@ from genshin_sim.core.systems.aura import (
 from genshin_sim.core.systems.damage import (
     DamageProfile,
     DamageReactionCapability,
-    DamageType,
     TransformativeReactionInput,
 )
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_TRANSFORMATIVE_REACTION
 from genshin_sim.core.systems.reaction.gates import ReactionDamageGateDefinition
 from genshin_sim.core.systems.reaction.models import (
     CapturedTransformativeScalingBasis,
@@ -559,8 +559,7 @@ def swirl_damage_profile() -> DamageProfile:
     """普通扩散使用的生产剧变 Damage Profile。"""
 
     return DamageProfile(
-        profile_key=SWIRL_DAMAGE_PROFILE_KEY,
-        damage_type=DamageType.TRANSFORMATIVE_REACTION,
+        formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
         main_attack_tags=frozenset({SWIRL_REACTION_KEY}),
         reaction_capabilities=frozenset({DamageReactionCapability.SECONDARY_AMPLIFYING}),
     )

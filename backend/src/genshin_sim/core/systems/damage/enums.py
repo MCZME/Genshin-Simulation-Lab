@@ -5,15 +5,6 @@ from __future__ import annotations
 from enum import StrEnum
 
 
-class DamageType(StrEnum):
-    """按完整公式结构选择伤害结算路径的稳定类型。"""
-
-    GENERAL = "general"
-    CATALYZE_REACTION = "catalyze_reaction"
-    TRANSFORMATIVE_REACTION = "transformative_reaction"
-    LUNAR_REACTION = "lunar_reaction"
-
-
 class LunarReactionDamageMode(StrEnum):
     """月曜伤害的来源模式。"""
 

@@ -24,7 +24,7 @@ def _damage(
     *,
     amount: float,
     source: str = "character:slot_1",
-    damage_type: str = "skill",
+    formula_key: str = "damage_formula.general",
 ) -> RecordedEvent:
     return RecordedEvent(
         frame=frame,
@@ -35,7 +35,7 @@ def _damage(
                 "source_ref": {"kind": "character", "entity_id": source},
                 "target_ref": {"kind": "target", "entity_id": "target:target_1"},
                 "final_damage": amount,
-                "damage_type": damage_type,
+                "formula_key": formula_key,
             }
         },
     )
@@ -109,8 +109,8 @@ def _executor(tmp_path) -> SQLiteAnalysisQueryExecutor:
             "run:1",
             frames_run=120,
             events=(
-                _damage(10, amount=300.0, damage_type="skill"),
-                _damage(20, amount=700.0, damage_type="burst"),
+                _damage(10, amount=300.0, formula_key="damage_formula.general"),
+                _damage(20, amount=700.0, formula_key="damage_formula.lunar_reaction"),
             ),
         )
     )

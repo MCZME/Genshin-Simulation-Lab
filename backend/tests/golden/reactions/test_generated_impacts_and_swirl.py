@@ -40,8 +40,8 @@ from genshin_sim.core.systems.aura import (
 from genshin_sim.core.systems.damage import (
     DamageProfileRegistry,
     DamageRequestHandler,
-    DamageType,
 )
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_TRANSFORMATIVE_REACTION
 from genshin_sim.core.systems.reaction import (
     ReactionEvaluationRequest,
     ReactionGeneratedImpactBatch,
@@ -98,7 +98,7 @@ def test_swirl_non_hydro_emission_applies_damage_and_regular_aura_to_six_meter_t
     assert not assembled.aura_runtime.view(ElementalSubjectRef.target("target:target_3")).components
     assert len(handler.records) == 1
     damage = handler.records[0].result
-    assert damage.damage_type is DamageType.TRANSFORMATIVE_REACTION
+    assert damage.formula_key == FORMULA_KEY_TRANSFORMATIVE_REACTION
     assert damage.final_damage == pytest.approx(868.1118)
     assert damage.element is damage_element
     assert damage.reaction_details is not None

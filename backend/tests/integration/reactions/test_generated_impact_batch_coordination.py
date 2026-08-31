@@ -35,9 +35,9 @@ from genshin_sim.core.systems.damage import (
     DamageProfileRegistry,
     DamageReactionCapability,
     DamageRequestHandler,
-    DamageType,
     TransformativeReactionInput,
 )
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_TRANSFORMATIVE_REACTION
 from genshin_sim.core.systems.reaction import (
     ReactionGeneratedImpact,
     ReactionGeneratedImpactBatch,
@@ -557,8 +557,7 @@ def _secondary_capable_profile_registry():
     return DamageProfileRegistry(
         (
             DamageProfile(
-                "damage_profile.test.generated_swirl",
-                DamageType.TRANSFORMATIVE_REACTION,
+                FORMULA_KEY_TRANSFORMATIVE_REACTION,
                 frozenset({"test.generated.swirl"}),
                 frozenset({DamageReactionCapability.SECONDARY_AMPLIFYING}),
             ),

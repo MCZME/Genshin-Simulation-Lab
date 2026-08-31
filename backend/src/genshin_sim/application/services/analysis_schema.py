@@ -21,7 +21,8 @@ _KNOWN_PAYLOAD_FIELDS: dict[str, tuple[AnalysisEventField, ...]] = {
         AnalysisEventField("result.final_damage", "float", "结算伤害值"),
         AnalysisEventField("result.source_ref", "string", "伤害来源引用（字符串形态）"),
         AnalysisEventField("result.source_ref.entity_id", "string", "伤害来源实体（对象形态）"),
-        AnalysisEventField("result.damage_type", "string", "伤害类型", "enum:damage_type"),
+        AnalysisEventField("result.formula_key", "string", "伤害公式", "enum:formula_key"),
+        AnalysisEventField("result.main_attack_tag", "string", "主攻击标签"),
         AnalysisEventField("result.element", "string", "伤害元素", "enum:element"),
     ),
     "HEALING_RESOLVED": (

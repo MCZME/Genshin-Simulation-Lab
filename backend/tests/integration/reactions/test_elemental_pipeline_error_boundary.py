@@ -35,7 +35,7 @@ def test_damage_preflight_failure_does_not_commit_elemental_domain_state(
         target_refs=("target_1",),
         damage_spec=DamageImpactSpec(
             impact_ref="golden:invalid_damage",
-            main_attack_tag="missing.damage_profile",
+            main_attack_tag="reaction.missing.damage_profile",
             element=Element.HYDRO,
             scaling_terms=(DamageScalingTerm("atk", STAT_ATK_TOTAL, 1.0),),
             can_crit=False,
@@ -44,7 +44,7 @@ def test_damage_preflight_failure_does_not_commit_elemental_domain_state(
         ),
     )
 
-    with pytest.raises(DamageValidationError, match="主攻击标签未映射 DamageProfile"):
+    with pytest.raises(DamageValidationError, match="反应标签未映射"):
         assembled.elemental_settlement_coordinator.settle_damage_impact(
             assembled.context,
             bad_request,

@@ -388,7 +388,8 @@
     "summary": {
       "request_id": "...",
       "frame": 120,
-      "damage_type": "general",
+      "formula_key": "damage_formula.general",
+      "main_attack_tag": "普通攻击1",
       "element": "pyro",
       "source_ref": "...",
       "target_ref": "...",

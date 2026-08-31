@@ -425,7 +425,7 @@ def test_facade_counts_filtered_events() -> None:
                         "source_ref": "character:slot_1",
                         "target_ref": "target:target_1",
                         "final_damage": 300.0,
-                        "damage_type": "skill",
+                        "formula_key": "damage_formula.general",
                     }
                 },
             ),

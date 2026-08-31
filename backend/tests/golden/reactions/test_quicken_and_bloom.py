@@ -21,7 +21,7 @@ from genshin_sim.core.elements import (
 from genshin_sim.core.events import EventType, ReactionOccurredPayload
 from genshin_sim.core.space import Vector3
 from genshin_sim.core.systems.aura import AuraDecayMode, AuraStrength
-from genshin_sim.core.systems.damage import DamageType
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_GENERAL
 from genshin_sim.core.systems.reaction import GeneratedDamageImpactEffect, SprawlingShotResolution
 from genshin_sim.core.systems.reaction.mechanics.bloom.keys import (
     BLOOM_EXPLOSION_DAMAGE_KIND_KEY,
@@ -31,7 +31,6 @@ from genshin_sim.core.systems.reaction.mechanics.bloom.keys import (
 from genshin_sim.core.systems.reaction.mechanics.catalyze.mechanic import (
     AGGRAVATE_PROFILE_KEY,
     AGGRAVATE_REACTION_KEY,
-    CATALYZE_DAMAGE_FORMULA_KEY,
     SPREAD_PROFILE_KEY,
     SPREAD_REACTION_KEY,
 )
@@ -123,7 +122,7 @@ def test_damage_icd_aura_quicken_and_catalyze_formula_audit(
         reaction_damage_request(
             trigger_element,
             "golden:catalyze:trigger",
-            main_attack_tag=CATALYZE_DAMAGE_FORMULA_KEY,
+            main_attack_tag="testing.catalyze.attack",
         ),
     )
     result = assembled.damage_handler.records[-1].result
@@ -138,7 +137,7 @@ def test_damage_icd_aura_quicken_and_catalyze_formula_audit(
     assert assembled.reaction_runtime.quicken_state_for(target_ref) == established_state
     assert len(assembled.aura_icd_runtime.snapshot().records) == 1
 
-    assert result.damage_type is DamageType.CATALYZE_REACTION
+    assert result.formula_key == FORMULA_KEY_GENERAL
     assert catalyze is not None
     assert catalyze.target_impact_ref == "golden:catalyze:trigger:target:target_1"
     assert catalyze.reaction_profile_key == reaction_profile_key
@@ -208,7 +207,7 @@ def test_quicken_decay_larger_coverage_and_natural_expiry(
             Element.ELECTRO,
             "golden:quicken:coverage",
             frame=1,
-            main_attack_tag=CATALYZE_DAMAGE_FORMULA_KEY,
+            main_attack_tag="testing.catalyze.attack",
         ),
     )
     covered_quicken = assembled.aura_runtime.view(target_ref).component_for(AuraKind.QUICKEN)
@@ -369,7 +368,7 @@ def test_expired_core_removes_binding_then_settles_bloom_damage(
     assert assembled.reaction_runtime.dendro_core_state_for(core.instance_ref) is None
     assert assembled.space_runtime.get_entity(core.space_entity_ref) is None
     damage_record = assembled.damage_handler.records[-1]
-    assert damage_record.damage_request.profile_key == "damage_profile.reaction.bloom_explosion"
+    assert damage_record.damage_request.main_attack_tag == "reaction.bloom_explosion"
     assert damage_record.damage_request.target_ref.entity_id == "target:target_1"
     character_record = _character_damage_record(assembled)
     assert character_record.result.reaction_details is not None
@@ -414,8 +413,8 @@ def test_sixth_core_evicts_oldest_and_settles_bloom_damage(
     assert created[0].instance_ref not in {core.instance_ref for core in active}
     assert [core.creation_sequence for core in active] == [2, 3, 4, 5, 6]
     assert assembled.space_runtime.get_entity(created[0].space_entity_ref) is None
-    assert assembled.damage_handler.records[-1].damage_request.profile_key == (
-        "damage_profile.reaction.bloom_explosion"
+    assert assembled.damage_handler.records[-1].damage_request.main_attack_tag == (
+        "reaction.bloom_explosion"
     )
     occurrence = next(
         payload.occurrence
@@ -452,8 +451,8 @@ def test_burgeon_contact_terminates_confirmed_core_and_settles_damage(
     assert not result.created_shot_refs
     assert assembled.reaction_runtime.dendro_core_state_for(core.instance_ref) is None
     assert assembled.space_runtime.get_entity(core.space_entity_ref) is None
-    assert assembled.damage_handler.records[-1].damage_request.profile_key == (
-        "damage_profile.reaction.burgeon"
+    assert assembled.damage_handler.records[-1].damage_request.main_attack_tag == (
+        "reaction.burgeon"
     )
     character_record = _character_damage_record(assembled)
     assert character_record.result.reaction_details is not None
@@ -516,8 +515,8 @@ def test_hyperbloom_locks_target_then_settles_arrival_damage(
     assert len(arrival.effect_groups) == 1
     assert assembled.reaction_runtime.sprawling_shot_state_for(shot_ref) is None
     assert assembled.space_runtime.get_entity(shot.space_entity_ref) is None
-    assert assembled.damage_handler.records[-1].damage_request.profile_key == (
-        "damage_profile.reaction.hyperbloom"
+    assert assembled.damage_handler.records[-1].damage_request.main_attack_tag == (
+        "reaction.hyperbloom"
     )
     assert assembled.character_damage_taken_coordinator.records == ()
     assert len(arrival.occurrences) == 1

@@ -20,7 +20,8 @@ from genshin_sim.core.impacts import (
     ImpactRequest,
 )
 from genshin_sim.core.systems.aura import AuraApplicationRequest, AuraStrength
-from genshin_sim.core.systems.damage import DamageScalingTerm, DamageType
+from genshin_sim.core.systems.damage import DamageScalingTerm
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_LUNAR_REACTION
 from genshin_sim.core.systems.reaction import CapturedTransformativeScalingBasis
 
 
@@ -142,7 +143,10 @@ def lunar_damage_record_count(assembled) -> int:
     return sum(
         1
         for record in assembled.damage_handler.records
-        if record.result.damage_type is DamageType.LUNAR_REACTION and record.result.final_damage > 0
+        if (
+            record.result.formula_key == FORMULA_KEY_LUNAR_REACTION
+            and record.result.final_damage > 0
+        )
     )
 
 

@@ -27,11 +27,12 @@ from genshin_sim.core.attributes.models import (
     AttributeSubjectRef,
 )
 from genshin_sim.core.elements import Element
-from genshin_sim.core.systems.damage.enums import DamageModifierStage, DamageType
+from genshin_sim.core.systems.damage.enums import DamageModifierStage
 from genshin_sim.core.systems.damage.formulas import (
     DamageFormulaRegistry,
     GeneralDamageFormula,
 )
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_GENERAL
 from genshin_sim.core.systems.damage.models import (
     DamageModifierTerm,
     DamageQuery,
@@ -68,7 +69,8 @@ def _query(damage_name: str | None = None) -> DamageQuery:
         request=DamageRequest(
             request_id="damage:test:1",
             frame=10,
-            damage_type=DamageType.GENERAL,
+            formula_key=FORMULA_KEY_GENERAL,
+            main_attack_tag="test.damage",
             impact_key="test.damage",
             source_ref=SOURCE,
             target_ref=TARGET,

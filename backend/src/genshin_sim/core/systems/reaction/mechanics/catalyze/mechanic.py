@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from genshin_sim.core.elements import AuraAmount, AuraKind, Element, ElementalStateLinkRef
-from genshin_sim.core.systems.damage import DamageProfile, DamageType
 from genshin_sim.core.systems.reaction.models import (
     AdditiveReactionProfile,
     CatalyzeCurrentImpactDamageAdjustment,
@@ -36,9 +35,6 @@ QUICKEN_ELECTRO_ON_DENDRO_PROFILE_KEY = "reaction_profile.quicken.incoming_elect
 QUICKEN_DENDRO_ON_ELECTRO_PROFILE_KEY = "reaction_profile.quicken.incoming_dendro_on_electro"
 AGGRAVATE_PROFILE_KEY = "reaction_profile.aggravate.incoming_electro_on_quicken"
 SPREAD_PROFILE_KEY = "reaction_profile.spread.incoming_dendro_on_quicken"
-CATALYZE_DAMAGE_PROFILE_KEY = "damage_profile.reaction.catalyze_additive"
-CATALYZE_DAMAGE_FORMULA_KEY = "damage_formula.catalyze_additive"
-
 AGGRAVATE_MULTIPLIER = 1.15
 SPREAD_MULTIPLIER = 1.25
 
@@ -212,16 +208,6 @@ def spread_definition() -> ReactionDefinition:
             ),
         ),
         SpreadRule(),
-    )
-
-
-def catalyze_damage_profile() -> DamageProfile:
-    """主攻击标签可选择的激化完整公式 Profile 模板。"""
-
-    return DamageProfile(
-        profile_key=CATALYZE_DAMAGE_PROFILE_KEY,
-        damage_type=DamageType.CATALYZE_REACTION,
-        main_attack_tags=frozenset({CATALYZE_DAMAGE_FORMULA_KEY}),
     )
 
 

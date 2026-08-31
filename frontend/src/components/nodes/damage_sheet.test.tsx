@@ -19,7 +19,7 @@ const CRIT_GENERAL_EVENT = {
     summary: {
       request_id: "req-142",
       frame: 318,
-      damage_type: "general",
+      formula_key: "damage_formula.general",
       source_ref: "character:slot_1",
       target_ref: "target:target_1",
       element: "pyro",
@@ -119,7 +119,7 @@ const TRANSFORMATIVE_EVENT = {
     summary: {
       request_id: "req-7",
       frame: 42,
-      damage_type: "transformative_reaction",
+      formula_key: "damage_formula.transformative_reaction",
       source_ref: "character:slot_1",
       target_ref: "target:1",
       element: "pyro",

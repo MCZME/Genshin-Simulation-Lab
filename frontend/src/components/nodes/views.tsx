@@ -10,7 +10,7 @@ import {
 } from "../../workflow/templates";
 import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 import {
-  DAMAGE_TYPE_LABELS,
+  FORMULA_KEY_LABELS,
   ELEMENT_LABELS,
   EVENT_TYPE_LABELS,
   RUN_STATE_LABELS,
@@ -45,7 +45,7 @@ const ENUM_LABEL_MAPS: Record<string, Record<string, string>> = {
   "enum:weapon_type": WEAPON_LABELS,
   "enum:run_state": RUN_STATE_LABELS,
   "enum:event_type": EVENT_TYPE_LABELS,
-  "enum:damage_type": DAMAGE_TYPE_LABELS,
+  "enum:formula_key": FORMULA_KEY_LABELS,
 };
 
 export function AnalysisViewBody({

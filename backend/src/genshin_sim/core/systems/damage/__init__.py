@@ -6,7 +6,6 @@ from genshin_sim.core.systems.damage.enums import (
     DamageModifierStackingPolicy,
     DamageModifierStage,
     DamageReactionCapability,
-    DamageType,
     LunarReactionDamageMode,
 )
 from genshin_sim.core.systems.damage.errors import (
@@ -23,10 +22,9 @@ from genshin_sim.core.systems.damage.errors import (
     DuplicateDamageFormulaError,
     InvalidDamageScalingError,
     UnsupportedDamageElementError,
-    UnsupportedDamageTypeError,
+    UnsupportedDamageFormulaError,
 )
 from genshin_sim.core.systems.damage.formulas import (
-    CatalyzeReactionDamageFormula,
     DamageFormula,
     DamageFormulaContext,
     DamageFormulaRegistry,
@@ -37,10 +35,17 @@ from genshin_sim.core.systems.damage.formulas import (
     create_default_damage_formula_registry,
 )
 from genshin_sim.core.systems.damage.handler import DamageRequestHandler, DamageResolutionRecord
+from genshin_sim.core.systems.damage.keys import (
+    DEFAULT_FORMULA_KEY,
+    FORMULA_KEY_GENERAL,
+    FORMULA_KEY_LUNAR_REACTION,
+    FORMULA_KEY_TRANSFORMATIVE_REACTION,
+    KNOWN_FORMULA_KEYS,
+    REACTION_TAG_PREFIX,
+)
 from genshin_sim.core.systems.damage.models import (
     AmplifyingReactionInput,
     BaseDamageAddition,
-    CatalyzeReactionDamageResolution,
     CatalyzeReactionInput,
     CatalyzeReactionResolution,
     CriticalZoneResolution,
@@ -107,8 +112,6 @@ __all__ = [
     "CriticalDecisionProvider",
     "BaseDamageAddition",
     "AmplifyingReactionInput",
-    "CatalyzeReactionDamageFormula",
-    "CatalyzeReactionDamageResolution",
     "CatalyzeReactionInput",
     "CatalyzeReactionResolution",
     "CriticalZoneResolution",
@@ -147,10 +150,15 @@ __all__ = [
     "DamageSourceNotFoundError",
     "DamageSystemError",
     "DamageTargetNotFoundError",
-    "DamageType",
+    "DEFAULT_FORMULA_KEY",
     "DamageValidationError",
     "DebugDamageAdjustment",
     "DuplicateDamageFormulaError",
+    "FORMULA_KEY_GENERAL",
+    "FORMULA_KEY_LUNAR_REACTION",
+    "FORMULA_KEY_TRANSFORMATIVE_REACTION",
+    "KNOWN_FORMULA_KEYS",
+    "REACTION_TAG_PREFIX",
     "DAMAGE_TAG_CHARGED_ATTACK",
     "DAMAGE_TAG_DIRECT_DAMAGE",
     "DAMAGE_TAG_ELEMENTAL_BURST",
@@ -185,7 +193,7 @@ __all__ = [
     "StandardScalingZonePolicy",
     "StaticDamageModifierProvider",
     "UnsupportedDamageElementError",
-    "UnsupportedDamageTypeError",
+    "UnsupportedDamageFormulaError",
     "create_default_damage_formula_registry",
     "validate_damage_float",
 ]

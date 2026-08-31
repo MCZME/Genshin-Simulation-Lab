@@ -8,7 +8,6 @@ from genshin_sim.core.systems.reaction.mechanics.catalyze.mechanic import (
     SPREAD_HANDLER_KEY,
     SPREAD_REACTION_KEY,
     aggravate_definition,
-    catalyze_damage_profile,
     quicken_definition,
     spread_definition,
 )
@@ -21,7 +20,6 @@ __all__ = [
     "SPREAD_HANDLER_KEY",
     "SPREAD_REACTION_KEY",
     "aggravate_definition",
-    "catalyze_damage_profile",
     "quicken_definition",
     "spread_definition",
 ]

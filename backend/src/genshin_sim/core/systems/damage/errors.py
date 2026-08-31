@@ -43,10 +43,10 @@ class DuplicateDamageFormulaError(DamageSystemError):
     code = "duplicate_damage_formula"
 
 
-class UnsupportedDamageTypeError(DamageValidationError):
-    """请求的伤害类型尚未注册可用公式。"""
+class UnsupportedDamageFormulaError(DamageValidationError):
+    """请求或标签选择的完整公式尚未注册可用实现。"""
 
-    code = "unsupported_damage_type"
+    code = "unsupported_damage_formula"
 
 
 class DamageFormulaInputError(DamageValidationError):

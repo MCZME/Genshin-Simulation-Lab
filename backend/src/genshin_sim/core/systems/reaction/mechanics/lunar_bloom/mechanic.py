@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from genshin_sim.core.elements import AuraKind, Element
-from genshin_sim.core.systems.damage import DamageProfile, DamageType
+from genshin_sim.core.systems.damage import DamageProfile
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_LUNAR_REACTION
 from genshin_sim.core.systems.reaction.mechanics.dendro_core import (
     DENDRO_CORE_SPATIAL_PROFILE_KEY,
     DENDRO_CORE_STATE_KEY,
@@ -11,7 +12,6 @@ from genshin_sim.core.systems.reaction.mechanics.dendro_core import (
 )
 from genshin_sim.core.systems.reaction.mechanics.lunar_bloom.keys import (
     LUNAR_BLOOM_CAPABILITY_KEY,
-    LUNAR_BLOOM_DAMAGE_PROFILE_KEY,
     LUNAR_BLOOM_DENDRO_ON_HYDRO_PROFILE_KEY,
     LUNAR_BLOOM_HANDLER_KEY,
     LUNAR_BLOOM_HYDRO_ON_DENDRO_PROFILE_KEY,
@@ -134,9 +134,8 @@ def lunar_bloom_definition() -> ReactionDefinition:
 def lunar_bloom_damage_profiles() -> tuple[DamageProfile, ...]:
     return (
         DamageProfile(
-            LUNAR_BLOOM_DAMAGE_PROFILE_KEY,
-            DamageType.LUNAR_REACTION,
-            frozenset({LUNAR_BLOOM_REACTION_KEY}),
+            formula_key=FORMULA_KEY_LUNAR_REACTION,
+            main_attack_tags=frozenset({LUNAR_BLOOM_REACTION_KEY}),
         ),
     )
 

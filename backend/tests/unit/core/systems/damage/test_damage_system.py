@@ -57,7 +57,6 @@ from genshin_sim.core.systems.damage import (
     DamageResolver,
     DamageResult,
     DamageScalingTerm,
-    DamageType,
     DamageValidationError,
     DebugDamageAdjustment,
     DefenseResolution,
@@ -76,8 +75,13 @@ from genshin_sim.core.systems.damage import (
     StandardResistancePolicy,
     StaticDamageModifierProvider,
     TransformativeReactionInput,
-    UnsupportedDamageTypeError,
+    UnsupportedDamageFormulaError,
     create_default_damage_formula_registry,
+)
+from genshin_sim.core.systems.damage.keys import (
+    FORMULA_KEY_GENERAL,
+    FORMULA_KEY_LUNAR_REACTION,
+    FORMULA_KEY_TRANSFORMATIVE_REACTION,
 )
 
 SOURCE = AttributeSubjectRef.character("character:slot_1")
@@ -90,7 +94,7 @@ class _ForbiddenStageFormula:
     @property
     def formula_spec(self) -> DamageFormulaSpec:
         return DamageFormulaSpec(
-            damage_type=DamageType.GENERAL,
+            formula_key=FORMULA_KEY_GENERAL,
             allowed_modifier_stages=frozenset(),
         )
 
@@ -140,7 +144,7 @@ def _attribute_resolver(
 def _query(
     *,
     can_crit: bool = False,
-    damage_type: DamageType = DamageType.GENERAL,
+    formula_key: str = FORMULA_KEY_GENERAL,
     scaling_terms: tuple[DamageScalingTerm, ...] | None = None,
     flat_base_damage: float = 0.0,
     amplifying_reaction: AmplifyingReactionInput | None = None,
@@ -154,7 +158,8 @@ def _query(
         request=DamageRequest(
             request_id="damage:test:1",
             frame=10,
-            damage_type=damage_type,
+            formula_key=formula_key,
+            main_attack_tag="test.damage",
             impact_key="test.damage",
             source_ref=SOURCE,
             target_ref=TARGET,
@@ -206,7 +211,8 @@ def _transformative_query(
         request=DamageRequest(
             request_id="damage:swirl:target:1",
             frame=10,
-            damage_type=DamageType.TRANSFORMATIVE_REACTION,
+            formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
+            main_attack_tag="reaction.swirl",
             impact_key="impact.reaction.swirl.emission",
             source_ref=SOURCE,
             target_ref=TARGET,
@@ -214,7 +220,6 @@ def _transformative_query(
             target_level=90,
             element=Element.HYDRO,
             source_context=CONFIG_SOURCE,
-            profile_key="damage_profile.reaction.swirl",
             reaction_capabilities=frozenset({DamageReactionCapability.SECONDARY_AMPLIFYING}),
             can_crit=False,
             transformative_reaction=_transformative_input(),
@@ -368,8 +373,7 @@ def test_handler_requires_capable_profile_and_matching_target_impact_for_seconda
         profile_registry=DamageProfileRegistry(
             (
                 DamageProfile(
-                    "damage_profile.test.transformative",
-                    DamageType.TRANSFORMATIVE_REACTION,
+                    FORMULA_KEY_TRANSFORMATIVE_REACTION,
                     frozenset({"test.reaction.transformative"}),
                 ),
             )
@@ -389,8 +393,7 @@ def test_handler_requires_capable_profile_and_matching_target_impact_for_seconda
         profile_registry=DamageProfileRegistry(
             (
                 DamageProfile(
-                    "damage_profile.test.transformative",
-                    DamageType.TRANSFORMATIVE_REACTION,
+                    FORMULA_KEY_TRANSFORMATIVE_REACTION,
                     frozenset({"test.reaction.transformative"}),
                     frozenset({DamageReactionCapability.SECONDARY_AMPLIFYING}),
                 ),
@@ -639,7 +642,8 @@ def test_transformative_formula_rejects_resistance_add_stage():
         request=DamageRequest(
             request_id="damage:transformative:1",
             frame=10,
-            damage_type=DamageType.TRANSFORMATIVE_REACTION,
+            formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
+            main_attack_tag="reaction.transformative",
             impact_key="impact.reaction.transformative",
             source_ref=SOURCE,
             target_ref=TARGET,
@@ -698,27 +702,54 @@ def test_trace_level_changes_audit_only():
     assert none.applied_terms == ()
 
 
-def test_handler_rejects_missing_and_unknown_damage_type():
+def test_handler_requires_damage_spec_and_rejects_unknown_reaction_tag():
     request_handler = DamageRequestHandler(DamageResolver(_attribute_resolver()))
-    base_payload: dict[str, object] = {
-        "scaling_terms": (
-            {
-                "component_key": "hp",
-                "attribute_key": "stat.hp.max",
-                "coefficient": 1.0,
-            },
+
+    with pytest.raises(DamageValidationError, match="必须提供 damage_spec"):
+        request_handler.handle_impact_request(_damage_context(), _damage_impact({}))
+
+    unknown_reaction = ImpactRequest(
+        frame=10,
+        kind=ImpactKind.DAMAGE,
+        impact_key="test.damage",
+        owner_slot=1,
+        target_refs=("target_1",),
+        damage_spec=DamageImpactSpec(
+            impact_ref="impact:test:1",
+            main_attack_tag="reaction.unknown",
+            element=Element.HYDRO,
+            scaling_terms=(DamageScalingTerm("hp", STAT_HP_MAX, 1.0),),
+            can_crit=False,
         ),
-        "can_crit": False,
-    }
-
-    with pytest.raises(UnsupportedDamageTypeError):
-        request_handler.handle_impact_request(_damage_context(), _damage_impact(base_payload))
-
-    with pytest.raises(UnsupportedDamageTypeError):
+    )
+    with pytest.raises(UnsupportedDamageFormulaError, match="反应标签未映射"):
         request_handler.handle_impact_request(
             _damage_context(),
-            _damage_impact({**base_payload, "damage_type": "future_formula"}),
+            unknown_reaction,
         )
+
+
+def test_handler_defaults_unregistered_non_reaction_tag_to_general_formula():
+    handler = DamageRequestHandler(DamageResolver(_attribute_resolver()))
+    impact = ImpactRequest(
+        frame=10,
+        kind=ImpactKind.DAMAGE,
+        impact_key="test.damage",
+        owner_slot=1,
+        target_refs=("target_1",),
+        damage_spec=DamageImpactSpec(
+            impact_ref="impact:test:1",
+            main_attack_tag="character.test.attack",
+            element=Element.HYDRO,
+            scaling_terms=(DamageScalingTerm("hp", STAT_HP_MAX, 1.0),),
+            can_crit=False,
+        ),
+    )
+
+    records = handler.prepare_impact_request(_damage_context(), impact)
+
+    assert records[0].damage_request.formula_key == FORMULA_KEY_GENERAL
+    assert records[0].damage_request.main_attack_tag == "character.test.attack"
 
 
 def test_formula_stage_validation_rejects_terms_before_formula_resolution():
@@ -733,7 +764,7 @@ def test_formula_stage_validation_rejects_terms_before_formula_resolution():
         resolver.resolve(_query())
 
 
-def test_registry_rejects_duplicate_and_unregistered_damage_type():
+def test_formula_registry_rejects_duplicate_and_unregistered_formula():
     with pytest.raises(DuplicateDamageFormulaError) as duplicate:
         DamageFormulaRegistry((GeneralDamageFormula(), GeneralDamageFormula()))
     assert "重复伤害公式" in str(duplicate.value)
@@ -742,13 +773,13 @@ def test_registry_rejects_duplicate_and_unregistered_damage_type():
         _attribute_resolver(),
         formula_registry=DamageFormulaRegistry(()),
     )
-    with pytest.raises(UnsupportedDamageTypeError):
+    with pytest.raises(UnsupportedDamageFormulaError):
         resolver.resolve(_query())
 
 
 def test_default_registry_registers_production_lunar_formula():
     registry = create_default_damage_formula_registry()
-    formula = registry.require(DamageType.LUNAR_REACTION)
+    formula = registry.require(FORMULA_KEY_LUNAR_REACTION)
     assert isinstance(formula, LunarReactionDamageFormula)
     assert formula.level_base_damage == {
         80: 1077.4,
@@ -796,7 +827,7 @@ def test_lunar_direct_formula_resolves_one_component_without_normal_damage_bonus
         formula_registry=DamageFormulaRegistry((formula,)),
     ).resolve(
         _query(
-            damage_type=DamageType.LUNAR_REACTION,
+            formula_key=FORMULA_KEY_LUNAR_REACTION,
             scaling_terms=(),
             lunar_reaction=lunar,
         )
@@ -837,7 +868,7 @@ def test_lunar_composite_sorts_complete_components_before_weighting():
         ),
     ).resolve(
         _query(
-            damage_type=DamageType.LUNAR_REACTION,
+            formula_key=FORMULA_KEY_LUNAR_REACTION,
             scaling_terms=(),
             lunar_reaction=lunar,
         )
@@ -976,7 +1007,8 @@ def test_catalyze_result_audit_reaction_uses_catalyze_detail():
     result = DamageResult(
         request_id="damage:test:1",
         frame=10,
-        damage_type=DamageType.CATALYZE_REACTION,
+        formula_key=FORMULA_KEY_GENERAL,
+        main_attack_tag="test.catalyze",
         source_ref=SOURCE,
         target_ref=TARGET,
         element=Element.DENDRO,
@@ -1030,7 +1062,7 @@ def test_lunar_result_audit_reaction_uses_lunar_resolution():
         ),
     ).resolve(
         _query(
-            damage_type=DamageType.LUNAR_REACTION,
+            formula_key=FORMULA_KEY_LUNAR_REACTION,
             scaling_terms=(),
             lunar_reaction=lunar,
         )

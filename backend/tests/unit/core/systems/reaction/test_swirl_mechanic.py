@@ -22,8 +22,8 @@ from genshin_sim.core.systems.aura import (
 )
 from genshin_sim.core.systems.damage import (
     DamageReactionCapability,
-    DamageType,
 )
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_TRANSFORMATIVE_REACTION
 from genshin_sim.core.systems.reaction import (
     GeneratedDamageImpactEffect,
     ReactionEvaluationRequest,
@@ -197,7 +197,7 @@ def test_swirl_test_assembly_declares_regular_aura_profile_damage_profile_and_ga
     gates = swirl_gate_definitions()
 
     assert aura_profile.profile_key == "aura_application_profile.reaction.swirl"
-    assert damage_profile.damage_type is DamageType.TRANSFORMATIVE_REACTION
+    assert damage_profile.formula_key == FORMULA_KEY_TRANSFORMATIVE_REACTION
     assert damage_profile.main_attack_tags == frozenset({SWIRL_REACTION_KEY})
     assert damage_profile.reaction_capabilities == frozenset(
         {DamageReactionCapability.SECONDARY_AMPLIFYING}

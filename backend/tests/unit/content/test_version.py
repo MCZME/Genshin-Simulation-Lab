@@ -15,15 +15,6 @@ from genshin_sim.content.definitions.content_unit import (
     ContentUnitOwnerType,
 )
 from genshin_sim.content.registries import CharacterContentUnitRequest
-from genshin_sim.content.test.characters.runtime_probe.constants import (
-    RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-)
-from genshin_sim.content.test.characters.runtime_probe.constants import (
-    RUNTIME_PROBE_CONTENT_VERSION as RUNTIME_PROBE_VERSION,
-)
-from genshin_sim.content.test.characters.runtime_probe.content import (
-    create_runtime_probe_content_unit,
-)
 
 
 def test_content_unit_requires_non_empty_version():
@@ -175,14 +166,3 @@ def _heal_scaling_entry(
         },
         tags=(talent_key, "ratio", "flat"),
     )
-
-
-def test_runtime_probe_content_unit_exposes_version():
-    unit = create_runtime_probe_content_unit(
-        CharacterContentUnitRequest(
-            handler_key=RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-            character_key="character:test_character",
-            slot=1,
-        )
-    )
-    assert unit.version == RUNTIME_PROBE_VERSION

@@ -9,6 +9,7 @@ from genshin_sim.application.execution import (
     SimulationRunSummary,
 )
 from genshin_sim.application.input import SimulationInput
+from genshin_sim.assets import CompositeAssetRepository
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
@@ -17,13 +18,17 @@ from genshin_sim.content.registries import (
     CharacterContentUnitRequest,
     ContentUnitRegistry,
 )
-from genshin_sim.content.test.characters.runtime_probe.actions import (
-    RuntimeProbeActionInterpreter,
-    create_runtime_probe_action,
+from genshin_sim.content.test.asset_repository import TestAssetRepository
+from genshin_sim.content.test.characters.reaction_probe.actions import (
+    ReactionProbeActionInterpreter,
+    create_probe_action,
 )
-from genshin_sim.content.test.characters.runtime_probe.constants import (
-    RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-    RUNTIME_PROBE_IMPACT_KEY,
+from genshin_sim.content.test.characters.reaction_probe.constants import (
+    TEST_A_ACTION_KEY,
+    TEST_A_DISPLAY_NAME_BY_KEY,
+    TEST_A_ELEMENT_BY_KEY,
+    TEST_A_HANDLER_KEY,
+    TEST_A_IMPACT_KEY,
 )
 from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.coordination.character_damage_taken import CharacterIncomingDamage
@@ -78,9 +83,14 @@ def _testing_shield_content_unit(request: CharacterContentUnitRequest) -> Conten
         handler_key=request.handler_key,
         version="dev-test",
         slot=request.slot,
-        action_interpreter=RuntimeProbeActionInterpreter(),
-        actions=(create_runtime_probe_action(),),
-        impact_factories={RUNTIME_PROBE_IMPACT_KEY: TestingShieldImpactFactory()},
+        action_interpreter=ReactionProbeActionInterpreter(
+            handler_key=TEST_A_HANDLER_KEY,
+            action_key=TEST_A_ACTION_KEY,
+            element_by_key=TEST_A_ELEMENT_BY_KEY,
+            display_name_by_key=TEST_A_DISPLAY_NAME_BY_KEY,
+        ),
+        actions=(create_probe_action(TEST_A_ACTION_KEY, (TEST_A_IMPACT_KEY,)),),
+        impact_factories={TEST_A_IMPACT_KEY: TestingShieldImpactFactory()},
         metadata={"purpose": "testing_shield_vertical_integration"},
     )
 
@@ -92,14 +102,14 @@ def test_action_impact_grants_shield_and_incoming_damage_reaches_health_runtime(
     write_minimal_static_asset_database(asset_db)
     unit_registry = ContentUnitRegistry()
     unit_registry.register_character_factory(
-        RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
+        TEST_A_HANDLER_KEY,
         _testing_shield_content_unit,
     )
     config = SimulationInput.from_mapping(
         static_asset_input_payload(meta_name="shield integration")
     )
     assembled = SimulationAssembler(
-        SQLiteAssetRepository(asset_db),
+        CompositeAssetRepository(SQLiteAssetRepository(asset_db), TestAssetRepository()),
         content_unit_registry=unit_registry,
     ).assemble(config)
     captured = []

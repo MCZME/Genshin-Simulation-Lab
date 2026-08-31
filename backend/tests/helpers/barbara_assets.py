@@ -17,7 +17,7 @@ from genshin_sim.assets import (
 from genshin_sim.content import (
     BARBARA_CHARACTER_HANDLER_KEY,
     BARBARA_ENCORE_EFFECT_HANDLER_KEY,
-    RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
+    TEST_A_HANDLER_KEY,
 )
 from genshin_sim.infrastructure.assets_sqlite import (
     ASSET_SCHEMA_VERSION,
@@ -157,7 +157,7 @@ def write_barbara_probe_asset_database(db_path: Path) -> Path:
 
     probe_scalings = (
         TalentScalingEntry(
-            character_key="character:test_character",
+            character_key="character:test_a",
             talent_key="normal_attack",
             entry_key="hit_1",
             label="Normal Attack Hit 1",
@@ -190,14 +190,14 @@ def write_barbara_probe_asset_database(db_path: Path) -> Path:
                 handler_key=BARBARA_CHARACTER_HANDLER_KEY,
             ),
             CharacterAsset(
-                asset_key="character:test_character",
-                source_id="test_character",
-                name="Test Character",
-                element="anemo",
+                asset_key="character:test_a",
+                source_id="test_a",
+                name="Test A",
+                element="pyro",
                 weapon_type="sword",
                 rarity=5,
                 burst_energy_cost=60.0,
-                handler_key=RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
+                handler_key=TEST_A_HANDLER_KEY,
             ),
         ),
         character_level_stats=(
@@ -222,7 +222,7 @@ def write_barbara_probe_asset_database(db_path: Path) -> Path:
                 ascension_value=0.0,
             ),
             CharacterLevelStats(
-                character_key="character:test_character",
+                character_key="character:test_a",
                 level=90,
                 ascension_phase=6,
                 base_hp=10000.0,

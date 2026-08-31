@@ -242,7 +242,7 @@ def test_content_compiler_uses_default_content_unit_registry_path():
                 weapon_type="catalyst",
                 rarity=5,
                 burst_energy_cost=60.0,
-                handler_key="character.testing.runtime_probe",
+                handler_key="character.testing.test_a",
             )
 
     compiler = ContentCompiler(create_default_content_unit_registry(developer_mode=True))
@@ -251,6 +251,6 @@ def test_content_compiler_uses_default_content_unit_registry_path():
     bundle = compiler.compile(_single_character_config(), assets)
 
     assert len(bundle.content_units) == 1
-    assert bundle.content_units[0].handler_key == "character.testing.runtime_probe"
+    assert bundle.content_units[0].handler_key == "character.testing.test_a"
     assert 1 in bundle.action_interpreters
     assert bundle.content_state_mounts == ()

@@ -27,25 +27,45 @@ TEST_META: dict[str, str] = {
 
 TEST_CHARACTER_ASSETS: tuple[CharacterAsset, ...] = (
     CharacterAsset(
-        asset_key="character:test_character",
-        source_id="test_character",
-        name="Test Character",
-        element="anemo",
+        asset_key="character:test_a",
+        source_id="test_a",
+        name="Test A",
+        element="pyro",
         weapon_type="sword",
         rarity=5,
         burst_energy_cost=60.0,
-        handler_key="character.testing.runtime_probe",
+        handler_key="character.testing.test_a",
+    ),
+    CharacterAsset(
+        asset_key="character:test_b",
+        source_id="test_b",
+        name="Test B",
+        element="pyro",
+        weapon_type="claymore",
+        rarity=5,
+        burst_energy_cost=60.0,
+        handler_key="character.testing.test_b",
     ),
 )
 
 TEST_CHARACTER_LEVEL_STATS: tuple[CharacterLevelStats, ...] = (
     CharacterLevelStats(
-        character_key="character:test_character",
+        character_key="character:test_a",
         level=90,
         ascension_phase=6,
         base_hp=10000.0,
         base_atk=200.0,
         base_def=600.0,
+    ),
+    CharacterLevelStats(
+        character_key="character:test_b",
+        level=90,
+        ascension_phase=6,
+        base_hp=10000.0,
+        base_atk=900.0,
+        base_def=600.0,
+        ascension_stat="elemental_mastery",
+        ascension_value=120.0,
     ),
 )
 
@@ -58,6 +78,14 @@ TEST_WEAPON_ASSETS: tuple[WeaponAsset, ...] = (
         rarity=4,
         handler_key="generic.test_weapon",
     ),
+    WeaponAsset(
+        asset_key="weapon:test_modifier_blade",
+        source_id="test_modifier_blade",
+        name="词条探针大剑",
+        weapon_type="claymore",
+        rarity=4,
+        handler_key="weapon.testing.modifier_blade",
+    ),
 )
 
 TEST_WEAPON_LEVEL_STATS: tuple[WeaponLevelStats, ...] = (
@@ -69,6 +97,14 @@ TEST_WEAPON_LEVEL_STATS: tuple[WeaponLevelStats, ...] = (
         secondary_stat="atk_percent",
         secondary_value=0.413,
     ),
+    WeaponLevelStats(
+        weapon_key="weapon:test_modifier_blade",
+        level=90,
+        ascension_phase=6,
+        base_atk=100.0,
+        secondary_stat=None,
+        secondary_value=None,
+    ),
 )
 
 TEST_ARTIFACT_SET_ASSETS: tuple[ArtifactSetAsset, ...] = (
@@ -77,6 +113,12 @@ TEST_ARTIFACT_SET_ASSETS: tuple[ArtifactSetAsset, ...] = (
         source_id="test_set",
         name="Test Set",
         handler_key="generic.test_artifact_set",
+    ),
+    ArtifactSetAsset(
+        asset_key="artifact_set:test_modifier_set",
+        source_id="test_modifier_set",
+        name="词条探针套装",
+        handler_key=None,
     ),
 )
 
@@ -87,14 +129,44 @@ TEST_ARTIFACT_SET_BONUSES: tuple[ArtifactSetBonus, ...] = (
         handler_key="generic.static_modifiers",
         params={"schema_version": 1},
     ),
+    ArtifactSetBonus(
+        artifact_set_key="artifact_set:test_modifier_set",
+        piece_count=2,
+        handler_key="artifact.testing.modifier_set",
+        params={
+            "schema_version": 1,
+            "components": [{"values": [120.0]}],
+        },
+    ),
+    ArtifactSetBonus(
+        artifact_set_key="artifact_set:test_modifier_set",
+        piece_count=4,
+        handler_key="artifact.testing.modifier_set",
+        params={
+            "schema_version": 1,
+            "components": [{"values": [80.0]}, {"values": [0.2]}, {"values": [0.12]}],
+        },
+    ),
 )
 
 TEST_TALENT_SCALINGS: tuple[TalentScalingEntry, ...] = (
     TalentScalingEntry(
-        character_key="character:test_character",
+        character_key="character:test_a",
         talent_key="normal_attack",
         entry_key="hit_1",
         label="Normal Attack Hit 1",
+        scaling={
+            "schema_version": 1,
+            "mode": "constant",
+            "components": [{"kind": "plain_ratio", "values": [1.0]}],
+        },
+        tags=("damage",),
+    ),
+    TalentScalingEntry(
+        character_key="character:test_b",
+        talent_key="normal_attack",
+        entry_key="hit_1",
+        label="Damage Probe Hit 1",
         scaling={
             "schema_version": 1,
             "mode": "constant",

@@ -98,7 +98,7 @@ def barbara_probe_input_payload(
             {
                 "slot": 2,
                 "character": {
-                    "asset_key": "character:test_character",
+                    "asset_key": "character:test_a",
                     "level": 90,
                     "constellation": 0,
                     "talents": {"normal_attack": 1},

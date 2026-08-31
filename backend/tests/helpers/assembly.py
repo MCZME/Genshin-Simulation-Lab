@@ -2,13 +2,15 @@
 
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Mapping
+from dataclasses import replace
 from pathlib import Path
 
 from genshin_sim.application.assembly import SimulationAssembler
 from genshin_sim.application.input import SimulationInput
+from genshin_sim.assets import CharacterLevelStats, CompositeAssetRepository
 from genshin_sim.content import create_default_content_unit_registry
+from genshin_sim.content.test.asset_repository import TestAssetRepository
 from genshin_sim.core.actions import (
     ActionInterpretationResult,
     ActionInterpretationTrigger,
@@ -29,6 +31,30 @@ from genshin_sim.infrastructure.assets_sqlite import (
     SQLiteAssetRepository,
     write_minimal_static_asset_database,
 )
+
+
+class ElementalMasteryOverrideRepository(TestAssetRepository):
+    """测试用：在内存测试资产仓库上覆盖 test_a 的等级词条。"""
+
+    def __init__(self, elemental_mastery: float | None) -> None:
+        super().__init__()
+        self._elemental_mastery = elemental_mastery
+
+    def get_character_level_stats(
+        self,
+        character_key: str,
+        level: int,
+        *,
+        ascended: bool = True,
+    ) -> CharacterLevelStats:
+        stats = super().get_character_level_stats(character_key, level, ascended=ascended)
+        if character_key == "character:test_a" and self._elemental_mastery is not None:
+            return replace(
+                stats,
+                ascension_stat="elemental_mastery",
+                ascension_value=self._elemental_mastery,
+            )
+        return stats
 
 
 class ContributedActionInterpreter:
@@ -188,12 +214,12 @@ def static_asset_input_payload(
     include_weapon: bool = False,
     include_artifact_set: bool = False,
 ) -> dict[str, object]:
-    """面向静态资产库（write_minimal_static_asset_database）的单角色仿真输入。"""
+    """面向 test_a 测试角色（CompositeAssetRepository + TestAssetRepository）的单角色仿真输入。"""
 
     team_member: dict[str, object] = {
         "slot": 1,
         "character": {
-            "asset_key": "character:test_character",
+            "asset_key": "character:test_a",
             "level": 90,
             "constellation": 0,
             "talents": {"normal_attack": 1},
@@ -248,20 +274,12 @@ def build_reaction_assembled(
 ):
     asset_db = tmp_path / "assets.db"
     write_minimal_static_asset_database(asset_db)
-    if elemental_mastery is not None:
-        with sqlite3.connect(asset_db) as connection:
-            cursor = connection.execute(
-                """
-                UPDATE character_level_stats
-                SET ascension_stat = ?, ascension_value = ?
-                WHERE character_key = ? AND level = ?
-                """,
-                ("elemental_mastery", elemental_mastery, "character:test_character", 90),
-            )
-        assert cursor.rowcount == 1
     return SimulationAssembler(
-        SQLiteAssetRepository(asset_db),
-        # 测试角色绑定 runtime_probe handler，需要开发者模式注册表。
+        CompositeAssetRepository(
+            SQLiteAssetRepository(asset_db),
+            ElementalMasteryOverrideRepository(elemental_mastery),
+        ),
+        # 测试角色绑定 test_a handler，需要开发者模式注册表。
         content_unit_registry=create_default_content_unit_registry(developer_mode=True),
     ).assemble(
         SimulationInput.from_mapping(

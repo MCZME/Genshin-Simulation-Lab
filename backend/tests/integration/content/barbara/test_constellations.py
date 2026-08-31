@@ -88,7 +88,7 @@ def test_barbara_c2_hydro_bonus_follows_active_character_on_switch(tmp_path: Pat
     )
     assembled = SimulationAssembler(
         SQLiteAssetRepository(asset_db),
-        # 探针库绑定 runtime_probe handler，需要开发者模式注册表。
+        # 探针库绑定 test_a handler，需要开发者模式注册表。
         content_unit_registry=create_default_content_unit_registry(developer_mode=True),
     ).assemble(SimulationInput.from_mapping(payload))
 

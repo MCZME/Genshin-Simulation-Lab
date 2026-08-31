@@ -7,9 +7,19 @@
 from __future__ import annotations
 
 from genshin_sim.content.registries import ContentUnitRegistry
-from genshin_sim.content.test.characters.runtime_probe import (
-    RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-    create_runtime_probe_content_unit,
+from genshin_sim.content.test.artifacts.modifier_set import (
+    MODIFIER_SET_HANDLER_KEY,
+    create_modifier_set_content_unit,
+)
+from genshin_sim.content.test.characters.reaction_probe import (
+    TEST_A_HANDLER_KEY,
+    TEST_B_HANDLER_KEY,
+    create_test_a_content_unit,
+    create_test_b_content_unit,
+)
+from genshin_sim.content.test.weapons.modifier_blade import (
+    MODIFIER_BLADE_HANDLER_KEY,
+    create_modifier_blade_content_unit,
 )
 
 
@@ -17,6 +27,18 @@ def register_test_content_units(registry: ContentUnitRegistry) -> None:
     """把开发者测试内容单元工厂注册进给定注册表。"""
 
     registry.register_character_factory(
-        RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-        create_runtime_probe_content_unit,
+        TEST_A_HANDLER_KEY,
+        create_test_a_content_unit,
+    )
+    registry.register_character_factory(
+        TEST_B_HANDLER_KEY,
+        create_test_b_content_unit,
+    )
+    registry.register_weapon_factory(
+        MODIFIER_BLADE_HANDLER_KEY,
+        create_modifier_blade_content_unit,
+    )
+    registry.register_artifact_factory(
+        MODIFIER_SET_HANDLER_KEY,
+        create_modifier_set_content_unit,
     )

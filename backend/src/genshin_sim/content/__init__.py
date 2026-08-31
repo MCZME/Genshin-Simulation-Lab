@@ -110,10 +110,13 @@ from genshin_sim.content.team import (
     create_resonance_buff_definitions,
     create_resonance_definitions,
 )
-from genshin_sim.content.test.characters.runtime_probe import (
-    RUNTIME_PROBE_ACTION_KEY,
-    RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-    RUNTIME_PROBE_IMPACT_KEY,
+from genshin_sim.content.test.characters.reaction_probe import (
+    TEST_A_ACTION_KEY,
+    TEST_A_HANDLER_KEY,
+    TEST_A_IMPACT_KEY,
+    TEST_B_ACTION_KEY,
+    TEST_B_HANDLER_KEY,
+    TEST_B_IMPACT_KEY,
 )
 from genshin_sim.content.weapons.bow.hunter_bow import (
     HUNTER_BOW_ASSET_KEY,
@@ -211,9 +214,6 @@ __all__ = [
     "MAIDEN_BELOVED_CONTENT_VERSION",
     "MAIDEN_BELOVED_HANDLER_KEY",
     "Modifier",
-    "RUNTIME_PROBE_ACTION_KEY",
-    "RUNTIME_PROBE_CHARACTER_HANDLER_KEY",
-    "RUNTIME_PROBE_IMPACT_KEY",
     "RESONANCE_DENDRO_EM_20_BUFF_KEY",
     "RESONANCE_DENDRO_EM_30_BUFF_KEY",
     "RESONANCE_GEO_RES_SHRED_BUFF_KEY",
@@ -226,6 +226,12 @@ __all__ = [
     "RESONANCE_INTERWOVEN",
     "RESONANCE_KEYS",
     "RESONANCE_PYRO",
+    "TEST_A_ACTION_KEY",
+    "TEST_A_HANDLER_KEY",
+    "TEST_A_IMPACT_KEY",
+    "TEST_B_ACTION_KEY",
+    "TEST_B_HANDLER_KEY",
+    "TEST_B_IMPACT_KEY",
     "StateContainerError",
     "StateContainerNotFoundError",
     "StatePatchError",

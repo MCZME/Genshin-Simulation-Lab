@@ -149,15 +149,43 @@ from genshin_sim.core.systems.reaction.gates import (
     ReactionDamageGateDecision,
     ReactionDamageGateRequest,
 )
+from genshin_sim.core.systems.reaction.mechanics.bloom.keys import (
+    BURGEON_DAMAGE_PROFILE_KEY,
+    HYPERBLOOM_DAMAGE_PROFILE_KEY,
+)
+from genshin_sim.core.systems.reaction.mechanics.burning.mechanic import (
+    BURNING_DAMAGE_PROFILE_KEY,
+)
+from genshin_sim.core.systems.reaction.mechanics.dendro_core import (
+    DENDRO_CORE_TERMINATION_DAMAGE_PROFILE_KEY,
+)
 from genshin_sim.core.systems.reaction.mechanics.electro_charged import (
     ELECTRO_CHARGED_DAMAGE_KIND_KEY,
+    ELECTRO_CHARGED_DAMAGE_PROFILE_KEY,
 )
 from genshin_sim.core.systems.reaction.mechanics.frozen.keys import FROZEN_REACTION_KEY
+from genshin_sim.core.systems.reaction.mechanics.lunar_bloom.keys import (
+    LUNAR_BLOOM_DAMAGE_PROFILE_KEY,
+)
+from genshin_sim.core.systems.reaction.mechanics.lunar_crystallize.keys import (
+    LUNAR_CRYSTALLIZE_DAMAGE_PROFILE_KEY,
+)
 from genshin_sim.core.systems.reaction.mechanics.lunar_electro_charged.keys import (
+    LUNAR_ELECTRO_CHARGED_DAMAGE_PROFILE_KEY,
     LUNAR_STORM_CLOUD_ATTACK_CONSUMPTION_AMOUNT,
 )
+from genshin_sim.core.systems.reaction.mechanics.overloaded.mechanic import (
+    OVERLOADED_DAMAGE_PROFILE_KEY,
+)
 from genshin_sim.core.systems.reaction.mechanics.shattered.mechanic import (
+    SHATTERED_DAMAGE_PROFILE_KEY,
     SHATTERED_REACTION_KEY,
+)
+from genshin_sim.core.systems.reaction.mechanics.superconduct.mechanic import (
+    SUPERCONDUCT_DAMAGE_PROFILE_KEY,
+)
+from genshin_sim.core.systems.reaction.mechanics.swirl.mechanic import (
+    SWIRL_DAMAGE_PROFILE_KEY,
 )
 from genshin_sim.core.systems.reaction.participants import (
     freeze_aura_character_participants,
@@ -906,6 +934,7 @@ class ElementalSettlementCoordinator:
                         main_attack_tag=component.main_attack_tag,
                         element=component.damage_element,
                         can_crit=False,
+                        display_name=_reaction_damage_display_name(component.damage_profile_key),
                     ),
                 ),
                 transformative_reactions=transformative_inputs,
@@ -1280,6 +1309,7 @@ class ElementalSettlementCoordinator:
                     main_attack_tag=component.main_attack_tag,
                     element=component.damage_element,
                     can_crit=False,
+                    display_name=_reaction_damage_display_name(component.damage_profile_key),
                 ),
             )
             damage_records = self.damage_handler.prepare_impact_request(
@@ -1719,6 +1749,7 @@ class ElementalSettlementCoordinator:
                     element=generated_damage.damage_element,
                     can_crit=False,
                     strike_type=generated_damage.strike_type,
+                    display_name=_reaction_damage_display_name(generated_damage.damage_profile_key),
                 ),
             )
             damage_records = self.damage_handler.prepare_impact_request(
@@ -1754,6 +1785,7 @@ class ElementalSettlementCoordinator:
                     main_attack_tag=lunar_damage.main_attack_tag,
                     element=lunar_damage.damage_element,
                     can_crit=lunar_damage.can_crit,
+                    display_name=_reaction_damage_display_name(lunar_damage.damage_profile_key),
                 ),
             )
             lunar_records = self.damage_handler.prepare_impact_request(
@@ -2115,6 +2147,7 @@ class ElementalSettlementCoordinator:
                     main_attack_tag=effect.main_attack_tag,
                     element=effect.damage_element,
                     can_crit=False,
+                    display_name=_reaction_damage_display_name(effect.damage_profile_key),
                 ),
             )
             damage_records = self.damage_handler.prepare_impact_request(
@@ -2335,6 +2368,7 @@ class ElementalSettlementCoordinator:
                     main_attack_tag=effect.main_attack_tag,
                     element=effect.damage_element,
                     can_crit=effect.can_crit,
+                    display_name=_reaction_damage_display_name(effect.damage_profile_key),
                 ),
             )
             damage_records = self.damage_handler.prepare_impact_request(
@@ -2726,6 +2760,28 @@ class ElementalSettlementCoordinator:
                 key=lambda item: (item.subject_ref.kind.value, item.subject_ref.entity_id),
             ),
         )
+
+
+_REACTION_DAMAGE_DISPLAY_NAMES: dict[str, str] = {
+    OVERLOADED_DAMAGE_PROFILE_KEY: "超载",
+    SUPERCONDUCT_DAMAGE_PROFILE_KEY: "超导",
+    SHATTERED_DAMAGE_PROFILE_KEY: "碎冰",
+    ELECTRO_CHARGED_DAMAGE_PROFILE_KEY: "感电",
+    SWIRL_DAMAGE_PROFILE_KEY: "扩散",
+    BURNING_DAMAGE_PROFILE_KEY: "燃烧",
+    DENDRO_CORE_TERMINATION_DAMAGE_PROFILE_KEY: "绽放",
+    HYPERBLOOM_DAMAGE_PROFILE_KEY: "超绽放",
+    BURGEON_DAMAGE_PROFILE_KEY: "烈绽放",
+    LUNAR_BLOOM_DAMAGE_PROFILE_KEY: "月绽放",
+    LUNAR_CRYSTALLIZE_DAMAGE_PROFILE_KEY: "月结晶",
+    LUNAR_ELECTRO_CHARGED_DAMAGE_PROFILE_KEY: "月感电",
+}
+
+
+def _reaction_damage_display_name(damage_profile_key: str) -> str | None:
+    """返回剧变/月曜伤害的显示名；未登记的 Profile 返回 None。"""
+
+    return _REACTION_DAMAGE_DISPLAY_NAMES.get(damage_profile_key)
 
 
 def _effect_group_work_id(

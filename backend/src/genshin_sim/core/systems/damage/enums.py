@@ -38,6 +38,7 @@ class DamageModifierStage(StrEnum):
     DEFENSE_IGNORE = "defense_ignore"
     CRIT_RATE_ADD = "crit_rate_add"
     CRIT_DAMAGE_ADD = "crit_damage_add"
+    RESISTANCE_ADD = "resistance_add"
 
 
 class CritOutcome(StrEnum):

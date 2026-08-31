@@ -338,8 +338,18 @@ class StandardDefensePolicy:
 class StandardResistancePolicy:
     """按旧项目迁移基线的分段函数计算抗性乘区。"""
 
-    def resolve(self, resistance: float) -> ResistanceResolution:
-        """返回给定抗性值对应的抗性区审计结果。"""
+    def resolve(
+        self,
+        resistance: float,
+        *,
+        base_resistance: float | None = None,
+        resistance_add: float = 0.0,
+    ) -> ResistanceResolution:
+        """返回给定有效抗性对应的抗性区审计结果。
+
+        ``resistance`` 是分段函数使用的有效抗性；``base_resistance`` 与
+        ``resistance_add`` 只进入审计，未提供时分别回退为有效抗性与 0。
+        """
 
         value = validate_damage_float(resistance, "resistance")
         if value < 0:
@@ -348,7 +358,12 @@ class StandardResistancePolicy:
             multiplier = 1 / (1 + 4 * value)
         else:
             multiplier = 1 - value
-        return ResistanceResolution(value, multiplier)
+        return ResistanceResolution(
+            resistance=value,
+            multiplier=multiplier,
+            base_resistance=base_resistance,
+            resistance_add=resistance_add,
+        )
 
 
 def _base_damage_additions(

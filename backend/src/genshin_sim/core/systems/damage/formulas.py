@@ -80,6 +80,7 @@ GENERAL_ALLOWED_MODIFIER_STAGES = frozenset(
         DamageModifierStage.DEFENSE_IGNORE,
         DamageModifierStage.CRIT_RATE_ADD,
         DamageModifierStage.CRIT_DAMAGE_ADD,
+        DamageModifierStage.RESISTANCE_ADD,
     }
 )
 TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES = frozenset[DamageModifierStage]()
@@ -215,7 +216,12 @@ class GeneralDamageFormula:
         resistance_resolution = context.session.resolve_target(
             ELEMENT_TO_RESISTANCE_KEY[query.request.element.value]
         )
-        resistance = self.resistance_policy.resolve(resistance_resolution.final_value)
+        resistance_add = _sum_terms(terms, DamageModifierStage.RESISTANCE_ADD)
+        resistance = self.resistance_policy.resolve(
+            resistance_resolution.final_value + resistance_add,
+            base_resistance=resistance_resolution.final_value,
+            resistance_add=resistance_add,
+        )
 
         official_damage = (
             scaling.value
@@ -452,7 +458,12 @@ class CatalyzeReactionDamageFormula:
         resistance_resolution = context.session.resolve_target(
             ELEMENT_TO_RESISTANCE_KEY[request.element.value]
         )
-        resistance = self.resistance_policy.resolve(resistance_resolution.final_value)
+        resistance_add = _sum_terms(terms, DamageModifierStage.RESISTANCE_ADD)
+        resistance = self.resistance_policy.resolve(
+            resistance_resolution.final_value + resistance_add,
+            base_resistance=resistance_resolution.final_value,
+            resistance_add=resistance_add,
+        )
 
         official_damage = (
             scaling.value

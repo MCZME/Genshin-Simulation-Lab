@@ -835,22 +835,43 @@ class DefenseResolution:
 
 @dataclass(frozen=True, slots=True)
 class ResistanceResolution:
-    """抗性区 policy 的输入抗性和最终乘数。"""
+    """抗性区 policy 的有效抗性、来源和最终乘数。"""
 
     resistance: float
     multiplier: float
+    base_resistance: float | None = None
+    resistance_add: float = 0.0
 
     def __post_init__(self) -> None:
         """规范化抗性区审计数值。"""
 
-        object.__setattr__(self, "resistance", validate_damage_float(self.resistance, "resistance"))
+        base = self.base_resistance
+        if base is None:
+            base = self.resistance
+        object.__setattr__(
+            self,
+            "resistance",
+            validate_damage_float(self.resistance, "resistance"),
+        )
         object.__setattr__(self, "multiplier", validate_damage_float(self.multiplier, "multiplier"))
+        object.__setattr__(
+            self,
+            "base_resistance",
+            validate_damage_float(base, "base_resistance"),
+        )
+        object.__setattr__(
+            self,
+            "resistance_add",
+            validate_damage_float(self.resistance_add, "resistance_add"),
+        )
 
     def to_dict(self) -> dict[str, object]:
         """返回抗性区的审计序列化。"""
 
         return {
             "resistance": self.resistance,
+            "base_resistance": self.base_resistance,
+            "resistance_add": self.resistance_add,
             "multiplier": self.multiplier,
         }
 

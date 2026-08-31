@@ -599,6 +599,65 @@ def test_resistance_policy_uses_piecewise_formula(resistance: float, expected: f
     assert StandardResistancePolicy().resolve(resistance).multiplier == pytest.approx(expected)
 
 
+@pytest.mark.parametrize(
+    ("base_resistance", "resistance_add", "expected_multiplier"),
+    [
+        (0.1, -0.2, 1.05),
+        (0.1, 0.7, 1 / 4.2),
+        (0.75, 0.05, 1 / 4.2),
+        (0.0, -0.1, 1.05),
+    ],
+)
+def test_resistance_add_stage_feeds_resistance_zone(
+    base_resistance: float,
+    resistance_add: float,
+    expected_multiplier: float,
+):
+    term = _term(DamageModifierStage.RESISTANCE_ADD, resistance_add)
+    resolver = DamageResolver(
+        _attribute_resolver(hp=1000, hydro_bonus=0, hydro_resistance=base_resistance),
+        modifier_index=DamageModifierIndex((_provider("provider.damage", (term,)),)),
+    )
+
+    result = resolver.resolve(_query())
+
+    assert result.resistance.resistance == pytest.approx(base_resistance + resistance_add)
+    assert result.resistance.base_resistance == pytest.approx(base_resistance)
+    assert result.resistance.resistance_add == pytest.approx(resistance_add)
+    assert result.resistance.multiplier == pytest.approx(expected_multiplier)
+    # 通用公式：基础伤害 2000 × 防御区 0.5 × 抗性乘数
+    assert result.final_damage == pytest.approx(1000 * expected_multiplier)
+
+
+def test_transformative_formula_rejects_resistance_add_stage():
+    term = _term(DamageModifierStage.RESISTANCE_ADD, -0.2)
+    resolver = DamageResolver(
+        _attribute_resolver(hydro_resistance=0.1),
+        modifier_index=DamageModifierIndex((_provider("provider.damage", (term,)),)),
+    )
+    query = DamageQuery(
+        request=DamageRequest(
+            request_id="damage:transformative:1",
+            frame=10,
+            damage_type=DamageType.TRANSFORMATIVE_REACTION,
+            impact_key="impact.reaction.transformative",
+            source_ref=SOURCE,
+            target_ref=TARGET,
+            source_level=90,
+            target_level=90,
+            element=Element.HYDRO,
+            source_context=CONFIG_SOURCE,
+            can_crit=False,
+            transformative_reaction=_transformative_input(),
+        ),
+        source_attribute_context=AttributeQueryContext(target_ref=TARGET),
+        target_attribute_context=AttributeQueryContext(target_ref=SOURCE),
+    )
+
+    with pytest.raises(DamageProviderViolationError, match="不允许阶段"):
+        resolver.resolve(query)
+
+
 def test_defense_policy_uses_separate_reduction_and_ignore_factors():
     policy = StandardDefensePolicy()
 

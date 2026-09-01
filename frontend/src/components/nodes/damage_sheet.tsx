@@ -521,7 +521,7 @@ function buildBaseZone(
       lines.push([
         {
           kind: "text",
-          text: `基础伤害 = 等级系数 ${formatOptionalNumber(level)} × 基础倍率 ${formatOptionalNumber(baseMultiplier)}`,
+          text: `${formatOptionalNumber(level)} × ${formatOptionalNumber(baseMultiplier)}`,
         },
         { kind: "result", text: ` = ${formatDamage(base)}` },
       ]);
@@ -695,52 +695,73 @@ function buildReactionZone(
         ? summary.reaction
         : null;
   const kind = record === null ? null : readString(record, "kind");
-  const panelMastery = collectSlotTerms(
-    readRecordList(audit ?? {}, "applied_terms"),
-    readRecordList(audit ?? {}, "rejected_terms"),
-    "panel_elemental_mastery",
-    null,
-  );
+  const appliedTerms = readRecordList(audit ?? {}, "applied_terms");
+  const rejectedTerms = readRecordList(audit ?? {}, "rejected_terms");
+  const panelMastery = collectSlotTerms(appliedTerms, rejectedTerms, "panel_elemental_mastery", null);
   const lines: FormulaToken[][] = [];
+  const drawers: SlotDrawerData[] = [];
   if (record !== null && multiplier !== null) {
     const masteryBonus = readNumber(record, "mastery_bonus");
     const reactionBonus = readNumber(record, "reaction_bonus");
+    const elementalMastery = readNumber(record, "elemental_mastery");
+    const hasPanelMastery = panelMastery.rows.length > 0 && panelMastery.sum !== 0;
+    const masteryHasContent =
+      hasPanelMastery || (elementalMastery !== null && elementalMastery !== 0);
     if (kind === "amplifying") {
       const baseMultiplier = readNumber(record, "base_multiplier");
-      lines.push([
-        {
-          kind: "text",
-          text: `${formatOptionalNumber(baseMultiplier)} × (1 + 精通加成 ${formatOptionalPercent(masteryBonus)} + 反应加成 ${formatOptionalSignedPercent(reactionBonus)})`,
-        },
-        { kind: "result", text: ` = ${formatFactor(multiplier)}` },
-      ]);
+      lines.push(
+        reactionFormulaLine({
+          prefix: null,
+          baseMultiplier,
+          masteryBonus,
+          reactionBonus,
+          multiplier,
+          masterySlotId: masteryHasContent ? "reaction-mastery" : null,
+        }),
+      );
+      if (masteryHasContent && masteryBonus !== null && masteryBonus !== 0) {
+        const rows: SlotRow[] = [];
+        if (hasPanelMastery) {
+          rows.push(...panelMastery.rows);
+        } else if (elementalMastery !== null) {
+          rows.push({ label: "元素精通", value: formatNumber(elementalMastery), base: true });
+        }
+        rows.push({
+          label: "精通加成（由元素精通派生）",
+          value: formatSignedPercent(masteryBonus),
+          base: true,
+        });
+        pushDrawer(drawers, "reaction-mastery", "精通加成", formatSignedPercent(masteryBonus), rows);
+      }
     } else if (kind === "transformative") {
-      lines.push([
-        {
-          kind: "text",
-          text: `1 + 精通加成 ${formatOptionalPercent(masteryBonus)} + 反应加成 ${formatOptionalSignedPercent(reactionBonus)}`,
-        },
-        { kind: "result", text: ` = ${formatFactor(multiplier)}` },
-      ]);
+      lines.push(
+        reactionFormulaLine({
+          prefix: null,
+          baseMultiplier: null,
+          masteryBonus,
+          reactionBonus,
+          multiplier,
+          masterySlotId: null,
+        }),
+      );
       const secondary = readRecord(record, "secondary_amplifying");
       const secondaryMultiplier = secondary === null ? null : readNumber(secondary, "multiplier");
       if (secondary !== null && secondaryMultiplier !== null) {
-        lines.push([
-          {
-            kind: "text",
-            text: `二次增幅 = 基础倍率 ${formatOptionalNumber(readNumber(secondary, "base_multiplier"))} × (1 + 精通加成 ${formatOptionalPercent(readNumber(secondary, "mastery_bonus"))} + 反应加成 ${formatOptionalSignedPercent(readNumber(secondary, "reaction_bonus"))})`,
-          },
-          { kind: "result", text: ` = ${formatFactor(secondaryMultiplier)}` },
-        ]);
+        lines.push(
+          reactionFormulaLine({
+            prefix: "二次增幅 ",
+            baseMultiplier: readNumber(secondary, "base_multiplier"),
+            masteryBonus: readNumber(secondary, "mastery_bonus"),
+            reactionBonus: readNumber(secondary, "reaction_bonus"),
+            multiplier: secondaryMultiplier,
+            masterySlotId: null,
+          }),
+        );
       }
     }
   }
   if (lines.length === 0 && multiplier !== null) {
     lines.push([{ kind: "result", text: formatFactor(multiplier) }]);
-  }
-  const drawers: SlotDrawerData[] = [];
-  if (panelMastery.rows.length > 0 && panelMastery.sum !== 0) {
-    pushDrawer(drawers, "reaction-mastery", "元素精通", formatNumber(panelMastery.sum), panelMastery.rows);
   }
   return {
     title: "反应区",
@@ -748,6 +769,62 @@ function buildReactionZone(
     drawers,
     note: record === null ? "无反应结算明细" : null,
   };
+}
+
+/** 反应区公式行：与其他乘区一致的纯算术骨架；零值加成项省略，括号组为 1 时一并省略。 */
+function reactionFormulaLine({
+  prefix,
+  baseMultiplier,
+  masteryBonus,
+  reactionBonus,
+  multiplier,
+  masterySlotId,
+}: {
+  prefix: string | null;
+  baseMultiplier: number | null;
+  masteryBonus: number | null;
+  reactionBonus: number | null;
+  multiplier: number;
+  masterySlotId: string | null;
+}): FormulaToken[] {
+  const hasMastery = masteryBonus !== null && masteryBonus !== 0;
+  const hasReaction = reactionBonus !== null && reactionBonus !== 0;
+  const hasAdditive = hasMastery || hasReaction;
+  const tokens: FormulaToken[] = [];
+  if (prefix !== null) {
+    tokens.push({ kind: "text", text: prefix });
+  }
+  if (baseMultiplier !== null) {
+    tokens.push({ kind: "text", text: formatNumber(baseMultiplier) });
+    if (hasAdditive) {
+      tokens.push({ kind: "text", text: " × (1" });
+      if (hasMastery) {
+        tokens.push({ kind: "text", text: " + " });
+        tokens.push(
+          masterySlotId !== null
+            ? slotValue(masterySlotId, formatPercent(Math.abs(masteryBonus)), true)
+            : { kind: "text", text: formatPercent(Math.abs(masteryBonus)) },
+        );
+      }
+      if (hasReaction) {
+        tokens.push({ kind: "text", text: reactionBonus < 0 ? " − " : " + " });
+        tokens.push({ kind: "text", text: formatPercent(Math.abs(reactionBonus)) });
+      }
+      tokens.push({ kind: "text", text: ")" });
+    }
+  } else if (hasAdditive) {
+    tokens.push({ kind: "text", text: "1" });
+    if (hasMastery) {
+      tokens.push({ kind: "text", text: " + " });
+      tokens.push({ kind: "text", text: formatPercent(Math.abs(masteryBonus)) });
+    }
+    if (hasReaction) {
+      tokens.push({ kind: "text", text: reactionBonus < 0 ? " − " : " + " });
+      tokens.push({ kind: "text", text: formatPercent(Math.abs(reactionBonus)) });
+    }
+  }
+  tokens.push({ kind: "result", text: ` = ${formatFactor(multiplier)}` });
+  return tokens;
 }
 
 function buildDefenseZone(
@@ -1055,14 +1132,6 @@ function formatSignedPercent(value: number): string {
 
 function formatOptionalNumber(value: number | null): string {
   return value === null ? "—" : formatNumber(value);
-}
-
-function formatOptionalPercent(value: number | null): string {
-  return value === null ? "—" : formatPercent(value);
-}
-
-function formatOptionalSignedPercent(value: number | null): string {
-  return value === null ? "—" : formatSignedPercent(value);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {

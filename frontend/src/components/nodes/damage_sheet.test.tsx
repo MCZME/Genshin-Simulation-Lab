@@ -334,7 +334,7 @@ describe("DamageSheet", () => {
     expect(screen.getByText("10.0%", { selector: ".damage-sheet-row-value" })).toBeDefined();
   });
 
-  it("反应区面板精通读取渲染为元素精通抽屉", () => {
+  it("反应区面板精通读取渲染为精通加成槽位与抽屉", () => {
     const base = CRIT_GENERAL_EVENT as unknown as {
       damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
     };
@@ -368,9 +368,221 @@ describe("DamageSheet", () => {
     } as unknown as EventDetailResponse;
     render(<DamageSheet event={event} />);
     clickSegment("反应");
-    expect(screen.getByText("元素精通", { selector: ".damage-sheet-drawer-title" })).toBeDefined();
+    // 公式行为纯算术骨架：内嵌"精通加成/反应加成"标签消失，精通加成呈现为槽位。
+    expect(screen.getByText("1.5", { selector: ".damage-sheet-formula-text" })).toBeDefined();
+    expect(screen.getByText(/× \(1/, { selector: ".damage-sheet-formula-text" })).toBeDefined();
+    expect(screen.getByText("31.7%", { selector: ".damage-sheet-slot" })).toBeDefined();
+    expect(screen.queryByText(/精通加成 31\.7%/)).toBeNull();
+    expect(screen.queryByText(/反应加成/)).toBeNull();
+    // 抽屉：头合计等于槽位值，基础行展示元素精通面板读取并标注派生关系。
+    expect(screen.getByText("精通加成", { selector: ".damage-sheet-drawer-title" })).toBeDefined();
+    expect(screen.getByText("+31.7%", { selector: ".damage-sheet-drawer-total" })).toBeDefined();
     expect(screen.getByText("元素精通", { selector: ".damage-sheet-row-label" })).toBeDefined();
     expect(screen.getByText("180", { selector: ".damage-sheet-row-value" })).toBeDefined();
+    expect(
+      screen.getByText("精通加成（由元素精通派生）", { selector: ".damage-sheet-row-label" }),
+    ).toBeDefined();
+  });
+
+  it("反应区零加成时省略括号组，不渲染假槽位", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: { ...base.damage.summary, reaction_multiplier: 1.5 },
+        audit: {
+          ...base.damage.audit,
+          reaction: {
+            kind: "amplifying",
+            occurrence_ref: "occurrence:1",
+            reaction_profile_key: "reaction_profile.test",
+            base_multiplier: 1.5,
+            elemental_mastery: 0,
+            mastery_bonus: 0,
+            reaction_bonus: 0,
+            multiplier: 1.5,
+          },
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    clickSegment("反应");
+    expect(screen.getByText("1.5", { selector: ".damage-sheet-formula-text" })).toBeDefined();
+    expect(screen.getByText(/1\.500/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
+    expect(screen.queryByText(/× \(1/, { selector: ".damage-sheet-formula-text" })).toBeNull();
+    expect(document.querySelector(".damage-sheet-slot")).toBeNull();
+    expect(screen.queryByText("精通加成", { selector: ".damage-sheet-drawer-title" })).toBeNull();
+  });
+
+  it("剧变反应区公式行为纯算术且无槽位", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: { ...base.damage.summary, reaction_multiplier: 1.3167 },
+        audit: {
+          ...base.damage.audit,
+          reaction: {
+            kind: "transformative",
+            occurrence_ref: "occurrence:1",
+            reaction_profile_key: "reaction_profile.test",
+            source_kind: "character",
+            source_level: 90,
+            level_multiplier_table_key: "level_multiplier.character",
+            level_multiplier: 868,
+            base_multiplier: 1,
+            elemental_mastery: 180,
+            mastery_bonus: 0.3167,
+            reaction_bonus: 0,
+            defense_policy: "approximate_unity",
+          },
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    clickSegment("反应");
+    expect(screen.getByText("1", { selector: ".damage-sheet-formula-text" })).toBeDefined();
+    expect(screen.getByText("31.7%", { selector: ".damage-sheet-formula-text" })).toBeDefined();
+    expect(screen.getByText(/1\.317/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
+    expect(document.querySelector(".damage-sheet-slot")).toBeNull();
+    expect(screen.queryByText(/精通加成/)).toBeNull();
+  });
+
+  it("反应区非零反应加成作为普通文本项显示", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: { ...base.damage.summary, reaction_multiplier: 2.125 },
+        audit: {
+          ...base.damage.audit,
+          reaction: {
+            kind: "amplifying",
+            occurrence_ref: "occurrence:1",
+            reaction_profile_key: "reaction_profile.test",
+            base_multiplier: 1.5,
+            elemental_mastery: 180,
+            mastery_bonus: 0.3167,
+            reaction_bonus: 0.1,
+            multiplier: 2.125,
+          },
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    clickSegment("反应");
+    expect(screen.getByText("10.0%", { selector: ".damage-sheet-formula-text" })).toBeDefined();
+    expect(screen.getByText(/2\.125/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
+  });
+
+  it("反应区二次增幅行与主行同规则", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: { ...base.damage.summary, reaction_multiplier: 1.3167 },
+        audit: {
+          ...base.damage.audit,
+          reaction: {
+            kind: "transformative",
+            occurrence_ref: "occurrence:1",
+            reaction_profile_key: "reaction_profile.test",
+            source_kind: "character",
+            source_level: 90,
+            level_multiplier_table_key: "level_multiplier.character",
+            level_multiplier: 868,
+            base_multiplier: 1,
+            elemental_mastery: 180,
+            mastery_bonus: 0.3167,
+            reaction_bonus: 0,
+            defense_policy: "approximate_unity",
+            secondary_amplifying: {
+              target_impact_ref: "impact:1",
+              occurrence_ref: "occurrence:2",
+              reaction_profile_key: "reaction_profile.test",
+              trigger_element: "pyro",
+              base_multiplier: 1.5,
+              captured_elemental_mastery: 180,
+              mastery_bonus: 0.3167,
+              reaction_bonus: 0,
+              multiplier: 1.5,
+            },
+          },
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    clickSegment("反应");
+    expect(screen.getByText("二次增幅", { selector: ".damage-sheet-formula-text" })).toBeDefined();
+    expect(
+      screen.getAllByText(/1\.317/, { selector: ".damage-sheet-formula-result" }),
+    ).toHaveLength(1);
+    expect(
+      screen.getAllByText(/1\.500/, { selector: ".damage-sheet-formula-result" }),
+    ).toHaveLength(1);
+  });
+
+  it("剧变基础区回退行统一为纯算术公式", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: {
+          ...base.damage.summary,
+          formula_key: "damage_formula.transformative_reaction",
+          base_damage: 868,
+          damage_bonus_multiplier: 1.0,
+          crit_outcome: "not_applicable",
+          crit_multiplier: 1.0,
+          reaction_multiplier: 1.3167,
+          defense_multiplier: 1.0,
+          resistance_multiplier: 0.9,
+          official_damage: 2160,
+          final_damage: 2160,
+        },
+        audit: {
+          ...base.damage.audit,
+          component_results: [],
+          base_damage_additions: [],
+          reaction: {
+            kind: "transformative",
+            occurrence_ref: "occurrence:1",
+            reaction_profile_key: "reaction_profile.test",
+            source_kind: "character",
+            source_level: 90,
+            level_multiplier_table_key: "level_multiplier.character",
+            level_multiplier: 868,
+            base_multiplier: 1,
+            elemental_mastery: 180,
+            mastery_bonus: 0.3167,
+            reaction_bonus: 0,
+            defense_policy: "approximate_unity",
+          },
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    expect(
+      screen.getByText("868 × 1", { selector: ".damage-sheet-formula-text" }),
+    ).toBeDefined();
+    expect(screen.getByText(/868/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
+    expect(screen.queryByText(/等级系数/)).toBeNull();
+    expect(screen.queryByText(/基础倍率/)).toBeNull();
   });
 
   it("属性解析审计不在伤害详情展示", () => {

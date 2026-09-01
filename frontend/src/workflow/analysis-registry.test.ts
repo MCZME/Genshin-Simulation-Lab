@@ -62,32 +62,16 @@ describe("分析节点注册表", () => {
     expect(overLimit.some((item) => item.message.includes("最多 1000 个"))).toBe(true);
   });
 
-  it("表格配置节点默认自适应宽度", () => {
+  it("表格配置不再持有宽度模式参数", () => {
     const spec = getNodeKindSpec("table_config");
     expect(spec?.paramFields).toEqual({
       condition_columns: { type: "list" },
       data_columns: { type: "list" },
-      width_mode: { type: "list" },
     });
     expect(spec?.defaultParams).toEqual({
       condition_columns: [],
       data_columns: [],
-      width_mode: "auto",
     });
-  });
-
-  it("表格配置拒绝非法宽度模式", () => {
-    const base = {
-      id: "config-1",
-      kind: "table_config",
-      region_id: "analysis-1",
-      position: { x: 0, y: 0 },
-    } as const;
-    const badMode = validateNode({
-      ...base,
-      params: { condition_columns: ["a"], data_columns: [], width_mode: "stretch" },
-    });
-    expect(badMode.some((item) => item.path === "width_mode")).toBe(true);
   });
 });
 

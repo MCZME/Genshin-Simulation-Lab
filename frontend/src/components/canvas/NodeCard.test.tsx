@@ -58,7 +58,7 @@ vi.mock("vis-timeline/standalone", () => {
 
 function renderNodeCard(
   node: WorkflowNode,
-  onResizeNode: (nodeId: string, size: NodeSize) => void = vi.fn(),
+  onResizeNode: (nodeId: string, size: Partial<NodeSize>) => void = vi.fn(),
 ) {
   const data: WorkflowNodeData = {
     node,
@@ -82,7 +82,6 @@ function renderNodeCard(
     stepRunning: false,
     interactionLocked: false,
     onResizeNode,
-    onResizeNodeWithFixedWidth: vi.fn(),
   };
   const props = { id: node.id, data, selected: false } as unknown as NodeProps;
   return render(<NodeCard {...props} />);
@@ -95,6 +94,20 @@ function traceNode(size?: NodeSize): WorkflowNode {
     region_id: "region-1",
     position: { x: 0, y: 0 },
     params: { items: [] },
+    ...(size === undefined ? {} : { size }),
+  };
+}
+
+function viewNode(
+  kind: "member_table" | "pie" | "bar",
+  size?: NodeSize,
+): WorkflowNode {
+  return {
+    id: `${kind}-1`,
+    kind,
+    region_id: "analysis-1",
+    position: { x: 0, y: 0 },
+    params: {},
     ...(size === undefined ? {} : { size }),
   };
 }
@@ -138,11 +151,47 @@ describe("NodeCard 按键轨迹节点宽度手柄", () => {
     fireEvent.pointerDown(handle, { button: 0, clientX: 0, clientY: 0 });
     fireEvent.pointerMove(handle, { clientX: 200, clientY: 0 });
     fireEvent.pointerUp(handle, { clientX: 200, clientY: 0 });
-    expect(onResizeNode).toHaveBeenCalledWith("trace-1", { width: 920, height: 360 });
+    expect(onResizeNode).toHaveBeenCalledWith("trace-1", { width: 920 });
 
     fireEvent.pointerDown(handle, { button: 0, clientX: 0, clientY: 0 });
     fireEvent.pointerMove(handle, { clientX: -2000, clientY: 0 });
     fireEvent.pointerUp(handle, { clientX: -2000, clientY: 0 });
-    expect(onResizeNode).toHaveBeenLastCalledWith("trace-1", { width: 560, height: 360 });
+    expect(onResizeNode).toHaveBeenLastCalledWith("trace-1", { width: 560 });
+  });
+});
+
+describe("NodeCard 视图节点手柄", () => {
+  it("表格/饼图/柱状图均渲染宽度与高度手柄", () => {
+    for (const kind of ["member_table", "pie", "bar"] as const) {
+      cleanup();
+      const { container } = renderNodeCard(viewNode(kind));
+      expect(container.querySelector(".node-resize-handle-right")).not.toBeNull();
+      expect(container.querySelector(".node-resize-handle-bottom")).not.toBeNull();
+      expect((container.querySelector(".node-card") as HTMLElement).style.width).toBe(
+        "560px",
+      );
+    }
+  });
+
+  it("视图节点拖宽按轴部分提交宽度", () => {
+    const onResizeNode = vi.fn();
+    const { container } = renderNodeCard(viewNode("bar"), onResizeNode);
+    const handle = container.querySelector(".node-resize-handle-right") as HTMLElement;
+
+    fireEvent.pointerDown(handle, { button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(handle, { clientX: 300, clientY: 0 });
+    fireEvent.pointerUp(handle, { clientX: 300, clientY: 0 });
+    expect(onResizeNode).toHaveBeenCalledWith("bar-1", { width: 860 });
+  });
+
+  it("视图节点拖高按轴部分提交高度", () => {
+    const onResizeNode = vi.fn();
+    const { container } = renderNodeCard(viewNode("bar"), onResizeNode);
+    const handle = container.querySelector(".node-resize-handle-bottom") as HTMLElement;
+
+    fireEvent.pointerDown(handle, { button: 0, clientX: 0, clientY: 0 });
+    fireEvent.pointerMove(handle, { clientX: 0, clientY: 100 });
+    fireEvent.pointerUp(handle, { clientX: 0, clientY: 100 });
+    expect(onResizeNode).toHaveBeenCalledWith("bar-1", { height: 460 });
   });
 });

@@ -62,8 +62,8 @@ export function AnalysisViewBody({
   onLocateNode?: (nodeId: string) => void;
   /** 节点内容区可用宽度（px）；供表格视图计算裁剪提示。 */
   viewWidth?: number;
-  /** 表格视图布局变化时上报：内容自然宽与被隐藏列数。 */
-  onFitChange?: (info: MemberTableFitInfo) => void;
+  /** 视图内容变化时上报：内容自然宽/高与被隐藏列数（视图按需填充）。 */
+  onFitChange?: (info: ViewFitInfo) => void;
 }) {
   const hasDataInput = definition.edges.some(
     (edge) => edge.target_node_id === node.id && edge.target_port_id === "in",
@@ -179,7 +179,7 @@ function renderAnalysisTable(
   definition: WorkflowDefinition,
   table: AnalysisTableResult,
   viewWidth?: number,
-  onFitChange?: (info: MemberTableFitInfo) => void,
+  onFitChange?: (info: ViewFitInfo) => void,
 ) {
   switch (node.kind) {
     case "member_table":
@@ -195,7 +195,14 @@ function renderAnalysisTable(
     case "pie":
       return <PieChartView node={node} definition={definition} table={table} />;
     case "bar":
-      return <BarChartView node={node} definition={definition} table={table} />;
+      return (
+        <BarChartView
+          node={node}
+          definition={definition}
+          table={table}
+          onFitChange={onFitChange}
+        />
+      );
     default:
       return null;
   }
@@ -212,7 +219,7 @@ function MemberTable({
   definition: WorkflowDefinition;
   table: AnalysisTableResult;
   viewWidth?: number;
-  onFitChange?: (info: MemberTableFitInfo) => void;
+  onFitChange?: (info: ViewFitInfo) => void;
 }) {
   const config = useMemo(
     () => connectedConfigNode(definition, node.id, "table_config"),
@@ -350,7 +357,7 @@ function MemberTable({
   );
   const clipped = layout.fitWidth > contentWidth;
   const fitInfo = useMemo(
-    () => ({ fitWidth: layout.fitWidth, hiddenColumns }),
+    () => ({ fitWidth: layout.fitWidth, fitHeight: null, hiddenColumns }),
     [layout.fitWidth, hiddenColumns],
   );
   useEffect(() => {
@@ -661,9 +668,11 @@ function asStringArray(value: unknown): string[] {
     : [];
 }
 
-export interface MemberTableFitInfo {
+export interface ViewFitInfo {
   /** 全部绑定列完整显示所需的内容自然宽（px）。 */
   fitWidth: number;
+  /** 内容完整显示所需的自然高（px）；表格高度不参与内容驱动，恒为 null。 */
+  fitHeight: number | null;
   /** 当前内容区内被裁剪隐藏的列数（含部分可见列之外的列）。 */
   hiddenColumns: number;
 }

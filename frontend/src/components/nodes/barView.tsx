@@ -1,6 +1,6 @@
 /** 柱状图视图：ECharts 柱状渲染 + 悬停柱值 + 点击选择输出。 */
 
-import { useCallback, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { rowItem } from "../../workflow/analysis_runner";
 import {
   computeAnalysisShapes,
@@ -12,8 +12,21 @@ import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 import { useAnalysisSchemaCatalog, useAnalysisSelection } from "../analysis_context";
 import { asString } from "./common";
 import { useAssetNames } from "./useAssetNames";
-import { MAX_RENDERED_ROWS, formatCell } from "./views";
+import { MAX_RENDERED_ROWS, estimateTextWidth, formatCell, type ViewFitInfo } from "./views";
 import { useEChartsView, VIEW_CHART_PALETTE, type ChartOption } from "./echartsCore";
+import {
+  BAR_AXIS_RESERVE,
+  BAR_CATEGORY_GAP,
+  BAR_HEIGHT_EXTRAS,
+  BAR_LABEL_PADDING,
+  BAR_MIN_HEIGHT,
+  BAR_SERIES_GAP,
+  BAR_TARGET_WIDTH,
+  MAX_BAR_FIT_HEIGHT,
+  MIN_VIEW_HEIGHT,
+  MIN_VIEW_WIDTH,
+  clamp,
+} from "../../workflow/view_size";
 
 /** 无系列列时唯一系列的展示名。 */
 export const DEFAULT_SERIES_NAME = "数值";
@@ -42,6 +55,58 @@ export interface BarChartData {
 export interface SelectedBar {
   seriesIndex: number;
   dataIndex: number;
+}
+
+export interface BarChartFit {
+  /** 内容完整显示所需的自然宽（px）。 */
+  fitWidth: number;
+  /** 内容完整显示所需的自然高（px）；无正数值时无法估算，为 null。 */
+  fitHeight: number | null;
+}
+
+/**
+ * 估算柱状图内容自然尺寸：
+ * 宽度按类目数 × 系列数 × 目标柱宽估算（类目标签更长时取标签宽）；
+ * 高度按 最大值/最小非零值 比值估算，保证最小非零值柱达到目标可读高度。
+ * 估算只用于节点尺寸，不修改图表渲染。
+ */
+export function estimateBarChartFit(data: BarChartData | null): BarChartFit {
+  if (data === null || data.categories.length === 0) {
+    return { fitWidth: MIN_VIEW_WIDTH, fitHeight: null };
+  }
+  const seriesCount = Math.max(1, data.series.length);
+  const slot =
+    seriesCount * BAR_TARGET_WIDTH +
+    (seriesCount - 1) * BAR_SERIES_GAP +
+    BAR_CATEGORY_GAP;
+  const slotsWidth = data.categories.length * slot;
+  let maxLabelWidth = 0;
+  for (const label of data.categories) {
+    maxLabelWidth = Math.max(maxLabelWidth, estimateTextWidth(label));
+  }
+  const fitWidth =
+    Math.max(slotsWidth, maxLabelWidth + BAR_LABEL_PADDING) + BAR_AXIS_RESERVE;
+
+  let minPositive: number | null = null;
+  let maxValue: number | null = null;
+  for (const series of data.series) {
+    for (const value of series.values) {
+      if (value !== null && value > 0) {
+        minPositive = minPositive === null ? value : Math.min(minPositive, value);
+        maxValue = maxValue === null ? value : Math.max(maxValue, value);
+      }
+    }
+  }
+  if (minPositive === null || maxValue === null) {
+    return { fitWidth, fitHeight: null };
+  }
+  const ratio = maxValue / minPositive;
+  const fitHeight = clamp(
+    Math.round(ratio * BAR_MIN_HEIGHT + BAR_HEIGHT_EXTRAS),
+    MIN_VIEW_HEIGHT,
+    MAX_BAR_FIT_HEIGHT,
+  );
+  return { fitWidth, fitHeight };
 }
 
 /**
@@ -204,10 +269,13 @@ export function BarChartView({
   node,
   definition,
   table,
+  onFitChange,
 }: {
   node: WorkflowNode;
   definition: WorkflowDefinition;
   table: AnalysisTableResult;
+  /** 内容自然尺寸变化时上报（宽度 + 高度）。 */
+  onFitChange?: (info: ViewFitInfo) => void;
 }) {
   const config = useMemo(
     () => connectedConfigNode(definition, node.id, "bar_config"),
@@ -296,6 +364,14 @@ export function BarChartView({
         : null,
     [missingColumn, yType, table, x, y, seriesColumn, formatValue],
   );
+
+  const fit = useMemo(
+    () => estimateBarChartFit(chartReady ? data : null),
+    [chartReady, data],
+  );
+  useEffect(() => {
+    onFitChange?.({ fitWidth: fit.fitWidth, fitHeight: fit.fitHeight, hiddenColumns: 0 });
+  }, [fit, onFitChange]);
 
   const handleBarClick = useCallback(
     (seriesIndex: number, dataIndex: number) => {

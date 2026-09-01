@@ -2,7 +2,6 @@
 
 import { useState } from "react";
 import { configTargetView, viewInputShape } from "../../../workflow/templates";
-import { normalizeWidthMode } from "../../../workflow/view_size";
 import { asString } from "../common";
 import { useContextEnv, type EditorProps } from "./context";
 
@@ -66,12 +65,11 @@ function asStringArray(value: unknown): string[] {
     : [];
 }
 
-/** 表格配置参数统一归一化：存量节点缺省宽度参数时按默认值补齐。 */
+/** 表格配置参数统一归一化：宽度模式（2026-09-01 单模式化）在编辑时清除。 */
 function normalizeTableParams(params: Record<string, unknown>): Record<string, unknown> {
-  return {
-    ...params,
-    width_mode: normalizeWidthMode(params.width_mode),
-  };
+  const next = { ...params };
+  delete next.width_mode;
+  return next;
 }
 
 type BindingZone = "condition" | "data";
@@ -301,7 +299,6 @@ export function TableConfigEditor({ node, onChange }: EditorProps) {
   const condition = asStringArray(node.params.condition_columns);
   const data = asStringArray(node.params.data_columns);
   const taken = new Set([...condition, ...data]);
-  const widthMode = node.params.width_mode === "fixed" ? "fixed" : "auto";
   const [dragSource, setDragSource] = useState<BindingDragSource | null>(null);
 
   function commitMove(
@@ -388,28 +385,6 @@ export function TableConfigEditor({ node, onChange }: EditorProps) {
           }
         }}
       />
-      <div className="table-display-zone">
-        <div className="table-binding-title">
-          <span>展示</span>
-          <span className="table-binding-hint">
-            高度手动调节；自适应内容超出上限时裁剪，拖宽查看
-          </span>
-        </div>
-        <label className="table-size-field">
-          <span>宽度模式</span>
-          <select
-            value={widthMode}
-            onChange={(event) =>
-              onChange(
-                normalizeTableParams({ ...node.params, width_mode: event.target.value }),
-              )
-            }
-          >
-            <option value="auto">自适应</option>
-            <option value="fixed">固定</option>
-          </select>
-        </label>
-      </div>
     </div>
   );
 }

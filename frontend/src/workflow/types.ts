@@ -88,6 +88,9 @@ export interface NodeSize {
   height: number;
 }
 
+/** 可调尺寸节点的按轴画布几何：缺省轴表示未手动调节（内容驱动或默认值）。 */
+export type PartialNodeSize = Partial<NodeSize>;
+
 export interface WorkflowNode {
   id: string;
   /** 与节点类型注册表一致；加载/校验阶段对未注册 kind 报错。 */
@@ -95,8 +98,8 @@ export interface WorkflowNode {
   region_id: string | null;
   position: { x: number; y: number };
   params: Record<string, unknown>;
-  /** 可选：支持尺寸调节节点（视图/详情/按键轨迹）手动调节后的尺寸；缺省表示默认宽度。 */
-  size?: NodeSize;
+  /** 可选：支持尺寸调节节点（视图/详情/按键轨迹）手动调节后的按轴尺寸；缺省轴表示内容驱动/默认。 */
+  size?: PartialNodeSize;
 }
 
 export interface WorkflowEdge {

@@ -11,7 +11,18 @@ import {
   BarChartView,
   buildBarChartData,
   buildBarChartOption,
+  estimateBarChartFit,
 } from "./barView";
+import {
+  BAR_AXIS_RESERVE,
+  BAR_CATEGORY_GAP,
+  BAR_HEIGHT_EXTRAS,
+  BAR_MIN_HEIGHT,
+  BAR_SERIES_GAP,
+  BAR_TARGET_WIDTH,
+  MAX_BAR_FIT_HEIGHT,
+  MIN_VIEW_WIDTH,
+} from "../../workflow/view_size";
 
 // ECharts 依赖真实 DOM 尺寸与渲染管线，组件测试用桩替换生命周期封装，
 // 捕获 option 与点击回调来断言视图行为。
@@ -317,5 +328,77 @@ describe("BarChartView 集成", () => {
       </AnalysisSelectionContext.Provider>,
     );
     expect(screen.getByText("绑定列不在上游表中：不存在")).toBeTruthy();
+  });
+});
+
+describe("estimateBarChartFit 内容尺寸估算", () => {
+  const series = (values: (number | null)[]) => ({
+    name: "数值",
+    values,
+    rowIndexes: values.map((_, index) => index),
+  });
+
+  it("无数据或空类目返回最小宽与 null 高度", () => {
+    expect(estimateBarChartFit(null)).toEqual({
+      fitWidth: MIN_VIEW_WIDTH,
+      fitHeight: null,
+    });
+    expect(estimateBarChartFit({ categories: [], series: [] })).toEqual({
+      fitWidth: MIN_VIEW_WIDTH,
+      fitHeight: null,
+    });
+  });
+
+  it("宽度按类目数与系列数估算，标签更长时取标签宽", () => {
+    const slot =
+      BAR_TARGET_WIDTH +
+      (1 - 1) * BAR_SERIES_GAP +
+      BAR_CATEGORY_GAP;
+    const fit = estimateBarChartFit({
+      categories: ["a", "b", "c"],
+      series: [series([1, 2, 3])],
+    });
+    expect(fit.fitWidth).toBe(3 * slot + BAR_AXIS_RESERVE);
+
+    const multiSlot =
+      2 * BAR_TARGET_WIDTH + (2 - 1) * BAR_SERIES_GAP + BAR_CATEGORY_GAP;
+    const multi = estimateBarChartFit({
+      categories: ["a", "b", "c"],
+      series: [series([1, 2, 3]), series([4, 5, 6])],
+    });
+    expect(multi.fitWidth).toBe(3 * multiSlot + BAR_AXIS_RESERVE);
+
+    const longLabel = estimateBarChartFit({
+      categories: ["非常非常长的类目标签"],
+      series: [series([1])],
+    });
+    expect(longLabel.fitWidth).toBeGreaterThan(
+      1 * slot + BAR_AXIS_RESERVE,
+    );
+  });
+
+  it("高度按最大值/最小非零值比值估算并夹持上限", () => {
+    const fit = estimateBarChartFit({
+      categories: ["a", "b", "c"],
+      series: [series([100, 1, null])],
+    });
+    expect(fit.fitHeight).toBe(
+      Math.round(100 * BAR_MIN_HEIGHT + BAR_HEIGHT_EXTRAS),
+    );
+
+    const extreme = estimateBarChartFit({
+      categories: ["a", "b"],
+      series: [series([1_000_000, 1])],
+    });
+    expect(extreme.fitHeight).toBe(MAX_BAR_FIT_HEIGHT);
+  });
+
+  it("没有正数值时高度无法估算", () => {
+    const fit = estimateBarChartFit({
+      categories: ["a", "b"],
+      series: [series([0, null])],
+    });
+    expect(fit.fitHeight).toBeNull();
+    expect(fit.fitWidth).toBeGreaterThan(0);
   });
 });

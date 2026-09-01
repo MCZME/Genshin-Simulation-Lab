@@ -125,6 +125,101 @@ describe("converters", () => {
     expect(state.definition.nodes[0].params).not.toHaveProperty("frame_max");
   });
 
+  it("旧 table_config 的 width_mode 参数加载时丢弃", () => {
+    const definition: WorkflowDefinition = {
+      ...sampleDefinition(),
+      nodes: [
+        {
+          id: "config-1",
+          kind: "table_config",
+          region_id: "analysis-1",
+          position: { x: 0, y: 0 },
+          params: {
+            condition_columns: ["char_key"],
+            data_columns: [],
+            width_mode: "fixed",
+          },
+        },
+      ],
+    };
+
+    const state = definitionToEditorState(definition);
+
+    expect(state.definition.nodes[0].params).not.toHaveProperty("width_mode");
+    expect(state.definition.nodes[0].params.condition_columns).toEqual(["char_key"]);
+  });
+
+  it("旧表格 auto 宽度快照随单模式化丢弃，fixed 宽度保留", () => {
+    const definition: WorkflowDefinition = {
+      ...sampleDefinition(),
+      regions: [
+        {
+          id: "analysis-1",
+          kind: "analysis",
+          name: "分析",
+          rect: { x: 0, y: 0, width: 800, height: 600 },
+        },
+      ],
+      nodes: [
+        {
+          id: "auto-config",
+          kind: "table_config",
+          region_id: "analysis-1",
+          position: { x: 0, y: 0 },
+          params: { condition_columns: ["c"], data_columns: [], width_mode: "auto" },
+        },
+        {
+          id: "auto-view",
+          kind: "member_table",
+          region_id: "analysis-1",
+          position: { x: 0, y: 0 },
+          params: {},
+          size: { width: 960, height: 420 },
+        },
+        {
+          id: "fixed-config",
+          kind: "table_config",
+          region_id: "analysis-1",
+          position: { x: 0, y: 0 },
+          params: { condition_columns: ["c"], data_columns: [], width_mode: "fixed" },
+        },
+        {
+          id: "fixed-view",
+          kind: "member_table",
+          region_id: "analysis-1",
+          position: { x: 0, y: 0 },
+          params: {},
+          size: { width: 1100, height: 400 },
+        },
+      ],
+      edges: [
+        {
+          id: "e1",
+          source_node_id: "auto-config",
+          source_port_id: "out",
+          target_node_id: "auto-view",
+          target_port_id: "config",
+        },
+        {
+          id: "e2",
+          source_node_id: "fixed-config",
+          source_port_id: "out",
+          target_node_id: "fixed-view",
+          target_port_id: "config",
+        },
+      ],
+      layout: {},
+    };
+
+    const state = definitionToEditorState(definition);
+    const byId = new Map(state.definition.nodes.map((node) => [node.id, node]));
+
+    expect(byId.get("auto-view")?.size).toEqual({ height: 420 });
+    expect(byId.get("fixed-view")?.size).toEqual({ width: 1100, height: 400 });
+    expect(byId.get("auto-config")?.params).not.toHaveProperty("width_mode");
+    expect(byId.get("fixed-config")?.params).not.toHaveProperty("width_mode");
+  });
+
   it("载荷提取列 event_type 按唯一路径回填，歧义与无匹配保持缺省", () => {
     const definition: WorkflowDefinition = {
       ...sampleDefinition(),

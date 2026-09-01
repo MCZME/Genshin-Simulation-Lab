@@ -49,7 +49,6 @@ import {
   renameRegion,
   renameWorkflow,
   resizeNode,
-  resizeNodeWithFixedMode,
   resizeRegion,
   setNodeParams,
   setSelection,
@@ -1472,11 +1471,6 @@ export function App() {
                 }
                 onResizeNode={(nodeId, size) =>
                   updateEditor((state) => resizeNode(state, nodeId, size))
-                }
-                onResizeNodeWithFixedWidth={(nodeId, size, configNodeId) =>
-                  updateEditor((state) =>
-                    resizeNodeWithFixedMode(state, nodeId, size, configNodeId),
-                  )
                 }
                 onMoveRegion={(regionId, position) =>
                   updateEditor((state) => moveRegionWithChildren(state, regionId, position))

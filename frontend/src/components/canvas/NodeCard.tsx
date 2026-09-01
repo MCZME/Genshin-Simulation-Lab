@@ -8,9 +8,8 @@ import { nodeKindColor } from "../nodes/registry";
 import { NodeEditorHost } from "../nodes/registry";
 import { useAnalysisSchemaCatalog } from "../analysis_context";
 import { AnalysisDetailBody, isAnalysisDetailKind, SingleItemBody } from "../nodes/detail";
-import { AnalysisViewBody, type MemberTableFitInfo } from "../nodes/views";
+import { AnalysisViewBody, type ViewFitInfo } from "../nodes/views";
 import { getNodeKindSpec } from "../../workflow/registry";
-import { connectedConfigNode } from "../../workflow/templates";
 import type { NodeSize, WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 import {
   DEFAULT_DETAIL_WIDTH,
@@ -24,8 +23,9 @@ import {
   MIN_VIEW_WIDTH,
   VIEW_SOFT_CAP_WIDTH,
   clamp,
-  normalizeWidthMode,
+  resolveBarHeight,
   resolveDragMaxWidth,
+  resolveManualViewWidth,
   resolveTraceWidth,
   resolveViewHeight,
   resolveViewWidth,
@@ -57,10 +57,8 @@ export type WorkflowNodeData = {
   interactionLocked: boolean;
   /** 分析执行结果（表节点 = 查询结果；视图节点 = 拼接后的输入表）。 */
   analysisResult?: AnalysisNodeResult;
-  /** 提交节点画布几何（宽高）。 */
-  onResizeNode: (nodeId: string, size: NodeSize) => void;
-  /** 自适应宽度拖宽结束时：一次提交节点尺寸并把表格配置切到固定模式。 */
-  onResizeNodeWithFixedWidth: (nodeId: string, size: NodeSize, configNodeId: string) => void;
+  /** 提交节点画布几何（按轴部分更新，宽高分别持久化）。 */
+  onResizeNode: (nodeId: string, size: Partial<NodeSize>) => void;
 } & Record<string, unknown>;
 
 export interface MemberPortInfo {
@@ -87,11 +85,13 @@ export function NodeCard({ data, selected }: NodeProps) {
     interactionLocked,
     analysisResult,
     onResizeNode,
-    onResizeNodeWithFixedWidth,
   } = data as WorkflowNodeData;
   const spec = getNodeKindSpec(node.kind);
   const isDraft = node.region_id === null && spec?.region !== null;
   const isView = isAnalysisView(node.kind);
+  const isTable = node.kind === "member_table";
+  const isPie = node.kind === "pie";
+  const isBar = node.kind === "bar";
   // 伤害详情卡支持手动调宽（高度随内容），其余详情节点维持固定宽度。
   const isDetailResizable = node.kind === "damage_detail";
   const isTraceResizable = node.kind === "input_trace";
@@ -100,7 +100,7 @@ export function NodeCard({ data, selected }: NodeProps) {
   const catalog = useAnalysisSchemaCatalog();
   const fieldErrors = collectFieldErrors(diagnostics, node.id);
   const [membersOpen, setMembersOpen] = useState(false);
-  const [fitInfo, setFitInfo] = useState<MemberTableFitInfo | null>(null);
+  const [fitInfo, setFitInfo] = useState<ViewFitInfo | null>(null);
   const [previewSize, setPreviewSize] = useState<Partial<NodeSize> | null>(null);
   const resizeDragRef = useRef<{
     axis: "width" | "height";
@@ -108,34 +108,37 @@ export function NodeCard({ data, selected }: NodeProps) {
     startWidth: number;
     startHeight: number;
   } | null>(null);
-  const handleFitChange = useCallback((info: MemberTableFitInfo) => {
+  const handleFitChange = useCallback((info: ViewFitInfo) => {
     setFitInfo(info);
   }, []);
-  const tableConfig =
-    node.kind === "member_table"
-      ? connectedConfigNode(definition, node.id, "table_config")
-      : null;
-  // 柱状图/饼图等没有展示配置节点，宽度即手动画布几何（等同固定模式）。
-  const widthMode =
-    tableConfig === null ? "fixed" : normalizeWidthMode(tableConfig.params.width_mode);
-  const resolvedWidth = isView
-    ? resolveViewWidth(widthMode, fitInfo?.fitWidth ?? null, node.size?.width)
-    : isDetailResizable
-      ? clamp(
-          Math.round(node.size?.width ?? DEFAULT_DETAIL_WIDTH),
-          MIN_DETAIL_WIDTH,
-          MAX_DETAIL_WIDTH,
-        )
-      : isTraceResizable
-        ? resolveTraceWidth(node.size?.width)
+  const resolvedWidth =
+    isTable || isBar
+      ? resolveViewWidth(fitInfo?.fitWidth ?? null, node.size?.width)
+      : isPie
+        ? resolveManualViewWidth(node.size?.width)
+        : isDetailResizable
+          ? clamp(
+              Math.round(node.size?.width ?? DEFAULT_DETAIL_WIDTH),
+              MIN_DETAIL_WIDTH,
+              MAX_DETAIL_WIDTH,
+            )
+          : isTraceResizable
+            ? resolveTraceWidth(node.size?.width)
+            : undefined;
+  const resolvedHeight = isBar
+    ? resolveBarHeight(fitInfo?.fitHeight ?? null, node.size?.height)
+    : isView
+      ? resolveViewHeight(node.size?.height)
+      : undefined;
+  const dragMaxWidth =
+    isTable || isBar
+      ? resolveDragMaxWidth(fitInfo?.fitWidth ?? null)
+      : isPie
+        ? VIEW_SOFT_CAP_WIDTH
         : undefined;
-  const resolvedHeight = isView ? resolveViewHeight(node.size?.height) : undefined;
-  const isClipped =
-    node.kind === "member_table" &&
-    widthMode === "auto" &&
-    fitInfo !== null &&
-    fitInfo.fitWidth > VIEW_SOFT_CAP_WIDTH;
-  const dragMaxWidth = resolveDragMaxWidth(fitInfo?.fitWidth ?? null);
+  const dragMaxHeight = isBar
+    ? fitInfo?.fitHeight ?? MAX_VIEW_HEIGHT
+    : MAX_VIEW_HEIGHT;
   const displayWidth = previewSize?.width ?? resolvedWidth;
   const displayHeight = previewSize?.height ?? resolvedHeight;
   const hasMemberPorts = memberPorts.length > 0;
@@ -153,10 +156,10 @@ export function NodeCard({ data, selected }: NodeProps) {
         ? [MIN_DETAIL_WIDTH, MAX_DETAIL_WIDTH]
         : isTraceResizable
           ? [MIN_TRACE_WIDTH, MAX_TRACE_WIDTH]
-          : [MIN_VIEW_WIDTH, dragMaxWidth];
+          : [MIN_VIEW_WIDTH, dragMaxWidth ?? VIEW_SOFT_CAP_WIDTH];
       return { width: clamp(Math.round(startWidth + dx), minWidth, maxWidth) };
     }
-    return { height: clamp(Math.round(startHeight + dy), MIN_VIEW_HEIGHT, MAX_VIEW_HEIGHT) };
+    return { height: clamp(Math.round(startHeight + dy), MIN_VIEW_HEIGHT, dragMaxHeight) };
   }
 
   function startResize(
@@ -209,16 +212,10 @@ export function NodeCard({ data, selected }: NodeProps) {
       drag.startHeight,
     );
     setPreviewSize(null);
-    if (drag.axis === "width" && widthMode === "auto" && tableConfig !== null) {
-      onResizeNodeWithFixedWidth(
-        node.id,
-        { width: size.width ?? drag.startWidth, height: drag.startHeight },
-        tableConfig.id,
-      );
-    } else if (drag.axis === "width") {
-      onResizeNode(node.id, { width: size.width ?? drag.startWidth, height: drag.startHeight });
+    if (drag.axis === "width") {
+      onResizeNode(node.id, { width: size.width ?? drag.startWidth });
     } else {
-      onResizeNode(node.id, { width: drag.startWidth, height: size.height ?? drag.startHeight });
+      onResizeNode(node.id, { height: size.height ?? drag.startHeight });
     }
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -365,20 +362,18 @@ export function NodeCard({ data, selected }: NodeProps) {
             onPointerUp={handleResizeUp}
             onPointerCancel={cancelResize}
           />
-          {node.kind === "member_table" && (widthMode === "fixed" || isClipped) && (
-            <div
-              className="node-resize-handle node-resize-handle-right nodrag visible"
-              title={
-                fitInfo !== null && fitInfo.hiddenColumns > 0
-                  ? `还有 ${fitInfo.hiddenColumns} 列被隐藏，拖宽查看`
-                  : "拖拽调整宽度"
-              }
-              onPointerDown={(event) => startResize(event, "width")}
-              onPointerMove={handleResizeMove}
-              onPointerUp={handleResizeUp}
-              onPointerCancel={cancelResize}
-            />
-          )}
+          <div
+            className="node-resize-handle node-resize-handle-right nodrag"
+            title={
+              isTable && fitInfo !== null && fitInfo.hiddenColumns > 0
+                ? `还有 ${fitInfo.hiddenColumns} 列被隐藏，拖宽查看`
+                : "拖拽调整宽度"
+            }
+            onPointerDown={(event) => startResize(event, "width")}
+            onPointerMove={handleResizeMove}
+            onPointerUp={handleResizeUp}
+            onPointerCancel={cancelResize}
+          />
         </>
       )}
     </div>

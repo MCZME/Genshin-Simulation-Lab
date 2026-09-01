@@ -12,7 +12,7 @@ import {
   estimateTextWidth,
   formatCell,
   sortRows,
-  type MemberTableFitInfo,
+  type ViewFitInfo,
 } from "./views";
 
 afterEach(() => {
@@ -123,7 +123,7 @@ function renderView(
   result: AnalysisNodeResult | undefined,
   options: { withDataEdge?: boolean; withConfigEdge?: boolean } = {},
   onLocateNode: (nodeId: string) => void = vi.fn(),
-  viewOptions: { viewWidth?: number; onFitChange?: (info: MemberTableFitInfo) => void } = {},
+  viewOptions: { viewWidth?: number; onFitChange?: (info: ViewFitInfo) => void } = {},
 ) {
   const definition = definitionWith(
     { condition_columns: ["weapon"], data_columns: ["total_damage", "dps"] },
@@ -329,7 +329,7 @@ describe("表格视图", () => {
       onFitChange,
     });
     expect(onFitChange).toHaveBeenCalled();
-    const info = onFitChange.mock.calls[0][0] as MemberTableFitInfo;
+    const info = onFitChange.mock.calls[0][0] as ViewFitInfo;
     expect(info.fitWidth).toBeGreaterThan(200);
     expect(info.hiddenColumns).toBeGreaterThan(0);
     expect(

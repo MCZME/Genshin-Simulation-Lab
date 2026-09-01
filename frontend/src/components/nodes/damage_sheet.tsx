@@ -251,6 +251,51 @@ function isFlatStage(stage: string): boolean {
   return stage === "base_damage_flat_add" || stage === "component_coefficient_flat_add";
 }
 
+/** 面板读取阶段：来自属性系统的面板值，作为槽位账单的基础贡献。 */
+function isPanelStage(stage: string): boolean {
+  return stage.startsWith("panel_");
+}
+
+/** 面板读取词条的值显示：数值类按原值，增伤/爆伤沿用带符号百分比，率与抗性沿用普通百分比。 */
+function panelValueText(stage: string, value: number): string {
+  switch (stage) {
+    case "panel_attribute_value":
+    case "panel_elemental_mastery":
+      return formatNumber(value);
+    case "panel_element_bonus":
+    case "panel_crit_damage":
+      return formatSignedPercent(value);
+    default:
+      return formatPercent(value);
+  }
+}
+
+/** 面板读取词条显示名；provider_key 形如 panel.<attribute_key>。 */
+function panelStageLabel(
+  stage: string,
+  providerKey: string | null,
+  componentKey: string | null,
+): string {
+  switch (stage) {
+    case "panel_attribute_value": {
+      const attributeKey = providerKey !== null ? providerKey.replace(/^panel\./, "") : "";
+      return `${attributeLabel(attributeKey)}${componentKey !== null ? `（${componentKey}）` : ""}`;
+    }
+    case "panel_element_bonus":
+      return "元素伤害加成";
+    case "panel_crit_rate":
+      return "面板暴击率";
+    case "panel_crit_damage":
+      return "面板暴击伤害";
+    case "panel_resistance":
+      return "目标基础抗性";
+    case "panel_elemental_mastery":
+      return "元素精通";
+    default:
+      return providerKey ?? "面板";
+  }
+}
+
 interface CollectedTerms {
   rows: SlotRow[];
   rejectedRows: SlotRow[];
@@ -268,14 +313,27 @@ function collectSlotTerms(
     readString(term, "stage") === stage &&
     (componentKey === null || readString(term, "component_key") === componentKey);
   const toRow = (term: Record<string, unknown>): SlotRow => {
-    const provider =
-      readString(term, "provider_display_name") ?? readString(term, "provider_key") ?? "未知来源";
+    const providerKey = readString(term, "provider_key");
+    const provider = readString(term, "provider_display_name") ?? providerKey ?? "未知来源";
     const comp = readString(term, "component_key");
     const value = readNumber(term, "value");
+    const panel = isPanelStage(stage);
     return {
-      label: comp !== null ? `${provider}（${comp}）` : provider,
-      value: value === null ? "—" : isFlatStage(stage) ? formatNumber(value) : formatSignedPercent(value),
-      title: readString(term, "provider_key") ?? undefined,
+      label: panel
+        ? panelStageLabel(stage, providerKey, comp)
+        : comp !== null
+          ? `${provider}（${comp}）`
+          : provider,
+      value:
+        value === null
+          ? "—"
+          : panel
+            ? panelValueText(stage, value)
+            : isFlatStage(stage)
+              ? formatNumber(value)
+              : formatSignedPercent(value),
+      base: panel || undefined,
+      title: providerKey ?? undefined,
     };
   };
   const matchedApplied = applied.filter(match);
@@ -348,6 +406,7 @@ function buildBaseZone(
   const percentSum = { value: 0 };
   const flatRows: SlotRow[] = [];
   const flatSum = { value: 0 };
+  const attributeRows: SlotRow[] = [];
 
   for (const [index, component] of components.entries()) {
     const componentKey = readString(component, "component_key") ?? `#${index + 1}`;
@@ -356,16 +415,26 @@ function buildBaseZone(
     const original = readNumber(component, "original_coefficient");
     const percent = collectSlotTerms(applied, rejected, "component_coefficient_percent_add", componentKey);
     const flat = collectSlotTerms(applied, rejected, "component_coefficient_flat_add", componentKey);
+    const attributePanel = collectSlotTerms(applied, rejected, "panel_attribute_value", componentKey);
     percentSum.value += percent.sum;
     flatSum.value += flat.sum;
     percentRows.push(...percent.rows, ...percent.rejectedRows.map((row) => ({ ...row, rejected: true })));
     flatRows.push(...flat.rows, ...flat.rejectedRows.map((row) => ({ ...row, rejected: true })));
+    if (attributePanel.rows.length > 0 && attributePanel.sum !== 0) {
+      attributeRows.push(...attributePanel.rows);
+    }
 
     const tokens: FormulaToken[] = [];
-    tokens.push({
-      kind: "text",
-      text: `${attributeLabel(attributeKey)}${attributeValue !== null ? ` ${formatNumber(attributeValue)}` : ""}`,
-    });
+    const attributeSlotHas = attributePanel.rows.length > 0 && attributePanel.sum !== 0;
+    if (attributeSlotHas && attributeValue !== null) {
+      tokens.push({ kind: "text", text: `${attributeLabel(attributeKey)} ` });
+      tokens.push(slotValue("base-attribute", formatNumber(attributeValue), true));
+    } else {
+      tokens.push({
+        kind: "text",
+        text: `${attributeLabel(attributeKey)}${attributeValue !== null ? ` ${formatNumber(attributeValue)}` : ""}`,
+      });
+    }
     if (original !== null) {
       const percentHas = percent.rows.length + percent.rejectedRows.length > 0;
       const flatHas = flat.rows.length + flat.rejectedRows.length > 0;
@@ -398,6 +467,10 @@ function buildBaseZone(
   }
   if (flatRows.length > 0) {
     pushDrawer(drawers, "base-flat", "倍率段加值", formatNumber(flatSum.value), flatRows);
+  }
+  if (attributeRows.length > 0) {
+    // 面板属性值按组件分别有意义，跨组件没有可加总的单一值，抽屉头不显示合计。
+    pushDrawer(drawers, "base-attribute", "倍率段属性", "—", attributeRows);
   }
 
   // 固定值加值行：非词条来源的加值（请求固定/激化等）作为基础行，词条加值来自 base_damage_flat_add。
@@ -460,12 +533,11 @@ function buildBaseZone(
     }
   }
 
-  const hasTermSlots = percentRows.length + flatRows.length + additionRows.length > 0;
   return {
     title: "基础区",
     lines,
     drawers,
-    note: hasTermSlots || components.length > 0 ? null : "无伤害词条修饰项",
+    note: null,
   };
 }
 
@@ -486,19 +558,16 @@ function buildBonusZone(
   const multiplier = readNumber(summary, "damage_bonus_multiplier");
   const bonus = audit === null ? null : readRecord(audit, "damage_bonus");
   const elementBonus = readNumber(bonus ?? {}, "element_bonus") ?? 0;
-  const terms =
-    audit === null
-      ? { rows: [], rejectedRows: [], sum: 0 }
-      : collectSlotTerms(
-          readRecordList(audit, "applied_terms"),
-          readRecordList(audit, "rejected_terms"),
-          "damage_bonus_add",
-          null,
-        );
+  const appliedTerms = audit === null ? [] : readRecordList(audit, "applied_terms");
+  const rejectedTerms = audit === null ? [] : readRecordList(audit, "rejected_terms");
+  const terms = collectSlotTerms(appliedTerms, rejectedTerms, "damage_bonus_add", null);
+  const panelBonus = collectSlotTerms(appliedTerms, rejectedTerms, "panel_element_bonus", null);
   const total = multiplier !== null ? multiplier - 1 : elementBonus + terms.sum;
   const hasContent = elementBonus !== 0 || terms.rows.length + terms.rejectedRows.length > 0;
   const rows: SlotRow[] = [];
-  if (elementBonus !== 0) {
+  if (panelBonus.rows.length > 0 && panelBonus.sum !== 0) {
+    rows.push(...panelBonus.rows);
+  } else if (elementBonus !== 0) {
     rows.push({ label: "元素伤害加成", value: formatSignedPercent(elementBonus), base: true });
   }
   rows.push(...terms.rows, ...terms.rejectedRows.map((row) => ({ ...row, rejected: true })));
@@ -548,19 +617,13 @@ function buildCritZone(
   const critDamage = readNumber(critical, "crit_damage") ?? 0;
   const critRate = readNumber(critical, "crit_rate") ?? 0;
   const effectiveRate = readNumber(critical, "effective_crit_rate") ?? 0;
+  const appliedTerms = readRecordList(audit ?? {}, "applied_terms");
+  const rejectedTerms = readRecordList(audit ?? {}, "rejected_terms");
 
-  const damageTerms = collectSlotTerms(
-    readRecordList(audit ?? {}, "applied_terms"),
-    readRecordList(audit ?? {}, "rejected_terms"),
-    "crit_damage_add",
-    null,
-  );
-  const rateTerms = collectSlotTerms(
-    readRecordList(audit ?? {}, "applied_terms"),
-    readRecordList(audit ?? {}, "rejected_terms"),
-    "crit_rate_add",
-    null,
-  );
+  const damageTerms = collectSlotTerms(appliedTerms, rejectedTerms, "crit_damage_add", null);
+  const rateTerms = collectSlotTerms(appliedTerms, rejectedTerms, "crit_rate_add", null);
+  const panelDamage = collectSlotTerms(appliedTerms, rejectedTerms, "panel_crit_damage", null);
+  const panelRate = collectSlotTerms(appliedTerms, rejectedTerms, "panel_crit_rate", null);
   const damageBase = critDamage - damageTerms.sum;
   const rateBase = critRate - rateTerms.sum;
 
@@ -593,7 +656,9 @@ function buildCritZone(
 
   const drawers: SlotDrawerData[] = [];
   const damageRows: SlotRow[] = [];
-  if (damageBase !== 0) {
+  if (panelDamage.rows.length > 0 && panelDamage.sum !== 0) {
+    damageRows.push(...panelDamage.rows);
+  } else if (damageBase !== 0) {
     damageRows.push({ label: "面板暴击伤害", value: formatSignedPercent(damageBase), base: true });
   }
   damageRows.push(
@@ -602,7 +667,9 @@ function buildCritZone(
   );
   pushDrawer(drawers, "crit-damage", "暴击伤害加成", formatSignedPercent(critDamage), damageRows);
   const rateRows: SlotRow[] = [];
-  if (rateBase !== 0) {
+  if (panelRate.rows.length > 0 && panelRate.sum !== 0) {
+    rateRows.push(...panelRate.rows);
+  } else if (rateBase !== 0) {
     rateRows.push({ label: "面板暴击率", value: formatPercent(rateBase), base: true });
   }
   if (effectiveRate !== critRate) {
@@ -628,6 +695,12 @@ function buildReactionZone(
         ? summary.reaction
         : null;
   const kind = record === null ? null : readString(record, "kind");
+  const panelMastery = collectSlotTerms(
+    readRecordList(audit ?? {}, "applied_terms"),
+    readRecordList(audit ?? {}, "rejected_terms"),
+    "panel_elemental_mastery",
+    null,
+  );
   const lines: FormulaToken[][] = [];
   if (record !== null && multiplier !== null) {
     const masteryBonus = readNumber(record, "mastery_bonus");
@@ -665,11 +738,15 @@ function buildReactionZone(
   if (lines.length === 0 && multiplier !== null) {
     lines.push([{ kind: "result", text: formatFactor(multiplier) }]);
   }
+  const drawers: SlotDrawerData[] = [];
+  if (panelMastery.rows.length > 0 && panelMastery.sum !== 0) {
+    pushDrawer(drawers, "reaction-mastery", "元素精通", formatNumber(panelMastery.sum), panelMastery.rows);
+  }
   return {
     title: "反应区",
     lines,
-    drawers: [],
-    note: record === null ? "无反应结算明细" : "无伤害词条修饰项",
+    drawers,
+    note: record === null ? "无反应结算明细" : null,
   };
 }
 
@@ -760,36 +837,89 @@ function buildResistanceZone(
   const multiplier = readNumber(summary, "resistance_multiplier");
   const resistance = audit === null ? null : readRecord(audit, "resistance");
   const value = resistance === null ? null : readNumber(resistance, "resistance");
-  let line: FormulaToken[];
+  const addTerms = collectSlotTerms(
+    readRecordList(audit ?? {}, "applied_terms"),
+    readRecordList(audit ?? {}, "rejected_terms"),
+    "resistance_add",
+    null,
+  );
+  const panelResistance = collectSlotTerms(
+    readRecordList(audit ?? {}, "applied_terms"),
+    readRecordList(audit ?? {}, "rejected_terms"),
+    "panel_resistance",
+    null,
+  );
+  const hasTerms = addTerms.rows.length + addTerms.rejectedRows.length > 0;
+  const hasPanelResistance = panelResistance.rows.length > 0 && panelResistance.sum !== 0;
+  const hasSlotContent = hasTerms || hasPanelResistance;
+  const base =
+    resistance === null
+      ? null
+      : readNumber(resistance, "base_resistance") ??
+        (value !== null ? value - addTerms.sum : null);
+  const lines: FormulaToken[][] = [];
   if (value !== null) {
-    // 公式直接代入抗性值，不重复标注符号名；负抗是增益（1 + |R|÷2），另行标注原值避免歧义。
-    line = [
-      {
-        kind: "text",
-        text:
-          value < 0
-            ? `1 + ${formatPercent(-value / 2)}`
-            : value > 0.75
-              ? `1 ÷ (1 + 4×${formatPercent(value)})`
-              : `1 − ${formatPercent(value)}`,
-      },
-      ...(value < 0
-        ? [{ kind: "muted" as const, text: ` · 抗性 ${formatPercent(value)}` }]
-        : []),
-      ...(multiplier !== null
-        ? [{ kind: "result" as const, text: ` = ${formatFactor(multiplier)}` }]
-        : []),
-    ];
+    if (hasSlotContent) {
+      // 与其他乘区一致：槽位显示该位置合计值（基础抗性 + 生效词条），直接嵌入分段公式骨架；
+      // 无 resistance_add 词条时面板抗性读取本身也作为基础贡献呈现为槽位。
+      const slot = slotValue("resistance-add", formatPercent(value), true);
+      const tokens: FormulaToken[] = [];
+      if (value < 0) {
+        tokens.push({ kind: "text", text: "1 + |" }, slot, { kind: "text", text: "| ÷ 2" });
+      } else if (value > 0.75) {
+        tokens.push({ kind: "text", text: "1 ÷ (1 + 4×" }, slot, { kind: "text", text: ")" });
+      } else {
+        tokens.push({ kind: "text", text: "1 − " }, slot);
+      }
+      if (multiplier !== null) {
+        tokens.push({ kind: "result", text: ` = ${formatFactor(multiplier)}` });
+      }
+      lines.push(tokens);
+    } else {
+      // 公式直接代入抗性值，与正抗分支一致；负抗为增益（1 + |R|÷2），原值直接进入公式。
+      lines.push([
+        {
+          kind: "text",
+          text:
+            value < 0
+              ? `1 + |${formatPercent(value)}| ÷ 2`
+              : value > 0.75
+                ? `1 ÷ (1 + 4×${formatPercent(value)})`
+                : `1 − ${formatPercent(value)}`,
+        },
+        ...(multiplier !== null
+          ? [{ kind: "result" as const, text: ` = ${formatFactor(multiplier)}` }]
+          : []),
+      ]);
+    }
   } else if (multiplier !== null) {
-    line = [{ kind: "result", text: formatFactor(multiplier) }];
-  } else {
-    line = [];
+    lines.push([{ kind: "result", text: formatFactor(multiplier) }]);
+  }
+  const drawers: SlotDrawerData[] = [];
+  if (hasSlotContent) {
+    const rows: SlotRow[] = [];
+    if (hasPanelResistance) {
+      rows.push(...panelResistance.rows);
+    } else if (base !== null) {
+      rows.push({ label: "目标基础抗性", value: formatPercent(base), base: true });
+    }
+    rows.push(
+      ...addTerms.rows,
+      ...addTerms.rejectedRows.map((row) => ({ ...row, rejected: true })),
+    );
+    pushDrawer(
+      drawers,
+      "resistance-add",
+      "抗性调整",
+      formatSignedPercent(value ?? addTerms.sum),
+      rows,
+    );
   }
   return {
     title: "抗性区",
-    lines: line.length > 0 ? [line] : [],
-    drawers: [],
-    note: "无伤害词条修饰项（抗性来自目标属性）",
+    lines,
+    drawers,
+    note: null,
   };
 }
 

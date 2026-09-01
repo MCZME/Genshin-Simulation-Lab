@@ -21,6 +21,15 @@ class DamageReactionCapability(StrEnum):
 class DamageModifierStage(StrEnum):
     """伤害专用修饰项进入流水线的计算阶段。"""
 
+    # 面板属性读取：公式从属性系统读取角色/目标面板值后物化为词条，
+    # 作为对应槽位的基础贡献进入伤害账单；属性系统内部的 modifier 不进入伤害系统。
+    PANEL_ATTRIBUTE_VALUE = "panel_attribute_value"
+    PANEL_ELEMENT_BONUS = "panel_element_bonus"
+    PANEL_CRIT_RATE = "panel_crit_rate"
+    PANEL_CRIT_DAMAGE = "panel_crit_damage"
+    PANEL_RESISTANCE = "panel_resistance"
+    PANEL_ELEMENTAL_MASTERY = "panel_elemental_mastery"
+
     COMPONENT_COEFFICIENT_PERCENT_ADD = "component_coefficient_percent_add"
     COMPONENT_COEFFICIENT_FLAT_ADD = "component_coefficient_flat_add"
     BASE_DAMAGE_FLAT_ADD = "base_damage_flat_add"

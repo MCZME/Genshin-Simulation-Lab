@@ -590,8 +590,58 @@ def test_damage_stacking_group_keeps_highest_and_audits_rejected_term():
 
     result = DamageResolver(_attribute_resolver(hydro_bonus=0), index).resolve(_query())
 
-    assert [term.value for term in result.applied_terms] == [0.4]
+    # 效果词条仍按叠加组取最高；面板读取词条追加在账单末尾，不影响筛选。
+    assert [
+        term.value
+        for term in result.applied_terms
+        if term.stage is DamageModifierStage.DAMAGE_BONUS_ADD
+    ] == [0.4]
     assert [term.value for term in result.rejected_terms] == [0.2]
+
+
+def test_panel_attribute_reads_enter_damage_bill_as_panel_terms():
+    result = DamageResolver(_attribute_resolver()).resolve(_query(can_crit=True))
+
+    panel_terms = tuple(
+        term for term in result.applied_terms if term.stage.value.startswith("panel_")
+    )
+    by_stage = {term.stage: term for term in panel_terms}
+    assert set(by_stage) == {
+        DamageModifierStage.PANEL_ATTRIBUTE_VALUE,
+        DamageModifierStage.PANEL_ELEMENT_BONUS,
+        DamageModifierStage.PANEL_CRIT_RATE,
+        DamageModifierStage.PANEL_CRIT_DAMAGE,
+        DamageModifierStage.PANEL_RESISTANCE,
+    }
+    attribute_panel = by_stage[DamageModifierStage.PANEL_ATTRIBUTE_VALUE]
+    assert attribute_panel.value == 40000.0
+    assert attribute_panel.component_key == "hp"
+    assert attribute_panel.provider_key == "panel.stat.hp.max"
+    assert by_stage[DamageModifierStage.PANEL_ELEMENT_BONUS].value == 0.2
+    assert by_stage[DamageModifierStage.PANEL_CRIT_RATE].value == 0.0
+    assert by_stage[DamageModifierStage.PANEL_CRIT_DAMAGE].value == 0.5
+    assert by_stage[DamageModifierStage.PANEL_RESISTANCE].value == 0.1
+    # 面板读取只进账单，不改变既有结算数值
+    assert result.crit_damage == pytest.approx(0.5)
+    assert result.damage_bonus_multiplier == pytest.approx(1.2)
+
+
+def test_amplifying_reaction_panel_mastery_enters_damage_bill():
+    reaction = AmplifyingReactionInput(
+        "occurrence:1",
+        "reaction_profile:test",
+        Element.PYRO,
+        1.5,
+    )
+    result = DamageResolver(_attribute_resolver(elemental_mastery=180.0)).resolve(
+        _query(amplifying_reaction=reaction)
+    )
+
+    panel_terms = tuple(
+        term for term in result.applied_terms if term.stage.value.startswith("panel_")
+    )
+    by_stage = {term.stage: term for term in panel_terms}
+    assert by_stage[DamageModifierStage.PANEL_ELEMENTAL_MASTERY].value == 180.0
 
 
 @pytest.mark.parametrize(

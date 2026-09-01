@@ -13,6 +13,7 @@ from genshin_sim.core.attributes import (
     AttributeResolution,
     AttributeSubjectKind,
     AttributeSubjectRef,
+    RuntimeSourceKind,
     RuntimeSourceRef,
     TraceLevel,
 )
@@ -575,6 +576,7 @@ class DamageModifierTerm:
         component_stage = self.stage in {
             DamageModifierStage.COMPONENT_COEFFICIENT_PERCENT_ADD,
             DamageModifierStage.COMPONENT_COEFFICIENT_FLAT_ADD,
+            DamageModifierStage.PANEL_ATTRIBUTE_VALUE,
         }
         if component_stage:
             if self.component_key is None:
@@ -587,6 +589,33 @@ class DamageModifierTerm:
         for tag in self.audit_tags:
             _validate_non_empty_text(tag, "audit_tag")
         object.__setattr__(self, "audit_tags", tuple(self.audit_tags))
+
+    @classmethod
+    def panel_read(
+        cls,
+        *,
+        stage: DamageModifierStage,
+        attribute: AttributeResolution,
+        component_key: str | None = None,
+    ) -> DamageModifierTerm:
+        """把公式从属性系统读取到的面板值物化为伤害账单词条。
+
+        ``provider_key`` 使用 ``panel.<attribute_key>`` 标识本次面板读取；
+        ``value`` 是属性系统解析后的最终面板值。属性系统内部的 modifier
+        不会进入伤害系统，只有读取结果进入槽位账单。
+        """
+
+        return cls(
+            stage=stage,
+            value=attribute.final_value,
+            provider_key=f"panel.{attribute.attribute_key}",
+            source_ref=RuntimeSourceRef(
+                RuntimeSourceKind.SYSTEM,
+                str(attribute.attribute_key),
+                attribute.subject_ref.entity_id,
+            ),
+            component_key=component_key,
+        )
 
     def to_dict(self) -> dict[str, object]:
         """返回伤害修饰项的稳定审计序列化。"""
@@ -1107,6 +1136,7 @@ class GeneralDamageResolution:
     source_attribute_trace: tuple[AttributeResolution, ...] = ()
     target_attribute_trace: tuple[AttributeResolution, ...] = ()
     catalyze: CatalyzeReactionResolution | None = None
+    panel_terms: tuple[DamageModifierTerm, ...] = ()
 
     def __post_init__(self) -> None:
         """校验通用公式输出为有限非负数。"""
@@ -1123,6 +1153,9 @@ class GeneralDamageResolution:
             CatalyzeReactionResolution,
         ):
             raise DamageValidationError("catalyze 必须是 CatalyzeReactionResolution")
+        if not all(isinstance(term, DamageModifierTerm) for term in self.panel_terms):
+            raise DamageValidationError("panel_terms 成员必须是 DamageModifierTerm")
+        object.__setattr__(self, "panel_terms", tuple(self.panel_terms))
 
 
 @dataclass(frozen=True, slots=True)
@@ -1222,9 +1255,7 @@ class CatalyzeReactionResolution:
 
 
 type DamageFormulaResolution = (
-    GeneralDamageResolution
-    | TransformativeReactionResolution
-    | LunarReactionDamageResolution
+    GeneralDamageResolution | TransformativeReactionResolution | LunarReactionDamageResolution
 )
 
 

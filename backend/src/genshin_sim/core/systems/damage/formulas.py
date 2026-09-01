@@ -193,9 +193,15 @@ class GeneralDamageFormula:
             raise InvalidDamageScalingError("普通直伤必须包含 scaling term 或固定基础伤害")
         terms = context.modifiers.applied_terms
         source_trace: list[AttributeResolution] = []
+        panel_terms: list[DamageModifierTerm] = []
 
-        scaling, scaling_trace = self.scaling_policy.resolve(query, context.session, terms)
+        scaling, scaling_trace, scaling_panel_terms = self.scaling_policy.resolve(
+            query,
+            context.session,
+            terms,
+        )
         source_trace.extend(scaling_trace)
+        panel_terms.extend(scaling_panel_terms)
 
         catalyze_resolution = None
         catalyze_input = query.request.catalyze_reaction
@@ -212,6 +218,12 @@ class GeneralDamageFormula:
             mastery = validate_damage_float(mastery_trace.final_value, "elemental_mastery")
             if mastery < 0:
                 raise DamageResolutionError("元素精通不能为负数")
+            panel_terms.append(
+                DamageModifierTerm.panel_read(
+                    stage=DamageModifierStage.PANEL_ELEMENTAL_MASTERY,
+                    attribute=mastery_trace,
+                )
+            )
             mastery_bonus = 5 * mastery / (1200 + mastery)
             addition_value = (
                 level_multiplier
@@ -258,19 +270,27 @@ class GeneralDamageFormula:
                 ),
             )
 
-        damage_bonus, damage_bonus_trace = self.damage_bonus_policy.resolve(
+        damage_bonus, damage_bonus_trace, bonus_panel_term = self.damage_bonus_policy.resolve(
             query,
             context.session,
             terms,
         )
         source_trace.append(damage_bonus_trace)
+        panel_terms.append(bonus_panel_term)
 
-        critical, critical_trace = self.critical_policy.resolve(query, context.session, terms)
+        critical, critical_trace, critical_panel_terms = self.critical_policy.resolve(
+            query,
+            context.session,
+            terms,
+        )
         source_trace.extend(critical_trace)
+        panel_terms.extend(critical_panel_terms)
 
-        reaction = self.reaction_policy.resolve(query, context.session)
+        reaction, reaction_panel_term = self.reaction_policy.resolve(query, context.session)
         if reaction.elemental_mastery_trace is not None:
             source_trace.append(reaction.elemental_mastery_trace)
+        if reaction_panel_term is not None:
+            panel_terms.append(reaction_panel_term)
         defense = self.defense_policy.resolve(
             query.request.source_level,
             query.request.target_level,
@@ -281,10 +301,15 @@ class GeneralDamageFormula:
         resistance_resolution = context.session.resolve_target(
             ELEMENT_TO_RESISTANCE_KEY[query.request.element.value]
         )
+        resistance_panel_term = DamageModifierTerm.panel_read(
+            stage=DamageModifierStage.PANEL_RESISTANCE,
+            attribute=resistance_resolution,
+        )
+        panel_terms.append(resistance_panel_term)
         resistance_add = _sum_terms(terms, DamageModifierStage.RESISTANCE_ADD)
         resistance = self.resistance_policy.resolve(
-            resistance_resolution.final_value + resistance_add,
-            base_resistance=resistance_resolution.final_value,
+            resistance_panel_term.value + resistance_add,
+            base_resistance=resistance_panel_term.value,
             resistance_add=resistance_add,
         )
 
@@ -315,6 +340,7 @@ class GeneralDamageFormula:
             source_attribute_trace=tuple(_unique_resolutions(source_trace)),
             target_attribute_trace=(resistance_resolution,),
             catalyze=catalyze_resolution,
+            panel_terms=tuple(panel_terms),
         )
 
 
@@ -524,7 +550,7 @@ class LunarReactionDamageFormula:
         source_trace: list[AttributeResolution] = []
         scaling = None
         if participant.scaling_terms or participant.flat_base_damage != 0:
-            scaling, scaling_trace = StandardScalingZonePolicy().resolve(
+            scaling, scaling_trace, _ = StandardScalingZonePolicy().resolve(
                 component_query,
                 component_session,
                 (),
@@ -566,7 +592,7 @@ class LunarReactionDamageFormula:
         if base_damage_after_reaction < 0:
             raise DamageResolutionError("月曜基础伤害区不能为负数")
 
-        critical, critical_trace = self.critical_policy.resolve(
+        critical, critical_trace, _ = self.critical_policy.resolve(
             component_query,
             component_session,
             (),

@@ -419,7 +419,7 @@
 - `damage.summary.damage_name` 是这一次伤害的显示名称（来自内容层 `DamageImpactSpec.display_name`），未提供时为 `null`，前端回退显示原键。
 - `damage.audit.applied_terms[]` / `rejected_terms[]` 每项附带 `provider_display_name`（来自 `DamageModifierProviderSpec.display_name`），未提供时为 `null`。
 - `damage.summary` 与 `damage.audit` 从 `data` 规范化派生，不改变原始 `data` 存储。
-- `damage.audit` 完整形状见[结果库契约](../结果库契约.md)第 5.3 节，序列化来源见[伤害系统设计](../../架构/系统/伤害系统设计.md)第 9 节。
+- `damage.audit` 完整形状见[结果库契约](../结果库契约.md)第 5.3 节，序列化来源见[伤害系统契约](../../契约/伤害系统契约.md)第 9.3 节。
 - 事件不存在或 `ordinal` 越界返回 `404 not_found`。
 
 ### `GET /api/v1/results/{session_id}/frames/{frame}`

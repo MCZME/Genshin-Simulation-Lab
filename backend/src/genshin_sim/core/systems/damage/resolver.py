@@ -183,9 +183,7 @@ def _validate_formula_stages(
 def _build_damage_result(
     query: DamageQuery,
     resolution: (
-        GeneralDamageResolution
-        | TransformativeReactionResolution
-        | LunarReactionDamageResolution
+        GeneralDamageResolution | TransformativeReactionResolution | LunarReactionDamageResolution
     ),
     modifiers: DamageModifierCollection,
     trace_level: TraceLevel,
@@ -274,7 +272,12 @@ def _build_damage_result(
             trace_metadata={"defense_policy": resolution.reaction.defense_policy},
         )
 
-    applied_terms = () if trace_level is TraceLevel.NONE else modifiers.applied_terms
+    # 槽位账单 = 本次伤害效果词条 + 面板属性读取词条；剧变/月曜路径保持无账单。
+    applied_terms = (
+        ()
+        if trace_level is TraceLevel.NONE
+        else (*modifiers.applied_terms, *resolution.panel_terms)
+    )
     rejected_terms = modifiers.rejected_terms if trace_level is TraceLevel.FULL else ()
     source_trace = () if trace_level is TraceLevel.NONE else resolution.source_attribute_trace
     target_trace = () if trace_level is TraceLevel.NONE else resolution.target_attribute_trace

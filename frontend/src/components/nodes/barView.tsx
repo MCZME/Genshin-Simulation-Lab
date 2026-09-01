@@ -22,7 +22,7 @@ import {
   BAR_MIN_HEIGHT,
   BAR_SERIES_GAP,
   BAR_TARGET_WIDTH,
-  MAX_BAR_FIT_HEIGHT,
+  MAX_VIEW_FIT_HEIGHT,
   MIN_VIEW_HEIGHT,
   MIN_VIEW_WIDTH,
   clamp,
@@ -104,7 +104,7 @@ export function estimateBarChartFit(data: BarChartData | null): BarChartFit {
   const fitHeight = clamp(
     Math.round(ratio * BAR_MIN_HEIGHT + BAR_HEIGHT_EXTRAS),
     MIN_VIEW_HEIGHT,
-    MAX_BAR_FIT_HEIGHT,
+    MAX_VIEW_FIT_HEIGHT,
   );
   return { fitWidth, fitHeight };
 }

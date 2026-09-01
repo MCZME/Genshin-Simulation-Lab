@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  MAX_BAR_FIT_HEIGHT,
+  MAX_VIEW_FIT_HEIGHT,
   MAX_VIEW_HEIGHT,
   MIN_VIEW_WIDTH,
   VIEW_SOFT_CAP_WIDTH,
@@ -36,7 +36,7 @@ describe("view_size 高度解析", () => {
   it("柱状图高度自动模式：min(内容估算高, 高度软上限)，未测量用默认高", () => {
     expect(resolveBarHeight(null, undefined)).toBe(360);
     expect(resolveBarHeight(400, undefined)).toBe(400);
-    expect(resolveBarHeight(MAX_BAR_FIT_HEIGHT, undefined)).toBe(MAX_VIEW_HEIGHT);
+    expect(resolveBarHeight(MAX_VIEW_FIT_HEIGHT, undefined)).toBe(MAX_VIEW_HEIGHT);
   });
 
   it("柱状图高度手动模式：夹持在 [最小高, 内容估算高]，未测量回落高度软上限", () => {
@@ -45,9 +45,16 @@ describe("view_size 高度解析", () => {
     expect(resolveBarHeight(null, 700)).toBe(700);
   });
 
-  it("普通视图高度纯手动", () => {
+  it("普通视图高度：未保存手动高度用默认 360，已保存高度夹持在上下限", () => {
     expect(resolveViewHeight(undefined)).toBe(360);
     expect(resolveViewHeight(500)).toBe(500);
     expect(resolveViewHeight(999)).toBe(MAX_VIEW_HEIGHT);
+  });
+
+  it("表格高度手柄可超过软上限：手动高度上限为内容估算高", () => {
+    expect(resolveViewHeight(900, 1200)).toBe(900);
+    expect(resolveViewHeight(2000, 1200)).toBe(1200);
+    expect(resolveViewHeight(900, null)).toBe(MAX_VIEW_HEIGHT);
+    expect(resolveViewHeight(500, 400)).toBe(400);
   });
 });

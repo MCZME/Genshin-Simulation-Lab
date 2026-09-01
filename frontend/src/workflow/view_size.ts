@@ -29,8 +29,10 @@ export const BAR_AXIS_RESERVE = 64;
 export const BAR_MIN_HEIGHT = 6;
 /** 柱状图高度估算：坐标轴标签、图例与边距预留。 */
 export const BAR_HEIGHT_EXTRAS = 68;
-/** 柱状图高度估算封顶：自动高度软上限之上的手柄可拖上限。 */
-export const MAX_BAR_FIT_HEIGHT = 1440;
+/** 内容估算高度封顶：自动高度软上限之上的手柄可拖上限（柱状图/表格共用）。 */
+export const MAX_VIEW_FIT_HEIGHT = 1440;
+/** 表格高度估算：表头、工具条、页脚与边框的固定占用。 */
+export const TABLE_HEIGHT_EXTRAS = 86;
 
 /**
  * 单项详情卡（伤害详情）宽度语义：宽度手动可调并随节点保存，高度随内容自适应。
@@ -95,13 +97,21 @@ export function resolveBarHeight(
   return clamp(Math.round(natural), MIN_VIEW_HEIGHT, MAX_VIEW_HEIGHT);
 }
 
-/** 解析视图节点高度：纯手动，夹持在上下限内。 */
-export function resolveViewHeight(height: number | undefined): number {
-  return clamp(
-    Math.round(height ?? DEFAULT_VIEW_HEIGHT),
-    MIN_VIEW_HEIGHT,
-    MAX_VIEW_HEIGHT,
-  );
+/**
+ * 解析视图节点高度（表格/饼图）：
+ * - 未保存手动高度：默认 360px；
+ * - 已保存手动高度：夹持在 [最小高, 内容估算高]（表格未测量时回落高度软上限；饼图无内容估算，恒为软上限）。
+ */
+export function resolveViewHeight(
+  height: number | undefined,
+  fitHeight: number | null = null,
+): number {
+  if (height !== undefined) {
+    const hardMax =
+      fitHeight === null ? MAX_VIEW_HEIGHT : Math.max(MIN_VIEW_HEIGHT, fitHeight);
+    return clamp(Math.round(height), MIN_VIEW_HEIGHT, hardMax);
+  }
+  return DEFAULT_VIEW_HEIGHT;
 }
 
 /** 解析按键轨迹节点宽度：纯手动，夹持在上下限内。 */

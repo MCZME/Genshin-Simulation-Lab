@@ -21,7 +21,13 @@ import { useAssetNames } from "./useAssetNames";
 import { BarChartView } from "./barView";
 import { PieChartView } from "./pieView";
 import { asString } from "./common";
-import { MIN_VIEW_WIDTH } from "../../workflow/view_size";
+import {
+  MAX_VIEW_FIT_HEIGHT,
+  MIN_VIEW_HEIGHT,
+  MIN_VIEW_WIDTH,
+  TABLE_HEIGHT_EXTRAS,
+  clamp,
+} from "../../workflow/view_size";
 
 const ROW_HEIGHT = 28;
 /** 超过该行数启用窗口化渲染，避免大批量一次性铺 DOM。 */
@@ -356,9 +362,17 @@ function MemberTable({
     [layout.widths, contentWidth],
   );
   const clipped = layout.fitWidth > contentWidth;
+  const fitHeight =
+    table.rows.length > 0
+      ? clamp(
+          Math.round(table.rows.length * ROW_HEIGHT + TABLE_HEIGHT_EXTRAS),
+          MIN_VIEW_HEIGHT,
+          MAX_VIEW_FIT_HEIGHT,
+        )
+      : null;
   const fitInfo = useMemo(
-    () => ({ fitWidth: layout.fitWidth, fitHeight: null, hiddenColumns }),
-    [layout.fitWidth, hiddenColumns],
+    () => ({ fitWidth: layout.fitWidth, fitHeight, hiddenColumns }),
+    [layout.fitWidth, fitHeight, hiddenColumns],
   );
   useEffect(() => {
     onFitChange?.(fitInfo);

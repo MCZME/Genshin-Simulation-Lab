@@ -20,7 +20,7 @@ import {
   BAR_MIN_HEIGHT,
   BAR_SERIES_GAP,
   BAR_TARGET_WIDTH,
-  MAX_BAR_FIT_HEIGHT,
+  MAX_VIEW_FIT_HEIGHT,
   MIN_VIEW_WIDTH,
 } from "../../workflow/view_size";
 
@@ -390,7 +390,7 @@ describe("estimateBarChartFit 内容尺寸估算", () => {
       categories: ["a", "b"],
       series: [series([1_000_000, 1])],
     });
-    expect(extreme.fitHeight).toBe(MAX_BAR_FIT_HEIGHT);
+    expect(extreme.fitHeight).toBe(MAX_VIEW_FIT_HEIGHT);
   });
 
   it("没有正数值时高度无法估算", () => {

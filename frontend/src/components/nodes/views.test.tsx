@@ -332,6 +332,8 @@ describe("表格视图", () => {
     const info = onFitChange.mock.calls[0][0] as ViewFitInfo;
     expect(info.fitWidth).toBeGreaterThan(200);
     expect(info.hiddenColumns).toBeGreaterThan(0);
+    expect(info.fitHeight).not.toBeNull();
+    expect(info.fitHeight!).toBeGreaterThan(0);
     expect(
       screen.getByLabelText(new RegExp(`还有 ${info.hiddenColumns} 列被隐藏`)),
     ).not.toBeNull();

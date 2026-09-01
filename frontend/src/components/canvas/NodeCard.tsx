@@ -127,16 +127,18 @@ export function NodeCard({ data, selected }: NodeProps) {
             : undefined;
   const resolvedHeight = isBar
     ? resolveBarHeight(fitInfo?.fitHeight ?? null, node.size?.height)
-    : isView
-      ? resolveViewHeight(node.size?.height)
-      : undefined;
+    : isTable
+      ? resolveViewHeight(node.size?.height, fitInfo?.fitHeight ?? null)
+      : isView
+        ? resolveViewHeight(node.size?.height)
+        : undefined;
   const dragMaxWidth =
     isTable || isBar
       ? resolveDragMaxWidth(fitInfo?.fitWidth ?? null)
       : isPie
         ? VIEW_SOFT_CAP_WIDTH
         : undefined;
-  const dragMaxHeight = isBar
+  const dragMaxHeight = isBar || isTable
     ? fitInfo?.fitHeight ?? MAX_VIEW_HEIGHT
     : MAX_VIEW_HEIGHT;
   const displayWidth = previewSize?.width ?? resolvedWidth;

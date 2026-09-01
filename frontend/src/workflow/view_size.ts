@@ -25,6 +25,11 @@ export const DEFAULT_DETAIL_WIDTH = 320;
 export const MIN_DETAIL_WIDTH = 280;
 export const MAX_DETAIL_WIDTH = VIEW_SOFT_CAP_WIDTH;
 
+/** 按键轨迹节点宽度语义：宽度手动可调并随节点保存，高度随内容自适应。 */
+export const DEFAULT_TRACE_WIDTH = 720;
+export const MIN_TRACE_WIDTH = 560;
+export const MAX_TRACE_WIDTH = 1280;
+
 export function clamp(value: number, min: number, max: number): number {
   return Math.min(max, Math.max(min, value));
 }
@@ -60,6 +65,15 @@ export function resolveViewHeight(height: number | undefined): number {
     Math.round(height ?? DEFAULT_VIEW_HEIGHT),
     MIN_VIEW_HEIGHT,
     MAX_VIEW_HEIGHT,
+  );
+}
+
+/** 解析按键轨迹节点宽度：纯手动，夹持在上下限内。 */
+export function resolveTraceWidth(width: number | undefined): number {
+  return clamp(
+    Math.round(width ?? DEFAULT_TRACE_WIDTH),
+    MIN_TRACE_WIDTH,
+    MAX_TRACE_WIDTH,
   );
 }
 

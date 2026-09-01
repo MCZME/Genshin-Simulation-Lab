@@ -82,7 +82,7 @@ export interface WorkflowRegion {
   rect: Rect;
 }
 
-/** 可调尺寸节点的画布几何（宽高像素）；只对支持尺寸调节的视图节点持久化。 */
+/** 可调尺寸节点的画布几何（宽高像素）；只对支持尺寸调节的视图、详情与按键轨迹节点持久化。 */
 export interface NodeSize {
   width: number;
   height: number;
@@ -95,7 +95,7 @@ export interface WorkflowNode {
   region_id: string | null;
   position: { x: number; y: number };
   params: Record<string, unknown>;
-  /** 可选：视图节点手动调节后的尺寸；缺省表示按内容自适应宽度、默认高度。 */
+  /** 可选：支持尺寸调节节点（视图/详情/按键轨迹）手动调节后的尺寸；缺省表示默认宽度。 */
   size?: NodeSize;
 }
 

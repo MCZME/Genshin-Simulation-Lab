@@ -16,7 +16,9 @@ import {
   DEFAULT_DETAIL_WIDTH,
   DEFAULT_VIEW_HEIGHT,
   MAX_DETAIL_WIDTH,
+  MAX_TRACE_WIDTH,
   MAX_VIEW_HEIGHT,
+  MIN_TRACE_WIDTH,
   MIN_DETAIL_WIDTH,
   MIN_VIEW_HEIGHT,
   MIN_VIEW_WIDTH,
@@ -24,6 +26,7 @@ import {
   clamp,
   normalizeWidthMode,
   resolveDragMaxWidth,
+  resolveTraceWidth,
   resolveViewHeight,
   resolveViewWidth,
 } from "../../workflow/view_size";
@@ -91,6 +94,8 @@ export function NodeCard({ data, selected }: NodeProps) {
   const isView = isAnalysisView(node.kind);
   // 伤害详情卡支持手动调宽（高度随内容），其余详情节点维持固定宽度。
   const isDetailResizable = node.kind === "damage_detail";
+  const isTraceResizable = node.kind === "input_trace";
+  const isWidthOnlyResizable = isDetailResizable || isTraceResizable;
   const rf = useReactFlow();
   const catalog = useAnalysisSchemaCatalog();
   const fieldErrors = collectFieldErrors(diagnostics, node.id);
@@ -121,7 +126,9 @@ export function NodeCard({ data, selected }: NodeProps) {
           MIN_DETAIL_WIDTH,
           MAX_DETAIL_WIDTH,
         )
-      : undefined;
+      : isTraceResizable
+        ? resolveTraceWidth(node.size?.width)
+        : undefined;
   const resolvedHeight = isView ? resolveViewHeight(node.size?.height) : undefined;
   const isClipped =
     node.kind === "member_table" &&
@@ -144,7 +151,9 @@ export function NodeCard({ data, selected }: NodeProps) {
     if (axis === "width") {
       const [minWidth, maxWidth] = isDetailResizable
         ? [MIN_DETAIL_WIDTH, MAX_DETAIL_WIDTH]
-        : [MIN_VIEW_WIDTH, dragMaxWidth];
+        : isTraceResizable
+          ? [MIN_TRACE_WIDTH, MAX_TRACE_WIDTH]
+          : [MIN_VIEW_WIDTH, dragMaxWidth];
       return { width: clamp(Math.round(startWidth + dx), minWidth, maxWidth) };
     }
     return { height: clamp(Math.round(startHeight + dy), MIN_VIEW_HEIGHT, MAX_VIEW_HEIGHT) };
@@ -230,7 +239,7 @@ export function NodeCard({ data, selected }: NodeProps) {
       style={
         isView
           ? { width: displayWidth, height: displayHeight }
-          : isDetailResizable
+          : isWidthOnlyResizable
             ? { width: displayWidth }
             : undefined
       }
@@ -336,7 +345,7 @@ export function NodeCard({ data, selected }: NodeProps) {
         groups={incomingGroups}
         onMoveEdgeOrder={onMoveEdgeOrder}
       />
-      {isDetailResizable && (
+      {isWidthOnlyResizable && (
         <div
           className="node-resize-handle node-resize-handle-right nodrag visible"
           title="拖拽调整宽度"

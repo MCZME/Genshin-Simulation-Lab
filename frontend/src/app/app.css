@@ -694,7 +694,6 @@ body {
 }
 
 .node-card.node-card-trace {
-  width: max-content;
   min-width: 560px;
 }
 
@@ -892,114 +891,18 @@ body {
   border-style: dashed;
 }
 
-.trace-delete-ghost {
-  position: fixed;
-  z-index: 100;
-  pointer-events: none;
-  padding: 2px 8px;
-  background: rgba(239, 68, 68, 0.9);
-  border: 1px dashed #f87171;
-  border-radius: 4px;
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.4;
-  white-space: nowrap;
-  transform: translate(-50%, -120%);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+.trace-timeline-wrap {
+  position: relative;
+  width: 100%;
 }
 
 .trace-timeline {
-  position: relative;
   background: #0f172a;
   border: 1px solid #334155;
   border-radius: 4px;
   cursor: crosshair;
   user-select: none;
   overflow: hidden;
-}
-
-.trace-ruler {
-  position: relative;
-  height: 18px;
-  border-bottom: 1px solid #1e293b;
-}
-
-.trace-tick {
-  position: absolute;
-  transform: translateX(-50%);
-}
-
-.trace-tick-major {
-  top: 2px;
-  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-  font-size: 9px;
-  color: #64748b;
-  white-space: nowrap;
-}
-
-.trace-tick-major::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 11px;
-  width: 1px;
-  height: 5px;
-  background: #334155;
-}
-
-.trace-tick-minor {
-  top: 13px;
-  width: 1px;
-  height: 4px;
-  background: #334155;
-}
-
-.trace-row {
-  height: 36px;
-  border-bottom: 1px solid #1e293b;
-}
-
-.trace-row:nth-child(even) {
-  background: rgba(30, 41, 59, 0.35);
-}
-
-.trace-block {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  height: 26px;
-  padding: 0 4px;
-  background: var(--key-color, #1d4ed8);
-  border: 1px solid var(--key-color, #3b82f6);
-  border-radius: 3px;
-  cursor: move;
-  touch-action: none;
-  user-select: none;
-  box-sizing: border-box;
-}
-
-.trace-block:hover {
-  filter: brightness(1.15);
-}
-
-.trace-block-unclosed {
-  background: rgba(239, 68, 68, 0.25);
-  border-style: dashed;
-  border-color: #ef4444;
-}
-
-.trace-block-unsupported {
-  background: rgba(100, 116, 139, 0.45);
-  border-color: #64748b;
-}
-
-.trace-block-chip {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  pointer-events: none;
 }
 
 .trace-block-cap {
@@ -1012,21 +915,83 @@ body {
   white-space: nowrap;
 }
 
-.trace-block-handle {
-  position: absolute;
-  top: 0;
-  width: 5px;
-  height: 100%;
+.trace-timeline .vis-timeline {
+  border: none;
+  background: transparent;
+}
+
+.trace-timeline .vis-panel {
+  background: transparent;
+  border-color: #1e293b;
+}
+
+.trace-timeline .vis-time-axis {
+  background: #0f172a;
+}
+
+.trace-timeline .vis-text {
+  color: #64748b;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 9px;
+}
+
+.trace-timeline .vis-grid.vis-minor {
+  border-color: rgba(51, 65, 85, 0.45);
+}
+
+.trace-timeline .vis-grid.vis-major {
+  border-color: #334155;
+}
+
+.trace-timeline .vis-item {
+  border-radius: 3px;
+  box-shadow: none;
+  color: #e2e8f0;
+}
+
+.trace-timeline .vis-item .vis-item-content {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 4px;
+  overflow: hidden;
+}
+
+.trace-timeline .vis-item .vis-item-overflow {
+  overflow: hidden;
+}
+
+.trace-timeline .vis-item.trace-item {
+  cursor: move;
+}
+
+.trace-timeline .vis-item.vis-selected {
+  border-color: #60a5fa !important;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.6);
+}
+
+.trace-timeline .vis-item.trace-block-unclosed {
+  background: rgba(239, 68, 68, 0.25) !important;
+  border-style: dashed !important;
+  border-color: #ef4444 !important;
+}
+
+.trace-timeline .vis-item.trace-block-unsupported {
+  background: rgba(100, 116, 139, 0.45) !important;
+  border-color: #64748b !important;
+}
+
+.trace-timeline .vis-item .vis-drag-left,
+.trace-timeline .vis-item .vis-drag-right {
   cursor: ew-resize;
-  touch-action: none;
 }
 
-.trace-block-handle-left {
-  left: 0;
+.trace-timeline .vis-item .vis-delete {
+  background: #ef4444;
+  border-color: #f87171;
 }
 
-.trace-block-handle-right {
-  right: 0;
+.trace-timeline .vis-item .vis-item-visible-frame {
+  display: none;
 }
 
 .trace-empty {

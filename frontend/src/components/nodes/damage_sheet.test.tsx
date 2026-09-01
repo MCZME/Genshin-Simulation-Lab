@@ -234,6 +234,173 @@ describe("DamageSheet", () => {
     expect(screen.getByText("1.586", { selector: ".damage-sheet-seg-value" })).toBeDefined();
     expect(screen.getByText("48,213", { selector: ".damage-sheet-total-value" })).toBeDefined();
     expect(screen.getByText("暴击", { selector: ".damage-sheet-total-badge" })).toBeDefined();
+    // 无反应事件不渲染反应徽标。
+    expect(document.querySelector(".damage-sheet-reaction-badge")).toBeNull();
+  });
+
+  it("上下文条在伤害名后显示增幅反应徽标（蒸发）", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: {
+          ...base.damage.summary,
+          reaction: {
+            kind: "amplifying",
+            occurrence_ref: "occurrence:1",
+            reaction_profile_key: "reaction_profile.vaporize.incoming_hydro_on_pyro",
+            base_multiplier: 1.5,
+            elemental_mastery: 0,
+            mastery_bonus: 0,
+            reaction_bonus: 0,
+            multiplier: 1.5,
+          },
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    const badge = screen.getByText("蒸发", { selector: ".damage-sheet-reaction-badge" });
+    const frame = screen.getByText("帧 318", { selector: ".damage-sheet-context-frame" });
+    expect(badge.compareDocumentPosition(frame) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+  });
+
+  it("上下文条显示剧变反应徽标（超载）", () => {
+    const base = TRANSFORMATIVE_EVENT as unknown as {
+      damage: { summary: Record<string, unknown> };
+    };
+    const event = {
+      ...TRANSFORMATIVE_EVENT,
+      damage: {
+        ...base.damage,
+        summary: {
+          ...base.damage.summary,
+          reaction: {
+            kind: "transformative",
+            occurrence_ref: "occurrence:1",
+            reaction_profile_key: "reaction_profile.overloaded.incoming_pyro_on_electro",
+            base_multiplier: 1,
+            elemental_mastery: 0,
+            mastery_bonus: 0,
+            reaction_bonus: 0,
+          },
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    expect(screen.getByText("超载", { selector: ".damage-sheet-reaction-badge" })).toBeDefined();
+  });
+
+  it("上下文条显示激化反应徽标（超激化）", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: {
+          ...base.damage.summary,
+          catalyze_reaction: {
+            reaction_profile_key: "reaction_profile.aggravate.incoming_electro_on_quicken",
+            trigger_element: "electro",
+          },
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    expect(screen.getByText("超激化", { selector: ".damage-sheet-reaction-badge" })).toBeDefined();
+  });
+
+  it("上下文条显示月曜反应徽标（月曜感电）", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: {
+          ...base.damage.summary,
+          lunar_reaction: {
+            reaction: {
+              reaction_profile_key:
+                "reaction_profile.lunar_electro_charged.incoming_hydro_on_electro",
+              mode: "character_direct",
+            },
+          },
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    expect(screen.getByText("月曜感电", { selector: ".damage-sheet-reaction-badge" })).toBeDefined();
+  });
+
+  it("扩散带二次增幅时显示双反应徽标", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: {
+          ...base.damage.summary,
+          reaction: {
+            kind: "transformative",
+            occurrence_ref: "occurrence:1",
+            reaction_profile_key: "reaction_profile.swirl.incoming_pyro_on_cryo",
+            base_multiplier: 1,
+            elemental_mastery: 0,
+            mastery_bonus: 0,
+            reaction_bonus: 0,
+          },
+          secondary_amplifying_reaction: {
+            reaction_profile_key: "reaction_profile.melt.incoming_pyro_on_cryo",
+            trigger_element: "cryo",
+            base_multiplier: 1.5,
+          },
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    const badges = document.querySelectorAll(".damage-sheet-reaction-badge");
+    expect(badges).toHaveLength(2);
+    expect(badges[0].textContent).toBe("扩散");
+    expect(badges[1].textContent).toBe("融化");
+  });
+
+  it("未知反应族回退完整 profile key", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: {
+          ...base.damage.summary,
+          reaction: {
+            kind: "amplifying",
+            occurrence_ref: "occurrence:1",
+            reaction_profile_key: "reaction_profile.unknown_mechanic.incoming_x_on_y",
+            base_multiplier: 1.5,
+            elemental_mastery: 0,
+            mastery_bonus: 0,
+            reaction_bonus: 0,
+            multiplier: 1.5,
+          },
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    expect(
+      screen.getByText("reaction_profile.unknown_mechanic.incoming_x_on_y", {
+        selector: ".damage-sheet-reaction-badge",
+      }),
+    ).toBeDefined();
   });
 
   it("基础段默认展示公式区与修饰项抽屉，点击链段切换", () => {

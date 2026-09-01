@@ -24,6 +24,30 @@ const FORMULA_KEY_LABELS: Record<string, string> = {
   "damage_formula.lunar_reaction": "月曜反应",
 };
 
+/** 反应族显示名；键取 reaction_profile.<family> 的第二段，未知族回退完整 profile key。 */
+const REACTION_LABELS: Record<string, string> = {
+  vaporize: "蒸发",
+  melt: "融化",
+  overloaded: "超载",
+  electro_charged: "感电",
+  superconduct: "超导",
+  swirl: "扩散",
+  burning: "燃烧",
+  frozen: "冻结",
+  shattered: "碎冰",
+  crystallize: "结晶",
+  bloom: "绽放",
+  bloom_explosion: "绽放爆炸",
+  hyperbloom: "超绽放",
+  burgeon: "烈绽放",
+  quicken: "原激化",
+  aggravate: "超激化",
+  spread: "蔓激化",
+  lunar_electro_charged: "月曜感电",
+  lunar_crystallize: "月曜结晶",
+  lunar_bloom: "月曜绽放",
+};
+
 type ChainSegmentId =
   | "base"
   | "bonus"
@@ -40,6 +64,58 @@ interface ChainSegment {
   tone?: "crit" | "dim";
   /** hover 提示：该步的累计轨迹（前值 × 乘数 = 后值）。 */
   title: string;
+}
+
+interface ReactionBadge {
+  label: string;
+  key: string;
+}
+
+/** 从 reaction_profile.<family>.* 提取反应族名。 */
+function reactionProfileFamily(profileKey: string): string | null {
+  const parts = profileKey.split(".");
+  return parts.length >= 2 ? parts[1] : null;
+}
+
+/** 反应显示名：按族映射，未知族回退完整 profile key。 */
+function reactionLabel(profileKey: string | null): string | null {
+  if (profileKey === null) {
+    return null;
+  }
+  const family = reactionProfileFamily(profileKey);
+  return family !== null && REACTION_LABELS[family] !== undefined
+    ? REACTION_LABELS[family]
+    : profileKey;
+}
+
+/** 从摘要收集本次伤害发生的反应徽标：激化 → 月曜 → 主反应（增幅/剧变）+ 二次增幅。 */
+function collectReactionBadges(summary: Record<string, unknown>): ReactionBadge[] {
+  const catalyze = isRecord(summary.catalyze_reaction) ? summary.catalyze_reaction : null;
+  const catalyzeKey = readString(catalyze ?? {}, "reaction_profile_key");
+  if (catalyzeKey !== null) {
+    return [{ label: reactionLabel(catalyzeKey) ?? catalyzeKey, key: catalyzeKey }];
+  }
+  const lunar = isRecord(summary.lunar_reaction)
+    ? readRecord(summary.lunar_reaction, "reaction")
+    : null;
+  const lunarKey = readString(lunar ?? {}, "reaction_profile_key");
+  if (lunarKey !== null) {
+    return [{ label: reactionLabel(lunarKey) ?? lunarKey, key: lunarKey }];
+  }
+  const reaction = isRecord(summary.reaction) ? summary.reaction : null;
+  const badges: ReactionBadge[] = [];
+  const reactionKey = readString(reaction ?? {}, "reaction_profile_key");
+  if (reactionKey !== null) {
+    badges.push({ label: reactionLabel(reactionKey) ?? reactionKey, key: reactionKey });
+  }
+  const secondary = isRecord(summary.secondary_amplifying_reaction)
+    ? summary.secondary_amplifying_reaction
+    : null;
+  const secondaryKey = readString(secondary ?? {}, "reaction_profile_key");
+  if (secondaryKey !== null && !badges.some((badge) => badge.key === secondaryKey)) {
+    badges.push({ label: reactionLabel(secondaryKey) ?? secondaryKey, key: secondaryKey });
+  }
+  return badges;
 }
 
 /** 按运行输入快照组装的会话实体表解析实体引用；未知引用回退原 entity_id。 */
@@ -85,6 +161,7 @@ function ContextBar({
   const targetRef = readString(summary, "target_ref") ?? "—";
   const sourceName = resolveEntityName(event, readString(summary, "source_ref")) ?? sourceRef;
   const targetName = resolveEntityName(event, readString(summary, "target_ref")) ?? targetRef;
+  const reactionBadges = collectReactionBadges(summary);
   return (
     <div className="damage-sheet-context">
       {elementLabel !== null && (
@@ -103,6 +180,11 @@ function ContextBar({
       >
         {damageName ?? "伤害"}
       </span>
+      {reactionBadges.map((badge) => (
+        <span className="damage-sheet-reaction-badge" key={badge.key} title={badge.key}>
+          {badge.label}
+        </span>
+      ))}
       <span className="damage-sheet-context-frame">帧 {event.frame}</span>
       <span className="damage-sheet-context-refs" title={`${sourceRef} → ${targetRef}`}>
         {sourceName} → {targetName}

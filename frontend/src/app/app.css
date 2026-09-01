@@ -4704,6 +4704,20 @@ body {
   white-space: nowrap;
 }
 
+/* 反应徽标：中性弱化样式，与实底元素徽标区分。 */
+.damage-sheet-reaction-badge {
+  flex: none;
+  padding: 0 4px;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
 .damage-sheet-context-name {
   font-size: 11px;
   font-weight: 600;

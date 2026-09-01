@@ -1109,7 +1109,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
   },
   bar: {
     kind: "bar",
-    displayName: "指标柱状图",
+    displayName: "柱状图",
     region: "analysis",
     ports: {
       inputs: [

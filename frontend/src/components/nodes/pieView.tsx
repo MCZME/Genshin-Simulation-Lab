@@ -1,7 +1,7 @@
 /** 饼图视图：ECharts 饼图渲染 + 悬停数值占比 + 点击选择输出。 */
 
 import { useCallback, useMemo, useRef, useState } from "react";
-import { rowItem } from "../../workflow/analysis_runner";
+import { tableRowsByIndex } from "../../workflow/analysis_runner";
 import {
   computeAnalysisShapes,
   connectedConfigNode,
@@ -27,8 +27,8 @@ export interface PieSliceData {
   name: string;
   /** 分组求和后的数值；null 表示该组没有数值行，不参与占比。 */
   value: number | null;
-  /** 该组首行下标，供选择输出 item。 */
-  rowIndex: number;
+  /** 该组命中的输入表行下标，供选择输出行集表。 */
+  rowIndexes: number[];
 }
 
 export interface PieChartData {
@@ -56,7 +56,7 @@ export function buildPieChartData(
     return null;
   }
 
-  const groups = new Map<string, { name: string; sum: number | null; rowIndex: number }>();
+  const groups = new Map<string, { name: string; sum: number | null; rowIndexes: number[] }>();
   table.rows.forEach((row, rowIndex) => {
     const groupRaw = row[groupIndex];
     const key = String(groupRaw);
@@ -66,9 +66,10 @@ export function buildPieChartData(
         labelIndex === undefined
           ? formatValue(binding.group, groupRaw)
           : formatValue(binding.label ?? "", row[labelIndex]);
-      group = { name, sum: null, rowIndex };
+      group = { name, sum: null, rowIndexes: [] };
       groups.set(key, group);
     }
+    group.rowIndexes.push(rowIndex);
     const raw = row[valueIndex];
     if (typeof raw === "number" && Number.isFinite(raw)) {
       group.sum = (group.sum ?? 0) + raw;
@@ -78,7 +79,7 @@ export function buildPieChartData(
     slices: [...groups.values()].map((group) => ({
       name: group.name,
       value: group.sum,
-      rowIndex: group.rowIndex,
+      rowIndexes: group.rowIndexes,
     })),
   };
 }
@@ -252,7 +253,7 @@ export function PieChartView({
         return;
       }
       const slice = data.slices[dataIndex];
-      if (slice === undefined || slice.rowIndex < 0) {
+      if (slice === undefined || slice.rowIndexes.length === 0) {
         return;
       }
       const isSame = selected !== null && selected.dataIndex === dataIndex;
@@ -260,7 +261,7 @@ export function PieChartView({
       if (selection === null) {
         return;
       }
-      selection.select(node.id, isSame ? null : rowItem(table, table.rows[slice.rowIndex]));
+      selection.select(node.id, isSame ? null : tableRowsByIndex(table, slice.rowIndexes));
     },
     [data, table, selected, selection, node.id],
   );

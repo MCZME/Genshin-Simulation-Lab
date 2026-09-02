@@ -800,6 +800,8 @@ function warnNodesOutsideRegions(
 }
 
 const ANALYSIS_VIEW_KINDS = new Set(["member_table", "pie", "bar"]);
+/** 只有表格视图的 selection 输出仍是 item；饼图/柱状图 selection 输出行集表。 */
+const ANALYSIS_ITEM_SELECTION_VIEW_KINDS = new Set(["member_table"]);
 /** 取单项：table -> item 的唯一显式转换（分析区域设计 6.3）。 */
 const ANALYSIS_SINGLE_KINDS = new Set(["single"]);
 /** 单项详情节点：接收 item，输出为空（分析区域设计 6.4）。 */
@@ -886,14 +888,15 @@ function validateAnalysisGraph(
   }
 
   // item 语言流：single 只接收表输入；详情节点只接收 item 输入；
-  // 视图 selection 端口只能流向详情节点（item 只能进单项详情节点）。
+  // 表格视图 selection 端口只能流向详情节点；饼图/柱状图 selection 输出行集表，
+  // 不再进入 item 详情链。
   const itemSourceIds = new Set<string>();
   for (const node of nodeById.values()) {
     if (ANALYSIS_SINGLE_KINDS.has(node.kind)) {
       itemSourceIds.add(node.id);
       continue;
     }
-    if (ANALYSIS_VIEW_KINDS.has(node.kind)) {
+    if (ANALYSIS_ITEM_SELECTION_VIEW_KINDS.has(node.kind)) {
       const hasSelectionOutput = definition.edges.some(
         (edge) => edge.source_node_id === node.id && edge.source_port_id === ANALYSIS_SELECTION_PORT,
       );

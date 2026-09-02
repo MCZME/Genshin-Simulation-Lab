@@ -323,6 +323,20 @@ export function rowItem(
   return item;
 }
 
+/** 从结果表按行下标构造行集输出表：保持列结构、行顺序与截断标记，不做其它处理。 */
+export function tableRowsByIndex(
+  table: AnalysisTableResult,
+  rowIndexes: readonly number[],
+): AnalysisTableResult {
+  return {
+    columns: table.columns,
+    rows: rowIndexes
+      .map((index) => table.rows[index])
+      .filter((row): row is unknown[] => row !== undefined),
+    truncated: table.truncated,
+  };
+}
+
 /** 视图数据输入：多条同结构入线的行拼接（单表语义）。 */
 export function viewInputTable(
   viewNodeId: string,

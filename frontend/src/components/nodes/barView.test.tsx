@@ -157,7 +157,7 @@ function renderView(
 describe("buildBarChartData", () => {
   const identityFormat = (_column: string, value: unknown) => String(value);
 
-  it("按 X 分槽、同 X + 系列求和合并，并记录首行下标", () => {
+  it("按 X 分槽、同 X + 系列求和合并，并记录组内全部行下标", () => {
     const data = buildBarChartData(
       TABLE,
       { x: "角色", y: "伤害", series: "来源" },
@@ -168,10 +168,10 @@ describe("buildBarChartData", () => {
     expect(data?.series.map((series) => series.name)).toEqual(["普攻", "大招"]);
     const puGong = data?.series.find((series) => series.name === "普攻");
     expect(puGong?.values).toEqual([150, null]);
-    expect(puGong?.rowIndexes).toEqual([0, -1]);
+    expect(puGong?.rowIndexes).toEqual([[0, 2], []]);
     const daZhao = data?.series.find((series) => series.name === "大招");
     expect(daZhao?.values).toEqual([null, 900]);
-    expect(daZhao?.rowIndexes).toEqual([-1, 1]);
+    expect(daZhao?.rowIndexes).toEqual([[], [1]]);
   });
 
   it("无系列列时输出单一系列", () => {
@@ -183,7 +183,7 @@ describe("buildBarChartData", () => {
     expect(data?.series).toHaveLength(1);
     expect(data?.series[0]?.name).toBe(DEFAULT_SERIES_NAME);
     expect(data?.series[0]?.values).toEqual([150, 900]);
-    expect(data?.series[0]?.rowIndexes).toEqual([0, 1]);
+    expect(data?.series[0]?.rowIndexes).toEqual([[0, 2], [1]]);
   });
 
   it("绑定列缺失时返回 null", () => {
@@ -270,7 +270,7 @@ describe("BarChartView 集成", () => {
     expect(screen.getByText("柱状图配置未绑定列")).toBeTruthy();
   });
 
-  it("渲染类目与聚合数值，点击柱输出对应行 item", () => {
+  it("渲染类目与聚合数值，点击柱输出对应组行集表", () => {
     const select = vi.fn();
     const definition = definitionWith({ x: "角色", y: "伤害", series: "来源" });
     renderView(BAR_NODE, definition, TABLE, select);
@@ -284,16 +284,19 @@ describe("BarChartView 集成", () => {
     expect(option.series.map((series) => series.name)).toEqual(["普攻", "大招"]);
 
     act(() => {
-      echartsStub.lastClick?.(1, 1);
+      echartsStub.lastClick?.(0, 0);
     });
     expect(select).toHaveBeenCalledWith("view-1", {
-      角色: "雷电将军",
-      伤害: 900,
-      来源: "大招",
+      columns: TABLE.columns,
+      rows: [
+        ["钟离", 100, "普攻"],
+        ["钟离", 50, "普攻"],
+      ],
+      truncated: false,
     });
 
     act(() => {
-      echartsStub.lastClick?.(1, 1);
+      echartsStub.lastClick?.(0, 0);
     });
     expect(select).toHaveBeenLastCalledWith("view-1", null);
   });
@@ -335,7 +338,7 @@ describe("estimateBarChartFit 内容尺寸估算", () => {
   const series = (values: (number | null)[]) => ({
     name: "数值",
     values,
-    rowIndexes: values.map((_, index) => index),
+    rowIndexes: values.map((_, index) => [index]),
   });
 
   it("无数据或空类目返回最小宽与 null 高度", () => {

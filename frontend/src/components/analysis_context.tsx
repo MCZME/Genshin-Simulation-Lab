@@ -8,7 +8,7 @@ export function useAnalysisSchemaCatalog(): AnalysisSchemaCatalog | null {
   return useContext(AnalysisSchemaCatalogContext);
 }
 
-/** 视图 selection 输出的瞬态选择存储：节点 id -> 选中的 item。 */
+/** 视图 selection 输出的瞬态选择存储：节点 id -> item（表格）或行集表（饼图/柱状图）。 */
 export interface AnalysisSelectionStore {
   selections: Map<string, unknown>;
   select: (nodeId: string, item: unknown | null) => void;

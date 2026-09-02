@@ -1,7 +1,7 @@
 /** 柱状图视图：ECharts 柱状渲染 + 悬停柱值 + 点击选择输出。 */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { rowItem } from "../../workflow/analysis_runner";
+import { tableRowsByIndex } from "../../workflow/analysis_runner";
 import {
   computeAnalysisShapes,
   connectedConfigNode,
@@ -42,8 +42,8 @@ export interface BarGroupSeries {
   name: string;
   /** 数值已聚合（同 X + 系列多行求和）；null 表示该组没有数值行，不渲染柱。 */
   values: (number | null)[];
-  /** 每根柱对应的表行下标（合并组取首行），供选择输出 item；-1 表示该组无行。 */
-  rowIndexes: number[];
+  /** 每根柱命中的输入表行下标集合（按类目对齐），供选择输出行集表；空数组表示无行。 */
+  rowIndexes: number[][];
 }
 
 export interface BarChartData {
@@ -131,7 +131,7 @@ export function buildBarChartData(
 
   interface Group {
     label: string;
-    rows: Map<string, { sum: number | null; rowIndex: number }>;
+    rows: Map<string, { sum: number | null; rowIndexes: number[] }>;
   }
   const groups = new Map<string, Group>();
   const seriesNames = new Map<string, string>();
@@ -152,8 +152,9 @@ export function buildBarChartData(
     const yValue = typeof yRaw === "number" && Number.isFinite(yRaw) ? yRaw : null;
     const entry = group.rows.get(sKey);
     if (entry === undefined) {
-      group.rows.set(sKey, { sum: yValue, rowIndex });
+      group.rows.set(sKey, { sum: yValue, rowIndexes: [rowIndex] });
     } else {
+      entry.rowIndexes.push(rowIndex);
       entry.sum = entry.sum === null ? yValue : yValue === null ? entry.sum : entry.sum + yValue;
     }
   });
@@ -170,7 +171,7 @@ export function buildBarChartData(
       name: seriesLabel,
       values: orderedKeys.map((key) => groups.get(key)?.rows.get(seriesKey)?.sum ?? null),
       rowIndexes: orderedKeys.map(
-        (key) => groups.get(key)?.rows.get(seriesKey)?.rowIndex ?? -1,
+        (key) => groups.get(key)?.rows.get(seriesKey)?.rowIndexes ?? [],
       ),
     })),
   };
@@ -378,8 +379,8 @@ export function BarChartView({
       if (data === null) {
         return;
       }
-      const rowIndex = data.series[seriesIndex]?.rowIndexes[dataIndex] ?? -1;
-      if (rowIndex < 0 || rowIndex >= table.rows.length) {
+      const rowIndexes = data.series[seriesIndex]?.rowIndexes[dataIndex] ?? [];
+      if (rowIndexes.length === 0) {
         return;
       }
       const isSame =
@@ -388,7 +389,7 @@ export function BarChartView({
       if (selection === null) {
         return;
       }
-      selection.select(node.id, isSame ? null : rowItem(table, table.rows[rowIndex]));
+      selection.select(node.id, isSame ? null : tableRowsByIndex(table, rowIndexes));
     },
     [data, table, selected, selection, node.id],
   );

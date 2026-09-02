@@ -140,15 +140,15 @@ function renderView(
 describe("buildPieChartData", () => {
   const identityFormat = (_column: string, value: unknown) => String(value);
 
-  it("按分组列合并扇区并求和，记录组首行下标", () => {
+  it("按分组列合并扇区并求和，记录组内全部行下标", () => {
     const data = buildPieChartData(
       TABLE,
       { group: "角色", value: "伤害", label: null },
       identityFormat,
     );
     expect(data?.slices).toEqual([
-      { name: "钟离", value: 150, rowIndex: 0 },
-      { name: "雷电将军", value: 900, rowIndex: 1 },
+      { name: "钟离", value: 150, rowIndexes: [0, 2] },
+      { name: "雷电将军", value: 900, rowIndexes: [1] },
     ]);
   });
 
@@ -175,7 +175,7 @@ describe("buildPieChartData", () => {
     );
     const nahida = data?.slices.find((slice) => slice.name === "草神");
     expect(nahida?.value).toBeNull();
-    expect(nahida?.rowIndex).toBe(3);
+    expect(nahida?.rowIndexes).toEqual([3]);
   });
 
   it("绑定列缺失时返回 null", () => {
@@ -253,7 +253,7 @@ describe("PieChartView 集成", () => {
     expect(screen.getByText("饼图配置未绑定列")).toBeTruthy();
   });
 
-  it("渲染扇区数据，点击扇区输出对应组首行 item", () => {
+  it("渲染扇区数据，点击扇区输出对应组行集表", () => {
     const select = vi.fn();
     const definition = definitionWith({ group: "角色", value: "伤害", label: "标签" });
     renderView(PIE_NODE, definition, TABLE, select);
@@ -266,16 +266,19 @@ describe("PieChartView 集成", () => {
     expect(option.series[0]?.data.map((item) => item.value)).toEqual([150, 900]);
 
     act(() => {
-      echartsStub.lastClick?.(0, 1);
+      echartsStub.lastClick?.(0, 0);
     });
     expect(select).toHaveBeenCalledWith("view-1", {
-      角色: "雷电将军",
-      伤害: 900,
-      标签: "将军",
+      columns: TABLE.columns,
+      rows: [
+        ["钟离", 100, "帝君"],
+        ["钟离", 50, "帝君"],
+      ],
+      truncated: false,
     });
 
     act(() => {
-      echartsStub.lastClick?.(0, 1);
+      echartsStub.lastClick?.(0, 0);
     });
     expect(select).toHaveBeenLastCalledWith("view-1", null);
   });

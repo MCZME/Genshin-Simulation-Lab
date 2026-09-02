@@ -22,6 +22,7 @@ export const COLORS = {
     dataProcessing: "#a855f7",
     displayConfig: "#ec4899",
     displayView: "#ef4444",
+    itemDetail: "#eab308",
   },
   severity: {
     error: "#ef4444",

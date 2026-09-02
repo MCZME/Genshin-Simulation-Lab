@@ -140,10 +140,10 @@ const NODE_CATEGORY_OF: Record<string, NodeCategory> = {
   pie: "displayView",
   bar: "displayView",
   single: "dataProcessing",
-  frame_state: "displayView",
-  damage_detail: "displayView",
-  state_detail: "displayView",
-  attribute_detail: "displayView",
+  frame_state: "itemDetail",
+  damage_detail: "itemDetail",
+  state_detail: "itemDetail",
+  attribute_detail: "itemDetail",
 };
 
 export function nodeCategoryOf(kind: string): NodeCategory | null {
@@ -161,22 +161,34 @@ export function nodeKindColor(kind: string): string {
   return category === null ? "#64748b" : COLORS.nodeCategory[category];
 }
 
+/** 配置区域：运行设置。 */
+export const CONFIG_RUN_SETTING_KINDS = ["root", "meta", "run_options"] as const;
+
+/** 配置区域：队伍配置。 */
+export const CONFIG_TEAM_KINDS = ["character", "weapon", "artifact"] as const;
+
+/** 配置区域：目标配置。 */
+export const CONFIG_TARGET_KINDS = ["target"] as const;
+
+/** 配置区域：操作输入。 */
+export const CONFIG_INPUT_KINDS = ["input_trace"] as const;
+
+/** 配置区域：变体扫描。 */
+export const CONFIG_VARIANT_KINDS = ["enum", "range"] as const;
+
 export const CONFIG_NODE_KINDS = [
-  "root",
-  "meta",
-  "character",
-  "weapon",
-  "artifact",
-  "target",
-  "input_trace",
-  "run_options",
-  "enum",
-  "range",
+  ...CONFIG_RUN_SETTING_KINDS,
+  ...CONFIG_TEAM_KINDS,
+  ...CONFIG_TARGET_KINDS,
+  ...CONFIG_INPUT_KINDS,
+  ...CONFIG_VARIANT_KINDS,
 ] as const;
 
-/** 分析区域内节点种类（不含画布级 data_provider）。 */
-export const ANALYSIS_NODE_KINDS = [
-  "fetch",
+/** 分析区域：取数节点。 */
+export const ANALYSIS_FETCH_KINDS = ["fetch"] as const;
+
+/** 分析区域：关系算子与取单项（数据加工）。 */
+export const ANALYSIS_OPERATOR_KINDS = [
   "filter",
   "project",
   "sort",
@@ -185,14 +197,31 @@ export const ANALYSIS_NODE_KINDS = [
   "join",
   "compute",
   "single",
+] as const;
+
+/** 分析区域：展示配置节点。 */
+export const ANALYSIS_DISPLAY_CONFIG_KINDS = [
   "table_config",
-  "member_table",
   "pie_config",
-  "pie",
   "bar_config",
-  "bar",
+] as const;
+
+/** 分析区域：展示视图节点（与单项详情节点语义不同类）。 */
+export const ANALYSIS_VIEW_KINDS = ["member_table", "pie", "bar"] as const;
+
+/** 分析区域：单项详情节点族（消费 item，独立于展示视图）。 */
+export const ANALYSIS_DETAIL_KINDS = [
   "frame_state",
   "damage_detail",
   "state_detail",
   "attribute_detail",
+] as const;
+
+/** 分析区域内节点种类（不含画布级 data_provider）。 */
+export const ANALYSIS_NODE_KINDS = [
+  ...ANALYSIS_FETCH_KINDS,
+  ...ANALYSIS_OPERATOR_KINDS,
+  ...ANALYSIS_DISPLAY_CONFIG_KINDS,
+  ...ANALYSIS_VIEW_KINDS,
+  ...ANALYSIS_DETAIL_KINDS,
 ] as const;

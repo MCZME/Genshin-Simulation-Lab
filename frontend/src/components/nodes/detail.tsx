@@ -5,6 +5,7 @@ import { getFrameState, getResultEvent } from "../../api/client";
 import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
 import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 import { useAnalysisResults, useAnalysisSelection } from "../analysis_context";
+import { CharacterStateSheet, locateCharacter } from "./character_state";
 import { DamageSheet } from "./damage_sheet";
 
 type DetailKind = "frame_state" | "damage_detail" | "state_detail" | "attribute_detail";
@@ -40,8 +41,10 @@ export function AnalysisDetailBody({
       return <DamageDetailView item={item} />;
     case "frame_state":
       return <FrameStateView item={item} />;
+    case "attribute_detail":
+      return <CharacterStateView item={item} />;
     default:
-      return <KeyValueView title={node.kind === "state_detail" ? "状态实例" : "属性值"} data={item} />;
+      return <KeyValueView title="状态实例" data={item} />;
   }
 }
 
@@ -152,6 +155,52 @@ function FrameStateView({ item }: { item: Record<string, unknown> }) {
   );
 }
 
+function CharacterStateView({ item }: { item: Record<string, unknown> }) {
+  const sessionId = readString(item, "session_id");
+  const frame = readNumber(item, "frame") ?? readNumber(item, "end_frame");
+  const slot = readOptionalNumber(item, "slot");
+  const entityId = readString(item, "combat_entity_id") ?? readString(item, "entity_id");
+  const characterKey = readString(item, "character_key");
+  const attributeKey = readString(item, "attribute_key");
+  const key = sessionId !== null && frame !== null ? `${sessionId}#${frame}` : null;
+  const loaded = useAsyncDetail(key, () => {
+    return getFrameState(sessionId as string, frame as number);
+  });
+
+  if (key === null) {
+    return (
+      <div className="analysis-view-state">
+        item 缺少 session_id / frame（或 end_frame）列
+      </div>
+    );
+  }
+  if (loaded === null || loaded.status === "loading") {
+    return <div className="analysis-view-state analysis-view-loading" role="status">加载中…</div>;
+  }
+  if (loaded.status === "error") {
+    return <div className="analysis-view-state analysis-view-error">{loaded.error}</div>;
+  }
+  const frameState = loaded.data;
+  const character = locateCharacter(frameState, {
+    slot: slot ?? undefined,
+    entityId: entityId ?? undefined,
+    characterKey: characterKey ?? undefined,
+    attributeKey: attributeKey ?? undefined,
+  });
+  if (character === null) {
+    return <div className="analysis-view-state">帧状态中不存在指定角色</div>;
+  }
+  const focusKey = `${sessionId ?? ""}#${frame ?? ""}#${character.combat_entity_id}#${attributeKey ?? ""}`;
+  return (
+    <CharacterStateSheet
+      key={focusKey}
+      frameState={frameState}
+      character={character}
+      focusAttributeKey={attributeKey}
+    />
+  );
+}
+
 /** 按稳定 key 拉取详情：异步回调内才 setState，key 变化前复用缓存。 */
 function useAsyncDetail<T>(
   key: string | null,
@@ -221,4 +270,17 @@ function readString(item: Record<string, unknown>, key: string): string | null {
 function readNumber(item: Record<string, unknown>, key: string): number | null {
   const value = item[key];
   return typeof value === "number" && Number.isFinite(value) ? value : null;
+}
+
+function readOptionalNumber(item: Record<string, unknown>, key: string): number | null {
+  const number = readNumber(item, key);
+  if (number !== null) {
+    return number;
+  }
+  const value = item[key];
+  if (typeof value === "string" && value.trim() !== "") {
+    const parsed = Number(value);
+    return Number.isFinite(parsed) ? parsed : null;
+  }
+  return null;
 }

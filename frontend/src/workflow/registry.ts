@@ -1171,7 +1171,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
   },
   attribute_detail: {
     kind: "attribute_detail",
-    displayName: "属性详情",
+    displayName: "角色状态详情",
     region: "analysis",
     ports: {
       inputs: [analysisPort("in", "item", "single", 1)],

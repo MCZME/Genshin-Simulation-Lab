@@ -35,7 +35,7 @@ export const MAX_VIEW_FIT_HEIGHT = 1440;
 export const TABLE_HEIGHT_EXTRAS = 86;
 
 /**
- * 单项详情卡（伤害详情）宽度语义：宽度手动可调并随节点保存，高度随内容自适应。
+ * 单项详情卡（伤害详情/角色状态详情）宽度语义：宽度手动可调并随节点保存，高度随内容自适应。
  * 与视图卡互不影响；上限沿用视图软上限。
  */
 export const DEFAULT_DETAIL_WIDTH = 320;

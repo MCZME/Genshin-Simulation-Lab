@@ -92,8 +92,8 @@ export function NodeCard({ data, selected }: NodeProps) {
   const isTable = node.kind === "member_table";
   const isPie = node.kind === "pie";
   const isBar = node.kind === "bar";
-  // 伤害详情卡支持手动调宽（高度随内容），其余详情节点维持固定宽度。
-  const isDetailResizable = node.kind === "damage_detail";
+  // 伤害详情/角色状态详情卡支持手动调宽（高度随内容），其余详情节点维持固定宽度。
+  const isDetailResizable = node.kind === "damage_detail" || node.kind === "attribute_detail";
   const isTraceResizable = node.kind === "input_trace";
   const isWidthOnlyResizable = isDetailResizable || isTraceResizable;
   const rf = useReactFlow();

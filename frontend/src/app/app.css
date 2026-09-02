@@ -4678,6 +4678,324 @@ body {
   user-select: text;
 }
 
+/* 角色状态详情（attribute_detail 节点卡内容区）：当前状态 + Buff + 属性面板。 */
+.state-sheet {
+  min-width: 0;
+  padding: 4px 10px 8px;
+  display: flex;
+  flex-direction: column;
+}
+
+.state-sheet-context {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 2px 0 4px;
+  font-size: 11px;
+  color: #cbd5e1;
+}
+
+.state-sheet-context-frame {
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+
+.state-sheet-context-char {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.state-sheet-context-badge {
+  flex: none;
+  font-size: 9px;
+  font-weight: 600;
+  color: #86efac;
+  border: 1px solid rgba(134, 239, 172, 0.4);
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 14px;
+}
+
+.state-sheet-section {
+  min-width: 0;
+  border-top: 1px solid rgba(148, 163, 184, 0.12);
+  padding: 4px 0 2px;
+}
+
+.state-sheet-section-title {
+  margin: 0;
+  padding: 2px 0;
+  font-size: 11px;
+  font-weight: 600;
+  color: #94a3b8;
+}
+
+.state-sheet-empty {
+  padding: 3px 0;
+  font-size: 11px;
+  color: #64748b;
+}
+
+/* 当前生命/能量。 */
+.state-sheet-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.state-sheet-status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.state-sheet-status-label {
+  flex: none;
+  width: 34px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.state-sheet-status-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.state-sheet-status-text {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+
+.state-sheet-status-ratio {
+  font-size: 10px;
+  color: #64748b;
+}
+
+.state-sheet-status-hint {
+  margin-left: auto;
+  font-size: 10px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.state-sheet-bar {
+  height: 3px;
+  margin-top: 3px;
+  border-radius: 2px;
+  background: rgba(148, 163, 184, 0.2);
+  overflow: hidden;
+}
+
+.state-sheet-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: #38bdf8;
+}
+
+/* Buff 列表。 */
+.state-sheet-buff {
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.35);
+  margin-top: 4px;
+}
+
+.state-sheet-buff-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 4px 6px;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.state-sheet-buff-head:hover {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.state-sheet-buff-arrow {
+  flex: none;
+  width: 10px;
+  font-size: 9px;
+  color: #64748b;
+}
+
+.state-sheet-buff-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: #cbd5e1;
+  min-width: 0;
+}
+
+.state-sheet-buff-stacks {
+  flex: none;
+  font-size: 10px;
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 4px;
+  padding: 0 3px;
+  line-height: 13px;
+}
+
+.state-sheet-buff-remaining {
+  margin-left: auto;
+  flex: none;
+  font-size: 10px;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.state-sheet-buff-body {
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
+  padding: 2px 6px 4px 21px;
+}
+
+.state-sheet-buff-modifier {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+
+.state-sheet-buff-modifier-label {
+  flex: 1;
+  min-width: 0;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state-sheet-buff-modifier-value {
+  flex: none;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 属性面板。 */
+.state-sheet-attr-group {
+  margin-top: 3px;
+}
+
+.state-sheet-attr-group-title {
+  font-size: 10px;
+  color: #64748b;
+  padding: 2px 0;
+}
+
+.state-sheet-attr {
+  border-radius: 6px;
+}
+
+.state-sheet-attr-head {
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  width: 100%;
+  padding: 2px 4px;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.state-sheet-attr-head:hover {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.state-sheet-attr-arrow {
+  flex: none;
+  width: 10px;
+  font-size: 9px;
+  color: #64748b;
+}
+
+.state-sheet-attr-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: #cbd5e1;
+  min-width: 0;
+}
+
+.state-sheet-attr-count {
+  flex: none;
+  font-size: 9px;
+  color: #7dd3fc;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  border-radius: 4px;
+  padding: 0 3px;
+  line-height: 13px;
+}
+
+.state-sheet-attr-value {
+  flex: none;
+  font-size: 11px;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+}
+
+.state-sheet-attr-terms {
+  padding: 1px 4px 3px 19px;
+}
+
+.state-sheet-term-group {
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
+  padding: 2px 0;
+}
+
+.state-sheet-term-group-title {
+  font-size: 10px;
+  color: #64748b;
+  padding: 1px 0;
+}
+
+.state-sheet-term-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 1px 0;
+  font-size: 11px;
+}
+
+.state-sheet-term-label {
+  flex: 1;
+  min-width: 0;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state-sheet-term-value {
+  flex: none;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+}
+
 /* 伤害结算单（damage_detail 节点卡内容区）：上下文条 + 乘法链 + 链段详情。 */
 .damage-sheet {
   min-width: 0;

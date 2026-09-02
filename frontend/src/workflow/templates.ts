@@ -345,6 +345,43 @@ export const ANALYSIS_TABLE_NODE_KINDS = new Set([
   "compute",
 ]);
 
+/** 展示配置转发节点：消费 table 并原样转发给视图，不进入查询计划。 */
+export const ANALYSIS_CONFIG_NODE_KINDS = new Set([
+  "table_config",
+  "pie_config",
+  "bar_config",
+]);
+
+const CATEGORY_COLUMN_TYPES = new Set(["string", "int", "float"]);
+
+/** 直连饼图视图的默认绑定：第一个数值列做值列，第一个合法列做分组列。 */
+export function defaultPieBinding(
+  columns: { name: string; type: string }[],
+): { group: string; value: string; label: null } | null {
+  const value = columns.find((column) => column.type === "int" || column.type === "float")?.name;
+  if (value === undefined) {
+    return null;
+  }
+  const group = columns.find(
+    (column) => column.name !== value && CATEGORY_COLUMN_TYPES.has(column.type),
+  )?.name;
+  return group === undefined ? null : { group, value, label: null };
+}
+
+/** 直连柱状图视图的默认绑定：第一个数值列做 Y 轴，第一个合法列做 X 轴。 */
+export function defaultBarBinding(
+  columns: { name: string; type: string }[],
+): { x: string; y: string; series: null } | null {
+  const y = columns.find((column) => column.type === "int" || column.type === "float")?.name;
+  if (y === undefined) {
+    return null;
+  }
+  const x = columns.find(
+    (column) => column.name !== y && CATEGORY_COLUMN_TYPES.has(column.type),
+  )?.name;
+  return x === undefined ? null : { x, y, series: null };
+}
+
 function isAnalysisTableNode(node: WorkflowNode): boolean {
   return ANALYSIS_TABLE_NODE_KINDS.has(node.kind);
 }
@@ -752,7 +789,7 @@ export function viewInputShape(
     (edge) => edge.target_node_id === viewNodeId && edge.target_port_id === "in",
   );
   for (const edge of dataEdges) {
-    const shape = shapes.get(edge.source_node_id);
+    const shape = shapes.get(resolveTableSource(definition, edge.source_node_id) ?? "");
     if (shape !== undefined && shape !== null) {
       return shape;
     }
@@ -760,32 +797,48 @@ export function viewInputShape(
   return [];
 }
 
-/** 视图的展示配置节点：按 kind 匹配，未连接时返回 null。 */
+/** 解析表节点经展示配置转发后的实际数据源（配置节点不进入形状推导）。 */
+function resolveTableSource(
+  definition: WorkflowDefinition,
+  nodeId: string,
+): string | null {
+  const seen = new Set<string>();
+  let current = nodeId;
+  while (!seen.has(current)) {
+    seen.add(current);
+    const node = definition.nodes.find((item) => item.id === current);
+    if (node === undefined) {
+      return null;
+    }
+    if (!ANALYSIS_CONFIG_NODE_KINDS.has(node.kind)) {
+      return node.id;
+    }
+    const inputEdge = definition.edges.find(
+      (item) => item.target_node_id === node.id && item.target_port_id === "in",
+    );
+    if (inputEdge === undefined) {
+      return null;
+    }
+    current = inputEdge.source_node_id;
+  }
+  return null;
+}
+
+/** 视图的数据链配置节点：在视图 in 入线中按 kind 匹配，未连接时返回 null。 */
 export function connectedConfigNode(
   definition: WorkflowDefinition,
   viewNodeId: string,
   kind: string,
 ): WorkflowNode | null {
   const edge = definition.edges.find(
-    (item) => item.target_node_id === viewNodeId && item.target_port_id === "config",
+    (item) =>
+      item.target_node_id === viewNodeId &&
+      item.target_port_id === "in" &&
+      definition.nodes.find((node) => node.id === item.source_node_id)?.kind === kind,
   );
   if (edge === undefined) {
     return null;
   }
   const node = definition.nodes.find((item) => item.id === edge.source_node_id);
   return node !== undefined && node.kind === kind ? node : null;
-}
-
-/** 展示配置节点所连的视图节点（列选项沿「配置 → 视图 → 上游」解析）。 */
-export function configTargetView(
-  definition: WorkflowDefinition,
-  configNodeId: string,
-): WorkflowNode | null {
-  const edge = definition.edges.find(
-    (item) => item.source_node_id === configNodeId && item.target_port_id === "config",
-  );
-  if (edge === undefined) {
-    return null;
-  }
-  return definition.nodes.find((item) => item.id === edge.target_node_id) ?? null;
 }

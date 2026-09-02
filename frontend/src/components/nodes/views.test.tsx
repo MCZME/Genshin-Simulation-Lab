@@ -60,28 +60,34 @@ function definitionWith(
       },
     ],
     edges: [
-      ...(withDataEdge
+      ...(withDataEdge && withConfigEdge
         ? [
             {
               id: "e-data",
               source_node_id: "fetch-1",
               source_port_id: "out",
+              target_node_id: "config-1",
+              target_port_id: "in",
+            },
+            {
+              id: "e-forward",
+              source_node_id: "config-1",
+              source_port_id: "out",
               target_node_id: "view-1",
               target_port_id: "in",
             },
           ]
-        : []),
-      ...(withConfigEdge
-        ? [
-            {
-              id: "e-config",
-              source_node_id: "config-1",
-              source_port_id: "out",
-              target_node_id: "view-1",
-              target_port_id: "config",
-            },
-          ]
-        : []),
+        : withDataEdge
+          ? [
+              {
+                id: "e-data",
+                source_node_id: "fetch-1",
+                source_port_id: "out",
+                target_node_id: "view-1",
+                target_port_id: "in",
+              },
+            ]
+          : []),
     ],
     layout: {},
   };
@@ -147,9 +153,14 @@ describe("表格视图", () => {
     expect(screen.getByText(/未连接数据源/)).not.toBeNull();
   });
 
-  it("缺少表格配置时显示提示", () => {
+  it("直连数据且无配置时默认显示全部列", () => {
     renderView(readyResult(), { withConfigEdge: false });
-    expect(screen.getByText(/缺少表格配置/)).not.toBeNull();
+    expect(headerNames()).toEqual([
+      "session_id",
+      "weapon",
+      "total_damage",
+      "dps",
+    ]);
   });
 
   it("配置未绑定列时提示并可定位到配置节点", () => {

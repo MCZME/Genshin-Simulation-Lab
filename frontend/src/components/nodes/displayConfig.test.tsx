@@ -52,15 +52,15 @@ function definitionWithView(): WorkflowDefinition {
         id: "e-data",
         source_node_id: "fetch-1",
         source_port_id: "out",
-        target_node_id: "view-1",
+        target_node_id: "config-1",
         target_port_id: "in",
       },
       {
-        id: "e-config",
+        id: "e-forward",
         source_node_id: "config-1",
         source_port_id: "out",
         target_node_id: "view-1",
-        target_port_id: "config",
+        target_port_id: "in",
       },
     ],
     layout: {},
@@ -164,22 +164,22 @@ describe("DisplayConfigEditor", () => {
     expect(screen.getByText("列不在上游表中")).toBeTruthy();
   });
 
-  it("未连接视图时不提供列选项并提示", () => {
+  it("未连接上游数据时不提供列选项并提示", () => {
     withEnv(EMPTY_DEFINITION, new Map());
     render(<DisplayConfigEditor node={BAR_CONFIG_NODE} onChange={() => {}} />);
-    expect(screen.getByText("连接柱状图视图后可绑定列")).toBeTruthy();
+    expect(screen.getByText("连接上游表节点后，这里会出现可绑定的列。")).toBeTruthy();
     expect(screen.queryAllByRole("combobox")).toHaveLength(0);
     expect(screen.getAllByText("—")).toHaveLength(3);
   });
 
-  it("已连视图但未接通数据源时提示接通上游", () => {
+  it("已接视图数据链但形状未推导时提示接通上游", () => {
     withEnv(definitionWithView(), new Map());
     render(<DisplayConfigEditor node={BAR_CONFIG_NODE} onChange={() => {}} />);
-    expect(screen.getByText("视图未接通数据源，接通后出现可绑定列")).toBeTruthy();
+    expect(screen.getByText("连接上游表节点后，这里会出现可绑定的列。")).toBeTruthy();
     expect(screen.queryAllByRole("combobox")).toHaveLength(0);
   });
 
-  it("饼图配置的空态文案按节点类型定制", () => {
+  it("饼图配置的空态文案统一为连接上游表节点", () => {
     withEnv(EMPTY_DEFINITION, new Map());
     render(
       <DisplayConfigEditor
@@ -187,6 +187,6 @@ describe("DisplayConfigEditor", () => {
         onChange={() => {}}
       />,
     );
-    expect(screen.getByText("连接饼图视图后可绑定列")).toBeTruthy();
+    expect(screen.getByText("连接上游表节点后，这里会出现可绑定的列。")).toBeTruthy();
   });
 });

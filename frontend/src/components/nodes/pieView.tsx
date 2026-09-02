@@ -5,6 +5,7 @@ import { tableRowsByIndex } from "../../workflow/analysis_runner";
 import {
   computeAnalysisShapes,
   connectedConfigNode,
+  defaultPieBinding,
   viewInputShape,
   type AnalysisTableResult,
 } from "../../workflow/templates";
@@ -163,9 +164,13 @@ export function PieChartView({
     () => connectedConfigNode(definition, node.id, "pie_config"),
     [definition, node.id],
   );
-  const group = asString(config?.params.group) ?? "";
-  const value = asString(config?.params.value) ?? "";
-  const labelColumn = asString(config?.params.label) ?? "";
+  const defaultBinding = useMemo(
+    () => (config === null ? defaultPieBinding(table.columns) : null),
+    [config, table.columns],
+  );
+  const group = config === null ? (defaultBinding?.group ?? "") : (asString(config.params.group) ?? "");
+  const value = config === null ? (defaultBinding?.value ?? "") : (asString(config.params.value) ?? "");
+  const labelColumn = config === null ? "" : (asString(config.params.label) ?? "");
 
   const catalog = useAnalysisSchemaCatalog();
   const shapes = useMemo(() => computeAnalysisShapes(definition, catalog), [definition, catalog]);
@@ -223,7 +228,6 @@ export function PieChartView({
   );
   const valueType = typeOf.get(value) ?? "";
   const chartReady =
-    config !== null &&
     group !== "" &&
     value !== "" &&
     missingColumn === undefined &&
@@ -278,9 +282,14 @@ export function PieChartView({
   const containerRef = useRef<HTMLDivElement | null>(null);
   useEChartsView(containerRef, chartReady ? option : null, handleSliceClick);
 
-  if (config === null || group === "" || value === "") {
-    // 连接与绑定校验由 AnalysisViewBody 与图校验器承担；此处兜底。
-    return <div className="analysis-view-state">饼图配置未就绪</div>;
+  if (group === "" || value === "") {
+    return (
+      <div className="analysis-view-state">
+        {config === null
+          ? "直连视图未找到可用的默认分组列与数值列"
+          : "饼图配置未就绪"}
+      </div>
+    );
   }
   if (missingColumn !== undefined) {
     return (

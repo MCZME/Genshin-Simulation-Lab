@@ -59,10 +59,7 @@ export type DataLanguage =
   | "session"
   | "session_group"
   | "table"
-  | "item"
-  | "table_config"
-  | "pie_config"
-  | "bar_config";
+  | "item";
 
 export type DiagnosticSeverity = "error" | "warning" | "info";
 

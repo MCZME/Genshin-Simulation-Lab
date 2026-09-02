@@ -87,24 +87,32 @@ function definitionWith(
       },
     ],
     edges: [
-      {
-        id: "e-data",
-        source_node_id: "fetch-1",
-        source_port_id: "out",
-        target_node_id: "view-1",
-        target_port_id: "in",
-      },
       ...(withConfigEdge
         ? [
             {
-              id: "e-config",
+              id: "e-data",
+              source_node_id: "fetch-1",
+              source_port_id: "out",
+              target_node_id: "config-1",
+              target_port_id: "in",
+            },
+            {
+              id: "e-forward",
               source_node_id: "config-1",
               source_port_id: "out",
               target_node_id: "view-1",
-              target_port_id: "config",
+              target_port_id: "in",
             },
           ]
-        : []),
+        : [
+            {
+              id: "e-data",
+              source_node_id: "fetch-1",
+              source_port_id: "out",
+              target_node_id: "view-1",
+              target_port_id: "in",
+            },
+          ]),
     ],
     layout: {},
   };
@@ -237,12 +245,15 @@ describe("buildPieChartOption", () => {
 });
 
 describe("PieChartView 集成", () => {
-  it("缺少饼图配置时显示提示", () => {
-    const definition = definitionWith({ group: "角色", value: "伤害" }, { withConfigEdge: false });
+  it("直连数据且无配置时使用默认分组/值列渲染", () => {
+    const definition = definitionWith(
+      { group: "角色", value: "伤害" },
+      { withConfigEdge: false },
+    );
     render(
       <AnalysisViewBody node={PIE_NODE} result={readyResult(TABLE)} definition={definition} />,
     );
-    expect(screen.getByText("缺少饼图配置（连接饼图配置节点）")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "饼图：分组=角色，值=伤害" })).toBeTruthy();
   });
 
   it("饼图配置未绑定列时显示提示", () => {

@@ -56,15 +56,15 @@ function definitionWith(configParams: Record<string, unknown>): WorkflowDefiniti
         id: "e-data",
         source_node_id: "fetch-1",
         source_port_id: "out",
-        target_node_id: "view-1",
+        target_node_id: "config-1",
         target_port_id: "in",
       },
       {
-        id: "e-config",
+        id: "e-forward",
         source_node_id: "config-1",
         source_port_id: "out",
         target_node_id: "view-1",
-        target_port_id: "config",
+        target_port_id: "in",
       },
     ],
     layout: {},
@@ -203,11 +203,11 @@ describe("表格配置节点编辑器", () => {
     });
   });
 
-  it("未连接视图时提示无可用列", () => {
+  it("未连接上游数据时提示无可用列", () => {
     const definition = definitionWith({ condition_columns: [], data_columns: [] });
     const disconnected = {
       ...definition,
-      edges: definition.edges.filter((edge) => edge.id !== "e-config"),
+      edges: definition.edges.filter((edge) => edge.id !== "e-data"),
     };
     setAnalysisEditorEnvironment({
       catalog: null,
@@ -216,6 +216,6 @@ describe("表格配置节点编辑器", () => {
     });
     const node = definition.nodes.find((item) => item.id === "config-1") as WorkflowNode;
     render(<TableConfigEditor node={node} onChange={vi.fn()} />);
-    expect(screen.getByText(/连接视图并接通数据源/)).not.toBeNull();
+    expect(screen.getByText(/连接上游表节点/)).not.toBeNull();
   });
 });

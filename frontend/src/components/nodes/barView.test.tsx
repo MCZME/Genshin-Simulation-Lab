@@ -110,18 +110,18 @@ function definitionWith(
               id: "e-data",
               source_node_id: "fetch-1",
               source_port_id: "out",
+              target_node_id: "config-1",
+              target_port_id: "in",
+            },
+            {
+              id: "e-forward",
+              source_node_id: "config-1",
+              source_port_id: "out",
               target_node_id: "view-1",
               target_port_id: "in",
             },
           ]
         : []),
-      {
-        id: "e-config",
-        source_node_id: "config-1",
-        source_port_id: "out",
-        target_node_id: "view-1",
-        target_port_id: "config",
-      },
     ],
     layout: {},
   };
@@ -250,16 +250,26 @@ describe("buildBarChartOption", () => {
 });
 
 describe("BarChartView 集成", () => {
-  it("缺少柱状图配置时显示提示", () => {
-    const definition = definitionWith(
-      { x: "角色", y: "伤害" },
-      { withDataEdge: true },
-    );
-    definition.edges = definition.edges.filter((edge) => edge.id !== "e-config");
+  it("直连数据且无配置时使用默认 X/Y 列渲染", () => {
+    const definition = {
+      ...definitionWith({ x: "", y: "", series: "" }, { withDataEdge: true }),
+      nodes: definitionWith({ x: "", y: "", series: "" }, { withDataEdge: true }).nodes.filter(
+        (node) => node.id !== "config-1",
+      ),
+    };
+    definition.edges = [
+      {
+        id: "e-data",
+        source_node_id: "fetch-1",
+        source_port_id: "out",
+        target_node_id: "view-1",
+        target_port_id: "in",
+      },
+    ];
     render(
       <AnalysisViewBody node={BAR_NODE} result={readyResult(TABLE)} definition={definition} />,
     );
-    expect(screen.getByText("缺少柱状图配置（连接柱状图配置节点）")).toBeTruthy();
+    expect(screen.getByRole("img", { name: "指标柱状图：X=角色，Y=伤害" })).toBeTruthy();
   });
 
   it("柱状图配置未绑定列时显示提示", () => {

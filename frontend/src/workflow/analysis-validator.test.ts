@@ -144,7 +144,7 @@ it("未知列导致投影无法推导时报 ANALYSIS_SHAPE_INVALID", () => {
   expect(codes(result)).toContain("ANALYSIS_SHAPE_INVALID");
 });
 
-it("视图缺少展示配置时报 VIEW_CONFIG_MISSING", () => {
+it("视图直连数据且无展示配置时合法", () => {
   const nodes = [
     fedRuns(),
     node("view1", "member_table"),
@@ -154,7 +154,40 @@ it("视图缺少展示配置时报 VIEW_CONFIG_MISSING", () => {
     edge("e1", "runs1", "out", "view1", "in"),
   ];
   const result = validateWorkflow(definition(nodes, edges));
-  expect(codes(result)).toContain("VIEW_CONFIG_MISSING");
+  expect(codes(result)).not.toContain("VIEW_CONFIG_MISSING");
+  expect(codes(result)).not.toContain("CONFIG_OUTPUT_INVALID");
+});
+
+it("展示配置节点经数据链转发给对应视图时合法", () => {
+  const nodes = [
+    fedRuns(),
+    node("cfg1", "table_config", { condition_columns: [], data_columns: [] }),
+    node("view1", "member_table"),
+  ];
+  const edges = [
+    boundaryFeed(),
+    edge("e1", "runs1", "out", "cfg1", "in"),
+    edge("e2", "cfg1", "out", "view1", "in"),
+  ];
+  const result = validateWorkflow(definition(nodes, edges));
+  expect(codes(result)).not.toContain("CONFIG_INPUT_INVALID");
+  expect(codes(result)).not.toContain("CONFIG_OUTPUT_INVALID");
+  expect(codes(result)).not.toContain("VIEW_CONFIG_CHAIN_INVALID");
+});
+
+it("展示配置节点输出连接错误视图时报 CONFIG_OUTPUT_INVALID", () => {
+  const nodes = [
+    fedRuns(),
+    node("cfg1", "table_config", { condition_columns: [], data_columns: [] }),
+    node("view1", "pie"),
+  ];
+  const edges = [
+    boundaryFeed(),
+    edge("e1", "runs1", "out", "cfg1", "in"),
+    edge("e2", "cfg1", "out", "view1", "in"),
+  ];
+  const result = validateWorkflow(definition(nodes, edges));
+  expect(codes(result)).toContain("CONFIG_OUTPUT_INVALID");
 });
 
 it("视图多条数据入线结构不一致时报 VIEW_INPUT_SHAPE_MISMATCH", () => {
@@ -163,7 +196,6 @@ it("视图多条数据入线结构不一致时报 VIEW_INPUT_SHAPE_MISMATCH", ()
     node("projA", "project", { columns: [{ name: "session_id" }] }),
     node("projB", "project", { columns: [{ name: "frames_run" }] }),
     node("view1", "member_table"),
-    node("cfg1", "table_config", { condition_columns: [], data_columns: [] }),
   ];
   const edges = [
     boundaryFeed(),
@@ -171,7 +203,6 @@ it("视图多条数据入线结构不一致时报 VIEW_INPUT_SHAPE_MISMATCH", ()
     edge("e2", "runs1", "out", "projB", "in"),
     edge("e3", "projA", "out", "view1", "in"),
     edge("e4", "projB", "out", "view1", "in"),
-    edge("e5", "cfg1", "out", "view1", "config"),
   ];
   const result = validateWorkflow(definition(nodes, edges));
   expect(codes(result)).toContain("VIEW_INPUT_SHAPE_MISMATCH");

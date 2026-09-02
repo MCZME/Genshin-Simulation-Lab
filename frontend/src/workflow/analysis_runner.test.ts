@@ -110,6 +110,31 @@ describe("查询计划编译", () => {
     const joinNode = request.nodes.find((node) => node.id === "j1");
     expect(joinNode?.inputs).toEqual(["runs1", "ev1"]);
   });
+
+  it("展示配置转发节点不进入计划，其上游表作为视图输出", () => {
+    const def = definition(
+      [
+        simulation("sim", ["a"]),
+        analysisNode("runs1", "fetch", { source: "runs" }),
+        analysisNode("cfg1", "table_config", {
+          condition_columns: [],
+          data_columns: [],
+        }),
+        analysisNode("view1", "member_table"),
+      ],
+      [
+        edge("b1", "sim", "out", "analysis-1", "in"),
+        edge("w1", "analysis-1", "in", "runs1", "in"),
+        edge("e1", "runs1", "out", "cfg1", "in"),
+        edge("e2", "cfg1", "out", "view1", "in"),
+      ],
+    );
+
+    const request = buildAnalysisPlanRequest(def, "analysis-1");
+
+    expect(request.nodes.map((node) => node.id)).toEqual(["runs1"]);
+    expect(request.outputs).toEqual(["runs1"]);
+  });
 });
 
 describe("计划执行", () => {

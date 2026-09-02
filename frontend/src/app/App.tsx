@@ -1085,11 +1085,27 @@ export function App() {
       for (const [nodeId, result] of results) {
         updates.set(nodeId, result);
       }
+      // 展示配置转发节点：把上游输出表原样带入自身运行态，供下游视图读取。
+      for (const config of definition.nodes) {
+        if (
+          config.region_id !== region.id ||
+          (config.kind !== "table_config" &&
+            config.kind !== "pie_config" &&
+            config.kind !== "bar_config")
+        ) {
+          continue;
+        }
+        const table = viewInputTable(config.id, definition, results);
+        updates.set(
+          config.id,
+          table === null ? { status: "stale" } : { status: "ready", table },
+        );
+      }
       for (const view of definition.nodes) {
         if (view.region_id !== region.id || !isAnalysisViewKind(view.kind)) {
           continue;
         }
-        const table = viewInputTable(view.id, definition, results);
+        const table = viewInputTable(view.id, definition, updates);
         updates.set(
           view.id,
           table === null ? { status: "stale" } : { status: "ready", table },
@@ -1099,7 +1115,7 @@ export function App() {
         if (single.region_id !== region.id || !isAnalysisSingleKind(single.kind)) {
           continue;
         }
-        const table = viewInputTable(single.id, definition, results);
+        const table = viewInputTable(single.id, definition, updates);
         updates.set(
           single.id,
           table === null

@@ -5,6 +5,7 @@ import { tableRowsByIndex } from "../../workflow/analysis_runner";
 import {
   computeAnalysisShapes,
   connectedConfigNode,
+  defaultBarBinding,
   viewInputShape,
   type AnalysisTableResult,
 } from "../../workflow/templates";
@@ -282,9 +283,13 @@ export function BarChartView({
     () => connectedConfigNode(definition, node.id, "bar_config"),
     [definition, node.id],
   );
-  const x = asString(config?.params.x) ?? "";
-  const y = asString(config?.params.y) ?? "";
-  const seriesColumn = asString(config?.params.series) ?? "";
+  const defaultBinding = useMemo(
+    () => (config === null ? defaultBarBinding(table.columns) : null),
+    [config, table.columns],
+  );
+  const x = config === null ? (defaultBinding?.x ?? "") : (asString(config.params.x) ?? "");
+  const y = config === null ? (defaultBinding?.y ?? "") : (asString(config.params.y) ?? "");
+  const seriesColumn = config === null ? "" : (asString(config.params.series) ?? "");
 
   const catalog = useAnalysisSchemaCatalog();
   const shapes = useMemo(() => computeAnalysisShapes(definition, catalog), [definition, catalog]);
@@ -342,7 +347,6 @@ export function BarChartView({
   );
   const yType = typeOf.get(y) ?? "";
   const chartReady =
-    config !== null &&
     x !== "" &&
     y !== "" &&
     missingColumn === undefined &&
@@ -407,9 +411,14 @@ export function BarChartView({
   const containerRef = useRef<HTMLDivElement | null>(null);
   useEChartsView(containerRef, chartReady ? option : null, handleBarClick);
 
-  if (config === null || x === "" || y === "") {
-    // 连接与绑定校验由 AnalysisViewBody 与图校验器承担；此处兜底。
-    return <div className="analysis-view-state">柱状图配置未就绪</div>;
+  if (x === "" || y === "") {
+    return (
+      <div className="analysis-view-state">
+        {config === null
+          ? "直连视图未找到可用的默认 X 轴列与 Y 轴数值列"
+          : "柱状图配置未就绪"}
+      </div>
+    );
   }
   if (missingColumn !== undefined) {
     return (

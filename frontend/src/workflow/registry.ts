@@ -1021,8 +1021,8 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     displayName: "表格配置",
     region: "analysis",
     ports: {
-      inputs: [],
-      outputs: [analysisPort("out", "table_config", "single", 1)],
+      inputs: [analysisPort("in", "table", "single", 1)],
+      outputs: [analysisPort("out", "table", "single", 1)],
     },
     paramFields: {
       condition_columns: { type: "list" },
@@ -1040,8 +1040,8 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     displayName: "饼图配置",
     region: "analysis",
     ports: {
-      inputs: [],
-      outputs: [analysisPort("out", "pie_config", "single", 1)],
+      inputs: [analysisPort("in", "table", "single", 1)],
+      outputs: [analysisPort("out", "table", "single", 1)],
     },
     paramFields: {
       group: { type: "string", required: true },
@@ -1057,8 +1057,8 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     displayName: "柱状图配置",
     region: "analysis",
     ports: {
-      inputs: [],
-      outputs: [analysisPort("out", "bar_config", "single", 1)],
+      inputs: [analysisPort("in", "table", "single", 1)],
+      outputs: [analysisPort("out", "table", "single", 1)],
     },
     paramFields: {
       x: { type: "string", required: true },
@@ -1074,10 +1074,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     displayName: "表格",
     region: "analysis",
     ports: {
-      inputs: [
-        analysisPort("in", "table", "single", Number.POSITIVE_INFINITY),
-        analysisPort("config", "table_config", "single", 1),
-      ],
+      inputs: [analysisPort("in", "table", "single", Number.POSITIVE_INFINITY)],
       outputs: [analysisPort("selection", "item")],
     },
     paramFields: {},
@@ -1090,10 +1087,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     displayName: "饼图",
     region: "analysis",
     ports: {
-      inputs: [
-        analysisPort("in", "table", "single", Number.POSITIVE_INFINITY),
-        analysisPort("config", "pie_config", "single", 1),
-      ],
+      inputs: [analysisPort("in", "table", "single", Number.POSITIVE_INFINITY)],
       outputs: [analysisPort("selection", "table")],
     },
     paramFields: {},
@@ -1106,10 +1100,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     displayName: "柱状图",
     region: "analysis",
     ports: {
-      inputs: [
-        analysisPort("in", "table", "single", Number.POSITIVE_INFINITY),
-        analysisPort("config", "bar_config", "single", 1),
-      ],
+      inputs: [analysisPort("in", "table", "single", Number.POSITIVE_INFINITY)],
       outputs: [analysisPort("selection", "table")],
     },
     paramFields: {},

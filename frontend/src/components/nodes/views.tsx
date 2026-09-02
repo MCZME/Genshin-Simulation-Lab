@@ -79,74 +79,71 @@ export function AnalysisViewBody({
   }
   if (node.kind === "member_table") {
     const config = connectedConfigNode(definition, node.id, "table_config");
-    if (config === null) {
-      return <div className="analysis-view-state">缺少表格配置（连接表格配置节点）</div>;
-    }
-    const condition = asStringArray(config.params.condition_columns);
-    const data = asStringArray(config.params.data_columns);
-    if (condition.length === 0 && data.length === 0) {
-      return (
-        <div className="analysis-view-state">
-          <span>表格配置未绑定列</span>
-          {onLocateNode !== undefined && (
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => onLocateNode(config.id)}
-            >
-              打开表格配置
-            </button>
-          )}
-        </div>
-      );
+    if (config !== null) {
+      const condition = asStringArray(config.params.condition_columns);
+      const data = asStringArray(config.params.data_columns);
+      if (condition.length === 0 && data.length === 0) {
+        return (
+          <div className="analysis-view-state">
+            <span>表格配置未绑定列</span>
+            {onLocateNode !== undefined && (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => onLocateNode(config.id)}
+              >
+                打开表格配置
+              </button>
+            )}
+          </div>
+        );
+      }
     }
   }
   if (node.kind === "bar") {
     const config = connectedConfigNode(definition, node.id, "bar_config");
-    if (config === null) {
-      return <div className="analysis-view-state">缺少柱状图配置（连接柱状图配置节点）</div>;
-    }
-    const x = asString(config.params.x) ?? "";
-    const y = asString(config.params.y) ?? "";
-    if (x === "" || y === "") {
-      return (
-        <div className="analysis-view-state">
-          <span>柱状图配置未绑定列</span>
-          {onLocateNode !== undefined && (
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => onLocateNode(config.id)}
-            >
-              打开柱状图配置
-            </button>
-          )}
-        </div>
-      );
+    if (config !== null) {
+      const x = asString(config.params.x) ?? "";
+      const y = asString(config.params.y) ?? "";
+      if (x === "" || y === "") {
+        return (
+          <div className="analysis-view-state">
+            <span>柱状图配置未绑定列</span>
+            {onLocateNode !== undefined && (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => onLocateNode(config.id)}
+              >
+                打开柱状图配置
+              </button>
+            )}
+          </div>
+        );
+      }
     }
   }
   if (node.kind === "pie") {
     const config = connectedConfigNode(definition, node.id, "pie_config");
-    if (config === null) {
-      return <div className="analysis-view-state">缺少饼图配置（连接饼图配置节点）</div>;
-    }
-    const group = asString(config.params.group) ?? "";
-    const value = asString(config.params.value) ?? "";
-    if (group === "" || value === "") {
-      return (
-        <div className="analysis-view-state">
-          <span>饼图配置未绑定列</span>
-          {onLocateNode !== undefined && (
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => onLocateNode(config.id)}
-            >
-              打开饼图配置
-            </button>
-          )}
-        </div>
-      );
+    if (config !== null) {
+      const group = asString(config.params.group) ?? "";
+      const value = asString(config.params.value) ?? "";
+      if (group === "" || value === "") {
+        return (
+          <div className="analysis-view-state">
+            <span>饼图配置未绑定列</span>
+            {onLocateNode !== undefined && (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => onLocateNode(config.id)}
+              >
+                打开饼图配置
+              </button>
+            )}
+          </div>
+        );
+      }
     }
   }
   if (result === undefined || result.status === "idle") {
@@ -235,7 +232,13 @@ function MemberTable({
     () => asStringArray(config?.params.condition_columns),
     [config],
   );
-  const dataColumns = useMemo(() => asStringArray(config?.params.data_columns), [config]);
+  const dataColumns = useMemo(
+    () =>
+      config === null
+        ? table.columns.map((column) => column.name)
+        : asStringArray(config.params.data_columns),
+    [config, table.columns],
+  );
   const columnIndex = useMemo(
     () => new Map(table.columns.map((column, index) => [column.name, index])),
     [table.columns],
@@ -322,7 +325,8 @@ function MemberTable({
 
   const assetKeys = useMemo(() => {
     const keys = new Set<string>();
-    for (const column of conditionColumns) {
+    const assetColumns = conditionColumns.length > 0 ? conditionColumns : dataColumns;
+    for (const column of assetColumns) {
       const kind = valueKinds.get(column) ?? "";
       if (!kind.startsWith("asset:")) {
         continue;
@@ -339,7 +343,7 @@ function MemberTable({
       }
     }
     return Array.from(keys);
-  }, [conditionColumns, valueKinds, columnIndex, table.rows]);
+  }, [conditionColumns, dataColumns, valueKinds, columnIndex, table.rows]);
   const assetNames = useAssetNames(assetKeys);
 
   const layout = useMemo(

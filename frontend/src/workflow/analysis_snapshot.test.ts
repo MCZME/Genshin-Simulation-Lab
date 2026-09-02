@@ -60,8 +60,8 @@ function buildDefinition(
     { id: "l1", source_node_id: "region-1", source_port_id: "out", target_node_id: "sim-1", target_port_id: "in" },
     { id: "a1", source_node_id: "sim-1", source_port_id: "out", target_node_id: "analysis-1", target_port_id: "in" },
     { id: "a2", source_node_id: "analysis-1", source_port_id: "in", target_node_id: "fetch-1", target_port_id: "in" },
-    { id: "a3", source_node_id: "fetch-1", source_port_id: "out", target_node_id: "view-1", target_port_id: "in" },
-    { id: "a4", source_node_id: "config-1", source_port_id: "out", target_node_id: "view-1", target_port_id: "config" },
+    { id: "a3", source_node_id: "fetch-1", source_port_id: "out", target_node_id: "config-1", target_port_id: "in" },
+    { id: "a4", source_node_id: "config-1", source_port_id: "out", target_node_id: "view-1", target_port_id: "in" },
   ];
   const definition: WorkflowDefinition = {
     schema_version: 1,

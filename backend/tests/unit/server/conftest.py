@@ -6,8 +6,11 @@ from typing import Any, cast
 import pytest
 
 from genshin_sim.application import (
+    AnalysisNodeExecution,
     AnalysisPlan,
     AnalysisReadSchema,
+    AnalysisStageResult,
+    AnalysisStageSelection,
     AnalysisTableResult,
     ApplicationError,
     ApplicationFacade,
@@ -47,6 +50,7 @@ class FakeApplicationFacade:
         assets: tuple[AssetListItem, ...] = (),
         batch_runs: tuple[BatchRunStatus, ...] = (),
         analysis_plan_results: dict[str, AnalysisTableResult] | None = None,
+        analysis_stage_results: dict[str, AnalysisStageResult] | None = None,
         analysis_schema: AnalysisReadSchema | None = None,
     ) -> None:
         self.workspace = workspace or WorkspaceInfo("data", "2026.08.17", True)
@@ -59,6 +63,10 @@ class FakeApplicationFacade:
         self._assets = list(assets)
         self._batch_runs = {run.run_id: run for run in batch_runs}
         self._analysis_plan_results = analysis_plan_results or {}
+        self._analysis_stage_results = analysis_stage_results or {}
+        self._analysis_contexts: dict[str, tuple[str, ...]] = {}
+        self._analysis_stages: dict[str, AnalysisStageResult] = {}
+        self._analysis_context_seq = 0
         self._analysis_schema = analysis_schema
 
     def get_workspace(self) -> WorkspaceInfo:
@@ -345,6 +353,103 @@ class FakeApplicationFacade:
         if self._analysis_schema is None:
             raise ApplicationError("analysis_query_unavailable", "分析查询能力未配置")
         return self._analysis_schema
+
+    def create_analysis_context(self, session_ids: list[str]) -> str:
+        self._analysis_context_seq += 1
+        context_id = f"ctx_{self._analysis_context_seq:08x}"
+        self._analysis_contexts[context_id] = tuple(session_ids)
+        return context_id
+
+    def execute_analysis_node(
+        self,
+        context_id: str,
+        execution: AnalysisNodeExecution,
+    ) -> AnalysisStageResult:
+        self._require_analysis_context(context_id)
+        result = self._analysis_stage_results.get(execution.node_id)
+        if result is None:
+            raise ApplicationError(
+                "validation_failed",
+                f"未配置节点阶段结果：{execution.node_id}",
+            )
+        stage_id = f"stage_{len(self._analysis_stages) + 1:08x}"
+        stage = AnalysisStageResult(
+            stage_id=stage_id,
+            columns=result.columns,
+            rows=result.rows,
+            truncated=result.truncated,
+            source_node_id=execution.node_id,
+        )
+        self._analysis_stages[stage_id] = stage
+        return stage
+
+    def read_analysis_stage(self, context_id: str, stage_id: str) -> AnalysisStageResult:
+        self._require_analysis_context(context_id)
+        try:
+            return self._analysis_stages[stage_id]
+        except KeyError as exc:
+            raise ApplicationError("not_found", f"阶段不存在：{stage_id}") from exc
+
+    def select_analysis_stage(
+        self,
+        context_id: str,
+        stage_id: str,
+        selection: AnalysisStageSelection,
+    ) -> AnalysisStageResult:
+        source = self.read_analysis_stage(context_id, stage_id)
+        names = [column.name for column in source.columns]
+        if selection.kind == "row":
+            rows = (
+                ()
+                if selection.row_index is None or selection.row_index >= len(source.rows)
+                else (source.rows[selection.row_index],)
+            )
+        else:
+            wanted = dict(zip(selection.columns, selection.values, strict=True))
+            rows = tuple(
+                row
+                for row in source.rows
+                if all(row[names.index(column)] == value for column, value in wanted.items())
+            )
+        stage_id = f"stage_{len(self._analysis_stages) + 1:08x}"
+        stage = AnalysisStageResult(
+            stage_id=stage_id,
+            columns=source.columns,
+            rows=rows,
+            truncated=False,
+            source_node_id=source.source_node_id,
+        )
+        self._analysis_stages[stage_id] = stage
+        return stage
+
+    def merge_analysis_stages(
+        self,
+        context_id: str,
+        stage_ids: list[str] | tuple[str, ...],
+    ) -> AnalysisStageResult:
+        self._require_analysis_context(context_id)
+        sources = [self.read_analysis_stage(context_id, stage_id) for stage_id in stage_ids]
+        if len(sources) < 2:
+            raise ApplicationError("validation_failed", "合并至少需要两个输入阶段")
+        reference = sources[0]
+        stage_id = f"stage_{len(self._analysis_stages) + 1:08x}"
+        stage = AnalysisStageResult(
+            stage_id=stage_id,
+            columns=reference.columns,
+            rows=tuple(row for source in sources for row in source.rows),
+            truncated=any(source.truncated for source in sources),
+            source_node_id=reference.source_node_id,
+        )
+        self._analysis_stages[stage_id] = stage
+        return stage
+
+    def close_analysis_context(self, context_id: str) -> None:
+        self._require_analysis_context(context_id)
+        del self._analysis_contexts[context_id]
+
+    def _require_analysis_context(self, context_id: str) -> None:
+        if context_id not in self._analysis_contexts:
+            raise ApplicationError("not_found", f"分析上下文不存在：{context_id}")
 
     def list_assets(
         self,

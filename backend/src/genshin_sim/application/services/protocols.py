@@ -8,8 +8,11 @@ from genshin_sim.application.config import ProjectConfig
 from genshin_sim.application.execution.models import RecordedEvent
 from genshin_sim.application.input import SimulationInput
 from genshin_sim.application.models import (
+    AnalysisNodeExecution,
     AnalysisPlan,
     AnalysisReadSchema,
+    AnalysisStageResult,
+    AnalysisStageSelection,
     AnalysisTableResult,
     RunDetail,
     RunListItem,
@@ -63,6 +66,42 @@ class AnalysisQueryExecutor(Protocol):
     def execute_plan(self, plan: AnalysisPlan) -> Mapping[str, AnalysisTableResult]: ...
 
     def read_schema(self) -> AnalysisReadSchema: ...
+
+
+class AnalysisStageExecutor(Protocol):
+    """分析节点运行时执行器：阶段上下文、单节点执行与阶段读取。"""
+
+    def create_context(
+        self,
+        session_ids: tuple[str, ...] | list[str],
+    ) -> str: ...
+
+    def execute_node(
+        self,
+        context_id: str,
+        execution: AnalysisNodeExecution,
+    ) -> AnalysisStageResult: ...
+
+    def select_stage(
+        self,
+        context_id: str,
+        stage_id: str,
+        selection: AnalysisStageSelection,
+    ) -> AnalysisStageResult: ...
+
+    def merge_stages(
+        self,
+        context_id: str,
+        stage_ids: tuple[str, ...] | list[str],
+    ) -> AnalysisStageResult: ...
+
+    def read_stage(
+        self,
+        context_id: str,
+        stage_id: str,
+    ) -> AnalysisStageResult: ...
+
+    def close_context(self, context_id: str) -> None: ...
 
 
 class SimulationInputValidator(Protocol):

@@ -158,6 +158,65 @@ it("视图直连数据且无展示配置时合法", () => {
   expect(codes(result)).not.toContain("CONFIG_OUTPUT_INVALID");
 });
 
+it("表格视图 selection（item）不能进入数据算子", () => {
+  const nodes = [
+    fedRuns(),
+    node("view1", "member_table"),
+    node("lim1", "limit", { count: 5 }),
+  ];
+  const edges = [
+    boundaryFeed(),
+    edge("e1", "runs1", "out", "view1", "in"),
+    edge("e2", "view1", "selection", "lim1", "in"),
+  ];
+  const result = validateWorkflow(definition(nodes, edges));
+  expect(codes(result)).toContain("ITEM_OUTPUT_INVALID");
+});
+
+it("饼图 selection（行集表）可进入下游数据算子", () => {
+  const nodes = [
+    fedRuns(),
+    node("view1", "pie"),
+    node("lim1", "limit", { count: 5 }),
+  ];
+  const edges = [
+    boundaryFeed(),
+    edge("e1", "runs1", "out", "view1", "in"),
+    edge("e2", "view1", "selection", "lim1", "in"),
+  ];
+  const result = validateWorkflow(definition(nodes, edges));
+  expect(codes(result)).not.toContain("ANALYSIS_SHAPE_INVALID");
+  expect(codes(result)).not.toContain("ITEM_OUTPUT_INVALID");
+});
+
+it("运行记录经展开行/构造列后可构成角色状态详情描述符", () => {
+  const nodes = [
+    fedRuns(),
+    node("x1", "expand", {
+      columns: [
+        { name: "slot", type: "int", values: [1, 2] },
+        {
+          name: "attribute_key",
+          type: "string",
+          values: ["stat.crit_rate", "stat.atk.total"],
+        },
+      ],
+    }),
+    node("view1", "member_table"),
+    node("detail1", "attribute_detail"),
+  ];
+  const edges = [
+    boundaryFeed(),
+    edge("e1", "runs1", "out", "x1", "in"),
+    edge("e2", "x1", "out", "view1", "in"),
+    edge("e3", "view1", "selection", "detail1", "in"),
+  ];
+  const result = validateWorkflow(definition(nodes, edges));
+  expect(codes(result)).not.toContain("ANALYSIS_SHAPE_INVALID");
+  expect(codes(result)).not.toContain("ITEM_INPUT_INVALID");
+  expect(codes(result)).not.toContain("ITEM_INPUT_MISSING");
+});
+
 it("展示配置节点经数据链转发给对应视图时合法", () => {
   const nodes = [
     fedRuns(),

@@ -3,7 +3,9 @@ import { COLORS, type NodeCategory } from "../../theme/tokens";
 import {
   AggregateEditor,
   ComputeEditor,
+  DeriveEditor,
   DisplayConfigEditor,
+  ExpandEditor,
   FetchEditor,
   FilterEditor,
   JoinEditor,
@@ -94,6 +96,10 @@ export function NodeEditorHost({
       return <JoinEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "compute":
       return <ComputeEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "derive":
+      return <DeriveEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "expand":
+      return <ExpandEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "pie_config":
     case "bar_config":
       return <DisplayConfigEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
@@ -133,6 +139,8 @@ const NODE_CATEGORY_OF: Record<string, NodeCategory> = {
   limit: "dataProcessing",
   join: "dataProcessing",
   compute: "dataProcessing",
+  derive: "dataProcessing",
+  expand: "dataProcessing",
   table_config: "displayConfig",
   pie_config: "displayConfig",
   bar_config: "displayConfig",
@@ -196,6 +204,8 @@ export const ANALYSIS_OPERATOR_KINDS = [
   "limit",
   "join",
   "compute",
+  "derive",
+  "expand",
   "single",
 ] as const;
 

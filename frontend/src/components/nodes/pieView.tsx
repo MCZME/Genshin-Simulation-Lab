@@ -10,7 +10,11 @@ import {
   type AnalysisTableResult,
 } from "../../workflow/templates";
 import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
-import { useAnalysisSchemaCatalog, useAnalysisSelection } from "../analysis_context";
+import {
+  useAnalysisSchemaCatalog,
+  useAnalysisSelection,
+  useAnalysisStageSelection,
+} from "../analysis_context";
 import { asString } from "./common";
 import { useAssetNames } from "./useAssetNames";
 import { MAX_RENDERED_ROWS, formatCell } from "./views";
@@ -155,10 +159,12 @@ export function PieChartView({
   node,
   definition,
   table,
+  stageId,
 }: {
   node: WorkflowNode;
   definition: WorkflowDefinition;
   table: AnalysisTableResult;
+  stageId?: string;
 }) {
   const config = useMemo(
     () => connectedConfigNode(definition, node.id, "pie_config"),
@@ -213,8 +219,14 @@ export function PieChartView({
   const assetNames = useAssetNames(assetKeys);
 
   const selection = useAnalysisSelection();
+  const stageSelection = useAnalysisStageSelection();
 
   const [selected, setSelected] = useState<SelectedSlice | null>(null);
+  const [prevStageId, setPrevStageId] = useState(stageId);
+  if (stageId !== prevStageId) {
+    setPrevStageId(stageId);
+    setSelected(null);
+  }
   // 绑定变化时重置瞬态选择（不随工作流保存）。
   const bindingKey = [group, value, labelColumn].join("|");
   const [prevBindingKey, setPrevBindingKey] = useState(bindingKey);
@@ -262,12 +274,44 @@ export function PieChartView({
       }
       const isSame = selected !== null && selected.dataIndex === dataIndex;
       setSelected(isSame ? null : { dataIndex });
+      if (isSame) {
+        stageSelection?.select(node.id, null);
+        selection?.select(node.id, null);
+        return;
+      }
       if (selection === null) {
+        return;
+      }
+      const stageContextId =
+        stageId === undefined ? null : stageSelection?.contextIdFor(node.region_id ?? "") ?? null;
+      const groupIndex = columnIndex.get(group);
+      const firstRow = table.rows[slice.rowIndexes[0]];
+      if (
+        stageContextId !== null &&
+        groupIndex !== undefined &&
+        firstRow !== undefined &&
+        stageSelection !== null
+      ) {
+        stageSelection.select(node.id, {
+          groupColumns: [group],
+          groupValues: [firstRow[groupIndex]],
+        });
         return;
       }
       selection.select(node.id, isSame ? null : tableRowsByIndex(table, slice.rowIndexes));
     },
-    [data, table, selected, selection, node.id],
+    [
+      data,
+      table,
+      selected,
+      selection,
+      stageSelection,
+      stageId,
+      columnIndex,
+      group,
+      node.id,
+      node.region_id,
+    ],
   );
 
   const option = useMemo(

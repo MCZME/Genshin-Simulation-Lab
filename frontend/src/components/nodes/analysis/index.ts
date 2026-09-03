@@ -9,4 +9,6 @@ export { AggregateEditor } from "./aggregate";
 export { LimitEditor } from "./limit";
 export { JoinEditor } from "./join";
 export { ComputeEditor } from "./compute";
+export { DeriveEditor } from "./derive";
+export { ExpandEditor } from "./expand";
 export { TableConfigEditor, DisplayConfigEditor } from "./config";

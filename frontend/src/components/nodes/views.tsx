@@ -174,7 +174,14 @@ export function AnalysisViewBody({
   if (table === undefined || table.rows.length === 0) {
     return <div className="analysis-view-state">上游为空（无匹配数据）</div>;
   }
-  return renderAnalysisTable(node, definition, table, viewWidth, onFitChange);
+  return renderAnalysisTable(
+    node,
+    definition,
+    table,
+    viewWidth,
+    onFitChange,
+    result.stage_id,
+  );
 }
 
 function renderAnalysisTable(
@@ -183,6 +190,7 @@ function renderAnalysisTable(
   table: AnalysisTableResult,
   viewWidth?: number,
   onFitChange?: (info: ViewFitInfo) => void,
+  stageId?: string,
 ) {
   switch (node.kind) {
     case "member_table":
@@ -196,7 +204,14 @@ function renderAnalysisTable(
         />
       );
     case "pie":
-      return <PieChartView node={node} definition={definition} table={table} />;
+      return (
+        <PieChartView
+          node={node}
+          definition={definition}
+          table={table}
+          stageId={stageId}
+        />
+      );
     case "bar":
       return (
         <BarChartView
@@ -204,6 +219,7 @@ function renderAnalysisTable(
           definition={definition}
           table={table}
           onFitChange={onFitChange}
+          stageId={stageId}
         />
       );
     default:

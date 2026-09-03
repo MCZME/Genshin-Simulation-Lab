@@ -343,6 +343,15 @@ export const ANALYSIS_TABLE_NODE_KINDS = new Set([
   "limit",
   "join",
   "compute",
+  "derive",
+  "expand",
+]);
+
+/** 展示视图：为选择输出提供输入形状，不进入 SQL 查询计划。 */
+export const ANALYSIS_VIEW_NODE_KINDS = new Set([
+  "member_table",
+  "pie",
+  "bar",
 ]);
 
 /** 展示配置转发节点：消费 table 并原样转发给视图，不进入查询计划。 */
@@ -382,8 +391,14 @@ export function defaultBarBinding(
   return x === undefined ? null : { x, y, series: null };
 }
 
-function isAnalysisTableNode(node: WorkflowNode): boolean {
-  return ANALYSIS_TABLE_NODE_KINDS.has(node.kind);
+function isAnalysisShapeNode(
+  node: WorkflowNode | undefined,
+): node is WorkflowNode {
+  return (
+    node !== undefined &&
+    (ANALYSIS_TABLE_NODE_KINDS.has(node.kind) ||
+      ANALYSIS_VIEW_NODE_KINDS.has(node.kind))
+  );
 }
 
 function aggregateShape(node: WorkflowNode, source: TableShape[]): TableShape[] | null {
@@ -531,6 +546,77 @@ function computeShape(node: WorkflowNode, source: TableShape[]): TableShape[] | 
     output.push({ name: item.name, type });
   }
   return output;
+}
+
+function deriveShape(node: WorkflowNode, source: TableShape[]): TableShape[] | null {
+  const output = [...source];
+  const taken = new Set(source.map((column) => column.name));
+  const sourceTypes = new Map(source.map((column) => [column.name, column.type]));
+  const overridden = new Set<string>();
+  if (!Array.isArray(node.params.columns) || node.params.columns.length === 0) {
+    return null;
+  }
+  const columns = node.params.columns as {
+    name?: unknown;
+    type?: unknown;
+    value?: unknown;
+  }[];
+  for (const item of columns) {
+    if (
+      !isRecord(item) ||
+      typeof item.name !== "string" ||
+      !COLUMN_NAME_PATTERN.test(item.name) ||
+      typeof item.type !== "string" ||
+      !TYPE_VOCABULARY.has(item.type) ||
+      !literalMatches(item.type, item.value) ||
+      (sourceTypes.has(item.name) &&
+        (item.type !== sourceTypes.get(item.name) || overridden.has(item.name))) ||
+      (!sourceTypes.has(item.name) && taken.has(item.name))
+    ) {
+      return null;
+    }
+    if (sourceTypes.has(item.name)) {
+      overridden.add(item.name);
+      continue;
+    }
+    taken.add(item.name);
+    output.push({ name: item.name, type: item.type });
+  }
+  return output;
+}
+
+function expandShape(node: WorkflowNode, source: TableShape[]): TableShape[] | null {
+  const output = [...source];
+  const taken = new Set(source.map((column) => column.name));
+  if (!Array.isArray(node.params.columns) || node.params.columns.length === 0) {
+    return null;
+  }
+  const columns = node.params.columns as {
+    name?: unknown;
+    type?: unknown;
+    values?: unknown;
+  }[];
+  let total = 1;
+  for (const item of columns) {
+    if (
+      !isRecord(item) ||
+      typeof item.name !== "string" ||
+      !COLUMN_NAME_PATTERN.test(item.name) ||
+      typeof item.type !== "string" ||
+      !TYPE_VOCABULARY.has(item.type) ||
+      !Array.isArray(item.values) ||
+      item.values.length === 0 ||
+      item.values.length > 64 ||
+      taken.has(item.name) ||
+      !item.values.every((value) => literalMatches(item.type as string, value))
+    ) {
+      return null;
+    }
+    total *= item.values.length;
+    taken.add(item.name);
+    output.push({ name: item.name, type: item.type });
+  }
+  return total <= 10_000 ? output : null;
 }
 
 function exprType(
@@ -689,11 +775,30 @@ export function computeAnalysisShapes(
       return null;
     }
     const node = nodeById.get(nodeId);
-    if (node === undefined || !isAnalysisTableNode(node)) {
+    if (!isAnalysisShapeNode(node)) {
       shapes.set(nodeId, null);
       return null;
     }
     visiting.add(nodeId);
+    if (ANALYSIS_VIEW_NODE_KINDS.has(node.kind)) {
+      for (const edge of incoming.get(nodeId) ?? []) {
+        if (edge.target_port_id !== "in") {
+          continue;
+        }
+        const sourceId = resolveTableSource(definition, edge.source_node_id);
+        const sourceNode = sourceId === null ? undefined : nodeById.get(sourceId);
+        if (isAnalysisShapeNode(sourceNode)) {
+          visit(sourceId as string);
+        }
+      }
+      const shape = viewInputShape(shapes, definition, node.id);
+      shapes.set(
+        node.id,
+        shape.length === 0 ? null : shape,
+      );
+      visiting.delete(node.id);
+      return shape.length === 0 ? null : shape;
+    }
     const edgesInto = (incoming.get(nodeId) ?? []).filter(
       (edge) => edge.source_node_id !== nodeId && nodeById.has(edge.source_node_id),
     );
@@ -730,6 +835,12 @@ export function computeAnalysisShapes(
       case "compute":
         shape = inputShapes[0] ? computeShape(node, inputShapes[0]) : null;
         break;
+      case "derive":
+        shape = inputShapes[0] ? deriveShape(node, inputShapes[0]) : null;
+        break;
+      case "expand":
+        shape = inputShapes[0] ? expandShape(node, inputShapes[0]) : null;
+        break;
       case "join":
         shape =
           inputShapes[0] && inputShapes[1]
@@ -744,7 +855,7 @@ export function computeAnalysisShapes(
   };
 
   for (const node of definition.nodes) {
-    if (isAnalysisTableNode(node)) {
+    if (isAnalysisShapeNode(node)) {
       visit(node.id);
     }
   }

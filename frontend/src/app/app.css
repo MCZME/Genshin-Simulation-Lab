@@ -748,6 +748,32 @@ body {
   font-weight: 600;
 }
 
+.node-output-badges {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.node-output-badge {
+  padding: 0 5px;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  color: #94a3b8;
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.node-output-badge.data {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+.node-output-badge.selection {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.45);
+}
+
 .node-card-body {
   padding: 8px 10px;
   max-height: 440px;
@@ -1043,6 +1069,14 @@ body {
   background: #64748b !important;
   border: 2px solid #0f172a !important;
   transition: background 0.15s ease;
+}
+
+.node-handle-data {
+  background: #38bdf8 !important;
+}
+
+.node-handle-selection {
+  background: #fbbf24 !important;
 }
 
 .node-handle::after {

@@ -9,6 +9,7 @@ import pytest
 from genshin_sim.application import (
     AnalysisPlan,
     AnalysisPlanNode,
+    AnalysisStageSelection,
     ApplicationError,
     ApplicationFacade,
     AssetListKind,
@@ -32,6 +33,12 @@ from genshin_sim.application.jobs import (
     SimulationJobStatus,
 )
 from genshin_sim.application.models import RecordedEvent, RunDetail, RunListItem
+from genshin_sim.application.services.analysis_query import (
+    AnalysisPlanValidationError,
+)
+from genshin_sim.application.services.analysis_runtime import (
+    AnalysisStageNotFoundError,
+)
 from genshin_sim.application.services.workflows import (
     StoredWorkflow,
     WorkflowAlreadyExistsError,
@@ -213,6 +220,41 @@ class _FakeJobRunner:
             raise SimulationJobNotFoundError(f"仿真任务不存在：{job_id}") from exc
 
 
+class _FakeAnalysisStageExecutor:
+    """仅覆盖 facade 错误映射测试的运行时执行器替身。"""
+
+    def __init__(
+        self,
+        *,
+        select_error: Exception | None = None,
+        merge_error: Exception | None = None,
+    ) -> None:
+        self._select_error = select_error
+        self._merge_error = merge_error
+
+    def create_context(self, session_ids) -> str:
+        return "ctx_fake"
+
+    def execute_node(self, context_id, execution):
+        raise NotImplementedError
+
+    def read_stage(self, context_id, stage_id):
+        raise NotImplementedError
+
+    def select_stage(self, context_id, stage_id, selection):
+        if self._select_error is not None:
+            raise self._select_error
+        raise NotImplementedError
+
+    def merge_stages(self, context_id, stage_ids):
+        if self._merge_error is not None:
+            raise self._merge_error
+        raise NotImplementedError
+
+    def close_context(self, context_id) -> None:
+        return None
+
+
 class _FakeWorkflowStore:
     """工作流存储的内存假实现。"""
 
@@ -257,6 +299,7 @@ def _make_facade(
     result_repository: _FakeResultRepository | None = None,
     job_runner: SimulationJobRunner | None = None,
     workflow_store: _FakeWorkflowStore | None = None,
+    analysis_stage_executor: Any = None,
 ) -> ApplicationFacade:
     return cast(
         ApplicationFacade,
@@ -270,6 +313,7 @@ def _make_facade(
             result_writer=_FakeResultWriter(),
             job_runner=job_runner,
             workflow_store=workflow_store,
+            analysis_stage_executor=analysis_stage_executor,
         ),
     )
 
@@ -475,6 +519,46 @@ def test_facade_executes_analysis_plan() -> None:
     with pytest.raises(ApplicationError) as exc_info:
         facade.execute_analysis_plan(bad_plan)
     assert exc_info.value.code == "validation_failed"
+
+
+def test_facade_select_analysis_stage_maps_plan_validation_error() -> None:
+    executor = _FakeAnalysisStageExecutor(
+        select_error=AnalysisPlanValidationError(
+            "查询计划校验失败",
+            [{"node_id": "filter1", "reason": "分组列不存在"}],
+        )
+    )
+    facade = _make_facade(analysis_stage_executor=executor)
+
+    with pytest.raises(ApplicationError) as exc_info:
+        facade.select_analysis_stage(
+            "ctx_fake",
+            "stage_fake",
+            AnalysisStageSelection(
+                kind="group",
+                columns=("missing_column",),
+                values=("x",),
+            ),
+        )
+
+    assert exc_info.value.code == "validation_failed"
+    assert exc_info.value.details[0]["reason"] == "分组列不存在"
+
+
+def test_facade_merge_analysis_stages_maps_missing_stage_to_not_found() -> None:
+    executor = _FakeAnalysisStageExecutor(
+        merge_error=AnalysisStageNotFoundError("阶段不存在：stage_missing")
+    )
+    facade = _make_facade(analysis_stage_executor=executor)
+
+    with pytest.raises(ApplicationError) as exc_info:
+        facade.merge_analysis_stages(
+            "ctx_fake",
+            ("stage_existing", "stage_missing"),
+        )
+
+    assert exc_info.value.code == "not_found"
+    assert "stage_missing" in str(exc_info.value)
 
 
 def test_facade_exposes_batch_validation_and_lifecycle() -> None:

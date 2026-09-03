@@ -246,6 +246,19 @@ export function NodeCard({ data, selected }: NodeProps) {
       <header className="node-card-header">
         <span className="node-dot" style={{ background: nodeKindColor(node.kind) }} />
         <span className="node-title">{spec?.displayName ?? node.kind}</span>
+        {spec !== null && spec.ports.outputs.length > 1 && (
+          <span className="node-output-badges">
+            {spec.ports.outputs.map((port) => (
+              <span
+                key={port.id}
+                className={`node-output-badge ${port.id}`}
+                title={`${outputPortLabel(port.id)}（${port.dataLanguage}）`}
+              >
+                {outputPortLabel(port.id)}
+              </span>
+            ))}
+          </span>
+        )}
         {isDraft && <span className="draft-badge">草稿</span>}
         <button
           type="button"
@@ -312,13 +325,20 @@ export function NodeCard({ data, selected }: NodeProps) {
             className="node-handle"
           />
         ))}
-        {spec?.ports.outputs.map((port) => (
+        {spec?.ports.outputs.map((port, index) => (
           <Handle
             key={`source-${port.id}`}
             type="source"
             position={Position.Right}
             id={port.id}
-            className="node-handle"
+            className={`node-handle node-handle-${port.id}`}
+            style={
+              spec !== null && spec.ports.outputs.length > 1
+                ? { top: `${42 + index * 17}%` }
+                : undefined
+            }
+            title={`${outputPortLabel(port.id)}（${port.dataLanguage}）`}
+            aria-label={`${outputPortLabel(port.id)}输出`}
           />
         ))}
       </footer>
@@ -400,4 +420,14 @@ function collectFieldErrors(
     result[item.path] = list;
   }
   return result;
+}
+
+function outputPortLabel(portId: string): string {
+  if (portId === "data") {
+    return "data 透传";
+  }
+  if (portId === "selection") {
+    return "selection 选择";
+  }
+  return portId;
 }

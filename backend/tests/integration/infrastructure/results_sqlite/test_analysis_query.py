@@ -463,6 +463,124 @@ def test_compute_rejects_empty_columns(tmp_path) -> None:
     assert any(item.get("node_id") == "c1" and "至少" in item.get("reason", "") for item in details)
 
 
+def test_derive_appends_typed_constant_columns(tmp_path) -> None:
+    executor = _executor(tmp_path)
+    plan = _plan(
+        (
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
+            AnalysisPlanNode(
+                id="d1",
+                kind="derive",
+                params={
+                    "columns": [
+                        {
+                            "name": "attribute_key",
+                            "type": "string",
+                            "value": "stat.crit_rate",
+                        },
+                        {"name": "probe_frame", "type": "int", "value": 600},
+                        {"name": "enabled", "type": "bool", "value": True},
+                    ]
+                },
+                inputs=("runs1",),
+            ),
+        ),
+        ("d1",),
+    )
+
+    table = executor.execute_plan(plan)["d1"]
+
+    names = [column.name for column in table.columns]
+    assert names[-3:] == ["attribute_key", "probe_frame", "enabled"]
+    assert _column_values(table, "attribute_key") == ["stat.crit_rate", "stat.crit_rate"]
+    assert _column_values(table, "probe_frame") == [600, 600]
+    assert _column_values(table, "enabled") == [1, 1]
+
+
+def test_derive_can_overwrite_existing_same_type_column(tmp_path) -> None:
+    executor = _executor(tmp_path)
+    plan = _plan(
+        (
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
+            AnalysisPlanNode(
+                id="d1",
+                kind="derive",
+                params={
+                    "columns": [
+                        {
+                            "name": "stop_reason",
+                            "type": "string",
+                            "value": "REWRITTEN",
+                        }
+                    ]
+                },
+                inputs=("runs1",),
+            ),
+        ),
+        ("d1",),
+    )
+
+    table = executor.execute_plan(plan)["d1"]
+
+    names = [column.name for column in table.columns]
+    assert names.count("stop_reason") == 1
+    assert _column_values(table, "stop_reason") == ["REWRITTEN", "REWRITTEN"]
+
+
+def test_expand_generates_cartesian_rows_from_literal_lists(tmp_path) -> None:
+    executor = _executor(tmp_path)
+    plan = _plan(
+        (
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
+            AnalysisPlanNode(
+                id="x1",
+                kind="expand",
+                params={
+                    "columns": [
+                        {
+                            "name": "attribute_key",
+                            "type": "string",
+                            "values": ["stat.crit_rate", "stat.atk.total"],
+                        },
+                        {
+                            "name": "probe_frame",
+                            "type": "int",
+                            "values": [600, 1200],
+                        },
+                    ]
+                },
+                inputs=("runs1",),
+            ),
+        ),
+        ("x1",),
+    )
+
+    table = executor.execute_plan(plan)["x1"]
+
+    # 每场运行 2 个属性 × 2 个帧 = 4 行；两场共 8 行。
+    assert len(table.rows) == 8
+    assert sorted(_column_values(table, "attribute_key")) == [
+        "stat.atk.total",
+        "stat.atk.total",
+        "stat.atk.total",
+        "stat.atk.total",
+        "stat.crit_rate",
+        "stat.crit_rate",
+        "stat.crit_rate",
+        "stat.crit_rate",
+    ]
+    assert sorted(_column_values(table, "probe_frame")) == [
+        600,
+        600,
+        600,
+        600,
+        1200,
+        1200,
+        1200,
+        1200,
+    ]
+
+
 def test_chinese_column_names_roundtrip(tmp_path) -> None:
     """中文列名可读名即列名：取数/过滤/聚合/投影全链路可用。"""
 

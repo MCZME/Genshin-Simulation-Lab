@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   cancelRun,
+  closeAnalysisContext,
   createWorkflow,
   deleteWorkflow,
   getAnalysisSchema,
@@ -10,6 +11,7 @@ import {
   listWorkflows,
   saveWorkflow,
   searchAssets,
+  selectAnalysisStage,
   submitRun,
   validateInputs,
 } from "../api/client";
@@ -17,10 +19,13 @@ import type { ValidateInputsResponse, WorkflowListItem } from "../api/client";
 import { pollRun } from "../api/runtime_subscription";
 import { CanvasView } from "../components/canvas/CanvasView";
 import {
+  AnalysisStageSelectionContext,
   AnalysisResultsContext,
   AnalysisSchemaCatalogContext,
   AnalysisSelectionContext,
   type AnalysisSelectionStore,
+  type AnalysisStageSelectionRecord,
+  type AnalysisStageSelectionStore,
 } from "../components/analysis_context";
 import { createAnalysisSchemaCatalog } from "../workflow/templates";
 import type { AnalysisSchemaCatalog } from "../workflow/templates";
@@ -80,10 +85,12 @@ import {
 } from "../state/run_state";
 import type { RunState } from "../state/run_state";
 import {
-  executeAnalysisRegion,
+  applyViewSelectionSingles,
+  directSelectionSingleIds,
+  executeAnalysisSelectionBranch,
   planFetchNodes,
-  rowItem,
-  viewInputTable,
+  populateAnalysisTerminalResults,
+  runAnalysisRegionStages,
 } from "../workflow/analysis_runner";
 import type { AnalysisNodeResult } from "../workflow/analysis_runner";
 import { compileConfigurationRegion } from "../workflow/compiler";
@@ -175,9 +182,135 @@ export function App() {
     }),
     [analysisSelections],
   );
+  const [analysisStageSelections, setAnalysisStageSelections] = useState<
+    Map<string, AnalysisStageSelectionRecord | null>
+  >(new Map());
+  const [analysisStageContextIds, setAnalysisStageContextIds] = useState<
+    ReadonlyMap<string, string>
+  >(new Map());
   const [analysisResults, setAnalysisResults] = useState<Map<string, AnalysisNodeResult>>(
     () => new Map(),
   );
+  const analysisSelectionBranchSeqRef = useRef(0);
+  const analysisStageSelectionStore = useMemo<AnalysisStageSelectionStore>(
+    () => ({
+      records: analysisStageSelections,
+      contextIdFor: (regionId: string) =>
+        analysisStageContextIds.get(regionId) ?? null,
+      select: (nodeId, record) => {
+        setAnalysisStageSelections((current) => {
+          const next = new Map(current);
+          if (record === null) {
+            next.delete(nodeId);
+          } else {
+            next.set(nodeId, record);
+          }
+          return next;
+        });
+        const definition = editorState?.definition;
+        const viewNode = definition?.nodes.find((item) => item.id === nodeId);
+        if (definition === undefined || viewNode === undefined) {
+          return;
+        }
+        if (record === null) {
+          setAnalysisResults((current) => {
+            const next = new Map(current);
+            for (const targetId of directSelectionSingleIds(
+              definition,
+              viewNode.region_id ?? "",
+              nodeId,
+            )) {
+              next.set(targetId, { status: "idle" });
+            }
+            return next;
+          });
+          return;
+        }
+        const regionId = viewNode.region_id;
+        if (regionId === null) {
+          return;
+        }
+        const contextId = analysisStageContextIds.get(regionId);
+        const viewStageId = analysisResults.get(nodeId)?.stage_id;
+        if (contextId === undefined || viewStageId === undefined) {
+          return;
+        }
+        const seq = ++analysisSelectionBranchSeqRef.current;
+        void (async () => {
+          const selectionStage = await selectAnalysisStage(contextId, viewStageId, {
+            kind: "group",
+            columns: record.groupColumns,
+            values: record.groupValues,
+          });
+          if (seq !== analysisSelectionBranchSeqRef.current) {
+            return;
+          }
+          const existingStages = new Map<string, string>();
+          for (const item of definition.nodes) {
+            const stageId = analysisResults.get(item.id)?.stage_id;
+            if (stageId !== undefined) {
+              existingStages.set(item.id, stageId);
+            }
+          }
+          const branchResults = await executeAnalysisSelectionBranch(
+            definition,
+            regionId,
+            nodeId,
+            contextId,
+            selectionStage.stage_id,
+            existingStages,
+          );
+          if (
+            seq !== analysisSelectionBranchSeqRef.current ||
+            analysisStageContextIdsRef.current.get(regionId) !== contextId
+          ) {
+            return;
+          }
+          setAnalysisResults((current) => {
+            const next = new Map(current);
+            for (const [branchNodeId, result] of branchResults) {
+              next.set(branchNodeId, result);
+            }
+            applyViewSelectionSingles(
+              definition,
+              regionId,
+              nodeId,
+              selectionStage,
+              next,
+            );
+            return populateAnalysisTerminalResults(definition, regionId, next);
+          });
+        })().catch(() => {
+          // 选择分支失败时保留旧结果；自动重算会在下次定义变化后刷新。
+        });
+      },
+    }),
+    [
+      analysisStageSelections,
+      analysisStageContextIds,
+      analysisResults,
+      editorState,
+    ],
+  );
+  /** 每个分析区域最近一次阶段运行保留的后端上下文（供点击选择派生阶段）。 */
+  const analysisStageContextIdsRef = useRef<Map<string, string>>(new Map());
+  /** 关闭全部分析运行时上下文并清空阶段运行态（工作流切换/新建/删除时调用）。 */
+  async function closeAnalysisContexts(): Promise<void> {
+    analysisSelectionBranchSeqRef.current += 1;
+    const contexts = [...analysisStageContextIdsRef.current.values()];
+    analysisStageContextIdsRef.current = new Map();
+    setAnalysisStageContextIds(new Map());
+    setAnalysisResults(new Map());
+    setAnalysisStageSelections(new Map());
+    setAnalysisSelections(new Map());
+    await Promise.all(
+      contexts.map((contextId) =>
+        closeAnalysisContext(contextId).catch(() => {
+          // 旧上下文回收失败不阻断工作流切换。
+        }),
+      ),
+    );
+  }
   /** 分析区域运行阶段（2026-08-26 定案：获取输入 → 查询 → 视图加载）。 */
   const [analysisRunPhase, setAnalysisRunPhase] = useState<AnalysisRunPhase | null>(null);
   /** 分析区域自动重算快照：只对影响查询/展示的定义变化触发。 */
@@ -305,6 +438,18 @@ export function App() {
     void initialize();
     // initialize 只允许在首帧执行一次，重复执行由 initializedRef 显式守护。
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      // 应用退出时尽力回收后端阶段上下文；竞态序号同时作废未完成的选择分支。
+      analysisSelectionBranchSeqRef.current += 1;
+      for (const contextId of analysisStageContextIdsRef.current.values()) {
+        void closeAnalysisContext(contextId).catch(() => {
+          // 卸载阶段回收失败不影响页面退出。
+        });
+      }
+    };
   }, []);
 
   const { diagnostics, compiles } = useMemo(() => {
@@ -679,6 +824,7 @@ export function App() {
   async function handleSwitchTo(workflowId: string): Promise<void> {
     const detail = await getWorkflow(workflowId);
     const definition = detail.definition as unknown as WorkflowDefinition;
+    await closeAnalysisContexts();
     setEditorState(definitionToEditorState(definition));
     setAppState((current) =>
       withCurrentWorkflow(current, {
@@ -720,10 +866,11 @@ export function App() {
     }
   }
 
-  function handleCreateWorkflow(): void {
+  async function handleCreateWorkflow(): Promise<void> {
     if (busy) {
       return;
     }
+    await closeAnalysisContexts();
     setEditorState(createEmptyEditorState("未命名工作流"));
     setAppState((current) =>
       withCurrentWorkflow(current, { id: null, name: "未命名工作流" }),
@@ -743,7 +890,7 @@ export function App() {
     setErrorMessage(null);
     try {
       await persistCurrentWorkflow();
-      handleCreateWorkflow();
+      await handleCreateWorkflow();
     } catch (error) {
       setErrorMessage(toMessage(error));
     } finally {
@@ -759,6 +906,7 @@ export function App() {
     try {
       await deleteWorkflow(workflowId);
       if (appState.workflowId === workflowId) {
+        await closeAnalysisContexts();
         setEditorState(createEmptyEditorState("未命名工作流"));
         setAppState((current) =>
           withCurrentWorkflow(current, { id: null, name: "未命名工作流" }),
@@ -1070,6 +1218,8 @@ export function App() {
     definition: WorkflowDefinition,
     onlyRegionId?: string,
   ): Promise<void> {
+    // 新一轮阶段运行开始：作废尚未完成的选择分支，避免旧上下文写回结果。
+    analysisSelectionBranchSeqRef.current += 1;
     if (schemaCatalog === null) {
       return;
     }
@@ -1081,49 +1231,28 @@ export function App() {
       ) {
         continue;
       }
-      const results = await executeAnalysisRegion(definition, region.id);
+      const previousContext = analysisStageContextIdsRef.current.get(region.id);
+      const run = await runAnalysisRegionStages(definition, region.id);
+      const results = run.results;
+      if (previousContext !== undefined && previousContext !== run.context_id) {
+        void closeAnalysisContext(previousContext).catch(() => {
+          // 旧上下文回收失败不阻断新结果。
+        });
+      }
+      const contextIds = new Map(analysisStageContextIdsRef.current);
+      if (run.context_id === null) {
+        contextIds.delete(region.id);
+      } else {
+        contextIds.set(region.id, run.context_id);
+      }
+      analysisStageContextIdsRef.current = contextIds;
+      setAnalysisStageContextIds(contextIds);
       for (const [nodeId, result] of results) {
         updates.set(nodeId, result);
       }
-      // 展示配置转发节点：把上游输出表原样带入自身运行态，供下游视图读取。
-      for (const config of definition.nodes) {
-        if (
-          config.region_id !== region.id ||
-          (config.kind !== "table_config" &&
-            config.kind !== "pie_config" &&
-            config.kind !== "bar_config")
-        ) {
-          continue;
-        }
-        const table = viewInputTable(config.id, definition, results);
-        updates.set(
-          config.id,
-          table === null ? { status: "stale" } : { status: "ready", table },
-        );
-      }
-      for (const view of definition.nodes) {
-        if (view.region_id !== region.id || !isAnalysisViewKind(view.kind)) {
-          continue;
-        }
-        const table = viewInputTable(view.id, definition, updates);
-        updates.set(
-          view.id,
-          table === null ? { status: "stale" } : { status: "ready", table },
-        );
-      }
-      for (const single of definition.nodes) {
-        if (single.region_id !== region.id || !isAnalysisSingleKind(single.kind)) {
-          continue;
-        }
-        const table = viewInputTable(single.id, definition, updates);
-        updates.set(
-          single.id,
-          table === null
-            ? { status: "stale" }
-            : table.rows.length === 0
-              ? { status: "ready" }
-              : { status: "ready", item: rowItem(table, table.rows[0]) },
-        );
+      const populated = populateAnalysisTerminalResults(definition, region.id, updates);
+      for (const [nodeId, result] of populated) {
+        updates.set(nodeId, result);
       }
     }
     setAnalysisResults((current) => new Map([...current, ...updates]));
@@ -1377,6 +1506,7 @@ export function App() {
       <AnalysisSelectionContext.Provider value={analysisSelectionStore}>
       <AnalysisResultsContext.Provider value={analysisResults}>
       <AnalysisSchemaCatalogContext.Provider value={schemaCatalog}>
+      <AnalysisStageSelectionContext.Provider value={analysisStageSelectionStore}>
         <div className="app-shell">
         <TopBar
           name={editorState?.definition.meta.name ?? appState.workflowName}
@@ -1394,7 +1524,7 @@ export function App() {
           onSave={() => void handleSave()}
           onRun={() => void handleRun()}
           onCancelRun={() => void handleCancelRun()}
-          onCreate={handleCreateWorkflow}
+          onCreate={() => void handleCreateWorkflow()}
           onSaveAndCreate={() => void handleSaveAndCreate()}
           onSwitch={(workflowId) => void handleSwitchWorkflow(workflowId)}
           onSaveAndSwitch={(workflowId) => void handleSaveAndSwitch(workflowId)}
@@ -1527,6 +1657,7 @@ export function App() {
           />
         )}
         </div>
+      </AnalysisStageSelectionContext.Provider>
       </AnalysisSchemaCatalogContext.Provider>
       </AnalysisResultsContext.Provider>
       </AnalysisSelectionContext.Provider>
@@ -1555,8 +1686,4 @@ function sameStringList(left: string[], right: string[]): boolean {
 
 function isAnalysisViewKind(kind: string): boolean {
   return kind === "member_table" || kind === "pie" || kind === "bar";
-}
-
-function isAnalysisSingleKind(kind: string): boolean {
-  return kind === "single";
 }

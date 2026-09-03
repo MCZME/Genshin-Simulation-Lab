@@ -35,6 +35,40 @@ class ExecutePlanResponse(BaseModel):
     tables: dict[str, TableResponse]
 
 
+class CreateAnalysisContextRequest(BaseModel):
+    session_ids: list[str] = Field(default_factory=list)
+
+
+class CreateAnalysisContextResponse(BaseModel):
+    context_id: str
+
+
+class NodeExecutionRequest(BaseModel):
+    node_id: str
+    kind: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    input_stages: list[str] = Field(default_factory=list)
+
+
+class StageResponse(BaseModel):
+    stage_id: str
+    columns: list[TableColumnDto]
+    rows: list[list[Any]]
+    truncated: bool
+    source_node_id: str | None = None
+
+
+class StageSelectionRequest(BaseModel):
+    kind: str
+    columns: list[str] = Field(default_factory=list)
+    values: list[Any] = Field(default_factory=list)
+    row_index: int | None = None
+
+
+class MergeStagesRequest(BaseModel):
+    stage_ids: list[str] = Field(default_factory=list)
+
+
 class SchemaColumnDto(BaseModel):
     name: str
     type: str

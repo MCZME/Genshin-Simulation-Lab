@@ -1016,6 +1016,8 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     validate: () => [],
   },
   compute: _operator("compute", "计算列"),
+  derive: _operator("derive", "构造列"),
+  expand: _operator("expand", "展开行"),
   table_config: {
     kind: "table_config",
     displayName: "表格配置",

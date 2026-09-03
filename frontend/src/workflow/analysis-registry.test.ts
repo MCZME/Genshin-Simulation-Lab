@@ -241,6 +241,105 @@ describe("形状推导", () => {
     }
   });
 
+  it("构造列按类型化常量追加输出列", () => {
+    const definition = definitionWith(
+      [
+        baseNode({ id: "runs1" }),
+        baseNode({
+          id: "d1",
+          kind: "derive",
+          params: {
+            columns: [
+              { name: "attribute_key", type: "string", value: "stat.crit_rate" },
+              { name: "probe_frame", type: "int", value: 600 },
+              { name: "enabled", type: "bool", value: true },
+            ],
+          },
+        }),
+      ],
+      [
+        {
+          id: "e1",
+          source_node_id: "runs1",
+          source_port_id: "out",
+          target_node_id: "d1",
+          target_port_id: "in",
+        },
+      ],
+    );
+    const shape = computeAnalysisShapes(definition).get("d1");
+    expect(shape?.slice(-3).map((column) => column.name)).toEqual([
+      "attribute_key",
+      "probe_frame",
+      "enabled",
+    ]);
+    expect(shape?.slice(-1)[0]?.type).toBe("bool");
+  });
+
+  it("构造列可覆盖同类型输入列且不产生重复列", () => {
+    const definition = definitionWith(
+      [
+        baseNode({ id: "runs1" }),
+        baseNode({
+          id: "d1",
+          kind: "derive",
+          params: {
+            columns: [
+              { name: "stop_reason", type: "string", value: "REWRITTEN" },
+            ],
+          },
+        }),
+      ],
+      [
+        {
+          id: "e1",
+          source_node_id: "runs1",
+          source_port_id: "out",
+          target_node_id: "d1",
+          target_port_id: "in",
+        },
+      ],
+    );
+    const shape = computeAnalysisShapes(definition).get("d1");
+    expect(shape?.filter((column) => column.name === "stop_reason")).toHaveLength(1);
+  });
+
+  it("展开行按值列表做笛卡尔积推导输出列", () => {
+    const definition = definitionWith(
+      [
+        baseNode({ id: "runs1" }),
+        baseNode({
+          id: "x1",
+          kind: "expand",
+          params: {
+            columns: [
+              {
+                name: "attribute_key",
+                type: "string",
+                values: ["stat.crit_rate", "stat.atk.total"],
+              },
+              { name: "probe_frame", type: "int", values: [600, 1200] },
+            ],
+          },
+        }),
+      ],
+      [
+        {
+          id: "e1",
+          source_node_id: "runs1",
+          source_port_id: "out",
+          target_node_id: "x1",
+          target_port_id: "in",
+        },
+      ],
+    );
+    const shape = computeAnalysisShapes(definition).get("x1");
+    expect(shape?.slice(-2).map((column) => column.name)).toEqual([
+      "attribute_key",
+      "probe_frame",
+    ]);
+  });
+
   it("compute 非法表达式不可推导", () => {
     const definition = definitionWith(
       [

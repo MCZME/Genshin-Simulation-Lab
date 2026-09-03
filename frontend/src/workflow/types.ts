@@ -36,6 +36,8 @@ export const NODE_KINDS = [
   "limit",
   "join",
   "compute",
+  "derive",
+  "expand",
   "single",
   "table_config",
   "pie_config",

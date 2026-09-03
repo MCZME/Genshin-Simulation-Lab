@@ -29,6 +29,12 @@ def test_openapi_exposes_all_mvp_endpoints(application_facade) -> None:
     expected = {
         "/api/v1/analysis/query": {"post"},
         "/api/v1/analysis/schema": {"get"},
+        "/api/v1/analysis/runtime/contexts": {"post"},
+        "/api/v1/analysis/runtime/contexts/{context_id}": {"delete"},
+        "/api/v1/analysis/runtime/contexts/{context_id}/nodes/execute": {"post"},
+        "/api/v1/analysis/runtime/contexts/{context_id}/stages/{stage_id}": {"get"},
+        "/api/v1/analysis/runtime/contexts/{context_id}/stages/{stage_id}/select": {"post"},
+        "/api/v1/analysis/runtime/contexts/{context_id}/merge": {"post"},
         "/api/v1/workspace": {"get"},
         "/api/v1/settings": {"get", "put"},
         "/api/v1/workflows": {"get", "post"},

@@ -20,6 +20,25 @@ export function useAnalysisSelection(): AnalysisSelectionStore | null {
   return useContext(AnalysisSelectionContext);
 }
 
+/** 分组选择的稳定意图：用于由后端在输入阶段上重新派生选择阶段。 */
+export interface AnalysisStageSelectionRecord {
+  groupColumns: string[];
+  groupValues: unknown[];
+}
+
+export interface AnalysisStageSelectionStore {
+  records: ReadonlyMap<string, AnalysisStageSelectionRecord | null>;
+  select: (nodeId: string, record: AnalysisStageSelectionRecord | null) => void;
+  contextIdFor: (regionId: string) => string | null;
+}
+
+export const AnalysisStageSelectionContext =
+  createContext<AnalysisStageSelectionStore | null>(null);
+
+export function useAnalysisStageSelection(): AnalysisStageSelectionStore | null {
+  return useContext(AnalysisStageSelectionContext);
+}
+
 /** 分析区域节点结果表的运行时只读视图：供单项详情节点解析上游 item。 */
 export const AnalysisResultsContext = createContext<Map<string, unknown> | null>(null);
 

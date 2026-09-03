@@ -42,6 +42,37 @@ export interface ExecutePlanResponse {
   tables: Record<string, AnalysisTableResponse>;
 }
 
+export interface CreateAnalysisContextRequest {
+  session_ids: string[];
+}
+
+export interface CreateAnalysisContextResponse {
+  context_id: string;
+}
+
+export interface NodeExecutionRequest {
+  node_id: string;
+  kind: string;
+  params: Record<string, unknown>;
+  input_stages: string[];
+}
+
+export interface StageResponse extends AnalysisTableResponse {
+  stage_id: string;
+  source_node_id?: string | null;
+}
+
+export interface StageSelectionRequest {
+  kind: "group" | "row";
+  columns?: string[];
+  values?: unknown[];
+  row_index?: number | null;
+}
+
+export interface MergeStagesRequest {
+  stage_ids: string[];
+}
+
 /** 输入快照结构树节点：对象 / 列表 / 标量；列表不枚举位置。 */
 export interface AnalysisSchemaNodeDto {
   key: string;
@@ -282,6 +313,77 @@ export async function executeAnalysisQuery(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+/** 创建分析节点运行时上下文（阶段结果留在后端）。 */
+export async function createAnalysisContext(
+  sessionIds: string[],
+): Promise<CreateAnalysisContextResponse> {
+  return request<CreateAnalysisContextResponse>("/analysis/runtime/contexts", {
+    method: "POST",
+    body: JSON.stringify({ session_ids: sessionIds } satisfies CreateAnalysisContextRequest),
+  });
+}
+
+/** 在上下文中执行单个节点并物化输出阶段。 */
+export async function executeAnalysisNode(
+  contextId: string,
+  payload: NodeExecutionRequest,
+): Promise<StageResponse> {
+  return request<StageResponse>(
+    `/analysis/runtime/contexts/${encodeURIComponent(contextId)}/nodes/execute`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+/** 读取上下文内已物化阶段表。 */
+export async function readAnalysisStage(
+  contextId: string,
+  stageId: string,
+): Promise<StageResponse> {
+  return request<StageResponse>(
+    `/analysis/runtime/contexts/${encodeURIComponent(contextId)}/stages/${encodeURIComponent(stageId)}`,
+  );
+}
+
+/** 把视图点击选择派生为后端选择阶段。 */
+export async function selectAnalysisStage(
+  contextId: string,
+  stageId: string,
+  selection: StageSelectionRequest,
+): Promise<StageResponse> {
+  return request<StageResponse>(
+    `/analysis/runtime/contexts/${encodeURIComponent(contextId)}/stages/${encodeURIComponent(stageId)}/select`,
+    {
+      method: "POST",
+      body: JSON.stringify(selection),
+    },
+  );
+}
+
+/** 把同结构阶段按行拼接为饼图/柱状图选择输入阶段。 */
+export async function mergeAnalysisStages(
+  contextId: string,
+  stageIds: string[],
+): Promise<StageResponse> {
+  return request<StageResponse>(
+    `/analysis/runtime/contexts/${encodeURIComponent(contextId)}/merge`,
+    {
+      method: "POST",
+      body: JSON.stringify({ stage_ids: stageIds } satisfies MergeStagesRequest),
+    },
+  );
+}
+
+/** 关闭分析节点运行时上下文并回收阶段。 */
+export async function closeAnalysisContext(contextId: string): Promise<void> {
+  await request<undefined>(
+    `/analysis/runtime/contexts/${encodeURIComponent(contextId)}`,
+    { method: "DELETE" },
+  );
 }
 
 /** 取数节点编辑器的可读 schema：表列、事件类型与载荷字段。 */

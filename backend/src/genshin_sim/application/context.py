@@ -17,6 +17,7 @@ from genshin_sim.application.services.assets import (
 )
 from genshin_sim.application.services.protocols import (
     AnalysisQueryExecutor,
+    AnalysisStageExecutor,
     ProjectConfigStore,
     ResultRepository,
 )
@@ -41,6 +42,7 @@ class ApplicationContext:
     result_writer: ResultWriter
     job_runner: SimulationJobRunner
     analysis_query_executor: AnalysisQueryExecutor | None = None
+    analysis_stage_executor: AnalysisStageExecutor | None = None
     asset_handler_repository: AssetHandlerBindingRepository | None = None
     content_unit_registry: ContentUnitRegistry | None = None
     init_result_database: Callable[[str | Path], Path] | None = None
@@ -79,6 +81,7 @@ def create_application(
     result_writer: ResultWriter,
     job_runner: SimulationJobRunner | None = None,
     analysis_query_executor: AnalysisQueryExecutor | None = None,
+    analysis_stage_executor: AnalysisStageExecutor | None = None,
     content_unit_registry: ContentUnitRegistry | None = None,
     workflow_store: WorkflowStore | None = None,
 ) -> ApplicationFacade:
@@ -101,6 +104,13 @@ def create_application(
         )
 
         executor = SQLiteAnalysisQueryExecutor(result_writer.db_path)
+    stage_executor = analysis_stage_executor
+    if stage_executor is None:
+        from genshin_sim.infrastructure.results_sqlite.analysis_stage import (
+            SQLiteAnalysisStageExecutor,
+        )
+
+        stage_executor = SQLiteAnalysisStageExecutor(result_writer.db_path)
 
     root = Path(project_root)
     # 配置是工作流存档路径的前置条件：组装时先解析一次，之后每次操作再按当前配置解析。
@@ -114,6 +124,7 @@ def create_application(
         result_writer=result_writer,
         job_runner=runner,
         analysis_query_executor=executor,
+        analysis_stage_executor=stage_executor,
         content_unit_registry=content_unit_registry,
         workflow_store=(
             workflow_store

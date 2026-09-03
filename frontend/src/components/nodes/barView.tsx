@@ -10,7 +10,11 @@ import {
   type AnalysisTableResult,
 } from "../../workflow/templates";
 import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
-import { useAnalysisSchemaCatalog, useAnalysisSelection } from "../analysis_context";
+import {
+  useAnalysisSchemaCatalog,
+  useAnalysisSelection,
+  useAnalysisStageSelection,
+} from "../analysis_context";
 import { asString } from "./common";
 import { useAssetNames } from "./useAssetNames";
 import { MAX_RENDERED_ROWS, estimateTextWidth, formatCell, type ViewFitInfo } from "./views";
@@ -272,12 +276,14 @@ export function BarChartView({
   definition,
   table,
   onFitChange,
+  stageId,
 }: {
   node: WorkflowNode;
   definition: WorkflowDefinition;
   table: AnalysisTableResult;
   /** 内容自然尺寸变化时上报（宽度 + 高度）。 */
   onFitChange?: (info: ViewFitInfo) => void;
+  stageId?: string;
 }) {
   const config = useMemo(
     () => connectedConfigNode(definition, node.id, "bar_config"),
@@ -332,8 +338,14 @@ export function BarChartView({
   const assetNames = useAssetNames(assetKeys);
 
   const selection = useAnalysisSelection();
+  const stageSelection = useAnalysisStageSelection();
 
   const [selected, setSelected] = useState<SelectedBar | null>(null);
+  const [prevStageId, setPrevStageId] = useState(stageId);
+  if (stageId !== prevStageId) {
+    setPrevStageId(stageId);
+    setSelected(null);
+  }
   // 绑定变化时重置瞬态选择（不随工作流保存）。
   const bindingKey = [x, y, seriesColumn].join("|");
   const [prevBindingKey, setPrevBindingKey] = useState(bindingKey);
@@ -390,12 +402,49 @@ export function BarChartView({
       const isSame =
         selected !== null && selected.seriesIndex === seriesIndex && selected.dataIndex === dataIndex;
       setSelected(isSame ? null : { seriesIndex, dataIndex });
+      if (isSame) {
+        stageSelection?.select(node.id, null);
+        selection?.select(node.id, null);
+        return;
+      }
       if (selection === null) {
+        return;
+      }
+      const stageContextId =
+        stageId === undefined ? null : stageSelection?.contextIdFor(node.region_id ?? "") ?? null;
+      const firstRow = table.rows[rowIndexes[0]];
+      if (
+        stageContextId !== null &&
+        firstRow !== undefined &&
+        stageSelection !== null
+      ) {
+        const xIndex = columnIndex.get(x);
+        const rawSeriesIndex =
+          seriesColumn === "" ? undefined : columnIndex.get(seriesColumn);
+        stageSelection.select(node.id, {
+          groupColumns: [x, ...(seriesColumn === "" ? [] : [seriesColumn])],
+          groupValues: [
+            ...(xIndex === undefined ? [] : [firstRow[xIndex]]),
+            ...(rawSeriesIndex === undefined ? [] : [firstRow[rawSeriesIndex]]),
+          ],
+        });
         return;
       }
       selection.select(node.id, isSame ? null : tableRowsByIndex(table, rowIndexes));
     },
-    [data, table, selected, selection, node.id],
+    [
+      data,
+      table,
+      selected,
+      selection,
+      stageSelection,
+      stageId,
+      columnIndex,
+      x,
+      seriesColumn,
+      node.id,
+      node.region_id,
+    ],
   );
 
   const option = useMemo(

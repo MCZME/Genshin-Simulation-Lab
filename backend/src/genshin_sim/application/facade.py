@@ -23,8 +23,11 @@ from genshin_sim.application.context import ApplicationContext
 from genshin_sim.application.errors import ApplicationError
 from genshin_sim.application.input import SimulationInput
 from genshin_sim.application.models import (
+    AnalysisNodeExecution,
     AnalysisPlan,
     AnalysisReadSchema,
+    AnalysisStageResult,
+    AnalysisStageSelection,
     AnalysisTableResult,
     AssetListItem,
     AssetListKind,
@@ -37,6 +40,12 @@ from genshin_sim.application.models import (
 from genshin_sim.application.services.analysis_query import (
     AnalysisPlanValidationError,
     AnalysisQueryService,
+)
+from genshin_sim.application.services.analysis_runtime import (
+    AnalysisContextNotFoundError,
+    AnalysisRuntimeService,
+    AnalysisRuntimeValidationError,
+    AnalysisStageNotFoundError,
 )
 from genshin_sim.application.services.assets import (
     AssetDatabaseService,
@@ -253,6 +262,38 @@ class ApplicationFacade(Protocol):
 
     def analysis_schema(self) -> AnalysisReadSchema: ...
 
+    def create_analysis_context(
+        self,
+        session_ids: Sequence[str],
+    ) -> str: ...
+
+    def execute_analysis_node(
+        self,
+        context_id: str,
+        execution: AnalysisNodeExecution,
+    ) -> AnalysisStageResult: ...
+
+    def read_analysis_stage(
+        self,
+        context_id: str,
+        stage_id: str,
+    ) -> AnalysisStageResult: ...
+
+    def select_analysis_stage(
+        self,
+        context_id: str,
+        stage_id: str,
+        selection: AnalysisStageSelection,
+    ) -> AnalysisStageResult: ...
+
+    def merge_analysis_stages(
+        self,
+        context_id: str,
+        stage_ids: tuple[str, ...] | list[str],
+    ) -> AnalysisStageResult: ...
+
+    def close_analysis_context(self, context_id: str) -> None: ...
+
     def create_workflow(self, name: str = DEFAULT_WORKFLOW_NAME) -> WorkflowDetail: ...
 
     def list_workflows(self) -> tuple[WorkflowSummary, ...]: ...
@@ -293,6 +334,7 @@ class DefaultApplicationFacade:
         self._input_validation_service = InputValidationService()
         self._results_service = ResultsService(context.result_repository)
         self._analysis_query_service_impl: AnalysisQueryService | None = None
+        self._analysis_runtime_service_impl: AnalysisRuntimeService | None = None
         self._batch_service = BatchRunService(
             context.job_runner,
             validator=BatchInputValidationService(
@@ -737,6 +779,96 @@ class DefaultApplicationFacade:
     def analysis_schema(self) -> AnalysisReadSchema:
         return self._analysis_query_service().read_schema()
 
+    def create_analysis_context(self, session_ids: Sequence[str]) -> str:
+        try:
+            return self._analysis_runtime_service().create_context(session_ids)
+        except AnalysisRuntimeValidationError as exc:
+            raise ApplicationError(
+                "validation_failed",
+                str(exc),
+                details=exc.details,
+            ) from exc
+
+    def execute_analysis_node(
+        self,
+        context_id: str,
+        execution: AnalysisNodeExecution,
+    ) -> AnalysisStageResult:
+        try:
+            return self._analysis_runtime_service().execute_node(context_id, execution)
+        except AnalysisRuntimeValidationError as exc:
+            raise ApplicationError(
+                "validation_failed",
+                str(exc),
+                details=exc.details,
+            ) from exc
+        except AnalysisPlanValidationError as exc:
+            raise ApplicationError(
+                "validation_failed",
+                str(exc),
+                details=exc.details,
+            ) from exc
+        except (AnalysisContextNotFoundError, AnalysisStageNotFoundError) as exc:
+            raise ApplicationError("not_found", str(exc)) from exc
+
+    def read_analysis_stage(self, context_id: str, stage_id: str) -> AnalysisStageResult:
+        try:
+            return self._analysis_runtime_service().read_stage(context_id, stage_id)
+        except (AnalysisContextNotFoundError, AnalysisStageNotFoundError) as exc:
+            raise ApplicationError("not_found", str(exc)) from exc
+
+    def select_analysis_stage(
+        self,
+        context_id: str,
+        stage_id: str,
+        selection: AnalysisStageSelection,
+    ) -> AnalysisStageResult:
+        try:
+            return self._analysis_runtime_service().select_stage(
+                context_id,
+                stage_id,
+                selection,
+            )
+        except AnalysisPlanValidationError as exc:
+            raise ApplicationError(
+                "validation_failed",
+                str(exc),
+                details=exc.details,
+            ) from exc
+        except AnalysisRuntimeValidationError as exc:
+            raise ApplicationError(
+                "validation_failed",
+                str(exc),
+                details=exc.details,
+            ) from exc
+        except (AnalysisContextNotFoundError, AnalysisStageNotFoundError) as exc:
+            raise ApplicationError("not_found", str(exc)) from exc
+
+    def merge_analysis_stages(
+        self,
+        context_id: str,
+        stage_ids: tuple[str, ...] | list[str],
+    ) -> AnalysisStageResult:
+        try:
+            return self._analysis_runtime_service().merge_stages(
+                context_id,
+                stage_ids,
+            )
+        except AnalysisRuntimeValidationError as exc:
+            raise ApplicationError(
+                "validation_failed",
+                str(exc),
+                details=exc.details,
+            ) from exc
+        except (AnalysisContextNotFoundError, AnalysisStageNotFoundError) as exc:
+            raise ApplicationError("not_found", str(exc)) from exc
+
+    def close_analysis_context(self, context_id: str) -> None:
+        try:
+            self._analysis_runtime_service().close_context(context_id)
+        except AnalysisContextNotFoundError as exc:
+            raise ApplicationError("not_found", str(exc)) from exc
+
     def create_workflow(self, name: str = DEFAULT_WORKFLOW_NAME) -> WorkflowDetail:
         return self._require_workflow_service().create(name)
 
@@ -835,6 +967,17 @@ class DefaultApplicationFacade:
                 )
             self._analysis_query_service_impl = AnalysisQueryService(executor)
         return self._analysis_query_service_impl
+
+    def _analysis_runtime_service(self) -> AnalysisRuntimeService:
+        if self._analysis_runtime_service_impl is None:
+            executor = self._context.analysis_stage_executor
+            if executor is None:
+                raise ApplicationError(
+                    "analysis_runtime_unavailable",
+                    "分析节点运行时能力未配置",
+                )
+            self._analysis_runtime_service_impl = AnalysisRuntimeService(executor)
+        return self._analysis_runtime_service_impl
 
 
 def _result_not_found(session_id: str) -> ApplicationError:

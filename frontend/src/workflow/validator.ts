@@ -25,6 +25,7 @@ import { collectUpstreamNodes } from "./chain";
 import {
   ANALYSIS_CONFIG_NODE_KINDS,
   ANALYSIS_TABLE_NODE_KINDS,
+  ANALYSIS_VIEW_NODE_KINDS,
   computeAnalysisShapes,
   type TableShape,
 } from "./templates";
@@ -854,7 +855,15 @@ function validateAnalysisGraph(
     });
     const incomingTableEdges = (edgesByTarget.get(node.id) ?? []).some((edge) => {
       const source = nodeById.get(edge.source_node_id);
-      return source !== undefined && ANALYSIS_TABLE_NODE_KINDS.has(source.kind);
+      const viewTableOutput =
+        source !== undefined &&
+        source.kind !== "member_table" &&
+        ANALYSIS_VIEW_NODE_KINDS.has(source.kind) &&
+        edge.source_port_id === ANALYSIS_SELECTION_PORT;
+      return (
+        source !== undefined &&
+        (ANALYSIS_TABLE_NODE_KINDS.has(source.kind) || viewTableOutput)
+      );
     });
     if (FETCH_KINDS.has(node.kind) && !boundaryFed && !incomingTableEdges) {
       diagnostics.push(
@@ -938,6 +947,20 @@ function validateAnalysisGraph(
         );
       }
     }
+    if (
+      source.kind === "member_table" &&
+      edge.source_port_id === ANALYSIS_SELECTION_PORT &&
+      !ANALYSIS_DETAIL_KINDS.has(target.kind)
+    ) {
+      diagnostics.push(
+        diagnostic(
+          "error",
+          "ITEM_OUTPUT_INVALID",
+          "表格视图的 selection 输出（item）只能连接单项详情节点",
+          { edge_id: edge.id, node_id: source.id },
+        ),
+      );
+    }
   }
   for (const node of nodeById.values()) {
     if (!ANALYSIS_SINGLE_KINDS.has(node.kind) && !ANALYSIS_DETAIL_KINDS.has(node.kind)) {
@@ -964,7 +987,15 @@ function validateAnalysisGraph(
     if (ANALYSIS_SINGLE_KINDS.has(node.kind)) {
       const tableFed = dataEdges.some((edge) => {
         const source = nodeById.get(edge.source_node_id);
-        return source !== undefined && ANALYSIS_TABLE_NODE_KINDS.has(source.kind);
+        const viewTableOutput =
+          source !== undefined &&
+          source.kind !== "member_table" &&
+          ANALYSIS_VIEW_NODE_KINDS.has(source.kind) &&
+          edge.source_port_id === ANALYSIS_SELECTION_PORT;
+        return (
+          source !== undefined &&
+          (ANALYSIS_TABLE_NODE_KINDS.has(source.kind) || viewTableOutput)
+        );
       });
       if (!tableFed) {
         diagnostics.push(

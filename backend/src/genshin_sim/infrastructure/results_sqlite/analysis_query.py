@@ -31,7 +31,6 @@ MAX_RESULT_ROWS = 10_000
 _MAX_EXPR_DEPTH = 16
 _MAX_EXTRACT_COLUMNS = 64
 _MAX_LIMIT_COUNT = 10_000
-_MAX_EXPAND_VALUES_PER_COLUMN = 64
 
 _IDENTIFIER_PATTERN = re.compile("^[A-Za-z0-9_-]{1,64}$")
 _COLUMN_NAME_PATTERN = re.compile("^[A-Za-z0-9_\u4e00-\u9fff]{1,64}$")
@@ -49,7 +48,6 @@ _INPUT_ARITY: dict[str, int] = {
     "aggregate": 1,
     "compute": 1,
     "derive": 1,
-    "expand": 1,
     "join": 2,
 }
 
@@ -64,7 +62,6 @@ _FETCH_PARAM_KEYS: dict[str, frozenset[str]] = {
     "join": frozenset({"left_key", "right_key", "mode"}),
     "compute": frozenset({"columns"}),
     "derive": frozenset({"columns"}),
-    "expand": frozenset({"columns"}),
 }
 
 _AGGREGATE_FUNCTIONS = frozenset({"sum", "count", "avg", "max", "min", "stddev", "p95"})
@@ -449,8 +446,6 @@ class _PlanCompiler:
             return checker.compute_shape(params)
         if kind == "derive":
             return checker.derive_shape(params)
-        if kind == "expand":
-            return checker.expand_shape(params)
         if kind == "join":
             right = input_shapes[1] if len(input_shapes) > 1 else ()
             return checker.join_shape(params, right)
@@ -499,8 +494,6 @@ class _PlanCompiler:
             return self._compile_compute(node, input_shapes, binder, source_sql)
         if node.kind == "derive":
             return self._compile_derive(node, input_shapes, binder, source_sql)
-        if node.kind == "expand":
-            return self._compile_expand(node, input_shapes, binder, source_sql)
         return None
 
     def _compile_stage_source(self, node: AnalysisPlanNode) -> str:
@@ -736,30 +729,6 @@ class _PlanCompiler:
                 select_items.append(binder.placeholder(item["value"]) + " AS " + _quoted(name))
         return "SELECT " + ", ".join(select_items) + " FROM " + source_sql
 
-    def _compile_expand(
-        self,
-        node: AnalysisPlanNode,
-        input_shapes: list[tuple[AnalysisColumn, ...]],
-        binder: _Binder,
-        source_sql: str,
-    ) -> str:
-        select_items = [
-            "S." + _quoted(column.name) for column in (input_shapes[0] if input_shapes else ())
-        ]
-        from_items = ["(" + source_sql + ") S"]
-        for index, item in enumerate(node.params.get("columns") or []):
-            alias = "E" + str(index)
-            values = list(item.get("values") or [])
-            value_sql = " UNION ALL ".join(
-                "SELECT " + binder.placeholder(value) + " AS " + _quoted(str(item["name"]))
-                for value in values
-            )
-            from_items.append("CROSS JOIN (" + value_sql + ") " + alias)
-            select_items.append(
-                alias + "." + _quoted(str(item["name"])) + " AS " + _quoted(str(item["name"]))
-            )
-        return "SELECT " + ", ".join(select_items) + " FROM " + " ".join(from_items)
-
     def _compile_expr(self, expr: Any, binder: _Binder, *, depth: int) -> str:
         if depth > _MAX_EXPR_DEPTH:
             raise AnalysisPlanValidationError("查询计划校验失败", [{"reason": "计算列表达式过深"}])
@@ -972,26 +941,26 @@ class _ShapeChecker:
         return tuple(output)
 
     def derive_shape(self, params: Mapping[str, Any]) -> tuple[AnalysisColumn, ...]:
-        """构造列：追加类型化常量列；同名输入列视为同类型覆盖改写。"""
+        """设置列值：新增类型化值列；同名同类型输入列改写为该值。"""
 
         output = [AnalysisColumn(name, type_) for name, type_ in self.types.items()]
         taken = set(self.types)
         overridden: set[str] = set()
         columns = self._list(params.get("columns"), "columns")
         if not columns:
-            self.compiler._issue(self.node.id, "构造列至少需要一列")
+            self.compiler._issue(self.node.id, "设置列值至少需要一列")
         for item in columns:
             name = self._field(item, "name")
             type_ = self._field(item, "type")
             value = item.get("value") if isinstance(item, dict) else None
             if not isinstance(name, str) or not _COLUMN_NAME_PATTERN.match(name):
-                self.compiler._issue(self.node.id, "构造列名不合法：" + str(name))
+                self.compiler._issue(self.node.id, "设置列值列名不合法：" + str(name))
                 continue
             if type_ not in _TYPE_VOCABULARY:
-                self.compiler._issue(self.node.id, "构造列类型不合法：" + str(type_))
+                self.compiler._issue(self.node.id, "设置列值类型不合法：" + str(type_))
                 continue
             if not _literal_matches(type_, value):
-                self.compiler._issue(self.node.id, "构造列字面量与类型不符：" + str(name))
+                self.compiler._issue(self.node.id, "设置列值字面量与类型不符：" + str(name))
                 continue
             if name in self.types:
                 if type_ != self.types[name]:
@@ -1010,51 +979,6 @@ class _ShapeChecker:
                 continue
             taken.add(name)
             output.append(AnalysisColumn(name, type_))
-        return tuple(output)
-
-    def expand_shape(self, params: Mapping[str, Any]) -> tuple[AnalysisColumn, ...]:
-        """展开行：输入每一行与声明常量值列表做笛卡尔积（行级构造节点）。"""
-
-        output = [AnalysisColumn(name, type_) for name, type_ in self.types.items()]
-        taken = set(self.types)
-        columns = self._list(params.get("columns"), "columns")
-        if not columns:
-            self.compiler._issue(self.node.id, "展开行至少需要一个维度列")
-        total = 1
-        for item in columns:
-            name = self._field(item, "name")
-            type_ = self._field(item, "type")
-            values = item.get("values") if isinstance(item, dict) else None
-            if not isinstance(name, str) or not _COLUMN_NAME_PATTERN.match(name):
-                self.compiler._issue(self.node.id, "展开列名不合法：" + str(name))
-                continue
-            if name in taken:
-                self.compiler._issue(self.node.id, "输出列名重复：" + name)
-                continue
-            if type_ not in _TYPE_VOCABULARY:
-                self.compiler._issue(self.node.id, "展开列类型不合法：" + str(type_))
-                continue
-            if not isinstance(values, list) or not values:
-                self.compiler._issue(self.node.id, "展开列需要非空值列表：" + str(name))
-                continue
-            if len(values) > _MAX_EXPAND_VALUES_PER_COLUMN:
-                self.compiler._issue(
-                    self.node.id,
-                    "单列展开值超过上限 " + str(_MAX_EXPAND_VALUES_PER_COLUMN),
-                )
-                continue
-            for value in values:
-                if not _literal_matches(type_, value):
-                    self.compiler._issue(
-                        self.node.id,
-                        "展开值与声明类型不符：" + str(name),
-                    )
-                    break
-            total *= len(values)
-            taken.add(name)
-            output.append(AnalysisColumn(name, type_))
-        if total > MAX_RESULT_ROWS:
-            self.compiler._issue(self.node.id, "展开组合数超过行数上限")
         return tuple(output)
 
     def join_shape(

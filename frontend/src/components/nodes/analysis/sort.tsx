@@ -81,7 +81,7 @@ export function SortEditor({ node, onChange }: EditorProps) {
       ))}
       <button
         type="button"
-        className="filter-add-button"
+        className="analysis-add-button"
         onClick={() =>
           onChange({
             ...node.params,
@@ -159,11 +159,11 @@ function SortKeyRow({
         >
           ↓
         </button>
-        <button type="button" className="filter-row-remove" title="移除排序键" onClick={onRemove}>
+        <button type="button" className="analysis-row-remove" title="移除排序键" onClick={onRemove}>
           ×
         </button>
       </div>
-      {error !== null && <p className="filter-row-error">{error}</p>}
+      {error !== null && <p className="analysis-row-error">{error}</p>}
     </div>
   );
 }

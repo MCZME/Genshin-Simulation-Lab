@@ -1,4 +1,4 @@
-/** 单项详情节点内容区：消费 item（表格行/取单项结果）并渲染详情。 */
+/** 单项详情节点内容区：消费 item（表格行/获取单行结果）并渲染详情。 */
 
 import { useEffect, useState } from "react";
 import { getFrameState, getResultEvent } from "../../api/client";
@@ -28,7 +28,7 @@ export function AnalysisDetailBody({
 }) {
   const item = useUpstreamItem(node, definition);
   if (item === null) {
-    return <div className="analysis-view-state">未连接 item 源（视图选择或取单项）</div>;
+    return <div className="analysis-view-state">未连接 item 源（视图选择或获取单行）</div>;
   }
   if (item === undefined) {
     return <div className="analysis-view-state">未选择（点击上游表格行）</div>;
@@ -48,7 +48,7 @@ export function AnalysisDetailBody({
   }
 }
 
-/** 取单项节点卡：显示上游表第一行的内容预览。 */
+/** 获取单行节点卡：显示上游表第一行的内容预览。 */
 export function SingleItemBody({ result }: { result: AnalysisNodeResult | undefined }) {
   if (result === undefined || result.status === "idle") {
     return <div className="analysis-view-state">未执行（连接数据后运行工作流）</div>;

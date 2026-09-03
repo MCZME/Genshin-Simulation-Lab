@@ -344,7 +344,6 @@ export const ANALYSIS_TABLE_NODE_KINDS = new Set([
   "join",
   "compute",
   "derive",
-  "expand",
 ]);
 
 /** 展示视图：为选择输出提供输入形状，不进入 SQL 查询计划。 */
@@ -585,40 +584,6 @@ function deriveShape(node: WorkflowNode, source: TableShape[]): TableShape[] | n
   return output;
 }
 
-function expandShape(node: WorkflowNode, source: TableShape[]): TableShape[] | null {
-  const output = [...source];
-  const taken = new Set(source.map((column) => column.name));
-  if (!Array.isArray(node.params.columns) || node.params.columns.length === 0) {
-    return null;
-  }
-  const columns = node.params.columns as {
-    name?: unknown;
-    type?: unknown;
-    values?: unknown;
-  }[];
-  let total = 1;
-  for (const item of columns) {
-    if (
-      !isRecord(item) ||
-      typeof item.name !== "string" ||
-      !COLUMN_NAME_PATTERN.test(item.name) ||
-      typeof item.type !== "string" ||
-      !TYPE_VOCABULARY.has(item.type) ||
-      !Array.isArray(item.values) ||
-      item.values.length === 0 ||
-      item.values.length > 64 ||
-      taken.has(item.name) ||
-      !item.values.every((value) => literalMatches(item.type as string, value))
-    ) {
-      return null;
-    }
-    total *= item.values.length;
-    taken.add(item.name);
-    output.push({ name: item.name, type: item.type });
-  }
-  return total <= 10_000 ? output : null;
-}
-
 function exprType(
   expr: unknown,
   types: Map<string, string>,
@@ -837,9 +802,6 @@ export function computeAnalysisShapes(
         break;
       case "derive":
         shape = inputShapes[0] ? deriveShape(node, inputShapes[0]) : null;
-        break;
-      case "expand":
-        shape = inputShapes[0] ? expandShape(node, inputShapes[0]) : null;
         break;
       case "join":
         shape =

@@ -189,17 +189,13 @@ it("饼图 selection（行集表）可进入下游数据算子", () => {
   expect(codes(result)).not.toContain("ITEM_OUTPUT_INVALID");
 });
 
-it("运行记录经展开行/构造列后可构成角色状态详情描述符", () => {
+it("运行记录经设置列值后可构成角色状态详情描述符", () => {
   const nodes = [
     fedRuns(),
-    node("x1", "expand", {
+    node("x1", "derive", {
       columns: [
-        { name: "slot", type: "int", values: [1, 2] },
-        {
-          name: "attribute_key",
-          type: "string",
-          values: ["stat.crit_rate", "stat.atk.total"],
-        },
+        { name: "slot", type: "int", value: 1 },
+        { name: "attribute_key", type: "string", value: "stat.crit_rate" },
       ],
     }),
     node("view1", "member_table"),

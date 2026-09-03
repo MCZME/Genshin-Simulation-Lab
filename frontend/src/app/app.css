@@ -3997,7 +3997,7 @@ body {
   flex: 1;
 }
 
-.filter-row-remove {
+.analysis-row-remove {
   flex: none;
   width: 22px;
   height: 22px;
@@ -4012,19 +4012,19 @@ body {
   cursor: pointer;
 }
 
-.filter-row-remove:hover {
+.analysis-row-remove:hover {
   color: #f87171;
   border-color: #f87171;
 }
 
-.filter-row-error {
+.analysis-row-error {
   margin: 0;
   font-size: 11px;
   color: #f87171;
   line-height: 1.4;
 }
 
-.filter-add-button {
+.analysis-add-button {
   width: 100%;
   margin-top: 2px;
   padding: 5px 0;
@@ -4037,7 +4037,7 @@ body {
   cursor: pointer;
 }
 
-.filter-add-button:hover {
+.analysis-add-button:hover {
   color: #e2e8f0;
   border-color: #3b82f6;
 }
@@ -4104,9 +4104,14 @@ body {
   width: 340px;
 }
 
+.node-card-derive {
+  width: 340px;
+}
+
 .aggregate-inline,
 .project-inline,
-.sort-inline {
+.sort-inline,
+.derive-inline {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -4147,7 +4152,8 @@ body {
 
 .aggregate-row,
 .project-row,
-.sort-key-row {
+.sort-key-row,
+.derive-row {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -4159,7 +4165,8 @@ body {
 
 .aggregate-line,
 .project-line,
-.sort-key-line {
+.sort-key-line,
+.derive-line {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -4169,7 +4176,9 @@ body {
 .aggregate-line input,
 .project-line select,
 .project-line input,
-.sort-key-line select {
+.sort-key-line select,
+.derive-line select,
+.derive-line input,
   min-width: 0;
   flex: 1;
 }
@@ -4231,7 +4240,7 @@ body {
   min-width: 0;
 }
 
-/* 合并表（连接）节点 */
+/* 连接表节点 */
 
 .node-card-join {
   width: 340px;
@@ -4335,6 +4344,8 @@ body {
 .project-line > select,
 .project-line > input,
 .sort-key-line > select,
+.derive-line > select,
+.derive-line > input,
 .limit-line > input,
 .join-key-row > select,
 .table-binding-row > select,

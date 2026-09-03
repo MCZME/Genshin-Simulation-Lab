@@ -198,7 +198,7 @@ export function FilterEditor({ node, onChange }: EditorProps) {
       ))}
       <button
         type="button"
-        className="filter-add-button"
+        className="analysis-add-button"
         onClick={() =>
           onChange({
             ...node.params,
@@ -255,14 +255,14 @@ function FilterConditionRow({
         <FilterValueControl condition={condition} type={type} onChange={onChangeValue} />
         <button
           type="button"
-          className="filter-row-remove"
+          className="analysis-row-remove"
           title="移除条件"
           onClick={onRemove}
         >
           ×
         </button>
       </div>
-      {error !== null && <p className="filter-row-error">{error}</p>}
+      {error !== null && <p className="analysis-row-error">{error}</p>}
     </div>
   );
 }

@@ -30,7 +30,7 @@ export interface AnalysisNodeResult {
   table?: AnalysisTableResult;
   /** 节点运行时物化的后端阶段引用。 */
   stage_id?: string;
-  /** 取单项节点计算的 item（上游表第一行）。 */
+  /** 获取单行节点计算的 item（上游表第一行）。 */
   item?: unknown;
   error?: string;
 }
@@ -92,7 +92,6 @@ const TABLE_NODE_KINDS = new Set([
   "join",
   "compute",
   "derive",
-  "expand",
 ]);
 const CONFIG_NODE_KINDS = new Set(["table_config", "pie_config", "bar_config"]);
 
@@ -880,7 +879,7 @@ export function viewInputTable(
       ANALYSIS_VIEW_NODE_KINDS.has(sourceNode.kind) &&
       edge.source_port_id === "selection"
     ) {
-      // selection 输出是瞬态选择，不是视图/取单项的数据输入；
+      // selection 输出是瞬态选择，不是视图/获取单行的数据输入；
       // 未选中时不能把视图的整组输入表当成上游数据。
       continue;
     }
@@ -901,7 +900,7 @@ export function viewInputTable(
 }
 
 /**
- * 把区域内展示终端（config 转发、视图、取单项）按当前表结果补齐。
+ * 把区域内展示终端（config 转发、视图、获取单行）按当前表结果补齐。
  * 供整区刷新与选择分支执行共用，避免两种路径的状态收尾不一致。
  */
 export function populateAnalysisTerminalResults(
@@ -968,7 +967,7 @@ export function populateAnalysisTerminalResults(
   return results;
 }
 
-/** 取单项是否由饼图/柱状图 selection 瞬态输出驱动。 */
+/** 获取单行是否由饼图/柱状图 selection 瞬态输出驱动。 */
 function hasViewSelectionInput(
   definition: WorkflowDefinition,
   nodeId: string,
@@ -987,7 +986,7 @@ function hasViewSelectionInput(
   });
 }
 
-/** 饼图/柱状图 selection 直接驱动的取单项 id（不经过表算子）。 */
+/** 饼图/柱状图 selection 直接驱动的获取单行 id（不经过表算子）。 */
 export function directSelectionSingleIds(
   definition: WorkflowDefinition,
   regionId: string,
@@ -1008,7 +1007,7 @@ export function directSelectionSingleIds(
     .map((edge) => edge.target_node_id);
 }
 
-/** 把点击后后端派生的选择阶段第一行写入直接下游取单项。 */
+/** 把点击后后端派生的选择阶段第一行写入直接下游获取单行。 */
 export function applyViewSelectionSingles(
   definition: WorkflowDefinition,
   regionId: string,

@@ -436,7 +436,7 @@ describe("节点运行时执行", () => {
     expect(results.get("lim1")?.stage_id).toBe("stage-selected-limit");
   });
 
-  it("选择分支结果补齐配置转发、下游视图与取单项", async () => {
+  it("选择分支结果补齐配置转发、下游视图与获取单行", async () => {
     const def = definition(
       [
         simulation("sim", ["a"]),
@@ -554,7 +554,7 @@ describe("节点运行时执行", () => {
     expect(executed).toEqual(["lim1"]);
   });
 
-  it("未点击时饼图 selection 直连的取单项不取整组数据", () => {
+  it("未点击时饼图 selection 直连的获取单行不取整组数据", () => {
     const def = definition(
       [
         simulation("sim", ["a"]),

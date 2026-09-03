@@ -1,4 +1,4 @@
-/** 合并表（连接）节点：卡片直编。 */
+/** 连接表节点：卡片直编。 */
 
 import { asString } from "../common";
 import { inputShapeFor, type EditorProps } from "./context";
@@ -77,8 +77,8 @@ export function JoinEditor({ node, onChange }: EditorProps) {
               ))}
             </select>
           </div>
-          {leftKey === "" && <p className="filter-row-error">请选择主表匹配列</p>}
-          {rightKey === "" && <p className="filter-row-error">请选择副表匹配列</p>}
+          {leftKey === "" && <p className="analysis-row-error">请选择主表匹配列</p>}
+          {rightKey === "" && <p className="analysis-row-error">请选择副表匹配列</p>}
           {typeMismatch && (
             <p className="join-warning">
               主表键（{leftType}）与副表键（{rightType}）类型不一致，可能永远匹配不上

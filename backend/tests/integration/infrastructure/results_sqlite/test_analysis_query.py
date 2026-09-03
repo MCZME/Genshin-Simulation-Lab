@@ -527,60 +527,6 @@ def test_derive_can_overwrite_existing_same_type_column(tmp_path) -> None:
     assert _column_values(table, "stop_reason") == ["REWRITTEN", "REWRITTEN"]
 
 
-def test_expand_generates_cartesian_rows_from_literal_lists(tmp_path) -> None:
-    executor = _executor(tmp_path)
-    plan = _plan(
-        (
-            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
-            AnalysisPlanNode(
-                id="x1",
-                kind="expand",
-                params={
-                    "columns": [
-                        {
-                            "name": "attribute_key",
-                            "type": "string",
-                            "values": ["stat.crit_rate", "stat.atk.total"],
-                        },
-                        {
-                            "name": "probe_frame",
-                            "type": "int",
-                            "values": [600, 1200],
-                        },
-                    ]
-                },
-                inputs=("runs1",),
-            ),
-        ),
-        ("x1",),
-    )
-
-    table = executor.execute_plan(plan)["x1"]
-
-    # 每场运行 2 个属性 × 2 个帧 = 4 行；两场共 8 行。
-    assert len(table.rows) == 8
-    assert sorted(_column_values(table, "attribute_key")) == [
-        "stat.atk.total",
-        "stat.atk.total",
-        "stat.atk.total",
-        "stat.atk.total",
-        "stat.crit_rate",
-        "stat.crit_rate",
-        "stat.crit_rate",
-        "stat.crit_rate",
-    ]
-    assert sorted(_column_values(table, "probe_frame")) == [
-        600,
-        600,
-        600,
-        600,
-        1200,
-        1200,
-        1200,
-        1200,
-    ]
-
-
 def test_chinese_column_names_roundtrip(tmp_path) -> None:
     """中文列名可读名即列名：取数/过滤/聚合/投影全链路可用。"""
 

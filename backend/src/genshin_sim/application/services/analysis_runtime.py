@@ -29,7 +29,6 @@ _NODE_INPUT_ARITY = {
     "aggregate": 1,
     "compute": 1,
     "derive": 1,
-    "expand": 1,
     "join": 2,
 }
 

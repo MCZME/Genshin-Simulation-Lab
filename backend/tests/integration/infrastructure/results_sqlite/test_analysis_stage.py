@@ -413,8 +413,8 @@ def test_stage_runtime_merge_same_shape_stages(tmp_path) -> None:
         runtime.close_context(context_id)
 
 
-def test_stage_runtime_matches_legacy_for_derive_expand_chain(tmp_path) -> None:
-    """新旧执行器 golden 对齐：构造列 + 展开行后结果完全一致。"""
+def test_stage_runtime_matches_legacy_for_derive_chain(tmp_path) -> None:
+    """新旧执行器 golden 对齐：常量列链结果完全一致。"""
 
     db_path = _populate(tmp_path)
     runtime = SQLiteAnalysisStageExecutor(db_path)
@@ -446,20 +446,6 @@ def test_stage_runtime_matches_legacy_for_derive_expand_chain(tmp_path) -> None:
                 input_stages=(runs.stage_id,),
             ),
         )
-        expanded = runtime.execute_node(
-            context_id,
-            AnalysisNodeExecution(
-                node_id="x1",
-                kind="expand",
-                params={
-                    "columns": [
-                        {"name": "slot", "type": "int", "values": [1, 2]},
-                        {"name": "probe_frame", "type": "int", "values": [600, 1200]},
-                    ]
-                },
-                input_stages=(derived.stage_id,),
-            ),
-        )
 
         expected = legacy.execute_plan(
             AnalysisPlan(
@@ -480,30 +466,15 @@ def test_stage_runtime_matches_legacy_for_derive_expand_chain(tmp_path) -> None:
                         },
                         inputs=("runs1",),
                     ),
-                    AnalysisPlanNode(
-                        id="x1",
-                        kind="expand",
-                        params={
-                            "columns": [
-                                {"name": "slot", "type": "int", "values": [1, 2]},
-                                {
-                                    "name": "probe_frame",
-                                    "type": "int",
-                                    "values": [600, 1200],
-                                },
-                            ]
-                        },
-                        inputs=("d1",),
-                    ),
                 ),
-                outputs=("x1",),
+                outputs=("d1",),
             )
-        )["x1"]
+        )["d1"]
 
-        assert [column.name for column in expanded.columns] == [
+        assert [column.name for column in derived.columns] == [
             column.name for column in expected.columns
         ]
-        assert sorted(tuple(row) for row in expanded.rows) == sorted(
+        assert sorted(tuple(row) for row in derived.rows) == sorted(
             tuple(row) for row in expected.rows
         )
     finally:

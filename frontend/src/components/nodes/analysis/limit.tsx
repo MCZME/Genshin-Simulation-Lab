@@ -32,7 +32,7 @@ export function LimitEditor({ node, onChange }: EditorProps) {
         />
         <span>行</span>
       </label>
-      {!valid && <p className="filter-row-error">请输入 1–10000 的整数</p>}
+      {!valid && <p className="analysis-row-error">请输入 1–10000 的整数</p>}
     </div>
   );
 }

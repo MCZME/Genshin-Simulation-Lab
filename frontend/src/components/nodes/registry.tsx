@@ -5,7 +5,6 @@ import {
   ComputeEditor,
   DeriveEditor,
   DisplayConfigEditor,
-  ExpandEditor,
   FetchEditor,
   FilterEditor,
   JoinEditor,
@@ -98,8 +97,6 @@ export function NodeEditorHost({
       return <ComputeEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "derive":
       return <DeriveEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
-    case "expand":
-      return <ExpandEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "pie_config":
     case "bar_config":
       return <DisplayConfigEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
@@ -110,7 +107,7 @@ export function NodeEditorHost({
     case "damage_detail":
     case "state_detail":
     case "attribute_detail":
-      // 取单项与单项详情节点没有参数编辑区，数据在节点卡内容区呈现。
+      // 获取单行与单项详情节点没有参数编辑区，数据在节点卡内容区呈现。
       return null;
     default:
       return <UnknownEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
@@ -140,7 +137,6 @@ const NODE_CATEGORY_OF: Record<string, NodeCategory> = {
   join: "dataProcessing",
   compute: "dataProcessing",
   derive: "dataProcessing",
-  expand: "dataProcessing",
   table_config: "displayConfig",
   pie_config: "displayConfig",
   bar_config: "displayConfig",
@@ -195,7 +191,7 @@ export const CONFIG_NODE_KINDS = [
 /** 分析区域：取数节点。 */
 export const ANALYSIS_FETCH_KINDS = ["fetch"] as const;
 
-/** 分析区域：关系算子与取单项（数据加工）。 */
+/** 分析区域：关系算子与获取单行（数据加工）。 */
 export const ANALYSIS_OPERATOR_KINDS = [
   "filter",
   "project",
@@ -205,7 +201,6 @@ export const ANALYSIS_OPERATOR_KINDS = [
   "join",
   "compute",
   "derive",
-  "expand",
   "single",
 ] as const;
 

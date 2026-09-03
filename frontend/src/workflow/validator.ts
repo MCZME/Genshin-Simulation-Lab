@@ -804,7 +804,7 @@ function warnNodesOutsideRegions(
 const ANALYSIS_VIEW_KINDS = new Set(["member_table", "pie", "bar"]);
 /** 只有表格视图的 selection 输出仍是 item；饼图/柱状图 selection 输出行集表。 */
 const ANALYSIS_ITEM_SELECTION_VIEW_KINDS = new Set(["member_table"]);
-/** 取单项：table -> item 的唯一显式转换（分析区域设计 6.3）。 */
+/** 获取单行：table -> item 的唯一显式转换（分析区域设计 6.3）。 */
 const ANALYSIS_SINGLE_KINDS = new Set(["single"]);
 /** 单项详情节点：接收 item，输出为空（分析区域设计 6.4）。 */
 const ANALYSIS_DETAIL_KINDS = new Set([
@@ -930,7 +930,7 @@ function validateAnalysisGraph(
     if (ANALYSIS_DETAIL_KINDS.has(target.kind) && edge.target_port_id === ANALYSIS_DATA_PORT) {
       if (!itemSourceIds.has(source.id)) {
         diagnostics.push(
-          diagnostic("error", "ITEM_INPUT_INVALID", "单项详情节点只能接收 item 输入（视图选择或取单项）", {
+          diagnostic("error", "ITEM_INPUT_INVALID", "单项详情节点只能接收 item 输入（视图选择或获取单行）", {
             edge_id: edge.id,
             node_id: target.id,
           }),
@@ -940,7 +940,7 @@ function validateAnalysisGraph(
     if (source.kind === "single" && edge.source_port_id === "out") {
       if (!ANALYSIS_DETAIL_KINDS.has(target.kind)) {
         diagnostics.push(
-          diagnostic("error", "ITEM_OUTPUT_INVALID", "取单项的输出只能连接单项详情节点", {
+          diagnostic("error", "ITEM_OUTPUT_INVALID", "获取单行的输出只能连接单项详情节点", {
             edge_id: edge.id,
             node_id: source.id,
           }),
@@ -971,7 +971,7 @@ function validateAnalysisGraph(
     if (dataEdges.length === 0) {
       if (ANALYSIS_SINGLE_KINDS.has(node.kind)) {
         diagnostics.push(
-          diagnostic("error", "SINGLE_INPUT_MISSING", "取单项缺少上游表输入", {
+          diagnostic("error", "SINGLE_INPUT_MISSING", "获取单行缺少上游表输入", {
             node_id: node.id,
           }),
         );
@@ -999,7 +999,7 @@ function validateAnalysisGraph(
       });
       if (!tableFed) {
         diagnostics.push(
-          diagnostic("error", "SINGLE_INPUT_INVALID", "取单项只能接收表输入", {
+          diagnostic("error", "SINGLE_INPUT_INVALID", "获取单行只能接收表输入", {
             node_id: node.id,
           }),
         );

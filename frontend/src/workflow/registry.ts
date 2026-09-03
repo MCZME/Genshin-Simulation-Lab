@@ -994,14 +994,14 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     fragment: () => null,
     validate: validateFetchNode,
   },
-  filter: _operator("filter", "过滤"),
+  filter: _operator("filter", "条件筛选"),
   project: _operator("project", "投影"),
   sort: _operator("sort", "排序"),
   aggregate: _operator("aggregate", "分组聚合"),
   limit: _operator("limit", "限制行数"),
   join: {
     kind: "join",
-    displayName: "合并表",
+    displayName: "连接表",
     region: "analysis",
     ports: {
       inputs: [
@@ -1015,9 +1015,8 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     fragment: () => null,
     validate: () => [],
   },
-  compute: _operator("compute", "计算列"),
-  derive: _operator("derive", "构造列"),
-  expand: _operator("expand", "展开行"),
+  compute: _operator("compute", "新增计算列"),
+  derive: _operator("derive", "设置列值"),
   table_config: {
     kind: "table_config",
     displayName: "表格配置",
@@ -1112,7 +1111,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
   },
   single: {
     kind: "single",
-    displayName: "取单项",
+    displayName: "获取单行",
     region: "analysis",
     ports: {
       inputs: [analysisPort("in", "table", "single", 1)],

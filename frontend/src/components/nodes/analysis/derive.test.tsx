@@ -120,4 +120,43 @@ describe("设置列值节点编辑器（卡片直编）", () => {
     );
     expect(screen.getByText("覆盖列类型须与输入列一致（float）")).toBeTruthy();
   });
+
+  it("字符串值使用多行文本域，可输入并保留完整文本", () => {
+    withUpstream();
+    const onChange = vi.fn();
+    render(
+      <DeriveEditor
+        node={deriveNode({
+          columns: [{ name: "note", type: "string", value: "" }],
+        })}
+        onChange={onChange}
+      />,
+    );
+    const textarea = screen.getByLabelText("设置列值 1") as HTMLTextAreaElement;
+    expect(textarea.tagName).toBe("TEXTAREA");
+    const longValue = "这是一段比较长的固定文本，用于验证多行文本域可以完整输入与查看。";
+    fireEvent.change(textarea, { target: { value: longValue } });
+    expect(onChange).toHaveBeenCalledWith({
+      columns: [{ name: "note", type: "string", value: longValue }],
+    });
+  });
+
+  it("数值类型的值仍使用数字输入框", () => {
+    withUpstream();
+    const onChange = vi.fn();
+    render(
+      <DeriveEditor
+        node={deriveNode({
+          columns: [{ name: "dps", type: "float", value: 0 }],
+        })}
+        onChange={onChange}
+      />,
+    );
+    const input = screen.getByLabelText("设置列值 1") as HTMLInputElement;
+    expect(input.type).toBe("number");
+    fireEvent.change(input, { target: { value: "12.5" } });
+    expect(onChange).toHaveBeenCalledWith({
+      columns: [{ name: "dps", type: "float", value: 12.5 }],
+    });
+  });
 });

@@ -5,7 +5,7 @@ import {
   upstreamShape,
   type EditorProps,
 } from "./context";
-import { ImeSafeInput } from "./imeInput";
+import { ImeSafeInput, ImeSafeTextarea } from "./imeInput";
 
 const DERIVE_TYPES = ["string", "int", "float", "bool"] as const;
 
@@ -132,32 +132,7 @@ export function DeriveEditor({ node, onChange }: EditorProps) {
                 <option value="true">true</option>
                 <option value="false">false</option>
               </select>
-            ) : (
-              <input
-                aria-label={`设置列值 ${index + 1}`}
-                placeholder={row.type === "int" || row.type === "float" ? "0" : "值"}
-                type={row.type === "int" || row.type === "float" ? "number" : "text"}
-                value={
-                  typeof row.value === "string" || typeof row.value === "number"
-                    ? String(row.value)
-                    : ""
-                }
-                onChange={(event) => {
-                  const raw = event.target.value;
-                  if (row.type === "int") {
-                    const parsed = Number(raw);
-                    updateRow(index, {
-                      value: raw === "" || !Number.isInteger(parsed) ? "" : parsed,
-                    });
-                  } else if (row.type === "float") {
-                    const parsed = Number(raw);
-                    updateRow(index, { value: raw === "" ? "" : parsed });
-                  } else {
-                    updateRow(index, { value: raw });
-                  }
-                }}
-              />
-            )}
+            ) : null}
             <button
               type="button"
               className="analysis-row-remove"
@@ -172,6 +147,42 @@ export function DeriveEditor({ node, onChange }: EditorProps) {
               ×
             </button>
           </div>
+          {row.type !== "bool" && (
+            <div className="derive-value">
+              {row.type === "int" || row.type === "float" ? (
+                <input
+                  aria-label={`设置列值 ${index + 1}`}
+                  placeholder="0"
+                  type="number"
+                  step={row.type === "int" ? 1 : "any"}
+                  value={
+                    typeof row.value === "number" && Number.isFinite(row.value)
+                      ? String(row.value)
+                      : ""
+                  }
+                  onChange={(event) => {
+                    const raw = event.target.value;
+                    if (row.type === "int") {
+                      const parsed = Number(raw);
+                      updateRow(index, {
+                        value: raw === "" || !Number.isInteger(parsed) ? "" : parsed,
+                      });
+                    } else {
+                      const parsed = Number(raw);
+                      updateRow(index, { value: raw === "" ? "" : parsed });
+                    }
+                  }}
+                />
+              ) : (
+                <ImeSafeTextarea
+                  aria-label={`设置列值 ${index + 1}`}
+                  placeholder="值"
+                  value={typeof row.value === "string" ? row.value : ""}
+                  onChange={(value) => updateRow(index, { value })}
+                />
+              )}
+            </div>
+          )}
           {rowErrors[index].map((message) => (
             <p key={message} className="analysis-row-error">
               {message}

@@ -4178,7 +4178,7 @@ body {
 .project-line input,
 .sort-key-line select,
 .derive-line select,
-.derive-line input,
+.derive-line input {
   min-width: 0;
   flex: 1;
 }
@@ -4346,6 +4346,7 @@ body {
 .sort-key-line > select,
 .derive-line > select,
 .derive-line > input,
+.derive-value > input,
 .limit-line > input,
 .join-key-row > select,
 .table-binding-row > select,
@@ -4363,6 +4364,35 @@ body {
   font-family: inherit;
   font-size: 11px;
   line-height: 1;
+}
+
+.derive-value {
+  min-width: 0;
+}
+
+.derive-value > input,
+.derive-value > textarea {
+  width: 100%;
+}
+
+.derive-value > textarea {
+  min-height: 44px;
+  max-height: 240px;
+  padding: 4px 6px;
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 5px;
+  color: #e2e8f0;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-y: auto;
+  resize: vertical;
+}
+
+.derive-value > textarea:focus {
+  border-color: #38bdf8;
+  outline: none;
 }
 
 /* 计算列节点 */

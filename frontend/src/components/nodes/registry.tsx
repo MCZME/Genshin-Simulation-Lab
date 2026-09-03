@@ -214,7 +214,7 @@ export const ANALYSIS_DISPLAY_CONFIG_KINDS = [
 /** 分析区域：展示视图节点（与单项详情节点语义不同类）。 */
 export const ANALYSIS_VIEW_KINDS = ["member_table", "pie", "bar"] as const;
 
-/** 分析区域：单项详情节点族（消费 item，独立于展示视图）。 */
+/** 分析区域：单项详情节点族（消费单行表，独立于展示视图）。 */
 export const ANALYSIS_DETAIL_KINDS = [
   "frame_state",
   "damage_detail",

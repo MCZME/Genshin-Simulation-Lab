@@ -158,7 +158,7 @@ it("视图直连数据且无展示配置时合法", () => {
   expect(codes(result)).not.toContain("CONFIG_OUTPUT_INVALID");
 });
 
-it("表格视图 selection（item）不能进入数据算子", () => {
+it("表格视图 selection（单行表）可进入下游数据算子", () => {
   const nodes = [
     fedRuns(),
     node("view1", "member_table"),
@@ -170,7 +170,8 @@ it("表格视图 selection（item）不能进入数据算子", () => {
     edge("e2", "view1", "selection", "lim1", "in"),
   ];
   const result = validateWorkflow(definition(nodes, edges));
-  expect(codes(result)).toContain("ITEM_OUTPUT_INVALID");
+  expect(codes(result)).not.toContain("ANALYSIS_SHAPE_INVALID");
+  expect(codes(result)).not.toContain("ITEM_OUTPUT_INVALID");
 });
 
 it("饼图 selection（行集表）可进入下游数据算子", () => {
@@ -209,8 +210,8 @@ it("运行记录经设置列值后可构成角色状态详情描述符", () => {
   ];
   const result = validateWorkflow(definition(nodes, edges));
   expect(codes(result)).not.toContain("ANALYSIS_SHAPE_INVALID");
-  expect(codes(result)).not.toContain("ITEM_INPUT_INVALID");
-  expect(codes(result)).not.toContain("ITEM_INPUT_MISSING");
+  expect(codes(result)).not.toContain("DETAIL_INPUT_MISSING");
+  expect(codes(result)).not.toContain("DATA_LANGUAGE_MISMATCH");
 });
 
 it("展示配置节点经数据链转发给对应视图时合法", () => {

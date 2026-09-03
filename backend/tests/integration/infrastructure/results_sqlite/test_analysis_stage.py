@@ -481,6 +481,106 @@ def test_stage_runtime_matches_legacy_for_derive_chain(tmp_path) -> None:
         runtime.close_context(context_id)
 
 
+def test_stage_runtime_single_takes_first_row_and_matches_legacy(tmp_path) -> None:
+    """新旧执行器 golden 对齐：single 输出与整图计划一致（≤1 行、形状透传）。"""
+
+    db_path = _populate(tmp_path)
+    runtime = SQLiteAnalysisStageExecutor(db_path)
+    legacy = SQLiteAnalysisQueryExecutor(db_path)
+    context_id = runtime.create_context(("run:1", "run:2"))
+    try:
+        runs = runtime.execute_node(
+            context_id,
+            AnalysisNodeExecution(
+                node_id="runs1",
+                kind="fetch",
+                params={"source": "runs"},
+            ),
+        )
+        sorted_stage = runtime.execute_node(
+            context_id,
+            AnalysisNodeExecution(
+                node_id="sorted1",
+                kind="sort",
+                params={"keys": [{"column": "session_id", "direction": "asc"}]},
+                input_stages=(runs.stage_id,),
+            ),
+        )
+        singled = runtime.execute_node(
+            context_id,
+            AnalysisNodeExecution(
+                node_id="single1",
+                kind="single",
+                input_stages=(sorted_stage.stage_id,),
+            ),
+        )
+
+        expected = legacy.execute_plan(
+            AnalysisPlan(
+                session_ids=("run:1", "run:2"),
+                nodes=(
+                    AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
+                    AnalysisPlanNode(
+                        id="sorted1",
+                        kind="sort",
+                        params={"keys": [{"column": "session_id", "direction": "asc"}]},
+                        inputs=("runs1",),
+                    ),
+                    AnalysisPlanNode(id="single1", kind="single", inputs=("sorted1",)),
+                ),
+                outputs=("single1",),
+            )
+        )["single1"]
+
+        assert [column.name for column in singled.columns] == [
+            column.name for column in expected.columns
+        ]
+        assert singled.rows == expected.rows
+        assert len(singled.rows) == 1
+        assert _column_values(singled, "session_id") == ["run:1"]
+    finally:
+        runtime.close_context(context_id)
+
+
+def test_stage_runtime_single_keeps_empty_input_empty(tmp_path) -> None:
+    runtime = SQLiteAnalysisStageExecutor(_populate(tmp_path))
+    context_id = runtime.create_context(("run:1", "run:2"))
+    try:
+        runs = runtime.execute_node(
+            context_id,
+            AnalysisNodeExecution(
+                node_id="runs1",
+                kind="fetch",
+                params={"source": "runs"},
+            ),
+        )
+        filtered = runtime.execute_node(
+            context_id,
+            AnalysisNodeExecution(
+                node_id="f1",
+                kind="filter",
+                params={
+                    "mode": "all",
+                    "conditions": [{"column": "session_id", "op": "eq", "value": "missing"}],
+                },
+                input_stages=(runs.stage_id,),
+            ),
+        )
+        singled = runtime.execute_node(
+            context_id,
+            AnalysisNodeExecution(
+                node_id="single1",
+                kind="single",
+                input_stages=(filtered.stage_id,),
+            ),
+        )
+
+        assert singled.rows == ()
+        assert len(singled.columns) == len(filtered.columns)
+    finally:
+        runtime.close_context(context_id)
+
+
 def test_stage_runtime_close_context_drops_stages(tmp_path) -> None:
     runtime = SQLiteAnalysisStageExecutor(_populate(tmp_path))
     context_id = runtime.create_context(("run:1",))

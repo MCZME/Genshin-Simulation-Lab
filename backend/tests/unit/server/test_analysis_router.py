@@ -207,6 +207,34 @@ def test_analysis_runtime_select_creates_selection_stage(application_facade) -> 
         assert selected.json()["stage_id"] != executed["stage_id"]
 
 
+def test_analysis_runtime_execute_single_node(application_facade) -> None:
+    stage_result = AnalysisStageResult(
+        stage_id="",
+        columns=(AnalysisColumn("session_id", "string"),),
+        rows=(("a1b2c3",),),
+        truncated=False,
+    )
+    app = create_app(application_facade(analysis_stage_results={"single1": stage_result}))
+
+    with TestClient(app) as client:
+        context_id = client.post(
+            "/api/v1/analysis/runtime/contexts",
+            json={"session_ids": ["a1b2c3"]},
+        ).json()["context_id"]
+        executed = client.post(
+            f"/api/v1/analysis/runtime/contexts/{context_id}/nodes/execute",
+            json={
+                "node_id": "single1",
+                "kind": "single",
+                "params": {},
+                "input_stages": ["stage-runs1"],
+            },
+        )
+
+        assert executed.status_code == 200
+        assert executed.json()["rows"] == [["a1b2c3"]]
+
+
 def test_analysis_runtime_merge_concatenates_stages(application_facade) -> None:
     columns = (AnalysisColumn("session_id", "string"),)
     app = create_app(

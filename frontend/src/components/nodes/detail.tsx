@@ -1,8 +1,9 @@
-/** 单项详情节点内容区：消费 item（表格行/获取单行结果）并渲染详情。 */
+/** 单项详情节点内容区：消费单行表（获取单行结果或视图选择表）并渲染详情。 */
 
 import { useEffect, useState } from "react";
 import { getFrameState, getResultEvent } from "../../api/client";
 import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
+import type { AnalysisTableResult } from "../../workflow/templates";
 import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 import { useAnalysisResults, useAnalysisSelection } from "../analysis_context";
 import { CharacterStateSheet, locateCharacter } from "./character_state";
@@ -26,16 +27,26 @@ export function AnalysisDetailBody({
   node: WorkflowNode;
   definition: WorkflowDefinition;
 }) {
-  const item = useUpstreamItem(node, definition);
-  if (item === null) {
-    return <div className="analysis-view-state">未连接 item 源（视图选择或获取单行）</div>;
+  const table = useUpstreamTable(node, definition);
+  if (table === null) {
+    return <div className="analysis-view-state">未连接 table 源（视图选择或获取单行）</div>;
   }
-  if (item === undefined) {
-    return <div className="analysis-view-state">未选择（点击上游表格行）</div>;
+  if (table === undefined) {
+    return (
+      <div className="analysis-view-state">未选择或未执行（点击上游视图选择行）</div>
+    );
   }
-  if (!isRecord(item)) {
-    return <div className="analysis-view-state">上游 item 不是数据对象</div>;
+  if (table.rows.length === 0) {
+    return <div className="analysis-view-state">无数据（上游为空）</div>;
   }
+  if (table.rows.length > 1) {
+    return (
+      <div className="analysis-view-state analysis-view-error">
+        详情节点需要单行表，当前 {table.rows.length} 行
+      </div>
+    );
+  }
+  const item = rowToObject(table, table.rows[0]);
   switch (node.kind) {
     case "damage_detail":
       return <DamageDetailView item={item} />;
@@ -59,20 +70,17 @@ export function SingleItemBody({ result }: { result: AnalysisNodeResult | undefi
   if (result.status === "error") {
     return <div className="analysis-view-state analysis-view-error">{result.error}</div>;
   }
-  const item = result.item;
-  if (item === undefined) {
+  const table = result.table;
+  if (table === undefined || table.rows.length === 0) {
     return <div className="analysis-view-state">无数据（上游为空）</div>;
   }
-  if (isRecord(item)) {
-    return <KeyValueView title="第一行" data={item} />;
-  }
-  return <pre className="detail-item-pre">{JSON.stringify(item, null, 2)}</pre>;
+  return <KeyValueView title="第一行" data={rowToObject(table, table.rows[0])} />;
 }
 
-function useUpstreamItem(
+function useUpstreamTable(
   node: WorkflowNode,
   definition: WorkflowDefinition,
-): unknown | null | undefined {
+): AnalysisTableResult | null | undefined {
   const selections = useAnalysisSelection();
   const results = useAnalysisResults();
   const upstream = definition.edges
@@ -82,11 +90,26 @@ function useUpstreamItem(
   if (upstream === undefined) {
     return null;
   }
-  if (upstream.kind === "single") {
-    const result = results?.get(upstream.id) as { item?: unknown } | undefined;
-    return result?.item;
+  if (isViewKind(upstream.kind)) {
+    return selections?.selections.get(upstream.id);
   }
-  return selections?.selections.get(upstream.id);
+  return results?.get(upstream.id)?.table;
+}
+
+function isViewKind(kind: string): boolean {
+  return kind === "member_table" || kind === "pie" || kind === "bar";
+}
+
+/** 表行转数据对象：列名 -> 单元格值。 */
+function rowToObject(
+  table: { columns: { name: string }[] },
+  row: unknown[],
+): Record<string, unknown> {
+  const item: Record<string, unknown> = {};
+  table.columns.forEach((column, index) => {
+    item[column.name] = row[index] ?? null;
+  });
+  return item;
 }
 
 function DamageDetailView({ item }: { item: Record<string, unknown> }) {
@@ -99,7 +122,7 @@ function DamageDetailView({ item }: { item: Record<string, unknown> }) {
 
   if (key === null) {
     return (
-      <div className="analysis-view-state">item 缺少 session_id / ordinal 列（事件表取数行）</div>
+      <div className="analysis-view-state">行缺少 session_id / ordinal 列（事件表取数行）</div>
     );
   }
   if (loaded === null || loaded.status === "loading") {
@@ -120,7 +143,7 @@ function FrameStateView({ item }: { item: Record<string, unknown> }) {
   });
 
   if (key === null) {
-    return <div className="analysis-view-state">item 缺少 session_id / frame 列</div>;
+    return <div className="analysis-view-state">行缺少 session_id / frame 列</div>;
   }
   if (loaded === null || loaded.status === "loading") {
     return <div className="analysis-view-state analysis-view-loading" role="status">加载中…</div>;
@@ -170,7 +193,7 @@ function CharacterStateView({ item }: { item: Record<string, unknown> }) {
   if (key === null) {
     return (
       <div className="analysis-view-state">
-        item 缺少 session_id / frame（或 end_frame）列
+        行缺少 session_id / frame（或 end_frame）列
       </div>
     );
   }
@@ -256,10 +279,6 @@ function KeyValueView({ title, data }: { title: string; data: unknown }) {
       <pre className="detail-item-pre">{JSON.stringify(data, null, 2)}</pre>
     </div>
   );
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function readString(item: Record<string, unknown>, key: string): string | null {

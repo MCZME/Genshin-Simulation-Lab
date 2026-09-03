@@ -341,6 +341,7 @@ export const ANALYSIS_TABLE_NODE_KINDS = new Set([
   "sort",
   "aggregate",
   "limit",
+  "single",
   "join",
   "compute",
   "derive",
@@ -711,6 +712,11 @@ function limitShape(node: WorkflowNode, source: TableShape[]): TableShape[] | nu
   return source;
 }
 
+/** 获取单行：输出形状与输入一致；行数语义（≤1）由执行时保证。 */
+function singleShape(source: TableShape[]): TableShape[] | null {
+  return source;
+}
+
 /**
  * 全图分析表形状推导：按拓扑序求值每个取数/算子节点的输出形状。
  * 无法推导的节点形状记为 null（校验器据此报错，列选择器隐藏该下游）。
@@ -790,6 +796,9 @@ export function computeAnalysisShapes(
         break;
       case "limit":
         shape = inputShapes[0] ? limitShape(node, inputShapes[0]) : null;
+        break;
+      case "single":
+        shape = inputShapes[0] ? singleShape(inputShapes[0]) : null;
         break;
       case "project":
         shape = inputShapes[0] ? projectShape(node, inputShapes[0]) : null;

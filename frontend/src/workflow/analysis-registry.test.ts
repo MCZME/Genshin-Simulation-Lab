@@ -16,8 +16,17 @@ describe("分析节点注册表", () => {
     expect(spec?.ports.outputs[0].cardinality).toBe("single");
   });
 
-  it("六个单输入算子均为结果表入出，连接为双输入", () => {
-    const single = ["filter", "project", "sort", "aggregate", "limit", "compute"] as const;
+  it("单输入算子均为结果表入出，连接为双输入", () => {
+    const single = [
+      "filter",
+      "project",
+      "sort",
+      "aggregate",
+      "limit",
+      "single",
+      "compute",
+      "derive",
+    ] as const;
     for (const kind of single) {
       const spec = getNodeKindSpec(kind);
       expect(spec?.ports.inputs).toHaveLength(1);
@@ -26,6 +35,15 @@ describe("分析节点注册表", () => {
     }
     const join = getNodeKindSpec("join");
     expect(join?.ports.inputs.map((port) => port.id)).toEqual(["left", "right"]);
+  });
+
+  it("表格视图与单项详情端口均使用 table 语言", () => {
+    const member = getNodeKindSpec("member_table");
+    expect(member?.ports.outputs[0].dataLanguage).toBe("table");
+    for (const kind of ["frame_state", "damage_detail", "state_detail", "attribute_detail"]) {
+      const spec = getNodeKindSpec(kind);
+      expect(spec?.ports.inputs[0].dataLanguage).toBe("table");
+    }
   });
 
   it("旧的处理与查询参数配置节点已退役", () => {

@@ -59,8 +59,7 @@ export type DataLanguage =
   | "input_document"
   | "session"
   | "session_group"
-  | "table"
-  | "item";
+  | "table";
 
 export type DiagnosticSeverity = "error" | "warning" | "info";
 

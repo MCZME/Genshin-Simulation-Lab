@@ -1,6 +1,7 @@
 import { createContext, useContext } from "react";
 
-import type { AnalysisSchemaCatalog } from "../workflow/templates";
+import type { AnalysisNodeResult } from "../workflow/analysis_runner";
+import type { AnalysisSchemaCatalog, AnalysisTableResult } from "../workflow/templates";
 
 export const AnalysisSchemaCatalogContext = createContext<AnalysisSchemaCatalog | null>(null);
 
@@ -8,10 +9,10 @@ export function useAnalysisSchemaCatalog(): AnalysisSchemaCatalog | null {
   return useContext(AnalysisSchemaCatalogContext);
 }
 
-/** 视图 selection 输出的瞬态选择存储：节点 id -> item（表格）或行集表（饼图/柱状图）。 */
+/** 视图 selection 输出的瞬态选择表：所有视图点击后都以 table 形式呈现。 */
 export interface AnalysisSelectionStore {
-  selections: Map<string, unknown>;
-  select: (nodeId: string, item: unknown | null) => void;
+  selections: Map<string, AnalysisTableResult>;
+  select: (nodeId: string, table: AnalysisTableResult | null) => void;
 }
 
 export const AnalysisSelectionContext = createContext<AnalysisSelectionStore | null>(null);
@@ -20,11 +21,10 @@ export function useAnalysisSelection(): AnalysisSelectionStore | null {
   return useContext(AnalysisSelectionContext);
 }
 
-/** 分组选择的稳定意图：用于由后端在输入阶段上重新派生选择阶段。 */
-export interface AnalysisStageSelectionRecord {
-  groupColumns: string[];
-  groupValues: unknown[];
-}
+/** 视图点击选择意图：行选择（表格）或分组选择（饼图/柱状图）。 */
+export type AnalysisStageSelectionRecord =
+  | { kind: "row"; row_index: number }
+  | { kind: "group"; groupColumns: string[]; groupValues: unknown[] };
 
 export interface AnalysisStageSelectionStore {
   records: ReadonlyMap<string, AnalysisStageSelectionRecord | null>;
@@ -39,9 +39,9 @@ export function useAnalysisStageSelection(): AnalysisStageSelectionStore | null 
   return useContext(AnalysisStageSelectionContext);
 }
 
-/** 分析区域节点结果表的运行时只读视图：供单项详情节点解析上游 item。 */
-export const AnalysisResultsContext = createContext<Map<string, unknown> | null>(null);
+/** 分析区域节点结果表的运行时只读视图：供单项详情节点读取上游单行表。 */
+export const AnalysisResultsContext = createContext<Map<string, AnalysisNodeResult> | null>(null);
 
-export function useAnalysisResults(): Map<string, unknown> | null {
+export function useAnalysisResults(): Map<string, AnalysisNodeResult> | null {
   return useContext(AnalysisResultsContext);
 }

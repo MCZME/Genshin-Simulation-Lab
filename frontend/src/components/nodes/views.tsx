@@ -1,7 +1,10 @@
 /** 分析视图节点内容区：消费处理节点结果表并渲染。 */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { rowItem, type AnalysisNodeResult } from "../../workflow/analysis_runner";
+import {
+  tableRowsByIndex,
+  type AnalysisNodeResult,
+} from "../../workflow/analysis_runner";
 import {
   computeAnalysisShapes,
   connectedConfigNode,
@@ -16,7 +19,11 @@ import {
   RUN_STATE_LABELS,
   WEAPON_LABELS,
 } from "../../theme/elements";
-import { useAnalysisSchemaCatalog, useAnalysisSelection } from "../analysis_context";
+import {
+  useAnalysisSchemaCatalog,
+  useAnalysisSelection,
+  useAnalysisStageSelection,
+} from "../analysis_context";
 import { useAssetNames } from "./useAssetNames";
 import { BarChartView } from "./barView";
 import { PieChartView } from "./pieView";
@@ -161,7 +168,14 @@ export function AnalysisViewBody({
       return (
         <div className="analysis-view-stale">
           <div className="analysis-stale-banner">结果已过期，正在刷新…</div>
-          {renderAnalysisTable(node, definition, result.table)}
+          {renderAnalysisTable(
+            node,
+            definition,
+            result.table,
+            viewWidth,
+            onFitChange,
+            result.stage_id,
+          )}
         </div>
       );
     }
@@ -201,6 +215,7 @@ function renderAnalysisTable(
           table={table}
           viewWidth={viewWidth}
           onFitChange={onFitChange}
+          stageId={stageId}
         />
       );
     case "pie":
@@ -233,12 +248,14 @@ function MemberTable({
   table,
   viewWidth,
   onFitChange,
+  stageId,
 }: {
   node: WorkflowNode;
   definition: WorkflowDefinition;
   table: AnalysisTableResult;
   viewWidth?: number;
   onFitChange?: (info: ViewFitInfo) => void;
+  stageId?: string;
 }) {
   const config = useMemo(
     () => connectedConfigNode(definition, node.id, "table_config"),
@@ -331,9 +348,13 @@ function MemberTable({
     () => [...conditionSort, ...(dataSort === null ? [] : [dataSort])],
     [conditionSort, dataSort],
   );
-  const sortedRows = useMemo(
-    () => sortRows(table.rows, sortKeys, columnIndex),
+  const orderedRowIndexes = useMemo(
+    () => sortRowIndexes(table.rows, sortKeys, columnIndex),
     [table.rows, sortKeys, columnIndex],
+  );
+  const sortedRows = useMemo(
+    () => orderedRowIndexes.map((index) => table.rows[index]),
+    [orderedRowIndexes, table.rows],
   );
   const visibleRows = virtualizing
     ? sortedRows.slice(windowRange.start, windowRange.end)
@@ -430,6 +451,7 @@ function MemberTable({
   };
 
   const selection = useAnalysisSelection();
+  const stageSelection = useAnalysisStageSelection();
   const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
   // 绑定或排序变化后选中行可能已不对应同一数据行，这里随排序结果重置。
   const [prevSortCount, setPrevSortCount] = useState(sortKeys.length);
@@ -437,18 +459,45 @@ function MemberTable({
     setPrevSortCount(sortKeys.length);
     setSelectedRowIndex(null);
   }
+  // 阶段（数据重算）、排序或绑定变化后，旧选择指向的行可能已变化：
+  // 同步清空节点内高亮与两套选择存储，避免详情继续展示过期行。
+  const selectionResetKey = [
+    stageId ?? "",
+    bindingKey,
+    ...sortKeys.map((key) => `${key.column}:${key.direction}`),
+  ].join("|");
+  const prevSelectionResetKeyRef = useRef(selectionResetKey);
+  useEffect(() => {
+    if (prevSelectionResetKeyRef.current === selectionResetKey) {
+      return;
+    }
+    prevSelectionResetKeyRef.current = selectionResetKey;
+    setSelectedRowIndex(null);
+    selection?.select(node.id, null);
+    stageSelection?.select(node.id, null);
+  }, [selectionResetKey, node.id, selection, stageSelection]);
 
-  const handleRowClick = (rowIndex: number, row: unknown[]) => {
+  const handleRowClick = (rowIndex: number) => {
+    const originalRowIndex = orderedRowIndexes[rowIndex] ?? rowIndex;
     const isSelected = selectedRowIndex === rowIndex;
     setSelectedRowIndex(isSelected ? null : rowIndex);
     if (selection === null) {
+      return;
+    }
+    const stageContextId =
+      stageId === undefined ? null : stageSelection?.contextIdFor(node.region_id ?? "") ?? null;
+    if (stageContextId !== null && stageSelection !== null) {
+      stageSelection.select(
+        node.id,
+        isSelected ? null : { kind: "row", row_index: originalRowIndex },
+      );
       return;
     }
     if (isSelected) {
       selection.select(node.id, null);
       return;
     }
-    selection.select(node.id, rowItem(table, row));
+    selection.select(node.id, tableRowsByIndex(table, [originalRowIndex]));
   };
 
   const handleConditionHeaderClick = (column: string) => {
@@ -631,7 +680,7 @@ function MemberTable({
                   ]
                     .filter((item) => item !== "")
                     .join(" ")}
-                  onClick={() => handleRowClick(absoluteRowIndex, row)}
+                  onClick={() => handleRowClick(absoluteRowIndex)}
                 >
                   {order.map((column, cellIndex) => {
                     const index = columnIndex.get(column);
@@ -859,14 +908,14 @@ export function compareCells(left: unknown, right: unknown): number {
   return String(left).localeCompare(String(right), "zh-CN");
 }
 
-/** 按排序键顺序排序行（条件列组合 + 数据列单列）。 */
-export function sortRows(
+/** 按排序键返回排序后的原始行下标（稳定；无键时保持原序）。 */
+export function sortRowIndexes(
   rows: unknown[][],
   keys: SortKey[],
   columnIndex: Map<string, number>,
-): unknown[][] {
+): number[] {
   if (keys.length === 0) {
-    return rows;
+    return rows.map((_, index) => index);
   }
   const indexes = rows.map((_, index) => index);
   indexes.sort((left, right) => {
@@ -882,5 +931,14 @@ export function sortRows(
     }
     return left - right;
   });
-  return indexes.map((index) => rows[index]);
+  return indexes;
+}
+
+/** 按排序键顺序排序行（条件列组合 + 数据列单列）。 */
+export function sortRows(
+  rows: unknown[][],
+  keys: SortKey[],
+  columnIndex: Map<string, number>,
+): unknown[][] {
+  return sortRowIndexes(rows, keys, columnIndex).map((index) => rows[index]);
 }

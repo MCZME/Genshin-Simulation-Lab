@@ -4,13 +4,13 @@ import { describe, expect, it } from "vitest";
 
 import type { WorkflowDefinition, WorkflowEdge, WorkflowNode } from "./types";
 import {
-  applyViewSelectionSingles,
   buildAnalysisPlanRequest,
   executeAnalysisSelectionBranch,
   executeAnalysisRegionByNodes,
   executeAnalysisRegion,
   populateAnalysisTerminalResults,
   resolveBoundarySessionGroup,
+  selectionBranchNodeIds,
 } from "./analysis_runner";
 import type { AnalysisNodeResult } from "./analysis_runner";
 
@@ -237,6 +237,49 @@ describe("节点运行时执行", () => {
     expect(results.get("lim1")?.stage_id).toBe("stage-lim1");
   });
 
+  it("普通刷新把获取单行作为后端表节点执行并返回单行表", async () => {
+    const def = definition(
+      [
+        simulation("sim", ["a"]),
+        analysisNode("runs1", "fetch", { source: "runs" }),
+        analysisNode("single1", "single"),
+        analysisNode("view1", "member_table"),
+      ],
+      [
+        edge("b1", "sim", "out", "analysis-1", "in"),
+        edge("w1", "analysis-1", "in", "runs1", "in"),
+        edge("e1", "runs1", "out", "single1", "in"),
+        edge("e2", "single1", "out", "view1", "in"),
+      ],
+    );
+    const executions: string[] = [];
+    const executeNode = async (
+      _contextId: string,
+      execution: { node_id: string },
+    ) => {
+      executions.push(execution.node_id);
+      return {
+        stage_id: `stage-${execution.node_id}`,
+        columns: [{ name: "session_id", type: "string" }],
+        rows: [["a"]],
+        truncated: false,
+      };
+    };
+
+    const results = await executeAnalysisRegionByNodes(
+      def,
+      "analysis-1",
+      executeNode,
+      async () => ({ context_id: "ctx-1" }),
+      async () => {},
+    );
+
+    expect(executions).toEqual(["runs1", "single1"]);
+    expect(results.get("single1")?.status).toBe("ready");
+    expect(results.get("single1")?.table?.rows).toEqual([["a"]]);
+    expect(results.get("single1")?.stage_id).toBe("stage-single1");
+  });
+
   it("单节点失败只置自身与下游错误，不再调用后端", async () => {
     const def = definition(
       [
@@ -461,7 +504,7 @@ describe("节点运行时执行", () => {
       _contextId: string,
       execution: { node_id: string },
     ) => {
-      expect(execution.node_id).toBe("lim1");
+      expect(["lim1", "single1"]).toContain(execution.node_id);
       return {
         stage_id: "stage-selected-limit",
         columns: [{ name: "session_id", type: "string" }],
@@ -501,10 +544,9 @@ describe("节点运行时执行", () => {
     expect(populated.get("cfg1")?.table?.rows).toEqual([["a"]]);
     expect(populated.get("view2")?.status).toBe("ready");
     expect(populated.get("view2")?.stage_id).toBe("stage-selected-limit");
-    expect(populated.get("single1")).toEqual({
-      status: "ready",
-      item: { session_id: "a" },
-    });
+    expect(populated.get("single1")?.status).toBe("ready");
+    expect(populated.get("single1")?.stage_id).toBe("stage-selected-limit");
+    expect(populated.get("single1")?.table?.rows).toEqual([["a"]]);
   });
 
   it("分支内上游失败时下游不回退旧阶段", async () => {
@@ -583,16 +625,15 @@ describe("节点运行时执行", () => {
         },
       ],
       ["view1", { status: "ready", stage_id: "stage-runs1" }],
-      ["single1", { status: "loading" }],
     ]);
 
     const populated = populateAnalysisTerminalResults(def, "analysis-1", results);
 
     expect(populated.get("view1")?.table?.rows).toEqual([["a"], ["b"]]);
-    expect(populated.get("single1")).toEqual({ status: "idle" });
+    expect(populated.has("single1")).toBe(false);
   });
 
-  it("点击后写入的选中行 item 不会被终端补齐覆盖", () => {
+  it("selection 分支把直接下游获取单行作为表节点执行", async () => {
     const def = definition(
       [
         simulation("sim", ["a"]),
@@ -607,34 +648,32 @@ describe("节点运行时执行", () => {
         edge("e2", "view1", "selection", "single1", "in"),
       ],
     );
-    const results = new Map<string, AnalysisNodeResult>([
-      [
-        "runs1",
-        {
-          status: "ready",
-          stage_id: "stage-runs1",
-          table: {
-            columns: [{ name: "session_id", type: "string" }],
-            rows: [["a"], ["b"]],
-            truncated: false,
-          },
-        },
-      ],
-      ["view1", { status: "ready", stage_id: "stage-runs1" }],
-    ]);
-    applyViewSelectionSingles(def, "analysis-1", "view1", {
-      stage_id: "stage-selected",
-      source_node_id: "view1",
-      columns: [{ name: "session_id", type: "string" }],
-      rows: [["b"]],
-      truncated: false,
-    }, results);
+    const executeNode = async (
+      _contextId: string,
+      execution: { node_id: string },
+    ) => {
+      expect(execution.node_id).toBe("single1");
+      return {
+        stage_id: "stage-single1",
+        columns: [{ name: "session_id", type: "string" }],
+        rows: [["b"]],
+        truncated: false,
+      };
+    };
 
-    const populated = populateAnalysisTerminalResults(def, "analysis-1", results);
+    const branchResults = await executeAnalysisSelectionBranch(
+      def,
+      "analysis-1",
+      "view1",
+      "ctx-1",
+      "stage-selected",
+      new Map([["runs1", "stage-runs1"]]),
+      executeNode,
+    );
 
-    expect(populated.get("single1")).toEqual({
-      status: "ready",
-      item: { session_id: "b" },
-    });
+    expect(selectionBranchNodeIds(def, "analysis-1", "view1")).toEqual(["single1"]);
+    expect(branchResults.get("single1")?.status).toBe("ready");
+    expect(branchResults.get("single1")?.table?.rows).toEqual([["b"]]);
+    expect(branchResults.get("single1")?.stage_id).toBe("stage-single1");
   });
 });

@@ -45,6 +45,7 @@ _INPUT_ARITY: dict[str, int] = {
     "project": 1,
     "sort": 1,
     "limit": 1,
+    "single": 1,
     "aggregate": 1,
     "compute": 1,
     "derive": 1,
@@ -59,6 +60,7 @@ _FETCH_PARAM_KEYS: dict[str, frozenset[str]] = {
     "sort": frozenset({"keys"}),
     "aggregate": frozenset({"group_by", "aggregates"}),
     "limit": frozenset({"count"}),
+    "single": frozenset(),
     "join": frozenset({"left_key", "right_key", "mode"}),
     "compute": frozenset({"columns"}),
     "derive": frozenset({"columns"}),
@@ -438,6 +440,8 @@ class _PlanCompiler:
         if kind == "limit":
             checker.check_limit(params)
             return passthrough
+        if kind == "single":
+            return passthrough
         if kind == "project":
             return checker.project_shape(params)
         if kind == "aggregate":
@@ -486,6 +490,8 @@ class _PlanCompiler:
         if node.kind == "limit":
             count = node.params["count"]
             return "SELECT * FROM " + source_sql + " LIMIT " + binder.placeholder(count)
+        if node.kind == "single":
+            return "SELECT * FROM " + source_sql + " LIMIT 1"
         if node.kind == "aggregate":
             return self._compile_aggregate(node, source_sql)
         if node.kind == "join":

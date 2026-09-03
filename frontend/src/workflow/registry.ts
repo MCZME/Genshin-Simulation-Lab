@@ -1076,7 +1076,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     region: "analysis",
     ports: {
       inputs: [analysisPort("in", "table", "single", Number.POSITIVE_INFINITY)],
-      outputs: [analysisPort("selection", "item")],
+      outputs: [analysisPort("selection", "table")],
     },
     paramFields: {},
     defaultParams: {},
@@ -1115,7 +1115,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     region: "analysis",
     ports: {
       inputs: [analysisPort("in", "table", "single", 1)],
-      outputs: [analysisPort("out", "item")],
+      outputs: [analysisPort("out", "table")],
     },
     paramFields: {},
     defaultParams: {},
@@ -1127,7 +1127,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     displayName: "帧状态详情",
     region: "analysis",
     ports: {
-      inputs: [analysisPort("in", "item", "single", 1)],
+      inputs: [analysisPort("in", "table", "single", 1)],
       outputs: [],
     },
     paramFields: {},
@@ -1140,7 +1140,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     displayName: "伤害详情",
     region: "analysis",
     ports: {
-      inputs: [analysisPort("in", "item", "single", 1)],
+      inputs: [analysisPort("in", "table", "single", 1)],
       outputs: [],
     },
     paramFields: {},
@@ -1153,7 +1153,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     displayName: "状态详情",
     region: "analysis",
     ports: {
-      inputs: [analysisPort("in", "item", "single", 1)],
+      inputs: [analysisPort("in", "table", "single", 1)],
       outputs: [],
     },
     paramFields: {},
@@ -1166,7 +1166,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     displayName: "角色状态详情",
     region: "analysis",
     ports: {
-      inputs: [analysisPort("in", "item", "single", 1)],
+      inputs: [analysisPort("in", "table", "single", 1)],
       outputs: [],
     },
     paramFields: {},

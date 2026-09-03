@@ -5,6 +5,10 @@ import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
 import type { AnalysisTableResult } from "../../workflow/templates";
 import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 import {
+  AnalysisSelectionContext,
+  AnalysisStageSelectionContext,
+} from "../analysis_context";
+import {
   AnalysisViewBody,
   compareCells,
   countHiddenColumns,
@@ -300,6 +304,81 @@ describe("表格视图", () => {
     expect(rows[1].textContent).toContain("polearm");
     expect(within(rows[2]).getByText("1")).not.toBeNull();
     expect(within(rows[3]).getByText("2")).not.toBeNull();
+  });
+
+  it("排序后点击行把原始行号提交给后端行选择", () => {
+    const definition = definitionWith({
+      condition_columns: ["weapon"],
+      data_columns: ["total_damage"],
+    });
+    const stageSelect = vi.fn();
+    const selectionSelect = vi.fn();
+    render(
+      <AnalysisSelectionContext.Provider
+        value={{ selections: new Map(), select: selectionSelect }}
+      >
+        <AnalysisStageSelectionContext.Provider
+          value={{
+            records: new Map(),
+            contextIdFor: () => "ctx-1",
+            select: stageSelect,
+          }}
+        >
+          <AnalysisViewBody
+            node={viewNode(definition)}
+            definition={definition}
+            result={{
+              status: "ready",
+              table: sampleTable(),
+              stage_id: "stage-view",
+            }}
+          />
+        </AnalysisStageSelectionContext.Provider>
+      </AnalysisSelectionContext.Provider>,
+    );
+
+    fireEvent.click(
+      screen.getByRole("columnheader", { name: /total_damage/ }),
+    );
+    const rows = screen.getAllByRole("row").slice(1);
+    expect(rows[0].textContent).toContain("polearm");
+
+    fireEvent.click(rows[0]);
+
+    expect(selectionSelect).toHaveBeenCalledWith("view-1", null);
+    expect(selectionSelect).toHaveBeenCalledTimes(1);
+    expect(stageSelect).toHaveBeenLastCalledWith("view-1", {
+      kind: "row",
+      row_index: 2,
+    });
+  });
+
+  it("无后端阶段时点击行以单行表作为选择输出", () => {
+    const definition = definitionWith({
+      condition_columns: ["weapon"],
+      data_columns: ["total_damage"],
+    });
+    const selectionSelect = vi.fn();
+    const table = sampleTable();
+    render(
+      <AnalysisSelectionContext.Provider
+        value={{ selections: new Map(), select: selectionSelect }}
+      >
+        <AnalysisViewBody
+          node={viewNode(definition)}
+          definition={definition}
+          result={{ status: "ready", table }}
+        />
+      </AnalysisSelectionContext.Provider>,
+    );
+
+    fireEvent.click(screen.getAllByRole("row")[1]);
+
+    expect(selectionSelect).toHaveBeenCalledWith("view-1", {
+      columns: table.columns,
+      rows: [table.rows[0]],
+      truncated: false,
+    });
   });
 
   it("高亮最大/最小作用于数据列并可清除", () => {

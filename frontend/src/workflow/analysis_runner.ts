@@ -30,8 +30,6 @@ export interface AnalysisNodeResult {
   table?: AnalysisTableResult;
   /** 节点运行时物化的后端阶段引用。 */
   stage_id?: string;
-  /** 获取单行节点计算的 item（上游表第一行）。 */
-  item?: unknown;
   error?: string;
 }
 
@@ -89,6 +87,7 @@ const TABLE_NODE_KINDS = new Set([
   "sort",
   "aggregate",
   "limit",
+  "single",
   "join",
   "compute",
   "derive",
@@ -644,19 +643,12 @@ export async function runAnalysisRegionStages(
   return { context_id: contextId, results };
 }
 
-/**
- * 执行由视图选择阶段驱动的下游分支：
- * 表格/图表点击已由后端物化为选择阶段，这里从选择阶段按拓扑序执行后续表算子。
- */
-export async function executeAnalysisSelectionBranch(
+/** 视图 selection 可达的表算子节点 id（不含详情/视图等展示终端）。 */
+export function selectionBranchNodeIds(
   definition: WorkflowDefinition,
   regionId: string,
   viewId: string,
-  contextId: string,
-  selectionStageId: string,
-  existingStages: ReadonlyMap<string, string>,
-  executeNode: ExecuteAnalysisNodeFn = executeAnalysisNode,
-): Promise<Map<string, AnalysisNodeResult>> {
+): string[] {
   const regionNodeIds = new Set(
     definition.nodes
       .filter((node) => node.region_id === regionId && TABLE_NODE_KINDS.has(node.kind))
@@ -687,6 +679,23 @@ export async function executeAnalysisSelectionBranch(
       }
     }
   }
+  return Array.from(branchIds);
+}
+
+/**
+ * 执行由视图选择阶段驱动的下游分支：
+ * 表格/图表点击已由后端物化为选择阶段，这里从选择阶段按拓扑序执行后续表算子。
+ */
+export async function executeAnalysisSelectionBranch(
+  definition: WorkflowDefinition,
+  regionId: string,
+  viewId: string,
+  contextId: string,
+  selectionStageId: string,
+  existingStages: ReadonlyMap<string, string>,
+  executeNode: ExecuteAnalysisNodeFn = executeAnalysisNode,
+): Promise<Map<string, AnalysisNodeResult>> {
+  const branchIds = new Set(selectionBranchNodeIds(definition, regionId, viewId));
 
   const byId = new Map(
     definition.nodes
@@ -834,18 +843,6 @@ function toAnalysisTableResult(table: AnalysisTableResponse): AnalysisTableResul
   };
 }
 
-/** 表行转 item 对象：列名 -> 单元格值。 */
-export function rowItem(
-  table: { columns: { name: string }[] },
-  row: unknown[],
-): Record<string, unknown> {
-  const item: Record<string, unknown> = {};
-  table.columns.forEach((column, index) => {
-    item[column.name] = row[index] ?? null;
-  });
-  return item;
-}
-
 /** 从结果表按行下标构造行集输出表：保持列结构、行顺序与截断标记，不做其它处理。 */
 export function tableRowsByIndex(
   table: AnalysisTableResult,
@@ -879,7 +876,7 @@ export function viewInputTable(
       ANALYSIS_VIEW_NODE_KINDS.has(sourceNode.kind) &&
       edge.source_port_id === "selection"
     ) {
-      // selection 输出是瞬态选择，不是视图/获取单行的数据输入；
+      // selection 输出是瞬态选择，不是视图的数据输入；
       // 未选中时不能把视图的整组输入表当成上游数据。
       continue;
     }
@@ -900,7 +897,7 @@ export function viewInputTable(
 }
 
 /**
- * 把区域内展示终端（config 转发、视图、获取单行）按当前表结果补齐。
+ * 把区域内展示终端（config 转发、视图）按当前表结果补齐。
  * 供整区刷新与选择分支执行共用，避免两种路径的状态收尾不一致。
  */
 export function populateAnalysisTerminalResults(
@@ -941,93 +938,7 @@ export function populateAnalysisTerminalResults(
           },
     );
   }
-  for (const node of definition.nodes) {
-    if (node.region_id !== regionId || node.kind !== "single") {
-      continue;
-    }
-    if (hasViewSelectionInput(definition, node.id)) {
-      const existing = results.get(node.id);
-      if (existing?.status === "ready") {
-        // 点击选择后由调用方写入的选中行 item，整区刷新不能清掉。
-        continue;
-      }
-      results.set(node.id, { status: "idle" });
-      continue;
-    }
-    const table = viewInputTable(node.id, definition, results);
-    results.set(
-      node.id,
-      table === null
-        ? { status: "stale" }
-        : table.rows.length === 0
-          ? { status: "ready" }
-          : { status: "ready", item: rowItem(table, table.rows[0]) },
-    );
-  }
   return results;
-}
-
-/** 获取单行是否由饼图/柱状图 selection 瞬态输出驱动。 */
-function hasViewSelectionInput(
-  definition: WorkflowDefinition,
-  nodeId: string,
-): boolean {
-  return definition.edges.some((edge) => {
-    if (edge.target_node_id !== nodeId || edge.source_port_id !== "selection") {
-      return false;
-    }
-    const source = definition.nodes.find(
-      (node) => node.id === edge.source_node_id,
-    );
-    return (
-      source !== undefined &&
-      ANALYSIS_VIEW_NODE_KINDS.has(source.kind)
-    );
-  });
-}
-
-/** 饼图/柱状图 selection 直接驱动的获取单行 id（不经过表算子）。 */
-export function directSelectionSingleIds(
-  definition: WorkflowDefinition,
-  regionId: string,
-  viewId: string,
-): string[] {
-  return definition.edges
-    .filter(
-      (edge) =>
-        edge.source_node_id === viewId &&
-        edge.source_port_id === "selection" &&
-        definition.nodes.some(
-          (node) =>
-            node.id === edge.target_node_id &&
-            node.region_id === regionId &&
-            node.kind === "single",
-        ),
-    )
-    .map((edge) => edge.target_node_id);
-}
-
-/** 把点击后后端派生的选择阶段第一行写入直接下游获取单行。 */
-export function applyViewSelectionSingles(
-  definition: WorkflowDefinition,
-  regionId: string,
-  viewId: string,
-  stage: StageResponse,
-  results: Map<string, AnalysisNodeResult>,
-): void {
-  for (const singleId of directSelectionSingleIds(
-    definition,
-    regionId,
-    viewId,
-  )) {
-    const first = stage.rows[0];
-    results.set(
-      singleId,
-      first === undefined
-        ? { status: "ready" }
-        : { status: "ready", item: rowItem(stage, first) },
-    );
-  }
 }
 
 /** 视图的阶段引用：单数据源直接取源阶段，无法推导时保留已有值。 */

@@ -85,15 +85,15 @@ import {
 } from "../state/run_state";
 import type { RunState } from "../state/run_state";
 import {
-  applyViewSelectionSingles,
-  directSelectionSingleIds,
   executeAnalysisSelectionBranch,
   planFetchNodes,
   populateAnalysisTerminalResults,
   runAnalysisRegionStages,
+  selectionBranchNodeIds,
 } from "../workflow/analysis_runner";
 import type { AnalysisNodeResult } from "../workflow/analysis_runner";
 import { compileConfigurationRegion } from "../workflow/compiler";
+import type { AnalysisTableResult } from "../workflow/templates";
 import {
   analysisInputStatus,
   batchInputFingerprint,
@@ -162,19 +162,19 @@ export function App() {
   const [workflowList, setWorkflowList] = useState<WorkflowListItem[]>([]);
   const [runState, setRunState] = useState<RunState>(() => createEmptyRunState());
   const [schemaCatalog, setSchemaCatalog] = useState<AnalysisSchemaCatalog | null>(null);
-  const [analysisSelections, setAnalysisSelections] = useState<Map<string, unknown>>(
+  const [analysisSelections, setAnalysisSelections] = useState<Map<string, AnalysisTableResult>>(
     new Map(),
   );
   const analysisSelectionStore = useMemo<AnalysisSelectionStore>(
     () => ({
       selections: analysisSelections,
-      select: (nodeId, item) => {
+      select: (nodeId, table) => {
         setAnalysisSelections((current) => {
           const next = new Map(current);
-          if (item === null || item === undefined) {
+          if (table === null) {
             next.delete(nodeId);
           } else {
-            next.set(nodeId, item);
+            next.set(nodeId, table);
           }
           return next;
         });
@@ -215,13 +215,18 @@ export function App() {
         if (record === null) {
           setAnalysisResults((current) => {
             const next = new Map(current);
-            for (const targetId of directSelectionSingleIds(
+            for (const targetId of selectionBranchNodeIds(
               definition,
               viewNode.region_id ?? "",
               nodeId,
             )) {
               next.set(targetId, { status: "idle" });
             }
+            return next;
+          });
+          setAnalysisSelections((current) => {
+            const next = new Map(current);
+            next.delete(nodeId);
             return next;
           });
           return;
@@ -237,14 +242,33 @@ export function App() {
         }
         const seq = ++analysisSelectionBranchSeqRef.current;
         void (async () => {
-          const selectionStage = await selectAnalysisStage(contextId, viewStageId, {
-            kind: "group",
-            columns: record.groupColumns,
-            values: record.groupValues,
-          });
+          const selectionStage =
+            record.kind === "row"
+              ? await selectAnalysisStage(contextId, viewStageId, {
+                  kind: "row",
+                  row_index: record.row_index,
+                })
+              : await selectAnalysisStage(contextId, viewStageId, {
+                  kind: "group",
+                  columns: record.groupColumns,
+                  values: record.groupValues,
+                });
           if (seq !== analysisSelectionBranchSeqRef.current) {
             return;
           }
+          const selectionTable: AnalysisTableResult = {
+            columns: selectionStage.columns.map((column) => ({
+              name: column.name,
+              type: column.type,
+            })),
+            rows: selectionStage.rows,
+            truncated: selectionStage.truncated,
+          };
+          setAnalysisSelections((current) => {
+            const next = new Map(current);
+            next.set(nodeId, selectionTable);
+            return next;
+          });
           const existingStages = new Map<string, string>();
           for (const item of definition.nodes) {
             const stageId = analysisResults.get(item.id)?.stage_id;
@@ -271,13 +295,6 @@ export function App() {
             for (const [branchNodeId, result] of branchResults) {
               next.set(branchNodeId, result);
             }
-            applyViewSelectionSingles(
-              definition,
-              regionId,
-              nodeId,
-              selectionStage,
-              next,
-            );
             return populateAnalysisTerminalResults(definition, regionId, next);
           });
         })().catch(() => {

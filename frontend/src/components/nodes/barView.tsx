@@ -422,6 +422,7 @@ export function BarChartView({
         const rawSeriesIndex =
           seriesColumn === "" ? undefined : columnIndex.get(seriesColumn);
         stageSelection.select(node.id, {
+          kind: "group",
           groupColumns: [x, ...(seriesColumn === "" ? [] : [seriesColumn])],
           groupValues: [
             ...(xIndex === undefined ? [] : [firstRow[xIndex]]),

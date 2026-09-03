@@ -26,6 +26,7 @@ _NODE_INPUT_ARITY = {
     "project": 1,
     "sort": 1,
     "limit": 1,
+    "single": 1,
     "aggregate": 1,
     "compute": 1,
     "derive": 1,

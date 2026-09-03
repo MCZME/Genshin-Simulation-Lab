@@ -746,6 +746,84 @@ def test_output_limit_marks_truncated(tmp_path) -> None:
     assert len(table.rows) == 10_000
 
 
+def test_single_operator_takes_first_row_and_preserves_shape(tmp_path) -> None:
+    executor = _executor(tmp_path)
+    plan = _plan(
+        (
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
+            AnalysisPlanNode(
+                id="sorted1",
+                kind="sort",
+                params={"keys": [{"column": "session_id", "direction": "asc"}]},
+                inputs=("runs1",),
+            ),
+            AnalysisPlanNode(id="single1", kind="single", inputs=("sorted1",)),
+        ),
+        ("single1",),
+    )
+
+    table = executor.execute_plan(plan)["single1"]
+    source = executor.execute_plan(
+        _plan(
+            (AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),),
+            ("runs1",),
+        )
+    )["runs1"]
+
+    assert len(table.rows) == 1
+    assert _column_values(table, "session_id") == ["run:1"]
+    assert {column.name for column in table.columns} == {column.name for column in source.columns}
+
+
+def test_single_operator_keeps_empty_input_empty(tmp_path) -> None:
+    executor = _executor(tmp_path)
+    plan = _plan(
+        (
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
+            AnalysisPlanNode(
+                id="f1",
+                kind="filter",
+                params={
+                    "mode": "all",
+                    "conditions": [{"column": "session_id", "op": "eq", "value": "missing"}],
+                },
+                inputs=("runs1",),
+            ),
+            AnalysisPlanNode(id="single1", kind="single", inputs=("f1",)),
+        ),
+        ("single1",),
+    )
+
+    table = executor.execute_plan(plan)["single1"]
+
+    assert table.rows == ()
+    assert len(table.columns) > 0
+
+
+def test_single_operator_rejects_parameters(tmp_path) -> None:
+    executor = _executor(tmp_path)
+    plan = _plan(
+        (
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
+            AnalysisPlanNode(
+                id="single1",
+                kind="single",
+                params={"count": 1},
+                inputs=("runs1",),
+            ),
+        ),
+        ("single1",),
+    )
+
+    with pytest.raises(AnalysisPlanValidationError) as exc_info:
+        executor.execute_plan(plan)
+
+    assert any(
+        item.get("node_id") == "single1" and "不支持的参数" in item.get("reason", "")
+        for item in exc_info.value.details
+    )
+
+
 def test_unknown_column_reports_node_detail(tmp_path) -> None:
     executor = SQLiteAnalysisQueryExecutor(tmp_path / "missing.db")
     plan = _plan(

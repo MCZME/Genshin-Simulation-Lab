@@ -293,6 +293,7 @@ export function PieChartView({
         stageSelection !== null
       ) {
         stageSelection.select(node.id, {
+          kind: "group",
           groupColumns: [group],
           groupValues: [firstRow[groupIndex]],
         });

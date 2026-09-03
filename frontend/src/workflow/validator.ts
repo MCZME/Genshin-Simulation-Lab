@@ -802,11 +802,7 @@ function warnNodesOutsideRegions(
 }
 
 const ANALYSIS_VIEW_KINDS = new Set(["member_table", "pie", "bar"]);
-/** 只有表格视图的 selection 输出仍是 item；饼图/柱状图 selection 输出行集表。 */
-const ANALYSIS_ITEM_SELECTION_VIEW_KINDS = new Set(["member_table"]);
-/** 获取单行：table -> item 的唯一显式转换（分析区域设计 6.3）。 */
-const ANALYSIS_SINGLE_KINDS = new Set(["single"]);
-/** 单项详情节点：接收 item，输出为空（分析区域设计 6.4）。 */
+/** 单项详情节点：接收 table，输出为空（分析区域设计 6.4）。 */
 const ANALYSIS_DETAIL_KINDS = new Set([
   "frame_state",
   "damage_detail",
@@ -857,7 +853,6 @@ function validateAnalysisGraph(
       const source = nodeById.get(edge.source_node_id);
       const viewTableOutput =
         source !== undefined &&
-        source.kind !== "member_table" &&
         ANALYSIS_VIEW_NODE_KINDS.has(source.kind) &&
         edge.source_port_id === ANALYSIS_SELECTION_PORT;
       return (
@@ -903,107 +898,20 @@ function validateAnalysisGraph(
   }
   validateConfigForwarders(definition, nodeById, diagnostics);
 
-  // item 语言流：single 只接收表输入；详情节点只接收 item 输入；
-  // 表格视图 selection 端口只能流向详情节点；饼图/柱状图 selection 输出行集表，
-  // 不再进入 item 详情链。
-  const itemSourceIds = new Set<string>();
+  // 详情节点是表消费者：缺少输入时只报终端缺失；数据语言匹配由通用边校验负责，
+  // 行数语义（0/1/≥2）由详情节点运行时检查，图校验无法静态承诺行数。
   for (const node of nodeById.values()) {
-    if (ANALYSIS_SINGLE_KINDS.has(node.kind)) {
-      itemSourceIds.add(node.id);
-      continue;
-    }
-    if (ANALYSIS_ITEM_SELECTION_VIEW_KINDS.has(node.kind)) {
-      const hasSelectionOutput = definition.edges.some(
-        (edge) => edge.source_node_id === node.id && edge.source_port_id === ANALYSIS_SELECTION_PORT,
-      );
-      if (hasSelectionOutput) {
-        itemSourceIds.add(node.id);
-      }
-    }
-  }
-  for (const edge of definition.edges) {
-    const target = nodeById.get(edge.target_node_id);
-    const source = nodeById.get(edge.source_node_id);
-    if (target === undefined || source === undefined) {
-      continue;
-    }
-    if (ANALYSIS_DETAIL_KINDS.has(target.kind) && edge.target_port_id === ANALYSIS_DATA_PORT) {
-      if (!itemSourceIds.has(source.id)) {
-        diagnostics.push(
-          diagnostic("error", "ITEM_INPUT_INVALID", "单项详情节点只能接收 item 输入（视图选择或获取单行）", {
-            edge_id: edge.id,
-            node_id: target.id,
-          }),
-        );
-      }
-    }
-    if (source.kind === "single" && edge.source_port_id === "out") {
-      if (!ANALYSIS_DETAIL_KINDS.has(target.kind)) {
-        diagnostics.push(
-          diagnostic("error", "ITEM_OUTPUT_INVALID", "获取单行的输出只能连接单项详情节点", {
-            edge_id: edge.id,
-            node_id: source.id,
-          }),
-        );
-      }
-    }
-    if (
-      source.kind === "member_table" &&
-      edge.source_port_id === ANALYSIS_SELECTION_PORT &&
-      !ANALYSIS_DETAIL_KINDS.has(target.kind)
-    ) {
-      diagnostics.push(
-        diagnostic(
-          "error",
-          "ITEM_OUTPUT_INVALID",
-          "表格视图的 selection 输出（item）只能连接单项详情节点",
-          { edge_id: edge.id, node_id: source.id },
-        ),
-      );
-    }
-  }
-  for (const node of nodeById.values()) {
-    if (!ANALYSIS_SINGLE_KINDS.has(node.kind) && !ANALYSIS_DETAIL_KINDS.has(node.kind)) {
+    if (!ANALYSIS_DETAIL_KINDS.has(node.kind)) {
       continue;
     }
     const incoming = edgesByTarget.get(node.id) ?? [];
     const dataEdges = incoming.filter((edge) => edge.target_port_id === ANALYSIS_DATA_PORT);
     if (dataEdges.length === 0) {
-      if (ANALYSIS_SINGLE_KINDS.has(node.kind)) {
-        diagnostics.push(
-          diagnostic("error", "SINGLE_INPUT_MISSING", "获取单行缺少上游表输入", {
-            node_id: node.id,
-          }),
-        );
-      } else {
-        diagnostics.push(
-          diagnostic("error", "ITEM_INPUT_MISSING", "单项详情节点缺少 item 输入连线", {
-            node_id: node.id,
-          }),
-        );
-      }
-      continue;
-    }
-    if (ANALYSIS_SINGLE_KINDS.has(node.kind)) {
-      const tableFed = dataEdges.some((edge) => {
-        const source = nodeById.get(edge.source_node_id);
-        const viewTableOutput =
-          source !== undefined &&
-          source.kind !== "member_table" &&
-          ANALYSIS_VIEW_NODE_KINDS.has(source.kind) &&
-          edge.source_port_id === ANALYSIS_SELECTION_PORT;
-        return (
-          source !== undefined &&
-          (ANALYSIS_TABLE_NODE_KINDS.has(source.kind) || viewTableOutput)
-        );
-      });
-      if (!tableFed) {
-        diagnostics.push(
-          diagnostic("error", "SINGLE_INPUT_INVALID", "获取单行只能接收表输入", {
-            node_id: node.id,
-          }),
-        );
-      }
+      diagnostics.push(
+        diagnostic("error", "DETAIL_INPUT_MISSING", "单项详情节点缺少输入连线", {
+          node_id: node.id,
+        }),
+      );
     }
   }
 }

@@ -86,6 +86,14 @@ TEST_WEAPON_ASSETS: tuple[WeaponAsset, ...] = (
         rarity=4,
         handler_key="weapon.testing.modifier_blade",
     ),
+    WeaponAsset(
+        asset_key="weapon:test_attribute_probe",
+        source_id="test_attribute_probe",
+        name="属性探针·单手剑",
+        weapon_type="sword",
+        rarity=4,
+        handler_key="weapon.testing.attribute_probe",
+    ),
 )
 
 TEST_WEAPON_LEVEL_STATS: tuple[WeaponLevelStats, ...] = (
@@ -105,6 +113,14 @@ TEST_WEAPON_LEVEL_STATS: tuple[WeaponLevelStats, ...] = (
         secondary_stat=None,
         secondary_value=None,
     ),
+    WeaponLevelStats(
+        weapon_key="weapon:test_attribute_probe",
+        level=90,
+        ascension_phase=6,
+        base_atk=300.0,
+        secondary_stat="atk_percent",
+        secondary_value=0.15,
+    ),
 )
 
 TEST_ARTIFACT_SET_ASSETS: tuple[ArtifactSetAsset, ...] = (
@@ -118,6 +134,12 @@ TEST_ARTIFACT_SET_ASSETS: tuple[ArtifactSetAsset, ...] = (
         asset_key="artifact_set:test_modifier_set",
         source_id="test_modifier_set",
         name="词条探针套装",
+        handler_key=None,
+    ),
+    ArtifactSetAsset(
+        asset_key="artifact_set:test_attribute_probe",
+        source_id="test_attribute_probe",
+        name="属性探针套装",
         handler_key=None,
     ),
 )
@@ -145,6 +167,24 @@ TEST_ARTIFACT_SET_BONUSES: tuple[ArtifactSetBonus, ...] = (
         params={
             "schema_version": 1,
             "components": [{"values": [80.0]}, {"values": [0.2]}, {"values": [0.12]}],
+        },
+    ),
+    ArtifactSetBonus(
+        artifact_set_key="artifact_set:test_attribute_probe",
+        piece_count=2,
+        handler_key="artifact.testing.attribute_probe",
+        params={
+            "schema_version": 1,
+            "components": [{"values": [0.2]}],
+        },
+    ),
+    ArtifactSetBonus(
+        artifact_set_key="artifact_set:test_attribute_probe",
+        piece_count=4,
+        handler_key="artifact.testing.attribute_probe",
+        params={
+            "schema_version": 1,
+            "components": [{"values": [10.0]}, {"values": [0.3]}],
         },
     ),
 )

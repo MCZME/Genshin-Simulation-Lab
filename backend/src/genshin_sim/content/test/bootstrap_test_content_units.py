@@ -7,6 +7,10 @@
 from __future__ import annotations
 
 from genshin_sim.content.registries import ContentUnitRegistry
+from genshin_sim.content.test.artifacts.attribute_probe import (
+    ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY,
+    create_attribute_probe_artifact_content_unit,
+)
 from genshin_sim.content.test.artifacts.modifier_set import (
     MODIFIER_SET_HANDLER_KEY,
     create_modifier_set_content_unit,
@@ -16,6 +20,10 @@ from genshin_sim.content.test.characters.reaction_probe import (
     TEST_B_HANDLER_KEY,
     create_test_a_content_unit,
     create_test_b_content_unit,
+)
+from genshin_sim.content.test.weapons.attribute_probe import (
+    ATTRIBUTE_PROBE_WEAPON_HANDLER_KEY,
+    create_attribute_probe_weapon_content_unit,
 )
 from genshin_sim.content.test.weapons.modifier_blade import (
     MODIFIER_BLADE_HANDLER_KEY,
@@ -38,7 +46,15 @@ def register_test_content_units(registry: ContentUnitRegistry) -> None:
         MODIFIER_BLADE_HANDLER_KEY,
         create_modifier_blade_content_unit,
     )
+    registry.register_weapon_factory(
+        ATTRIBUTE_PROBE_WEAPON_HANDLER_KEY,
+        create_attribute_probe_weapon_content_unit,
+    )
     registry.register_artifact_factory(
         MODIFIER_SET_HANDLER_KEY,
         create_modifier_set_content_unit,
+    )
+    registry.register_artifact_factory(
+        ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY,
+        create_attribute_probe_artifact_content_unit,
     )

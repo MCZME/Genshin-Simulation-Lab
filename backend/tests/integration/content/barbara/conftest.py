@@ -11,12 +11,11 @@ from genshin_sim.application.assembly import AssembledSimulation, SimulationAsse
 from genshin_sim.application.input import SimulationInput
 from genshin_sim.infrastructure.assets_sqlite import SQLiteAssetRepository
 from tests.helpers import barbara as barbara_helpers
-from tests.helpers.barbara_assets import write_barbara_asset_database
 
 
 @pytest.fixture
 def barbara_asset_db(tmp_path: Path) -> Path:
-    return write_barbara_asset_database(tmp_path / "assets.db")
+    return barbara_helpers.write_barbara_asset_database(tmp_path / "assets.db")
 
 
 @pytest.fixture

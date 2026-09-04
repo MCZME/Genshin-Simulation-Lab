@@ -231,26 +231,25 @@ def test_content_compiler_instantiates_state_container_from_unit_schema():
     assert mount.values == {"stacks": 0}
 
 
-def test_content_compiler_uses_default_content_unit_registry_path():
-    class RuntimeProbeRepository(StageAssetRepositoryWithHandler):
+def test_content_compiler_resolves_default_noop_handler_without_developer_mode():
+    class NoopHandlerRepository(StageAssetRepositoryWithHandler):
         def get_character(self, character_key: str) -> CharacterAsset:
             return CharacterAsset(
                 asset_key=character_key,
                 source_id="stage_test",
-                name="runtime probe",
+                name="noop fixture",
                 element="hydro",
                 weapon_type="catalyst",
                 rarity=5,
                 burst_energy_cost=60.0,
-                handler_key="character.testing.test_a",
+                handler_key="generic.test_character",
             )
 
-    compiler = ContentCompiler(create_default_content_unit_registry(developer_mode=True))
-    assets = AssetBundleLoader(RuntimeProbeRepository()).load(_single_character_config())
+    compiler = ContentCompiler(create_default_content_unit_registry())
+    assets = AssetBundleLoader(NoopHandlerRepository()).load(_single_character_config())
 
     bundle = compiler.compile(_single_character_config(), assets)
 
-    assert len(bundle.content_units) == 1
-    assert bundle.content_units[0].handler_key == "character.testing.test_a"
-    assert 1 in bundle.action_interpreters
+    assert bundle.content_units == ()
+    assert bundle.action_interpreters == {}
     assert bundle.content_state_mounts == ()

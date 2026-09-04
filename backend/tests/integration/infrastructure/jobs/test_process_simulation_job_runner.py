@@ -12,10 +12,10 @@ from genshin_sim.application.batch import (
 )
 from genshin_sim.application.batch.models import BatchMemberValidation
 from genshin_sim.application.input import SimulationInput
-from genshin_sim.infrastructure.assets_sqlite import write_minimal_static_asset_database
 from genshin_sim.infrastructure.jobs import ProcessSimulationJobRunner
 from genshin_sim.infrastructure.results_sqlite import SQLiteResultRepository
 from tests.helpers.assembly import static_asset_input_payload
+from tests.helpers.fixture_assets import write_fixture_asset_database
 
 
 class _PassthroughValidator:
@@ -33,13 +33,14 @@ def test_process_runner_runs_file_and_persists_result(tmp_path: Path):
     asset_db = tmp_path / "assets.db"
     result_db = tmp_path / "results.db"
     input_path = tmp_path / "config.json"
-    write_minimal_static_asset_database(asset_db)
+    write_fixture_asset_database(asset_db)
     input_path.write_text(
         json.dumps(
             static_asset_input_payload(
                 meta_name="process runner integration run",
                 include_weapon=True,
                 include_artifact_set=True,
+                input_trace=[],
             ),
             ensure_ascii=False,
         ),
@@ -50,7 +51,7 @@ def test_process_runner_runs_file_and_persists_result(tmp_path: Path):
         asset_db_path=asset_db,
         result_db_path=result_db,
         max_workers=1,
-        developer_mode=True,
+        developer_mode=False,
         job_id_factory=lambda: "job-1",
     ) as runner:
         service = BatchRunService(

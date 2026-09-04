@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import replace
 from pathlib import Path
 
 from genshin_sim.application.assembly import SimulationAssembler
 from genshin_sim.application.input import SimulationInput
-from genshin_sim.assets import CharacterLevelStats, CompositeAssetRepository
 from genshin_sim.content import create_default_content_unit_registry
-from genshin_sim.content.test.asset_repository import TestAssetRepository
 from genshin_sim.core.actions import (
     ActionInterpretationResult,
     ActionInterpretationTrigger,
@@ -27,34 +24,13 @@ from genshin_sim.core.attributes import (
 )
 from genshin_sim.core.impacts import ActionImpactContext, ImpactKind, ImpactRequest
 from genshin_sim.core.space import CreatedObjectRuntimeState
-from genshin_sim.infrastructure.assets_sqlite import (
-    SQLiteAssetRepository,
-    write_minimal_static_asset_database,
+from genshin_sim.infrastructure.assets_sqlite import SQLiteAssetRepository
+from tests.helpers.fixture_assets import (
+    FIXTURE_ARTIFACT_SET_ASSET_KEY,
+    FIXTURE_CHARACTER_ASSET_KEY,
+    FIXTURE_WEAPON_ASSET_KEY,
+    write_fixture_asset_database,
 )
-
-
-class ElementalMasteryOverrideRepository(TestAssetRepository):
-    """测试用：在内存测试资产仓库上覆盖 test_a 的等级词条。"""
-
-    def __init__(self, elemental_mastery: float | None) -> None:
-        super().__init__()
-        self._elemental_mastery = elemental_mastery
-
-    def get_character_level_stats(
-        self,
-        character_key: str,
-        level: int,
-        *,
-        ascended: bool = True,
-    ) -> CharacterLevelStats:
-        stats = super().get_character_level_stats(character_key, level, ascended=ascended)
-        if character_key == "character:test_a" and self._elemental_mastery is not None:
-            return replace(
-                stats,
-                ascension_stat="elemental_mastery",
-                ascension_value=self._elemental_mastery,
-            )
-        return stats
 
 
 class ContributedActionInterpreter:
@@ -214,12 +190,12 @@ def static_asset_input_payload(
     include_weapon: bool = False,
     include_artifact_set: bool = False,
 ) -> dict[str, object]:
-    """面向 test_a 测试角色（CompositeAssetRepository + TestAssetRepository）的单角色仿真输入。"""
+    """面向零行为夹具角色的单角色仿真输入（不含 content/test）。"""
 
     team_member: dict[str, object] = {
         "slot": 1,
         "character": {
-            "asset_key": "character:test_a",
+            "asset_key": FIXTURE_CHARACTER_ASSET_KEY,
             "level": 90,
             "constellation": 0,
             "talents": {"normal_attack": 1},
@@ -228,13 +204,13 @@ def static_asset_input_payload(
     }
     if include_weapon:
         team_member["weapon"] = {
-            "asset_key": "weapon:test_sword",
+            "asset_key": FIXTURE_WEAPON_ASSET_KEY,
             "level": 90,
             "refinement": 1,
         }
     if include_artifact_set:
         team_member["artifacts"] = {
-            "sets": [{"asset_key": "artifact_set:test_set", "pieces": 4}],
+            "sets": [{"asset_key": FIXTURE_ARTIFACT_SET_ASSET_KEY, "pieces": 4}],
             "stats": {},
         }
     return {
@@ -254,7 +230,8 @@ def static_asset_input_payload(
             ]
         },
         "input_trace": input_trace
-        or [
+        if input_trace is not None
+        else [
             {"frame": 1, "events": [{"key": "keyboard.e", "phase": "press"}]},
             {"frame": 2, "events": [{"key": "keyboard.e", "phase": "release"}]},
         ],
@@ -273,14 +250,10 @@ def build_reaction_assembled(
     elemental_mastery: float | None = None,
 ):
     asset_db = tmp_path / "assets.db"
-    write_minimal_static_asset_database(asset_db)
+    write_fixture_asset_database(asset_db, elemental_mastery=elemental_mastery)
     return SimulationAssembler(
-        CompositeAssetRepository(
-            SQLiteAssetRepository(asset_db),
-            ElementalMasteryOverrideRepository(elemental_mastery),
-        ),
-        # 测试角色绑定 test_a handler，需要开发者模式注册表。
-        content_unit_registry=create_default_content_unit_registry(developer_mode=True),
+        SQLiteAssetRepository(asset_db),
+        content_unit_registry=create_default_content_unit_registry(),
     ).assemble(
         SimulationInput.from_mapping(
             static_asset_input_payload(

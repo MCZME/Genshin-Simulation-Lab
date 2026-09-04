@@ -6,17 +6,239 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from typing import Any
 
 from genshin_sim.application.assembly import AssembledSimulation
-from genshin_sim.content import BARBARA_ENCORE_EFFECT_HANDLER_KEY
+from genshin_sim.assets.models import (
+    CharacterAsset,
+    CharacterLevelStats,
+    EffectPayload,
+    TalentScalingEntry,
+)
+from genshin_sim.content import (
+    BARBARA_ENCORE_EFFECT_HANDLER_KEY,
+)
+from genshin_sim.content.characters.mondstadt.barbara.data import (
+    BARBARA_ASSET_KEY,
+    BARBARA_CHARACTER_HANDLER_KEY,
+    BARBARA_CONSTELLATION_C1_HANDLER_KEY,
+    BARBARA_CONSTELLATION_C2_HANDLER_KEY,
+    BARBARA_CONSTELLATION_C4_HANDLER_KEY,
+)
 from genshin_sim.content.registries import EffectContentUnitRequest
 from genshin_sim.core.systems.energy import (
     EnergyElement,
     EnergyPickupKind,
     SpawnEnergyPickupRequest,
 )
-from tests.helpers.barbara_assets import BARBARA_CHARACTER_KEY
+from genshin_sim.infrastructure.assets_sqlite import (
+    ASSET_SCHEMA_VERSION,
+    SQLiteAssetDataWriter,
+)
+from tests.helpers.fixture_assets import FIXTURE_CHARACTER_ASSET_KEY
+
+BARBARA_CHARACTER_KEY = BARBARA_ASSET_KEY
+BARBARA_SWITCH_FIXTURE_HANDLER_KEY = "character.testing.barbara_switch_noop"
+
+
+def write_barbara_asset_database(db_path: Path) -> Path:
+    """写入芭芭拉单人最小合成资产库（不携带真实资产数值）。"""
+
+    return _write_barbara_minimal_asset_database(db_path, include_switch_fixture=False)
+
+
+def write_barbara_switch_asset_database(db_path: Path) -> Path:
+    """写入芭芭拉 + 测试本地切人夹具角色的最小合成资产库。"""
+
+    return _write_barbara_minimal_asset_database(db_path, include_switch_fixture=True)
+
+
+def _write_barbara_minimal_asset_database(
+    db_path: Path,
+    *,
+    include_switch_fixture: bool,
+) -> Path:
+    characters = [
+        CharacterAsset(
+            asset_key=BARBARA_CHARACTER_KEY,
+            source_id=BARBARA_CHARACTER_KEY.removeprefix("character:"),
+            name="芭芭拉",
+            element="hydro",
+            weapon_type="catalyst",
+            rarity=4,
+            burst_energy_cost=80.0,
+            handler_key=BARBARA_CHARACTER_HANDLER_KEY,
+        ),
+    ]
+    character_level_stats = [
+        CharacterLevelStats(
+            character_key=BARBARA_CHARACTER_KEY,
+            level=90,
+            ascension_phase=6,
+            base_hp=10_000.0,
+            base_atk=200.0,
+            base_def=600.0,
+            ascension_stat="hp_percent",
+            ascension_value=0.0,
+        ),
+    ]
+    if include_switch_fixture:
+        characters.append(
+            CharacterAsset(
+                asset_key=FIXTURE_CHARACTER_ASSET_KEY,
+                source_id=FIXTURE_CHARACTER_ASSET_KEY.removeprefix("character:"),
+                name="Switch Fixture",
+                element="hydro",
+                weapon_type="sword",
+                rarity=5,
+                burst_energy_cost=60.0,
+                handler_key=BARBARA_SWITCH_FIXTURE_HANDLER_KEY,
+            ),
+        )
+        character_level_stats.append(
+            CharacterLevelStats(
+                character_key=FIXTURE_CHARACTER_ASSET_KEY,
+                level=90,
+                ascension_phase=6,
+                base_hp=10_000.0,
+                base_atk=200.0,
+                base_def=600.0,
+            ),
+        )
+    return SQLiteAssetDataWriter(db_path).replace_all(
+        meta={
+            "schema_version": ASSET_SCHEMA_VERSION,
+            "data_version": "barbara-minimal-1",
+            "importer_version": "sqlite-asset-writer-1",
+            "source_name": "test-barbara-minimal",
+            "source_version": "1",
+            "content_hash": "barbara-minimal-1",
+        },
+        characters=tuple(characters),
+        character_level_stats=tuple(character_level_stats),
+        talent_scalings=_minimal_barbara_scaling_entries(),
+        effect_payloads=_minimal_barbara_effect_payloads(),
+    )
+
+
+def _minimal_barbara_scaling_entries() -> tuple[TalentScalingEntry, ...]:
+    """返回芭芭拉 content 工厂接线所需的最小倍率行。
+
+    所有数值取 1.0，只保证倍率条目结构（label、分量数与等级区间）满足
+    工厂编译；测试不断言真实倍率或最终数值。
+    """
+
+    specs = (
+        ("na_1", "normal_attack", "一段伤害", ("plain_ratio",)),
+        ("na_2", "normal_attack", "二段伤害", ("plain_ratio",)),
+        ("na_3", "normal_attack", "三段伤害", ("plain_ratio",)),
+        ("na_4", "normal_attack", "四段伤害", ("plain_ratio",)),
+        ("charged", "normal_attack", "重击伤害", ("plain_ratio",)),
+        ("plunge_collision", "normal_attack", "下坠期间伤害", ("plain_ratio",)),
+        (
+            "plunge_landing",
+            "normal_attack",
+            "低空/高空坠地冲击伤害",
+            ("plain_ratio", "plain_ratio"),
+        ),
+        ("skill_damage", "elemental_skill", "水珠伤害", ("plain_ratio",)),
+        (
+            "ring_heal",
+            "elemental_skill",
+            "持续治疗量",
+            ("plain_ratio", "plain_value"),
+        ),
+        (
+            "on_hit_heal",
+            "elemental_skill",
+            "命中治疗量",
+            ("plain_ratio", "plain_value"),
+        ),
+        (
+            "burst_heal",
+            "elemental_burst",
+            "治疗量",
+            ("plain_ratio", "plain_value"),
+        ),
+    )
+    return tuple(
+        TalentScalingEntry(
+            character_key=BARBARA_CHARACTER_KEY,
+            talent_key=talent_key,
+            entry_key=entry_key,
+            label=label,
+            scaling={
+                "schema_version": 1,
+                "mode": "level_table",
+                "level_min": 1,
+                "level_max": 15,
+                "components": tuple(
+                    {
+                        "source_param": f"param_{index}",
+                        "kind": kind,
+                        "values": tuple(1.0 for _ in range(15)),
+                    }
+                    for index, kind in enumerate(kinds)
+                ),
+            },
+            tags=(talent_key,),
+        )
+        for entry_key, talent_key, label, kinds in specs
+    )
+
+
+def _minimal_barbara_effect_payloads() -> tuple[EffectPayload, ...]:
+    """返回命座/被动测试需要的合成效果行（不含真实效果参数）。"""
+
+    return (
+        EffectPayload(
+            effect_key=f"{BARBARA_CHARACTER_KEY}:passive:5",
+            owner_type="character",
+            owner_key=BARBARA_CHARACTER_KEY,
+            effect_kind="passive",
+            unlock_key="passive:5",
+            handler_key=BARBARA_ENCORE_EFFECT_HANDLER_KEY,
+            params=_effect_params((1.0, 5.0)),
+        ),
+        EffectPayload(
+            effect_key=f"{BARBARA_CHARACTER_KEY}:constellation:c1",
+            owner_type="character",
+            owner_key=BARBARA_CHARACTER_KEY,
+            effect_kind="constellation",
+            unlock_key="c1",
+            handler_key=BARBARA_CONSTELLATION_C1_HANDLER_KEY,
+            params=_effect_params((10.0, 1.0)),
+        ),
+        EffectPayload(
+            effect_key=f"{BARBARA_CHARACTER_KEY}:constellation:c2",
+            owner_type="character",
+            owner_key=BARBARA_CHARACTER_KEY,
+            effect_kind="constellation",
+            unlock_key="c2",
+            handler_key=BARBARA_CONSTELLATION_C2_HANDLER_KEY,
+            params=_effect_params((0.15, 0.15)),
+        ),
+        EffectPayload(
+            effect_key=f"{BARBARA_CHARACTER_KEY}:constellation:c4",
+            owner_type="character",
+            owner_key=BARBARA_CHARACTER_KEY,
+            effect_kind="constellation",
+            unlock_key="c4",
+            handler_key=BARBARA_CONSTELLATION_C4_HANDLER_KEY,
+            params=_effect_params((1.0, 5.0)),
+        ),
+    )
+
+
+def _effect_params(values: tuple[float, float]) -> dict[str, object]:
+    return {
+        "schema_version": 1,
+        "components": (
+            {"kind": "numeric", "format": "number", "values": [values[0]]},
+            {"kind": "numeric", "format": "number", "values": [values[1]]},
+        ),
+    }
 
 
 def barbara_input_payload(
@@ -68,18 +290,18 @@ def barbara_input_payload(
     }
 
 
-def barbara_probe_input_payload(
+def barbara_switch_input_payload(
     *,
     constellation: int = 0,
     max_frames: int = 140,
     input_trace: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
-    """芭芭拉（槽位 1）+ runtime probe（槽位 2）的双人队伍配置。"""
+    """芭芭拉双人队伍配置：槽位 1 为被测角色，槽位 2 用于切人验证。"""
 
     return {
         "schema_version": 2,
         "kind": "simulation_input",
-        "meta": {"name": "barbara probe switch integration", "description": ""},
+        "meta": {"name": "barbara switch integration", "description": ""},
         "team": [
             {
                 "slot": 1,
@@ -98,7 +320,7 @@ def barbara_probe_input_payload(
             {
                 "slot": 2,
                 "character": {
-                    "asset_key": "character:test_a",
+                    "asset_key": FIXTURE_CHARACTER_ASSET_KEY,
                     "level": 90,
                     "constellation": 0,
                     "talents": {"normal_attack": 1},

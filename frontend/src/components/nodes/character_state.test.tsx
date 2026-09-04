@@ -198,6 +198,34 @@ describe("CharacterStateSheet", () => {
     expect(screen.queryByText("15,000")).toBeNull();
   });
 
+  it("Buff 带 display_name 时主标题优先显示显示名", () => {
+    const namedBuffState = JSON.parse(JSON.stringify(FRAME_STATE)) as FrameStateResponse;
+    namedBuffState.characters[0].buffs![0].display_name = "被怜爱的少女 2件套";
+    render(
+      <CharacterStateSheet
+        frameState={namedBuffState}
+        character={namedBuffState.characters[0]}
+      />,
+    );
+
+    expect(screen.getByText("被怜爱的少女 2件套")).toBeDefined();
+    expect(screen.queryByText("buff.maiden_2pc")).toBeNull();
+  });
+
+  it("上下文条提供角色显示名时不再直接展示角色 key", () => {
+    render(
+      <CharacterStateSheet
+        frameState={FRAME_STATE}
+        character={FRAME_STATE.characters[0]}
+        characterName="芭芭拉"
+      />,
+    );
+
+    expect(screen.getByText("芭芭拉")).toBeDefined();
+    expect(screen.queryByText(/^1\./)).toBeNull();
+    expect(screen.queryByText(/character:barbara/)).toBeNull();
+  });
+
   it("属性面板每三个属性排一行", () => {
     const { container } = render(
       <CharacterStateSheet

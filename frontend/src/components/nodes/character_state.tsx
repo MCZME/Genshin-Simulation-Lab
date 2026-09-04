@@ -59,10 +59,13 @@ export function CharacterStateSheet({
   frameState,
   character,
   focusAttributeKey = null,
+  characterName = null,
 }: {
   frameState: FrameStateResponse;
   character: FrameCharacterState;
   focusAttributeKey?: string | null;
+  /** 角色资产显示名；未解析到时回退 character_key。 */
+  characterName?: string | null;
 }) {
   const attributes = isRecord(character.attributes) ? character.attributes : {};
   const mergeCoreStats = focusAttributeKey === null || !isCoreBaseKey(focusAttributeKey);
@@ -93,7 +96,11 @@ export function CharacterStateSheet({
 
   return (
     <div className="state-sheet">
-      <CharacterContext frameState={frameState} character={character} />
+      <CharacterContext
+        frameState={frameState}
+        character={character}
+        characterName={characterName}
+      />
       <section className="state-sheet-section">
         <h3 className="state-sheet-section-title">当前状态</h3>
         <HealthEnergyRows character={character} />
@@ -131,17 +138,22 @@ export function CharacterStateSheet({
 function CharacterContext({
   frameState,
   character,
+  characterName,
 }: {
   frameState: FrameStateResponse;
   character: FrameCharacterState;
+  characterName: string | null;
 }) {
   return (
     <div className="state-sheet-context">
       <span className="state-sheet-context-frame">
         帧 {frameState.frame}（{frameState.time_seconds.toFixed(2)} 秒）
       </span>
-      <span className="state-sheet-context-char">
-        {character.slot}. {character.character_key}
+      <span
+        className="state-sheet-context-char"
+        title={character.character_key}
+      >
+        {characterName ?? character.character_key}
       </span>
       {character.active && <span className="state-sheet-context-badge">场上</span>}
     </div>
@@ -275,7 +287,7 @@ function BuffSection({
               >
                 <span className="state-sheet-buff-arrow">{open ? "▾" : "▸"}</span>
                 <span className="state-sheet-buff-name" title={buffTitle(buff)}>
-                  {buffDefinitionKey(buff)}
+                  {buffDisplayName(buff)}
                 </span>
                 {buffStackCount(buff) !== null && buffStackCount(buff)! > 1 && (
                   <span className="state-sheet-buff-stacks">×{buffStackCount(buff)}</span>
@@ -669,6 +681,11 @@ function buffDefinitionKey(buff: Record<string, unknown>): string {
     (definition === null ? null : readString(definition, "definition_key")) ??
     "buff"
   );
+}
+
+/** Buff 主标题：优先展示载荷中的 Buff 显示名，旧数据回退 definition_key。 */
+function buffDisplayName(buff: Record<string, unknown>): string {
+  return readString(buff, "display_name") ?? buffDefinitionKey(buff);
 }
 
 function buffStackCount(buff: Record<string, unknown>): number | null {

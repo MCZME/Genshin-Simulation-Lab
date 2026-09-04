@@ -648,6 +648,19 @@ def test_buff_display_name_flows_into_provider_spec_and_resolved_terms():
     provider = BuffAttributeModifierProvider(definition, BuffStoreReader(runtime.buff_store))
     assert provider.provider_spec.display_name == "测试增伤增益"
 
+    snapshot = runtime.snapshot(0).to_dict()
+    assert isinstance(snapshot, dict)
+    instances = snapshot.get("instances")
+    assert isinstance(instances, tuple) and instances
+    assert isinstance(instances[0], dict)
+    assert instances[0]["display_name"] == "测试增伤增益"
+    applied_payload = runtime.event_engine.frame_events[-1].payload.to_dict()
+    assert isinstance(applied_payload, dict)
+    result = applied_payload.get("result")
+    instance_after = result.get("instance_after") if isinstance(result, dict) else None
+    assert isinstance(instance_after, dict)
+    assert instance_after["display_name"] == "测试增伤增益"
+
     registry = create_public_attribute_registry()
     resolver = AttributeResolver(
         definitions=registry,

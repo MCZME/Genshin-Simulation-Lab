@@ -49,6 +49,13 @@ def test_static_modifier_rejects_non_finite_value_and_bad_tags():
         ResonanceStaticModifier(STAT_ATK_TOTAL, ModifierStage.PERCENT_ADD, float("nan"))
     with pytest.raises(ResonanceValidationError, match="非空字符串"):
         ResonanceStaticModifier(STAT_ATK_TOTAL, ModifierStage.PERCENT_ADD, 0.25, ("",))
+    with pytest.raises(ResonanceValidationError, match="display_name"):
+        ResonanceStaticModifier(
+            STAT_ATK_TOTAL,
+            ModifierStage.PERCENT_ADD,
+            0.25,
+            display_name="  ",
+        )
 
 
 def test_definition_rejects_duplicate_static_modifier_target():

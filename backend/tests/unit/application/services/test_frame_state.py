@@ -248,6 +248,7 @@ def test_fold_buffs_shields_infusion_cooldowns_and_content_states():
     buff_instance = {
         "instance_ref": {"domain_key": "buff", "sequence": 1},
         "definition_key": "buff.definition:a",
+        "display_name": "测试 Buff 名",
         "target_ref": {"kind": "character", "entity_id": "character:slot_1"},
         "stack_count": 1,
         "expires_at_frame": 100,

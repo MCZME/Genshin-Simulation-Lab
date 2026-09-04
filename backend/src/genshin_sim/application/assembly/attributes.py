@@ -211,6 +211,7 @@ def _iter_static_asset_modifier_providers(
             value=bundle.character_level_stats.ascension_value,
             provider_key=character_provider_key,
             source_ref=character_source_ref,
+            provider_display_name="角色突破加成",
         )
         if bundle.weapon_level_stats is not None:
             weapon_provider_key = f"assembly.asset.weapon_secondary.{bundle.slot}"
@@ -224,6 +225,7 @@ def _iter_static_asset_modifier_providers(
                 value=bundle.weapon_level_stats.secondary_value,
                 provider_key=weapon_provider_key,
                 source_ref=weapon_source_ref,
+                provider_display_name="武器副属性",
             )
         if not terms:
             continue
@@ -236,6 +238,7 @@ def _iter_static_asset_modifier_providers(
                 provider_key=provider_key,
                 source_ref=term.source_ref,
                 audit_tags=term.audit_tags,
+                provider_display_name=term.provider_display_name,
             )
             for term in terms
         )
@@ -257,6 +260,7 @@ def _append_asset_stat_modifier(
     value: float | None,
     provider_key: str,
     source_ref: RuntimeSourceRef,
+    provider_display_name: str | None = None,
 ) -> None:
     if stat_name is None or value is None:
         return
@@ -272,6 +276,7 @@ def _append_asset_stat_modifier(
             provider_key=provider_key,
             source_ref=source_ref,
             audit_tags=(stat_name,),
+            provider_display_name=provider_display_name,
         )
     )
 
@@ -300,6 +305,7 @@ def _iter_config_artifact_modifier_providers(
                         f"config:team[{team_index}].artifacts.stats.{stat_key}",
                     ),
                     audit_tags=(stat_key,),
+                    provider_display_name="圣遗物词条",
                 )
             )
         if not terms:

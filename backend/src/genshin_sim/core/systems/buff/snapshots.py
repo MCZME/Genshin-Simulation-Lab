@@ -32,6 +32,8 @@ class BuffInstanceSnapshot:
     last_applied_frame: int
     expires_at_frame: int
     tags: frozenset[str]
+    # Buff 显示名：内容层提供，只进入展示投影，不作为身份或冲突依据。
+    display_name: str | None = None
 
     @classmethod
     def from_record(cls, record: BuffRecord) -> BuffInstanceSnapshot:
@@ -53,6 +55,7 @@ class BuffInstanceSnapshot:
             last_applied_frame=record.last_applied_frame,
             expires_at_frame=record.expires_at_frame,
             tags=state.tags,
+            display_name=definition.display_name,
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -62,6 +65,7 @@ class BuffInstanceSnapshot:
             "mechanic_key": self.mechanic_key,
             "handler_key": self.handler_key,
             "conflict_key": self.conflict_key,
+            "display_name": self.display_name,
             "target_ref": _subject_ref_to_dict(self.target_ref),
             "applier_ref": (
                 None if self.applier_ref is None else _subject_ref_to_dict(self.applier_ref)

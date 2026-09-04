@@ -1,13 +1,15 @@
 /** 单项详情节点内容区：消费单行表（获取单行结果或视图选择表）并渲染详情。 */
 
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { getFrameState, getResultEvent } from "../../api/client";
+import type { FrameCharacterState, FrameStateResponse } from "../../api/client";
 import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
 import type { AnalysisTableResult } from "../../workflow/templates";
 import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 import { useAnalysisResults, useAnalysisSelection } from "../analysis_context";
 import { CharacterStateSheet, locateCharacter } from "./character_state";
 import { DamageSheet } from "./damage_sheet";
+import { useAssetNames } from "./useAssetNames";
 
 type DetailKind = "frame_state" | "damage_detail" | "state_detail" | "attribute_detail";
 
@@ -215,11 +217,36 @@ function CharacterStateView({ item }: { item: Record<string, unknown> }) {
   }
   const focusKey = `${sessionId ?? ""}#${frame ?? ""}#${character.combat_entity_id}#${attributeKey ?? ""}`;
   return (
-    <CharacterStateSheet
+    <CharacterStateSheetWithName
       key={focusKey}
       frameState={frameState}
       character={character}
       focusAttributeKey={attributeKey}
+    />
+  );
+}
+
+function CharacterStateSheetWithName({
+  frameState,
+  character,
+  focusAttributeKey = null,
+}: {
+  frameState: FrameStateResponse;
+  character: FrameCharacterState;
+  focusAttributeKey?: string | null;
+}) {
+  // 数组必须稳定：useAssetNames 以数组引用作为 effect 依赖，字面量数组会造成无限重渲染。
+  const characterKeys = useMemo(
+    () => [character.character_key],
+    [character.character_key],
+  );
+  const names = useAssetNames(characterKeys);
+  return (
+    <CharacterStateSheet
+      frameState={frameState}
+      character={character}
+      focusAttributeKey={focusAttributeKey}
+      characterName={names.get(character.character_key) ?? null}
     />
   );
 }

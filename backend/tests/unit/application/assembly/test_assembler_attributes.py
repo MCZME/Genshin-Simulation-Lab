@@ -71,6 +71,7 @@ def test_attribute_runtime_isolates_static_asset_modifiers_by_character_slot():
 
     assert slot_1.final_value == 1200
     assert slot_2.final_value == 3000
+    assert [term.provider_display_name for term in slot_1.applied_terms] == ["角色突破加成"]
 
 
 def test_attribute_runtime_applies_config_artifact_stats_by_slot():
@@ -120,3 +121,4 @@ def test_attribute_runtime_applies_config_artifact_stats_by_slot():
     assert hp.final_value == 1500.0
     assert atk.final_value == 150.0
     assert crit.final_value == 0.311
+    assert {term.provider_display_name for term in hp.applied_terms} == {"圣遗物词条"}

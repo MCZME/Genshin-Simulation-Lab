@@ -1,0 +1,14 @@
+# 项目配置
+schema_version = 1
+
+[workspace]
+data_dir = "data"
+
+# 界面偏好设置；修改立即生效，由前端设置弹窗维护
+[ui]
+# 运行动画：构建阶段逐节点限速推进，保留最小执行时长
+run_animation = true
+
+# 开发者模式；开启后注册并可见 content/test 包的测试内容，重启服务后生效
+[developer]
+enabled = false

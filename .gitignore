@@ -18,3 +18,11 @@ data/
 
 # Local project configuration
 config.toml
+
+# Disposable local UI prototypes
+prototypes/
+
+# Frontend
+node_modules/
+frontend/.env
+frontend/.env.*

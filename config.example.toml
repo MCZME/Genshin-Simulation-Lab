@@ -1,5 +1,0 @@
-# 项目配置
-schema_version = 1
-
-[workspace]
-data_dir = "data"

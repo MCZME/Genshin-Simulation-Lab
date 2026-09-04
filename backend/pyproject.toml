@@ -1,0 +1,72 @@
+[project]
+name = "genshin-sim-lab"
+version = "0.1.0"
+description = "Genshin Impact combat simulation and analysis toolkit."
+readme = "README.md"
+authors = [
+    { name = "MCZME", email = "126310378+MCZME@users.noreply.github.com" }
+]
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.141.1",
+    "pydantic>=2.13.4",
+    "tomlkit>=0.15.1",
+    "uvicorn>=0.52.3",
+]
+
+[dependency-groups]
+dev = [
+    "pytest",
+    "pytest-cov",
+    "ruff",
+    "pyright",
+    "httpx>=0.28.1",
+]
+
+[project.scripts]
+genshin-sim = "genshin_sim.cli.main:main"
+genshin-sim-server = "genshin_sim.server.main:main"
+
+[build-system]
+requires = ["uv_build>=0.11.16,<0.12.0"]
+build-backend = "uv_build"
+
+[tool.uv.build-backend]
+module-name = "genshin_sim"
+
+[tool.pytest.ini_options]
+addopts = [
+    "--strict-config",
+    "--strict-markers",
+]
+testpaths = [
+    "tests",
+]
+
+[tool.ruff]
+line-length = 100
+src = ["src", "tests"]
+target-version = "py314"
+
+[tool.ruff.lint]
+select = [
+    "E",
+    "F",
+    "I",
+    "UP",
+    "B",
+    "SIM",
+]
+
+[tool.ruff.format]
+line-ending = "lf"
+
+[tool.pyright]
+include = [
+    "src",
+    "tests",
+]
+venv = ".venv"
+venvPath = "."
+pythonVersion = "3.14"
+typeCheckingMode = "standard"

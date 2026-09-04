@@ -65,7 +65,8 @@ export function CharacterStateSheet({
   focusAttributeKey?: string | null;
 }) {
   const attributes = isRecord(character.attributes) ? character.attributes : {};
-  const sections = buildAttributeSections(attributes);
+  const mergeCoreStats = focusAttributeKey === null || !isCoreBaseKey(focusAttributeKey);
+  const sections = buildAttributeSections(attributes, mergeCoreStats);
   const visibleSections =
     focusAttributeKey === null
       ? sections
@@ -82,8 +83,8 @@ export function CharacterStateSheet({
   );
   const [openBuffs, setOpenBuffs] = useState<ReadonlySet<string>>(new Set());
 
-  function toggleAttribute(key: string) {
-    setOpenAttributes((current) => toggleKey(current, key));
+  function toggleAttribute(key: string, rowKeys: ReadonlySet<string>) {
+    setOpenAttributes((current) => toggleGroupKey(current, key, rowKeys));
   }
 
   function toggleBuff(key: string) {
@@ -153,6 +154,7 @@ function HealthEnergyRows({ character }: { character: FrameCharacterState }) {
   const maxHp = health.max_hp ?? null;
   const hpRatio = health.hp_ratio ?? null;
   const capacity = energy.capacity ?? null;
+  const burstReady = energy.burst_ready === true;
   const energyRatio =
     typeof capacity === "number" && Number.isFinite(capacity) && capacity > 0
       ? Math.min(1, Math.max(0, energy.current_energy / capacity))
@@ -163,21 +165,28 @@ function HealthEnergyRows({ character }: { character: FrameCharacterState }) {
         label="生命"
         value={`${formatNumber(health.current_hp)}${maxHp === null ? "" : ` / ${formatNumber(maxHp)}`}`}
         ratio={hpRatio}
+        barColor={ratioBarColor(hpRatio)}
       />
       <StatusLine
         label="能量"
         value={`${formatNumber(energy.current_energy)}${capacity === null ? "" : ` / ${formatNumber(capacity)}`}`}
         ratio={energyRatio}
-        hint={
-          capacity === null
-            ? undefined
-            : energy.burst_ready
-              ? "大招就绪"
-              : "大招未就绪"
-        }
+        hint={capacity === null ? undefined : burstReady ? "大招就绪" : "大招未就绪"}
+        hintState={burstReady ? "ready" : undefined}
+        barColor={burstReady ? "#fbbf24" : "#7dd3fc"}
       />
     </div>
   );
+}
+
+function ratioBarColor(ratio: number | null): string {
+  if (ratio === null || ratio > 0.5) {
+    return "#4ade80";
+  }
+  if (ratio <= 0.25) {
+    return "#f87171";
+  }
+  return "#fbbf24";
 }
 
 function StatusLine({
@@ -185,11 +194,15 @@ function StatusLine({
   value,
   ratio,
   hint,
+  hintState,
+  barColor,
 }: {
   label: string;
   value: string;
   ratio: number | null;
   hint?: string;
+  hintState?: "ready";
+  barColor: string;
 }) {
   return (
     <div className="state-sheet-status-line">
@@ -200,13 +213,18 @@ function StatusLine({
           {ratio !== null && (
             <span className="state-sheet-status-ratio">{formatPercent(ratio)}</span>
           )}
-          {hint !== undefined && <span className="state-sheet-status-hint">{hint}</span>}
+          {hint !== undefined && (
+            <span className={`state-sheet-status-hint${hintState === "ready" ? " ready" : ""}`}>
+              {hint}
+            </span>
+          )}
         </div>
         <div className="state-sheet-bar" aria-hidden="true">
           <div
             className="state-sheet-bar-fill"
             style={{
               width: ratio === null ? "0%" : `${Math.min(100, Math.max(0, ratio * 100))}%`,
+              background: barColor,
             }}
           />
         </div>
@@ -238,6 +256,15 @@ function BuffSection({
         buffs.map((buff, index) => {
           const key = buffInstanceKey(buff, index);
           const open = openBuffs.has(key);
+          const expiresAtFrame = buffExpiresAtFrame(buff);
+          const remainingFrames =
+            expiresAtFrame === null ? null : Math.max(0, expiresAtFrame - frameState.frame);
+          const remainingState =
+            remainingFrames === null || remainingFrames > 120
+              ? ""
+              : remainingFrames <= 0
+                ? " expired"
+                : " warn";
           return (
             <div className="state-sheet-buff" key={key}>
               <button
@@ -253,8 +280,8 @@ function BuffSection({
                 {buffStackCount(buff) !== null && buffStackCount(buff)! > 1 && (
                   <span className="state-sheet-buff-stacks">×{buffStackCount(buff)}</span>
                 )}
-                <span className="state-sheet-buff-remaining">
-                  {formatRemaining(buffExpiresAtFrame(buff), frameState.frame)}
+                <span className={`state-sheet-buff-remaining${remainingState}`}>
+                  {formatRemaining(expiresAtFrame, frameState.frame)}
                 </span>
               </button>
               {open && <BuffModifiers buff={buff} />}
@@ -297,38 +324,86 @@ function AttributeGroup({
   title: string;
   entries: AttributeEntry[];
   openKeys: ReadonlySet<string>;
-  onToggle: (key: string) => void;
+  onToggle: (key: string, rowKeys: ReadonlySet<string>) => void;
 }) {
   if (entries.length === 0) {
     return null;
   }
+  const rows: AttributeEntry[][] = [];
+  for (let index = 0; index < entries.length; index += 3) {
+    rows.push(entries.slice(index, index + 3));
+  }
   return (
     <div className="state-sheet-attr-group">
       <div className="state-sheet-attr-group-title">{title}</div>
-      {entries.map((entry) => {
-        const open = openKeys.has(entry.key);
+      {rows.map((row, rowIndex) => {
+        const openKey = row.find((entry) => openKeys.has(entry.key))?.key ?? null;
+        const openEntry = row.find((entry) => entry.key === openKey) ?? null;
         return (
-          <div className="state-sheet-attr" key={entry.key}>
-            <button
-              type="button"
-              className="state-sheet-attr-head"
-              aria-expanded={open}
-              onClick={() => onToggle(entry.key)}
-            >
-              <span className="state-sheet-attr-arrow">{open ? "▾" : "▸"}</span>
-              <span className="state-sheet-attr-name">{attributeLabel(entry.key)}</span>
-              {entry.terms.length > 0 && (
-                <span className="state-sheet-attr-count">{entry.terms.length}</span>
-              )}
-              <span className="state-sheet-attr-value">
-                {formatAttributeValue(entry.key, entry.value)}
-              </span>
-            </button>
-            {open && <AttributeTerms attributeKey={entry.key} terms={entry.terms} />}
+          <div className="state-sheet-attr-row" key={`${title}-${rowIndex}`}>
+            {row.map((entry) => {
+              const open = entry.key === openKey;
+              const rowKeys = new Set(row.map((item) => item.key));
+              return (
+                <button
+                  type="button"
+                  className={`state-sheet-attr-head${open ? " open" : ""}`}
+                  aria-expanded={open}
+                  onClick={() => onToggle(entry.key, rowKeys)}
+                  key={entry.key}
+                >
+                  <span className="state-sheet-attr-head-label">
+                    <span className="state-sheet-attr-arrow">{open ? "▾" : "▸"}</span>
+                    <span className="state-sheet-attr-name">{attributeLabel(entry.key)}</span>
+                    {entry.terms.length > 0 && (
+                      <span className="state-sheet-attr-count">{entry.terms.length}</span>
+                    )}
+                  </span>
+                  <AttributeValue entry={entry} />
+                </button>
+              );
+            })}
+            {openEntry !== null && (
+              <div className="state-sheet-attr-row-expand">
+                <AttributeTerms attributeKey={openEntry.key} terms={openEntry.terms} />
+              </div>
+            )}
           </div>
         );
       })}
     </div>
+  );
+}
+
+/** 属性行数值：核心属性显示“总值（基础 + 加成）”，基础与加成分色。 */
+function AttributeValue({ entry }: { entry: AttributeEntry }) {
+  if (entry.value === null) {
+    return (
+      <span className="state-sheet-attr-value">
+        <span className="state-sheet-attr-total">—</span>
+      </span>
+    );
+  }
+  const total = entry.value;
+  const base = entry.baseValue;
+  const bonus =
+    base !== null && base !== undefined && Number.isFinite(base) ? total - base : null;
+  const showBreakdown = bonus !== null && Math.abs(bonus) >= 0.0005;
+  return (
+    <span className="state-sheet-attr-value">
+      <span className="state-sheet-attr-total">{formatAttributeValue(entry.key, total)}</span>
+      {showBreakdown && base !== null && base !== undefined && (
+        <span className="state-sheet-attr-breakdown">
+          （
+          <span className="state-sheet-attr-base">{formatNumber(base)}</span>
+          <span className={`state-sheet-attr-bonus${bonus < 0 ? " neg" : ""}`}>
+            {bonus > 0 ? "+" : "-"}
+            {formatNumber(Math.abs(bonus))}
+          </span>
+          ）
+        </span>
+      )}
+    </span>
   );
 }
 
@@ -391,7 +466,7 @@ function TermRow({
   return (
     <div className="state-sheet-term-row" title={termTitle(term)}>
       <span className="state-sheet-term-label">{providerName}</span>
-      <span className="state-sheet-term-value">
+      <span className={`state-sheet-term-value${signedValueClass(value)}`}>
         {value === null ? "—" : formatModifierValue(targetKey, stage, value)}
       </span>
     </div>
@@ -406,16 +481,23 @@ interface AttributeEntry {
   key: string;
   value: number | null;
   terms: Record<string, unknown>[];
+  /** 核心属性配对的基础值：总值行用它展示“总值（基础 + 加成）”。 */
+  baseValue?: number | null;
 }
 
-const STAT_ORDER = [
-  "stat.hp.base",
-  "stat.hp.max",
-  "stat.atk.base",
-  "stat.atk.total",
-  "stat.def.base",
-  "stat.def.total",
-];
+/** 核心属性 base -> total 配对：普通面板合并为游戏面板三行。 */
+const CORE_STAT_PAIRS = [
+  { baseKey: "stat.hp.base", totalKey: "stat.hp.max" },
+  { baseKey: "stat.atk.base", totalKey: "stat.atk.total" },
+  { baseKey: "stat.def.base", totalKey: "stat.def.total" },
+] as const;
+
+const CORE_BASE_KEYS = new Set<string>(CORE_STAT_PAIRS.map((pair) => pair.baseKey));
+
+const STAT_ORDER: string[] = CORE_STAT_PAIRS.flatMap((pair) => [
+  pair.baseKey,
+  pair.totalKey,
+]);
 
 const COMBAT_ORDER = [
   "stat.crit_rate",
@@ -459,26 +541,60 @@ const STAGE_ORDER = [
 
 function buildAttributeSections(
   attributes: Record<string, unknown>,
+  mergeCoreStats: boolean,
 ): { title: string; entries: AttributeEntry[] }[] {
-  const keys = Object.keys(attributes).sort(
-    (left, right) => attributeRank(left) - attributeRank(right),
-  );
   const sections = new Map<string, AttributeEntry[]>();
-  for (const key of keys) {
-    const entry = readRecord(attributes, key);
-    if (entry === null) {
-      continue;
-    }
-    const item: AttributeEntry = {
-      key,
-      value: readNumber(entry, "value"),
-      terms: readRecordList(entry, "applied_terms"),
-    };
-    const title = attributeSectionTitle(key);
+
+  function push(item: AttributeEntry) {
+    const title = attributeSectionTitle(item.key);
     const list = sections.get(title) ?? [];
     list.push(item);
     sections.set(title, list);
   }
+
+  const consumed = new Set<string>();
+  if (mergeCoreStats) {
+    for (const pair of CORE_STAT_PAIRS) {
+      consumed.add(pair.baseKey);
+      consumed.add(pair.totalKey);
+      const base = readAttributeEntry(attributes, pair.baseKey);
+      const total = readAttributeEntry(attributes, pair.totalKey);
+      if (total !== null) {
+        push({
+          ...total,
+          baseValue: base === null ? null : base.value,
+        });
+      } else if (base !== null) {
+        // 缺总值时保留基础值条目，避免数据丢失（正常快照不会走到这里）。
+        push(base);
+      }
+    }
+  } else {
+    // 聚焦单个基础属性时按原键展示，聚焦模式不合并核心属性对。
+    for (const pair of CORE_STAT_PAIRS) {
+      consumed.add(pair.baseKey);
+      consumed.add(pair.totalKey);
+      const base = readAttributeEntry(attributes, pair.baseKey);
+      const total = readAttributeEntry(attributes, pair.totalKey);
+      if (base !== null) {
+        push(base);
+      }
+      if (total !== null) {
+        push(total);
+      }
+    }
+  }
+
+  const keys = Object.keys(attributes)
+    .filter((key) => !consumed.has(key))
+    .sort((left, right) => attributeRank(left) - attributeRank(right));
+  for (const key of keys) {
+    const item = readAttributeEntry(attributes, key);
+    if (item !== null) {
+      push(item);
+    }
+  }
+
   return [
     { title: "生命/攻击/防御", entries: sections.get("生命/攻击/防御") ?? [] },
     { title: "战斗属性", entries: sections.get("战斗属性") ?? [] },
@@ -486,6 +602,25 @@ function buildAttributeSections(
     { title: "抗性", entries: sections.get("抗性") ?? [] },
     { title: "其他", entries: sections.get("其他") ?? [] },
   ].filter((section) => section.entries.length > 0);
+}
+
+function readAttributeEntry(
+  attributes: Record<string, unknown>,
+  key: string,
+): AttributeEntry | null {
+  const raw = readRecord(attributes, key);
+  if (raw === null) {
+    return null;
+  }
+  return {
+    key,
+    value: readNumber(raw, "value"),
+    terms: readRecordList(raw, "applied_terms"),
+  };
+}
+
+function isCoreBaseKey(key: string): boolean {
+  return CORE_BASE_KEYS.has(key);
 }
 
 function attributeRank(key: string): number {
@@ -641,6 +776,14 @@ function formatModifierValue(targetKey: string, stage: string, value: number | n
   return percent ? formatSignedPercent(value) : formatSignedNumber(value);
 }
 
+/** 词条值符号着色：正增益绿、负效果红，零值保持中性文本色。 */
+function signedValueClass(value: number | null): string {
+  if (value === null || value === 0) {
+    return "";
+  }
+  return value > 0 ? " state-sheet-value-pos" : " state-sheet-value-neg";
+}
+
 function termTitle(term: Record<string, unknown>): string {
   const parts: string[] = [];
   const providerKey = readString(term, "provider_key");
@@ -691,6 +834,23 @@ function toggleKey(current: ReadonlySet<string>, key: string): ReadonlySet<strin
   } else {
     next.add(key);
   }
+  return next;
+}
+
+/** 同一网格行内互斥展开：点开一项时收起该行其它展开项。 */
+function toggleGroupKey(
+  current: ReadonlySet<string>,
+  key: string,
+  rowKeys: ReadonlySet<string>,
+): ReadonlySet<string> {
+  if (current.has(key)) {
+    return toggleKey(current, key);
+  }
+  const next = new Set(current);
+  for (const rowKey of rowKeys) {
+    next.delete(rowKey);
+  }
+  next.add(key);
   return next;
 }
 

@@ -710,6 +710,12 @@ body {
   overflow: visible;
 }
 
+/* 详情节点卡（伤害详情/角色状态详情等）高度随内容自适应，不做卡体内滚动。 */
+.node-card.node-card-detail .node-card-body {
+  max-height: none;
+  overflow: visible;
+}
+
 .node-card.node-card-artifact {
   width: 360px;
 }
@@ -4743,11 +4749,11 @@ body {
   font-size: 11px;
   font-weight: 600;
   color: #cbd5e1;
-  padding: 4px 10px 2px;
+  padding: 4px 2px 2px;
 }
 
 .detail-item-pre {
-  margin: 2px 8px 6px;
+  margin: 2px 0 6px;
   padding: 8px;
   border-radius: 6px;
   background: rgba(15, 23, 42, 0.55);
@@ -4764,9 +4770,10 @@ body {
 /* 角色状态详情（attribute_detail 节点卡内容区）：当前状态 + Buff + 属性面板。 */
 .state-sheet {
   min-width: 0;
-  padding: 4px 10px 8px;
+  padding: 2px 0 6px;
   display: flex;
   flex-direction: column;
+  gap: 6px;
 }
 
 .state-sheet-context {
@@ -4774,9 +4781,12 @@ body {
   align-items: center;
   flex-wrap: wrap;
   gap: 6px;
-  padding: 2px 0 4px;
+  padding: 5px 8px;
   font-size: 11px;
   color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 8px;
 }
 
 .state-sheet-context-frame {
@@ -4804,16 +4814,19 @@ body {
 
 .state-sheet-section {
   min-width: 0;
-  border-top: 1px solid rgba(148, 163, 184, 0.12);
-  padding: 4px 0 2px;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.35);
+  padding: 6px 8px;
 }
 
 .state-sheet-section-title {
   margin: 0;
-  padding: 2px 0;
-  font-size: 11px;
-  font-weight: 600;
-  color: #94a3b8;
+  padding: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #7dd3fc;
 }
 
 .state-sheet-empty {
@@ -4860,7 +4873,11 @@ body {
 
 .state-sheet-status-ratio {
   font-size: 10px;
-  color: #64748b;
+  color: #94a3b8;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(15, 23, 42, 0.4);
+  white-space: nowrap;
 }
 
 .state-sheet-status-hint {
@@ -4870,24 +4887,30 @@ body {
   white-space: nowrap;
 }
 
+.state-sheet-status-hint.ready {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
 .state-sheet-bar {
-  height: 3px;
-  margin-top: 3px;
-  border-radius: 2px;
-  background: rgba(148, 163, 184, 0.2);
+  height: 6px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: rgba(148, 163, 184, 0.22);
   overflow: hidden;
 }
 
 .state-sheet-bar-fill {
   height: 100%;
-  border-radius: 2px;
+  border-radius: 3px;
   background: #38bdf8;
+  transition: width 0.15s ease;
 }
 
 /* Buff 列表。 */
 .state-sheet-buff {
   border-radius: 6px;
-  background: rgba(15, 23, 42, 0.35);
+  background: rgba(2, 6, 23, 0.35);
   margin-top: 4px;
 }
 
@@ -4945,6 +4968,15 @@ body {
   white-space: nowrap;
 }
 
+.state-sheet-buff-remaining.warn {
+  color: #fbbf24;
+}
+
+.state-sheet-buff-remaining.expired {
+  color: #f87171;
+  font-weight: 600;
+}
+
 .state-sheet-buff-body {
   border-top: 1px solid rgba(148, 163, 184, 0.08);
   padding: 2px 6px 4px 21px;
@@ -4975,36 +5007,60 @@ body {
 
 /* 属性面板。 */
 .state-sheet-attr-group {
-  margin-top: 3px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  min-width: 0;
 }
 
 .state-sheet-attr-group-title {
   font-size: 10px;
   color: #64748b;
-  padding: 2px 0;
+  padding: 0;
 }
 
-.state-sheet-attr {
-  border-radius: 6px;
+.state-sheet-attr-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
 }
 
 .state-sheet-attr-head {
   display: flex;
+  flex-direction: row;
   align-items: baseline;
-  gap: 5px;
+  justify-content: space-between;
+  gap: 6px;
   width: 100%;
-  padding: 2px 4px;
+  padding: 5px 7px;
   font: inherit;
   text-align: left;
-  background: none;
-  border: none;
-  border-radius: 5px;
+  color: inherit;
+  background: rgba(2, 6, 23, 0.32);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 8px;
   cursor: pointer;
   min-width: 0;
 }
 
 .state-sheet-attr-head:hover {
-  background: rgba(148, 163, 184, 0.08);
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.22);
+}
+
+.state-sheet-attr-head.open {
+  background: rgba(56, 189, 248, 0.08);
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.state-sheet-attr-head-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
 }
 
 .state-sheet-attr-arrow {
@@ -5035,10 +5091,52 @@ body {
 }
 
 .state-sheet-attr-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
   flex: none;
+  min-width: 0;
   font-size: 11px;
   color: #e2e8f0;
   font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.state-sheet-attr-total {
+  white-space: nowrap;
+}
+
+/* 核心属性总值行：总值（基础 + 加成），基础与加成分色，括号弱化。 */
+.state-sheet-attr-breakdown {
+  font-size: 10px;
+  font-weight: 400;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.state-sheet-attr-base {
+  color: #cbd5e1;
+}
+
+.state-sheet-attr-bonus {
+  color: #4ade80;
+}
+
+.state-sheet-attr-bonus.neg {
+  color: #f87171;
+}
+
+.state-sheet-attr-row-expand {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 4px 6px 6px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.state-sheet-attr-row-expand .state-sheet-attr-terms {
+  padding: 2px 2px 0;
 }
 
 .state-sheet-attr-terms {
@@ -5077,6 +5175,15 @@ body {
   flex: none;
   color: #e2e8f0;
   font-variant-numeric: tabular-nums;
+}
+
+/* 正负词条值着色：Buff 修饰项 / 属性词条行的数值。声明在基础色之后以覆盖。 */
+.state-sheet-value-pos {
+  color: #4ade80;
+}
+
+.state-sheet-value-neg {
+  color: #f87171;
 }
 
 /* 伤害结算单（damage_detail 节点卡内容区）：上下文条 + 乘法链 + 链段详情。 */

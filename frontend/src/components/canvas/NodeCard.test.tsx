@@ -112,6 +112,17 @@ function viewNode(
   };
 }
 
+function detailNode(kind: "damage_detail" | "attribute_detail", size?: NodeSize): WorkflowNode {
+  return {
+    id: `${kind}-1`,
+    kind,
+    region_id: "analysis-1",
+    position: { x: 0, y: 0 },
+    params: {},
+    ...(size === undefined ? {} : { size }),
+  };
+}
+
 beforeEach(() => {
   Object.defineProperty(HTMLElement.prototype, "setPointerCapture", {
     configurable: true,
@@ -193,5 +204,18 @@ describe("NodeCard 视图节点手柄", () => {
     fireEvent.pointerMove(handle, { clientX: 0, clientY: 100 });
     fireEvent.pointerUp(handle, { clientX: 0, clientY: 100 });
     expect(onResizeNode).toHaveBeenCalledWith("bar-1", { height: 460 });
+  });
+});
+
+describe("NodeCard 详情节点默认宽度", () => {
+  it("角色状态详情使用三列适配的默认宽度，伤害详情维持紧凑宽度", () => {
+    const { container: attributeCard, unmount: unmountAttribute } = renderNodeCard(
+      detailNode("attribute_detail"),
+    );
+    expect((attributeCard.querySelector(".node-card") as HTMLElement).style.width).toBe("640px");
+    unmountAttribute();
+
+    const { container: damageCard } = renderNodeCard(detailNode("damage_detail"));
+    expect((damageCard.querySelector(".node-card") as HTMLElement).style.width).toBe("320px");
   });
 });

@@ -39,6 +39,8 @@ export const TABLE_HEIGHT_EXTRAS = 86;
  * 与视图卡互不影响；上限沿用视图软上限。
  */
 export const DEFAULT_DETAIL_WIDTH = 320;
+/** 角色状态详情默认更宽，容纳三列属性格；伤害详情维持紧凑默认。 */
+export const DEFAULT_ATTRIBUTE_DETAIL_WIDTH = 640;
 export const MIN_DETAIL_WIDTH = 280;
 export const MAX_DETAIL_WIDTH = VIEW_SOFT_CAP_WIDTH;
 

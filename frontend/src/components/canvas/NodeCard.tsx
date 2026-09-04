@@ -12,6 +12,7 @@ import { AnalysisViewBody, type ViewFitInfo } from "../nodes/views";
 import { getNodeKindSpec } from "../../workflow/registry";
 import type { NodeSize, WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 import {
+  DEFAULT_ATTRIBUTE_DETAIL_WIDTH,
   DEFAULT_DETAIL_WIDTH,
   DEFAULT_VIEW_HEIGHT,
   MAX_DETAIL_WIDTH,
@@ -94,6 +95,8 @@ export function NodeCard({ data, selected }: NodeProps) {
   const isBar = node.kind === "bar";
   // 伤害详情/角色状态详情卡支持手动调宽（高度随内容），其余详情节点维持固定宽度。
   const isDetailResizable = node.kind === "damage_detail" || node.kind === "attribute_detail";
+  const defaultDetailWidth =
+    node.kind === "attribute_detail" ? DEFAULT_ATTRIBUTE_DETAIL_WIDTH : DEFAULT_DETAIL_WIDTH;
   const isTraceResizable = node.kind === "input_trace";
   const isWidthOnlyResizable = isDetailResizable || isTraceResizable;
   const rf = useReactFlow();
@@ -118,7 +121,7 @@ export function NodeCard({ data, selected }: NodeProps) {
         ? resolveManualViewWidth(node.size?.width)
         : isDetailResizable
           ? clamp(
-              Math.round(node.size?.width ?? DEFAULT_DETAIL_WIDTH),
+              Math.round(node.size?.width ?? defaultDetailWidth),
               MIN_DETAIL_WIDTH,
               MAX_DETAIL_WIDTH,
             )
@@ -176,7 +179,7 @@ export function NodeCard({ data, selected }: NodeProps) {
     resizeDragRef.current = {
       axis,
       startFlow: rf.screenToFlowPosition({ x: event.clientX, y: event.clientY }),
-      startWidth: displayWidth ?? (isDetailResizable ? DEFAULT_DETAIL_WIDTH : MIN_VIEW_WIDTH),
+      startWidth: displayWidth ?? (isDetailResizable ? defaultDetailWidth : MIN_VIEW_WIDTH),
       startHeight: displayHeight ?? DEFAULT_VIEW_HEIGHT,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -234,7 +237,7 @@ export function NodeCard({ data, selected }: NodeProps) {
 
   return (
     <div
-      className={`node-card ${isAnalysisView(node.kind) ? "node-card-view" : ""} ${node.kind === "input_trace" ? "node-card-trace" : ""} ${node.kind === "artifact" ? "node-card-artifact" : ""} ${node.kind === "fetch" ? "node-card-fetch" : ""} ${node.kind === "table_config" ? "node-card-table-config" : ""} ${node.kind === "pie_config" || node.kind === "bar_config" ? "node-card-display-config" : ""} ${node.kind === "filter" ? "node-card-filter" : ""} ${node.kind === "aggregate" ? "node-card-aggregate" : ""} ${node.kind === "project" ? "node-card-project" : ""} ${node.kind === "sort" ? "node-card-sort" : ""} ${node.kind === "join" ? "node-card-join" : ""} ${node.kind === "compute" ? "node-card-compute" : ""} ${node.kind === "derive" ? "node-card-derive" : ""} ${selected ? "selected" : ""} ${isDraft ? "draft" : ""} ${dimmed ? "dimmed" : ""} ${stepRunning ? "step-running" : ""}`}
+      className={`node-card ${isAnalysisView(node.kind) ? "node-card-view" : ""} ${node.kind === "input_trace" ? "node-card-trace" : ""} ${isAnalysisDetailKind(node.kind) ? "node-card-detail" : ""} ${node.kind === "artifact" ? "node-card-artifact" : ""} ${node.kind === "fetch" ? "node-card-fetch" : ""} ${node.kind === "table_config" ? "node-card-table-config" : ""} ${node.kind === "pie_config" || node.kind === "bar_config" ? "node-card-display-config" : ""} ${node.kind === "filter" ? "node-card-filter" : ""} ${node.kind === "aggregate" ? "node-card-aggregate" : ""} ${node.kind === "project" ? "node-card-project" : ""} ${node.kind === "sort" ? "node-card-sort" : ""} ${node.kind === "join" ? "node-card-join" : ""} ${node.kind === "compute" ? "node-card-compute" : ""} ${node.kind === "derive" ? "node-card-derive" : ""} ${selected ? "selected" : ""} ${isDraft ? "draft" : ""} ${dimmed ? "dimmed" : ""} ${stepRunning ? "step-running" : ""}`}
       style={
         isView
           ? { width: displayWidth, height: displayHeight }

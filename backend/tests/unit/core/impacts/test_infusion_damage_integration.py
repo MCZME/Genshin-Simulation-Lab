@@ -47,8 +47,8 @@ from genshin_sim.core.systems.damage import (
     DamageRequestHandler,
     DamageResolver,
     DamageScalingTerm,
-    DamageType,
 )
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_GENERAL
 from genshin_sim.core.systems.infusion import (
     InfusionDamageElementAdapter,
     InfusionDefinitionRegistry,
@@ -72,8 +72,7 @@ def test_infusion_damage_integration_changes_element_and_recovers_physical():
         profile_registry=DamageProfileRegistry(
             (
                 DamageProfile(
-                    "damage_profile.test.melee",
-                    DamageType.GENERAL,
+                    FORMULA_KEY_GENERAL,
                     frozenset({"普通攻击1", "元素战技"}),
                 ),
             )

@@ -43,8 +43,8 @@
 | 方法 | 路径 | 说明 |
 | --- | --- | --- |
 | GET | `/api/v1/workspace` | 初始化状态与资产库版本 |
-| GET | `/api/v1/settings` | 读取界面偏好设置（config.toml `ui` 节） |
-| PUT | `/api/v1/settings` | 保存界面偏好设置 |
+| GET | `/api/v1/settings` | 读取界面偏好与开发者设置（config.toml `ui` / `developer` 节） |
+| PUT | `/api/v1/settings` | 保存界面偏好与开发者设置 |
 | GET | `/api/v1/workflows` | 工作流存档列表 |
 | POST | `/api/v1/workflows` | 创建空工作流存档 |
 | GET | `/api/v1/workflows/{id}` | 读取工作流 JSON |
@@ -91,12 +91,14 @@
 ### `GET /api/v1/settings`
 
 ```json
-{ "run_animation": true, "workspace": { "data_dir": "data" } }
+{ "run_animation": true, "developer": { "enabled": false }, "workspace": { "data_dir": "data" } }
 ```
 
 ### `PUT /api/v1/settings`
 
-请求体只含界面偏好字段：`run_animation` 必填布尔值，非法值 `400` / `validation_failed`；工作区节不可经此修改。响应为保存后的完整设置视图。写入经 tomlkit 保留 config.toml 用户注释。
+请求体含必填布尔值 `run_animation` 与可选布尔值 `developer_enabled`（缺省时保持当前开发者模式不变，兼容既有前端），非法值 `400` / `validation_failed`；工作区节不可经此修改。响应为保存后的完整设置视图。写入经 tomlkit 保留 config.toml 用户注释。
+
+`developer.enabled` 开启开发者模式：注册并可见 `content/test` 包测试内容（含测试资产），修改写入 config.toml，**重启服务后生效**（组装期重建内容注册表与资产仓库组合）。
 
 ## 5. 工作流存档
 
@@ -386,7 +388,8 @@
     "summary": {
       "request_id": "...",
       "frame": 120,
-      "damage_type": "general",
+      "formula_key": "damage_formula.general",
+      "main_attack_tag": "普通攻击1",
       "element": "pyro",
       "source_ref": "...",
       "target_ref": "...",
@@ -409,8 +412,14 @@
 ```
 
 - 非 `DAMAGE_RESOLVED` 事件返回 `damage: null`。
+- 响应附带 `entities` 会话实体显示表（以运行输入快照为权威）：
+  - `entities.characters[] = { slot, asset_key, name }`：角色槽位身份与资产库显示名；解析失败的 `name` 为空字符串。
+  - `entities.targets[] = { id, label }`：目标 id 与输入快照中的显示标签（可空）。
+  - 详情视图用它把 `summary.source_ref`（`character:slot_{n}`）与 `summary.target_ref`（`target:{id}`）解析为显示名。
+- `damage.summary.damage_name` 是这一次伤害的显示名称（来自内容层 `DamageImpactSpec.display_name`），未提供时为 `null`，前端回退显示原键。
+- `damage.audit.applied_terms[]` / `rejected_terms[]` 每项附带 `provider_display_name`（来自 `DamageModifierProviderSpec.display_name`），未提供时为 `null`。
 - `damage.summary` 与 `damage.audit` 从 `data` 规范化派生，不改变原始 `data` 存储。
-- `damage.audit` 完整形状见[结果库契约](../结果库契约.md)第 5.3 节，序列化来源见[伤害系统设计](../../架构/系统/伤害系统设计.md)第 9 节。
+- `damage.audit` 完整形状见[结果库契约](../结果库契约.md)第 5.3 节，序列化来源见[伤害系统契约](../../契约/伤害系统契约.md)第 9.3 节。
 - 事件不存在或 `ordinal` 越界返回 `404 not_found`。
 
 ### `GET /api/v1/results/{session_id}/frames/{frame}`
@@ -585,7 +594,7 @@
 ## 12. 后置能力
 
 - 分析算子扩展：文本匹配条件、嵌套条件 AST、跨列比较，以及专门处理节点（区间配对、曲线等非关系代数逻辑）。
-- 分析区域视图补齐：饼图、柱状图、区间、曲线与单项详情节点渲染（节点注册与查询计划执行已落地第一版，见[节点与区域契约](./节点与区域契约.md)）。
+- 分析区域视图补齐：区间、曲线等时间呈现视图（节点注册、查询计划执行、视图 `selection` 输出、单项详情节点渲染与表格/柱状图/饼图视图已落地第一版，见[节点与区域契约](./节点与区域契约.md)）。
 - 结果详情中的输入快照与初始快照（含成员/变体标签；前端成员标签链路已随决策 2.29 移除，落地后此处是历史结果变体身份的唯一出口，见[项目决策记录](../../决策/项目决策记录.md) 2.29）。
 - 资产图像。
 - 文件上传/下载（输入 JSON、结果导出）。

@@ -175,6 +175,7 @@ def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
             provider_key=provider_key,
             writes=frozenset({BONUS_HEALING_OUTGOING}),
             owner_ref=subject_ref,
+            display_name="少女飘摇的思念 2件套",
         ),
         (
             ModifierTerm(
@@ -231,6 +232,7 @@ def _create_four_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
         application_policy=BuffApplicationPolicy.REPLACE,
         value_refresh_policy=BuffValueRefreshPolicy.REPLACE_LATEST,
         max_stacks=1,
+        display_name="少女飘摇的思念 4件套",
         attribute_modifiers=(
             BuffAttributeModifierTemplate(
                 term_key=MAIDEN_BELOVED_4P_TERM_KEY,

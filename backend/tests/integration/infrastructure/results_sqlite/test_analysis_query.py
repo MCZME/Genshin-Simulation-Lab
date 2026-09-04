@@ -24,7 +24,7 @@ def _damage(
     *,
     amount: float,
     source: str = "character:slot_1",
-    damage_type: str = "skill",
+    formula_key: str = "damage_formula.general",
 ) -> RecordedEvent:
     return RecordedEvent(
         frame=frame,
@@ -35,7 +35,7 @@ def _damage(
                 "source_ref": {"kind": "character", "entity_id": source},
                 "target_ref": {"kind": "target", "entity_id": "target:target_1"},
                 "final_damage": amount,
-                "damage_type": damage_type,
+                "formula_key": formula_key,
             }
         },
     )
@@ -109,8 +109,8 @@ def _executor(tmp_path) -> SQLiteAnalysisQueryExecutor:
             "run:1",
             frames_run=120,
             events=(
-                _damage(10, amount=300.0, damage_type="skill"),
-                _damage(20, amount=700.0, damage_type="burst"),
+                _damage(10, amount=300.0, formula_key="damage_formula.general"),
+                _damage(20, amount=700.0, formula_key="damage_formula.lunar_reaction"),
             ),
         )
     )
@@ -463,6 +463,70 @@ def test_compute_rejects_empty_columns(tmp_path) -> None:
     assert any(item.get("node_id") == "c1" and "至少" in item.get("reason", "") for item in details)
 
 
+def test_derive_appends_typed_constant_columns(tmp_path) -> None:
+    executor = _executor(tmp_path)
+    plan = _plan(
+        (
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
+            AnalysisPlanNode(
+                id="d1",
+                kind="derive",
+                params={
+                    "columns": [
+                        {
+                            "name": "attribute_key",
+                            "type": "string",
+                            "value": "stat.crit_rate",
+                        },
+                        {"name": "probe_frame", "type": "int", "value": 600},
+                        {"name": "enabled", "type": "bool", "value": True},
+                    ]
+                },
+                inputs=("runs1",),
+            ),
+        ),
+        ("d1",),
+    )
+
+    table = executor.execute_plan(plan)["d1"]
+
+    names = [column.name for column in table.columns]
+    assert names[-3:] == ["attribute_key", "probe_frame", "enabled"]
+    assert _column_values(table, "attribute_key") == ["stat.crit_rate", "stat.crit_rate"]
+    assert _column_values(table, "probe_frame") == [600, 600]
+    assert _column_values(table, "enabled") == [1, 1]
+
+
+def test_derive_can_overwrite_existing_same_type_column(tmp_path) -> None:
+    executor = _executor(tmp_path)
+    plan = _plan(
+        (
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
+            AnalysisPlanNode(
+                id="d1",
+                kind="derive",
+                params={
+                    "columns": [
+                        {
+                            "name": "stop_reason",
+                            "type": "string",
+                            "value": "REWRITTEN",
+                        }
+                    ]
+                },
+                inputs=("runs1",),
+            ),
+        ),
+        ("d1",),
+    )
+
+    table = executor.execute_plan(plan)["d1"]
+
+    names = [column.name for column in table.columns]
+    assert names.count("stop_reason") == 1
+    assert _column_values(table, "stop_reason") == ["REWRITTEN", "REWRITTEN"]
+
+
 def test_chinese_column_names_roundtrip(tmp_path) -> None:
     """中文列名可读名即列名：取数/过滤/聚合/投影全链路可用。"""
 
@@ -680,6 +744,84 @@ def test_output_limit_marks_truncated(tmp_path) -> None:
 
     assert table.truncated is True
     assert len(table.rows) == 10_000
+
+
+def test_single_operator_takes_first_row_and_preserves_shape(tmp_path) -> None:
+    executor = _executor(tmp_path)
+    plan = _plan(
+        (
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
+            AnalysisPlanNode(
+                id="sorted1",
+                kind="sort",
+                params={"keys": [{"column": "session_id", "direction": "asc"}]},
+                inputs=("runs1",),
+            ),
+            AnalysisPlanNode(id="single1", kind="single", inputs=("sorted1",)),
+        ),
+        ("single1",),
+    )
+
+    table = executor.execute_plan(plan)["single1"]
+    source = executor.execute_plan(
+        _plan(
+            (AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),),
+            ("runs1",),
+        )
+    )["runs1"]
+
+    assert len(table.rows) == 1
+    assert _column_values(table, "session_id") == ["run:1"]
+    assert {column.name for column in table.columns} == {column.name for column in source.columns}
+
+
+def test_single_operator_keeps_empty_input_empty(tmp_path) -> None:
+    executor = _executor(tmp_path)
+    plan = _plan(
+        (
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
+            AnalysisPlanNode(
+                id="f1",
+                kind="filter",
+                params={
+                    "mode": "all",
+                    "conditions": [{"column": "session_id", "op": "eq", "value": "missing"}],
+                },
+                inputs=("runs1",),
+            ),
+            AnalysisPlanNode(id="single1", kind="single", inputs=("f1",)),
+        ),
+        ("single1",),
+    )
+
+    table = executor.execute_plan(plan)["single1"]
+
+    assert table.rows == ()
+    assert len(table.columns) > 0
+
+
+def test_single_operator_rejects_parameters(tmp_path) -> None:
+    executor = _executor(tmp_path)
+    plan = _plan(
+        (
+            AnalysisPlanNode(id="runs1", kind="fetch", params={"source": "runs"}),
+            AnalysisPlanNode(
+                id="single1",
+                kind="single",
+                params={"count": 1},
+                inputs=("runs1",),
+            ),
+        ),
+        ("single1",),
+    )
+
+    with pytest.raises(AnalysisPlanValidationError) as exc_info:
+        executor.execute_plan(plan)
+
+    assert any(
+        item.get("node_id") == "single1" and "不支持的参数" in item.get("reason", "")
+        for item in exc_info.value.details
+    )
 
 
 def test_unknown_column_reports_node_detail(tmp_path) -> None:

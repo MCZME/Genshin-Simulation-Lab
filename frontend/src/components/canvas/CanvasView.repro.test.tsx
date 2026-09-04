@@ -69,7 +69,6 @@ describe("CanvasView repro", () => {
         onRenameRegionRequestHandled={() => undefined}
         onMoveNode={() => undefined}
         onResizeNode={() => undefined}
-        onResizeNodeWithFixedWidth={() => undefined}
         onMoveRegion={() => undefined}
         onResizeRegion={() => undefined}
         onRenameRegion={() => undefined}

@@ -23,7 +23,9 @@ import {
 import { expandConfigurationRegion } from "./compiler";
 import { collectUpstreamNodes } from "./chain";
 import {
+  ANALYSIS_CONFIG_NODE_KINDS,
   ANALYSIS_TABLE_NODE_KINDS,
+  ANALYSIS_VIEW_NODE_KINDS,
   computeAnalysisShapes,
   type TableShape,
 } from "./templates";
@@ -799,9 +801,23 @@ function warnNodesOutsideRegions(
   }
 }
 
-const ANALYSIS_VIEW_KINDS = new Set(["member_table", "timeline", "pie", "bar"]);
-const ANALYSIS_CONFIG_PORT = "config";
+const ANALYSIS_VIEW_KINDS = new Set(["member_table", "pie", "bar"]);
+/** 单项详情节点：接收 table，输出为空（分析区域设计 6.4）。 */
+const ANALYSIS_DETAIL_KINDS = new Set([
+  "frame_state",
+  "damage_detail",
+  "state_detail",
+  "attribute_detail",
+]);
+/** 视图 selection 输出端口 id。 */
+const ANALYSIS_SELECTION_PORT = "selection";
 const ANALYSIS_DATA_PORT = "in";
+
+const VIEW_KIND_BY_CONFIG: Record<string, string> = {
+  table_config: "member_table",
+  pie_config: "pie",
+  bar_config: "bar",
+};
 
 /** 分析区域图级校验：算子参数、视图配置与同结构输入（依赖形状推导）。 */
 const FETCH_KINDS = new Set(["fetch"]);
@@ -835,7 +851,14 @@ function validateAnalysisGraph(
     });
     const incomingTableEdges = (edgesByTarget.get(node.id) ?? []).some((edge) => {
       const source = nodeById.get(edge.source_node_id);
-      return source !== undefined && ANALYSIS_TABLE_NODE_KINDS.has(source.kind);
+      const viewTableOutput =
+        source !== undefined &&
+        ANALYSIS_VIEW_NODE_KINDS.has(source.kind) &&
+        edge.source_port_id === ANALYSIS_SELECTION_PORT;
+      return (
+        source !== undefined &&
+        (ANALYSIS_TABLE_NODE_KINDS.has(source.kind) || viewTableOutput)
+      );
     });
     if (FETCH_KINDS.has(node.kind) && !boundaryFed && !incomingTableEdges) {
       diagnostics.push(
@@ -871,7 +894,79 @@ function validateAnalysisGraph(
     if (!ANALYSIS_VIEW_KINDS.has(node.kind)) {
       continue;
     }
-    validateViewInputs(node, edgesByTarget, shapes, diagnostics);
+    validateViewInputs(node, nodeById, edgesByTarget, shapes, diagnostics);
+  }
+  validateConfigForwarders(definition, nodeById, diagnostics);
+
+  // 详情节点是表消费者：缺少输入时只报终端缺失；数据语言匹配由通用边校验负责，
+  // 行数语义（0/1/≥2）由详情节点运行时检查，图校验无法静态承诺行数。
+  for (const node of nodeById.values()) {
+    if (!ANALYSIS_DETAIL_KINDS.has(node.kind)) {
+      continue;
+    }
+    const incoming = edgesByTarget.get(node.id) ?? [];
+    const dataEdges = incoming.filter((edge) => edge.target_port_id === ANALYSIS_DATA_PORT);
+    if (dataEdges.length === 0) {
+      diagnostics.push(
+        diagnostic("error", "DETAIL_INPUT_MISSING", "单项详情节点缺少输入连线", {
+          node_id: node.id,
+        }),
+      );
+    }
+  }
+}
+
+/** 展示配置转发节点：只接收表节点输入、只转发给对应视图，不进入查询计划。 */
+function validateConfigForwarders(
+  definition: WorkflowDefinition,
+  nodeById: Map<string, WorkflowNode>,
+  diagnostics: Diagnostic[],
+): void {
+  for (const node of nodeById.values()) {
+    if (!ANALYSIS_CONFIG_NODE_KINDS.has(node.kind)) {
+      continue;
+    }
+    const outputEdges = definition.edges.filter(
+      (edge) => edge.source_node_id === node.id && edge.source_port_id === "out",
+    );
+    if (outputEdges.length === 0) {
+      continue;
+    }
+    const inputEdges = definition.edges.filter(
+      (edge) => edge.target_node_id === node.id && edge.target_port_id === ANALYSIS_DATA_PORT,
+    );
+    if (inputEdges.length !== 1) {
+      diagnostics.push(
+        diagnostic("error", "CONFIG_INPUT_INVALID", "展示配置节点需要一条上游表输入", {
+          node_id: node.id,
+        }),
+      );
+    } else {
+      const source = nodeById.get(inputEdges[0].source_node_id);
+      if (source === undefined || !ANALYSIS_TABLE_NODE_KINDS.has(source.kind)) {
+        diagnostics.push(
+          diagnostic(
+            "error",
+            "CONFIG_INPUT_INVALID",
+            "展示配置节点只能接收表节点（取数/算子）输入",
+            { node_id: node.id, edge_id: inputEdges[0].id },
+          ),
+        );
+      }
+    }
+    for (const edge of outputEdges) {
+      const target = nodeById.get(edge.target_node_id);
+      if (target === undefined || target.kind !== VIEW_KIND_BY_CONFIG[node.kind]) {
+        diagnostics.push(
+          diagnostic(
+            "error",
+            "CONFIG_OUTPUT_INVALID",
+            "展示配置节点的输出只能连接对应视图",
+            { node_id: node.id, edge_id: edge.id },
+          ),
+        );
+      }
+    }
   }
 }
 
@@ -912,22 +1007,43 @@ function validatePayloadEventTypeFilter(
 
 function validateViewInputs(
   node: WorkflowNode,
+  nodeById: Map<string, WorkflowNode>,
   edgesByTarget: Map<string, WorkflowEdge[]>,
   shapes: Map<string, TableShape[] | null>,
   diagnostics: Diagnostic[],
 ): void {
   const incoming = edgesByTarget.get(node.id) ?? [];
-  const configEdges = incoming.filter((edge) => edge.target_port_id === ANALYSIS_CONFIG_PORT);
   const dataEdges = incoming.filter((edge) => edge.target_port_id === ANALYSIS_DATA_PORT);
-  if (configEdges.length === 0) {
+  const configEdges = dataEdges.filter((edge) => {
+    const source = nodeById.get(edge.source_node_id);
+    return source !== undefined && ANALYSIS_CONFIG_NODE_KINDS.has(source.kind);
+  });
+  if (configEdges.length > 0 && dataEdges.length !== 1) {
     diagnostics.push(
-      diagnostic("error", "VIEW_CONFIG_MISSING", "视图缺少对应的展示配置节点", {
+      diagnostic(
+        "error",
+        "VIEW_CONFIG_CHAIN_INVALID",
+        "使用展示配置节点时，视图只能有一条数据入线",
+        {
+          node_id: node.id,
+        },
+      ),
+    );
+    return;
+  }
+  if (configEdges.length > 1) {
+    diagnostics.push(
+      diagnostic("error", "VIEW_CONFIG_CHAIN_INVALID", "视图只能接入一个展示配置节点", {
         node_id: node.id,
       }),
     );
+    return;
   }
   let reference: string[] | null = null;
   for (const edge of dataEdges) {
+    if (configEdges.length > 0) {
+      continue;
+    }
     const shape = shapes.get(edge.source_node_id);
     if (shape === undefined || shape === null) {
       continue;

@@ -621,3 +621,76 @@ def _request(
         stack_delta=stack_delta,
         modifier_values=modifier_values,
     )
+
+
+def test_buff_display_name_flows_into_provider_spec_and_resolved_terms():
+    definition = BuffDefinition(
+        definition_key="buff.display_name.test",
+        mechanic_key="mechanic.test_buff",
+        handler_key="test.buff",
+        conflict_key="test.buff.conflict.display",
+        target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
+        application_policy=BuffApplicationPolicy.REPLACE,
+        value_refresh_policy=BuffValueRefreshPolicy.REPLACE_LATEST,
+        max_stacks=1,
+        attribute_modifiers=(
+            BuffAttributeModifierTemplate(
+                term_key="atk_bonus",
+                target_key=STAT_ATK_TOTAL,
+                stage=ModifierStage.PERCENT_ADD,
+            ),
+        ),
+        display_name="测试增伤增益",
+    )
+    runtime = _runtime(definition)
+    runtime.apply(_request("display:1", definition))
+
+    provider = BuffAttributeModifierProvider(definition, BuffStoreReader(runtime.buff_store))
+    assert provider.provider_spec.display_name == "测试增伤增益"
+
+    snapshot = runtime.snapshot(0).to_dict()
+    assert isinstance(snapshot, dict)
+    instances = snapshot.get("instances")
+    assert isinstance(instances, tuple) and instances
+    assert isinstance(instances[0], dict)
+    assert instances[0]["display_name"] == "测试增伤增益"
+    applied_payload = runtime.event_engine.frame_events[-1].payload.to_dict()
+    assert isinstance(applied_payload, dict)
+    result = applied_payload.get("result")
+    instance_after = result.get("instance_after") if isinstance(result, dict) else None
+    assert isinstance(instance_after, dict)
+    assert instance_after["display_name"] == "测试增伤增益"
+
+    registry = create_public_attribute_registry()
+    resolver = AttributeResolver(
+        definitions=registry,
+        base_attributes=BaseAttributeSet(
+            ((CHARACTER, BaseAttributeContribution(STAT_ATK_TOTAL, 1000.0, SOURCE)),)
+        ),
+        modifier_index=ModifierProviderIndex((provider,), registry=registry),
+    )
+    resolution = resolver.resolve(AttributeQuery(CHARACTER, STAT_ATK_TOTAL, frame=0))
+
+    assert resolution.applied_terms[0].provider_display_name == "测试增伤增益"
+
+
+def test_buff_definition_rejects_blank_display_name():
+    with pytest.raises(Exception, match="display_name"):
+        BuffDefinition(
+            definition_key="buff.display_name.blank",
+            mechanic_key="mechanic.test_buff",
+            handler_key="test.buff",
+            conflict_key="test.buff.conflict.blank",
+            target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
+            application_policy=BuffApplicationPolicy.REPLACE,
+            value_refresh_policy=BuffValueRefreshPolicy.REPLACE_LATEST,
+            max_stacks=1,
+            attribute_modifiers=(
+                BuffAttributeModifierTemplate(
+                    term_key="atk_bonus",
+                    target_key=STAT_ATK_TOTAL,
+                    stage=ModifierStage.PERCENT_ADD,
+                ),
+            ),
+            display_name="  ",
+        )

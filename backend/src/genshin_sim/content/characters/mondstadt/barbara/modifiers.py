@@ -62,6 +62,7 @@ class BarbaraConstellationC2HydroBonusProvider:
         self.provider_spec = ModifierProviderSpec(
             provider_key=BARBARA_CONSTELLATION_C2_HYDRO_PROVIDER_KEY,
             writes=frozenset({BONUS_DAMAGE_HYDRO}),
+            display_name="华彩圆舞曲·环水伤加成",
         )
 
     def bind_runtime_ports(

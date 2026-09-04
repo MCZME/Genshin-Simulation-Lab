@@ -10,15 +10,6 @@ from genshin_sim.content.characters.mondstadt.barbara.data import (
 from genshin_sim.content.characters.mondstadt.barbara.data import (
     BARBARA_CONTENT_VERSION as BARBARA_VERSION,
 )
-from genshin_sim.content.characters.testing.runtime_probe.constants import (
-    RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-)
-from genshin_sim.content.characters.testing.runtime_probe.constants import (
-    RUNTIME_PROBE_CONTENT_VERSION as RUNTIME_PROBE_VERSION,
-)
-from genshin_sim.content.characters.testing.runtime_probe.content import (
-    create_runtime_probe_content_unit,
-)
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
@@ -175,14 +166,3 @@ def _heal_scaling_entry(
         },
         tags=(talent_key, "ratio", "flat"),
     )
-
-
-def test_runtime_probe_content_unit_exposes_version():
-    unit = create_runtime_probe_content_unit(
-        CharacterContentUnitRequest(
-            handler_key=RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-            character_key="character:test_character",
-            slot=1,
-        )
-    )
-    assert unit.version == RUNTIME_PROBE_VERSION

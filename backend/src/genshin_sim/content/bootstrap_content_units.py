@@ -25,10 +25,6 @@ from genshin_sim.content.characters.mondstadt.barbara import (
     create_barbara_content_unit,
     create_barbara_encore_effect,
 )
-from genshin_sim.content.characters.testing.runtime_probe import (
-    RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-    create_runtime_probe_content_unit,
-)
 from genshin_sim.content.registries import ContentUnitRegistry
 from genshin_sim.content.weapons.bow.hunter_bow import (
     HUNTER_BOW_HANDLER_KEY,
@@ -65,11 +61,15 @@ BUILTIN_NOOP_CONTENT_HANDLER_KEYS = (
 )
 
 
-def create_default_content_unit_registry() -> ContentUnitRegistry:
+def create_default_content_unit_registry(
+    *,
+    developer_mode: bool = False,
+) -> ContentUnitRegistry:
     """创建包含内置角色的默认内容单元注册表。
 
     内置角色直接注册新模型内容单元工厂；武器/圣遗物与效果 payload 仍走
-    legacy 注册路径（M5 清理）。
+    legacy 注册路径（M5 清理）。开发者模式额外注册 ``content/test`` 包的
+    测试内容；正常模式不导入测试包。
     """
 
     registry = ContentUnitRegistry()
@@ -77,10 +77,10 @@ def create_default_content_unit_registry() -> ContentUnitRegistry:
         BARBARA_CHARACTER_HANDLER_KEY,
         create_barbara_content_unit,
     )
-    registry.register_character_factory(
-        RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-        create_runtime_probe_content_unit,
-    )
+    if developer_mode:
+        from genshin_sim.content.test import register_test_content_units
+
+        register_test_content_units(registry)
     registry.register_effect_factory(
         BARBARA_ENCORE_EFFECT_HANDLER_KEY,
         create_barbara_encore_effect,

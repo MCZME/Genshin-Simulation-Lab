@@ -1,5 +1,17 @@
 import { getNodeKindSpec } from "../../workflow/registry";
-import { ANALYSIS_NODE_KINDS, CONFIG_NODE_KINDS, nodeKindColor } from "../nodes/registry";
+import {
+  ANALYSIS_DETAIL_KINDS,
+  ANALYSIS_DISPLAY_CONFIG_KINDS,
+  ANALYSIS_FETCH_KINDS,
+  ANALYSIS_OPERATOR_KINDS,
+  ANALYSIS_VIEW_KINDS,
+  CONFIG_INPUT_KINDS,
+  CONFIG_RUN_SETTING_KINDS,
+  CONFIG_TARGET_KINDS,
+  CONFIG_TEAM_KINDS,
+  CONFIG_VARIANT_KINDS,
+  nodeKindColor,
+} from "../nodes/registry";
 
 export interface ObjectPanelProps {
   onDragStart: (kind: string) => void;
@@ -38,14 +50,25 @@ export function ObjectPanel({ onDragStart, onCollapse }: ObjectPanelProps) {
       </div>
       <div className="panel-section">
         <h2 className="panel-title">配置节点</h2>
-        {CONFIG_NODE_KINDS.map((kind) => (
-          <DraggableObject
-            key={kind}
-            kind={kind}
-            label={getNodeKindSpec(kind)?.displayName ?? kind}
-            color={nodeKindColor(kind)}
-            onDragStart={onDragStart}
-          />
+        <h3 className="panel-subtitle">运行设置</h3>
+        {CONFIG_RUN_SETTING_KINDS.map((kind) => (
+          <PanelItem key={kind} kind={kind} onDragStart={onDragStart} />
+        ))}
+        <h3 className="panel-subtitle">队伍配置</h3>
+        {CONFIG_TEAM_KINDS.map((kind) => (
+          <PanelItem key={kind} kind={kind} onDragStart={onDragStart} />
+        ))}
+        <h3 className="panel-subtitle">目标配置</h3>
+        {CONFIG_TARGET_KINDS.map((kind) => (
+          <PanelItem key={kind} kind={kind} onDragStart={onDragStart} />
+        ))}
+        <h3 className="panel-subtitle">操作输入</h3>
+        {CONFIG_INPUT_KINDS.map((kind) => (
+          <PanelItem key={kind} kind={kind} onDragStart={onDragStart} />
+        ))}
+        <h3 className="panel-subtitle">变体扫描</h3>
+        {CONFIG_VARIANT_KINDS.map((kind) => (
+          <PanelItem key={kind} kind={kind} onDragStart={onDragStart} />
         ))}
       </div>
       <div className="panel-section">
@@ -65,17 +88,45 @@ export function ObjectPanel({ onDragStart, onCollapse }: ObjectPanelProps) {
       </div>
       <div className="panel-section">
         <h2 className="panel-title">分析节点</h2>
-        {ANALYSIS_NODE_KINDS.map((kind) => (
-          <DraggableObject
-            key={kind}
-            kind={kind}
-            label={getNodeKindSpec(kind)?.displayName ?? kind}
-            color={nodeKindColor(kind)}
-            onDragStart={onDragStart}
-          />
+        <h3 className="panel-subtitle">数据获取</h3>
+        {ANALYSIS_FETCH_KINDS.map((kind) => (
+          <PanelItem key={kind} kind={kind} onDragStart={onDragStart} />
+        ))}
+        <h3 className="panel-subtitle">数据加工</h3>
+        {ANALYSIS_OPERATOR_KINDS.map((kind) => (
+          <PanelItem key={kind} kind={kind} onDragStart={onDragStart} />
+        ))}
+        <h3 className="panel-subtitle">展示配置</h3>
+        {ANALYSIS_DISPLAY_CONFIG_KINDS.map((kind) => (
+          <PanelItem key={kind} kind={kind} onDragStart={onDragStart} />
+        ))}
+        <h3 className="panel-subtitle">展示视图</h3>
+        {ANALYSIS_VIEW_KINDS.map((kind) => (
+          <PanelItem key={kind} kind={kind} onDragStart={onDragStart} />
+        ))}
+        <h3 className="panel-subtitle">单项详情</h3>
+        {ANALYSIS_DETAIL_KINDS.map((kind) => (
+          <PanelItem key={kind} kind={kind} onDragStart={onDragStart} />
         ))}
       </div>
     </aside>
+  );
+}
+
+function PanelItem({
+  kind,
+  onDragStart,
+}: {
+  kind: string;
+  onDragStart: (kind: string) => void;
+}) {
+  return (
+    <DraggableObject
+      kind={kind}
+      label={getNodeKindSpec(kind)?.displayName ?? kind}
+      color={nodeKindColor(kind)}
+      onDragStart={onDragStart}
+    />
   );
 }
 

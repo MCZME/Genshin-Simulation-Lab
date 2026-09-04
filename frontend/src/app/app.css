@@ -468,6 +468,14 @@ body {
   letter-spacing: 0.05em;
 }
 
+.panel-subtitle {
+  margin: 10px 0 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748b;
+  letter-spacing: 0.04em;
+}
+
 .panel-section {
   margin-bottom: 16px;
 }
@@ -694,11 +702,16 @@ body {
 }
 
 .node-card.node-card-trace {
-  width: max-content;
   min-width: 560px;
 }
 
 .node-card.node-card-trace .node-card-body {
+  max-height: none;
+  overflow: visible;
+}
+
+/* 详情节点卡（伤害详情/角色状态详情等）高度随内容自适应，不做卡体内滚动。 */
+.node-card.node-card-detail .node-card-body {
   max-height: none;
   overflow: visible;
 }
@@ -739,6 +752,32 @@ body {
   flex: 1;
   font-size: 13px;
   font-weight: 600;
+}
+
+.node-output-badges {
+  display: flex;
+  flex: none;
+  gap: 4px;
+}
+
+.node-output-badge {
+  padding: 0 5px;
+  border: 1px solid #475569;
+  border-radius: 8px;
+  color: #94a3b8;
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.node-output-badge.data {
+  color: #38bdf8;
+  border-color: rgba(56, 189, 248, 0.45);
+}
+
+.node-output-badge.selection {
+  color: #fbbf24;
+  border-color: rgba(251, 191, 36, 0.45);
 }
 
 .node-card-body {
@@ -892,114 +931,18 @@ body {
   border-style: dashed;
 }
 
-.trace-delete-ghost {
-  position: fixed;
-  z-index: 100;
-  pointer-events: none;
-  padding: 2px 8px;
-  background: rgba(239, 68, 68, 0.9);
-  border: 1px dashed #f87171;
-  border-radius: 4px;
-  color: #ffffff;
-  font-size: 11px;
-  font-weight: 600;
-  line-height: 1.4;
-  white-space: nowrap;
-  transform: translate(-50%, -120%);
-  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.4);
+.trace-timeline-wrap {
+  position: relative;
+  width: 100%;
 }
 
 .trace-timeline {
-  position: relative;
   background: #0f172a;
   border: 1px solid #334155;
   border-radius: 4px;
   cursor: crosshair;
   user-select: none;
   overflow: hidden;
-}
-
-.trace-ruler {
-  position: relative;
-  height: 18px;
-  border-bottom: 1px solid #1e293b;
-}
-
-.trace-tick {
-  position: absolute;
-  transform: translateX(-50%);
-}
-
-.trace-tick-major {
-  top: 2px;
-  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
-  font-size: 9px;
-  color: #64748b;
-  white-space: nowrap;
-}
-
-.trace-tick-major::before {
-  content: "";
-  position: absolute;
-  left: 50%;
-  top: 11px;
-  width: 1px;
-  height: 5px;
-  background: #334155;
-}
-
-.trace-tick-minor {
-  top: 13px;
-  width: 1px;
-  height: 4px;
-  background: #334155;
-}
-
-.trace-row {
-  height: 36px;
-  border-bottom: 1px solid #1e293b;
-}
-
-.trace-row:nth-child(even) {
-  background: rgba(30, 41, 59, 0.35);
-}
-
-.trace-block {
-  position: absolute;
-  display: flex;
-  align-items: center;
-  height: 26px;
-  padding: 0 4px;
-  background: var(--key-color, #1d4ed8);
-  border: 1px solid var(--key-color, #3b82f6);
-  border-radius: 3px;
-  cursor: move;
-  touch-action: none;
-  user-select: none;
-  box-sizing: border-box;
-}
-
-.trace-block:hover {
-  filter: brightness(1.15);
-}
-
-.trace-block-unclosed {
-  background: rgba(239, 68, 68, 0.25);
-  border-style: dashed;
-  border-color: #ef4444;
-}
-
-.trace-block-unsupported {
-  background: rgba(100, 116, 139, 0.45);
-  border-color: #64748b;
-}
-
-.trace-block-chip {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-  min-width: 0;
-  pointer-events: none;
 }
 
 .trace-block-cap {
@@ -1012,21 +955,83 @@ body {
   white-space: nowrap;
 }
 
-.trace-block-handle {
-  position: absolute;
-  top: 0;
-  width: 5px;
-  height: 100%;
+.trace-timeline .vis-timeline {
+  border: none;
+  background: transparent;
+}
+
+.trace-timeline .vis-panel {
+  background: transparent;
+  border-color: #1e293b;
+}
+
+.trace-timeline .vis-time-axis {
+  background: #0f172a;
+}
+
+.trace-timeline .vis-text {
+  color: #64748b;
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 9px;
+}
+
+.trace-timeline .vis-grid.vis-minor {
+  border-color: rgba(51, 65, 85, 0.45);
+}
+
+.trace-timeline .vis-grid.vis-major {
+  border-color: #334155;
+}
+
+.trace-timeline .vis-item {
+  border-radius: 3px;
+  box-shadow: none;
+  color: #e2e8f0;
+}
+
+.trace-timeline .vis-item .vis-item-content {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 0 4px;
+  overflow: hidden;
+}
+
+.trace-timeline .vis-item .vis-item-overflow {
+  overflow: hidden;
+}
+
+.trace-timeline .vis-item.trace-item {
+  cursor: move;
+}
+
+.trace-timeline .vis-item.vis-selected {
+  border-color: #60a5fa !important;
+  box-shadow: 0 0 0 1px rgba(59, 130, 246, 0.6);
+}
+
+.trace-timeline .vis-item.trace-block-unclosed {
+  background: rgba(239, 68, 68, 0.25) !important;
+  border-style: dashed !important;
+  border-color: #ef4444 !important;
+}
+
+.trace-timeline .vis-item.trace-block-unsupported {
+  background: rgba(100, 116, 139, 0.45) !important;
+  border-color: #64748b !important;
+}
+
+.trace-timeline .vis-item .vis-drag-left,
+.trace-timeline .vis-item .vis-drag-right {
   cursor: ew-resize;
-  touch-action: none;
 }
 
-.trace-block-handle-left {
-  left: 0;
+.trace-timeline .vis-item .vis-delete {
+  background: #ef4444;
+  border-color: #f87171;
 }
 
-.trace-block-handle-right {
-  right: 0;
+.trace-timeline .vis-item .vis-item-visible-frame {
+  display: none;
 }
 
 .trace-empty {
@@ -1070,6 +1075,14 @@ body {
   background: #64748b !important;
   border: 2px solid #0f172a !important;
   transition: background 0.15s ease;
+}
+
+.node-handle-data {
+  background: #38bdf8 !important;
+}
+
+.node-handle-selection {
+  background: #fbbf24 !important;
 }
 
 .node-handle::after {
@@ -2763,6 +2776,8 @@ body {
 }
 
 .node-card.node-card-view .node-card-body {
+  display: flex;
+  flex-direction: column;
   max-height: none;
   padding: 0;
   flex: 1;
@@ -3060,10 +3075,103 @@ body {
   font-weight: 500;
 }
 
+/* ── 分析图表视图（柱状图 / 饼图）── */
+
+.analysis-chart-view {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.analysis-chart {
+  flex: 1;
+  min-height: 0;
+  min-width: 0;
+}
+
+.analysis-chart svg {
+  display: block;
+}
+
 /* ── 表格配置节点：条件列 / 数据列绑定 ── */
 
 .node-card.node-card-table-config {
   width: 420px;
+}
+
+/* ── 展示配置节点（饼图配置 / 柱状图配置）：摘要行 + 行级绑定状态 ── */
+
+.node-card.node-card-display-config {
+  width: 300px;
+}
+
+.display-config-summary {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-bottom: 8px;
+  padding-bottom: 6px;
+  border-bottom: 1px solid #334155;
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.display-config-summary-item + .display-config-summary-item::before {
+  content: "·";
+  margin: 0 6px;
+  color: #475569;
+}
+
+.display-config-summary-key {
+  color: #64748b;
+}
+
+.display-config-summary-value {
+  color: #cbd5e1;
+}
+
+.display-config-summary-empty {
+  color: #475569;
+}
+
+.display-config-row + .display-config-row {
+  margin-top: 6px;
+}
+
+.display-config-row select,
+.display-config-row input {
+  width: 100%;
+  min-width: 0;
+}
+
+/* 必选标记走伪元素：标签文本保持纯净，星号不进入可访问名与测试文本。 */
+.display-config-required-label::before {
+  content: "✱";
+  margin-right: 4px;
+  color: #f87171;
+}
+
+.display-config-optional {
+  color: #64748b;
+}
+
+.display-config-row-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.display-config-row-hint.warn {
+  color: #f59e0b;
+}
+
+.display-config-row-hint.error {
+  color: #f87171;
+}
+
+.display-config-row select.field-invalid {
+  border-color: #ef4444;
 }
 
 .table-config-editor {
@@ -3895,7 +4003,7 @@ body {
   flex: 1;
 }
 
-.filter-row-remove {
+.analysis-row-remove {
   flex: none;
   width: 22px;
   height: 22px;
@@ -3910,19 +4018,19 @@ body {
   cursor: pointer;
 }
 
-.filter-row-remove:hover {
+.analysis-row-remove:hover {
   color: #f87171;
   border-color: #f87171;
 }
 
-.filter-row-error {
+.analysis-row-error {
   margin: 0;
   font-size: 11px;
   color: #f87171;
   line-height: 1.4;
 }
 
-.filter-add-button {
+.analysis-add-button {
   width: 100%;
   margin-top: 2px;
   padding: 5px 0;
@@ -3935,7 +4043,7 @@ body {
   cursor: pointer;
 }
 
-.filter-add-button:hover {
+.analysis-add-button:hover {
   color: #e2e8f0;
   border-color: #3b82f6;
 }
@@ -4002,9 +4110,14 @@ body {
   width: 340px;
 }
 
+.node-card-derive {
+  width: 340px;
+}
+
 .aggregate-inline,
 .project-inline,
-.sort-inline {
+.sort-inline,
+.derive-inline {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -4045,7 +4158,8 @@ body {
 
 .aggregate-row,
 .project-row,
-.sort-key-row {
+.sort-key-row,
+.derive-row {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -4057,7 +4171,8 @@ body {
 
 .aggregate-line,
 .project-line,
-.sort-key-line {
+.sort-key-line,
+.derive-line {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -4067,7 +4182,9 @@ body {
 .aggregate-line input,
 .project-line select,
 .project-line input,
-.sort-key-line select {
+.sort-key-line select,
+.derive-line select,
+.derive-line input {
   min-width: 0;
   flex: 1;
 }
@@ -4129,7 +4246,7 @@ body {
   min-width: 0;
 }
 
-/* 合并表（连接）节点 */
+/* 连接表节点 */
 
 .node-card-join {
   width: 340px;
@@ -4226,11 +4343,16 @@ body {
 
 .filter-condition-line > select,
 .filter-condition-line > input,
+.display-config-row select,
+.display-config-row input,
 .aggregate-line > select,
 .aggregate-line > input,
 .project-line > select,
 .project-line > input,
 .sort-key-line > select,
+.derive-line > select,
+.derive-line > input,
+.derive-value > input,
 .limit-line > input,
 .join-key-row > select,
 .table-binding-row > select,
@@ -4248,6 +4370,35 @@ body {
   font-family: inherit;
   font-size: 11px;
   line-height: 1;
+}
+
+.derive-value {
+  min-width: 0;
+}
+
+.derive-value > input,
+.derive-value > textarea {
+  width: 100%;
+}
+
+.derive-value > textarea {
+  min-height: 44px;
+  max-height: 240px;
+  padding: 4px 6px;
+  background: #0f172a;
+  border: 1px solid #475569;
+  border-radius: 5px;
+  color: #e2e8f0;
+  font-family: inherit;
+  font-size: 11px;
+  line-height: 1.4;
+  overflow-y: auto;
+  resize: vertical;
+}
+
+.derive-value > textarea:focus {
+  border-color: #38bdf8;
+  outline: none;
 }
 
 /* 计算列节点 */
@@ -4582,4 +4733,795 @@ body {
 .fetch-scope-status {
   font-size: 11px;
   color: #94a3b8;
+}
+
+/* 单项选择与单项详情节点（分析区域设计第 5、6 节）。 */
+.analysis-member-table tbody tr.row-selected td {
+  box-shadow: inset 0 0 0 999px rgba(56, 189, 248, 0.14);
+}
+
+.detail-body {
+  padding: 4px 0;
+  min-width: 0;
+}
+
+.detail-section-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #cbd5e1;
+  padding: 4px 2px 2px;
+}
+
+.detail-item-pre {
+  margin: 2px 0 6px;
+  padding: 8px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  font-size: 11px;
+  line-height: 1.5;
+  overflow: auto;
+  max-height: 260px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  user-select: text;
+}
+
+/* 角色状态详情（attribute_detail 节点卡内容区）：当前状态 + Buff + 属性面板。 */
+.state-sheet {
+  min-width: 0;
+  padding: 2px 0 6px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.state-sheet-context {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 5px 8px;
+  font-size: 11px;
+  color: #cbd5e1;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 8px;
+}
+
+.state-sheet-context-frame {
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+}
+
+.state-sheet-context-char {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.state-sheet-context-badge {
+  flex: none;
+  font-size: 9px;
+  font-weight: 600;
+  color: #86efac;
+  border: 1px solid rgba(134, 239, 172, 0.4);
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 14px;
+}
+
+.state-sheet-section {
+  min-width: 0;
+  border: 1px solid rgba(148, 163, 184, 0.1);
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.35);
+  padding: 6px 8px;
+}
+
+.state-sheet-section-title {
+  margin: 0;
+  padding: 0 0 4px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #7dd3fc;
+}
+
+.state-sheet-empty {
+  padding: 3px 0;
+  font-size: 11px;
+  color: #64748b;
+}
+
+/* 当前生命/能量。 */
+.state-sheet-status-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.state-sheet-status-line {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.state-sheet-status-label {
+  flex: none;
+  width: 34px;
+  font-size: 11px;
+  color: #94a3b8;
+}
+
+.state-sheet-status-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.state-sheet-status-text {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+  font-size: 11px;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+
+.state-sheet-status-ratio {
+  font-size: 10px;
+  color: #94a3b8;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: rgba(15, 23, 42, 0.4);
+  white-space: nowrap;
+}
+
+.state-sheet-status-hint {
+  margin-left: auto;
+  font-size: 10px;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.state-sheet-status-hint.ready {
+  color: #fbbf24;
+  font-weight: 600;
+}
+
+.state-sheet-bar {
+  height: 6px;
+  margin-top: 4px;
+  border-radius: 3px;
+  background: rgba(148, 163, 184, 0.22);
+  overflow: hidden;
+}
+
+.state-sheet-bar-fill {
+  height: 100%;
+  border-radius: 3px;
+  background: #38bdf8;
+  transition: width 0.15s ease;
+}
+
+/* Buff 列表。 */
+.state-sheet-buff {
+  border-radius: 6px;
+  background: rgba(2, 6, 23, 0.35);
+  margin-top: 4px;
+}
+
+.state-sheet-buff-head {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  width: 100%;
+  padding: 4px 6px;
+  font: inherit;
+  text-align: left;
+  background: none;
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.state-sheet-buff-head:hover {
+  background: rgba(148, 163, 184, 0.08);
+}
+
+.state-sheet-buff-arrow {
+  flex: none;
+  width: 10px;
+  font-size: 9px;
+  color: #64748b;
+}
+
+.state-sheet-buff-name {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: #cbd5e1;
+  min-width: 0;
+}
+
+.state-sheet-buff-stacks {
+  flex: none;
+  font-size: 10px;
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.35);
+  border-radius: 4px;
+  padding: 0 3px;
+  line-height: 13px;
+}
+
+.state-sheet-buff-remaining {
+  margin-left: auto;
+  flex: none;
+  font-size: 10px;
+  color: #64748b;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.state-sheet-buff-remaining.warn {
+  color: #fbbf24;
+}
+
+.state-sheet-buff-remaining.expired {
+  color: #f87171;
+  font-weight: 600;
+}
+
+.state-sheet-buff-body {
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
+  padding: 2px 6px 4px 21px;
+}
+
+.state-sheet-buff-modifier {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 11px;
+}
+
+.state-sheet-buff-modifier-label {
+  flex: 1;
+  min-width: 0;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state-sheet-buff-modifier-value {
+  flex: none;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 属性面板。 */
+.state-sheet-attr-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin-top: 4px;
+  min-width: 0;
+}
+
+.state-sheet-attr-group-title {
+  font-size: 10px;
+  color: #64748b;
+  padding: 0;
+}
+
+.state-sheet-attr-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  min-width: 0;
+}
+
+.state-sheet-attr-head {
+  display: flex;
+  flex-direction: row;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 6px;
+  width: 100%;
+  padding: 5px 7px;
+  font: inherit;
+  text-align: left;
+  color: inherit;
+  background: rgba(2, 6, 23, 0.32);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+  border-radius: 8px;
+  cursor: pointer;
+  min-width: 0;
+}
+
+.state-sheet-attr-head:hover {
+  background: rgba(148, 163, 184, 0.1);
+  border-color: rgba(148, 163, 184, 0.22);
+}
+
+.state-sheet-attr-head.open {
+  background: rgba(56, 189, 248, 0.08);
+  border-color: rgba(56, 189, 248, 0.35);
+}
+
+.state-sheet-attr-head-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: 1;
+  min-width: 0;
+}
+
+.state-sheet-attr-arrow {
+  flex: none;
+  width: 10px;
+  font-size: 9px;
+  color: #64748b;
+}
+
+.state-sheet-attr-name {
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 11px;
+  color: #cbd5e1;
+  min-width: 0;
+}
+
+.state-sheet-attr-count {
+  flex: none;
+  font-size: 9px;
+  color: #7dd3fc;
+  border: 1px solid rgba(125, 211, 252, 0.35);
+  border-radius: 4px;
+  padding: 0 3px;
+  line-height: 13px;
+}
+
+.state-sheet-attr-value {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 3px;
+  flex: none;
+  min-width: 0;
+  font-size: 11px;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.state-sheet-attr-total {
+  white-space: nowrap;
+}
+
+/* 核心属性总值行：总值（基础 + 加成），基础与加成分色，括号弱化。 */
+.state-sheet-attr-breakdown {
+  font-size: 10px;
+  font-weight: 400;
+  color: #64748b;
+  white-space: nowrap;
+}
+
+.state-sheet-attr-base {
+  color: #cbd5e1;
+}
+
+.state-sheet-attr-bonus {
+  color: #4ade80;
+}
+
+.state-sheet-attr-bonus.neg {
+  color: #f87171;
+}
+
+.state-sheet-attr-row-expand {
+  grid-column: 1 / -1;
+  min-width: 0;
+  padding: 4px 6px 6px;
+  border-radius: 8px;
+  background: rgba(15, 23, 42, 0.45);
+  border: 1px solid rgba(148, 163, 184, 0.12);
+}
+
+.state-sheet-attr-row-expand .state-sheet-attr-terms {
+  padding: 2px 2px 0;
+}
+
+.state-sheet-attr-terms {
+  padding: 1px 4px 3px 19px;
+}
+
+.state-sheet-term-group {
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
+  padding: 2px 0;
+}
+
+.state-sheet-term-group-title {
+  font-size: 10px;
+  color: #64748b;
+  padding: 1px 0;
+}
+
+.state-sheet-term-row {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 1px 0;
+  font-size: 11px;
+}
+
+.state-sheet-term-label {
+  flex: 1;
+  min-width: 0;
+  color: #94a3b8;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.state-sheet-term-value {
+  flex: none;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+}
+
+/* 正负词条值着色：Buff 修饰项 / 属性词条行的数值。声明在基础色之后以覆盖。 */
+.state-sheet-value-pos {
+  color: #4ade80;
+}
+
+.state-sheet-value-neg {
+  color: #f87171;
+}
+
+/* 伤害结算单（damage_detail 节点卡内容区）：上下文条 + 乘法链 + 链段详情。 */
+.damage-sheet {
+  min-width: 0;
+}
+
+.damage-sheet-context {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px;
+  padding: 4px 10px;
+}
+
+/* 元素徽标：对齐目标抗性网格的元素角标样式（实底元素色 + 深色文字）。 */
+.damage-sheet-element-badge {
+  flex: none;
+  padding: 0 4px;
+  color: #0f172a;
+  border: 1px solid #0f172a;
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+/* 反应徽标：中性弱化样式，与实底元素徽标区分。 */
+.damage-sheet-reaction-badge {
+  flex: none;
+  padding: 0 4px;
+  color: #94a3b8;
+  background: rgba(148, 163, 184, 0.12);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  border-radius: 4px;
+  font-size: 9px;
+  font-weight: 600;
+  line-height: 14px;
+  white-space: nowrap;
+}
+
+.damage-sheet-context-name {
+  font-size: 11px;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.damage-sheet-context-frame {
+  flex: none;
+  font-size: 10px;
+  color: #64748b;
+}
+
+.damage-sheet-context-refs {
+  margin-left: auto;
+  font-size: 10px;
+  color: #64748b;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  min-width: 0;
+}
+
+.damage-sheet-chain {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: 4px 6px;
+  padding: 4px 10px 2px;
+}
+
+/* 乘号连接符与链段绑定为不可分割单元，换行时随链段移到下一行行首；
+   链内与链间 gap 相同，保证每个乘区之间的间隔一致。 */
+.damage-sheet-step {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.damage-sheet-op {
+  color: #64748b;
+  font-size: 12px;
+  line-height: 1;
+  flex: none;
+}
+
+.damage-sheet-seg {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 1px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px solid rgba(148, 163, 184, 0.16);
+  cursor: pointer;
+  font: inherit;
+  text-align: left;
+}
+
+.damage-sheet-seg:hover {
+  border-color: rgba(148, 163, 184, 0.4);
+}
+
+.damage-sheet-seg.selected {
+  border-color: #38bdf8;
+  box-shadow: inset 0 0 0 1px rgba(56, 189, 248, 0.35);
+}
+
+.damage-sheet-seg-label {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.damage-sheet-seg-value {
+  font-size: 12px;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.damage-sheet-seg-value--crit {
+  color: #fbbf24;
+}
+
+.damage-sheet-seg-value--dim {
+  color: #8fa3bd;
+}
+
+.damage-sheet-total {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 10px 4px;
+}
+
+.damage-sheet-total-eq {
+  font-size: 13px;
+  color: #64748b;
+}
+
+.damage-sheet-total-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+}
+
+.damage-sheet-total-value--crit {
+  color: #fbbf24;
+}
+
+.damage-sheet-total-badge {
+  font-size: 10px;
+  color: #fbbf24;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  border-radius: 4px;
+  padding: 0 4px;
+  line-height: 16px;
+}
+
+.damage-sheet-total-official {
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.damage-sheet-detail {
+  border-top: 1px solid rgba(148, 163, 184, 0.16);
+  padding: 4px 10px 8px;
+}
+
+.damage-sheet-zone-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: #e2e8f0;
+  padding: 3px 0 2px;
+}
+
+.damage-sheet-formula {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 2px 4px;
+  padding: 3px 0;
+  font-size: 11px;
+  font-variant-numeric: tabular-nums;
+  min-width: 0;
+}
+
+.damage-sheet-formula-text {
+  color: #cbd5e1;
+  white-space: pre-wrap;
+  min-width: 0;
+}
+
+.damage-sheet-formula-muted {
+  color: #64748b;
+}
+
+.damage-sheet-formula-result {
+  color: #e2e8f0;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* 公式中的可修饰槽位：虚线胶囊，点击与对应抽屉联动折叠。 */
+.damage-sheet-slot {
+  display: inline-flex;
+  align-items: center;
+  font: inherit;
+  font-size: 11px;
+  color: #e2e8f0;
+  background: rgba(15, 23, 42, 0.55);
+  border: 1px dashed rgba(148, 163, 184, 0.45);
+  border-radius: 5px;
+  padding: 0 6px;
+  line-height: 18px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.damage-sheet-slot:hover {
+  border-color: #38bdf8;
+}
+
+.damage-sheet-slot--collapsed {
+  opacity: 0.6;
+  border-style: solid;
+}
+
+/* 抽屉：卡中卡面板，展开时有背景、折叠时弱化，边界清晰可辨。 */
+.damage-sheet-drawer {
+  background: rgba(15, 23, 42, 0.45);
+  border-radius: 6px;
+  padding: 2px 8px;
+  margin-top: 6px;
+}
+
+.damage-sheet-formula + .damage-sheet-drawer {
+  margin-top: 8px;
+}
+
+.damage-sheet-drawer--collapsed {
+  background: transparent;
+}
+
+.damage-sheet-drawer-head {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  font: inherit;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  padding: 3px 4px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.damage-sheet-drawer-head:hover {
+  background: rgba(148, 163, 184, 0.1);
+}
+
+.damage-sheet-drawer-arrow {
+  font-size: 9px;
+  color: #64748b;
+  flex: none;
+  width: 10px;
+}
+
+.damage-sheet-drawer-title {
+  font-size: 11px;
+  font-weight: 600;
+  color: #cbd5e1;
+}
+
+.damage-sheet-drawer--collapsed .damage-sheet-drawer-title {
+  color: #94a3b8;
+}
+
+.damage-sheet-drawer-total {
+  margin-left: auto;
+  font-size: 11px;
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+}
+
+.damage-sheet-drawer-body {
+  display: flex;
+  flex-direction: column;
+  border-top: 1px solid rgba(148, 163, 184, 0.08);
+  margin-top: 1px;
+  padding: 1px 2px 2px;
+}
+
+.damage-sheet-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  padding: 2px 0;
+  font-size: 11px;
+  min-width: 0;
+}
+
+.damage-sheet-row-label {
+  color: #94a3b8;
+  flex: none;
+  max-width: 70%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.damage-sheet-row-value {
+  color: #e2e8f0;
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  min-width: 0;
+  word-break: break-all;
+}
+
+/* 基础值行：属性/请求来源的合成起点，弱一档并与词条行区分。 */
+.damage-sheet-row--base .damage-sheet-row-label {
+  color: #64748b;
+}
+
+.damage-sheet-row--base .damage-sheet-row-label::before {
+  content: "· ";
+}
+
+.damage-sheet-row--rejected .damage-sheet-row-label,
+.damage-sheet-row--rejected .damage-sheet-row-value {
+  color: #64748b;
+  text-decoration: line-through;
 }

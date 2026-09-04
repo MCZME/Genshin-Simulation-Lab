@@ -161,7 +161,8 @@ def test_read_schema_exposes_full_catalog() -> None:
         "result.final_damage",
         "result.source_ref",
         "result.source_ref.entity_id",
-        "result.damage_type",
+        "result.formula_key",
+        "result.main_attack_tag",
         "result.element",
     }
     element_field = next(field for field in damage.fields if field.path == "result.element")

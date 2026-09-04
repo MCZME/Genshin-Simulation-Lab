@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from typing import TYPE_CHECKING, Protocol
 
 from genshin_sim.core.attributes import (
@@ -48,6 +48,8 @@ class DamageModifierProviderSpec:
     reads: tuple[DamageAttributeRead, ...] = ()
     writes: frozenset[DamageModifierStage] = frozenset()
     owner_ref: AttributeSubjectRef | None = None
+    # provider 显示名；由内容层提供，收集器注入返回 term 的审计。
+    display_name: str | None = None
 
     def __post_init__(self) -> None:
         """冻结声明集合，并校验 provider key、读取和写入阶段。"""
@@ -60,6 +62,10 @@ class DamageModifierProviderSpec:
             raise DamageValidationError("damage provider reads 包含非法声明")
         if any(not isinstance(stage, DamageModifierStage) for stage in self.writes):
             raise DamageValidationError("damage provider writes 包含非法阶段")
+        if self.display_name is not None and (
+            not isinstance(self.display_name, str) or not self.display_name.strip()
+        ):
+            raise DamageValidationError("damage provider display_name 必须是非空字符串")
         object.__setattr__(self, "reads", tuple(self.reads))
         object.__setattr__(self, "writes", frozenset(self.writes))
 
@@ -190,6 +196,8 @@ class DamageModifierIndex:
                         f"provider {spec.provider_key} 返回了非法 damage modifier term"
                     )
                 self._validate_term(spec, term, query)
+                if spec.display_name is not None and term.provider_display_name is None:
+                    term = replace(term, provider_display_name=spec.display_name)
                 terms.append(term)
         return self._apply_stacking(tuple(sorted(terms, key=_term_sort_key)))
 

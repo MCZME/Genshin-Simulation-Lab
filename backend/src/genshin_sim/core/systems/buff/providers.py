@@ -37,6 +37,7 @@ class BuffAttributeModifierProvider:
                 ),
                 private_namespace=definition.handler_key,
                 owner_ref=None,
+                display_name=definition.display_name,
             ),
         )
 

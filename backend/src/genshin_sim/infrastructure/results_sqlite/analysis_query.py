@@ -40,24 +40,30 @@ _TYPE_VOCABULARY = frozenset({"string", "int", "float", "bool"})
 
 _INPUT_ARITY: dict[str, int] = {
     "fetch": 0,
+    "__stage_source": 0,
     "filter": 1,
     "project": 1,
     "sort": 1,
     "limit": 1,
+    "single": 1,
     "aggregate": 1,
     "compute": 1,
+    "derive": 1,
     "join": 2,
 }
 
 _FETCH_PARAM_KEYS: dict[str, frozenset[str]] = {
     "fetch": frozenset({"source", "snapshot_columns", "event_types", "payload_columns"}),
+    "__stage_source": frozenset({"stage_table", "columns"}),
     "filter": frozenset({"mode", "conditions"}),
     "project": frozenset({"columns"}),
     "sort": frozenset({"keys"}),
     "aggregate": frozenset({"group_by", "aggregates"}),
     "limit": frozenset({"count"}),
+    "single": frozenset(),
     "join": frozenset({"left_key", "right_key", "mode"}),
     "compute": frozenset({"columns"}),
+    "derive": frozenset({"columns"}),
 }
 
 _AGGREGATE_FUNCTIONS = frozenset({"sum", "count", "avg", "max", "min", "stddev", "p95"})
@@ -90,6 +96,8 @@ _RUN_TABLE_SCHEMA: tuple[AnalysisSchemaColumn, ...] = (
     AnalysisSchemaColumn("seed", "string", "随机种子"),
 )
 
+_STAGE_SOURCE_KIND = "__stage_source"
+
 _EVENT_TABLE_SCHEMA: tuple[AnalysisSchemaColumn, ...] = (
     AnalysisSchemaColumn("session_id", "string", "会话 ID"),
     AnalysisSchemaColumn("ordinal", "int", "会话内全局事实顺序"),
@@ -114,7 +122,7 @@ class SQLiteAnalysisQueryExecutor:
                 for node_id in compiled.output_ids
             }
         with closing(_connect(self.db_path)) as connection:
-            connection.create_aggregate("P95", 1, _P95Aggregate)
+            register_analysis_aggregates(connection)
             return compiled.execute(connection)
 
     def read_schema(self) -> AnalysisReadSchema:
@@ -209,6 +217,29 @@ def _sqlite_json_path(path: str) -> str:
 
 def _node_sql(node_id: str) -> str:
     return _quoted("n_" + node_id)
+
+
+def compile_plan_shapes(
+    plan: AnalysisPlan,
+) -> dict[str, tuple[AnalysisColumn, ...]]:
+    """只编译并返回计划中各节点输出形状（不执行 SQL）。"""
+
+    return _PlanCompiler(plan).compile().shapes
+
+
+def execute_plan_on_connection(
+    connection: sqlite3.Connection,
+    plan: AnalysisPlan,
+) -> Mapping[str, AnalysisTableResult]:
+    """在调用方持有的连接上执行已编译查询计划（阶段运行时可复用同一连接）。"""
+
+    return _PlanCompiler(plan).compile().execute(connection)
+
+
+def register_analysis_aggregates(connection: sqlite3.Connection) -> None:
+    """在连接上注册分析 SQL 需要的自定义聚合。"""
+
+    connection.create_aggregate("P95", 1, _P95Aggregate)
 
 
 def _in_placeholders(binder: _Binder, values: Sequence[Any]) -> str:
@@ -398,6 +429,8 @@ class _PlanCompiler:
                     require_event_type=True,
                 )
             return ()
+        if kind == _STAGE_SOURCE_KIND:
+            return checker.stage_source_shape(params)
         if kind == "filter":
             checker.check_conditions(params)
             return passthrough
@@ -407,12 +440,16 @@ class _PlanCompiler:
         if kind == "limit":
             checker.check_limit(params)
             return passthrough
+        if kind == "single":
+            return passthrough
         if kind == "project":
             return checker.project_shape(params)
         if kind == "aggregate":
             return checker.aggregate_shape(params)
         if kind == "compute":
             return checker.compute_shape(params)
+        if kind == "derive":
+            return checker.derive_shape(params)
         if kind == "join":
             right = input_shapes[1] if len(input_shapes) > 1 else ()
             return checker.join_shape(params, right)
@@ -442,6 +479,8 @@ class _PlanCompiler:
     ) -> str | None:
         if node.kind == "fetch":
             return self._compile_fetch(node, binder)
+        if node.kind == _STAGE_SOURCE_KIND:
+            return self._compile_stage_source(node)
         if node.kind == "filter":
             return self._compile_filter(node, binder, source_sql)
         if node.kind == "project":
@@ -451,13 +490,24 @@ class _PlanCompiler:
         if node.kind == "limit":
             count = node.params["count"]
             return "SELECT * FROM " + source_sql + " LIMIT " + binder.placeholder(count)
+        if node.kind == "single":
+            return "SELECT * FROM " + source_sql + " LIMIT 1"
         if node.kind == "aggregate":
             return self._compile_aggregate(node, source_sql)
         if node.kind == "join":
             return self._compile_join(node, input_shapes)
         if node.kind == "compute":
             return self._compile_compute(node, input_shapes, binder, source_sql)
+        if node.kind == "derive":
+            return self._compile_derive(node, input_shapes, binder, source_sql)
         return None
+
+    def _compile_stage_source(self, node: AnalysisPlanNode) -> str:
+        table = str(node.params["stage_table"])
+        if not _IDENTIFIER_PATTERN.match(table):
+            self._issue(node.id, "阶段表名不合法：" + table)
+            return "SELECT NULL WHERE 0"
+        return "SELECT * FROM " + _quoted(table)
 
     def _compile_fetch(self, node: AnalysisPlanNode, binder: _Binder) -> str:
         if node.params.get("source") == "events":
@@ -657,6 +707,34 @@ class _PlanCompiler:
             select_items.append(expr_sql + " AS " + _quoted(str(item["name"])))
         return "SELECT " + ", ".join(select_items) + " FROM " + source_sql
 
+    def _compile_derive(
+        self,
+        node: AnalysisPlanNode,
+        input_shapes: list[tuple[AnalysisColumn, ...]],
+        binder: _Binder,
+        source_sql: str,
+    ) -> str:
+        source_columns = input_shapes[0] if input_shapes else ()
+        source_names = {column.name for column in source_columns}
+        derived_items = [
+            item for item in node.params.get("columns") or [] if isinstance(item, dict)
+        ]
+        value_by_name = {str(item["name"]): item["value"] for item in derived_items}
+        overwritten_names = set(value_by_name) & source_names
+        select_items: list[str] = []
+        for column in source_columns:
+            if column.name in overwritten_names:
+                select_items.append(
+                    binder.placeholder(value_by_name[column.name]) + " AS " + _quoted(column.name)
+                )
+            else:
+                select_items.append(_quoted(column.name))
+        for item in derived_items:
+            name = str(item["name"])
+            if name not in overwritten_names:
+                select_items.append(binder.placeholder(item["value"]) + " AS " + _quoted(name))
+        return "SELECT " + ", ".join(select_items) + " FROM " + source_sql
+
     def _compile_expr(self, expr: Any, binder: _Binder, *, depth: int) -> str:
         if depth > _MAX_EXPR_DEPTH:
             raise AnalysisPlanValidationError("查询计划校验失败", [{"reason": "计算列表达式过深"}])
@@ -746,6 +824,35 @@ class _ShapeChecker:
             or any(not isinstance(item, str) for item in event_types)
         ):
             self.compiler._issue(self.node.id, "event_types 必须是字符串数组")
+
+    def stage_source_shape(
+        self,
+        params: Mapping[str, Any],
+    ) -> tuple[AnalysisColumn, ...]:
+        """内部阶段输入的形状：由物化阶段元数据声明，不进入公开节点契约。"""
+
+        stage_table = params.get("stage_table")
+        if not isinstance(stage_table, str) or not _IDENTIFIER_PATTERN.match(stage_table):
+            self.compiler._issue(self.node.id, "阶段表名不合法：" + str(stage_table))
+            return ()
+        raw_columns = self.compiler._as_list(params.get("columns"), self.node.id, "阶段列")
+        output: list[AnalysisColumn] = []
+        seen: set[str] = set()
+        for item in raw_columns:
+            name = item.get("name") if isinstance(item, dict) else None
+            type_ = item.get("type") if isinstance(item, dict) else None
+            if not isinstance(name, str) or not _COLUMN_NAME_PATTERN.match(name):
+                self.compiler._issue(self.node.id, "阶段列名不合法：" + str(name))
+                continue
+            if type_ not in _TYPE_VOCABULARY:
+                self.compiler._issue(self.node.id, "阶段列类型不合法：" + str(type_))
+                continue
+            if name in seen:
+                self.compiler._issue(self.node.id, "阶段列名重复：" + name)
+                continue
+            seen.add(name)
+            output.append(AnalysisColumn(name, type_))
+        return tuple(output)
 
     def project_shape(self, params: Mapping[str, Any]) -> tuple[AnalysisColumn, ...]:
         output: list[AnalysisColumn] = []
@@ -837,6 +944,47 @@ class _ShapeChecker:
                 continue
             taken.add(name)
             output.append(AnalysisColumn(name, expr_type))
+        return tuple(output)
+
+    def derive_shape(self, params: Mapping[str, Any]) -> tuple[AnalysisColumn, ...]:
+        """设置列值：新增类型化值列；同名同类型输入列改写为该值。"""
+
+        output = [AnalysisColumn(name, type_) for name, type_ in self.types.items()]
+        taken = set(self.types)
+        overridden: set[str] = set()
+        columns = self._list(params.get("columns"), "columns")
+        if not columns:
+            self.compiler._issue(self.node.id, "设置列值至少需要一列")
+        for item in columns:
+            name = self._field(item, "name")
+            type_ = self._field(item, "type")
+            value = item.get("value") if isinstance(item, dict) else None
+            if not isinstance(name, str) or not _COLUMN_NAME_PATTERN.match(name):
+                self.compiler._issue(self.node.id, "设置列值列名不合法：" + str(name))
+                continue
+            if type_ not in _TYPE_VOCABULARY:
+                self.compiler._issue(self.node.id, "设置列值类型不合法：" + str(type_))
+                continue
+            if not _literal_matches(type_, value):
+                self.compiler._issue(self.node.id, "设置列值字面量与类型不符：" + str(name))
+                continue
+            if name in self.types:
+                if type_ != self.types[name]:
+                    self.compiler._issue(
+                        self.node.id,
+                        "覆盖列类型须与输入列一致：" + name,
+                    )
+                    continue
+                if name in overridden:
+                    self.compiler._issue(self.node.id, "同一输入列不能重复覆盖：" + name)
+                    continue
+                overridden.add(name)
+                continue
+            if name in taken:
+                self.compiler._issue(self.node.id, "输出列名重复：" + name)
+                continue
+            taken.add(name)
+            output.append(AnalysisColumn(name, type_))
         return tuple(output)
 
     def join_shape(

@@ -17,7 +17,8 @@ from genshin_sim.core.systems.buff import (
     BuffModifierValue,
     BuffReentrancyError,
 )
-from genshin_sim.core.systems.damage import DamageType, DamageValidationError
+from genshin_sim.core.systems.damage import DamageValidationError
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_TRANSFORMATIVE_REACTION
 from genshin_sim.core.systems.reaction import ReactionStoreConflictError
 from tests.helpers.reactions import aura_request
 
@@ -163,7 +164,7 @@ def test_multi_target_root_uses_unique_round_one_work_ids(reaction_assembled):
             tuple(
                 record
                 for record in assembled.damage_handler.records
-                if record.result.damage_type is DamageType.TRANSFORMATIVE_REACTION
+                if record.result.formula_key == FORMULA_KEY_TRANSFORMATIVE_REACTION
             )
         )
         == 2

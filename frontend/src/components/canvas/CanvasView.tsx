@@ -72,8 +72,7 @@ export interface CanvasViewProps {
     position: { x: number; y: number },
     regionId: string | null,
   ) => void;
-  onResizeNode: (nodeId: string, size: NodeSize) => void;
-  onResizeNodeWithFixedWidth: (nodeId: string, size: NodeSize, configNodeId: string) => void;
+  onResizeNode: (nodeId: string, size: Partial<NodeSize>) => void;
   onMoveRegion: (regionId: string, position: { x: number; y: number }) => void;
   onResizeRegion: (
     regionId: string,
@@ -123,7 +122,6 @@ interface CallbackSnapshot {
   onRenameRegionRequestHandled: CanvasViewProps["onRenameRegionRequestHandled"];
   onMoveNode: CanvasViewProps["onMoveNode"];
   onResizeNode: CanvasViewProps["onResizeNode"];
-  onResizeNodeWithFixedWidth: CanvasViewProps["onResizeNodeWithFixedWidth"];
   onMoveRegion: CanvasViewProps["onMoveRegion"];
   onResizeRegion: CanvasViewProps["onResizeRegion"];
   onRenameRegion: CanvasViewProps["onRenameRegion"];
@@ -161,7 +159,6 @@ export function CanvasView({
   onRenameRegionRequestHandled,
   onMoveNode,
   onResizeNode,
-  onResizeNodeWithFixedWidth,
   onMoveRegion,
   onResizeRegion,
   onRenameRegion,
@@ -185,7 +182,6 @@ export function CanvasView({
     onRenameRegionRequestHandled,
     onMoveNode,
     onResizeNode,
-    onResizeNodeWithFixedWidth,
     onMoveRegion,
     onResizeRegion,
     onRenameRegion,
@@ -208,7 +204,6 @@ export function CanvasView({
       onRenameRegionRequestHandled,
       onMoveNode,
       onResizeNode,
-      onResizeNodeWithFixedWidth,
       onMoveRegion,
       onResizeRegion,
       onRenameRegion,
@@ -560,7 +555,6 @@ function buildNodes(
       analysisResult: analysisResults?.get(node.id),
       onParamsChange: callbacks.onParamsChange,
       onResizeNode: callbacks.onResizeNode,
-      onResizeNodeWithFixedWidth: callbacks.onResizeNodeWithFixedWidth,
       onDeleteNode: callbacks.onDeleteNode,
       onMoveEdgeOrder: callbacks.onMoveEdgeOrder,
       onLocateNode: callbacks.onLocateNode,

@@ -18,8 +18,9 @@ describe("节点类别配色", () => {
       ["enum", "range"],
       ["data_provider", "fetch"],
       ["filter", "project", "sort", "aggregate", "limit", "join", "compute"],
-      ["table_config", "timeline_config", "pie_config", "bar_config"],
-      ["member_table", "timeline", "pie", "bar"],
+      ["table_config", "pie_config", "bar_config"],
+      ["member_table", "pie", "bar"],
+      ["frame_state", "damage_detail", "state_detail", "attribute_detail"],
     ];
     const seen = new Set<string>();
     for (const group of groups) {
@@ -33,6 +34,8 @@ describe("节点类别配色", () => {
     expect(nodeKindColor("target")).toBe(COLORS.nodeCategory.targetConfig);
     expect(nodeKindColor("input_trace")).toBe(COLORS.nodeCategory.inputSequence);
     expect(nodeKindColor("simulation")).toBe(COLORS.nodeCategory.simulation);
+    expect(nodeKindColor("member_table")).toBe(COLORS.nodeCategory.displayView);
+    expect(nodeKindColor("damage_detail")).toBe(COLORS.nodeCategory.itemDetail);
   });
 
   it("区域对象使用区域色而非节点类别色", () => {

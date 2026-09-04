@@ -21,6 +21,7 @@ from genshin_sim.application.execution.models import (
 from genshin_sim.application.execution.protocols import ResultWriter
 from genshin_sim.application.input import SimulationInput
 from genshin_sim.assets import AssetRepository
+from genshin_sim.content import create_default_content_unit_registry
 from genshin_sim.core.events import EventSubscriber, EventType, GameEvent
 from genshin_sim.infrastructure.errors import (
     InfrastructureExecutionError,
@@ -55,9 +56,16 @@ class SynchronousSimulationExecutor:
         cls,
         asset_repository: AssetRepository,
         result_writer: ResultWriter,
+        *,
+        developer_mode: bool = False,
     ) -> SynchronousSimulationExecutor:
         return cls(
-            assembler=SimulationAssembler(asset_repository),
+            assembler=SimulationAssembler(
+                asset_repository,
+                content_unit_registry=create_default_content_unit_registry(
+                    developer_mode=developer_mode
+                ),
+            ),
             result_writer=result_writer,
             asset_repository=asset_repository,
         )
@@ -95,6 +103,7 @@ class SynchronousSimulationExecutor:
                     frame=event.frame,
                     event_type=event.event_type.name,
                     data=event.payload.to_dict(),
+                    ordinal=len(collected_events),
                 )
             )
 

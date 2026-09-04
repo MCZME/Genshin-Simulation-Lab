@@ -6,8 +6,11 @@ from typing import Any, cast
 import pytest
 
 from genshin_sim.application import (
+    AnalysisNodeExecution,
     AnalysisPlan,
     AnalysisReadSchema,
+    AnalysisStageResult,
+    AnalysisStageSelection,
     AnalysisTableResult,
     ApplicationError,
     ApplicationFacade,
@@ -27,6 +30,8 @@ from genshin_sim.application import (
     WorkflowSummary,
     WorkspaceInfo,
 )
+from genshin_sim.application.config import DeveloperConfig
+from genshin_sim.application.services.frame_state import fold_frame_state
 
 ApplicationFacadeFactory = Callable[..., ApplicationFacade]
 
@@ -39,21 +44,29 @@ class FakeApplicationFacade:
         *,
         workspace: WorkspaceInfo | None = None,
         ui_settings: UiConfig | None = None,
+        developer_settings: DeveloperConfig | None = None,
         workflows: tuple[WorkflowDetail, ...] = (),
         results: tuple[RunDetail, ...] = (),
         assets: tuple[AssetListItem, ...] = (),
         batch_runs: tuple[BatchRunStatus, ...] = (),
         analysis_plan_results: dict[str, AnalysisTableResult] | None = None,
+        analysis_stage_results: dict[str, AnalysisStageResult] | None = None,
         analysis_schema: AnalysisReadSchema | None = None,
     ) -> None:
         self.workspace = workspace or WorkspaceInfo("data", "2026.08.17", True)
         self.ui_settings = ui_settings or UiConfig()
+        self.developer_settings = developer_settings or DeveloperConfig()
         self.saved_ui_settings: list[bool] = []
+        self.saved_developer_settings: list[bool] = []
         self._workflows = {workflow.id: workflow for workflow in workflows}
         self._results = {run.session_id: run for run in results}
         self._assets = list(assets)
         self._batch_runs = {run.run_id: run for run in batch_runs}
         self._analysis_plan_results = analysis_plan_results or {}
+        self._analysis_stage_results = analysis_stage_results or {}
+        self._analysis_contexts: dict[str, tuple[str, ...]] = {}
+        self._analysis_stages: dict[str, AnalysisStageResult] = {}
+        self._analysis_context_seq = 0
         self._analysis_schema = analysis_schema
 
     def get_workspace(self) -> WorkspaceInfo:
@@ -118,6 +131,14 @@ class FakeApplicationFacade:
         self.saved_ui_settings.append(run_animation)
         self.ui_settings = UiConfig(run_animation=run_animation)
         return self.ui_settings
+
+    def get_developer_settings(self) -> DeveloperConfig:
+        return self.developer_settings
+
+    def save_developer_settings(self, *, enabled: bool) -> DeveloperConfig:
+        self.saved_developer_settings.append(enabled)
+        self.developer_settings = DeveloperConfig(enabled=enabled)
+        return self.developer_settings
 
     def validate_batch_inputs(self, members: list[BatchMember]) -> BatchValidationResult:
         if len(members) > 200:
@@ -257,6 +278,71 @@ class FakeApplicationFacade:
             _filter_events(self.get_run(session_id).events, frame_min, frame_max, event_type)
         )
 
+    def get_run_event(self, session_id: str, ordinal: int) -> RecordedEvent | None:
+        events = self.get_run(session_id).events
+        if ordinal < 0 or ordinal >= len(events):
+            return None
+        return events[ordinal]
+
+    def get_run_entities(self, session_id: str) -> dict[str, Any]:
+        run = self.get_run(session_id, include_events=False)
+        snapshot = run.input_snapshot
+        characters: list[dict[str, Any]] = []
+        asset_keys: list[str] = []
+        slots: list[int] = []
+        team = snapshot.get("team")
+        if isinstance(team, list):
+            for entry in team:
+                if not isinstance(entry, dict):
+                    continue
+                slot = entry.get("slot")
+                character = entry.get("character")
+                if not isinstance(slot, int) or not isinstance(character, dict):
+                    continue
+                asset_key = character.get("asset_key")
+                if not isinstance(asset_key, str) or not asset_key:
+                    continue
+                slots.append(slot)
+                asset_keys.append(asset_key)
+        names = {item.asset_key: item.name for item in self.resolve_assets(tuple(asset_keys))}
+        characters = [
+            {"slot": slot, "asset_key": asset_key, "name": names.get(asset_key, "")}
+            for slot, asset_key in zip(slots, asset_keys, strict=True)
+        ]
+        scene = snapshot.get("scene")
+        targets: list[dict[str, Any]] = []
+        if isinstance(scene, dict) and isinstance(scene.get("targets"), list):
+            for target in scene["targets"]:
+                if not isinstance(target, dict) or not isinstance(target.get("id"), str):
+                    continue
+                targets.append(
+                    {
+                        "id": target["id"],
+                        "label": target.get("label")
+                        if isinstance(target.get("label"), str)
+                        else "",
+                    }
+                )
+        return {"characters": characters, "targets": targets}
+
+    def get_frame_state(self, session_id: str, frame: int) -> dict[str, Any]:
+        try:
+            run = self._results[session_id]
+        except KeyError as exc:
+            raise ApplicationError("not_found", f"运行结果不存在：{session_id}") from exc
+        end_frame = None if run.summary is None else run.summary.end_frame
+        if end_frame is None or frame < 0 or frame > end_frame:
+            raise ApplicationError(
+                "frame_out_of_range",
+                f"frame {frame} 超出会话 {session_id} 的运行范围",
+            )
+        return fold_frame_state(
+            session_id=session_id,
+            frame=frame,
+            initial_snapshot=run.initial_snapshot or {},
+            events=tuple(event for event in run.events if event.frame <= frame),
+        )
+
     def execute_analysis_plan(self, plan: AnalysisPlan) -> dict[str, AnalysisTableResult]:
         try:
             return {node_id: self._analysis_plan_results[node_id] for node_id in plan.outputs}
@@ -267,6 +353,103 @@ class FakeApplicationFacade:
         if self._analysis_schema is None:
             raise ApplicationError("analysis_query_unavailable", "分析查询能力未配置")
         return self._analysis_schema
+
+    def create_analysis_context(self, session_ids: list[str]) -> str:
+        self._analysis_context_seq += 1
+        context_id = f"ctx_{self._analysis_context_seq:08x}"
+        self._analysis_contexts[context_id] = tuple(session_ids)
+        return context_id
+
+    def execute_analysis_node(
+        self,
+        context_id: str,
+        execution: AnalysisNodeExecution,
+    ) -> AnalysisStageResult:
+        self._require_analysis_context(context_id)
+        result = self._analysis_stage_results.get(execution.node_id)
+        if result is None:
+            raise ApplicationError(
+                "validation_failed",
+                f"未配置节点阶段结果：{execution.node_id}",
+            )
+        stage_id = f"stage_{len(self._analysis_stages) + 1:08x}"
+        stage = AnalysisStageResult(
+            stage_id=stage_id,
+            columns=result.columns,
+            rows=result.rows,
+            truncated=result.truncated,
+            source_node_id=execution.node_id,
+        )
+        self._analysis_stages[stage_id] = stage
+        return stage
+
+    def read_analysis_stage(self, context_id: str, stage_id: str) -> AnalysisStageResult:
+        self._require_analysis_context(context_id)
+        try:
+            return self._analysis_stages[stage_id]
+        except KeyError as exc:
+            raise ApplicationError("not_found", f"阶段不存在：{stage_id}") from exc
+
+    def select_analysis_stage(
+        self,
+        context_id: str,
+        stage_id: str,
+        selection: AnalysisStageSelection,
+    ) -> AnalysisStageResult:
+        source = self.read_analysis_stage(context_id, stage_id)
+        names = [column.name for column in source.columns]
+        if selection.kind == "row":
+            rows = (
+                ()
+                if selection.row_index is None or selection.row_index >= len(source.rows)
+                else (source.rows[selection.row_index],)
+            )
+        else:
+            wanted = dict(zip(selection.columns, selection.values, strict=True))
+            rows = tuple(
+                row
+                for row in source.rows
+                if all(row[names.index(column)] == value for column, value in wanted.items())
+            )
+        stage_id = f"stage_{len(self._analysis_stages) + 1:08x}"
+        stage = AnalysisStageResult(
+            stage_id=stage_id,
+            columns=source.columns,
+            rows=rows,
+            truncated=False,
+            source_node_id=source.source_node_id,
+        )
+        self._analysis_stages[stage_id] = stage
+        return stage
+
+    def merge_analysis_stages(
+        self,
+        context_id: str,
+        stage_ids: list[str] | tuple[str, ...],
+    ) -> AnalysisStageResult:
+        self._require_analysis_context(context_id)
+        sources = [self.read_analysis_stage(context_id, stage_id) for stage_id in stage_ids]
+        if len(sources) < 2:
+            raise ApplicationError("validation_failed", "合并至少需要两个输入阶段")
+        reference = sources[0]
+        stage_id = f"stage_{len(self._analysis_stages) + 1:08x}"
+        stage = AnalysisStageResult(
+            stage_id=stage_id,
+            columns=reference.columns,
+            rows=tuple(row for source in sources for row in source.rows),
+            truncated=any(source.truncated for source in sources),
+            source_node_id=reference.source_node_id,
+        )
+        self._analysis_stages[stage_id] = stage
+        return stage
+
+    def close_analysis_context(self, context_id: str) -> None:
+        self._require_analysis_context(context_id)
+        del self._analysis_contexts[context_id]
+
+    def _require_analysis_context(self, context_id: str) -> None:
+        if context_id not in self._analysis_contexts:
+            raise ApplicationError("not_found", f"分析上下文不存在：{context_id}")
 
     def list_assets(
         self,

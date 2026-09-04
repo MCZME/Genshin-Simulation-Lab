@@ -9,7 +9,6 @@ from genshin_sim.content import (
     BUILTIN_NOOP_CONTENT_HANDLER_KEYS,
     DULL_BLADE_HANDLER_KEY,
     HUNTER_BOW_HANDLER_KEY,
-    RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
     WASTER_GREATSWORD_HANDLER_KEY,
     CharacterContentUnitRequest,
     ContentUnitRegistry,
@@ -48,7 +47,6 @@ def test_default_content_unit_registry_exposes_builtin_characters():
     registry = create_default_content_unit_registry()
 
     assert registry.has_character_handler(BARBARA_CHARACTER_HANDLER_KEY)
-    assert registry.has_character_handler(RUNTIME_PROBE_CHARACTER_HANDLER_KEY)
 
 
 def test_default_content_unit_registry_exposes_starter_weapons():

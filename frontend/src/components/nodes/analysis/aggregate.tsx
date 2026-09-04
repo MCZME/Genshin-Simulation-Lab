@@ -176,7 +176,7 @@ export function AggregateEditor({ node, onChange }: EditorProps) {
         ))}
         <button
           type="button"
-          className="filter-add-button"
+          className="analysis-add-button"
           onClick={() =>
             onChange({
               ...node.params,
@@ -239,11 +239,11 @@ function AggregateRow({
           value={as}
           onChange={(value) => onChange({ as: value })}
         />
-        <button type="button" className="filter-row-remove" title="移除指标" onClick={onRemove}>
+        <button type="button" className="analysis-row-remove" title="移除指标" onClick={onRemove}>
           ×
         </button>
       </div>
-      {error !== null && <p className="filter-row-error">{error}</p>}
+      {error !== null && <p className="analysis-row-error">{error}</p>}
     </div>
   );
 }

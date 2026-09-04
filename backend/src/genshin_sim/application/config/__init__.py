@@ -2,6 +2,7 @@
 
 from genshin_sim.application.config.models import (
     PROJECT_CONFIG_SCHEMA_VERSION,
+    DeveloperConfig,
     ProjectConfig,
     UiConfig,
     WorkspaceConfig,
@@ -12,6 +13,7 @@ __all__ = [
     "ConfigError",
     "ConfigFileError",
     "PROJECT_CONFIG_SCHEMA_VERSION",
+    "DeveloperConfig",
     "ProjectConfig",
     "UiConfig",
     "WorkspaceConfig",

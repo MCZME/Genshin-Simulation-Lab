@@ -36,14 +36,18 @@ export const NODE_KINDS = [
   "limit",
   "join",
   "compute",
+  "derive",
+  "single",
   "table_config",
-  "timeline_config",
   "pie_config",
   "bar_config",
   "member_table",
-  "timeline",
   "pie",
   "bar",
+  "frame_state",
+  "damage_detail",
+  "state_detail",
+  "attribute_detail",
 ] as const;
 
 export type NodeKind = (typeof NODE_KINDS)[number];
@@ -55,11 +59,7 @@ export type DataLanguage =
   | "input_document"
   | "session"
   | "session_group"
-  | "table"
-  | "table_config"
-  | "timeline_config"
-  | "pie_config"
-  | "bar_config";
+  | "table";
 
 export type DiagnosticSeverity = "error" | "warning" | "info";
 
@@ -79,11 +79,14 @@ export interface WorkflowRegion {
   rect: Rect;
 }
 
-/** 可调尺寸节点的画布几何（宽高像素）；只对支持尺寸调节的视图节点持久化。 */
+/** 可调尺寸节点的画布几何（宽高像素）；只对支持尺寸调节的视图、详情与按键轨迹节点持久化。 */
 export interface NodeSize {
   width: number;
   height: number;
 }
+
+/** 可调尺寸节点的按轴画布几何：缺省轴表示未手动调节（内容驱动或默认值）。 */
+export type PartialNodeSize = Partial<NodeSize>;
 
 export interface WorkflowNode {
   id: string;
@@ -92,8 +95,8 @@ export interface WorkflowNode {
   region_id: string | null;
   position: { x: number; y: number };
   params: Record<string, unknown>;
-  /** 可选：视图节点手动调节后的尺寸；缺省表示按内容自适应宽度、默认高度。 */
-  size?: NodeSize;
+  /** 可选：支持尺寸调节节点（视图/详情/按键轨迹）手动调节后的按轴尺寸；缺省轴表示内容驱动/默认。 */
+  size?: PartialNodeSize;
 }
 
 export interface WorkflowEdge {

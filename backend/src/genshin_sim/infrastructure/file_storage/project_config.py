@@ -82,6 +82,11 @@ class ProjectConfigFileStore:
         ui = document["ui"]
         ui["run_animation"] = config.ui.run_animation
 
+        if "developer" not in document:
+            document["developer"] = tomlkit.table()
+        developer = document["developer"]
+        developer["enabled"] = config.developer.enabled
+
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(tomlkit.dumps(document), encoding="utf-8")
         return path

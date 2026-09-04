@@ -45,6 +45,7 @@ def _definitions() -> tuple[ResonanceDefinition, ...]:
                     ModifierStage.PERCENT_ADD,
                     0.25,
                     ("atk_percent",),
+                    display_name="测试共鸣攻击提升",
                 ),
             ),
         ),
@@ -71,6 +72,7 @@ def test_static_providers_expand_activation_to_each_slot_and_isolate_subjects():
     )
 
     assert len(providers) == 2
+    assert {provider.provider_spec.display_name for provider in providers} == {"元素共鸣"}
     slot_one = next(
         provider
         for provider in providers
@@ -95,6 +97,7 @@ def test_static_providers_expand_activation_to_each_slot_and_isolate_subjects():
     )
     assert len(terms) == 1
     assert terms[0].value == 0.25
+    assert terms[0].provider_display_name == "测试共鸣攻击提升"
     assert (
         slot_one.contribute(
             AttributeQuery(AttributeSubjectRef.character("character:slot_3"), STAT_ATK_TOTAL, 0),

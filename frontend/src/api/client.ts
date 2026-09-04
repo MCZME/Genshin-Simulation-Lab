@@ -42,6 +42,37 @@ export interface ExecutePlanResponse {
   tables: Record<string, AnalysisTableResponse>;
 }
 
+export interface CreateAnalysisContextRequest {
+  session_ids: string[];
+}
+
+export interface CreateAnalysisContextResponse {
+  context_id: string;
+}
+
+export interface NodeExecutionRequest {
+  node_id: string;
+  kind: string;
+  params: Record<string, unknown>;
+  input_stages: string[];
+}
+
+export interface StageResponse extends AnalysisTableResponse {
+  stage_id: string;
+  source_node_id?: string | null;
+}
+
+export interface StageSelectionRequest {
+  kind: "group" | "row";
+  columns?: string[];
+  values?: unknown[];
+  row_index?: number | null;
+}
+
+export interface MergeStagesRequest {
+  stage_ids: string[];
+}
+
 /** 输入快照结构树节点：对象 / 列表 / 标量；列表不枚举位置。 */
 export interface AnalysisSchemaNodeDto {
   key: string;
@@ -99,15 +130,18 @@ export async function getWorkspace(): Promise<WorkspaceResponse> {
   return request<WorkspaceResponse>("/workspace");
 }
 
-/** 界面偏好设置持久化在后端项目配置（config.toml 的 ui 节）。 */
+/** 界面偏好与开发者设置持久化在后端项目配置（config.toml 的 ui / developer 节）。 */
 export async function getUiSettings(): Promise<UiSettingsResponse> {
   return request<UiSettingsResponse>("/settings");
 }
 
-export async function saveUiSettings(runAnimation: boolean): Promise<UiSettingsResponse> {
+export async function saveUiSettings(
+  runAnimation: boolean,
+  developerEnabled: boolean,
+): Promise<UiSettingsResponse> {
   return request<UiSettingsResponse>("/settings", {
     method: "PUT",
-    body: JSON.stringify({ run_animation: runAnimation }),
+    body: JSON.stringify({ run_animation: runAnimation, developer_enabled: developerEnabled }),
   });
 }
 
@@ -221,6 +255,56 @@ export async function getResultDetail(sessionId: string): Promise<RunDetailRespo
   return request<RunDetailResponse>(`/results/${encodeURIComponent(sessionId)}`);
 }
 
+export type EventItem = Schema["EventItem"];
+export type EventPageResponse = Schema["EventPageResponse"];
+export type DamageEventView = Schema["DamageEventView"];
+export type EventDetailResponse = Schema["EventDetailResponse"];
+export type FrameStateResponse = Schema["FrameStateResponse"];
+export type FrameCharacterState = Schema["FrameCharacterState"];
+
+/** 事件分页（帧状态与伤害事件详情的 ordinal 入口）。 */
+export async function getResultEvents(
+  sessionId: string,
+  options: {
+    frameMin?: number;
+    frameMax?: number;
+    eventType?: string;
+    offset?: number;
+    limit?: number;
+  } = {},
+): Promise<EventPageResponse> {
+  const params = new URLSearchParams();
+  if (options.frameMin !== undefined) params.set("frame_min", String(options.frameMin));
+  if (options.frameMax !== undefined) params.set("frame_max", String(options.frameMax));
+  if (options.eventType !== undefined) params.set("event_type", options.eventType);
+  if (options.offset !== undefined) params.set("offset", String(options.offset));
+  if (options.limit !== undefined) params.set("limit", String(options.limit));
+  const query = params.toString();
+  return request<EventPageResponse>(
+    `/results/${encodeURIComponent(sessionId)}/events${query === "" ? "" : `?${query}`}`,
+  );
+}
+
+/** 单条事件详情；DAMAGE_RESOLVED 携带规范化伤害视图。 */
+export async function getResultEvent(
+  sessionId: string,
+  ordinal: number,
+): Promise<EventDetailResponse> {
+  return request<EventDetailResponse>(
+    `/results/${encodeURIComponent(sessionId)}/events/${encodeURIComponent(String(ordinal))}`,
+  );
+}
+
+/** 指定帧的帧末角色状态。 */
+export async function getFrameState(
+  sessionId: string,
+  frame: number,
+): Promise<FrameStateResponse> {
+  return request<FrameStateResponse>(
+    `/results/${encodeURIComponent(sessionId)}/frames/${encodeURIComponent(String(frame))}`,
+  );
+}
+
 /** 执行分析查询计划，返回输出表集合（契约 v2）。 */
 export async function executeAnalysisQuery(
   payload: ExecutePlanRequest,
@@ -229,6 +313,77 @@ export async function executeAnalysisQuery(
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+/** 创建分析节点运行时上下文（阶段结果留在后端）。 */
+export async function createAnalysisContext(
+  sessionIds: string[],
+): Promise<CreateAnalysisContextResponse> {
+  return request<CreateAnalysisContextResponse>("/analysis/runtime/contexts", {
+    method: "POST",
+    body: JSON.stringify({ session_ids: sessionIds } satisfies CreateAnalysisContextRequest),
+  });
+}
+
+/** 在上下文中执行单个节点并物化输出阶段。 */
+export async function executeAnalysisNode(
+  contextId: string,
+  payload: NodeExecutionRequest,
+): Promise<StageResponse> {
+  return request<StageResponse>(
+    `/analysis/runtime/contexts/${encodeURIComponent(contextId)}/nodes/execute`,
+    {
+      method: "POST",
+      body: JSON.stringify(payload),
+    },
+  );
+}
+
+/** 读取上下文内已物化阶段表。 */
+export async function readAnalysisStage(
+  contextId: string,
+  stageId: string,
+): Promise<StageResponse> {
+  return request<StageResponse>(
+    `/analysis/runtime/contexts/${encodeURIComponent(contextId)}/stages/${encodeURIComponent(stageId)}`,
+  );
+}
+
+/** 把视图点击选择派生为后端选择阶段。 */
+export async function selectAnalysisStage(
+  contextId: string,
+  stageId: string,
+  selection: StageSelectionRequest,
+): Promise<StageResponse> {
+  return request<StageResponse>(
+    `/analysis/runtime/contexts/${encodeURIComponent(contextId)}/stages/${encodeURIComponent(stageId)}/select`,
+    {
+      method: "POST",
+      body: JSON.stringify(selection),
+    },
+  );
+}
+
+/** 把同结构阶段按行拼接为饼图/柱状图选择输入阶段。 */
+export async function mergeAnalysisStages(
+  contextId: string,
+  stageIds: string[],
+): Promise<StageResponse> {
+  return request<StageResponse>(
+    `/analysis/runtime/contexts/${encodeURIComponent(contextId)}/merge`,
+    {
+      method: "POST",
+      body: JSON.stringify({ stage_ids: stageIds } satisfies MergeStagesRequest),
+    },
+  );
+}
+
+/** 关闭分析节点运行时上下文并回收阶段。 */
+export async function closeAnalysisContext(contextId: string): Promise<void> {
+  await request<undefined>(
+    `/analysis/runtime/contexts/${encodeURIComponent(contextId)}`,
+    { method: "DELETE" },
+  );
 }
 
 /** 取数节点编辑器的可读 schema：表列、事件类型与载荷字段。 */

@@ -495,3 +495,102 @@ def test_init_result_database_allows_same_version_reinit(tmp_path):
         sqlite3.connect(db_path).execute("SELECT key, value FROM result_db_meta").fetchall()
     )
     assert stored["schema_version"] == RESULTS_SCHEMA_VERSION
+
+
+def test_get_events_and_get_run_return_ordinal(tmp_path):
+    db_path = tmp_path / "results.db"
+    writer = SQLiteResultWriter(db_path)
+    run = CompletedSimulationRun(
+        input_schema_version=2,
+        input_kind="simulation_input",
+        input_meta={"name": "Ordinals"},
+        input_snapshot={"schema_version": 2, "kind": "simulation_input"},
+        summary=SimulationRunSummary(
+            stop_reason="MAX_FRAMES",
+            end_frame=3,
+            frames_run=3,
+        ),
+        events=(
+            RecordedEvent(frame=1, event_type="SIMULATION_STARTED", data={}),
+            RecordedEvent(frame=2, event_type="DAMAGE_RESOLVED", data={"damage": 10}),
+            RecordedEvent(frame=3, event_type="SIMULATION_ENDED", data={}),
+        ),
+    )
+    session_id = writer.save_run(run)
+    repository = SQLiteResultRepository(db_path)
+
+    assert [event.ordinal for event in repository.get_events(session_id)] == [0, 1, 2]
+    detail = repository.get_run(session_id)
+    assert [event.ordinal for event in detail.events] == [0, 1, 2]
+
+
+def test_get_event_reads_single_event_by_ordinal(tmp_path):
+    db_path = tmp_path / "results.db"
+    writer = SQLiteResultWriter(db_path)
+    run = CompletedSimulationRun(
+        input_schema_version=2,
+        input_kind="simulation_input",
+        input_meta={"name": "Single Event"},
+        input_snapshot={"schema_version": 2, "kind": "simulation_input"},
+        summary=SimulationRunSummary(
+            stop_reason="MAX_FRAMES",
+            end_frame=2,
+            frames_run=2,
+        ),
+        events=(
+            RecordedEvent(frame=1, event_type="SIMULATION_STARTED", data={"ok": True}),
+            RecordedEvent(frame=2, event_type="DAMAGE_RESOLVED", data={"damage": 10}),
+        ),
+    )
+    session_id = writer.save_run(run)
+    repository = SQLiteResultRepository(db_path)
+
+    event = repository.get_event(session_id, 1)
+    assert event is not None
+    assert event.ordinal == 1
+    assert event.event_type == "DAMAGE_RESOLVED"
+    assert event.data == {"damage": 10}
+
+    assert repository.get_event(session_id, 99) is None
+    with pytest.raises(ResultNotFoundError):
+        repository.get_event("missing-session", 0)
+    with pytest.raises(ValueError):
+        repository.get_event(session_id, -1)
+
+
+def test_get_initial_snapshot_returns_saved_baseline(tmp_path):
+    db_path = tmp_path / "results.db"
+    writer = SQLiteResultWriter(db_path)
+    run = CompletedSimulationRun(
+        input_schema_version=2,
+        input_kind="simulation_input",
+        input_meta={"name": "Snapshot Run"},
+        input_snapshot={"schema_version": 2, "kind": "simulation_input"},
+        initial_snapshot={"frame": 0, "providers": {"team": {"active_slot": 1}}},
+        summary=SimulationRunSummary(
+            stop_reason="MAX_FRAMES",
+            end_frame=1,
+            frames_run=1,
+        ),
+        events=(),
+    )
+    session_id = writer.save_run(run)
+    failed_session = writer.save_failed_run(
+        FailedSimulationRun(
+            session_id="failed-snapshot",
+            input_schema_version=2,
+            input_kind="simulation_input",
+            input_meta={"name": "Failed"},
+            input_snapshot={"schema_version": 2, "kind": "simulation_input"},
+            error_message="boom",
+        )
+    )
+    repository = SQLiteResultRepository(db_path)
+
+    assert repository.get_initial_snapshot(session_id) == {
+        "frame": 0,
+        "providers": {"team": {"active_slot": 1}},
+    }
+    assert repository.get_initial_snapshot(failed_session) is None
+    with pytest.raises(ResultNotFoundError):
+        repository.get_initial_snapshot("missing-session")

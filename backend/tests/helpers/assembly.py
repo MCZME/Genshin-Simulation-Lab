@@ -2,12 +2,12 @@
 
 from __future__ import annotations
 
-import sqlite3
 from collections.abc import Mapping
 from pathlib import Path
 
 from genshin_sim.application.assembly import SimulationAssembler
 from genshin_sim.application.input import SimulationInput
+from genshin_sim.content import create_default_content_unit_registry
 from genshin_sim.core.actions import (
     ActionInterpretationResult,
     ActionInterpretationTrigger,
@@ -24,9 +24,12 @@ from genshin_sim.core.attributes import (
 )
 from genshin_sim.core.impacts import ActionImpactContext, ImpactKind, ImpactRequest
 from genshin_sim.core.space import CreatedObjectRuntimeState
-from genshin_sim.infrastructure.assets_sqlite import (
-    SQLiteAssetRepository,
-    write_minimal_static_asset_database,
+from genshin_sim.infrastructure.assets_sqlite import SQLiteAssetRepository
+from tests.helpers.fixture_assets import (
+    FIXTURE_ARTIFACT_SET_ASSET_KEY,
+    FIXTURE_CHARACTER_ASSET_KEY,
+    FIXTURE_WEAPON_ASSET_KEY,
+    write_fixture_asset_database,
 )
 
 
@@ -187,12 +190,12 @@ def static_asset_input_payload(
     include_weapon: bool = False,
     include_artifact_set: bool = False,
 ) -> dict[str, object]:
-    """面向静态资产库（write_minimal_static_asset_database）的单角色仿真输入。"""
+    """面向零行为夹具角色的单角色仿真输入（不含 content/test）。"""
 
     team_member: dict[str, object] = {
         "slot": 1,
         "character": {
-            "asset_key": "character:test_character",
+            "asset_key": FIXTURE_CHARACTER_ASSET_KEY,
             "level": 90,
             "constellation": 0,
             "talents": {"normal_attack": 1},
@@ -201,13 +204,13 @@ def static_asset_input_payload(
     }
     if include_weapon:
         team_member["weapon"] = {
-            "asset_key": "weapon:test_sword",
+            "asset_key": FIXTURE_WEAPON_ASSET_KEY,
             "level": 90,
             "refinement": 1,
         }
     if include_artifact_set:
         team_member["artifacts"] = {
-            "sets": [{"asset_key": "artifact_set:test_set", "pieces": 4}],
+            "sets": [{"asset_key": FIXTURE_ARTIFACT_SET_ASSET_KEY, "pieces": 4}],
             "stats": {},
         }
     return {
@@ -227,7 +230,8 @@ def static_asset_input_payload(
             ]
         },
         "input_trace": input_trace
-        or [
+        if input_trace is not None
+        else [
             {"frame": 1, "events": [{"key": "keyboard.e", "phase": "press"}]},
             {"frame": 2, "events": [{"key": "keyboard.e", "phase": "release"}]},
         ],
@@ -246,19 +250,11 @@ def build_reaction_assembled(
     elemental_mastery: float | None = None,
 ):
     asset_db = tmp_path / "assets.db"
-    write_minimal_static_asset_database(asset_db)
-    if elemental_mastery is not None:
-        with sqlite3.connect(asset_db) as connection:
-            cursor = connection.execute(
-                """
-                UPDATE character_level_stats
-                SET ascension_stat = ?, ascension_value = ?
-                WHERE character_key = ? AND level = ?
-                """,
-                ("elemental_mastery", elemental_mastery, "character:test_character", 90),
-            )
-        assert cursor.rowcount == 1
-    return SimulationAssembler(SQLiteAssetRepository(asset_db)).assemble(
+    write_fixture_asset_database(asset_db, elemental_mastery=elemental_mastery)
+    return SimulationAssembler(
+        SQLiteAssetRepository(asset_db),
+        content_unit_registry=create_default_content_unit_registry(),
+    ).assemble(
         SimulationInput.from_mapping(
             static_asset_input_payload(
                 meta_name=meta_name,

@@ -16,8 +16,17 @@ describe("分析节点注册表", () => {
     expect(spec?.ports.outputs[0].cardinality).toBe("single");
   });
 
-  it("六个单输入算子均为结果表入出，连接为双输入", () => {
-    const single = ["filter", "project", "sort", "aggregate", "limit", "compute"] as const;
+  it("单输入算子均为结果表入出，连接为双输入", () => {
+    const single = [
+      "filter",
+      "project",
+      "sort",
+      "aggregate",
+      "limit",
+      "single",
+      "compute",
+      "derive",
+    ] as const;
     for (const kind of single) {
       const spec = getNodeKindSpec(kind);
       expect(spec?.ports.inputs).toHaveLength(1);
@@ -26,6 +35,15 @@ describe("分析节点注册表", () => {
     }
     const join = getNodeKindSpec("join");
     expect(join?.ports.inputs.map((port) => port.id)).toEqual(["left", "right"]);
+  });
+
+  it("表格视图与单项详情端口均使用 table 语言", () => {
+    const member = getNodeKindSpec("member_table");
+    expect(member?.ports.outputs[0].dataLanguage).toBe("table");
+    for (const kind of ["frame_state", "damage_detail", "state_detail", "attribute_detail"]) {
+      const spec = getNodeKindSpec(kind);
+      expect(spec?.ports.inputs[0].dataLanguage).toBe("table");
+    }
   });
 
   it("旧的处理与查询参数配置节点已退役", () => {
@@ -62,32 +80,16 @@ describe("分析节点注册表", () => {
     expect(overLimit.some((item) => item.message.includes("最多 1000 个"))).toBe(true);
   });
 
-  it("表格配置节点默认自适应宽度", () => {
+  it("表格配置不再持有宽度模式参数", () => {
     const spec = getNodeKindSpec("table_config");
     expect(spec?.paramFields).toEqual({
       condition_columns: { type: "list" },
       data_columns: { type: "list" },
-      width_mode: { type: "list" },
     });
     expect(spec?.defaultParams).toEqual({
       condition_columns: [],
       data_columns: [],
-      width_mode: "auto",
     });
-  });
-
-  it("表格配置拒绝非法宽度模式", () => {
-    const base = {
-      id: "config-1",
-      kind: "table_config",
-      region_id: "analysis-1",
-      position: { x: 0, y: 0 },
-    } as const;
-    const badMode = validateNode({
-      ...base,
-      params: { condition_columns: ["a"], data_columns: [], width_mode: "stretch" },
-    });
-    expect(badMode.some((item) => item.path === "width_mode")).toBe(true);
   });
 });
 
@@ -255,6 +257,69 @@ describe("形状推导", () => {
       const definition = definitionWith(nodes, edges);
       expect(computeAnalysisShapes(definition).get(item.id)).toBeNull();
     }
+  });
+
+  it("设置列值按类型化值追加输出列", () => {
+    const definition = definitionWith(
+      [
+        baseNode({ id: "runs1" }),
+        baseNode({
+          id: "d1",
+          kind: "derive",
+          params: {
+            columns: [
+              { name: "attribute_key", type: "string", value: "stat.crit_rate" },
+              { name: "probe_frame", type: "int", value: 600 },
+              { name: "enabled", type: "bool", value: true },
+            ],
+          },
+        }),
+      ],
+      [
+        {
+          id: "e1",
+          source_node_id: "runs1",
+          source_port_id: "out",
+          target_node_id: "d1",
+          target_port_id: "in",
+        },
+      ],
+    );
+    const shape = computeAnalysisShapes(definition).get("d1");
+    expect(shape?.slice(-3).map((column) => column.name)).toEqual([
+      "attribute_key",
+      "probe_frame",
+      "enabled",
+    ]);
+    expect(shape?.slice(-1)[0]?.type).toBe("bool");
+  });
+
+  it("设置列值可覆盖同类型输入列且不产生重复列", () => {
+    const definition = definitionWith(
+      [
+        baseNode({ id: "runs1" }),
+        baseNode({
+          id: "d1",
+          kind: "derive",
+          params: {
+            columns: [
+              { name: "stop_reason", type: "string", value: "REWRITTEN" },
+            ],
+          },
+        }),
+      ],
+      [
+        {
+          id: "e1",
+          source_node_id: "runs1",
+          source_port_id: "out",
+          target_node_id: "d1",
+          target_port_id: "in",
+        },
+      ],
+    );
+    const shape = computeAnalysisShapes(definition).get("d1");
+    expect(shape?.filter((column) => column.name === "stop_reason")).toHaveLength(1);
   });
 
   it("compute 非法表达式不可推导", () => {

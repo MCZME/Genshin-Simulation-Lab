@@ -53,11 +53,6 @@ from genshin_sim.content.characters.mondstadt.barbara.data import (
 from genshin_sim.content.characters.mondstadt.barbara.effects import (
     create_barbara_encore_effect,
 )
-from genshin_sim.content.characters.testing.runtime_probe import (
-    RUNTIME_PROBE_ACTION_KEY,
-    RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-    RUNTIME_PROBE_IMPACT_KEY,
-)
 from genshin_sim.content.hooks import (
     HookContext,
     HookDispatcher,
@@ -211,9 +206,6 @@ __all__ = [
     "MAIDEN_BELOVED_CONTENT_VERSION",
     "MAIDEN_BELOVED_HANDLER_KEY",
     "Modifier",
-    "RUNTIME_PROBE_ACTION_KEY",
-    "RUNTIME_PROBE_CHARACTER_HANDLER_KEY",
-    "RUNTIME_PROBE_IMPACT_KEY",
     "RESONANCE_DENDRO_EM_20_BUFF_KEY",
     "RESONANCE_DENDRO_EM_30_BUFF_KEY",
     "RESONANCE_GEO_RES_SHRED_BUFF_KEY",

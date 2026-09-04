@@ -65,6 +65,17 @@ class _FakeResultRepository:
     def count_events(self, session_id: str, **kwargs: object) -> int:
         return len(self.get_events(session_id, **kwargs))
 
+    def get_event(self, session_id: str, ordinal: int) -> RecordedEvent | None:
+        assert session_id == "run:1"
+        events = self._run.events
+        if ordinal < 0 or ordinal >= len(events):
+            return None
+        return events[ordinal]
+
+    def get_initial_snapshot(self, session_id: str) -> dict[str, object] | None:
+        assert session_id == "run:1"
+        return self._run.initial_snapshot
+
 
 def test_results_service_counts_filtered_events():
     run = RunDetail(
@@ -88,6 +99,32 @@ def test_results_service_counts_filtered_events():
     count = service.count_events("run:1", frame_min=2, event_type="DAMAGE_RESOLVED")
 
     assert count == 1
+
+
+def test_results_service_reads_single_event_by_ordinal():
+    run = RunDetail(
+        session_id="run:1",
+        state="completed",
+        input_snapshot={},
+        initial_snapshot=None,
+        summary=None,
+        events=(
+            RecordedEvent(frame=1, event_type="INPUT", data={}, ordinal=0),
+            RecordedEvent(frame=2, event_type="DAMAGE_RESOLVED", data={}, ordinal=1),
+        ),
+        error_code=None,
+        error_message=None,
+        created_at="2026-08-11T00:00:00+00:00",
+        started_at=None,
+        finished_at=None,
+    )
+    service = ResultsService(cast(ResultRepository, _FakeResultRepository(run)))
+
+    found = service.get_event("run:1", 1)
+    assert found is not None
+    assert found.event_type == "DAMAGE_RESOLVED"
+    assert found.ordinal == 1
+    assert service.get_event("run:1", 99) is None
 
 
 def test_results_service_reorders_session_ids_like_request():

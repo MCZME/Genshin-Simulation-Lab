@@ -5,6 +5,10 @@ import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
 import type { AnalysisTableResult } from "../../workflow/templates";
 import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 import {
+  AnalysisSelectionContext,
+  AnalysisStageSelectionContext,
+} from "../analysis_context";
+import {
   AnalysisViewBody,
   compareCells,
   countHiddenColumns,
@@ -12,7 +16,7 @@ import {
   estimateTextWidth,
   formatCell,
   sortRows,
-  type MemberTableFitInfo,
+  type ViewFitInfo,
 } from "./views";
 
 afterEach(() => {
@@ -60,28 +64,34 @@ function definitionWith(
       },
     ],
     edges: [
-      ...(withDataEdge
+      ...(withDataEdge && withConfigEdge
         ? [
             {
               id: "e-data",
               source_node_id: "fetch-1",
               source_port_id: "out",
+              target_node_id: "config-1",
+              target_port_id: "in",
+            },
+            {
+              id: "e-forward",
+              source_node_id: "config-1",
+              source_port_id: "out",
               target_node_id: "view-1",
               target_port_id: "in",
             },
           ]
-        : []),
-      ...(withConfigEdge
-        ? [
-            {
-              id: "e-config",
-              source_node_id: "config-1",
-              source_port_id: "out",
-              target_node_id: "view-1",
-              target_port_id: "config",
-            },
-          ]
-        : []),
+        : withDataEdge
+          ? [
+              {
+                id: "e-data",
+                source_node_id: "fetch-1",
+                source_port_id: "out",
+                target_node_id: "view-1",
+                target_port_id: "in",
+              },
+            ]
+          : []),
     ],
     layout: {},
   };
@@ -123,7 +133,7 @@ function renderView(
   result: AnalysisNodeResult | undefined,
   options: { withDataEdge?: boolean; withConfigEdge?: boolean } = {},
   onLocateNode: (nodeId: string) => void = vi.fn(),
-  viewOptions: { viewWidth?: number; onFitChange?: (info: MemberTableFitInfo) => void } = {},
+  viewOptions: { viewWidth?: number; onFitChange?: (info: ViewFitInfo) => void } = {},
 ) {
   const definition = definitionWith(
     { condition_columns: ["weapon"], data_columns: ["total_damage", "dps"] },
@@ -147,9 +157,14 @@ describe("表格视图", () => {
     expect(screen.getByText(/未连接数据源/)).not.toBeNull();
   });
 
-  it("缺少表格配置时显示提示", () => {
+  it("直连数据且无配置时默认显示全部列", () => {
     renderView(readyResult(), { withConfigEdge: false });
-    expect(screen.getByText(/缺少表格配置/)).not.toBeNull();
+    expect(headerNames()).toEqual([
+      "session_id",
+      "weapon",
+      "total_damage",
+      "dps",
+    ]);
   });
 
   it("配置未绑定列时提示并可定位到配置节点", () => {
@@ -291,6 +306,81 @@ describe("表格视图", () => {
     expect(within(rows[3]).getByText("2")).not.toBeNull();
   });
 
+  it("排序后点击行把原始行号提交给后端行选择", () => {
+    const definition = definitionWith({
+      condition_columns: ["weapon"],
+      data_columns: ["total_damage"],
+    });
+    const stageSelect = vi.fn();
+    const selectionSelect = vi.fn();
+    render(
+      <AnalysisSelectionContext.Provider
+        value={{ selections: new Map(), select: selectionSelect }}
+      >
+        <AnalysisStageSelectionContext.Provider
+          value={{
+            records: new Map(),
+            contextIdFor: () => "ctx-1",
+            select: stageSelect,
+          }}
+        >
+          <AnalysisViewBody
+            node={viewNode(definition)}
+            definition={definition}
+            result={{
+              status: "ready",
+              table: sampleTable(),
+              stage_id: "stage-view",
+            }}
+          />
+        </AnalysisStageSelectionContext.Provider>
+      </AnalysisSelectionContext.Provider>,
+    );
+
+    fireEvent.click(
+      screen.getByRole("columnheader", { name: /total_damage/ }),
+    );
+    const rows = screen.getAllByRole("row").slice(1);
+    expect(rows[0].textContent).toContain("polearm");
+
+    fireEvent.click(rows[0]);
+
+    expect(selectionSelect).toHaveBeenCalledWith("view-1", null);
+    expect(selectionSelect).toHaveBeenCalledTimes(1);
+    expect(stageSelect).toHaveBeenLastCalledWith("view-1", {
+      kind: "row",
+      row_index: 2,
+    });
+  });
+
+  it("无后端阶段时点击行以单行表作为选择输出", () => {
+    const definition = definitionWith({
+      condition_columns: ["weapon"],
+      data_columns: ["total_damage"],
+    });
+    const selectionSelect = vi.fn();
+    const table = sampleTable();
+    render(
+      <AnalysisSelectionContext.Provider
+        value={{ selections: new Map(), select: selectionSelect }}
+      >
+        <AnalysisViewBody
+          node={viewNode(definition)}
+          definition={definition}
+          result={{ status: "ready", table }}
+        />
+      </AnalysisSelectionContext.Provider>,
+    );
+
+    fireEvent.click(screen.getAllByRole("row")[1]);
+
+    expect(selectionSelect).toHaveBeenCalledWith("view-1", {
+      columns: table.columns,
+      rows: [table.rows[0]],
+      truncated: false,
+    });
+  });
+
   it("高亮最大/最小作用于数据列并可清除", () => {
     renderView(readyResult());
     const damageHeader = screen.getByRole("columnheader", { name: /total_damage/ });
@@ -329,9 +419,11 @@ describe("表格视图", () => {
       onFitChange,
     });
     expect(onFitChange).toHaveBeenCalled();
-    const info = onFitChange.mock.calls[0][0] as MemberTableFitInfo;
+    const info = onFitChange.mock.calls[0][0] as ViewFitInfo;
     expect(info.fitWidth).toBeGreaterThan(200);
     expect(info.hiddenColumns).toBeGreaterThan(0);
+    expect(info.fitHeight).not.toBeNull();
+    expect(info.fitHeight!).toBeGreaterThan(0);
     expect(
       screen.getByLabelText(new RegExp(`还有 ${info.hiddenColumns} 列被隐藏`)),
     ).not.toBeNull();

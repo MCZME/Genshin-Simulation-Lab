@@ -15,7 +15,7 @@ from genshin_sim.core.elements import (
     ElementalSubjectRef,
 )
 from genshin_sim.core.systems.aura import AuraApplicationRequest, AuraStrength
-from genshin_sim.core.systems.damage import DamageType
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_TRANSFORMATIVE_REACTION
 from tests.helpers.reactions import aura_request
 
 
@@ -63,7 +63,7 @@ def test_transformative_reactions_use_confirmed_damage_and_exact_consumption(
     reaction_records = tuple(
         record
         for record in assembled.damage_handler.records
-        if record.result.damage_type is DamageType.TRANSFORMATIVE_REACTION
+        if record.result.formula_key == FORMULA_KEY_TRANSFORMATIVE_REACTION
     )
     assert len(reaction_records) == 1
     result = reaction_records[0].result
@@ -109,7 +109,7 @@ def test_overloaded_gate_blocks_second_damage_but_not_occurrence(golden_assemble
     reaction_records = tuple(
         record
         for record in assembled.damage_handler.records
-        if record.result.damage_type is DamageType.TRANSFORMATIVE_REACTION
+        if record.result.formula_key == FORMULA_KEY_TRANSFORMATIVE_REACTION
     )
     assert len(reaction_records) == 1
     assert len(assembled.reaction_runtime.gate_records) == 1
@@ -202,7 +202,7 @@ def test_reaction_effect_group_includes_five_meter_boundary_with_stable_targets(
     targets = tuple(
         record.result.target_ref.entity_id
         for record in assembled.damage_handler.records
-        if record.result.damage_type is DamageType.TRANSFORMATIVE_REACTION
+        if record.result.formula_key == FORMULA_KEY_TRANSFORMATIVE_REACTION
     )
     assert targets == ("target:target_1", "target:target_2")
 

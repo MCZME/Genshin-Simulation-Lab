@@ -21,7 +21,7 @@ from genshin_sim.core.events import (
     ReactionOccurredPayload,
 )
 from genshin_sim.core.systems.aura import AuraStrength
-from genshin_sim.core.systems.damage import DamageType
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_TRANSFORMATIVE_REACTION
 from tests.helpers.reactions import apply_aura, aura_request
 
 
@@ -672,7 +672,7 @@ def _reaction_records(assembled):
     return tuple(
         record
         for record in assembled.damage_handler.records
-        if record.result.damage_type is DamageType.TRANSFORMATIVE_REACTION
+        if record.result.formula_key == FORMULA_KEY_TRANSFORMATIVE_REACTION
     )
 
 

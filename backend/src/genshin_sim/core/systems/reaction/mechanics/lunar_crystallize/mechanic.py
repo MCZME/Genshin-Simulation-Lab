@@ -3,7 +3,8 @@
 from __future__ import annotations
 
 from genshin_sim.core.elements import AuraKind, Element
-from genshin_sim.core.systems.damage import DamageProfile, DamageType
+from genshin_sim.core.systems.damage import DamageProfile
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_LUNAR_REACTION
 from genshin_sim.core.systems.reaction.mechanics.lunar_crystallize.keys import (
     LUNAR_CAGE_COUNT,
     LUNAR_CAGE_SPATIAL_PROFILE_KEY,
@@ -11,7 +12,6 @@ from genshin_sim.core.systems.reaction.mechanics.lunar_crystallize.keys import (
     LUNAR_CAGE_TEAM_SCOPE,
     LUNAR_CRYSTALLIZE_CAPABILITY_KEY,
     LUNAR_CRYSTALLIZE_DAMAGE_KIND_KEY,
-    LUNAR_CRYSTALLIZE_DAMAGE_PROFILE_KEY,
     LUNAR_CRYSTALLIZE_GEO_ON_HYDRO_PROFILE_KEY,
     LUNAR_CRYSTALLIZE_HANDLER_KEY,
     LUNAR_CRYSTALLIZE_REACTION_KEY,
@@ -142,16 +142,14 @@ def lunar_crystallize_definition() -> ReactionDefinition:
 def lunar_crystallize_damage_profiles() -> tuple[DamageProfile, ...]:
     return (
         DamageProfile(
-            LUNAR_CRYSTALLIZE_DAMAGE_PROFILE_KEY,
-            DamageType.LUNAR_REACTION,
-            frozenset({LUNAR_CRYSTALLIZE_REACTION_KEY}),
+            formula_key=FORMULA_KEY_LUNAR_REACTION,
+            main_attack_tags=frozenset({LUNAR_CRYSTALLIZE_REACTION_KEY}),
         ),
     )
 
 
 __all__ = (
     "LUNAR_CRYSTALLIZE_DAMAGE_KIND_KEY",
-    "LUNAR_CRYSTALLIZE_DAMAGE_PROFILE_KEY",
     "LunarCrystallizeRule",
     "lunar_crystallize_definition",
     "lunar_crystallize_damage_profiles",

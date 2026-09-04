@@ -56,15 +56,15 @@ function definitionWith(configParams: Record<string, unknown>): WorkflowDefiniti
         id: "e-data",
         source_node_id: "fetch-1",
         source_port_id: "out",
-        target_node_id: "view-1",
+        target_node_id: "config-1",
         target_port_id: "in",
       },
       {
-        id: "e-config",
+        id: "e-forward",
         source_node_id: "config-1",
         source_port_id: "out",
         target_node_id: "view-1",
-        target_port_id: "config",
+        target_port_id: "in",
       },
     ],
     layout: {},
@@ -114,7 +114,6 @@ describe("表格配置节点编辑器", () => {
     expect(onChange).toHaveBeenCalledWith({
       condition_columns: ["weapon_key"],
       data_columns: ["frames_run"],
-      width_mode: "auto",
     });
   });
 
@@ -134,7 +133,6 @@ describe("表格配置节点编辑器", () => {
     expect(onChange).toHaveBeenLastCalledWith({
       condition_columns: ["char_key"],
       data_columns: [],
-      width_mode: "auto",
     });
   });
 
@@ -169,7 +167,6 @@ describe("表格配置节点编辑器", () => {
     expect(onChange).toHaveBeenLastCalledWith({
       condition_columns: ["weapon_key", "char_key"],
       data_columns: [],
-      width_mode: "auto",
     });
   });
 
@@ -191,7 +188,6 @@ describe("表格配置节点编辑器", () => {
     expect(onChange).toHaveBeenLastCalledWith({
       condition_columns: [],
       data_columns: ["weapon_key", "frames_run"],
-      width_mode: "auto",
     });
   });
 
@@ -204,30 +200,14 @@ describe("表格配置节点编辑器", () => {
     expect(onChange).toHaveBeenLastCalledWith({
       condition_columns: ["char_key"],
       data_columns: [],
-      width_mode: "auto",
     });
   });
 
-  it("宽度模式写入表格配置参数", () => {
-    const onChange = renderEditor({
-      condition_columns: ["weapon_key"],
-      data_columns: [],
-    });
-    fireEvent.change(screen.getByLabelText("宽度模式"), {
-      target: { value: "fixed" },
-    });
-    expect(onChange).toHaveBeenLastCalledWith({
-      condition_columns: ["weapon_key"],
-      data_columns: [],
-      width_mode: "fixed",
-    });
-  });
-
-  it("未连接视图时提示无可用列", () => {
+  it("未连接上游数据时提示无可用列", () => {
     const definition = definitionWith({ condition_columns: [], data_columns: [] });
     const disconnected = {
       ...definition,
-      edges: definition.edges.filter((edge) => edge.id !== "e-config"),
+      edges: definition.edges.filter((edge) => edge.id !== "e-data"),
     };
     setAnalysisEditorEnvironment({
       catalog: null,
@@ -236,6 +216,6 @@ describe("表格配置节点编辑器", () => {
     });
     const node = definition.nodes.find((item) => item.id === "config-1") as WorkflowNode;
     render(<TableConfigEditor node={node} onChange={vi.fn()} />);
-    expect(screen.getByText(/连接视图并接通数据源/)).not.toBeNull();
+    expect(screen.getByText(/连接上游表节点/)).not.toBeNull();
   });
 });

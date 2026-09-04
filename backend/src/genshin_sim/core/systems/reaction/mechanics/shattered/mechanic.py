@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from genshin_sim.core.elements import AuraAmount, AuraKind, Element
 from genshin_sim.core.impacts import StrikeType
+from genshin_sim.core.systems.damage import DamageProfile
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_TRANSFORMATIVE_REACTION
 from genshin_sim.core.systems.reaction.gates import ReactionDamageGateDefinition
 from genshin_sim.core.systems.reaction.models import (
     CapturedTransformativeScalingBasis,
@@ -129,4 +131,13 @@ def shattered_gate_definitions() -> tuple[ReactionDamageGateDefinition, ...]:
             30,
             2,
         ),
+    )
+
+
+def shattered_damage_profile() -> DamageProfile:
+    """普通碎冰使用的生产剧变 Damage Profile。"""
+
+    return DamageProfile(
+        formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
+        main_attack_tags=frozenset({SHATTERED_REACTION_KEY}),
     )

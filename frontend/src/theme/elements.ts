@@ -80,9 +80,8 @@ export const EVENT_TYPE_LABELS: Record<string, string> = {
   ATTRIBUTE_PANEL_CHANGED: "属性面板变化",
 };
 
-export const DAMAGE_TYPE_LABELS: Record<string, string> = {
-  general: "常规伤害",
-  catalyze_reaction: "激化反应",
-  transformative_reaction: "剧变反应",
-  lunar_reaction: "月曜反应",
+export const FORMULA_KEY_LABELS: Record<string, string> = {
+  "damage_formula.general": "常规伤害",
+  "damage_formula.transformative_reaction": "剧变反应",
+  "damage_formula.lunar_reaction": "月曜反应",
 };

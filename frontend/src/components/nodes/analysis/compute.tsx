@@ -64,7 +64,7 @@ export function ComputeEditor({ node, onChange }: EditorProps) {
       ))}
       <button
         type="button"
-        className="filter-add-button"
+        className="analysis-add-button"
         onClick={() => onChange({ ...node.params, columns: [...rows, {}] })}
       >
         ＋ 添加计算列
@@ -164,7 +164,7 @@ function ComputeRow({
             </option>
           ))}
         </select>
-        <button type="button" className="filter-row-remove" title="移除计算列" onClick={onRemove}>
+        <button type="button" className="analysis-row-remove" title="移除计算列" onClick={onRemove}>
           ×
         </button>
       </div>
@@ -178,7 +178,7 @@ function ComputeRow({
         onCompositionEnd={() => setComposing(false)}
       />
       {errors.map((message) => (
-        <p key={message} className="filter-row-error">
+        <p key={message} className="analysis-row-error">
           {message}
         </p>
       ))}

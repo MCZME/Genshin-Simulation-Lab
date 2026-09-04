@@ -131,6 +131,41 @@ class AnalysisTableResult:
 
 
 @dataclass(frozen=True, slots=True)
+class AnalysisStageResult:
+    """节点运行时中的一个可寻址阶段结果表。"""
+
+    stage_id: str
+    columns: tuple[AnalysisColumn, ...]
+    rows: tuple[tuple[Any, ...], ...]
+    truncated: bool
+    source_node_id: str | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisNodeExecution:
+    """节点运行时中的一次单节点执行：参数 + 已物化输入阶段。"""
+
+    node_id: str
+    kind: str
+    params: Mapping[str, Any] = field(default_factory=dict)
+    input_stages: tuple[str, ...] = ()
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisStageSelection:
+    """视图点击派生选择阶段的选择意图。
+
+    - ``group``：按输入阶段的分组列与命中值筛选（饼图/柱状图扇区/柱）；
+    - ``row``：按阶段行号取单行（表格行点击，阶段版本内稳定）。
+    """
+
+    kind: str  # "group" | "row"
+    columns: tuple[str, ...] = ()
+    values: tuple[Any, ...] = ()
+    row_index: int | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class AnalysisSchemaColumn:
     """可读 schema 中一个表列。"""
 
@@ -198,11 +233,14 @@ __all__ = [
     "AnalysisColumn",
     "AnalysisEventField",
     "AnalysisEventTypeSchema",
+    "AnalysisNodeExecution",
     "AnalysisPlan",
     "AnalysisPlanNode",
     "AnalysisReadSchema",
     "AnalysisSchemaNode",
     "AnalysisSchemaColumn",
+    "AnalysisStageSelection",
+    "AnalysisStageResult",
     "AnalysisTableResult",
     "AnalysisTableSchema",
     "AssetListItem",

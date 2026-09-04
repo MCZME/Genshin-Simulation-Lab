@@ -65,6 +65,8 @@ class ResonanceStaticModifier:
     stage: ModifierStage
     value: float
     audit_tags: tuple[str, ...] = ()
+    # 静态修饰显示名：内容层提供，进入属性词条审计（provider_display_name）。
+    display_name: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.target_key, AttributeKey):
@@ -80,6 +82,10 @@ class ResonanceStaticModifier:
         for tag in tags:
             _require_text(tag, "共鸣静态修饰审计标签")
         object.__setattr__(self, "audit_tags", tags)
+        if self.display_name is not None and (
+            not isinstance(self.display_name, str) or not self.display_name.strip()
+        ):
+            raise ResonanceValidationError("共鸣静态修饰 display_name 提供时必须是非空字符串")
 
     def _validate_value(self) -> float:
         try:

@@ -38,23 +38,6 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
-    "/api/v1/assets/{asset_type}": {
-        parameters: {
-            query?: never;
-            header?: never;
-            path?: never;
-            cookie?: never;
-        };
-        /** List Assets */
-        get: operations["list_assets_api_v1_assets__asset_type__get"];
-        put?: never;
-        post?: never;
-        delete?: never;
-        options?: never;
-        head?: never;
-        patch?: never;
-        trace?: never;
-    };
     "/api/v1/assets/resolve": {
         parameters: {
             query?: never;
@@ -66,6 +49,23 @@ export interface paths {
         put?: never;
         /** Resolve Assets */
         post: operations["resolve_assets_api_v1_assets_resolve_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/assets/{asset_type}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** List Assets */
+        get: operations["list_assets_api_v1_assets__asset_type__get"];
+        put?: never;
+        post?: never;
         delete?: never;
         options?: never;
         head?: never;
@@ -149,6 +149,40 @@ export interface paths {
         };
         /** Get Run Events */
         get: operations["get_run_events_api_v1_results__session_id__events_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/results/{session_id}/events/{ordinal}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Run Event Detail */
+        get: operations["get_run_event_detail_api_v1_results__session_id__events__ordinal__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/results/{session_id}/frames/{frame}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Get Frame State */
+        get: operations["get_frame_state_api_v1_results__session_id__frames__frame__get"];
         put?: never;
         post?: never;
         delete?: never;
@@ -290,9 +324,6 @@ export interface components {
             tables: components["schemas"]["TableSchemaDto"][];
             /** Event Types */
             event_types: components["schemas"]["EventTypeSchemaDto"][];
-            /** Snapshot Paths */
-            snapshot_paths: components["schemas"]["SnapshotPathDto"][];
-            /** Snapshot Tree */
             snapshot_tree?: components["schemas"]["SchemaNodeDto"] | null;
         };
         /**
@@ -338,6 +369,26 @@ export interface components {
          */
         BatchRunState: "queued" | "running" | "stopping" | "completed" | "partial" | "failed" | "cancelled";
         /**
+         * DamageEventView
+         * @description DAMAGE_RESOLVED 的规范化伤害视图。
+         */
+        DamageEventView: {
+            /** Summary */
+            summary: {
+                [key: string]: unknown;
+            };
+            /** Audit */
+            audit?: unknown;
+        };
+        /**
+         * DeveloperSettingsView
+         * @description 开发者模式开关；修改写入 config.toml，重启服务后生效。
+         */
+        DeveloperSettingsView: {
+            /** Enabled */
+            enabled: boolean;
+        };
+        /**
          * Diagnostic
          * @description 面向输入的诊断项；item_id/path 可空。
          */
@@ -356,6 +407,26 @@ export interface components {
             /** Path */
             path?: string | null;
         };
+        /**
+         * EventDetailResponse
+         * @description 单条事件详情。
+         */
+        EventDetailResponse: {
+            /** Session Id */
+            session_id: string;
+            /** Ordinal */
+            ordinal: number;
+            /** Frame */
+            frame: number;
+            /** Event Type */
+            event_type: string;
+            /** Data */
+            data?: {
+                [key: string]: unknown;
+            };
+            damage?: components["schemas"]["DamageEventView"] | null;
+            entities?: components["schemas"]["SessionEntitiesView"];
+        };
         /** EventFieldDto */
         EventFieldDto: {
             /** Path */
@@ -367,7 +438,10 @@ export interface components {
              * @default
              */
             description: string;
-            /** Value Kind */
+            /**
+             * Value Kind
+             * @default
+             */
             value_kind: string;
         };
         /**
@@ -375,6 +449,8 @@ export interface components {
          * @description 单条事件。
          */
         EventItem: {
+            /** Ordinal */
+            ordinal: number;
             /** Frame */
             frame: number;
             /** Event Type */
@@ -421,6 +497,153 @@ export interface components {
                 [key: string]: components["schemas"]["TableResponse"];
             };
         };
+        /**
+         * FrameCharacterState
+         * @description 帧状态中的单个角色状态。
+         */
+        FrameCharacterState: {
+            /** Slot */
+            slot: number;
+            /** Character Key */
+            character_key: string;
+            /** Combat Entity Id */
+            combat_entity_id: string;
+            /** Active */
+            active: boolean;
+            health: components["schemas"]["FrameHealth"];
+            energy: components["schemas"]["FrameEnergy"];
+            /** Attributes */
+            attributes?: {
+                [key: string]: unknown;
+            };
+            /** Buffs */
+            buffs?: {
+                [key: string]: unknown;
+            }[];
+            /** Shields */
+            shields?: {
+                [key: string]: unknown;
+            }[];
+            /** Infusion */
+            infusion?: {
+                [key: string]: unknown;
+            }[];
+            /** Cooldowns */
+            cooldowns?: {
+                [key: string]: unknown;
+            }[];
+            /** Content States */
+            content_states?: {
+                [key: string]: unknown;
+            }[];
+        };
+        /**
+         * FrameCoverage
+         * @description 帧状态逐组折叠标注。
+         */
+        FrameCoverage: {
+            /** Team */
+            team: string;
+            /** Characters.Health */
+            "characters.health": string;
+            /** Characters.Energy */
+            "characters.energy": string;
+            /** Characters.Attributes */
+            "characters.attributes": string;
+            /** Characters.Buffs */
+            "characters.buffs": string;
+            /** Characters.Shields */
+            "characters.shields": string;
+            /** Characters.Infusion */
+            "characters.infusion": string;
+            /** Characters.Cooldowns */
+            "characters.cooldowns": string;
+            /** Characters.Content States */
+            "characters.content_states": string;
+            /** Aura */
+            aura: string;
+            /** Aura Icd */
+            aura_icd: string;
+            /** Reaction */
+            reaction: string;
+            /** Space */
+            space: string;
+        };
+        /**
+         * FrameEnergy
+         * @description 帧状态中的角色能量。
+         */
+        FrameEnergy: {
+            /** Current Energy */
+            current_energy: number;
+            /** Capacity */
+            capacity?: number | null;
+            /**
+             * Burst Ready
+             * @default false
+             */
+            burst_ready: boolean;
+        };
+        /**
+         * FrameHealth
+         * @description 帧状态中的角色生命。
+         */
+        FrameHealth: {
+            /** Current Hp */
+            current_hp: number;
+            /** Max Hp */
+            max_hp?: number | null;
+            /** Hp Ratio */
+            hp_ratio?: number | null;
+        };
+        /**
+         * FrameStateResponse
+         * @description 指定帧的帧末角色状态。
+         */
+        FrameStateResponse: {
+            /** Session Id */
+            session_id: string;
+            /** Frame */
+            frame: number;
+            /** Time Seconds */
+            time_seconds: number;
+            team: components["schemas"]["FrameTeam"];
+            /** Characters */
+            characters: components["schemas"]["FrameCharacterState"][];
+            /** Resonance */
+            resonance?: {
+                [key: string]: unknown;
+            };
+            /** Moonsign */
+            moonsign?: {
+                [key: string]: unknown;
+            };
+            coverage: components["schemas"]["FrameCoverage"];
+        };
+        /**
+         * FrameTeam
+         * @description 帧状态中的队伍身份与场上角色。
+         */
+        FrameTeam: {
+            /** Active Slot */
+            active_slot: number | null;
+            /** Slots */
+            slots: number[];
+            /** Characters */
+            characters: components["schemas"]["FrameTeamCharacter"][];
+        };
+        /**
+         * FrameTeamCharacter
+         * @description 帧状态中的队伍角色身份。
+         */
+        FrameTeamCharacter: {
+            /** Slot */
+            slot: number;
+            /** Character Key */
+            character_key: string;
+            /** Combat Entity Id */
+            combat_entity_id: string;
+        };
         /** HTTPValidationError */
         HTTPValidationError: {
             /** Detail */
@@ -462,6 +685,14 @@ export interface components {
             };
             /** Inputs */
             inputs?: string[];
+        };
+        /**
+         * ResolveAssetsRequest
+         * @description 按 asset_key 批量解析显示名（最多 200 个）。
+         */
+        ResolveAssetsRequest: {
+            /** Keys */
+            keys?: string[];
         };
         /**
          * RunDetailResponse
@@ -581,10 +812,16 @@ export interface components {
              * @default
              */
             description: string;
-            /** Value Kind */
+            /**
+             * Value Kind
+             * @default
+             */
             value_kind: string;
         };
-        /** SchemaNodeDto */
+        /**
+         * SchemaNodeDto
+         * @description 输入快照结构树节点（object / list / scalar）。
+         */
         SchemaNodeDto: {
             /** Key */
             key: string;
@@ -594,32 +831,54 @@ export interface components {
             kind: string;
             /** Type */
             type?: string | null;
-            /** Description */
+            /**
+             * Description
+             * @default
+             */
             description: string;
-            /** Value Kind */
-            value_kind: string;
             /** Default Name */
             default_name?: string | null;
             /** Default Name Template */
             default_name_template?: string | null;
+            /**
+             * Value Kind
+             * @default
+             */
+            value_kind: string;
             /** Children */
             children?: components["schemas"]["SchemaNodeDto"][];
         };
-        /** ResolveAssetsRequest */
-        ResolveAssetsRequest: {
-            /** Keys */
-            keys: string[];
+        /**
+         * SessionEntitiesView
+         * @description 会话级实体显示表；以运行输入快照为权威，供详情视图解析实体引用。
+         */
+        SessionEntitiesView: {
+            /** Characters */
+            characters?: components["schemas"]["SessionEntityCharacter"][];
+            /** Targets */
+            targets?: components["schemas"]["SessionEntityTarget"][];
         };
-        /** SnapshotPathDto */
-        SnapshotPathDto: {
-            /** Path */
-            path: string;
-            /** Type */
-            type: string;
-            /** Default Name */
-            default_name: string;
-            /** Segments */
-            segments: string[];
+        /**
+         * SessionEntityCharacter
+         * @description 会话输入快照中的角色槽位身份与显示名。
+         */
+        SessionEntityCharacter: {
+            /** Slot */
+            slot: number;
+            /** Asset Key */
+            asset_key: string;
+            /** Name */
+            name: string;
+        };
+        /**
+         * SessionEntityTarget
+         * @description 会话输入快照中的目标身份与显示标签。
+         */
+        SessionEntityTarget: {
+            /** Id */
+            id: string;
+            /** Label */
+            label: string;
         };
         /**
          * SubmitRunRequest
@@ -666,15 +925,21 @@ export interface components {
         UiSettingsResponse: {
             /** Run Animation */
             run_animation: boolean;
+            developer: components["schemas"]["DeveloperSettingsView"];
             workspace: components["schemas"]["WorkspaceSettingsView"];
         };
         /**
          * UiSettingsUpdateRequest
          * @description PUT /api/v1/settings 的请求模型；工作区节不可经此修改。
+         *
+         *     ``developer_enabled`` 可选：缺省时保持当前开发者模式不变，
+         *     兼容只发送 ``run_animation`` 的既有前端。
          */
         UiSettingsUpdateRequest: {
             /** Run Animation */
             run_animation: boolean;
+            /** Developer Enabled */
+            developer_enabled?: boolean | null;
         };
         /**
          * ValidateInputsRequest
@@ -833,24 +1098,18 @@ export interface operations {
             };
         };
     };
-    list_assets_api_v1_assets__asset_type__get: {
+    resolve_assets_api_v1_assets_resolve_post: {
         parameters: {
-            query?: {
-                q?: string | null;
-                element?: string | null;
-                weapon_type?: string | null;
-                rarity?: number | null;
-                usable?: boolean | null;
-                limit?: number;
-                offset?: number;
-            };
+            query?: never;
             header?: never;
-            path: {
-                asset_type: string;
-            };
+            path?: never;
             cookie?: never;
         };
-        requestBody?: never;
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ResolveAssetsRequest"];
+            };
+        };
         responses: {
             /** @description Successful Response */
             200: {
@@ -872,18 +1131,24 @@ export interface operations {
             };
         };
     };
-    resolve_assets_api_v1_assets_resolve_post: {
+    list_assets_api_v1_assets__asset_type__get: {
         parameters: {
-            query?: never;
+            query?: {
+                q?: string | null;
+                element?: string | null;
+                weapon_type?: string | null;
+                rarity?: number | null;
+                usable?: boolean | null;
+                limit?: number;
+                offset?: number;
+            };
             header?: never;
-            path?: never;
+            path: {
+                asset_type: string;
+            };
             cookie?: never;
         };
-        requestBody: {
-            content: {
-                "application/json": components["schemas"]["ResolveAssetsRequest"];
-            };
-        };
+        requestBody?: never;
         responses: {
             /** @description Successful Response */
             200: {
@@ -976,6 +1241,10 @@ export interface operations {
                 limit?: number;
                 offset?: number;
                 state?: string | null;
+                q?: string | null;
+                created_from?: string | null;
+                created_to?: string | null;
+                ids?: string | null;
             };
             header?: never;
             path?: never;
@@ -1058,6 +1327,70 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["EventPageResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_run_event_detail_api_v1_results__session_id__events__ordinal__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                ordinal: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["EventDetailResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    get_frame_state_api_v1_results__session_id__frames__frame__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                session_id: string;
+                frame: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FrameStateResponse"];
                 };
             };
             /** @description Validation Error */

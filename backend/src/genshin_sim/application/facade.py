@@ -18,13 +18,16 @@ from genshin_sim.application.batch import (
     BatchValidationResult,
     SingleBatchResult,
 )
-from genshin_sim.application.config import ProjectConfig, UiConfig
+from genshin_sim.application.config import DeveloperConfig, ProjectConfig, UiConfig
 from genshin_sim.application.context import ApplicationContext
 from genshin_sim.application.errors import ApplicationError
 from genshin_sim.application.input import SimulationInput
 from genshin_sim.application.models import (
+    AnalysisNodeExecution,
     AnalysisPlan,
     AnalysisReadSchema,
+    AnalysisStageResult,
+    AnalysisStageSelection,
     AnalysisTableResult,
     AssetListItem,
     AssetListKind,
@@ -37,6 +40,12 @@ from genshin_sim.application.models import (
 from genshin_sim.application.services.analysis_query import (
     AnalysisPlanValidationError,
     AnalysisQueryService,
+)
+from genshin_sim.application.services.analysis_runtime import (
+    AnalysisContextNotFoundError,
+    AnalysisRuntimeService,
+    AnalysisRuntimeValidationError,
+    AnalysisStageNotFoundError,
 )
 from genshin_sim.application.services.assets import (
     AssetDatabaseService,
@@ -57,7 +66,11 @@ from genshin_sim.application.services.project_initialization import (
     ProjectInitializationResult,
     ProjectInitializationService,
 )
-from genshin_sim.application.services.results import ResultDatabaseService, ResultsService
+from genshin_sim.application.services.results import (
+    FrameOutOfRangeError,
+    ResultDatabaseService,
+    ResultsService,
+)
 from genshin_sim.application.services.workflows import (
     DEFAULT_WORKFLOW_NAME,
     WorkflowDetail,
@@ -219,6 +232,8 @@ class ApplicationFacade(Protocol):
 
     def get_run(self, session_id: str, *, include_events: bool = True) -> RunDetail: ...
 
+    def get_run_entities(self, session_id: str) -> dict[str, Any]: ...
+
     def count_run_events(
         self,
         session_id: str,
@@ -239,9 +254,45 @@ class ApplicationFacade(Protocol):
         limit: int | None = None,
     ) -> tuple[RecordedEvent, ...]: ...
 
+    def get_run_event(self, session_id: str, ordinal: int) -> RecordedEvent | None: ...
+
+    def get_frame_state(self, session_id: str, frame: int) -> dict[str, Any]: ...
+
     def execute_analysis_plan(self, plan: AnalysisPlan) -> Mapping[str, AnalysisTableResult]: ...
 
     def analysis_schema(self) -> AnalysisReadSchema: ...
+
+    def create_analysis_context(
+        self,
+        session_ids: Sequence[str],
+    ) -> str: ...
+
+    def execute_analysis_node(
+        self,
+        context_id: str,
+        execution: AnalysisNodeExecution,
+    ) -> AnalysisStageResult: ...
+
+    def read_analysis_stage(
+        self,
+        context_id: str,
+        stage_id: str,
+    ) -> AnalysisStageResult: ...
+
+    def select_analysis_stage(
+        self,
+        context_id: str,
+        stage_id: str,
+        selection: AnalysisStageSelection,
+    ) -> AnalysisStageResult: ...
+
+    def merge_analysis_stages(
+        self,
+        context_id: str,
+        stage_ids: tuple[str, ...] | list[str],
+    ) -> AnalysisStageResult: ...
+
+    def close_analysis_context(self, context_id: str) -> None: ...
 
     def create_workflow(self, name: str = DEFAULT_WORKFLOW_NAME) -> WorkflowDetail: ...
 
@@ -261,6 +312,10 @@ class ApplicationFacade(Protocol):
 
     def save_ui_settings(self, *, run_animation: bool) -> UiConfig: ...
 
+    def get_developer_settings(self) -> DeveloperConfig: ...
+
+    def save_developer_settings(self, *, enabled: bool) -> DeveloperConfig: ...
+
 
 class DefaultApplicationFacade:
     """基于现有应用服务的默认 facade 实现。"""
@@ -279,6 +334,7 @@ class DefaultApplicationFacade:
         self._input_validation_service = InputValidationService()
         self._results_service = ResultsService(context.result_repository)
         self._analysis_query_service_impl: AnalysisQueryService | None = None
+        self._analysis_runtime_service_impl: AnalysisRuntimeService | None = None
         self._batch_service = BatchRunService(
             context.job_runner,
             validator=BatchInputValidationService(
@@ -585,6 +641,73 @@ class DefaultApplicationFacade:
         except LookupError as exc:
             raise _result_not_found(session_id) from exc
 
+    def get_run_entities(self, session_id: str) -> dict[str, Any]:
+        """读取会话的运行时实体显示表（角色槽位名、目标标签），供详情视图解析引用。
+
+        实体身份以运行输入快照为准（结果库固化），角色显示名来自资产库；
+        快照缺失或字段异常时返回空表，不视为错误。
+        """
+
+        try:
+            run = self._results_service.inspect_run(session_id, include_events=False)
+        except LookupError as exc:
+            raise _result_not_found(session_id) from exc
+
+        snapshot = run.input_snapshot
+        if not isinstance(snapshot, Mapping):
+            return {"characters": (), "targets": ()}
+
+        characters: list[dict[str, Any]] = []
+        asset_keys: list[str] = []
+        slots: list[int] = []
+        team = snapshot.get("team")
+        if isinstance(team, Sequence) and not isinstance(team, (str, bytes)):
+            for entry in team:
+                if not isinstance(entry, Mapping):
+                    continue
+                slot = entry.get("slot")
+                character = entry.get("character")
+                if not isinstance(slot, int) or isinstance(slot, bool):
+                    continue
+                if not isinstance(character, Mapping):
+                    continue
+                asset_key = character.get("asset_key")
+                if not isinstance(asset_key, str) or not asset_key:
+                    continue
+                slots.append(slot)
+                asset_keys.append(asset_key)
+
+        names: dict[str, str] = {}
+        if asset_keys:
+            for item in self.resolve_assets(tuple(asset_keys)):
+                names[item.asset_key] = item.name
+
+        characters = [
+            {"slot": slot, "asset_key": asset_key, "name": names.get(asset_key, "")}
+            for slot, asset_key in zip(slots, asset_keys, strict=True)
+        ]
+
+        targets: list[dict[str, Any]] = []
+        scene = snapshot.get("scene")
+        if isinstance(scene, Mapping):
+            scene_targets = scene.get("targets")
+            if isinstance(scene_targets, Sequence) and not isinstance(scene_targets, (str, bytes)):
+                for target in scene_targets:
+                    if not isinstance(target, Mapping):
+                        continue
+                    target_id = target.get("id")
+                    if not isinstance(target_id, str) or not target_id:
+                        continue
+                    label = target.get("label")
+                    targets.append(
+                        {
+                            "id": target_id,
+                            "label": label if isinstance(label, str) else "",
+                        }
+                    )
+
+        return {"characters": characters, "targets": targets}
+
     def count_run_events(
         self,
         session_id: str,
@@ -625,6 +748,24 @@ class DefaultApplicationFacade:
         except LookupError as exc:
             raise _result_not_found(session_id) from exc
 
+    def get_run_event(self, session_id: str, ordinal: int) -> RecordedEvent | None:
+        """按会话内事实顺序读取单条事件；事件不存在返回 None。"""
+
+        try:
+            return self._results_service.get_event(session_id, ordinal)
+        except LookupError as exc:
+            raise _result_not_found(session_id) from exc
+
+    def get_frame_state(self, session_id: str, frame: int) -> dict[str, Any]:
+        """读取指定帧的帧末角色状态。"""
+
+        try:
+            return self._results_service.get_frame_state(session_id, frame)
+        except FrameOutOfRangeError as exc:
+            raise ApplicationError("frame_out_of_range", str(exc)) from exc
+        except LookupError as exc:
+            raise _result_not_found(session_id) from exc
+
     def execute_analysis_plan(self, plan: AnalysisPlan) -> Mapping[str, AnalysisTableResult]:
         try:
             return self._analysis_query_service().execute(plan)
@@ -637,6 +778,96 @@ class DefaultApplicationFacade:
 
     def analysis_schema(self) -> AnalysisReadSchema:
         return self._analysis_query_service().read_schema()
+
+    def create_analysis_context(self, session_ids: Sequence[str]) -> str:
+        try:
+            return self._analysis_runtime_service().create_context(session_ids)
+        except AnalysisRuntimeValidationError as exc:
+            raise ApplicationError(
+                "validation_failed",
+                str(exc),
+                details=exc.details,
+            ) from exc
+
+    def execute_analysis_node(
+        self,
+        context_id: str,
+        execution: AnalysisNodeExecution,
+    ) -> AnalysisStageResult:
+        try:
+            return self._analysis_runtime_service().execute_node(context_id, execution)
+        except AnalysisRuntimeValidationError as exc:
+            raise ApplicationError(
+                "validation_failed",
+                str(exc),
+                details=exc.details,
+            ) from exc
+        except AnalysisPlanValidationError as exc:
+            raise ApplicationError(
+                "validation_failed",
+                str(exc),
+                details=exc.details,
+            ) from exc
+        except (AnalysisContextNotFoundError, AnalysisStageNotFoundError) as exc:
+            raise ApplicationError("not_found", str(exc)) from exc
+
+    def read_analysis_stage(self, context_id: str, stage_id: str) -> AnalysisStageResult:
+        try:
+            return self._analysis_runtime_service().read_stage(context_id, stage_id)
+        except (AnalysisContextNotFoundError, AnalysisStageNotFoundError) as exc:
+            raise ApplicationError("not_found", str(exc)) from exc
+
+    def select_analysis_stage(
+        self,
+        context_id: str,
+        stage_id: str,
+        selection: AnalysisStageSelection,
+    ) -> AnalysisStageResult:
+        try:
+            return self._analysis_runtime_service().select_stage(
+                context_id,
+                stage_id,
+                selection,
+            )
+        except AnalysisPlanValidationError as exc:
+            raise ApplicationError(
+                "validation_failed",
+                str(exc),
+                details=exc.details,
+            ) from exc
+        except AnalysisRuntimeValidationError as exc:
+            raise ApplicationError(
+                "validation_failed",
+                str(exc),
+                details=exc.details,
+            ) from exc
+        except (AnalysisContextNotFoundError, AnalysisStageNotFoundError) as exc:
+            raise ApplicationError("not_found", str(exc)) from exc
+
+    def merge_analysis_stages(
+        self,
+        context_id: str,
+        stage_ids: tuple[str, ...] | list[str],
+    ) -> AnalysisStageResult:
+        try:
+            return self._analysis_runtime_service().merge_stages(
+                context_id,
+                stage_ids,
+            )
+        except AnalysisRuntimeValidationError as exc:
+            raise ApplicationError(
+                "validation_failed",
+                str(exc),
+                details=exc.details,
+            ) from exc
+        except (AnalysisContextNotFoundError, AnalysisStageNotFoundError) as exc:
+            raise ApplicationError("not_found", str(exc)) from exc
+
+    def close_analysis_context(self, context_id: str) -> None:
+        try:
+            self._analysis_runtime_service().close_context(context_id)
+        except AnalysisContextNotFoundError as exc:
+            raise ApplicationError("not_found", str(exc)) from exc
 
     def create_workflow(self, name: str = DEFAULT_WORKFLOW_NAME) -> WorkflowDetail:
         return self._require_workflow_service().create(name)
@@ -666,6 +897,16 @@ class DefaultApplicationFacade:
         updated = replace(config, ui=UiConfig(run_animation=run_animation))
         self._context.config_store.save(root, updated)
         return updated.ui
+
+    def get_developer_settings(self) -> DeveloperConfig:
+        return self._project_service.load_project(self._context.project_root).developer
+
+    def save_developer_settings(self, *, enabled: bool) -> DeveloperConfig:
+        root = self._context.project_root
+        config = self._project_service.load_project(root)
+        updated = replace(config, developer=DeveloperConfig(enabled=enabled))
+        self._context.config_store.save(root, updated)
+        return updated.developer
 
     def _asset_database_service(
         self,
@@ -726,6 +967,17 @@ class DefaultApplicationFacade:
                 )
             self._analysis_query_service_impl = AnalysisQueryService(executor)
         return self._analysis_query_service_impl
+
+    def _analysis_runtime_service(self) -> AnalysisRuntimeService:
+        if self._analysis_runtime_service_impl is None:
+            executor = self._context.analysis_stage_executor
+            if executor is None:
+                raise ApplicationError(
+                    "analysis_runtime_unavailable",
+                    "分析节点运行时能力未配置",
+                )
+            self._analysis_runtime_service_impl = AnalysisRuntimeService(executor)
+        return self._analysis_runtime_service_impl
 
 
 def _result_not_found(session_id: str) -> ApplicationError:

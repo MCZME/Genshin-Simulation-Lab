@@ -11,7 +11,7 @@ from genshin_sim.core.elements import (
     ElementalSourceRef,
 )
 from genshin_sim.core.systems.aura import AuraStrength
-from genshin_sim.core.systems.damage import DamageType
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_TRANSFORMATIVE_REACTION
 from genshin_sim.core.systems.reaction.mechanics.burning import BURNING_DAMAGE_KIND_KEY
 from genshin_sim.core.systems.reaction.states import ScheduledStateTickCause
 from tests.helpers.reactions import advance_to, apply_aura, aura_request, target_subject
@@ -308,7 +308,7 @@ def _burning_records(assembled):
     return tuple(
         record
         for record in assembled.damage_handler.records
-        if record.result.damage_type is DamageType.TRANSFORMATIVE_REACTION
+        if record.result.formula_key == FORMULA_KEY_TRANSFORMATIVE_REACTION
     )
 
 

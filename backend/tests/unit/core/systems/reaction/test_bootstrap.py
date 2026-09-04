@@ -1,6 +1,6 @@
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_TRANSFORMATIVE_REACTION
 from genshin_sim.core.systems.reaction import create_default_reaction_bootstrap
 from genshin_sim.core.systems.reaction.mechanics.burning import (
-    BURNING_DAMAGE_PROFILE_KEY,
     BURNING_PYRO_AURA_APPLICATION_PROFILE_KEY,
     burning_damage_profile,
     burning_gate_definitions,
@@ -75,7 +75,10 @@ def test_burning_specific_profiles_and_gate_registered_in_default_bootstrap() ->
     bootstrap = create_default_reaction_bootstrap()
 
     assert burning_gate_definitions()[0] in bootstrap.damage_gate_definitions
-    assert burning_damage_profile().profile_key == BURNING_DAMAGE_PROFILE_KEY
+    assert (
+        burning_damage_profile().formula_key
+        == FORMULA_KEY_TRANSFORMATIVE_REACTION
+    )
     assert (
         burning_pyro_aura_application_profile().profile_key
         == BURNING_PYRO_AURA_APPLICATION_PROFILE_KEY

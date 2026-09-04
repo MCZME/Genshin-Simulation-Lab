@@ -17,8 +17,11 @@
   },
   "dependencies": {
     "@xyflow/react": "^12.11.3",
+    "echarts": "^6.1.0",
     "react": "^19.2.8",
-    "react-dom": "^19.2.8"
+    "react-dom": "^19.2.8",
+    "recharts": "^3.10.1",
+    "vis-timeline": "^8.5.4"
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",

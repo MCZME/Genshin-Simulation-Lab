@@ -159,7 +159,10 @@ class DamageResolvedPayload:
     result: DamageResult
 
     def to_dict(self) -> dict[str, object]:
-        return {"result": self.result.to_dict()}
+        return {
+            "result": self.result.to_dict(),
+            "audit": self.result.to_audit_dict(),
+        }
 
 
 @dataclass(frozen=True, slots=True)

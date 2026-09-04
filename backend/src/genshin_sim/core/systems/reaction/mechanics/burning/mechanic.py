@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from genshin_sim.core.elements import AuraAmount, AuraKind, Element, ElementalStateLinkRef
 from genshin_sim.core.systems.aura import AuraApplicationProfile, AuraDecayProfilePolicy
-from genshin_sim.core.systems.damage import DamageProfile, DamageType
+from genshin_sim.core.systems.damage import DamageProfile
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_TRANSFORMATIVE_REACTION
 from genshin_sim.core.systems.reaction.gates import ReactionDamageGateDefinition
 from genshin_sim.core.systems.reaction.models import (
     AreaAroundSubjectSelection,
@@ -275,8 +276,7 @@ def burning_damage_profile() -> DamageProfile:
     """普通燃烧使用的剧变伤害 Profile。"""
 
     return DamageProfile(
-        profile_key=BURNING_DAMAGE_PROFILE_KEY,
-        damage_type=DamageType.TRANSFORMATIVE_REACTION,
+        formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
         main_attack_tags=frozenset({BURNING_REACTION_KEY}),
     )
 

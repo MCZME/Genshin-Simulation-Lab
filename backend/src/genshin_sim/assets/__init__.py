@@ -1,5 +1,6 @@
 """资产模型、仓库协议和资产错误。"""
 
+from genshin_sim.assets.composite import CompositeAssetRepository
 from genshin_sim.assets.errors import AssetError, AssetNotFoundError, AssetValidationError
 from genshin_sim.assets.models import (
     ArtifactSetAsset,
@@ -33,6 +34,7 @@ __all__ = [
     "AssetValidationError",
     "CharacterAsset",
     "CharacterLevelStats",
+    "CompositeAssetRepository",
     "EffectPayload",
     "HandlerBinding",
     "TalentScalingEntry",

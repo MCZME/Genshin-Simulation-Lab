@@ -103,6 +103,8 @@ class BuffDefinition:
     attribute_modifiers: tuple[BuffAttributeModifierTemplate, ...] = ()
     marker_only: bool = False
     tags: frozenset[str] = frozenset()
+    # Buff 显示名：内容层提供的可读名称，进入属性词条审计（provider_display_name）。
+    display_name: str | None = None
 
     def __post_init__(self) -> None:
         for value, name in (
@@ -112,6 +114,10 @@ class BuffDefinition:
             (self.conflict_key, "conflict_key"),
         ):
             validate_non_empty_text(value, name)
+        if self.display_name is not None and (
+            not isinstance(self.display_name, str) or not self.display_name.strip()
+        ):
+            raise BuffValidationError("display_name 提供时必须是非空字符串")
         target_kinds = frozenset(self.target_kinds)
         if not target_kinds:
             raise BuffValidationError("target_kinds 不能为空")

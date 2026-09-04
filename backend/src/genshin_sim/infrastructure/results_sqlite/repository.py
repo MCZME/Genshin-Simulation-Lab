@@ -313,7 +313,7 @@ class SQLiteResultRepository:
             if include_events:
                 event_rows = connection.execute(
                     """
-                    SELECT frame, event_type, data_json
+                    SELECT ordinal, frame, event_type, data_json
                     FROM simulation_events
                     WHERE session_id = ?
                     ORDER BY ordinal
@@ -339,6 +339,7 @@ class SQLiteResultRepository:
             summary=summary,
             events=tuple(
                 RecordedEvent(
+                    ordinal=int(row["ordinal"]),
                     frame=int(row["frame"]),
                     event_type=str(row["event_type"]),
                     data=_load_json_object(str(row["data_json"])),
@@ -383,7 +384,7 @@ class SQLiteResultRepository:
             params.append(event_type)
 
         sql = (
-            "SELECT frame, event_type, data_json FROM simulation_events "
+            "SELECT ordinal, frame, event_type, data_json FROM simulation_events "
             f"WHERE {' AND '.join(conditions)} ORDER BY ordinal"
         )
         if limit is not None:
@@ -406,12 +407,67 @@ class SQLiteResultRepository:
 
         return tuple(
             RecordedEvent(
+                ordinal=int(row["ordinal"]),
                 frame=int(row["frame"]),
                 event_type=str(row["event_type"]),
                 data=_load_json_object(str(row["data_json"])),
             )
             for row in rows
         )
+
+    def get_event(self, session_id: str, ordinal: int) -> RecordedEvent | None:
+        """按会话内事实顺序读取单条事件；会话不存在报错，事件不存在返回 None。"""
+
+        if isinstance(ordinal, bool) or not isinstance(ordinal, int) or ordinal < 0:
+            raise ValueError("ordinal 必须是非负整数")
+        if not self.db_path.exists():
+            raise ResultNotFoundError(f"simulation run not found: {session_id}")
+
+        with closing(_connect(self.db_path)) as connection:
+            run_row = connection.execute(
+                "SELECT 1 FROM simulation_runs WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if run_row is None:
+                raise ResultNotFoundError(f"simulation run not found: {session_id}")
+            row = connection.execute(
+                """
+                SELECT ordinal, frame, event_type, data_json
+                FROM simulation_events
+                WHERE session_id = ? AND ordinal = ?
+                """,
+                (session_id, ordinal),
+            ).fetchone()
+
+        if row is None:
+            return None
+        return RecordedEvent(
+            ordinal=int(row["ordinal"]),
+            frame=int(row["frame"]),
+            event_type=str(row["event_type"]),
+            data=_load_json_object(str(row["data_json"])),
+        )
+
+    def get_initial_snapshot(self, session_id: str) -> dict[str, Any] | None:
+        """读取第 0 帧状态基线；会话不存在报错，未保存快照返回 None。"""
+
+        if not self.db_path.exists():
+            raise ResultNotFoundError(f"simulation run not found: {session_id}")
+
+        with closing(_connect(self.db_path)) as connection:
+            run_row = connection.execute(
+                "SELECT 1 FROM simulation_runs WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+            if run_row is None:
+                raise ResultNotFoundError(f"simulation run not found: {session_id}")
+            row = connection.execute(
+                "SELECT initial_snapshot_json FROM simulation_runs WHERE session_id = ?",
+                (session_id,),
+            ).fetchone()
+
+        raw = row["initial_snapshot_json"] if row is not None else None
+        return None if raw is None else _load_json_object(str(raw))
 
 
 def _escape_like(value: str) -> str:

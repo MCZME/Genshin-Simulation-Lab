@@ -1,12 +1,56 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useState } from "react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { Timeline as MockedTimeline } from "vis-timeline/standalone";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkflowNode } from "../../workflow/types";
 import { RunStateContext } from "../run_state_context";
 import type { RunState } from "../../state/run_state";
 import { ArtifactEditor, CharacterEditor, InputTraceEditor, MetaEditor } from "./editors";
 import { SimulationEditor } from "./run";
+import type { TraceEventItem } from "./traceModel";
+
+vi.mock("vis-timeline/standalone", () => {
+  class FakeTimeline {
+    window = { start: new Date(0), end: new Date(6000) };
+    options: Record<string, unknown>;
+    handlers: Record<string, Array<(properties?: unknown) => void>> = {};
+    items: unknown[];
+
+    constructor(
+      public container: HTMLElement,
+      items: unknown[],
+      options: Record<string, unknown>,
+    ) {
+      this.items = items;
+      this.options = options;
+    }
+
+    on(event: string, handler: (properties?: unknown) => void) {
+      (this.handlers[event] ??= []).push(handler);
+    }
+
+    setWindow(start: Date, end: Date) {
+      this.window = { start: new Date(start), end: new Date(end) };
+    }
+
+    getWindow() {
+      return this.window;
+    }
+
+    setOptions(options: Record<string, unknown>) {
+      Object.assign(this.options, options);
+    }
+
+    setItems(items: unknown[]) {
+      this.items = items;
+    }
+
+    destroy() {}
+  }
+
+  return { Timeline: FakeTimeline };
+});
 
 function characterNode(overrides: Partial<WorkflowNode> = {}): WorkflowNode {
   return {
@@ -45,16 +89,6 @@ function artifactNode(overrides: Partial<WorkflowNode> = {}): WorkflowNode {
     params: { slot: 1, sets: [{ asset_key: "", pieces: 4 }], stats: {} },
     ...overrides,
   };
-}
-
-function TraceHarness({ node }: { node: WorkflowNode }) {
-  const [current, setCurrent] = useState(node);
-  return (
-    <InputTraceEditor
-      node={current}
-      onChange={(params) => setCurrent({ ...current, params })}
-    />
-  );
 }
 
 function ArtifactHarness({
@@ -253,28 +287,41 @@ describe("固定路径节点的编辑器", () => {
 });
 
 describe("按键轨迹编辑器", () => {
-  function mockTimelineRect(container: HTMLElement) {
-    const timeline = container.querySelector(".trace-timeline") as HTMLElement;
-    expect(timeline).not.toBeNull();
-    const width = parseFloat(timeline.style.width);
-    vi.spyOn(timeline, "getBoundingClientRect").mockReturnValue({
-      x: 0,
-      y: 0,
-      left: 0,
-      top: 0,
-      right: width,
-      bottom: 120,
-      width,
-      height: 120,
-      toJSON: () => ({}),
-    } as DOMRect);
+  const traceRect = {
+    x: 0,
+    y: 0,
+    left: 0,
+    top: 0,
+    right: 640,
+    bottom: 200,
+    width: 640,
+    height: 200,
+    toJSON: () => ({}),
+  } as DOMRect;
+
+  beforeEach(() => {
+    vi.spyOn(HTMLElement.prototype, "getBoundingClientRect").mockReturnValue(traceRect);
+  });
+
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  function TraceStateHarness() {
+    const [current, setCurrent] = useState(inputTraceNode());
+    return (
+      <InputTraceEditor
+        node={current}
+        onChange={(params) => setCurrent({ ...current, params })}
+      />
+    );
   }
 
   function dragPaletteTo(
     container: HTMLElement,
     cap: string,
     clientX: number,
-    clientY = 60,
+    clientY = 100,
   ) {
     const chip = Array.from(container.querySelectorAll(".trace-palette-chip")).find(
       (item) => item.textContent?.trim() === cap,
@@ -292,143 +339,79 @@ describe("按键轨迹编辑器", () => {
   });
 
   it("拖拽按键到时间轴创建点按块", () => {
-    const { container } = render(<TraceHarness node={inputTraceNode()} />);
-    mockTimelineRect(container);
-
+    const onChange = vi.fn();
+    const { container } = render(
+      <InputTraceEditor node={inputTraceNode()} onChange={onChange} />,
+    );
     dragPaletteTo(container, "E", 96);
-    const block = container.querySelector(".trace-block");
-    expect(block).not.toBeNull();
-    expect((block as HTMLElement).style.left).toBe("96px");
-    expect(block!.textContent).toContain("E");
-    expect((block as HTMLElement).style.getPropertyValue("--key-color")).toBe("#3b82f6");
+
+    expect(onChange).toHaveBeenCalledTimes(1);
+    const params = onChange.mock.calls[0][0] as { items: TraceEventItem[] };
+    expect(params.items).toHaveLength(2);
+    expect(params.items[0].events[0]).toEqual({ key: "keyboard.e", phase: "press" });
+    expect(params.items[1].events[0]).toEqual({ key: "keyboard.e", phase: "release" });
+    expect(params.items[1].frame - params.items[0].frame).toBe(15);
   });
 
-  it("拖拽时幽灵块显示实际插入位置", () => {
-    const { container } = render(<TraceHarness node={inputTraceNode()} />);
-    mockTimelineRect(container);
+  it("拖拽时幽灵块跟随指针", () => {
+    const { container } = render(<InputTraceEditor node={inputTraceNode()} onChange={vi.fn()} />);
     const chip = Array.from(container.querySelectorAll(".trace-palette-chip")).find(
       (item) => item.textContent?.trim() === "E",
     ) as HTMLElement;
     expect(chip).toBeTruthy();
 
-    fireEvent.pointerDown(chip, { button: 0, clientX: 123, clientY: 45 });
+    fireEvent.pointerDown(chip, { button: 0, clientX: 123, clientY: 80 });
     const ghost = container.querySelector(".trace-drag-ghost") as HTMLElement;
     expect(ghost).not.toBeNull();
-    expect(ghost.style.left).toBe("123.2px");
-    expect(ghost.style.top).toBe("23px");
-    expect(ghost.style.width).toBe("24px");
+    const firstLeft = parseFloat(ghost.style.left);
+    expect(firstLeft).toBeGreaterThan(0);
 
-    fireEvent.pointerMove(chip, { clientX: 260, clientY: 90 });
-    expect(ghost.style.left).toBe("260.8px");
-    expect(ghost.style.top).toBe("23px");
-
-    fireEvent.pointerUp(chip, { clientX: 260, clientY: 90 });
+    fireEvent.pointerMove(chip, { clientX: 260, clientY: 80 });
+    expect(parseFloat(ghost.style.left)).toBeGreaterThan(firstLeft);
+    fireEvent.pointerUp(chip, { clientX: 260, clientY: 80 });
   });
 
-  it("同一时刻的两个按键自动分到不同轨道", () => {
-    const { container } = render(<TraceHarness node={inputTraceNode()} />);
-    mockTimelineRect(container);
-
+  it("不同按键可在同一时刻创建", () => {
+    const { container } = render(<TraceStateHarness />);
     dragPaletteTo(container, "E", 96);
     dragPaletteTo(container, "左键", 96);
 
-    const blocks = container.querySelectorAll(".trace-block");
-    expect(blocks.length).toBe(2);
-    const tops = new Set(Array.from(blocks, (block) => (block as HTMLElement).style.top));
-    expect(tops.size).toBe(2);
+    expect(container.querySelector(".trace-summary")?.textContent).toContain("2 个操作");
   });
 
   it("同一按键在同一时刻不会重复创建", () => {
-    const { container } = render(<TraceHarness node={inputTraceNode()} />);
-    mockTimelineRect(container);
-
+    const { container } = render(<TraceStateHarness />);
     dragPaletteTo(container, "E", 96);
     dragPaletteTo(container, "E", 96);
 
-    expect(container.querySelectorAll(".trace-block").length).toBe(1);
+    expect(container.querySelector(".trace-summary")?.textContent).toContain("1 个操作");
   });
 
-  it("拖动右侧把手可延长按住时长", () => {
-    const { container } = render(<TraceHarness node={inputTraceNode()} />);
-    mockTimelineRect(container);
-
+  it("同键冲突时幽灵块显示阻塞状态", () => {
+    const { container } = render(<TraceStateHarness />);
     dragPaletteTo(container, "E", 96);
-    let block = container.querySelector(".trace-block") as HTMLElement;
-    const handle = block.querySelector(".trace-block-handle-right");
 
-    fireEvent.pointerDown(handle!, { button: 0, clientX: 124 });
-    fireEvent.pointerMove(block, { clientX: 192 });
-    fireEvent.pointerUp(block, { button: 0 });
-
-    block = container.querySelector(".trace-block") as HTMLElement;
-    expect(block.style.width).toBe("92.8px");
+    const chip = Array.from(container.querySelectorAll(".trace-palette-chip")).find(
+      (item) => item.textContent?.trim() === "E",
+    ) as HTMLElement;
+    fireEvent.pointerDown(chip, { button: 0, clientX: 96, clientY: 100 });
+    const ghost = container.querySelector(".trace-drag-ghost") as HTMLElement;
+    expect(ghost?.className).toContain("trace-drag-ghost-blocked");
+    fireEvent.pointerUp(chip, { clientX: 96, clientY: 100 });
+    expect(container.querySelector(".trace-summary")?.textContent).toContain("1 个操作");
   });
 
-  it("拖动块后松开即落在新位置", () => {
-    const { container } = render(<TraceHarness node={inputTraceNode()} />);
-    mockTimelineRect(container);
-
-    dragPaletteTo(container, "E", 96);
-    let block = container.querySelector(".trace-block") as HTMLElement;
-
-    fireEvent.pointerDown(block, { button: 0, clientX: 96, clientY: 60 });
-    fireEvent.pointerMove(block, { clientX: 192, clientY: 60 });
-    fireEvent.pointerUp(block, { clientX: 192, clientY: 60 });
-
-    block = container.querySelector(".trace-block") as HTMLElement;
-    expect(block.style.left).toBe("192px");
-  });
-
-  it("同键块可以拖到另一个块右侧", () => {
-    const { container } = render(<TraceHarness node={inputTraceNode()} />);
-    mockTimelineRect(container);
-
-    dragPaletteTo(container, "E", 96);
-    dragPaletteTo(container, "E", 288);
-    let blocks = container.querySelectorAll(".trace-block");
-    expect(blocks.length).toBe(2);
-
-    fireEvent.pointerDown(blocks[0], { button: 0, clientX: 96, clientY: 60 });
-    fireEvent.pointerMove(blocks[0], { clientX: 320, clientY: 60 });
-    fireEvent.pointerUp(blocks[0], { clientX: 320, clientY: 60 });
-
-    blocks = container.querySelectorAll(".trace-block");
-    expect(blocks.length).toBe(2);
-    const lefts = Array.from(blocks, (block) =>
-      parseFloat((block as HTMLElement).style.left),
-    ).sort((a, b) => a - b);
-    expect(lefts).toEqual([288, 320]);
-  });
-
-  it("拖出时间轴删除事件块", () => {
+  it("拖出时间轴不创建块", () => {
+    const onChange = vi.fn();
     const { container } = render(
-      <TraceHarness
-        node={inputTraceNode({
-          params: {
-            items: [
-              { frame: 60, events: [{ key: "keyboard.e", phase: "press" }] },
-              { frame: 75, events: [{ key: "keyboard.e", phase: "release" }] },
-            ],
-          },
-        })}
-      />,
+      <InputTraceEditor node={inputTraceNode()} onChange={onChange} />,
     );
-    mockTimelineRect(container);
-    const block = container.querySelector(".trace-block") as HTMLElement;
-    expect(block).not.toBeNull();
-
-    fireEvent.pointerDown(block, { button: 0, clientX: 96, clientY: 60 });
-    fireEvent.pointerMove(block, { clientX: -50, clientY: 60 });
-    const hint = document.body.querySelector(".trace-delete-ghost");
-    expect(hint).not.toBeNull();
-    fireEvent.pointerUp(block, { clientX: -50, clientY: 60 });
-
-    expect(container.querySelector(".trace-block")).toBeNull();
-    expect(document.body.querySelector(".trace-delete-ghost")).toBeNull();
+    dragPaletteTo(container, "E", 96, 300);
+    expect(onChange).not.toHaveBeenCalled();
   });
 
   it("标记不支持的按键", () => {
-    const { container } = render(
+    render(
       <InputTraceEditor
         node={inputTraceNode({
           params: {
@@ -439,8 +422,66 @@ describe("按键轨迹编辑器", () => {
       />,
     );
     expect(screen.getByText("1 个不支持按键")).toBeTruthy();
-    const block = container.querySelector(".trace-block");
-    expect(block?.className).toContain("trace-block-unsupported");
+  });
+
+  it("未闭合按键显示警告", () => {
+    const { container } = render(
+      <InputTraceEditor
+        node={inputTraceNode({
+          params: {
+            items: [{ frame: 6, events: [{ key: "keyboard.e", phase: "press" }] }],
+          },
+        })}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("1 个未闭合按键")).toBeTruthy();
+    expect(container.querySelector(".trace-summary")?.textContent).toContain("1 个操作");
+  });
+
+  it("编辑块后保持当前时间窗口", () => {
+    const setWindowSpy = vi.spyOn(MockedTimeline.prototype, "setWindow");
+    function EditingHarness() {
+      const [current, setCurrent] = useState(
+        inputTraceNode({
+          params: {
+            items: [
+              { frame: 60, events: [{ key: "keyboard.e", phase: "press" }] },
+              { frame: 75, events: [{ key: "keyboard.e", phase: "release" }] },
+            ],
+          },
+        }),
+      );
+      return (
+        <>
+          <InputTraceEditor
+            node={current}
+            onChange={(params) => setCurrent({ ...current, params })}
+          />
+          <button
+            type="button"
+            onClick={() =>
+              setCurrent({
+                ...current,
+                params: {
+                  items: [
+                    { frame: 300, events: [{ key: "keyboard.e", phase: "press" }] },
+                    { frame: 315, events: [{ key: "keyboard.e", phase: "release" }] },
+                  ],
+                },
+              })
+            }
+          >
+            移动到 300 帧
+          </button>
+        </>
+      );
+    }
+
+    const { getByText } = render(<EditingHarness />);
+    expect(setWindowSpy).toHaveBeenCalledTimes(1);
+    fireEvent.click(getByText("移动到 300 帧"));
+    expect(setWindowSpy).toHaveBeenCalledTimes(1);
   });
 });
 

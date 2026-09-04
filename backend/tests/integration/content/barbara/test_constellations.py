@@ -8,6 +8,17 @@ import pytest
 
 from genshin_sim.application.assembly import SimulationAssembler
 from genshin_sim.application.input import SimulationInput
+from genshin_sim.content import create_default_content_unit_registry
+from genshin_sim.content.definitions.content_unit import (
+    ContentUnit,
+    ContentUnitOwnerType,
+)
+from genshin_sim.content.registries import CharacterContentUnitRequest
+from genshin_sim.core.actions import (
+    ActionInterpretationContext,
+    ActionInterpretationResult,
+    InputSessionView,
+)
 from genshin_sim.core.attributes import (
     BONUS_DAMAGE_HYDRO,
     AttributeQuery,
@@ -17,7 +28,34 @@ from genshin_sim.core.events import EventType
 from genshin_sim.core.systems.cooldown import CooldownKey, CooldownSubjectRef
 from genshin_sim.infrastructure.assets_sqlite import SQLiteAssetRepository
 from tests.helpers import barbara as barbara_helpers
-from tests.helpers.barbara_assets import write_barbara_probe_asset_database
+
+
+class _SwitchFixtureActionInterpreter:
+    """测试本地切人夹具：始终等待，不触发任何动作。"""
+
+    supported_action_keys: tuple[str, ...] = ()
+
+    def interpret(
+        self,
+        context: ActionInterpretationContext,
+        session: InputSessionView,
+    ) -> ActionInterpretationResult:
+        del context, session
+        return ActionInterpretationResult.wait()
+
+
+def _switch_fixture_content_unit(
+    request: CharacterContentUnitRequest,
+) -> ContentUnit:
+    return ContentUnit(
+        owner_type=ContentUnitOwnerType.CHARACTER,
+        owner_key=request.character_key,
+        handler_key=request.handler_key,
+        version="dev-test",
+        slot=request.slot,
+        action_interpreter=_SwitchFixtureActionInterpreter(),
+        metadata={"purpose": "barbara_switch_fixture"},
+    )
 
 
 @pytest.mark.parametrize(
@@ -72,8 +110,8 @@ def test_barbara_c2_reduces_elemental_skill_cooldown(barbara_assembled):
 
 
 def test_barbara_c2_hydro_bonus_follows_active_character_on_switch(tmp_path: Path):
-    asset_db = write_barbara_probe_asset_database(tmp_path / "assets.db")
-    payload = barbara_helpers.barbara_probe_input_payload(
+    asset_db = barbara_helpers.write_barbara_switch_asset_database(tmp_path / "assets.db")
+    payload = barbara_helpers.barbara_switch_input_payload(
         constellation=2,
         max_frames=140,
         input_trace=[
@@ -85,9 +123,15 @@ def test_barbara_c2_hydro_bonus_follows_active_character_on_switch(tmp_path: Pat
             {"frame": 111, "events": [{"key": "keyboard.1", "phase": "release"}]},
         ],
     )
-    assembled = SimulationAssembler(SQLiteAssetRepository(asset_db)).assemble(
-        SimulationInput.from_mapping(payload)
+    registry = create_default_content_unit_registry()
+    registry.register_character_factory(
+        barbara_helpers.BARBARA_SWITCH_FIXTURE_HANDLER_KEY,
+        _switch_fixture_content_unit,
     )
+    assembled = SimulationAssembler(
+        SQLiteAssetRepository(asset_db),
+        content_unit_registry=registry,
+    ).assemble(SimulationInput.from_mapping(payload))
 
     resolver = assembled.attribute_runtime.resolver
     slot_1 = AttributeSubjectRef.character("character:slot_1")

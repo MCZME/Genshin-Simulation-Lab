@@ -25,7 +25,6 @@ from genshin_sim.core.systems.damage.formulas import (
     create_default_damage_formula_registry,
 )
 from genshin_sim.core.systems.damage.models import (
-    CatalyzeReactionDamageResolution,
     DamageQuery,
     DamageResult,
     DefenseResolution,
@@ -153,7 +152,7 @@ class DamageResolver:
     ) -> DamageResult:
         """选择完整公式，执行结算，并返回可审计结果。"""
 
-        formula = self.formula_registry.require(query.request.damage_type)
+        formula = self.formula_registry.require(query.request.formula_key)
         session = DamageResolutionSession(self.attribute_resolver, query, trace_level)
         modifiers = self.modifier_index.collect(query, session)
         _validate_formula_stages(formula.formula_spec, modifiers)
@@ -177,17 +176,14 @@ def _validate_formula_stages(
     for term in (*modifiers.applied_terms, *modifiers.rejected_terms):
         if term.stage not in formula_spec.allowed_modifier_stages:
             raise DamageProviderViolationError(
-                f"伤害公式 {formula_spec.damage_type.value} 不允许阶段：{term.stage.value}"
+                f"伤害公式 {formula_spec.formula_key} 不允许阶段：{term.stage.value}"
             )
 
 
 def _build_damage_result(
     query: DamageQuery,
     resolution: (
-        GeneralDamageResolution
-        | CatalyzeReactionDamageResolution
-        | TransformativeReactionResolution
-        | LunarReactionDamageResolution
+        GeneralDamageResolution | TransformativeReactionResolution | LunarReactionDamageResolution
     ),
     modifiers: DamageModifierCollection,
     trace_level: TraceLevel,
@@ -198,7 +194,8 @@ def _build_damage_result(
         return DamageResult(
             request_id=query.request.request_id,
             frame=query.request.frame,
-            damage_type=query.request.damage_type,
+            formula_key=query.request.formula_key,
+            main_attack_tag=query.request.main_attack_tag,
             source_ref=query.request.source_ref,
             target_ref=query.request.target_ref,
             element=query.request.element,
@@ -221,6 +218,7 @@ def _build_damage_result(
             official_damage=resolution.official_damage,
             debug_multiplier=resolution.debug_multiplier,
             final_damage=resolution.final_damage,
+            damage_name=query.request.damage_name,
             lunar_reaction_resolution=resolution,
             source_attribute_trace=(
                 () if trace_level is TraceLevel.NONE else resolution.source_attribute_trace
@@ -241,7 +239,8 @@ def _build_damage_result(
         return DamageResult(
             request_id=query.request.request_id,
             frame=query.request.frame,
-            damage_type=query.request.damage_type,
+            formula_key=query.request.formula_key,
+            main_attack_tag=query.request.main_attack_tag,
             source_ref=query.request.source_ref,
             target_ref=query.request.target_ref,
             element=query.request.element,
@@ -260,6 +259,7 @@ def _build_damage_result(
             official_damage=resolution.official_damage,
             debug_multiplier=resolution.debug_multiplier,
             final_damage=resolution.final_damage,
+            damage_name=query.request.damage_name,
             reaction_details=resolution.reaction,
             secondary_amplifying_resolution=resolution.secondary_amplifying_resolution,
             source_attribute_trace=(),
@@ -272,50 +272,20 @@ def _build_damage_result(
             trace_metadata={"defense_policy": resolution.reaction.defense_policy},
         )
 
-    if isinstance(resolution, CatalyzeReactionDamageResolution):
-        applied_terms = () if trace_level is TraceLevel.NONE else modifiers.applied_terms
-        rejected_terms = modifiers.rejected_terms if trace_level is TraceLevel.FULL else ()
-        source_trace = () if trace_level is TraceLevel.NONE else resolution.source_attribute_trace
-        target_trace = () if trace_level is TraceLevel.NONE else resolution.target_attribute_trace
-        return DamageResult(
-            request_id=query.request.request_id,
-            frame=query.request.frame,
-            damage_type=query.request.damage_type,
-            source_ref=query.request.source_ref,
-            target_ref=query.request.target_ref,
-            element=query.request.element,
-            base_damage=resolution.scaling.value,
-            base_damage_additions=resolution.scaling.additions,
-            damage_bonus_multiplier=resolution.damage_bonus.multiplier,
-            crit_outcome=resolution.critical.outcome,
-            crit_rate=resolution.critical.crit_rate,
-            crit_damage=resolution.critical.crit_damage,
-            crit_multiplier=resolution.critical.multiplier,
-            reaction_multiplier=resolution.reaction.multiplier,
-            defense=resolution.defense,
-            resistance=resolution.resistance,
-            official_damage=resolution.official_damage,
-            debug_multiplier=resolution.debug_multiplier,
-            final_damage=resolution.final_damage,
-            reaction_details=resolution.reaction,
-            catalyze_reaction_resolution=resolution.catalyze,
-            component_results=resolution.scaling.component_results,
-            source_attribute_trace=source_trace,
-            target_attribute_trace=target_trace,
-            applied_terms=applied_terms,
-            rejected_terms=rejected_terms,
-            trace_level=trace_level,
-            trace_metadata={"effective_crit_rate": resolution.critical.effective_crit_rate},
-        )
-
-    applied_terms = () if trace_level is TraceLevel.NONE else modifiers.applied_terms
+    # 槽位账单 = 本次伤害效果词条 + 面板属性读取词条；剧变/月曜路径保持无账单。
+    applied_terms = (
+        ()
+        if trace_level is TraceLevel.NONE
+        else (*modifiers.applied_terms, *resolution.panel_terms)
+    )
     rejected_terms = modifiers.rejected_terms if trace_level is TraceLevel.FULL else ()
     source_trace = () if trace_level is TraceLevel.NONE else resolution.source_attribute_trace
     target_trace = () if trace_level is TraceLevel.NONE else resolution.target_attribute_trace
     return DamageResult(
         request_id=query.request.request_id,
         frame=query.request.frame,
-        damage_type=query.request.damage_type,
+        formula_key=query.request.formula_key,
+        main_attack_tag=query.request.main_attack_tag,
         source_ref=query.request.source_ref,
         target_ref=query.request.target_ref,
         element=query.request.element,
@@ -332,7 +302,9 @@ def _build_damage_result(
         official_damage=resolution.official_damage,
         debug_multiplier=resolution.debug_multiplier,
         final_damage=resolution.final_damage,
+        damage_name=query.request.damage_name,
         reaction_details=resolution.reaction,
+        catalyze_reaction_resolution=resolution.catalyze,
         component_results=resolution.scaling.component_results,
         source_attribute_trace=source_trace,
         target_attribute_trace=target_trace,
@@ -340,4 +312,6 @@ def _build_damage_result(
         rejected_terms=rejected_terms,
         trace_level=trace_level,
         trace_metadata={"effective_crit_rate": resolution.critical.effective_crit_rate},
+        damage_bonus_zone=resolution.damage_bonus,
+        critical_zone=resolution.critical,
     )

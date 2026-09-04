@@ -1,10 +1,8 @@
-/** 展示配置节点：表格 / 时间轴 / 饼图 / 柱状图绑定编辑。 */
+/** 展示配置转发节点：表格 / 饼图 / 柱状图绑定编辑，列选项来自上游表。 */
 
 import { useState } from "react";
-import { configTargetView, viewInputShape } from "../../../workflow/templates";
-import { normalizeWidthMode } from "../../../workflow/view_size";
 import { asString } from "../common";
-import { useContextEnv, type EditorProps } from "./context";
+import { upstreamShape, type EditorProps } from "./context";
 
 type RoleConfig =
   | { role: string; required: boolean; list?: false }
@@ -34,18 +32,43 @@ const ROLE_CONFIGS: Record<string, RoleConfig[]> = {
   ],
 };
 
+/** 绑定角色的可读名：列名即显示名，角色标签统一用业务语义。 */
+const ROLE_LABELS: Record<string, string> = {
+  track: "轨道",
+  start: "起点",
+  end: "终点",
+  value: "值列",
+  label: "标签列",
+  group: "分组列",
+  x: "X 轴列",
+  y: "Y 轴列",
+  series: "系列列",
+};
+
+/** 摘要行字段短名：卡顶一行读出当前绑定，未绑定显示「—」。 */
+const SUMMARY_LABELS: Record<string, string> = {
+  track: "轨道",
+  start: "起点",
+  end: "终点",
+  value: "值",
+  label: "标签",
+  group: "分组",
+  x: "X",
+  y: "Y",
+  series: "系列",
+};
+
 function asStringArray(value: unknown): string[] {
   return Array.isArray(value)
     ? value.filter((item): item is string => typeof item === "string")
     : [];
 }
 
-/** 表格配置参数统一归一化：存量节点缺省宽度参数时按默认值补齐。 */
+/** 表格配置参数统一归一化：宽度模式（2026-09-01 单模式化）在编辑时清除。 */
 function normalizeTableParams(params: Record<string, unknown>): Record<string, unknown> {
-  return {
-    ...params,
-    width_mode: normalizeWidthMode(params.width_mode),
-  };
+  const next = { ...params };
+  delete next.width_mode;
+  return next;
 }
 
 type BindingZone = "condition" | "data";
@@ -268,14 +291,11 @@ function BindingList({
 
 /** 表格配置编辑器：条件列 / 数据列两个分区列表（契约：绑定归属配置节点）。 */
 export function TableConfigEditor({ node, onChange }: EditorProps) {
-  const env = useContextEnv();
-  const view = configTargetView(env.definition, node.id);
-  const shape = view === null ? [] : viewInputShape(env.shapes, env.definition, view.id);
+  const shape = upstreamShape(node.id);
   const available = shape.map((column) => column.name);
   const condition = asStringArray(node.params.condition_columns);
   const data = asStringArray(node.params.data_columns);
   const taken = new Set([...condition, ...data]);
-  const widthMode = node.params.width_mode === "fixed" ? "fixed" : "auto";
   const [dragSource, setDragSource] = useState<BindingDragSource | null>(null);
 
   function commitMove(
@@ -311,7 +331,7 @@ export function TableConfigEditor({ node, onChange }: EditorProps) {
     <div className="analysis-editor table-config-editor">
       {available.length === 0 && (
         <p className="analysis-editor-empty table-config-editor-empty">
-          连接视图并接通数据源后，这里会出现可绑定的列。
+          连接上游表节点后，这里会出现可绑定的列。
         </p>
       )}
       <BindingList
@@ -362,70 +382,110 @@ export function TableConfigEditor({ node, onChange }: EditorProps) {
           }
         }}
       />
-      <div className="table-display-zone">
-        <div className="table-binding-title">
-          <span>展示</span>
-          <span className="table-binding-hint">
-            高度手动调节；自适应内容超出上限时裁剪，拖宽查看
-          </span>
-        </div>
-        <label className="table-size-field">
-          <span>宽度模式</span>
-          <select
-            value={widthMode}
-            onChange={(event) =>
-              onChange(
-                normalizeTableParams({ ...node.params, width_mode: event.target.value }),
-              )
-            }
-          >
-            <option value="auto">自适应</option>
-            <option value="fixed">固定</option>
-          </select>
-        </label>
-      </div>
     </div>
   );
 }
 
-export function DisplayConfigEditor({ node, onChange }: EditorProps) {
+/** 展示配置编辑器：绑定摘要行 + 行级绑定状态的列下拉表单（列选项来自配置节点上游表）。 */
+export function DisplayConfigEditor({ node, onChange, fieldErrors }: EditorProps) {
+  const shape = upstreamShape(node.id);
+  const available = shape.map((column) => column.name);
   const roles = ROLE_CONFIGS[node.kind] ?? [];
   return (
-    <div className="analysis-editor">
-      {roles.map((config) => (
-        <label key={config.role} className="analysis-field">
-          <span>
-            {config.role}
-            {config.required ? "（必选）" : ""}
-          </span>
-          {config.list ? (
-            <input
-              value={
-                Array.isArray(node.params[config.role])
-                  ? (node.params[config.role] as unknown[]).join(",")
-                  : ""
-              }
-              placeholder="列名，逗号分隔"
-              onChange={(event) =>
-                onChange({
-                  ...node.params,
-                  [config.role]: event.target.value
-                    .split(",")
-                    .map((item) => item.trim())
-                    .filter((item) => item !== ""),
-                })
-              }
-            />
-          ) : (
-            <input
-              value={asString(node.params[config.role]) ?? ""}
-              onChange={(event) =>
-                onChange({ ...node.params, [config.role]: event.target.value })
-              }
-            />
-          )}
-        </label>
-      ))}
+    <div className="analysis-editor display-config-editor">
+      <div className="display-config-summary">
+        {roles.map((config) => {
+          const current = asString(node.params[config.role]) ?? "";
+          return (
+            <span key={config.role} className="display-config-summary-item">
+              <span className="display-config-summary-key">
+                {SUMMARY_LABELS[config.role] ?? config.role}
+              </span>
+              =
+              {current === "" ? (
+                <span className="display-config-summary-empty">—</span>
+              ) : (
+                <span className="display-config-summary-value">{current}</span>
+              )}
+            </span>
+          );
+        })}
+      </div>
+      {available.length === 0 && (
+        <p className="analysis-editor-empty">连接上游表节点后，这里会出现可绑定的列。</p>
+      )}
+      {available.length > 0 &&
+        roles.map((config) => {
+        const current = asString(node.params[config.role]) ?? "";
+        const fieldError = fieldErrors?.[config.role]?.[0];
+        const missing = current !== "" && !available.includes(current);
+        const hint = (() => {
+          if (fieldError !== undefined) {
+            return { text: fieldError, tone: "error" };
+          }
+          if (missing) {
+            return { text: "列不在上游表中", tone: "error" };
+          }
+          if (config.required && current === "") {
+            return { text: "必选，尚未绑定", tone: "warn" };
+          }
+          return null;
+        })();
+        const invalid = fieldError !== undefined || missing;
+        return (
+          <div key={config.role} className="display-config-row">
+            <label className="field-row">
+              <span
+                className={`field-label ${
+                  config.required ? "display-config-required-label" : "display-config-optional"
+                }`}
+              >
+                {ROLE_LABELS[config.role] ?? config.role}
+              </span>
+              {config.list ? (
+                <input
+                  value={
+                    Array.isArray(node.params[config.role])
+                      ? (node.params[config.role] as unknown[]).join(",")
+                      : ""
+                  }
+                  placeholder="列名，逗号分隔"
+                  onChange={(event) =>
+                    onChange({
+                      ...node.params,
+                      [config.role]: event.target.value
+                        .split(",")
+                        .map((item) => item.trim())
+                        .filter((item) => item !== ""),
+                    })
+                  }
+                />
+              ) : (
+                <select
+                  className={invalid ? "field-invalid" : undefined}
+                  value={current}
+                  onChange={(event) =>
+                    onChange({ ...node.params, [config.role]: event.target.value })
+                  }
+                >
+                  <option value="">列…</option>
+                  {available.map((name) => (
+                    <option key={name} value={name}>
+                      {name}
+                    </option>
+                  ))}
+                  {current !== "" && !available.includes(current) && (
+                    <option value={current}>{current}</option>
+                  )}
+                </select>
+              )}
+            </label>
+            {hint !== null && (
+              <p className={`display-config-row-hint ${hint.tone}`}>{hint.text}</p>
+            )}
+          </div>
+        );
+      })}
     </div>
   );
 }

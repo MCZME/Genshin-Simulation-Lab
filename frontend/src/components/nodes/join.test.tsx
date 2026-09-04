@@ -107,9 +107,9 @@ function Harness({
   );
 }
 
-describe("合并表（连接）节点编辑器", () => {
-  it("节点显示名为合并表", () => {
-    expect(getNodeKindSpec("join")?.displayName).toBe("合并表");
+describe("连接表节点编辑器", () => {
+  it("节点显示名为连接表", () => {
+    expect(getNodeKindSpec("join")?.displayName).toBe("连接表");
   });
 
   it("卡片内直编：主表/副表匹配键与两种合并方式说明", () => {

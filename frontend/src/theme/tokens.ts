@@ -22,11 +22,23 @@ export const COLORS = {
     dataProcessing: "#a855f7",
     displayConfig: "#ec4899",
     displayView: "#ef4444",
+    itemDetail: "#eab308",
   },
   severity: {
     error: "#ef4444",
     warning: "#f59e0b",
     info: "#3b82f6",
+  },
+  /** 元素显示色：仅 UI 装饰（详情卡徽标等），不参与仿真数值；取自游戏惯例配色。 */
+  element: {
+    physical: "#ece5d8",
+    pyro: "#ef7938",
+    hydro: "#4cc2f1",
+    electro: "#af8ec1",
+    cryo: "#9fd6e3",
+    anemo: "#74c2a8",
+    geo: "#fab632",
+    dendro: "#a5c83b",
   },
   status: {
     queued: "#94a3b8",

@@ -65,6 +65,7 @@ def build_resonance_static_providers(
                             f"resonance:{key}",
                         ),
                         audit_tags=modifier.audit_tags,
+                        provider_display_name=modifier.display_name,
                     )
                 )
         if terms:
@@ -74,6 +75,7 @@ def build_resonance_static_providers(
                         provider_key=provider_key,
                         writes=frozenset(term.target_key for term in terms),
                         owner_ref=subject_ref,
+                        display_name="元素共鸣",
                     ),
                     tuple(terms),
                     subject_ref=subject_ref,

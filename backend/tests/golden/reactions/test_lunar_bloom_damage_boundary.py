@@ -14,7 +14,8 @@ from genshin_sim.core.elements import (
 from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import DamageImpactSpec, ImpactKind, ImpactRequest
 from genshin_sim.core.systems.aura import AuraApplicationRequest, AuraStrength
-from genshin_sim.core.systems.damage import DamageScalingTerm, DamageType
+from genshin_sim.core.systems.damage import DamageScalingTerm
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_LUNAR_REACTION
 from genshin_sim.core.systems.reaction.mechanics.dendro_core import (
     PLAYER_TEAM_DENDRO_CORE_POOL_SCOPE,
 )
@@ -86,7 +87,7 @@ def test_lunar_bloom_reaction_produces_no_reaction_damage(golden_assembled) -> N
     lunar_records = tuple(
         record
         for record in assembled.damage_handler.records
-        if record.result.damage_type is DamageType.LUNAR_REACTION
+        if record.result.formula_key == FORMULA_KEY_LUNAR_REACTION
     )
     assert lunar_records == ()
     assert (

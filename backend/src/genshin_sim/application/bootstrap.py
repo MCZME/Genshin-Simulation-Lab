@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING
 
 from genshin_sim.application.context import ApplicationContext, resolve_workspace_data_dir
+from genshin_sim.assets import CompositeAssetRepository
 from genshin_sim.content import create_default_content_unit_registry
 from genshin_sim.infrastructure.assets_project_amber import (
     build_asset_manifest_from_project_amber_cache,
@@ -34,6 +35,9 @@ from genshin_sim.infrastructure.results_sqlite import (
 )
 from genshin_sim.infrastructure.results_sqlite.analysis_query import (
     SQLiteAnalysisQueryExecutor,
+)
+from genshin_sim.infrastructure.results_sqlite.analysis_stage import (
+    SQLiteAnalysisStageExecutor,
 )
 
 if TYPE_CHECKING:
@@ -62,6 +66,7 @@ def create_cli_application(
     asset_db = Path(asset_db_path) if asset_db_path is not None else root / DEFAULT_ASSET_DB
     config_path = config_store.config_path(root)
     config = config_store.load(root) if config_path.is_file() else None
+    developer_mode = config.developer.enabled if config is not None else False
     if result_db_path is None:
         if config is not None:
             result_db = config.results_db(root)
@@ -84,13 +89,20 @@ def create_cli_application(
     runner = ProcessSimulationJobRunner(
         asset_db_path=asset_db,
         result_db_path=result_db,
+        developer_mode=developer_mode,
         # 执行后端容量覆盖批调度允许的上限；批服务是唯一队列。
         max_workers=MAX_BATCH_CONCURRENCY,
     )
 
-    asset_repository = SQLiteAssetRepository(asset_db)
+    sqlite_asset_repository = SQLiteAssetRepository(asset_db)
+    asset_repository: SQLiteAssetRepository | CompositeAssetRepository = sqlite_asset_repository
     result_repository = SQLiteResultRepository(result_db)
     result_writer = SQLiteResultWriter(result_db)
+    # 开发者模式下叠加代码定义的测试资产；handler 绑定维护通道始终指向主库。
+    if developer_mode:
+        from genshin_sim.content.test.asset_repository import TestAssetRepository
+
+        asset_repository = CompositeAssetRepository(asset_repository, TestAssetRepository())
 
     def rebuild_asset_database_from_source(db_path: str | Path) -> Path:
         fetch_project_amber_source_cache(source_cache)
@@ -106,8 +118,9 @@ def create_cli_application(
         result_writer=result_writer,
         job_runner=runner,
         analysis_query_executor=SQLiteAnalysisQueryExecutor(result_db),
-        asset_handler_repository=asset_repository,
-        content_unit_registry=create_default_content_unit_registry(),
+        analysis_stage_executor=SQLiteAnalysisStageExecutor(result_db),
+        asset_handler_repository=sqlite_asset_repository,
+        content_unit_registry=create_default_content_unit_registry(developer_mode=developer_mode),
         init_result_database=init_result_database,
         init_asset_database=init_asset_database,
         write_minimal_static_asset_database=write_minimal_static_asset_database,

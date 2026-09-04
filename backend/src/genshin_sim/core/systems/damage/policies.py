@@ -69,8 +69,12 @@ class ScalingZonePolicy(Protocol):
         query: DamageQuery,
         session: DamageResolutionSession,
         terms: tuple[DamageModifierTerm, ...],
-    ) -> tuple[ScalingZoneResolution, tuple[AttributeResolution, ...]]:
-        """返回倍率区结果和本区读取的来源属性 trace。"""
+    ) -> tuple[
+        ScalingZoneResolution,
+        tuple[AttributeResolution, ...],
+        tuple[DamageModifierTerm, ...],
+    ]:
+        """返回倍率区结果、来源属性 trace 和面板读取词条。"""
 
         ...
 
@@ -83,14 +87,25 @@ class StandardScalingZonePolicy:
         query: DamageQuery,
         session: DamageResolutionSession,
         terms: tuple[DamageModifierTerm, ...],
-    ) -> tuple[ScalingZoneResolution, tuple[AttributeResolution, ...]]:
-        """返回倍率区组件、加值和合计基础伤害。"""
+    ) -> tuple[
+        ScalingZoneResolution,
+        tuple[AttributeResolution, ...],
+        tuple[DamageModifierTerm, ...],
+    ]:
+        """按槽位账单返回倍率区组件、加值和合计基础伤害。"""
 
         source_trace: list[AttributeResolution] = []
+        panel_terms: list[DamageModifierTerm] = []
         component_results: list[DamageComponentResult] = []
         for scaling in query.request.scaling_terms:
             attribute = session.resolve_source(scaling.attribute_key)
             source_trace.append(attribute)
+            panel_term = DamageModifierTerm.panel_read(
+                stage=DamageModifierStage.PANEL_ATTRIBUTE_VALUE,
+                attribute=attribute,
+                component_key=scaling.component_key,
+            )
+            panel_terms.append(panel_term)
             percent_add = _sum_terms(
                 terms,
                 DamageModifierStage.COMPONENT_COEFFICIENT_PERCENT_ADD,
@@ -106,12 +121,12 @@ class StandardScalingZonePolicy:
                 raise DamageResolutionError(
                     f"component {scaling.component_key} 的最终倍率不能为负数"
                 )
-            component_damage = attribute.final_value * final_coefficient
+            component_damage = panel_term.value * final_coefficient
             component_results.append(
                 DamageComponentResult(
                     component_key=scaling.component_key,
                     attribute_key=scaling.attribute_key,
-                    attribute_value=attribute.final_value,
+                    attribute_value=panel_term.value,
                     original_coefficient=scaling.coefficient,
                     final_coefficient=final_coefficient,
                     damage=component_damage,
@@ -134,6 +149,7 @@ class StandardScalingZonePolicy:
                 value=value,
             ),
             tuple(source_trace),
+            tuple(panel_terms),
         )
 
 
@@ -145,8 +161,8 @@ class DamageBonusZonePolicy(Protocol):
         query: DamageQuery,
         session: DamageResolutionSession,
         terms: tuple[DamageModifierTerm, ...],
-    ) -> tuple[DamageBonusZoneResolution, AttributeResolution]:
-        """返回增伤区结果和读取的元素增伤属性 trace。"""
+    ) -> tuple[DamageBonusZoneResolution, AttributeResolution, DamageModifierTerm]:
+        """返回增伤区结果、元素增伤属性 trace 和面板读取词条。"""
 
         ...
 
@@ -159,23 +175,28 @@ class StandardDamageBonusZonePolicy:
         query: DamageQuery,
         session: DamageResolutionSession,
         terms: tuple[DamageModifierTerm, ...],
-    ) -> tuple[DamageBonusZoneResolution, AttributeResolution]:
-        """返回第一轮通用公式增伤区结果。"""
+    ) -> tuple[DamageBonusZoneResolution, AttributeResolution, DamageModifierTerm]:
+        """按槽位账单返回第一轮通用公式增伤区结果。"""
 
         bonus_resolution = session.resolve_source(
             ELEMENT_TO_DAMAGE_BONUS_KEY[query.request.element.value]
         )
+        panel_term = DamageModifierTerm.panel_read(
+            stage=DamageModifierStage.PANEL_ELEMENT_BONUS,
+            attribute=bonus_resolution,
+        )
         modifier_bonus = _sum_terms(terms, DamageModifierStage.DAMAGE_BONUS_ADD)
-        multiplier = 1 + bonus_resolution.final_value + modifier_bonus
+        multiplier = 1 + panel_term.value + modifier_bonus
         if multiplier < 0:
             raise DamageResolutionError("增伤区乘数不能为负数")
         return (
             DamageBonusZoneResolution(
-                element_bonus=bonus_resolution.final_value,
+                element_bonus=panel_term.value,
                 modifier_bonus=modifier_bonus,
                 multiplier=multiplier,
             ),
             bonus_resolution,
+            panel_term,
         )
 
 
@@ -187,8 +208,12 @@ class CriticalZonePolicy(Protocol):
         query: DamageQuery,
         session: DamageResolutionSession,
         terms: tuple[DamageModifierTerm, ...],
-    ) -> tuple[CriticalZoneResolution, tuple[AttributeResolution, ...]]:
-        """返回暴击区结果和读取的来源属性 trace。"""
+    ) -> tuple[
+        CriticalZoneResolution,
+        tuple[AttributeResolution, ...],
+        tuple[DamageModifierTerm, ...],
+    ]:
+        """返回暴击区结果、来源属性 trace 和面板读取词条。"""
 
         ...
 
@@ -204,17 +229,29 @@ class StandardCriticalZonePolicy:
         query: DamageQuery,
         session: DamageResolutionSession,
         terms: tuple[DamageModifierTerm, ...],
-    ) -> tuple[CriticalZoneResolution, tuple[AttributeResolution, ...]]:
-        """返回暴击率、暴击伤害、决策结果和乘数。"""
+    ) -> tuple[
+        CriticalZoneResolution,
+        tuple[AttributeResolution, ...],
+        tuple[DamageModifierTerm, ...],
+    ]:
+        """按槽位账单返回暴击率、暴击伤害、决策结果和乘数。"""
 
         if query.request.can_crit:
             crit_rate_resolution = session.resolve_source(STAT_CRIT_RATE)
             crit_damage_resolution = session.resolve_source(STAT_CRIT_DAMAGE)
-            crit_rate = crit_rate_resolution.final_value + _sum_terms(
+            rate_panel = DamageModifierTerm.panel_read(
+                stage=DamageModifierStage.PANEL_CRIT_RATE,
+                attribute=crit_rate_resolution,
+            )
+            damage_panel = DamageModifierTerm.panel_read(
+                stage=DamageModifierStage.PANEL_CRIT_DAMAGE,
+                attribute=crit_damage_resolution,
+            )
+            crit_rate = rate_panel.value + _sum_terms(
                 terms,
                 DamageModifierStage.CRIT_RATE_ADD,
             )
-            crit_damage = crit_damage_resolution.final_value + _sum_terms(
+            crit_damage = damage_panel.value + _sum_terms(
                 terms,
                 DamageModifierStage.CRIT_DAMAGE_ADD,
             )
@@ -223,12 +260,14 @@ class StandardCriticalZonePolicy:
             if outcome is CritOutcome.NOT_APPLICABLE:
                 raise CriticalDecisionError("可暴击伤害不能返回 not_applicable")
             source_trace = (crit_rate_resolution, crit_damage_resolution)
+            panel_terms = (rate_panel, damage_panel)
         else:
             crit_rate = 0.0
             crit_damage = 0.0
             effective_crit_rate = 0.0
             outcome = CritOutcome.NOT_APPLICABLE
             source_trace = ()
+            panel_terms = ()
         multiplier = 1 + crit_damage if outcome is CritOutcome.CRITICAL else 1.0
         if multiplier < 0:
             raise DamageResolutionError("暴击乘数不能为负数")
@@ -242,6 +281,7 @@ class StandardCriticalZonePolicy:
                 multiplier=multiplier,
             ),
             source_trace,
+            panel_terms,
         )
 
 
@@ -252,8 +292,8 @@ class GeneralReactionZonePolicy(Protocol):
         self,
         query: DamageQuery,
         session: DamageResolutionSession,
-    ) -> GeneralReactionZoneResolution:
-        """返回通用公式反应区乘数。"""
+    ) -> tuple[GeneralReactionZoneResolution, DamageModifierTerm | None]:
+        """返回通用公式反应区乘数和元素精通面板读取词条（无读取时为 None）。"""
 
         ...
 
@@ -265,11 +305,11 @@ class IdentityGeneralReactionZonePolicy:
         self,
         query: DamageQuery,
         session: DamageResolutionSession,
-    ) -> GeneralReactionZoneResolution:
+    ) -> tuple[GeneralReactionZoneResolution, DamageModifierTerm | None]:
         """忽略查询，返回单位乘数。"""
 
         del query, session
-        return GeneralReactionZoneResolution(1.0)
+        return GeneralReactionZoneResolution(1.0), None
 
 
 class StandardGeneralReactionZonePolicy:
@@ -279,27 +319,34 @@ class StandardGeneralReactionZonePolicy:
         self,
         query: DamageQuery,
         session: DamageResolutionSession,
-    ) -> GeneralReactionZoneResolution:
+    ) -> tuple[GeneralReactionZoneResolution, DamageModifierTerm | None]:
         reaction = query.request.amplifying_reaction
         if reaction is None:
-            return GeneralReactionZoneResolution(1.0)
+            return GeneralReactionZoneResolution(1.0), None
         mastery_trace = session.resolve_source(STAT_ELEMENTAL_MASTERY)
-        mastery = validate_damage_float(mastery_trace.final_value, "elemental_mastery")
+        panel_term = DamageModifierTerm.panel_read(
+            stage=DamageModifierStage.PANEL_ELEMENTAL_MASTERY,
+            attribute=mastery_trace,
+        )
+        mastery = validate_damage_float(panel_term.value, "elemental_mastery")
         if mastery < 0:
             raise DamageResolutionError("元素精通不能为负数")
         mastery_bonus = 2.78 * mastery / (mastery + 1400.0)
         multiplier = reaction.base_multiplier * (1.0 + mastery_bonus + reaction.reaction_bonus)
         if not math.isfinite(multiplier) or multiplier <= 0:
             raise DamageResolutionError("增幅反应乘数必须是有限正数")
-        return GeneralReactionZoneResolution(
-            multiplier=multiplier,
-            occurrence_ref=reaction.occurrence_ref,
-            reaction_profile_key=reaction.reaction_profile_key,
-            base_multiplier=reaction.base_multiplier,
-            elemental_mastery=mastery,
-            mastery_bonus=mastery_bonus,
-            reaction_bonus=reaction.reaction_bonus,
-            elemental_mastery_trace=mastery_trace,
+        return (
+            GeneralReactionZoneResolution(
+                multiplier=multiplier,
+                occurrence_ref=reaction.occurrence_ref,
+                reaction_profile_key=reaction.reaction_profile_key,
+                base_multiplier=reaction.base_multiplier,
+                elemental_mastery=mastery,
+                mastery_bonus=mastery_bonus,
+                reaction_bonus=reaction.reaction_bonus,
+                elemental_mastery_trace=mastery_trace,
+            ),
+            panel_term,
         )
 
 
@@ -338,8 +385,18 @@ class StandardDefensePolicy:
 class StandardResistancePolicy:
     """按旧项目迁移基线的分段函数计算抗性乘区。"""
 
-    def resolve(self, resistance: float) -> ResistanceResolution:
-        """返回给定抗性值对应的抗性区审计结果。"""
+    def resolve(
+        self,
+        resistance: float,
+        *,
+        base_resistance: float | None = None,
+        resistance_add: float = 0.0,
+    ) -> ResistanceResolution:
+        """返回给定有效抗性对应的抗性区审计结果。
+
+        ``resistance`` 是分段函数使用的有效抗性；``base_resistance`` 与
+        ``resistance_add`` 只进入审计，未提供时分别回退为有效抗性与 0。
+        """
 
         value = validate_damage_float(resistance, "resistance")
         if value < 0:
@@ -348,7 +405,12 @@ class StandardResistancePolicy:
             multiplier = 1 / (1 + 4 * value)
         else:
             multiplier = 1 - value
-        return ResistanceResolution(value, multiplier)
+        return ResistanceResolution(
+            resistance=value,
+            multiplier=multiplier,
+            base_resistance=base_resistance,
+            resistance_add=resistance_add,
+        )
 
 
 def _base_damage_additions(

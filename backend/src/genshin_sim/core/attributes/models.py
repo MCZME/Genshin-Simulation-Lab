@@ -158,6 +158,8 @@ class ModifierTerm:
     source_ref: RuntimeSourceRef
     stacking_group: str | None = None
     audit_tags: tuple[str, ...] = ()
+    # provider 显示名：由收集器从 ModifierProviderSpec.display_name 注入，内容未提供时为 None。
+    provider_display_name: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.stage, ModifierStage):
@@ -178,6 +180,7 @@ class ModifierTerm:
             "stage": self.stage.value,
             "value": self.value,
             "provider_key": self.provider_key,
+            "provider_display_name": self.provider_display_name,
             "source_ref": self.source_ref.to_dict(),
             "stacking_group": self.stacking_group,
             "audit_tags": tuple(self.audit_tags),
@@ -201,6 +204,8 @@ class ModifierProviderSpec:
     writes: frozenset[AttributeKey] = frozenset()
     private_namespace: str | None = None
     owner_ref: AttributeSubjectRef | None = None
+    # provider 显示名；由内容层提供，属性解析收集器注入返回 term 的审计。
+    display_name: str | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.provider_key, str) or not self.provider_key.strip():
@@ -209,6 +214,10 @@ class ModifierProviderSpec:
         object.__setattr__(self, "writes", frozenset(self.writes))
         if self.private_namespace is not None and not self.private_namespace.strip():
             raise AttributeValidationError("private_namespace 提供时必须是非空字符串")
+        if self.display_name is not None and (
+            not isinstance(self.display_name, str) or not self.display_name.strip()
+        ):
+            raise AttributeValidationError("provider display_name 提供时必须是非空字符串")
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,6 +243,23 @@ class AttributeResolution:
         object.__setattr__(self, "rejected_terms", tuple(self.rejected_terms))
         object.__setattr__(self, "dependency_resolutions", tuple(self.dependency_resolutions))
         object.__setattr__(self, "trace_metadata", MappingProxyType(dict(self.trace_metadata)))
+
+    def to_dict(self) -> dict[str, object]:
+        """返回完整属性解析审计；递归依赖完整保存，不截断。"""
+
+        return {
+            "attribute_key": self.attribute_key.value,
+            "subject_ref": self.subject_ref.to_dict(),
+            "final_value": self.final_value,
+            "base_value": self.base_value,
+            "applied_terms": tuple(term.to_dict() for term in self.applied_terms),
+            "rejected_terms": tuple(term.to_dict() for term in self.rejected_terms),
+            "dependency_resolutions": tuple(
+                resolution.to_dict() for resolution in self.dependency_resolutions
+            ),
+            "policy_key": self.policy_key,
+            "trace_metadata": dict(self.trace_metadata),
+        }
 
 
 @dataclass(frozen=True, slots=True)

@@ -1,5 +1,8 @@
 """运行期结果库的 SQLite 实现。"""
 
+from genshin_sim.infrastructure.results_sqlite.analysis_stage import (
+    SQLiteAnalysisStageExecutor,
+)
 from genshin_sim.infrastructure.results_sqlite.repository import (
     SQLiteResultRepository,
     SQLiteResultWriter,
@@ -11,6 +14,7 @@ from genshin_sim.infrastructure.results_sqlite.schema import (
 
 __all__ = [
     "RESULTS_SCHEMA_VERSION",
+    "SQLiteAnalysisStageExecutor",
     "SQLiteResultRepository",
     "SQLiteResultWriter",
     "init_result_database",

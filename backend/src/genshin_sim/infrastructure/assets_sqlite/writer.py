@@ -24,7 +24,7 @@ from genshin_sim.infrastructure.assets_sqlite.schema import (
 
 
 class SQLiteAssetDataWriter:
-    """Small writer used by build scripts and tests to create asset databases."""
+    """供构建脚本和测试创建资产数据库的小型写入器。"""
 
     def __init__(self, db_path: str | Path) -> None:
         self.db_path = Path(db_path)
@@ -61,7 +61,11 @@ class SQLiteAssetDataWriter:
 
 
 def write_minimal_static_asset_database(db_path: str | Path) -> Path:
-    """Create a tiny local asset database for smoke tests and CLI bootstrapping."""
+    """创建仅含元数据的最小本地资产数据库骨架。
+
+    生产侧最小库不携带任何具体内容行；开发者模式下测试角色由
+    ``CompositeAssetRepository`` 叠加的 ``TestAssetRepository`` 提供。
+    """
 
     writer = SQLiteAssetDataWriter(db_path)
     return writer.replace_all(
@@ -73,78 +77,6 @@ def write_minimal_static_asset_database(db_path: str | Path) -> Path:
             "source_version": "1",
             "content_hash": "local-static-1",
         },
-        characters=(
-            CharacterAsset(
-                asset_key="character:test_character",
-                source_id="test_character",
-                name="Test Character",
-                element="anemo",
-                weapon_type="sword",
-                rarity=5,
-                burst_energy_cost=60.0,
-                handler_key="character.testing.runtime_probe",
-            ),
-        ),
-        character_level_stats=(
-            CharacterLevelStats(
-                character_key="character:test_character",
-                level=90,
-                ascension_phase=6,
-                base_hp=10000.0,
-                base_atk=200.0,
-                base_def=600.0,
-            ),
-        ),
-        weapons=(
-            WeaponAsset(
-                asset_key="weapon:test_sword",
-                source_id="test_sword",
-                name="Test Sword",
-                weapon_type="sword",
-                rarity=4,
-                handler_key="generic.test_weapon",
-            ),
-        ),
-        weapon_level_stats=(
-            WeaponLevelStats(
-                weapon_key="weapon:test_sword",
-                level=90,
-                ascension_phase=6,
-                base_atk=510.0,
-                secondary_stat="atk_percent",
-                secondary_value=0.413,
-            ),
-        ),
-        artifact_sets=(
-            ArtifactSetAsset(
-                asset_key="artifact_set:test_set",
-                source_id="test_set",
-                name="Test Set",
-                handler_key="generic.test_artifact_set",
-            ),
-        ),
-        artifact_set_bonuses=(
-            ArtifactSetBonus(
-                artifact_set_key="artifact_set:test_set",
-                piece_count=4,
-                handler_key="generic.static_modifiers",
-                params={"schema_version": 1},
-            ),
-        ),
-        talent_scalings=(
-            TalentScalingEntry(
-                character_key="character:test_character",
-                talent_key="normal_attack",
-                entry_key="hit_1",
-                label="Normal Attack Hit 1",
-                scaling={
-                    "schema_version": 1,
-                    "mode": "constant",
-                    "components": [{"kind": "plain_ratio", "values": [1.0]}],
-                },
-                tags=("damage",),
-            ),
-        ),
     )
 
 

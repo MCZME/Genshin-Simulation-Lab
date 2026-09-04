@@ -1,7 +1,10 @@
 /** 分析视图节点内容区：消费处理节点结果表并渲染。 */
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
+import {
+  tableRowsByIndex,
+  type AnalysisNodeResult,
+} from "../../workflow/analysis_runner";
 import {
   computeAnalysisShapes,
   connectedConfigNode,
@@ -10,20 +13,33 @@ import {
 } from "../../workflow/templates";
 import type { WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 import {
-  DAMAGE_TYPE_LABELS,
+  FORMULA_KEY_LABELS,
   ELEMENT_LABELS,
   EVENT_TYPE_LABELS,
   RUN_STATE_LABELS,
   WEAPON_LABELS,
 } from "../../theme/elements";
-import { useAnalysisSchemaCatalog } from "../analysis_context";
+import {
+  useAnalysisSchemaCatalog,
+  useAnalysisSelection,
+  useAnalysisStageSelection,
+} from "../analysis_context";
 import { useAssetNames } from "./useAssetNames";
-import { MIN_VIEW_WIDTH } from "../../workflow/view_size";
+import { BarChartView } from "./barView";
+import { PieChartView } from "./pieView";
+import { asString } from "./common";
+import {
+  MAX_VIEW_FIT_HEIGHT,
+  MIN_VIEW_HEIGHT,
+  MIN_VIEW_WIDTH,
+  TABLE_HEIGHT_EXTRAS,
+  clamp,
+} from "../../workflow/view_size";
 
 const ROW_HEIGHT = 28;
 /** 超过该行数启用窗口化渲染，避免大批量一次性铺 DOM。 */
 const VIRTUALIZE_THRESHOLD = 200;
-const MAX_RENDERED_ROWS = 10000;
+export const MAX_RENDERED_ROWS = 10000;
 const SORT_ORDERS = ["①", "②", "③", "④", "⑤", "⑥", "⑦", "⑧", "⑨", "⑩"];
 /** 列宽估算：单元格左右内边距合计（px）。 */
 const CELL_PADDING = 16;
@@ -42,7 +58,7 @@ const ENUM_LABEL_MAPS: Record<string, Record<string, string>> = {
   "enum:weapon_type": WEAPON_LABELS,
   "enum:run_state": RUN_STATE_LABELS,
   "enum:event_type": EVENT_TYPE_LABELS,
-  "enum:damage_type": DAMAGE_TYPE_LABELS,
+  "enum:formula_key": FORMULA_KEY_LABELS,
 };
 
 export function AnalysisViewBody({
@@ -59,8 +75,8 @@ export function AnalysisViewBody({
   onLocateNode?: (nodeId: string) => void;
   /** 节点内容区可用宽度（px）；供表格视图计算裁剪提示。 */
   viewWidth?: number;
-  /** 表格视图布局变化时上报：内容自然宽与被隐藏列数。 */
-  onFitChange?: (info: MemberTableFitInfo) => void;
+  /** 视图内容变化时上报：内容自然宽/高与被隐藏列数（视图按需填充）。 */
+  onFitChange?: (info: ViewFitInfo) => void;
 }) {
   const hasDataInput = definition.edges.some(
     (edge) => edge.target_node_id === node.id && edge.target_port_id === "in",
@@ -70,26 +86,71 @@ export function AnalysisViewBody({
   }
   if (node.kind === "member_table") {
     const config = connectedConfigNode(definition, node.id, "table_config");
-    if (config === null) {
-      return <div className="analysis-view-state">缺少表格配置（连接表格配置节点）</div>;
+    if (config !== null) {
+      const condition = asStringArray(config.params.condition_columns);
+      const data = asStringArray(config.params.data_columns);
+      if (condition.length === 0 && data.length === 0) {
+        return (
+          <div className="analysis-view-state">
+            <span>表格配置未绑定列</span>
+            {onLocateNode !== undefined && (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => onLocateNode(config.id)}
+              >
+                打开表格配置
+              </button>
+            )}
+          </div>
+        );
+      }
     }
-    const condition = asStringArray(config.params.condition_columns);
-    const data = asStringArray(config.params.data_columns);
-    if (condition.length === 0 && data.length === 0) {
-      return (
-        <div className="analysis-view-state">
-          <span>表格配置未绑定列</span>
-          {onLocateNode !== undefined && (
-            <button
-              type="button"
-              className="text-button"
-              onClick={() => onLocateNode(config.id)}
-            >
-              打开表格配置
-            </button>
-          )}
-        </div>
-      );
+  }
+  if (node.kind === "bar") {
+    const config = connectedConfigNode(definition, node.id, "bar_config");
+    if (config !== null) {
+      const x = asString(config.params.x) ?? "";
+      const y = asString(config.params.y) ?? "";
+      if (x === "" || y === "") {
+        return (
+          <div className="analysis-view-state">
+            <span>柱状图配置未绑定列</span>
+            {onLocateNode !== undefined && (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => onLocateNode(config.id)}
+              >
+                打开柱状图配置
+              </button>
+            )}
+          </div>
+        );
+      }
+    }
+  }
+  if (node.kind === "pie") {
+    const config = connectedConfigNode(definition, node.id, "pie_config");
+    if (config !== null) {
+      const group = asString(config.params.group) ?? "";
+      const value = asString(config.params.value) ?? "";
+      if (group === "" || value === "") {
+        return (
+          <div className="analysis-view-state">
+            <span>饼图配置未绑定列</span>
+            {onLocateNode !== undefined && (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => onLocateNode(config.id)}
+              >
+                打开饼图配置
+              </button>
+            )}
+          </div>
+        );
+      }
     }
   }
   if (result === undefined || result.status === "idle") {
@@ -107,7 +168,14 @@ export function AnalysisViewBody({
       return (
         <div className="analysis-view-stale">
           <div className="analysis-stale-banner">结果已过期，正在刷新…</div>
-          {renderAnalysisTable(node, definition, result.table)}
+          {renderAnalysisTable(
+            node,
+            definition,
+            result.table,
+            viewWidth,
+            onFitChange,
+            result.stage_id,
+          )}
         </div>
       );
     }
@@ -120,7 +188,14 @@ export function AnalysisViewBody({
   if (table === undefined || table.rows.length === 0) {
     return <div className="analysis-view-state">上游为空（无匹配数据）</div>;
   }
-  return renderAnalysisTable(node, definition, table, viewWidth, onFitChange);
+  return renderAnalysisTable(
+    node,
+    definition,
+    table,
+    viewWidth,
+    onFitChange,
+    result.stage_id,
+  );
 }
 
 function renderAnalysisTable(
@@ -128,7 +203,8 @@ function renderAnalysisTable(
   definition: WorkflowDefinition,
   table: AnalysisTableResult,
   viewWidth?: number,
-  onFitChange?: (info: MemberTableFitInfo) => void,
+  onFitChange?: (info: ViewFitInfo) => void,
+  stageId?: string,
 ) {
   switch (node.kind) {
     case "member_table":
@@ -139,14 +215,28 @@ function renderAnalysisTable(
           table={table}
           viewWidth={viewWidth}
           onFitChange={onFitChange}
+          stageId={stageId}
         />
       );
-    case "timeline":
-      return <div className="analysis-view-state">单场时间轴（后续实现）</div>;
     case "pie":
-      return <div className="analysis-view-state">占比饼图（后续实现）</div>;
+      return (
+        <PieChartView
+          node={node}
+          definition={definition}
+          table={table}
+          stageId={stageId}
+        />
+      );
     case "bar":
-      return <div className="analysis-view-state">指标柱状图（后续实现）</div>;
+      return (
+        <BarChartView
+          node={node}
+          definition={definition}
+          table={table}
+          onFitChange={onFitChange}
+          stageId={stageId}
+        />
+      );
     default:
       return null;
   }
@@ -158,12 +248,14 @@ function MemberTable({
   table,
   viewWidth,
   onFitChange,
+  stageId,
 }: {
   node: WorkflowNode;
   definition: WorkflowDefinition;
   table: AnalysisTableResult;
   viewWidth?: number;
-  onFitChange?: (info: MemberTableFitInfo) => void;
+  onFitChange?: (info: ViewFitInfo) => void;
+  stageId?: string;
 }) {
   const config = useMemo(
     () => connectedConfigNode(definition, node.id, "table_config"),
@@ -173,7 +265,13 @@ function MemberTable({
     () => asStringArray(config?.params.condition_columns),
     [config],
   );
-  const dataColumns = useMemo(() => asStringArray(config?.params.data_columns), [config]);
+  const dataColumns = useMemo(
+    () =>
+      config === null
+        ? table.columns.map((column) => column.name)
+        : asStringArray(config.params.data_columns),
+    [config, table.columns],
+  );
   const columnIndex = useMemo(
     () => new Map(table.columns.map((column, index) => [column.name, index])),
     [table.columns],
@@ -250,9 +348,13 @@ function MemberTable({
     () => [...conditionSort, ...(dataSort === null ? [] : [dataSort])],
     [conditionSort, dataSort],
   );
-  const sortedRows = useMemo(
-    () => sortRows(table.rows, sortKeys, columnIndex),
+  const orderedRowIndexes = useMemo(
+    () => sortRowIndexes(table.rows, sortKeys, columnIndex),
     [table.rows, sortKeys, columnIndex],
+  );
+  const sortedRows = useMemo(
+    () => orderedRowIndexes.map((index) => table.rows[index]),
+    [orderedRowIndexes, table.rows],
   );
   const visibleRows = virtualizing
     ? sortedRows.slice(windowRange.start, windowRange.end)
@@ -260,7 +362,8 @@ function MemberTable({
 
   const assetKeys = useMemo(() => {
     const keys = new Set<string>();
-    for (const column of conditionColumns) {
+    const assetColumns = conditionColumns.length > 0 ? conditionColumns : dataColumns;
+    for (const column of assetColumns) {
       const kind = valueKinds.get(column) ?? "";
       if (!kind.startsWith("asset:")) {
         continue;
@@ -277,7 +380,7 @@ function MemberTable({
       }
     }
     return Array.from(keys);
-  }, [conditionColumns, valueKinds, columnIndex, table.rows]);
+  }, [conditionColumns, dataColumns, valueKinds, columnIndex, table.rows]);
   const assetNames = useAssetNames(assetKeys);
 
   const layout = useMemo(
@@ -300,9 +403,17 @@ function MemberTable({
     [layout.widths, contentWidth],
   );
   const clipped = layout.fitWidth > contentWidth;
+  const fitHeight =
+    table.rows.length > 0
+      ? clamp(
+          Math.round(table.rows.length * ROW_HEIGHT + TABLE_HEIGHT_EXTRAS),
+          MIN_VIEW_HEIGHT,
+          MAX_VIEW_FIT_HEIGHT,
+        )
+      : null;
   const fitInfo = useMemo(
-    () => ({ fitWidth: layout.fitWidth, hiddenColumns }),
-    [layout.fitWidth, hiddenColumns],
+    () => ({ fitWidth: layout.fitWidth, fitHeight, hiddenColumns }),
+    [layout.fitWidth, fitHeight, hiddenColumns],
   );
   useEffect(() => {
     onFitChange?.(fitInfo);
@@ -337,6 +448,56 @@ function MemberTable({
   const clearSort = () => {
     setConditionSort([]);
     setDataSort(null);
+  };
+
+  const selection = useAnalysisSelection();
+  const stageSelection = useAnalysisStageSelection();
+  const [selectedRowIndex, setSelectedRowIndex] = useState<number | null>(null);
+  // 绑定或排序变化后选中行可能已不对应同一数据行，这里随排序结果重置。
+  const [prevSortCount, setPrevSortCount] = useState(sortKeys.length);
+  if (sortKeys.length !== prevSortCount) {
+    setPrevSortCount(sortKeys.length);
+    setSelectedRowIndex(null);
+  }
+  // 阶段（数据重算）、排序或绑定变化后，旧选择指向的行可能已变化：
+  // 同步清空节点内高亮与两套选择存储，避免详情继续展示过期行。
+  const selectionResetKey = [
+    stageId ?? "",
+    bindingKey,
+    ...sortKeys.map((key) => `${key.column}:${key.direction}`),
+  ].join("|");
+  const prevSelectionResetKeyRef = useRef(selectionResetKey);
+  useEffect(() => {
+    if (prevSelectionResetKeyRef.current === selectionResetKey) {
+      return;
+    }
+    prevSelectionResetKeyRef.current = selectionResetKey;
+    setSelectedRowIndex(null);
+    selection?.select(node.id, null);
+    stageSelection?.select(node.id, null);
+  }, [selectionResetKey, node.id, selection, stageSelection]);
+
+  const handleRowClick = (rowIndex: number) => {
+    const originalRowIndex = orderedRowIndexes[rowIndex] ?? rowIndex;
+    const isSelected = selectedRowIndex === rowIndex;
+    setSelectedRowIndex(isSelected ? null : rowIndex);
+    if (selection === null) {
+      return;
+    }
+    const stageContextId =
+      stageId === undefined ? null : stageSelection?.contextIdFor(node.region_id ?? "") ?? null;
+    if (stageContextId !== null && stageSelection !== null) {
+      stageSelection.select(
+        node.id,
+        isSelected ? null : { kind: "row", row_index: originalRowIndex },
+      );
+      return;
+    }
+    if (isSelected) {
+      selection.select(node.id, null);
+      return;
+    }
+    selection.select(node.id, tableRowsByIndex(table, [originalRowIndex]));
   };
 
   const handleConditionHeaderClick = (column: string) => {
@@ -513,7 +674,13 @@ function MemberTable({
               return (
                 <tr
                   key={rowIndex}
-                  className={absoluteRowIndex % 2 === 1 ? "stripe" : ""}
+                  className={[
+                    absoluteRowIndex % 2 === 1 ? "stripe" : "",
+                    selectedRowIndex === absoluteRowIndex ? "row-selected" : "",
+                  ]
+                    .filter((item) => item !== "")
+                    .join(" ")}
+                  onClick={() => handleRowClick(absoluteRowIndex)}
                 >
                   {order.map((column, cellIndex) => {
                     const index = columnIndex.get(column);
@@ -584,9 +751,11 @@ function asStringArray(value: unknown): string[] {
     : [];
 }
 
-export interface MemberTableFitInfo {
+export interface ViewFitInfo {
   /** 全部绑定列完整显示所需的内容自然宽（px）。 */
   fitWidth: number;
+  /** 内容完整显示所需的自然高（px）；表格高度不参与内容驱动，恒为 null。 */
+  fitHeight: number | null;
   /** 当前内容区内被裁剪隐藏的列数（含部分可见列之外的列）。 */
   hiddenColumns: number;
 }
@@ -739,14 +908,14 @@ export function compareCells(left: unknown, right: unknown): number {
   return String(left).localeCompare(String(right), "zh-CN");
 }
 
-/** 按排序键顺序排序行（条件列组合 + 数据列单列）。 */
-export function sortRows(
+/** 按排序键返回排序后的原始行下标（稳定；无键时保持原序）。 */
+export function sortRowIndexes(
   rows: unknown[][],
   keys: SortKey[],
   columnIndex: Map<string, number>,
-): unknown[][] {
+): number[] {
   if (keys.length === 0) {
-    return rows;
+    return rows.map((_, index) => index);
   }
   const indexes = rows.map((_, index) => index);
   indexes.sort((left, right) => {
@@ -762,5 +931,14 @@ export function sortRows(
     }
     return left - right;
   });
-  return indexes.map((index) => rows[index]);
+  return indexes;
+}
+
+/** 按排序键顺序排序行（条件列组合 + 数据列单列）。 */
+export function sortRows(
+  rows: unknown[][],
+  keys: SortKey[],
+  columnIndex: Map<string, number>,
+): unknown[][] {
+  return sortRowIndexes(rows, keys, columnIndex).map((index) => rows[index]);
 }

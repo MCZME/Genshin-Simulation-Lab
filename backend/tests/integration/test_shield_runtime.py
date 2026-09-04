@@ -9,14 +9,6 @@ from genshin_sim.application.execution import (
     SimulationRunSummary,
 )
 from genshin_sim.application.input import SimulationInput
-from genshin_sim.content.characters.testing.runtime_probe.actions import (
-    RuntimeProbeActionInterpreter,
-    create_runtime_probe_action,
-)
-from genshin_sim.content.characters.testing.runtime_probe.constants import (
-    RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
-    RUNTIME_PROBE_IMPACT_KEY,
-)
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
@@ -25,21 +17,33 @@ from genshin_sim.content.registries import (
     CharacterContentUnitRequest,
     ContentUnitRegistry,
 )
+from genshin_sim.core.actions import (
+    ActionInterpretationContext,
+    ActionInterpretationResult,
+    ActionInterpretationTrigger,
+    ActionOwnerRef,
+    InputSessionView,
+    PreparedAction,
+    TargetingSpec,
+    TimedImpactAction,
+)
 from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.coordination.character_damage_taken import CharacterIncomingDamage
 from genshin_sim.core.elements import Element
 from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import ActionImpactContext, ImpactKind, ImpactRequest
-from genshin_sim.infrastructure.assets_sqlite import (
-    SQLiteAssetRepository,
-    write_minimal_static_asset_database,
-)
+from genshin_sim.infrastructure.assets_sqlite import SQLiteAssetRepository
 from genshin_sim.infrastructure.results_sqlite import (
     SQLiteResultRepository,
     SQLiteResultWriter,
 )
 from genshin_sim.infrastructure.results_sqlite.schema import RESULTS_SCHEMA_VERSION
 from tests.helpers.assembly import static_asset_input_payload
+from tests.helpers.fixture_assets import write_fixture_asset_database
+
+SHIELD_HANDLER_KEY = "character.testing.shield_local"
+SHIELD_ACTION_KEY = "testing.shield.action"
+SHIELD_IMPACT_KEY = "testing.shield.impact"
 
 
 class TestingShieldImpactFactory:
@@ -71,6 +75,31 @@ class TestingShieldImpactFactory:
         )
 
 
+class _ShieldActionInterpreter:
+    supported_action_keys = (SHIELD_ACTION_KEY,)
+
+    def interpret(
+        self,
+        context: ActionInterpretationContext,
+        session: InputSessionView,
+    ) -> ActionInterpretationResult:
+        del context
+        if session.trigger is not ActionInterpretationTrigger.RELEASE:
+            return ActionInterpretationResult.wait()
+        if session.release_frame is None:
+            return ActionInterpretationResult.reject("缺少释放帧")
+        if session.key != "keyboard.e":
+            return ActionInterpretationResult.reject(f"护盾夹具未映射按键 {session.key}")
+        return ActionInterpretationResult.start(
+            PreparedAction(
+                action_key=SHIELD_ACTION_KEY,
+                owner=ActionOwnerRef.character(session.owner.slot or 1),
+                requested_start_frame=session.current_frame,
+                source_session_id=session.session_id,
+            )
+        )
+
+
 def _testing_shield_content_unit(request: CharacterContentUnitRequest) -> ContentUnit:
     return ContentUnit(
         owner_type=ContentUnitOwnerType.CHARACTER,
@@ -78,9 +107,16 @@ def _testing_shield_content_unit(request: CharacterContentUnitRequest) -> Conten
         handler_key=request.handler_key,
         version="dev-test",
         slot=request.slot,
-        action_interpreter=RuntimeProbeActionInterpreter(),
-        actions=(create_runtime_probe_action(),),
-        impact_factories={RUNTIME_PROBE_IMPACT_KEY: TestingShieldImpactFactory()},
+        action_interpreter=_ShieldActionInterpreter(),
+        actions=(
+            TimedImpactAction(
+                action_key=SHIELD_ACTION_KEY,
+                duration_frames=1,
+                impact_keys=(SHIELD_IMPACT_KEY,),
+                targeting=TargetingSpec(radius=1.0),
+            ),
+        ),
+        impact_factories={SHIELD_IMPACT_KEY: TestingShieldImpactFactory()},
         metadata={"purpose": "testing_shield_vertical_integration"},
     )
 
@@ -89,10 +125,13 @@ def test_action_impact_grants_shield_and_incoming_damage_reaches_health_runtime(
     tmp_path: Path,
 ):
     asset_db = tmp_path / "assets.db"
-    write_minimal_static_asset_database(asset_db)
+    write_fixture_asset_database(
+        asset_db,
+        character_handler_key=SHIELD_HANDLER_KEY,
+    )
     unit_registry = ContentUnitRegistry()
     unit_registry.register_character_factory(
-        RUNTIME_PROBE_CHARACTER_HANDLER_KEY,
+        SHIELD_HANDLER_KEY,
         _testing_shield_content_unit,
     )
     config = SimulationInput.from_mapping(

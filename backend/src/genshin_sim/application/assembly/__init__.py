@@ -2,6 +2,9 @@
 
 from genshin_sim.application.assembly.assembler import SimulationAssembler
 from genshin_sim.application.assembly.attributes import AttributeRuntimeBundle
+from genshin_sim.application.assembly.damage_profiles import (
+    create_default_damage_profile_registry,
+)
 from genshin_sim.application.assembly.errors import (
     AssemblyError,
     InvalidRuntimePayloadError,
@@ -31,6 +34,7 @@ __all__ = [
     "AttributeRuntimeBundle",
     "ConfigTranslator",
     "ContentCompiler",
+    "create_default_damage_profile_registry",
     "InvalidRuntimePayloadError",
     "MissingRuntimeAssetError",
     "MissingRuntimeHandlerError",

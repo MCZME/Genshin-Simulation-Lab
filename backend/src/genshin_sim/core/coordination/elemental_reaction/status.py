@@ -51,6 +51,7 @@ def superconduct_buff_definition() -> BuffDefinition:
             ),
         ),
         tags=frozenset({"reaction.superconduct"}),
+        display_name="超导 物理抗性降低",
     )
 
 

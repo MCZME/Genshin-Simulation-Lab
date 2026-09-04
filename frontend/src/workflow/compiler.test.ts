@@ -136,15 +136,46 @@ describe("compileConfigurationRegion", () => {
       level: 90,
       position: { x: 0, y: 0, z: 5 },
       resistance: {
-        physical: 10,
-        pyro: 10,
-        hydro: 10,
-        electro: 10,
-        cryo: 10,
-        anemo: 10,
-        geo: 10,
-        dendro: 10,
+        physical: 0.1,
+        pyro: 0.1,
+        hydro: 0.1,
+        electro: 0.1,
+        cryo: 0.1,
+        anemo: 0.1,
+        geo: 0.1,
+        dendro: 0.1,
       },
+    });
+  });
+
+  it("目标抗性按百分数输入换算为小数比例", () => {
+    const target = makeNode("target", "target", {
+      index: 0,
+      resistance: { pyro: 30, physical: -20 },
+    });
+    const edges = [
+      makeEdge("e1", "target", "out", "region-1", "out"),
+      makeEdge("e2", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [target, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    const targets = (result.members[0].input.scene as Record<string, unknown>)
+      .targets as Array<Record<string, unknown>>;
+    expect(targets[0].resistance).toEqual({
+      physical: -0.2,
+      pyro: 0.3,
+      hydro: 0.1,
+      electro: 0.1,
+      cryo: 0.1,
+      anemo: 0.1,
+      geo: 0.1,
+      dendro: 0.1,
     });
   });
 

@@ -5,7 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from genshin_sim.core.elements import AuraAmount, AuraKind, Element
-from genshin_sim.core.systems.damage import DamageProfile, DamageType
+from genshin_sim.core.systems.damage import DamageProfile
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_TRANSFORMATIVE_REACTION
 from genshin_sim.core.systems.reaction.gates import ReactionDamageGateDefinition
 from genshin_sim.core.systems.reaction.mechanics.bloom.keys import (
     BLOOM_DENDRO_ON_HYDRO_PROFILE_KEY,
@@ -28,7 +29,6 @@ from genshin_sim.core.systems.reaction.mechanics.bloom.profiles import (
 from genshin_sim.core.systems.reaction.mechanics.dendro_core import (
     DENDRO_CORE_SPATIAL_PROFILE_KEY,
     DENDRO_CORE_STATE_KEY,
-    DENDRO_CORE_TERMINATION_DAMAGE_PROFILE_KEY,
     plan_dendro_core_creation,
 )
 from genshin_sim.core.systems.reaction.models import (
@@ -174,19 +174,16 @@ def burgeon_definition() -> ReactionDefinition:
 def bloom_damage_profiles() -> tuple[DamageProfile, ...]:
     return (
         DamageProfile(
-            DENDRO_CORE_TERMINATION_DAMAGE_PROFILE_KEY,
-            DamageType.TRANSFORMATIVE_REACTION,
-            frozenset({BLOOM_EXPLOSION_REACTION_KEY}),
+            formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
+            main_attack_tags=frozenset({BLOOM_EXPLOSION_REACTION_KEY}),
         ),
         DamageProfile(
-            "damage_profile.reaction.hyperbloom",
-            DamageType.TRANSFORMATIVE_REACTION,
-            frozenset({HYPERBLOOM_REACTION_KEY}),
+            formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
+            main_attack_tags=frozenset({HYPERBLOOM_REACTION_KEY}),
         ),
         DamageProfile(
-            "damage_profile.reaction.burgeon",
-            DamageType.TRANSFORMATIVE_REACTION,
-            frozenset({BURGEON_REACTION_KEY}),
+            formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
+            main_attack_tags=frozenset({BURGEON_REACTION_KEY}),
         ),
     )
 

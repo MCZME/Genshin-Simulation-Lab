@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import FrozenInstanceError
-from typing import Any
+from typing import Any, cast
 
 import pytest
 
@@ -18,6 +18,7 @@ from genshin_sim.core.attributes import (
     AttributeKey,
     AttributeQuery,
     AttributeQueryContext,
+    AttributeResolution,
     AttributeResolutionSession,
     AttributeResolveOptions,
     AttributeSubjectKind,
@@ -614,3 +615,44 @@ def test_rejects_non_finite_values_normalizes_negative_zero_and_uses_fsum():
     zero = resolver.resolve(AttributeQuery(CHARACTER, STAT_CRIT_RATE, frame=1)).final_value
     assert zero == 0.0
     assert math.copysign(1.0, zero) == 1.0
+
+
+def test_attribute_resolution_to_dict_recurses_dependencies_completely():
+    source = RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.source")
+    subject = AttributeSubjectRef.character("character:slot_1")
+    dependency = AttributeResolution(
+        attribute_key=STAT_ATK_BASE,
+        subject_ref=subject,
+        final_value=100.0,
+        base_value=100.0,
+        applied_terms=(),
+        rejected_terms=(),
+        dependency_resolutions=(),
+        policy_key="policy.default",
+    )
+    resolution = AttributeResolution(
+        attribute_key=STAT_ATK_TOTAL,
+        subject_ref=subject,
+        final_value=180.0,
+        base_value=100.0,
+        applied_terms=(
+            ModifierTerm(
+                STAT_ATK_TOTAL,
+                ModifierStage.PERCENT_ADD,
+                0.8,
+                "provider.test",
+                source,
+            ),
+        ),
+        rejected_terms=(),
+        dependency_resolutions=(dependency,),
+        policy_key="policy.default",
+    )
+
+    payload = cast(dict[str, Any], resolution.to_dict())
+    assert payload["attribute_key"] == STAT_ATK_TOTAL.value
+    assert payload["subject_ref"] == {"kind": "character", "entity_id": "character:slot_1"}
+    assert payload["applied_terms"][0]["provider_key"] == "provider.test"
+    assert payload["dependency_resolutions"][0]["attribute_key"] == STAT_ATK_BASE.value
+    assert payload["dependency_resolutions"][0]["dependency_resolutions"] == ()
+    assert payload["policy_key"] == "policy.default"

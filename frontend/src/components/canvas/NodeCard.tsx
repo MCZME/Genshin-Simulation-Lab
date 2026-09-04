@@ -7,19 +7,27 @@ import type { IncomingOrderGroup } from "./InputOrderPopover";
 import { nodeKindColor } from "../nodes/registry";
 import { NodeEditorHost } from "../nodes/registry";
 import { useAnalysisSchemaCatalog } from "../analysis_context";
-import { AnalysisViewBody, type MemberTableFitInfo } from "../nodes/views";
+import { AnalysisDetailBody, isAnalysisDetailKind, SingleItemBody } from "../nodes/detail";
+import { AnalysisViewBody, type ViewFitInfo } from "../nodes/views";
 import { getNodeKindSpec } from "../../workflow/registry";
-import { connectedConfigNode } from "../../workflow/templates";
 import type { NodeSize, WorkflowDefinition, WorkflowNode } from "../../workflow/types";
 import {
+  DEFAULT_ATTRIBUTE_DETAIL_WIDTH,
+  DEFAULT_DETAIL_WIDTH,
   DEFAULT_VIEW_HEIGHT,
+  MAX_DETAIL_WIDTH,
+  MAX_TRACE_WIDTH,
   MAX_VIEW_HEIGHT,
+  MIN_TRACE_WIDTH,
+  MIN_DETAIL_WIDTH,
   MIN_VIEW_HEIGHT,
   MIN_VIEW_WIDTH,
   VIEW_SOFT_CAP_WIDTH,
   clamp,
-  normalizeWidthMode,
+  resolveBarHeight,
   resolveDragMaxWidth,
+  resolveManualViewWidth,
+  resolveTraceWidth,
   resolveViewHeight,
   resolveViewWidth,
 } from "../../workflow/view_size";
@@ -50,10 +58,8 @@ export type WorkflowNodeData = {
   interactionLocked: boolean;
   /** 分析执行结果（表节点 = 查询结果；视图节点 = 拼接后的输入表）。 */
   analysisResult?: AnalysisNodeResult;
-  /** 提交节点画布几何（宽高）。 */
-  onResizeNode: (nodeId: string, size: NodeSize) => void;
-  /** 自适应宽度拖宽结束时：一次提交节点尺寸并把表格配置切到固定模式。 */
-  onResizeNodeWithFixedWidth: (nodeId: string, size: NodeSize, configNodeId: string) => void;
+  /** 提交节点画布几何（按轴部分更新，宽高分别持久化）。 */
+  onResizeNode: (nodeId: string, size: Partial<NodeSize>) => void;
 } & Record<string, unknown>;
 
 export interface MemberPortInfo {
@@ -80,16 +86,24 @@ export function NodeCard({ data, selected }: NodeProps) {
     interactionLocked,
     analysisResult,
     onResizeNode,
-    onResizeNodeWithFixedWidth,
   } = data as WorkflowNodeData;
   const spec = getNodeKindSpec(node.kind);
   const isDraft = node.region_id === null && spec?.region !== null;
   const isView = isAnalysisView(node.kind);
+  const isTable = node.kind === "member_table";
+  const isPie = node.kind === "pie";
+  const isBar = node.kind === "bar";
+  // 伤害详情/角色状态详情卡支持手动调宽（高度随内容），其余详情节点维持固定宽度。
+  const isDetailResizable = node.kind === "damage_detail" || node.kind === "attribute_detail";
+  const defaultDetailWidth =
+    node.kind === "attribute_detail" ? DEFAULT_ATTRIBUTE_DETAIL_WIDTH : DEFAULT_DETAIL_WIDTH;
+  const isTraceResizable = node.kind === "input_trace";
+  const isWidthOnlyResizable = isDetailResizable || isTraceResizable;
   const rf = useReactFlow();
   const catalog = useAnalysisSchemaCatalog();
   const fieldErrors = collectFieldErrors(diagnostics, node.id);
   const [membersOpen, setMembersOpen] = useState(false);
-  const [fitInfo, setFitInfo] = useState<MemberTableFitInfo | null>(null);
+  const [fitInfo, setFitInfo] = useState<ViewFitInfo | null>(null);
   const [previewSize, setPreviewSize] = useState<Partial<NodeSize> | null>(null);
   const resizeDragRef = useRef<{
     axis: "width" | "height";
@@ -97,25 +111,39 @@ export function NodeCard({ data, selected }: NodeProps) {
     startWidth: number;
     startHeight: number;
   } | null>(null);
-  const handleFitChange = useCallback((info: MemberTableFitInfo) => {
+  const handleFitChange = useCallback((info: ViewFitInfo) => {
     setFitInfo(info);
   }, []);
-  const tableConfig =
-    node.kind === "member_table"
-      ? connectedConfigNode(definition, node.id, "table_config")
-      : null;
-  const widthMode =
-    tableConfig === null ? "auto" : normalizeWidthMode(tableConfig.params.width_mode);
-  const resolvedWidth = isView
-    ? resolveViewWidth(widthMode, fitInfo?.fitWidth ?? null, node.size?.width)
-    : undefined;
-  const resolvedHeight = isView ? resolveViewHeight(node.size?.height) : undefined;
-  const isClipped =
-    node.kind === "member_table" &&
-    widthMode === "auto" &&
-    fitInfo !== null &&
-    fitInfo.fitWidth > VIEW_SOFT_CAP_WIDTH;
-  const dragMaxWidth = resolveDragMaxWidth(fitInfo?.fitWidth ?? null);
+  const resolvedWidth =
+    isTable || isBar
+      ? resolveViewWidth(fitInfo?.fitWidth ?? null, node.size?.width)
+      : isPie
+        ? resolveManualViewWidth(node.size?.width)
+        : isDetailResizable
+          ? clamp(
+              Math.round(node.size?.width ?? defaultDetailWidth),
+              MIN_DETAIL_WIDTH,
+              MAX_DETAIL_WIDTH,
+            )
+          : isTraceResizable
+            ? resolveTraceWidth(node.size?.width)
+            : undefined;
+  const resolvedHeight = isBar
+    ? resolveBarHeight(fitInfo?.fitHeight ?? null, node.size?.height)
+    : isTable
+      ? resolveViewHeight(node.size?.height, fitInfo?.fitHeight ?? null)
+      : isView
+        ? resolveViewHeight(node.size?.height)
+        : undefined;
+  const dragMaxWidth =
+    isTable || isBar
+      ? resolveDragMaxWidth(fitInfo?.fitWidth ?? null)
+      : isPie
+        ? VIEW_SOFT_CAP_WIDTH
+        : undefined;
+  const dragMaxHeight = isBar || isTable
+    ? fitInfo?.fitHeight ?? MAX_VIEW_HEIGHT
+    : MAX_VIEW_HEIGHT;
   const displayWidth = previewSize?.width ?? resolvedWidth;
   const displayHeight = previewSize?.height ?? resolvedHeight;
   const hasMemberPorts = memberPorts.length > 0;
@@ -129,9 +157,14 @@ export function NodeCard({ data, selected }: NodeProps) {
     startHeight: number,
   ): Partial<NodeSize> {
     if (axis === "width") {
-      return { width: clamp(Math.round(startWidth + dx), MIN_VIEW_WIDTH, dragMaxWidth) };
+      const [minWidth, maxWidth] = isDetailResizable
+        ? [MIN_DETAIL_WIDTH, MAX_DETAIL_WIDTH]
+        : isTraceResizable
+          ? [MIN_TRACE_WIDTH, MAX_TRACE_WIDTH]
+          : [MIN_VIEW_WIDTH, dragMaxWidth ?? VIEW_SOFT_CAP_WIDTH];
+      return { width: clamp(Math.round(startWidth + dx), minWidth, maxWidth) };
     }
-    return { height: clamp(Math.round(startHeight + dy), MIN_VIEW_HEIGHT, MAX_VIEW_HEIGHT) };
+    return { height: clamp(Math.round(startHeight + dy), MIN_VIEW_HEIGHT, dragMaxHeight) };
   }
 
   function startResize(
@@ -146,7 +179,7 @@ export function NodeCard({ data, selected }: NodeProps) {
     resizeDragRef.current = {
       axis,
       startFlow: rf.screenToFlowPosition({ x: event.clientX, y: event.clientY }),
-      startWidth: displayWidth ?? MIN_VIEW_WIDTH,
+      startWidth: displayWidth ?? (isDetailResizable ? defaultDetailWidth : MIN_VIEW_WIDTH),
       startHeight: displayHeight ?? DEFAULT_VIEW_HEIGHT,
     };
     event.currentTarget.setPointerCapture(event.pointerId);
@@ -184,16 +217,10 @@ export function NodeCard({ data, selected }: NodeProps) {
       drag.startHeight,
     );
     setPreviewSize(null);
-    if (drag.axis === "width" && widthMode === "auto" && tableConfig !== null) {
-      onResizeNodeWithFixedWidth(
-        node.id,
-        { width: size.width ?? drag.startWidth, height: drag.startHeight },
-        tableConfig.id,
-      );
-    } else if (drag.axis === "width") {
-      onResizeNode(node.id, { width: size.width ?? drag.startWidth, height: drag.startHeight });
+    if (drag.axis === "width") {
+      onResizeNode(node.id, { width: size.width ?? drag.startWidth });
     } else {
-      onResizeNode(node.id, { width: drag.startWidth, height: size.height ?? drag.startHeight });
+      onResizeNode(node.id, { height: size.height ?? drag.startHeight });
     }
     if (event.currentTarget.hasPointerCapture(event.pointerId)) {
       event.currentTarget.releasePointerCapture(event.pointerId);
@@ -210,12 +237,31 @@ export function NodeCard({ data, selected }: NodeProps) {
 
   return (
     <div
-      className={`node-card ${isAnalysisView(node.kind) ? "node-card-view" : ""} ${node.kind === "input_trace" ? "node-card-trace" : ""} ${node.kind === "artifact" ? "node-card-artifact" : ""} ${node.kind === "fetch" ? "node-card-fetch" : ""} ${node.kind === "table_config" ? "node-card-table-config" : ""} ${node.kind === "filter" ? "node-card-filter" : ""} ${node.kind === "aggregate" ? "node-card-aggregate" : ""} ${node.kind === "project" ? "node-card-project" : ""} ${node.kind === "sort" ? "node-card-sort" : ""} ${node.kind === "join" ? "node-card-join" : ""} ${node.kind === "compute" ? "node-card-compute" : ""} ${selected ? "selected" : ""} ${isDraft ? "draft" : ""} ${dimmed ? "dimmed" : ""} ${stepRunning ? "step-running" : ""}`}
-      style={isView ? { width: displayWidth, height: displayHeight } : undefined}
+      className={`node-card ${isAnalysisView(node.kind) ? "node-card-view" : ""} ${node.kind === "input_trace" ? "node-card-trace" : ""} ${isAnalysisDetailKind(node.kind) ? "node-card-detail" : ""} ${node.kind === "artifact" ? "node-card-artifact" : ""} ${node.kind === "fetch" ? "node-card-fetch" : ""} ${node.kind === "table_config" ? "node-card-table-config" : ""} ${node.kind === "pie_config" || node.kind === "bar_config" ? "node-card-display-config" : ""} ${node.kind === "filter" ? "node-card-filter" : ""} ${node.kind === "aggregate" ? "node-card-aggregate" : ""} ${node.kind === "project" ? "node-card-project" : ""} ${node.kind === "sort" ? "node-card-sort" : ""} ${node.kind === "join" ? "node-card-join" : ""} ${node.kind === "compute" ? "node-card-compute" : ""} ${node.kind === "derive" ? "node-card-derive" : ""} ${selected ? "selected" : ""} ${isDraft ? "draft" : ""} ${dimmed ? "dimmed" : ""} ${stepRunning ? "step-running" : ""}`}
+      style={
+        isView
+          ? { width: displayWidth, height: displayHeight }
+          : isWidthOnlyResizable
+            ? { width: displayWidth }
+            : undefined
+      }
     >
       <header className="node-card-header">
         <span className="node-dot" style={{ background: nodeKindColor(node.kind) }} />
         <span className="node-title">{spec?.displayName ?? node.kind}</span>
+        {spec !== null && spec.ports.outputs.length > 1 && (
+          <span className="node-output-badges">
+            {spec.ports.outputs.map((port) => (
+              <span
+                key={port.id}
+                className={`node-output-badge ${port.id}`}
+                title={`${outputPortLabel(port.id)}（${port.dataLanguage}）`}
+              >
+                {outputPortLabel(port.id)}
+              </span>
+            ))}
+          </span>
+        )}
         {isDraft && <span className="draft-badge">草稿</span>}
         <button
           type="button"
@@ -237,6 +283,10 @@ export function NodeCard({ data, selected }: NodeProps) {
             viewWidth={isView ? resolvedWidth : undefined}
             onFitChange={node.kind === "member_table" ? handleFitChange : undefined}
           />
+        ) : isAnalysisDetailKind(node.kind) ? (
+          <AnalysisDetailBody node={node} definition={definition} />
+        ) : node.kind === "single" ? (
+          <SingleItemBody result={analysisResult} />
         ) : (
           <NodeEditorHost
             kind={node.kind}
@@ -278,13 +328,20 @@ export function NodeCard({ data, selected }: NodeProps) {
             className="node-handle"
           />
         ))}
-        {spec?.ports.outputs.map((port) => (
+        {spec?.ports.outputs.map((port, index) => (
           <Handle
             key={`source-${port.id}`}
             type="source"
             position={Position.Right}
             id={port.id}
-            className="node-handle"
+            className={`node-handle node-handle-${port.id}`}
+            style={
+              spec !== null && spec.ports.outputs.length > 1
+                ? { top: `${42 + index * 17}%` }
+                : undefined
+            }
+            title={`${outputPortLabel(port.id)}（${port.dataLanguage}）`}
+            aria-label={`${outputPortLabel(port.id)}输出`}
           />
         ))}
       </footer>
@@ -310,6 +367,16 @@ export function NodeCard({ data, selected }: NodeProps) {
         groups={incomingGroups}
         onMoveEdgeOrder={onMoveEdgeOrder}
       />
+      {isWidthOnlyResizable && (
+        <div
+          className="node-resize-handle node-resize-handle-right nodrag visible"
+          title="拖拽调整宽度"
+          onPointerDown={(event) => startResize(event, "width")}
+          onPointerMove={handleResizeMove}
+          onPointerUp={handleResizeUp}
+          onPointerCancel={cancelResize}
+        />
+      )}
       {isView && (
         <>
           <div
@@ -320,20 +387,18 @@ export function NodeCard({ data, selected }: NodeProps) {
             onPointerUp={handleResizeUp}
             onPointerCancel={cancelResize}
           />
-          {node.kind === "member_table" && (widthMode === "fixed" || isClipped) && (
-            <div
-              className="node-resize-handle node-resize-handle-right nodrag visible"
-              title={
-                fitInfo !== null && fitInfo.hiddenColumns > 0
-                  ? `还有 ${fitInfo.hiddenColumns} 列被隐藏，拖宽查看`
-                  : "拖拽调整宽度"
-              }
-              onPointerDown={(event) => startResize(event, "width")}
-              onPointerMove={handleResizeMove}
-              onPointerUp={handleResizeUp}
-              onPointerCancel={cancelResize}
-            />
-          )}
+          <div
+            className="node-resize-handle node-resize-handle-right nodrag"
+            title={
+              isTable && fitInfo !== null && fitInfo.hiddenColumns > 0
+                ? `还有 ${fitInfo.hiddenColumns} 列被隐藏，拖宽查看`
+                : "拖拽调整宽度"
+            }
+            onPointerDown={(event) => startResize(event, "width")}
+            onPointerMove={handleResizeMove}
+            onPointerUp={handleResizeUp}
+            onPointerCancel={cancelResize}
+          />
         </>
       )}
     </div>
@@ -341,7 +406,7 @@ export function NodeCard({ data, selected }: NodeProps) {
 }
 
 function isAnalysisView(kind: string): boolean {
-  return kind === "member_table" || kind === "timeline" || kind === "pie" || kind === "bar";
+  return kind === "member_table" || kind === "pie" || kind === "bar";
 }
 
 function collectFieldErrors(
@@ -358,4 +423,14 @@ function collectFieldErrors(
     result[item.path] = list;
   }
   return result;
+}
+
+function outputPortLabel(portId: string): string {
+  if (portId === "data") {
+    return "data 透传";
+  }
+  if (portId === "selection") {
+    return "selection 选择";
+  }
+  return portId;
 }

@@ -19,6 +19,7 @@ class SimulationWorkerPayload:
     input_path: str | None = None
     asset_db_path: str | None = None
     result_db_path: str | None = None
+    developer_mode: bool = False
     created_at: str = field(default_factory=_utc_now)
 
     def __post_init__(self) -> None:
@@ -39,6 +40,7 @@ class SimulationWorkerPayload:
         simulation_input: SimulationInput,
         asset_db_path: str | None = None,
         result_db_path: str | None = None,
+        developer_mode: bool = False,
         created_at: str | None = None,
     ) -> SimulationWorkerPayload:
         return cls(
@@ -46,6 +48,7 @@ class SimulationWorkerPayload:
             input_payload=simulation_input.to_dict(),
             asset_db_path=asset_db_path,
             result_db_path=result_db_path,
+            developer_mode=developer_mode,
             created_at=created_at or _utc_now(),
         )
 
@@ -57,6 +60,7 @@ class SimulationWorkerPayload:
         input_path: str,
         asset_db_path: str | None = None,
         result_db_path: str | None = None,
+        developer_mode: bool = False,
         created_at: str | None = None,
     ) -> SimulationWorkerPayload:
         return cls(
@@ -64,6 +68,7 @@ class SimulationWorkerPayload:
             input_path=input_path,
             asset_db_path=asset_db_path,
             result_db_path=result_db_path,
+            developer_mode=developer_mode,
             created_at=created_at or _utc_now(),
         )
 

@@ -137,6 +137,7 @@ def compile_normal_attack_damage_specs(
             elemental_amount=BARBARA_DAMAGE_ELEMENTAL_AMOUNT,
             icd_tag_key=BARBARA_DAMAGE_ICD_TAG_KEY,
             icd_sequence_key=BARBARA_DAMAGE_ICD_SEQUENCE_KEY,
+            display_name=label,
             area=ImpactAreaSpec(
                 shape=BARBARA_DAMAGE_AOE_SHAPE,
                 radius=damage_data.aoe_radius,
@@ -179,6 +180,7 @@ def compile_charged_attack_damage_spec(
         range_type=BARBARA_DAMAGE_RANGE_TYPE,
         elemental_strength=BARBARA_DAMAGE_ELEMENTAL_STRENGTH,
         elemental_amount=BARBARA_DAMAGE_ELEMENTAL_AMOUNT,
+        display_name=_BARBARA_CHARGED_ATTACK_DAMAGE_LABEL,
         area=ImpactAreaSpec(
             shape=BARBARA_DAMAGE_AOE_SHAPE,
             radius=BARBARA_CHARGED_ATTACK_AOE_RADIUS,
@@ -226,6 +228,7 @@ def compile_elemental_skill_damage_spec(
         elemental_amount=BARBARA_DAMAGE_ELEMENTAL_AMOUNT,
         icd_tag_key=BARBARA_ELEMENTAL_SKILL_ICD_TAG_KEY,
         icd_sequence_key=BARBARA_ELEMENTAL_SKILL_ICD_SEQUENCE_KEY,
+        display_name=_BARBARA_ELEMENTAL_SKILL_DAMAGE_LABEL,
         area=ImpactAreaSpec(
             shape=BARBARA_DAMAGE_AOE_SHAPE,
             radius=BARBARA_ELEMENTAL_SKILL_AOE_RADIUS,
@@ -393,6 +396,7 @@ def _compile_plunge_damage_spec(
     aoe_radius: float,
     aoe_offset: Vector3,
     elemental_amount: int,
+    display_name: str,
 ) -> DamageImpactSpec:
     """编译一段下落攻击伤害契约（法器通用资料数据）。"""
 
@@ -414,6 +418,7 @@ def _compile_plunge_damage_spec(
         range_type=BARBARA_DAMAGE_RANGE_TYPE,
         elemental_strength=(BARBARA_DAMAGE_ELEMENTAL_STRENGTH if has_element else None),
         elemental_amount=(AuraAmount(elemental_amount) if has_element else AuraAmount.zero()),
+        display_name=display_name,
         area=ImpactAreaSpec(
             shape=aoe_shape,
             radius=aoe_radius,
@@ -462,6 +467,7 @@ def compile_plunge_damage_specs(
             aoe_radius=PLUNGE_COLLISION_AOE_RADIUS,
             aoe_offset=PLUNGE_COLLISION_AOE_OFFSET,
             elemental_amount=PLUNGE_COLLISION_ELEMENTAL_AMOUNT,
+            display_name=_BARBARA_PLUNGE_COLLISION_DAMAGE_LABEL,
         ),
         f"{BARBARA_PLUNGE_LANDING_IMPACT_KEY}.low": _compile_plunge_damage_spec(
             BARBARA_PLUNGE_LANDING_IMPACT_KEY,
@@ -472,6 +478,7 @@ def compile_plunge_damage_specs(
             aoe_radius=PLUNGE_LANDING_LOW_AOE_RADIUS,
             aoe_offset=PLUNGE_LANDING_AOE_OFFSET,
             elemental_amount=PLUNGE_LANDING_ELEMENTAL_AMOUNT,
+            display_name="低空坠地冲击伤害",
         ),
         f"{BARBARA_PLUNGE_LANDING_IMPACT_KEY}.high": _compile_plunge_damage_spec(
             BARBARA_PLUNGE_LANDING_IMPACT_KEY,
@@ -482,6 +489,7 @@ def compile_plunge_damage_specs(
             aoe_radius=PLUNGE_LANDING_HIGH_AOE_RADIUS,
             aoe_offset=PLUNGE_LANDING_AOE_OFFSET,
             elemental_amount=PLUNGE_LANDING_ELEMENTAL_AMOUNT,
+            display_name="高空坠地冲击伤害",
         ),
     }
 

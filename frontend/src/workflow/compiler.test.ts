@@ -148,6 +148,105 @@ describe("compileConfigurationRegion", () => {
     });
   });
 
+  it("运行选项节点输出最大帧数与随机种子", () => {
+    const runNode = makeNode("run", "run_options", { max_frames: 60, seed: 42 });
+    const edges = [
+      makeEdge("e1", "run", "out", "region-1", "out"),
+      makeEdge("e2", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [runNode, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members[0].input.run_options).toEqual({
+      max_frames: 60,
+      seed: 42,
+    });
+  });
+
+  it("随机种子未设置时编译产物不含 seed 字段", () => {
+    const runNode = makeNode("run", "run_options", { max_frames: 60 });
+    const edges = [
+      makeEdge("e1", "run", "out", "region-1", "out"),
+      makeEdge("e2", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [runNode, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members[0].input.run_options).toEqual({ max_frames: 60 });
+  });
+
+  it("规则节点全关时输出空激活列表", () => {
+    const rules = makeNode("rules", "rules", {});
+    const edges = [
+      makeEdge("e1", "rules", "out", "region-1", "out"),
+      makeEdge("e2", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [rules, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members[0].input.rules).toEqual({ active: [] });
+  });
+
+  it("规则节点输出开关规则与暴击模式对象项", () => {
+    const rules = makeNode("rules", "rules", {
+      start_with_full_energy: true,
+      crit_mode: "random",
+    });
+    const edges = [
+      makeEdge("e1", "rules", "out", "region-1", "out"),
+      makeEdge("e2", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [rules, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members[0].input.rules).toEqual({
+      active: [
+        "start_with_full_energy",
+        { rule: "crit_mode", params: { mode: "random" } },
+      ],
+    });
+  });
+
+  it("暴击模式关闭时规则节点不输出暴击激活项", () => {
+    const rules = makeNode("rules", "rules", {
+      start_with_full_energy: false,
+      crit_mode: "off",
+    });
+    const edges = [
+      makeEdge("e1", "rules", "out", "region-1", "out"),
+      makeEdge("e2", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [rules, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members[0].input.rules).toEqual({ active: [] });
+  });
+
   it("目标抗性按百分数输入换算为小数比例", () => {
     const target = makeNode("target", "target", {
       index: 0,

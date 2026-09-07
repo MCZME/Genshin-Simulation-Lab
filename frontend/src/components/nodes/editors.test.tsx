@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { WorkflowNode } from "../../workflow/types";
 import { RunStateContext } from "../run_state_context";
 import type { RunState } from "../../state/run_state";
-import { ArtifactEditor, CharacterEditor, InputTraceEditor, MetaEditor } from "./editors";
+import { ArtifactEditor, CharacterEditor, InputTraceEditor, MetaEditor, RulesEditor, RunOptionsEditor } from "./editors";
 import { SimulationEditor } from "./run";
 import type { TraceEventItem } from "./traceModel";
 
@@ -283,6 +283,79 @@ describe("固定路径节点的编辑器", () => {
     expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ name: "深渊满星队" }));
     expect(screen.queryByText("目标路径")).toBeNull();
     expect(screen.queryByText("高级")).toBeNull();
+  });
+
+  it("规则编辑器切换满能量开关并联动暴击模式提示", () => {
+    const onChange = vi.fn();
+    const node: WorkflowNode = {
+      id: "rules-node",
+      kind: "rules",
+      region_id: "region-1",
+      position: { x: 0, y: 0 },
+      params: { start_with_full_energy: false, crit_mode: "off" },
+    };
+    render(<RulesEditor node={node} onChange={onChange} />);
+
+    const checkbox = screen.getByRole("checkbox");
+    expect((checkbox as HTMLInputElement).checked).toBe(false);
+    expect(screen.queryByText("随机种子在运行选项节点设置")).toBeNull();
+
+    fireEvent.click(checkbox);
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ start_with_full_energy: true }),
+    );
+
+    fireEvent.change(screen.getByRole("combobox"), {
+      target: { value: "random" },
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({ crit_mode: "random" }),
+    );
+
+    render(
+      <RulesEditor
+        node={{
+          ...node,
+          params: { start_with_full_energy: true, crit_mode: "random" },
+        }}
+        onChange={vi.fn()}
+      />,
+    );
+    expect(screen.getByText("随机种子在运行选项节点设置")).toBeTruthy();
+  });
+
+  it("运行选项编辑器种子未设置显示自动，可设置与清除", () => {
+    const onChange = vi.fn();
+    const node: WorkflowNode = {
+      id: "run-node",
+      kind: "run_options",
+      region_id: "region-1",
+      position: { x: 0, y: 0 },
+      params: { max_frames: 18000 },
+    };
+    const { unmount } = render(<RunOptionsEditor node={node} onChange={onChange} />);
+    expect(screen.getByRole("button", { name: "随机种子" }).textContent).toBe("自动");
+    unmount();
+
+    render(
+      <RunOptionsEditor
+        node={{ ...node, params: { max_frames: 18000, seed: 42 } }}
+        onChange={onChange}
+      />,
+    );
+    expect(screen.getByRole("button", { name: "随机种子" }).textContent).toBe("42");
+
+    fireEvent.click(screen.getByRole("button", { name: "随机种子" }));
+    const input = screen.getByRole("spinbutton");
+    fireEvent.change(input, { target: { value: "7" } });
+    fireEvent.blur(input);
+    expect(onChange).toHaveBeenCalledWith({ max_frames: 18000, seed: 7 });
+
+    fireEvent.click(screen.getByRole("button", { name: "随机种子" }));
+    const clearInput = screen.getByRole("spinbutton");
+    fireEvent.change(clearInput, { target: { value: "" } });
+    fireEvent.blur(clearInput);
+    expect(onChange).toHaveBeenCalledWith({ max_frames: 18000 });
   });
 });
 

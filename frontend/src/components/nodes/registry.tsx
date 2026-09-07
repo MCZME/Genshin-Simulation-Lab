@@ -23,6 +23,7 @@ import {
   MetaEditor,
   RangeEditor,
   RootEditor,
+  RulesEditor,
   RunOptionsEditor,
   SimulationEditor,
   TargetEditor,
@@ -71,6 +72,8 @@ export function NodeEditorHost({
       return <InputTraceEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "run_options":
       return <RunOptionsEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
+    case "rules":
+      return <RulesEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "enum":
       return <EnumEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "range":
@@ -119,6 +122,7 @@ const NODE_CATEGORY_OF: Record<string, NodeCategory> = {
   root: "runSettings",
   meta: "runSettings",
   run_options: "runSettings",
+  rules: "runSettings",
   character: "teamConfig",
   weapon: "teamConfig",
   artifact: "teamConfig",
@@ -166,7 +170,7 @@ export function nodeKindColor(kind: string): string {
 }
 
 /** 配置区域：运行设置。 */
-export const CONFIG_RUN_SETTING_KINDS = ["root", "meta", "run_options"] as const;
+export const CONFIG_RUN_SETTING_KINDS = ["root", "meta", "run_options", "rules"] as const;
 
 /** 配置区域：队伍配置。 */
 export const CONFIG_TEAM_KINDS = ["character", "weapon", "artifact"] as const;

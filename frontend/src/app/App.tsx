@@ -104,6 +104,7 @@ import {
   planWorkflowRun,
   scopedDiagnostics,
   validationErrorMessage,
+  withAutoBatchSeed,
 } from "../workflow/runner";
 import type { BatchPlan, RunPlan } from "../workflow/runner";
 import { regionAnalysisSnapshot } from "../workflow/analysis_snapshot";
@@ -1089,8 +1090,10 @@ export function App() {
       setRunState((current) => setBatchStatus(current, batch.nodeId, "validating"));
       // 区域校验（决策 2.40）：提交前对批次成员做后端统一校验；
       // 失败该批标失败并附成员级诊断，其余批次照跑（对齐 2.32）。
+      // 随机种子未设置时提交前自动随机生成（同批共用），校验与提交使用同一份成员。
+      const seededMembers = withAutoBatchSeed(batch.members);
       try {
-        const validation = await validateInputs(batch.members);
+        const validation = await validateInputs(seededMembers);
         if (cancelRequestedRef.current) {
           setRunState((current) => setBatchStatus(current, batch.nodeId, "skipped"));
           cancelled = true;
@@ -1117,7 +1120,7 @@ export function App() {
       setRunState((current) => setBatchStatus(current, batch.nodeId, "submitting"));
       currentBatchRef.current = { nodeId: batch.nodeId, runId: null };
       try {
-        const submitted = await submitRun(batch.members, {
+        const submitted = await submitRun(seededMembers, {
           name: batch.name,
           concurrency: batch.concurrency ?? undefined,
         });

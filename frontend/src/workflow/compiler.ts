@@ -62,7 +62,7 @@ export function createSimulationInputSkeleton(): Record<string, unknown> {
     team: [],
     scene: {},
     input_trace: [],
-    rules: { enabled: [] },
+    rules: { active: [] },
     run_options: { max_frames: 18000 },
   };
 }

@@ -1,9 +1,10 @@
-import { FieldRow, NumberField } from "../common/fields";
+import { FieldRow, NumberField, SelectField } from "../common/fields";
 import { useRunState } from "../run_state_context";
 import { BATCH_STATUS_LABELS } from "../../state/run_state";
 import type { RunMemberStatus } from "../../api/client";
+import { CRIT_MODES } from "../../workflow/registry";
 import type { NodeEditorProps } from "./common";
-import { asNumber, firstError } from "./common";
+import { asNumber, asString, firstError } from "./common";
 export function RunOptionsEditor({ node, onChange, fieldErrors = {} }: NodeEditorProps) {
   const params = node.params;
   return (
@@ -15,6 +16,63 @@ export function RunOptionsEditor({ node, onChange, fieldErrors = {} }: NodeEdito
           onChange={(value) => onChange({ ...params, max_frames: value ?? 18000 })}
         />
       </FieldRow>
+      <FieldRow label="随机种子" error={firstError(fieldErrors, "seed")}>
+        <NumberField
+          value={asNumber(params.seed)}
+          ariaLabel="随机种子"
+          emptyLabel="自动"
+          onChange={(value) => {
+            const next = { ...params };
+            if (value === null) {
+              delete next.seed;
+            } else {
+              next.seed = value;
+            }
+            onChange(next);
+          }}
+        />
+      </FieldRow>
+    </div>
+  );
+}
+
+const CRIT_MODE_OPTIONS = [
+  { value: "off", label: "关闭" },
+  { value: "random", label: "随机" },
+] as const;
+
+/** 规则节点编辑器：内置规则的开关与模式；未开启的规则不写入激活列表。 */
+export function RulesEditor({ node, onChange, fieldErrors = {} }: NodeEditorProps) {
+  const params = node.params;
+  const fullEnergy = params.start_with_full_energy === true;
+  const critMode = asString(params.crit_mode) ?? "off";
+  return (
+    <div className="node-editor">
+      <FieldRow
+        label="开局满元素能量"
+        error={firstError(fieldErrors, "start_with_full_energy")}
+      >
+        <span className="field-check">
+          <input
+            type="checkbox"
+            checked={fullEnergy}
+            onChange={(event) =>
+              onChange({ ...params, start_with_full_energy: event.target.checked })
+            }
+          />
+          <span>{fullEnergy ? "开启" : "关闭"}</span>
+        </span>
+      </FieldRow>
+      <FieldRow label="暴击模式" error={firstError(fieldErrors, "crit_mode")}>
+        <SelectField
+          value={CRIT_MODES.includes(critMode) ? critMode : "off"}
+          options={[...CRIT_MODE_OPTIONS]}
+          onChange={(value) => onChange({ ...params, crit_mode: value })}
+        />
+      </FieldRow>
+      {critMode === "random" && (
+        <p className="node-note">随机种子在运行选项节点设置</p>
+      )}
     </div>
   );
 }

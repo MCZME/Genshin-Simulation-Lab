@@ -157,6 +157,32 @@ describe("validateWorkflow", () => {
     ]);
   });
 
+  it("规则节点暴击模式非法与满能量开关非法报参数错误", () => {
+    const nodes = [
+      makeNode("rules", "rules", {
+        start_with_full_energy: "yes",
+        crit_mode: "always",
+      }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, []);
+    const params = validateWorkflow(definition).filter((item) => item.code === "PARAM_INVALID");
+    expect(params.map((item) => item.path).sort()).toEqual([
+      "crit_mode",
+      "start_with_full_energy",
+    ]);
+  });
+
+  it("运行选项节点种子非整数报参数错误", () => {
+    const nodes = [
+      makeNode("run", "run_options", { max_frames: 60, seed: 1.5 }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, []);
+    const params = validateWorkflow(definition).filter((item) => item.code === "PARAM_INVALID");
+    expect(params.map((item) => item.path)).toEqual(["seed"]);
+  });
+
   it("同一区域内节点链连线合法", () => {
     const nodes = [
       makeNode("root", "root"),

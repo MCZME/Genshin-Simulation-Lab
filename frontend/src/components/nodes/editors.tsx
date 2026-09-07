@@ -4,4 +4,4 @@ export { ArtifactEditor, CharacterEditor, WeaponEditor } from "./team";
 export { TargetEditor } from "./target";
 export { InputTraceEditor } from "./inputTrace";
 export { EnumEditor, RangeEditor } from "./variants";
-export { RunOptionsEditor, SimulationEditor, UnknownEditor } from "./run";
+export { RulesEditor, RunOptionsEditor, SimulationEditor, UnknownEditor } from "./run";

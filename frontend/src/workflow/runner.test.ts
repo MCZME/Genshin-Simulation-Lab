@@ -17,6 +17,7 @@ import {
   planWorkflowRun,
   scopedDiagnostics,
   validationErrorMessage,
+  withAutoBatchSeed,
 } from "./runner";
 
 function makeRegion(id: string): WorkflowRegion {
@@ -656,5 +657,47 @@ describe("paceBuildSteps", () => {
     );
     expect(events).toEqual(["a:running", "a:done", "b:skipped", "c:skipped"]);
     expect(sleeps).toEqual([5]);
+  });
+});
+
+describe("withAutoBatchSeed", () => {
+  it("未设置种子的成员填充同一个随机种子", () => {
+    const members = [
+      { item_id: "m-1", input: { run_options: { max_frames: 60 } } },
+      { item_id: "m-2", input: { run_options: { max_frames: 60 } } },
+    ];
+
+    const seeded = withAutoBatchSeed(members);
+
+    const seed1 = (seeded[0].input.run_options as Record<string, unknown>).seed;
+    const seed2 = (seeded[1].input.run_options as Record<string, unknown>).seed;
+    expect(typeof seed1).toBe("number");
+    expect(Number.isInteger(seed1)).toBe(true);
+    expect(seed2).toBe(seed1);
+    // 原成员不被修改。
+    expect(members[0].input.run_options).toEqual({ max_frames: 60 });
+  });
+
+  it("已设置的种子保持不变，只填充缺失成员", () => {
+    const members = [
+      { item_id: "m-1", input: { run_options: { max_frames: 60, seed: 42 } } },
+      { item_id: "m-2", input: { run_options: { max_frames: 60 } } },
+    ];
+
+    const seeded = withAutoBatchSeed(members);
+
+    expect(seeded[0].input.run_options).toEqual({ max_frames: 60, seed: 42 });
+    const seed2 = (seeded[1].input.run_options as Record<string, unknown>).seed;
+    expect(typeof seed2).toBe("number");
+    expect(seed2).not.toBe(42);
+  });
+
+  it("两次调用生成不同种子", () => {
+    const members = [{ item_id: "m-1", input: { run_options: { max_frames: 60 } } }];
+
+    const first = withAutoBatchSeed(members)[0].input.run_options as Record<string, unknown>;
+    const second = withAutoBatchSeed(members)[0].input.run_options as Record<string, unknown>;
+
+    expect(first.seed).not.toBe(second.seed);
   });
 });

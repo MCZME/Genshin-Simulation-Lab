@@ -1493,6 +1493,15 @@ body {
   border-color: #ef4444;
 }
 
+.field-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: #e2e8f0;
+  font-size: 12px;
+  cursor: pointer;
+}
+
 .node-note {
   margin: 0;
   font-size: 12px;

@@ -77,7 +77,7 @@ def _minimal_input() -> SimulationInput:
             "team": [],
             "scene": {"player": {}, "targets": []},
             "input_trace": [],
-            "rules": {"enabled": []},
+            "rules": {"active": []},
             "run_options": {"max_frames": 10},
         }
     )

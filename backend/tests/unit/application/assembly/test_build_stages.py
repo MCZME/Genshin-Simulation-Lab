@@ -44,7 +44,7 @@ def _minimal_input_payload(*, team: list[dict[str, object]]) -> dict[str, object
         "team": team,
         "scene": {"targets": []},
         "input_trace": [],
-        "rules": {"enabled": []},
+        "rules": {"active": []},
         "run_options": {"max_frames": 10},
     }
 

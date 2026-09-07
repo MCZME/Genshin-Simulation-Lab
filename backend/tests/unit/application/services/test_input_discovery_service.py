@@ -27,7 +27,7 @@ def _write_input(
                     "team": [],
                     "scene": {"player": {}, "targets": []},
                     "input_trace": [],
-                    "rules": {"enabled": []},
+                    "rules": {"active": []},
                     "run_options": {"max_frames": 10},
                 }
             ),

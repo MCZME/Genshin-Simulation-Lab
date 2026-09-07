@@ -58,6 +58,7 @@ from genshin_sim.core.systems.damage.models import (
 )
 from genshin_sim.core.systems.damage.modifiers import DamageModifierCollection
 from genshin_sim.core.systems.damage.policies import (
+    CriticalDecisionProvider,
     CriticalZonePolicy,
     DamageBonusZonePolicy,
     GeneralReactionZonePolicy,
@@ -723,14 +724,21 @@ PRODUCTION_LUNAR_MASTERY_DENOMINATOR = 2000.0
 def create_default_damage_formula_registry(
     *,
     lunar_formula: LunarReactionDamageFormula | None = None,
+    critical_decision_provider: CriticalDecisionProvider | None = None,
 ) -> DamageFormulaRegistry:
     """创建生产默认公式注册表；月曜公式默认使用已确认的生产数值。
 
-    ``lunar_formula`` 仅供测试或未来配置覆盖生产默认值。
+    ``lunar_formula`` 仅供测试或未来配置覆盖生产默认值；
+    ``critical_decision_provider`` 缺省时暴击区使用固定不暴击决策。
     """
 
+    critical_policy = (
+        StandardCriticalZonePolicy(decision_provider=critical_decision_provider)
+        if critical_decision_provider is not None
+        else StandardCriticalZonePolicy()
+    )
     formulas: list[DamageFormula] = [
-        GeneralDamageFormula(),
+        GeneralDamageFormula(critical_policy=critical_policy),
         TransformativeReactionDamageFormula(),
     ]
     formulas.append(
@@ -740,6 +748,7 @@ def create_default_damage_formula_registry(
             level_base_damage=PRODUCTION_LUNAR_REACTION_LEVEL_BASE_DAMAGE,
             mastery_numerator=PRODUCTION_LUNAR_MASTERY_NUMERATOR,
             mastery_denominator=PRODUCTION_LUNAR_MASTERY_DENOMINATOR,
+            critical_policy=critical_policy,
         )
     )
     return DamageFormulaRegistry(tuple(formulas))

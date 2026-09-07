@@ -73,7 +73,7 @@ def _minimal_input_payload() -> dict[str, object]:
                 ],
             },
         ],
-        "rules": {"enabled": []},
+        "rules": {"active": []},
         "run_options": {"max_frames": 18000},
     }
 
@@ -278,4 +278,105 @@ def test_simulation_input_rejects_artifact_pieces_outside_1_2_4(pieces):
     }
 
     with pytest.raises(ConfigError, match="pieces 必须是 1、2 或 4"):
+        SimulationInput.from_mapping(payload)
+
+
+def test_simulation_input_parses_rules_active_with_string_and_object_items():
+    payload = _minimal_input_payload()
+    payload["rules"] = {
+        "active": [
+            "start_with_full_energy",
+            {"rule": "crit_mode", "params": {"mode": "random"}},
+        ]
+    }
+
+    config = SimulationInput.from_mapping(payload)
+
+    assert [item.rule_key for item in config.rules.active] == [
+        "start_with_full_energy",
+        "crit_mode",
+    ]
+    assert config.rules.active[0].params == {}
+    assert config.rules.active[1].params == {"mode": "random"}
+    assert config.to_dict()["rules"] == {
+        "active": [
+            "start_with_full_energy",
+            {"rule": "crit_mode", "params": {"mode": "random"}},
+        ]
+    }
+
+
+def test_simulation_input_rules_default_to_empty_active():
+    payload = _minimal_input_payload()
+    payload["rules"] = {}
+
+    config = SimulationInput.from_mapping(payload)
+
+    assert config.rules.active == ()
+    assert config.to_dict()["rules"] == {"active": []}
+
+
+@pytest.mark.parametrize(
+    "rules",
+    [
+        {"enabled": []},
+        {"active": [], "extra": True},
+    ],
+    ids=("legacy-enabled", "unknown-field"),
+)
+def test_simulation_input_rejects_unknown_rules_fields(rules):
+    payload = _minimal_input_payload()
+    payload["rules"] = rules
+
+    with pytest.raises(ConfigError, match="rules 包含未知字段"):
+        SimulationInput.from_mapping(payload)
+
+
+@pytest.mark.parametrize(
+    "item",
+    [
+        "",
+        42,
+        {"params": {}},
+        {"rule": "crit_mode", "params": "random"},
+    ],
+    ids=("empty-string", "non-string", "missing-rule", "params-not-object"),
+)
+def test_simulation_input_rejects_invalid_rule_activation_items(item):
+    payload = _minimal_input_payload()
+    payload["rules"] = {"active": [item]}
+
+    with pytest.raises(ConfigError, match="rules\\.active\\[0\\]"):
+        SimulationInput.from_mapping(payload)
+
+
+def test_simulation_input_parses_run_options_seed():
+    payload = _minimal_input_payload()
+    payload["run_options"] = {"max_frames": 100, "seed": 42}
+
+    config = SimulationInput.from_mapping(payload)
+
+    assert config.run_options.max_frames == 100
+    assert config.run_options.seed == 42
+    assert config.to_dict()["run_options"] == {"max_frames": 100, "seed": 42}
+
+
+def test_simulation_input_run_options_seed_defaults_to_zero():
+    payload = _minimal_input_payload()
+
+    config = SimulationInput.from_mapping(payload)
+
+    assert config.run_options.seed == 0
+
+
+@pytest.mark.parametrize(
+    "seed",
+    ["42", 1.5, True],
+    ids=("string", "float", "bool"),
+)
+def test_simulation_input_rejects_non_integer_run_options_seed(seed):
+    payload = _minimal_input_payload()
+    payload["run_options"] = {"seed": seed}
+
+    with pytest.raises(ConfigError, match="run_options\\.seed 必须是整数"):
         SimulationInput.from_mapping(payload)

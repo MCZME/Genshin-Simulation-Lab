@@ -285,7 +285,7 @@ def barbara_input_payload(
             {"frame": 1, "events": [{"key": input_key, "phase": "press"}]},
             {"frame": 2, "events": [{"key": input_key, "phase": "release"}]},
         ],
-        "rules": {"enabled": []},
+        "rules": {"active": []},
         "run_options": {"max_frames": max_frames},
     }
 
@@ -334,7 +334,7 @@ def barbara_switch_input_payload(
             {"frame": 1, "events": [{"key": "keyboard.e", "phase": "press"}]},
             {"frame": 2, "events": [{"key": "keyboard.e", "phase": "release"}]},
         ],
-        "rules": {"enabled": []},
+        "rules": {"active": []},
         "run_options": {"max_frames": max_frames},
     }
 

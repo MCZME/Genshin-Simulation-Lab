@@ -17,6 +17,7 @@ from genshin_sim.content.bootstrap_content_units import (
     create_default_content_unit_registry,
 )
 from genshin_sim.content.registries import ContentUnitRegistry
+from genshin_sim.core.rules import RuleRegistry
 from genshin_sim.core.systems.damage import DamageFormulaRegistry, DamageProfileRegistry
 
 
@@ -30,6 +31,7 @@ class SimulationAssembler:
         damage_formula_registry: DamageFormulaRegistry | None = None,
         damage_profile_registry: DamageProfileRegistry | None = None,
         content_unit_registry: ContentUnitRegistry | None = None,
+        rule_registry: RuleRegistry | None = None,
     ) -> None:
         self.asset_repository = asset_repository
         self.damage_formula_registry = damage_formula_registry
@@ -44,6 +46,7 @@ class SimulationAssembler:
         self.runtime_assembler = RuntimeAssembler(
             damage_formula_registry=damage_formula_registry,
             damage_profile_registry=damage_profile_registry,
+            rule_registry=rule_registry,
         )
 
     def assemble(self, config: SimulationInput) -> AssembledSimulation:

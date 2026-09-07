@@ -1,0 +1,46 @@
+"""模拟输入契约和校验。"""
+
+from genshin_sim.application.errors import ConfigError, ConfigFileError
+from genshin_sim.application.input.models import (
+    SIMULATION_INPUT_KIND,
+    SUPPORTED_SCHEMA_VERSION,
+    ArtifactConfig,
+    ArtifactSetConfig,
+    CharacterConfig,
+    InputFrameConfig,
+    InputMeta,
+    KeyEventConfig,
+    RuleConfig,
+    RunOptions,
+    SceneConfig,
+    ScenePlayerConfig,
+    SceneTargetConfig,
+    SimulationInput,
+    TeamSlotConfig,
+    Vector3Config,
+    WeaponConfig,
+    load_simulation_input,
+)
+
+__all__ = [
+    "ArtifactConfig",
+    "ArtifactSetConfig",
+    "CharacterConfig",
+    "ConfigError",
+    "ConfigFileError",
+    "InputFrameConfig",
+    "KeyEventConfig",
+    "RuleConfig",
+    "RunOptions",
+    "SceneConfig",
+    "ScenePlayerConfig",
+    "SceneTargetConfig",
+    "SIMULATION_INPUT_KIND",
+    "SUPPORTED_SCHEMA_VERSION",
+    "SimulationInput",
+    "InputMeta",
+    "TeamSlotConfig",
+    "Vector3Config",
+    "WeaponConfig",
+    "load_simulation_input",
+]

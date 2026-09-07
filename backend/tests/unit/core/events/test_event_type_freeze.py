@@ -1,0 +1,60 @@
+from __future__ import annotations
+
+from genshin_sim.core.events import EventType
+from genshin_sim.core.events.specs import EVENT_SPECS
+
+FROZEN_EVENT_TYPE_NAMES = (
+    "SIMULATION_STARTED",
+    "SIMULATION_ENDED",
+    "FRAME_STARTED",
+    "FRAME_ENDED",
+    "INPUT_KEY_RECEIVED",
+    "INPUT_SESSION_BOUNDARY_REACHED",
+    "DAMAGE_RESOLVED",
+    "HEALING_RESOLVED",
+    "CHARACTER_HEALTH_CHANGED",
+    "CHARACTER_MAX_HP_CHANGED",
+    "SHIELD_GRANTED",
+    "SHIELD_CAPACITY_CHANGED",
+    "SHIELD_REMOVED",
+    "SHIELD_ABSORPTION_RESOLVED",
+    "DAMAGE_APPLIED",
+    "BUFF_APPLIED",
+    "BUFF_REMOVED",
+    "INFUSION_APPLIED",
+    "INFUSION_REMOVED",
+    "ENERGY_PICKUP_SPAWNED",
+    "ENERGY_PICKUP_SETTLED",
+    "DIRECT_ENERGY_CHANGE_RESOLVED",
+    "CHARACTER_ENERGY_CHANGED",
+    "AURA_ICD_RESOLVED",
+    "AURA_APPLIED",
+    "AURA_DEPLETED",
+    "AURA_INTERACTION_RESOLVED",
+    "REACTION_STATE_CHANGED",
+    "REACTION_OCCURRED",
+    "ELEMENTAL_INTERACTION_RESOLVED",
+    "MOVEMENT_COLLIDED",
+    "MOVEMENT_LANDED",
+    "RESONANCE_ACTIVATED",
+    "ACTION_STARTED",
+    "MOONSIGN_LEVEL_SET",
+    "MOONSIGN_BONUS_APPLIED",
+    "MOONSIGN_BONUS_EXPIRED",
+    "TEAM_SWITCHED",
+    "COOLDOWN_CHANGED",
+    "CONTENT_STATE_CHANGED",
+    "SPACE_ENTITY_CREATED",
+    "SPACE_ENTITY_REMOVED",
+    "ATTRIBUTE_PANEL_CHANGED",
+)
+
+
+def test_event_type_names_are_frozen():
+    """事件类型名是持久化公钥：只允许追加，不允许改名或复用。"""
+
+    assert tuple(event_type.name for event_type in EventType) == FROZEN_EVENT_TYPE_NAMES
+
+
+def test_event_specs_cover_all_event_types():
+    assert set(EventType) == set(EVENT_SPECS)

@@ -1,0 +1,19 @@
+"""伤害查询使用的公共标签。"""
+
+from __future__ import annotations
+
+DAMAGE_TAG_NORMAL_ATTACK = "normal_attack"
+DAMAGE_TAG_CHARGED_ATTACK = "charged_attack"
+DAMAGE_TAG_PLUNGING_ATTACK = "plunging_attack"
+DAMAGE_TAG_ELEMENTAL_SKILL = "elemental_skill"
+DAMAGE_TAG_ELEMENTAL_BURST = "elemental_burst"
+DAMAGE_TAG_DIRECT_DAMAGE = "direct_damage"
+
+PUBLIC_DAMAGE_TAGS = (
+    DAMAGE_TAG_NORMAL_ATTACK,
+    DAMAGE_TAG_CHARGED_ATTACK,
+    DAMAGE_TAG_PLUNGING_ATTACK,
+    DAMAGE_TAG_ELEMENTAL_SKILL,
+    DAMAGE_TAG_ELEMENTAL_BURST,
+    DAMAGE_TAG_DIRECT_DAMAGE,
+)

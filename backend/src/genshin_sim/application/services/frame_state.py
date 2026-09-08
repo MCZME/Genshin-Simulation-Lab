@@ -192,6 +192,7 @@ def fold_frame_state(
 
     state = _FoldState()
     _load_team_baseline(state, providers.get("team"))
+    _load_energy_baseline(state, providers.get("energy"))
     _load_attributes_baseline(state, providers.get("attributes"))
     _load_instance_baselines(state, providers)
 
@@ -233,6 +234,33 @@ def _load_team_baseline(state: _FoldState, team: object) -> None:
             "current_energy": _number_or(character.get("current_energy"), 0.0),
             "capacity": None,
         }
+
+
+def _load_energy_baseline(state: _FoldState, energy: object) -> None:
+    """从能量快照基线回填 current_energy 与 capacity。
+
+    team 基线只携带角色初始能量数值，不携带能量上限；能量系统是能量状态的
+    领域权威，帧 0 的精确值与 capacity 以 energy provider 为准。旧快照缺少
+    energy provider 时保持 team 基线不变，仍由事件折叠回填。
+    """
+    if not isinstance(energy, dict):
+        return
+    characters = energy.get("characters")
+    if not isinstance(characters, list | tuple):
+        return
+    for character in characters:
+        if not isinstance(character, dict):
+            continue
+        entity_id = _ref_entity_id(character.get("character_ref"))
+        entry = state.energy.get(entity_id) if entity_id is not None else None
+        if entry is None:
+            continue
+        current_energy = _number_or(character.get("current_energy"), None)
+        if current_energy is not None:
+            entry["current_energy"] = current_energy
+        capacity = _number_or(character.get("capacity"), None)
+        if capacity is not None:
+            entry["capacity"] = capacity
 
 
 def _load_attributes_baseline(state: _FoldState, attributes: object) -> None:

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import replace
+from typing import Any
 
 from genshin_sim.application.assembly.attributes import (
     AttributeRuntimeBundle,
@@ -108,6 +109,14 @@ from genshin_sim.core.impacts import (
     ImpactRequestDispatcher,
     ImpactRuntime,
 )
+from genshin_sim.core.rules import (
+    RuleActivation,
+    RuleEngine,
+    RuleRegistry,
+    RuleResolutionContext,
+    RuleSystemError,
+    create_default_rule_registry,
+)
 from genshin_sim.core.simulation import (
     FramePipeline,
     InputSessionTrace,
@@ -156,6 +165,7 @@ from genshin_sim.core.systems.cooldown import (
     CooldownStore,
 )
 from genshin_sim.core.systems.damage import (
+    CriticalDecisionProvider,
     DamageFormulaRegistry,
     DamageModifierIndex,
     DamageProfileRegistry,
@@ -171,6 +181,8 @@ from genshin_sim.core.systems.energy import (
     EnergyRuntime,
     EnergySystemError,
     EnergyTransitQueue,
+    InitialEnergyPolicy,
+    ZeroInitialEnergyPolicy,
 )
 from genshin_sim.core.systems.healing import (
     HealingImpactRequestHandler,
@@ -245,12 +257,16 @@ class RuntimeAssembler:
         *,
         damage_formula_registry: DamageFormulaRegistry | None = None,
         damage_profile_registry: DamageProfileRegistry | None = None,
+        rule_registry: RuleRegistry | None = None,
     ) -> None:
         self.damage_formula_registry = damage_formula_registry
         self.damage_profile_registry = (
             damage_profile_registry
             if damage_profile_registry is not None
             else create_default_damage_profile_registry()
+        )
+        self.rule_engine = RuleEngine(
+            rule_registry if rule_registry is not None else create_default_rule_registry()
         )
 
     def assemble(
@@ -260,6 +276,7 @@ class RuntimeAssembler:
         content_bundle: RuntimeContentBundle,
     ) -> AssembledSimulation:
         assets_by_slot = {bundle.slot: bundle for bundle in assets}
+        rule_bundle = self._resolve_rule_bundle(config)
         reaction_eligibility_port = build_static_reaction_eligibility_port(
             content_bundle.content_units
         )
@@ -348,6 +365,10 @@ class RuntimeAssembler:
             context.events,
         )
         context.register_system(health_runtime)
+        initial_energy_policy: InitialEnergyPolicy = rule_bundle.get(
+            InitialEnergyPolicy,
+            ZeroInitialEnergyPolicy(),
+        )
         try:
             energy_entries = []
             for character in team_state.characters:
@@ -357,6 +378,9 @@ class RuntimeAssembler:
                     raise InvalidRuntimePayloadError(
                         f"槽位 {character.slot} 角色资产缺少 burst_energy_cost"
                     )
+                character.energy.current_energy = initial_energy_policy.initial_energy(
+                    burst_energy_cost
+                )
                 energy_entries.append(
                     (
                         CharacterEnergyProfile(
@@ -494,7 +518,9 @@ class RuntimeAssembler:
                     formula_registry=(
                         self.damage_formula_registry
                         if self.damage_formula_registry is not None
-                        else create_default_damage_formula_registry()
+                        else create_default_damage_formula_registry(
+                            critical_decision_provider=rule_bundle.get(CriticalDecisionProvider)
+                        )
                     ),
                 ),
                 profile_registry=self.damage_profile_registry,
@@ -937,6 +963,19 @@ class RuntimeAssembler:
                     raise InvalidRuntimePayloadError(
                         f"属性 provider 运行时端口绑定失败：{exc}"
                     ) from exc
+
+    def _resolve_rule_bundle(self, config: SimulationInput) -> dict[type, Any]:
+        """把激活规则解析为按规则类型索引的产物束。"""
+
+        activations = tuple(
+            RuleActivation(rule_key=item.rule_key, params=item.params)
+            for item in config.rules.active
+        )
+        context = RuleResolutionContext(seed=config.run_options.seed)
+        try:
+            return self.rule_engine.resolve(activations, context)
+        except RuleSystemError as exc:
+            raise InvalidRuntimePayloadError(f"规则解析失败：{exc}") from exc
 
     def _build_character_runtime_state(
         self,

@@ -407,39 +407,71 @@ class InputFrameConfig:
 
 
 @dataclass(frozen=True, slots=True)
-class RuleConfig:
-    """规则配置的临时占位结构。
+class RuleActivationConfig:
+    """一条激活规则的配置。"""
 
-    当前只保留启用规则列表，具体形式等待规则系统实现方式确定后再细化。
+    rule_key: str
+    params: dict[str, Any] = field(default_factory=dict)
+
+    @classmethod
+    def from_mapping(cls, raw: Mapping[str, Any], path: str) -> RuleActivationConfig:
+        rule_key = _require_string(raw.get("rule"), f"{path}.rule")
+        params = _require_mapping(raw.get("params", {}), f"{path}.params")
+        return cls(rule_key=rule_key, params=dict(params))
+
+    def to_dict(self) -> dict[str, Any] | str:
+        if not self.params:
+            return self.rule_key
+        return {"rule": self.rule_key, "params": dict(self.params)}
+
+
+@dataclass(frozen=True, slots=True)
+class RuleConfig:
+    """规则配置：激活规则列表。
+
+    规则语义由 ``core/rules/`` 的规则定义承载；此处只做结构校验。
     """
 
-    enabled: tuple[str, ...] = ()
+    active: tuple[RuleActivationConfig, ...] = ()
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any]) -> RuleConfig:
-        enabled = tuple(
-            _require_string(item, f"rules.enabled[{index}]")
-            for index, item in enumerate(_require_sequence(raw.get("enabled", []), "rules.enabled"))
+        unknown = set(raw) - {"active"}
+        if unknown:
+            raise ConfigError(f"rules 包含未知字段：{', '.join(sorted(unknown))}")
+        active = tuple(
+            _rule_activation_from_item(item, f"rules.active[{index}]")
+            for index, item in enumerate(_require_sequence(raw.get("active", []), "rules.active"))
         )
-        return cls(enabled=enabled)
+        return cls(active=active)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"enabled": list(self.enabled)}
+        return {"active": [item.to_dict() for item in self.active]}
+
+
+def _rule_activation_from_item(item: Any, path: str) -> RuleActivationConfig:
+    if isinstance(item, str):
+        return RuleActivationConfig(rule_key=_require_string(item, path))
+    if isinstance(item, Mapping):
+        return RuleActivationConfig.from_mapping(item, path)
+    raise ConfigError(f"{path} 必须是非空字符串或对象")
 
 
 @dataclass(frozen=True, slots=True)
 class RunOptions:
     max_frames: int = 18000
+    seed: int = 0
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any]) -> RunOptions:
         max_frames = _require_int(raw.get("max_frames", 18000), "run_options.max_frames")
         if max_frames <= 0:
             raise ConfigError("run_options.max_frames 必须是正整数")
-        return cls(max_frames=max_frames)
+        seed = _require_int(raw.get("seed", 0), "run_options.seed")
+        return cls(max_frames=max_frames, seed=seed)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"max_frames": self.max_frames}
+        return {"max_frames": self.max_frames, "seed": self.seed}
 
 
 @dataclass(frozen=True, slots=True)

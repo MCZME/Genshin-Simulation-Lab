@@ -394,6 +394,33 @@ export function batchInputFingerprint(
 }
 
 /**
+ * 批次提交前为未设置随机种子的成员填充同一个随机种子。
+ * 种子在提交时生成（编译保持纯净，指纹与就绪判定不随种子抖动）；
+ * 同批成员共用一个种子，保证变体成员在相同暴击序列下对比。
+ */
+export function withAutoBatchSeed(members: BatchMember[]): BatchMember[] {
+  const seed = Math.floor(Math.random() * 2 ** 31);
+  return members.map((member) => {
+    const runOptions = member.input.run_options;
+    if (
+      runOptions === null ||
+      typeof runOptions !== "object" ||
+      Array.isArray(runOptions)
+    ) {
+      return member;
+    }
+    const record = runOptions as Record<string, unknown>;
+    if (typeof record.seed === "number" && Number.isInteger(record.seed)) {
+      return member;
+    }
+    return {
+      ...member,
+      input: { ...member.input, run_options: { ...record, seed } },
+    };
+  });
+}
+
+/**
  * 模拟节点当前配置区域的期望输入指纹；未连接配置区域或区域无法编译时返回 null。
  * 与批次写入的 last_input_fingerprint 比对，用于判断 last_sessions 是否过期。
  */

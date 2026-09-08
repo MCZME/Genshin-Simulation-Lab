@@ -3,8 +3,9 @@
 from __future__ import annotations
 
 import math
+import random
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Protocol
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from genshin_sim.core.attributes import (
     ELEMENT_TO_DAMAGE_BONUS_KEY,
@@ -33,6 +34,7 @@ if TYPE_CHECKING:
     from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
 
 
+@runtime_checkable
 class CriticalDecisionProvider(Protocol):
     """根据有效暴击率决定一次伤害的暴击结果。"""
 
@@ -59,6 +61,26 @@ class FixedCriticalDecisionProvider:
 
         del query, effective_crit_rate
         return self.outcome
+
+
+class SeededRandomCriticalDecisionProvider:
+    """按固定种子确定性随机决定暴击。"""
+
+    def __init__(self, seed: int = 0) -> None:
+        self.seed = seed
+        self._rng = random.Random(seed)
+
+    def decide(self, query: DamageQuery, effective_crit_rate: float) -> CritOutcome:
+        """按有效暴击率做一次确定性随机判定。"""
+
+        del query
+        if effective_crit_rate <= 0.0:
+            return CritOutcome.NON_CRITICAL
+        if effective_crit_rate >= 1.0:
+            return CritOutcome.CRITICAL
+        if self._rng.random() < effective_crit_rate:
+            return CritOutcome.CRITICAL
+        return CritOutcome.NON_CRITICAL
 
 
 class ScalingZonePolicy(Protocol):

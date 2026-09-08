@@ -142,7 +142,7 @@ def minimal_input(*, input_trace: list[dict[str, object]] | None = None) -> Simu
                 ],
             },
             "input_trace": [] if input_trace is None else input_trace,
-            "rules": {"enabled": []},
+            "rules": {"active": []},
             "run_options": {"max_frames": 10},
         }
     )
@@ -235,7 +235,7 @@ def static_asset_input_payload(
             {"frame": 1, "events": [{"key": "keyboard.e", "phase": "press"}]},
             {"frame": 2, "events": [{"key": "keyboard.e", "phase": "release"}]},
         ],
-        "rules": {"enabled": []},
+        "rules": {"active": []},
         "run_options": {"max_frames": max_frames},
     }
 

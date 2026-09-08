@@ -24,6 +24,7 @@ export const NODE_KINDS = [
   "target",
   "input_trace",
   "run_options",
+  "rules",
   "enum",
   "range",
   "simulation",

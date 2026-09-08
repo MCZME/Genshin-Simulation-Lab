@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from genshin_sim.application.execution.models import RecordedEvent
@@ -49,6 +51,34 @@ def _snapshot() -> dict[str, object]:
                     },
                 },
             },
+            "energy": {
+                "frame": 0,
+                "characters": [
+                    {
+                        "character_ref": {
+                            "kind": "character",
+                            "entity_id": "character:slot_1",
+                        },
+                        "character_key": "character:test_a",
+                        "element": "hydro",
+                        "current_energy": 10.0,
+                        "capacity": 60.0,
+                        "burst_ready": False,
+                    },
+                    {
+                        "character_ref": {
+                            "kind": "character",
+                            "entity_id": "character:slot_2",
+                        },
+                        "character_key": "character:test_b",
+                        "element": "pyro",
+                        "current_energy": 0.0,
+                        "capacity": 70.0,
+                        "burst_ready": False,
+                    },
+                ],
+                "pending_pickups": [],
+            },
             "resonance": {"active_keys": ("resonance.pyro",), "team_size": 2},
             "moonsign": {"level": "nascent_gleam", "moonsign_character_refs": ()},
             "aura": {"entities": {}},
@@ -82,7 +112,9 @@ def test_baseline_frame_zero_reports_team_attributes_and_coverage():
     first = response["characters"][0]
     assert first["active"] is True
     assert first["health"] == {"current_hp": 12000.0, "max_hp": 15000.0, "hp_ratio": 0.8}
-    assert first["energy"] == {"current_energy": 10.0, "capacity": None, "burst_ready": False}
+    assert first["energy"] == {"current_energy": 10.0, "capacity": 60.0, "burst_ready": False}
+    second = response["characters"][1]
+    assert second["energy"] == {"current_energy": 0.0, "capacity": 70.0, "burst_ready": False}
     assert first["attributes"]["stat.atk.total"] == {"value": 1500.0, "applied_terms": []}
     assert first["buffs"] == []
     assert response["resonance"] == {"active_keys": ["resonance.pyro"]}
@@ -105,6 +137,27 @@ def test_baseline_frame_zero_reports_team_attributes_and_coverage():
     }
     assert response["coverage"]["team"] == "folded"
     assert response["coverage"]["aura"] == "baseline_only"
+
+
+def test_fold_without_energy_provider_keeps_team_baseline_capacity_empty():
+    """旧快照缺少 energy provider 时回退 team 基线，capacity 保持 None。"""
+
+    snapshot = _snapshot()
+    providers = cast(dict[str, object], snapshot["providers"])
+    del providers["energy"]
+
+    response = fold_frame_state(
+        session_id="session:1",
+        frame=0,
+        initial_snapshot=snapshot,
+        events=(),
+    )
+
+    assert response["characters"][0]["energy"] == {
+        "current_energy": 10.0,
+        "capacity": None,
+        "burst_ready": False,
+    }
 
 
 def test_fold_applies_switch_health_energy_and_attribute_events():

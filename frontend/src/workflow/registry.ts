@@ -260,10 +260,44 @@ function inputTraceFragment(
 function runOptionsFragment(
   node: WorkflowNode,
 ): FragmentSource | null {
+  const value: Record<string, unknown> = {
+    max_frames: asInteger(node.params.max_frames) ?? 18000,
+  };
+  const seed = asInteger(node.params.seed);
+  if (seed !== null) {
+    value.seed = seed;
+  }
   return {
     item_id: `node:${node.id}`,
     path: asString(node.params.path) ?? "run_options",
-    value: { max_frames: asInteger(node.params.max_frames) ?? 18000 },
+    value,
+  };
+}
+
+/** 规则节点支持的暴击模式；与后端 crit_mode 规则定义保持一致。 */
+export const CRIT_MODES: readonly string[] = ["off", "random"];
+
+/** 内置规则词汇表；与后端 create_default_rule_registry 保持一致。 */
+export const BUILTIN_RULE_KEYS: readonly string[] = [
+  "start_with_full_energy",
+  "crit_mode",
+];
+
+function rulesFragment(
+  node: WorkflowNode,
+): FragmentSource | null {
+  const active: unknown[] = [];
+  if (node.params.start_with_full_energy === true) {
+    active.push("start_with_full_energy");
+  }
+  const critMode = asString(node.params.crit_mode) ?? "off";
+  if (critMode !== "off") {
+    active.push({ rule: "crit_mode", params: { mode: critMode } });
+  }
+  return {
+    item_id: `node:${node.id}`,
+    path: asString(node.params.path) ?? "rules",
+    value: { active },
   };
 }
 
@@ -577,6 +611,26 @@ function validateRunOptions(node: WorkflowNode): Diagnostic[] {
   if (maxFrames !== undefined && !isPositiveInteger(maxFrames)) {
     diagnostics.push(paramError(node, "max_frames", "max_frames 必须是 >= 1 的整数"));
   }
+  const seed = node.params.seed;
+  if (seed !== undefined && (typeof seed !== "number" || !Number.isInteger(seed))) {
+    diagnostics.push(paramError(node, "seed", "seed 必须是整数"));
+  }
+  return diagnostics;
+}
+
+function validateRules(node: WorkflowNode): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  checkCustomPath(node, diagnostics);
+  if (node.params.start_with_full_energy !== undefined &&
+      typeof node.params.start_with_full_energy !== "boolean") {
+    diagnostics.push(
+      paramError(node, "start_with_full_energy", "start_with_full_energy 必须是布尔值"),
+    );
+  }
+  const critMode = node.params.crit_mode;
+  if (critMode !== undefined && !CRIT_MODES.includes(critMode as string)) {
+    diagnostics.push(paramError(node, "crit_mode", "crit_mode 必须是 off 或 random"));
+  }
   return diagnostics;
 }
 
@@ -888,10 +942,29 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
       inputs: [fragmentPort("in", "single")],
       outputs: [fragmentPort("out", "single", Number.POSITIVE_INFINITY)],
     },
-    paramFields: { max_frames: { type: "integer", default: 18000 } },
+    paramFields: {
+      max_frames: { type: "integer", default: 18000 },
+      seed: { type: "integer" },
+    },
     defaultParams: { max_frames: 18000 },
     fragment: runOptionsFragment,
     validate: validateRunOptions,
+  },
+  rules: {
+    kind: "rules",
+    displayName: "规则",
+    region: "configuration",
+    ports: {
+      inputs: [fragmentPort("in", "single")],
+      outputs: [fragmentPort("out", "single", Number.POSITIVE_INFINITY)],
+    },
+    paramFields: {
+      start_with_full_energy: { type: "boolean", default: false },
+      crit_mode: { type: "string", default: "off" },
+    },
+    defaultParams: { start_with_full_energy: false, crit_mode: "off" },
+    fragment: rulesFragment,
+    validate: validateRules,
   },
   enum: {
     kind: "enum",

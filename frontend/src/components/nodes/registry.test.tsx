@@ -13,7 +13,7 @@ describe("节点类别配色", () => {
 
   it("同类节点共享颜色，类别之间颜色不同", () => {
     const groups = [
-      ["root", "meta", "run_options"],
+      ["root", "meta", "run_options", "rules"],
       ["character", "weapon", "artifact"],
       ["enum", "range"],
       ["data_provider", "fetch"],

@@ -31,12 +31,22 @@ git diff --cached --stat
 
 按一个可审查主题组织改动。如果工作区同时包含规划文档和代码实现，优先拆成不同提交；除非文档是该实现对应的直接契约更新。
 
-提交前运行适用检查：
+提交前按改动范围运行适用检查。
+
+backend/ 下：
 
 ```powershell
 uv run pytest
 uv run ruff check
 uv run pyright
+```
+
+frontend/ 下：
+
+```powershell
+pnpm lint
+pnpm typecheck
+pnpm test
 ```
 
 纯文档改动可以不运行代码检查，但需要在最终回复或 PR 说明中明确说明。
@@ -125,7 +135,7 @@ codex/project-initialization
 
 ## Issue 管理
 
-Issue 用于记录待办、缺陷、迁移任务、设计讨论和验收目标。建议标签如下：
+Issue 用于记录待办、缺陷、迁移任务、设计讨论和验收目标。标签不预建，以下为参考命名，用到哪个在 GitHub 上手动创建：
 
 ```text
 type:feat
@@ -184,29 +194,27 @@ PR 是本项目最小审查单位。撰写 PR 说明或 GitHub 工作交接时�
 
 清楚标注不确定或高风险事项，不要把它们描述成已经定论。
 
-建议 PR 模板：
+PR 模板已落地为 `.github/PULL_REQUEST_TEMPLATE.md`，内容如下：
 
 ```markdown
 ## 目标
 
 ## 修改范围
 
-## 是否涉及风险
-- [ ] 架构边界
-- [ ] 配置契约
-- [ ] 资产库 schema
-- [ ] 结果库结构
-- [ ] 游戏机制/数值
+## 风险
+- [ ] 无
+- [ ] 架构边界 / 配置契约
+- [ ] 资产库 schema / 结果库结构
+- [ ] 游戏机制与数值
 
 ## 验证
-- [ ] uv run pytest
-- [ ] uv run ruff check
-- [ ] uv run pyright
+- [ ] backend：ruff / pyright / pytest（按改动范围）
+- [ ] frontend：lint / typecheck / test（按改动范围）
 - [ ] 未运行，原因：
 
 ## 文档同步
 - [ ] 不需要
-- [ ] 已同步 docs/
+- [ ] 已同步 docs/ 或本 skill
 
 ## AI 参与说明
 ```
@@ -218,15 +226,21 @@ PR 是本项目最小审查单位。撰写 PR 说明或 GitHub 工作交接时�
 - Draft PR 用于提前暴露方向、CI 结果和审查问题；未满足验收标准前不合并。
 - 重要契约或架构 PR 合并前，应至少完成一次人工确认。
 
+## 版本与发布
+
+- git tag 是项目唯一版本号；代码内不维护包版本常量（`pyproject.toml` 的 version 仅为打包样板，frontend 为私有应用不发布）。
+- tag 与里程碑挂钩：M1 完成 → `v0.1.0`，M2 → `v0.2.0`，依此类推；只在 main 上、CI 通过后打 tag。
+- Release notes 手动撰写，从该版本区间的 PR 列表与提交归纳；不引入自动生成工具。
+- 旧项目历史保留在本地 `backup-old` 分支，不推送远程。
+
 ## 检查要求
 
-代码 PR 至少运行与改动相关的检查：
+代码 PR 至少按改动范围运行相关检查（命令见「提交前检查」）；CI 在 PR 与 main push 时运行全量检查兜底：
 
-```powershell
-uv run pytest
-uv run ruff check
-uv run pyright
-```
+- backend job：`uv sync --frozen` 后运行 ruff check、pyright、pytest 全量。
+- frontend job：`pnpm install --frozen-lockfile` 后运行 lint、typecheck、test 全量。
+
+本地求快（窄路径），CI 求全（全量）；CI 定义在 `.github/workflows/ci.yml`。
 
 文档或 skill-only 改动可不运行代码检查，但应在最终回复或 PR 中说明。
 
@@ -236,7 +250,7 @@ uv run pyright
 
 ## 阶段管理
 
-建议使用 GitHub Milestones 管理阶段目标：
+使用 GitHub Milestones 管理阶段目标（尚未建立，待实际启用 Issue 管理任务时再建）：
 
 ```text
 M0 项目骨架与规范

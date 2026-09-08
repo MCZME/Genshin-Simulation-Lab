@@ -10,6 +10,7 @@ from fastapi import FastAPI
 
 from genshin_sim.application import ApplicationFacade
 from genshin_sim.server.errors import register_error_handlers
+from genshin_sim.server.request_logging import RequestLoggingMiddleware
 from genshin_sim.server.routers import (
     analysis,
     assets,
@@ -29,6 +30,7 @@ def create_app(application: ApplicationFacade) -> FastAPI:
     """Create the HTTP app bound to one application instance."""
     app = FastAPI(title=APP_TITLE, version=APP_VERSION)
     app.state.application = application
+    app.add_middleware(RequestLoggingMiddleware)
     app.include_router(analysis.router)
     app.include_router(assets.router)
     app.include_router(inputs.router)

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import logging
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -10,8 +9,6 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 
 from genshin_sim.application import ApplicationError
-
-logger = logging.getLogger(__name__)
 
 _NOT_FOUND_CODES = {"not_found", "frame_out_of_range"}
 _CONFLICT_CODES = {"workspace_not_initialized", "already_exists"}
@@ -61,7 +58,7 @@ def register_error_handlers(app: FastAPI) -> None:
 
     @app.exception_handler(Exception)
     async def _handle_unexpected_error(request: Request, exc: Exception) -> JSONResponse:
-        logger.exception("未处理的 HTTP 请求错误", exc_info=exc)
+        # 完整异常栈由请求日志中间件在请求上下文中记录，此处只生成响应。
         return JSONResponse(
             status_code=500,
             content={

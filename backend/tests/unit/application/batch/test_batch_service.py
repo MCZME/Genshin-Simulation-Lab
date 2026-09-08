@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+import logging
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import replace
 
 import pytest
@@ -17,6 +20,8 @@ from genshin_sim.assets import CharacterAsset
 from genshin_sim.content import create_default_content_unit_registry
 from tests.helpers.assembly import minimal_input
 from tests.helpers.asset_repository import FakeAssetRepository
+
+_SERVICE_LOGGER = "genshin_sim.application.batch.service"
 
 
 class _ControlledRunner:
@@ -325,3 +330,118 @@ def test_terminal_batch_remains_queryable_until_retention_expires() -> None:
 
     with pytest.raises(Exception, match="run-ttl"):
         service.get("run-ttl")
+
+
+class _RecordHandler(logging.Handler):
+    def __init__(self) -> None:
+        super().__init__()
+        self.records: list[logging.LogRecord] = []
+
+    def emit(self, record: logging.LogRecord) -> None:
+        self.records.append(record)
+
+
+@contextmanager
+def _capture_service_logs() -> Iterator[list[logging.LogRecord]]:
+    """捕获批次服务 logger 的记录，级别开到 WARNING。"""
+
+    service_logger = logging.getLogger(_SERVICE_LOGGER)
+    previous_level = service_logger.level
+    recorder = _RecordHandler()
+    service_logger.setLevel(logging.WARNING)
+    service_logger.addHandler(recorder)
+    try:
+        yield recorder.records
+    finally:
+        service_logger.setLevel(previous_level)
+        service_logger.removeHandler(recorder)
+
+
+def _warnings(records: list[logging.LogRecord], message: str) -> list[logging.LogRecord]:
+    return [
+        record
+        for record in records
+        if record.levelno == logging.WARNING and record.getMessage() == message
+    ]
+
+
+def test_submit_logs_warning_on_member_validation_failure() -> None:
+    runner = _ControlledRunner()
+    # 无资产仓库的校验器返回 VALIDATION_UNAVAILABLE，成员校验必然失败。
+    service = BatchRunService(runner, run_id_factory=lambda: "run-log-1")
+
+    with (
+        _capture_service_logs() as records,
+        pytest.raises(BatchValidationError) as error,
+    ):
+        service.submit(_members(1))
+
+    assert error.value.code == "validation_failed"
+    failures = _warnings(records, "批次成员校验失败")
+    assert len(failures) == 1
+    assert getattr(failures[0], "member_count", None) == 1
+    assert getattr(failures[0], "failed_count", None) == 1
+    assert getattr(failures[0], "item_ids", None) == ("item-0",)
+
+
+def test_validate_members_logs_warning_on_failure() -> None:
+    service = BatchRunService(_ControlledRunner(), run_id_factory=lambda: "run-log-2")
+
+    with _capture_service_logs() as records:
+        report = service.validate_members(_members(1))
+
+    assert report.ok is False
+    assert len(_warnings(records, "批次成员校验失败")) == 1
+
+
+def test_submit_logs_warning_on_request_structure_failure() -> None:
+    service = BatchRunService(_ControlledRunner(), validator=_full_validator())
+
+    with (
+        _capture_service_logs() as records,
+        pytest.raises(BatchValidationError) as error,
+    ):
+        service.submit(())
+
+    assert error.value.code == "batch_empty"
+    failures = _warnings(records, "批次请求校验失败")
+    assert len(failures) == 1
+    assert getattr(failures[0], "error_code", None) == "batch_empty"
+    # 请求结构失败不应再叠加成员校验日志。
+    assert _warnings(records, "批次成员校验失败") == []
+
+
+def test_submit_member_task_failure_is_logged() -> None:
+    class _FailingSubmitRunner(_ControlledRunner):
+        def submit_input(self, config):
+            raise RuntimeError("提交通道不可用")
+
+    runner = _FailingSubmitRunner()
+    service = BatchRunService(
+        runner,
+        validator=_full_validator(),
+        run_id_factory=lambda: "run-log-3",
+    )
+
+    with _capture_service_logs() as records:
+        status = service.submit(_members(1))
+
+    assert status.members[0].state is BatchMemberState.FAILED
+    failures = _warnings(records, "批次成员任务失败")
+    assert len(failures) == 1
+    assert getattr(failures[0], "item_id", None) == "item-0"
+    assert getattr(failures[0], "job_id", None) is None
+    assert getattr(failures[0], "error_code", None)
+
+
+def test_submit_success_does_not_log_warning() -> None:
+    service = BatchRunService(
+        _ControlledRunner(),
+        validator=_full_validator(),
+        run_id_factory=lambda: "run-log-4",
+    )
+
+    with _capture_service_logs() as records:
+        service.submit(_members(2))
+
+    assert records == []

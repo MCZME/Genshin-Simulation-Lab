@@ -7,6 +7,7 @@ from concurrent.futures import Future, ProcessPoolExecutor
 from dataclasses import dataclass, replace
 from pathlib import Path
 from types import TracebackType
+from typing import Any
 
 from genshin_sim.application.errors_kinds import execution_error_code
 from genshin_sim.application.execution import SynchronousSimulationExecutor
@@ -23,6 +24,7 @@ from genshin_sim.application.jobs import (
 from genshin_sim.application.jobs.models import _utc_now
 from genshin_sim.assets import CompositeAssetRepository
 from genshin_sim.infrastructure.assets_sqlite import SQLiteAssetRepository
+from genshin_sim.infrastructure.logging import LoggingSettings, configure_logging
 from genshin_sim.infrastructure.results_sqlite import SQLiteResultWriter
 
 logger = logging.getLogger(__name__)
@@ -46,6 +48,7 @@ class ProcessSimulationJobRunner:
         max_workers: int = 1,
         developer_mode: bool = False,
         job_id_factory: Callable[[], str] | None = None,
+        logs_dir: str | Path | None = None,
     ) -> None:
         if max_workers <= 0:
             raise ValueError("max_workers 必须大于 0")
@@ -53,7 +56,13 @@ class ProcessSimulationJobRunner:
         self.result_db_path = Path(result_db_path)
         self.developer_mode = developer_mode
         self._job_id_factory = job_id_factory or (lambda: uuid.uuid4().hex)
-        self._pool = ProcessPoolExecutor(max_workers=max_workers)
+        self.logs_dir = Path(logs_dir) if logs_dir is not None else None
+        pool_kwargs: dict[str, Any] = {"max_workers": max_workers}
+        if self.logs_dir is not None:
+            # worker 进程启用独立 JSONL 文件日志；文件名带 pid，与主进程日志天然分离。
+            pool_kwargs["initializer"] = _configure_worker_logging
+            pool_kwargs["initargs"] = (str(self.logs_dir),)
+        self._pool = ProcessPoolExecutor(**pool_kwargs)
         self._jobs: dict[str, _ProcessJobRecord] = {}
         self._closed = False
 
@@ -227,6 +236,12 @@ class ProcessSimulationJobRunner:
             return self._jobs[job_id]
         except KeyError as exc:
             raise SimulationJobNotFoundError(f"仿真任务不存在：{job_id}") from exc
+
+
+def _configure_worker_logging(logs_dir: str) -> None:
+    """worker 进程日志初始化：只写 JSONL 文件，控制台输出仍归主进程。"""
+
+    configure_logging(LoggingSettings(console_enabled=False, file_dir=Path(logs_dir)))
 
 
 def run_sqlite_simulation_worker(payload: SimulationWorkerPayload) -> SimulationJobResult:

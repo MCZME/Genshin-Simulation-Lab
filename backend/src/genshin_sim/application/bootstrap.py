@@ -45,6 +45,17 @@ DEFAULT_ASSET_MANIFEST = Path("data") / "assets" / "manifests" / "project_amber_
 DEFAULT_ASSET_SOURCE_CACHE = Path("data") / "assets" / "sources" / "project_amber_yatta" / "default"
 
 
+def resolve_logs_dir(project_root: str | Path) -> Path:
+    """解析项目日志目录；存在 config.toml 用配置，否则回落 root/data/logs。"""
+
+    root = Path(project_root)
+    config_store = ProjectConfigFileStore()
+    config_path = config_store.config_path(root)
+    if config_path.is_file():
+        return config_store.load(root).logs_dir(root)
+    return root / "data" / "logs"
+
+
 def create_cli_application(
     *,
     project_root: str | Path,
@@ -52,6 +63,7 @@ def create_cli_application(
     result_db_path: str | Path | None = None,
     source_cache_dir: str | Path | None = None,
     asset_manifest_path: str | Path | None = None,
+    worker_logs_dir: str | Path | None = None,
 ) -> ApplicationFacade:
     """组装 CLI 可用的完整 application facade。"""
     from genshin_sim.application.batch import MAX_BATCH_CONCURRENCY
@@ -83,10 +95,15 @@ def create_cli_application(
         else root / DEFAULT_ASSET_MANIFEST
     )
 
+    if worker_logs_dir is None:
+        # CLI 项目模式（存在 config.toml）才默认启用 worker 文件日志，与主进程策略一致。
+        worker_logs_dir = config.logs_dir(root) if config is not None else None
+
     runner = ProcessSimulationJobRunner(
         asset_db_path=asset_db,
         result_db_path=result_db,
         developer_mode=developer_mode,
+        logs_dir=worker_logs_dir,
         # 执行后端容量覆盖批调度允许的上限；批服务是唯一队列。
         max_workers=MAX_BATCH_CONCURRENCY,
     )
@@ -150,4 +167,6 @@ def create_server_application(
         result_db_path=result_db_path,
         source_cache_dir=source_cache_dir,
         asset_manifest_path=asset_manifest_path,
+        # server 是常驻进程，worker 文件日志始终启用。
+        worker_logs_dir=resolve_logs_dir(project_root),
     )

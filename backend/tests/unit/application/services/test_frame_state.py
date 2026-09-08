@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import cast
+
 import pytest
 
 from genshin_sim.application.execution.models import RecordedEvent
@@ -141,7 +143,8 @@ def test_fold_without_energy_provider_keeps_team_baseline_capacity_empty():
     """旧快照缺少 energy provider 时回退 team 基线，capacity 保持 None。"""
 
     snapshot = _snapshot()
-    del snapshot["providers"]["energy"]
+    providers = cast(dict[str, object], snapshot["providers"])
+    del providers["energy"]
 
     response = fold_frame_state(
         session_id="session:1",

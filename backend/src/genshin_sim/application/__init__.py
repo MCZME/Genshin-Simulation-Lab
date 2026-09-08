@@ -16,7 +16,11 @@ from genshin_sim.application.batch import (
     BatchValidationResult,
     SingleBatchResult,
 )
-from genshin_sim.application.bootstrap import create_cli_application, create_server_application
+from genshin_sim.application.bootstrap import (
+    create_cli_application,
+    create_server_application,
+    resolve_logs_dir,
+)
 from genshin_sim.application.config import ProjectConfig, UiConfig
 from genshin_sim.application.context import create_application
 from genshin_sim.application.errors import ApplicationError
@@ -117,4 +121,5 @@ __all__ = [
     "create_application",
     "create_cli_application",
     "create_server_application",
+    "resolve_logs_dir",
 ]

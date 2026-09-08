@@ -6,8 +6,11 @@ from pathlib import Path
 
 import uvicorn
 
-from genshin_sim.application import create_server_application
+from genshin_sim.application import create_server_application, resolve_logs_dir
+from genshin_sim.infrastructure.logging import LoggingSettings, configure_logging
 from genshin_sim.server import create_app
+
+SERVER_LOG_FILE_NAME = "server.jsonl"
 
 
 def run_server(
@@ -20,6 +23,7 @@ def run_server(
 ) -> None:
     """组装进程执行的应用并启动同源 HTTP 服务。"""
 
+    _configure_server_logging(project_root)
     application = create_server_application(
         project_root=project_root,
         asset_db_path=asset_db_path,
@@ -27,6 +31,14 @@ def run_server(
     )
     app = create_app(application)
     uvicorn.run(app, host=host, port=port)
+
+
+def _configure_server_logging(project_root: str | Path) -> None:
+    """server 常驻进程日志：单文件大小轮转，写入项目 logs 目录。"""
+
+    configure_logging(
+        LoggingSettings(file_path=resolve_logs_dir(project_root) / SERVER_LOG_FILE_NAME)
+    )
 
 
 def main(argv: list[str] | None = None) -> int:

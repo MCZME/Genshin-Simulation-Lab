@@ -5,11 +5,20 @@ from pathlib import Path
 
 SERVER_ROOT = Path(__file__).resolve().parents[3] / "src" / "genshin_sim" / "server"
 
+# 入口层负责日志初始化，允许直接使用日志基础设施（与 CLI 边界规则一致）。
+_ALLOWED_GENSHIN_PREFIXES = (
+    "genshin_sim.application",
+    "genshin_sim.server",
+    "genshin_sim.infrastructure.logging",
+)
+
 
 def _is_allowed_module(module: str) -> bool:
-    if module == "genshin_sim.application" or module.startswith("genshin_sim.server"):
+    if not module.startswith("genshin_sim"):
         return True
-    return not module.startswith("genshin_sim")
+    return any(
+        module == prefix or module.startswith(f"{prefix}.") for prefix in _ALLOWED_GENSHIN_PREFIXES
+    )
 
 
 def test_server_only_imports_application_public_surface() -> None:

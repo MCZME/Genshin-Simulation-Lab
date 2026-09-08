@@ -89,6 +89,17 @@ class SynchronousSimulationExecutor:
             raise
 
         logger.info(
+            "仿真组装完成",
+            extra={
+                "config_name": config.meta.name,
+                "session_id": session_id,
+                "team_size": len(config.team),
+                "target_count": len(config.scene.targets),
+                "rule_count": len(config.rules.active),
+            },
+        )
+
+        logger.info(
             "仿真运行开始",
             extra={"config_name": config.meta.name, "session_id": session_id},
         )

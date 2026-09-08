@@ -78,6 +78,65 @@ def test_process_runner_runs_file_and_persists_result(tmp_path: Path):
     assert detail.input_snapshot["meta"]["name"] == "process runner integration run"
 
 
+def test_process_runner_worker_writes_jsonl_logs(tmp_path: Path):
+    asset_db = tmp_path / "assets.db"
+    result_db = tmp_path / "results.db"
+    logs_dir = tmp_path / "logs"
+    input_path = tmp_path / "config.json"
+    write_fixture_asset_database(asset_db)
+    input_path.write_text(
+        json.dumps(
+            static_asset_input_payload(
+                meta_name="worker logging run",
+                include_weapon=True,
+                include_artifact_set=True,
+                input_trace=[],
+            ),
+            ensure_ascii=False,
+        ),
+        encoding="utf-8",
+    )
+
+    with ProcessSimulationJobRunner(
+        asset_db_path=asset_db,
+        result_db_path=result_db,
+        max_workers=1,
+        logs_dir=logs_dir,
+        job_id_factory=lambda: "job-log-1",
+    ) as runner:
+        service = BatchRunService(
+            runner,
+            validator=_PassthroughValidator(),
+            run_id_factory=lambda: "run-log-1",
+        )
+        result = service.run_single_and_wait(
+            BatchMember(
+                item_id="item-log-1",
+                input=SimulationInput.from_json_file(input_path),
+            ),
+            poll_interval_seconds=0.01,
+            timeout_seconds=10,
+        )
+
+    assert result.error_code is None
+
+    files = list(logs_dir.glob("genshin-sim-*.jsonl"))
+    assert len(files) == 1
+    records = [
+        json.loads(line)
+        for line in files[0].read_text(encoding="utf-8").splitlines()
+        if line.strip()
+    ]
+    messages = {record["message"] for record in records}
+    assert {"仿真组装开始", "仿真组装完成", "仿真运行完成", "仿真结果已保存"} <= messages
+    assembled = next(record for record in records if record["message"] == "仿真组装完成")
+    assert assembled["fields"]["team_size"] == 1
+    assert assembled["fields"]["target_count"] == 1
+    session_records = [record for record in records if record["fields"].get("session_id")]
+    assert session_records
+    assert all(record["fields"]["session_id"] == result.session_id for record in session_records)
+
+
 def test_process_runner_records_missing_asset_database_failure(tmp_path: Path):
     result_db = tmp_path / "results.db"
     input_path = tmp_path / "config.json"

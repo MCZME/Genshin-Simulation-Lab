@@ -136,7 +136,14 @@ def test_executor_logs_session_id_on_start_and_failure():
         logger.removeHandler(recorder)
 
     messages = {record.getMessage() for record in recorder.records}
-    assert {"仿真组装开始", "仿真执行失败"} <= messages
+    assert {"仿真组装开始", "仿真组装完成", "仿真执行失败"} <= messages
+    assembled_records = [
+        record for record in recorder.records if record.getMessage() == "仿真组装完成"
+    ]
+    assert len(assembled_records) == 1
+    assert getattr(assembled_records[0], "team_size", None) == 0
+    assert getattr(assembled_records[0], "target_count", None) == 0
+    assert getattr(assembled_records[0], "rule_count", None) == 0
     failed = writer.failed[0]
     assert all(
         getattr(record, "session_id", "") == failed.session_id for record in recorder.records

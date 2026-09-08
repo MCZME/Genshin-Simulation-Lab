@@ -15,7 +15,7 @@ description: 本仓库的提交、分支和 PR 工作流。用于准备提交、
 - `main` 保持为稳定主线，不直接提交日常开发改动。
 - 每个 Pull Request 只处理一个明确主题，避免混入无关重构。
 - 涉及架构、契约、资产库、结果库、数值机制或迁移策略的变更，必须在 PR 中明确标注风险并同步相关文档。
-- AI/Codex 参与的改动也必须经过同样的分支、提交、检查和审查流程。
+- AI 参与的改动也必须经过同样的分支、提交、检查和审查流程。
 
 ## 提交前检查
 
@@ -27,7 +27,7 @@ git diff --stat
 git diff --cached --stat
 ```
 
-区分用户已有改动和 Codex 本次改动。不要回滚、覆盖或暂存无关的用户改动。
+区分用户已有改动和 AI 本次改动。不要回滚、覆盖或暂存无关的用户改动。
 
 按一个可审查主题组织改动。如果工作区同时包含规划文档和代码实现，优先拆成不同提交；除非文档是该实现对应的直接契约更新。
 
@@ -65,7 +65,7 @@ type(scope): 中文摘要
 feat fix docs refactor test chore build ci perf ai
 ```
 
-AI/Codex 协作规范、skill、agent 配置等 AI 协作资产统一使用 `ai` 类型。
+AI 协作规范、skill、agent 配置等 AI 协作资产统一使用 `ai` 类型。
 
 需要表达模块或主题时，使用简短英文 `scope`，例如 `core`、`assets`、`config`、`github`、`migration`。
 
@@ -117,10 +117,10 @@ git commit -m "type(scope): 中文摘要"
 
 ```text
 <type>/<short-english-topic>
-codex/<short-english-topic>
+ai/<short-english-topic>
 ```
 
-Codex 主导的工作使用 `codex/` 前缀。不要使用中文、空格或下划线。
+AI 主导的工作使用 `ai/` 前缀。不要使用中文、空格或下划线。
 
 示例：
 
@@ -128,7 +128,7 @@ Codex 主导的工作使用 `codex/` 前缀。不要使用中文、空格或下�
 docs/github-workflow
 feat/config-validation
 fix/core-event-order
-codex/project-initialization
+ai/project-initialization
 ```
 
 如果用户要求直接翻译现有中文分支名，保留前缀，并将主题翻译为简短的英文短横线命名。
@@ -190,7 +190,7 @@ PR 是本项目最小审查单位。撰写 PR 说明或 GitHub 工作交接时�
 - 风险类型，尤其是架构、契约、资产 schema、结果 schema、数值行为或迁移风险
 - 验证命令和结果
 - 文档同步情况
-- AI/Codex 参与范围
+- AI 参与范围
 
 清楚标注不确定或高风险事项，不要把它们描述成已经定论。
 
@@ -268,10 +268,10 @@ M5 CLI / UI MVP
 - 主要 Issue 或 PR
 - 阶段验收标准
 
-## AI/Codex 协作补充
+## AI 协作补充
 
-- Codex 主导的工作优先使用 `codex/` 分支。
-- AI/Codex 协作规范、skill、agent 配置等 AI 协作资产统一使用 `ai` 类型。
+- AI 主导的工作优先使用 `ai/` 分支。
+- AI 协作规范、skill、agent 配置等 AI 协作资产统一使用 `ai` 类型。
 - AI 生成或修改的代码仍需遵守模块边界、契约和测试要求。
 - AI 不应仅凭记忆实现游戏机制数值。
 - 涉及高风险内容时，AI 应在 Issue 或 PR 中标注不确定性，并请求人工确认。

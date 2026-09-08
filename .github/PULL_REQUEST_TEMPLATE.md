@@ -16,5 +16,3 @@
 ## 文档同步
 - [ ] 不需要
 - [ ] 已同步 docs/ 或 commit-workflow skill
-
-## AI 参与说明

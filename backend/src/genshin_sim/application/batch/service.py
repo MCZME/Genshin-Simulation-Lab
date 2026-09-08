@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import os
 import uuid
 from collections.abc import Callable, Sequence
@@ -29,11 +30,15 @@ from genshin_sim.application.jobs import (
 )
 from genshin_sim.application.services.input_validation import BatchInputValidationService
 
+logger = logging.getLogger(__name__)
+
 MAX_BATCH_MEMBERS = 200
 MIN_BATCH_CONCURRENCY = 1
 MAX_BATCH_CONCURRENCY = 16
 DEFAULT_BATCH_CONCURRENCY = min(4, os.cpu_count() or 1)
 TERMINAL_BATCH_RETENTION_SECONDS = 60.0
+# 失败 item_id 汇总日志只保留前若干个，避免大批次刷屏；明细走响应体诊断。
+MAX_LOGGED_ITEM_IDS = 10
 
 _TERMINAL_MEMBER_STATES = {
     BatchMemberState.COMPLETED,
@@ -117,7 +122,10 @@ class BatchRunService:
         with self._lock:
             self._expire_terminal_runs()
             normalized_members = self._normalize_request_members(members)
-            return self.validator.validate_members(normalized_members)
+            report = self.validator.validate_members(normalized_members)
+            if not report.ok:
+                _log_member_validation_failure(report)
+            return report
 
     def submit(
         self,
@@ -130,9 +138,15 @@ class BatchRunService:
 
         with self._lock:
             self._expire_terminal_runs()
-            request_members = self._normalize_request_members(members)
+            try:
+                request_members = self._normalize_request_members(members)
+                resolved_concurrency = self._resolve_concurrency(concurrency)
+            except BatchValidationError as exc:
+                logger.warning("批次请求校验失败", extra={"error_code": exc.code})
+                raise
             report = self.validator.validate_members(request_members)
             if not report.ok:
+                _log_member_validation_failure(report)
                 raise BatchValidationError(
                     "validation_failed",
                     "批次输入校验失败",
@@ -142,7 +156,6 @@ class BatchRunService:
             normalized_members = report.normalized_members or tuple(
                 _normalize_member(member) for member in request_members
             )
-            resolved_concurrency = self._resolve_concurrency(concurrency)
             run_id = self._new_run_id()
             record = _BatchRecord(
                 run_id=run_id,
@@ -373,8 +386,18 @@ class BatchRunService:
         member.error_message = status.error_message
 
     def _mark_failed(self, member: _BatchMemberRecord, exc: BaseException) -> None:
+        # 任务提交或状态查询异常被吞掉转为成员失败状态，必须留日志痕迹。
+        error_code = scheduling_error_code(exc)
+        logger.warning(
+            "批次成员任务失败",
+            extra={
+                "item_id": member.member.item_id,
+                "job_id": member.job_id,
+                "error_code": error_code,
+            },
+        )
         member.state = BatchMemberState.FAILED
-        member.error_code = scheduling_error_code(exc)
+        member.error_code = error_code
         member.error_message = str(exc) or exc.__class__.__name__
         member.session_id = None
         member.finished_at = member.finished_at or self._now_factory()
@@ -458,6 +481,20 @@ class BatchRunService:
             return self._runs[run_id]
         except KeyError as exc:
             raise BatchRunNotFoundError(run_id) from exc
+
+
+def _log_member_validation_failure(report: BatchValidationResult) -> None:
+    """成员校验失败记 WARNING 汇总；逐条明细由响应体诊断承载，不进日志。"""
+
+    failed_members = [member for member in report.members if not member.ok]
+    logger.warning(
+        "批次成员校验失败",
+        extra={
+            "member_count": len(report.members),
+            "failed_count": len(failed_members),
+            "item_ids": tuple(member.item_id for member in failed_members[:MAX_LOGGED_ITEM_IDS]),
+        },
+    )
 
 
 def _normalize_member(member: BatchMember) -> BatchMember:

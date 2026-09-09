@@ -1,7 +1,11 @@
 import { useState } from "react";
 import { AssetPicker } from "../common/AssetPicker";
 import { CollapsibleGroup, FieldRow, InlineError, NumberField } from "../common/fields";
-import { ARTIFACT_RAW_STAT_KEYS, ARTIFACT_STAT_KEYS } from "../../workflow/registry";
+import {
+  ARTIFACT_RAW_STAT_KEYS,
+  ARTIFACT_STAT_KEYS,
+  ARTIFACT_STAT_LABELS,
+} from "../../workflow/vocabularies";
 import type { NodeEditorProps } from "./common";
 import { asNumber, asString, firstError, isPlainObject } from "./common";
 const CHARACTER_LEVELS = [...Array.from({ length: 90 }, (_, index) => index + 1), 95, 100];
@@ -16,28 +20,6 @@ interface ArtifactStatRow {
   key: string;
   value: number;
 }
-
-const ARTIFACT_STAT_LABELS: Record<string, string> = {
-  hp_percent: "生命值%",
-  atk_percent: "攻击力%",
-  def_percent: "防御力%",
-  flat_hp: "固定生命值",
-  flat_atk: "固定攻击力",
-  flat_def: "固定防御力",
-  crit_rate: "暴击率",
-  crit_damage: "暴击伤害",
-  elemental_mastery: "元素精通",
-  energy_recharge: "元素充能效率",
-  healing_bonus: "治疗加成",
-  physical_damage_bonus: "物理伤害加成",
-  pyro_damage_bonus: "火元素伤害加成",
-  hydro_damage_bonus: "水元素伤害加成",
-  electro_damage_bonus: "雷元素伤害加成",
-  cryo_damage_bonus: "冰元素伤害加成",
-  anemo_damage_bonus: "风元素伤害加成",
-  geo_damage_bonus: "岩元素伤害加成",
-  dendro_damage_bonus: "草元素伤害加成",
-};
 
 const ARTIFACT_STAT_GROUPS: ReadonlyArray<{ label: string; keys: readonly string[] }> = [
   {

@@ -14,6 +14,16 @@ import { SUPPORTED_INPUT_KEYS } from "./inputKeys";
 import { parsePath } from "./path";
 import { MAX_ANALYSIS_SESSION_IDS } from "./types";
 import { COLUMN_NAME_PATTERN, TYPE_VOCABULARY } from "./templates";
+import {
+  ARTIFACT_STAT_KEYS,
+  RESISTANCE_ELEMENT_KEYS,
+} from "./vocabularies";
+import {
+  getScanDimension,
+  resolveScanPath,
+  validatePathParamValues,
+  type ScanDimensionSpec,
+} from "./scanDimensions";
 
 export type ParamFieldType =
   | "string"
@@ -161,49 +171,6 @@ function artifactFragment(
   };
 }
 
-/** 目标抗性支持的 8 个元素键；与后端 RESISTANCE_KEYS_BY_ELEMENT 保持一致。 */
-export const RESISTANCE_ELEMENT_KEYS: readonly string[] = [
-  "physical",
-  "pyro",
-  "hydro",
-  "electro",
-  "cryo",
-  "anemo",
-  "geo",
-  "dendro",
-];
-
-/** 圣遗物总词条配置词汇表；与后端 ARTIFACT_STAT_KEYS 保持一致。 */
-export const ARTIFACT_STAT_KEYS: readonly string[] = [
-  "hp_percent",
-  "atk_percent",
-  "def_percent",
-  "flat_hp",
-  "flat_atk",
-  "flat_def",
-  "crit_rate",
-  "crit_damage",
-  "elemental_mastery",
-  "energy_recharge",
-  "healing_bonus",
-  "physical_damage_bonus",
-  "pyro_damage_bonus",
-  "hydro_damage_bonus",
-  "electro_damage_bonus",
-  "cryo_damage_bonus",
-  "anemo_damage_bonus",
-  "geo_damage_bonus",
-  "dendro_damage_bonus",
-];
-
-/** 按原值输入、不做百分比换算的圣遗物词条。 */
-export const ARTIFACT_RAW_STAT_KEYS: readonly string[] = [
-  "flat_hp",
-  "flat_atk",
-  "flat_def",
-  "elemental_mastery",
-];
-
 const DEFAULT_TARGET_POSITION: Record<string, number> = { x: 0, y: 0, z: 5 };
 
 /** 编辑器内目标抗性默认值；单位为百分数（10 表示 10%），编译时换算为小数比例。 */
@@ -301,9 +268,40 @@ function rulesFragment(
   };
 }
 
+/**
+ * 枚举/区间节点的目标路径与值类型：
+ * 维度模式（dimension 非空）由扫描维度注册表推导，自定义模式读节点参数。
+ */
+function variantPathInfo(
+  node: WorkflowNode,
+): { path: string; valueType: EnumValueType; spec: ScanDimensionSpec | null } {
+  const dimensionKey =
+    typeof node.params.dimension === "string" ? node.params.dimension : null;
+  if (dimensionKey !== null) {
+    const spec = getScanDimension(dimensionKey);
+    const pathParams = isPlainObject(node.params.path_params)
+      ? node.params.path_params
+      : {};
+    if (spec === null) {
+      return { path: "", valueType: "asset", spec: null };
+    }
+    return {
+      path: resolveScanPath(spec, pathParams),
+      valueType: spec.valueType,
+      spec,
+    };
+  }
+  return {
+    path: asString(node.params.path) ?? "",
+    valueType: isEnumValueType(node.params.value_type)
+      ? node.params.value_type
+      : "asset",
+    spec: null,
+  };
+}
+
 function enumGroupFragments(node: WorkflowNode): FragmentSource[] {
-  const path = asString(node.params.path) ?? "";
-  const valueType = node.params.value_type as EnumValueType;
+  const { path, valueType } = variantPathInfo(node);
   const values = Array.isArray(node.params.values) ? (node.params.values as EnumValue[]) : [];
   return values.map((item) => ({
     item_id: item.item_id,
@@ -326,7 +324,7 @@ function enumValueToFragment(value: string | number, valueType: EnumValueType): 
 }
 
 function rangeGroupFragments(node: WorkflowNode): FragmentSource[] {
-  const path = asString(node.params.path) ?? "";
+  const { path } = variantPathInfo(node);
   const entries = rangeEntries(
     asNumber(node.params.start) ?? 0,
     asNumber(node.params.end) ?? 0,
@@ -637,12 +635,32 @@ function validateRules(node: WorkflowNode): Diagnostic[] {
 function validateEnum(node: WorkflowNode): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const params = node.params;
-  if (!isValidPath(params.path)) {
-    diagnostics.push(paramError(node, "path", "路径语法错误"));
+  const { valueType } = variantPathInfo(node);
+  let spec: ScanDimensionSpec | null = null;
+
+  if (typeof params.dimension !== "string") {
+    if (!isValidPath(params.path)) {
+      diagnostics.push(paramError(node, "path", "路径语法错误"));
+    }
+    if (!isEnumValueType(params.value_type)) {
+      diagnostics.push(paramError(node, "value_type", "未知取值类型"));
+    }
+  } else {
+    spec = getScanDimension(params.dimension);
+    if (spec === null) {
+      diagnostics.push(paramError(node, "dimension", "未知扫描维度"));
+    } else if (!spec.supports.includes("enum")) {
+      diagnostics.push(paramError(node, "dimension", "该维度不支持枚举扫描"));
+      spec = null;
+    } else {
+      const pathParams = isPlainObject(params.path_params) ? params.path_params : {};
+      const paramMessage = validatePathParamValues(spec, pathParams);
+      if (paramMessage !== null) {
+        diagnostics.push(paramError(node, "path_params", paramMessage));
+      }
+    }
   }
-  if (!isEnumValueType(params.value_type)) {
-    diagnostics.push(paramError(node, "value_type", "未知取值类型"));
-  }
+
   if (!Array.isArray(params.values) || params.values.length === 0) {
     diagnostics.push(paramError(node, "values", "values 至少需要一项"));
     return diagnostics;
@@ -658,10 +676,18 @@ function validateEnum(node: WorkflowNode): Diagnostic[] {
       );
     }
     seen.add(enumItem.item_id ?? "");
-    if (enumItem.value === undefined || enumItem.value === null) {
+    if (
+      enumItem.value === undefined ||
+      enumItem.value === null ||
+      enumItem.value === ""
+    ) {
       diagnostics.push(paramError(node, `values[${index}].value`, "取值不能为空"));
-    }
-    if (params.value_type === "json_fragment") {
+    } else if (valueType === "number" && spec !== null) {
+      const num = typeof enumItem.value === "number" ? enumItem.value : Number(enumItem.value);
+      diagnostics.push(
+        ...validateScanNumber(node, `values[${index}].value`, num, spec),
+      );
+    } else if (valueType === "json_fragment") {
       try {
         JSON.parse(String(enumItem.value));
       } catch {
@@ -677,9 +703,28 @@ function validateEnum(node: WorkflowNode): Diagnostic[] {
 function validateRange(node: WorkflowNode): Diagnostic[] {
   const diagnostics: Diagnostic[] = [];
   const params = node.params;
-  if (!isValidPath(params.path)) {
-    diagnostics.push(paramError(node, "path", "路径语法错误"));
+  let spec: ScanDimensionSpec | null = null;
+
+  if (typeof params.dimension !== "string") {
+    if (!isValidPath(params.path)) {
+      diagnostics.push(paramError(node, "path", "路径语法错误"));
+    }
+  } else {
+    spec = getScanDimension(params.dimension);
+    if (spec === null) {
+      diagnostics.push(paramError(node, "dimension", "未知扫描维度"));
+    } else if (!spec.supports.includes("range")) {
+      diagnostics.push(paramError(node, "dimension", "该维度不支持区间扫描"));
+      spec = null;
+    } else {
+      const pathParams = isPlainObject(params.path_params) ? params.path_params : {};
+      const paramMessage = validatePathParamValues(spec, pathParams);
+      if (paramMessage !== null) {
+        diagnostics.push(paramError(node, "path_params", paramMessage));
+      }
+    }
   }
+
   const start = asNumber(params.start);
   const end = asNumber(params.end);
   const step = asNumber(params.step);
@@ -694,6 +739,61 @@ function validateRange(node: WorkflowNode): Diagnostic[] {
   }
   if (start !== null && end !== null && start > end) {
     diagnostics.push(paramError(node, "start", "起点不能大于终点"));
+  }
+  if (spec !== null && spec.constraints !== undefined) {
+    const constraints = spec.constraints;
+    if (constraints.integer === true) {
+      for (const [field, value] of [
+        ["start", start],
+        ["end", end],
+        ["step", step],
+      ] as const) {
+        if (value !== null && !Number.isInteger(value)) {
+          diagnostics.push(paramError(node, field, `${fieldNameOf(field)}必须是整数`));
+        }
+      }
+    }
+    if (constraints.min !== undefined && start !== null && start < constraints.min) {
+      diagnostics.push(
+        paramError(node, "start", `起点不能小于 ${constraints.min}`),
+      );
+    }
+    if (constraints.max !== undefined && end !== null && end > constraints.max) {
+      diagnostics.push(paramError(node, "end", `终点不能大于 ${constraints.max}`));
+    }
+  }
+  return diagnostics;
+}
+
+function fieldNameOf(field: string): string {
+  const labels: Record<string, string> = { start: "起点", end: "终点", step: "步长" };
+  return labels[field] ?? field;
+}
+
+/** 维度模式下的数值取值约束校验（枚举取值单值）。 */
+function validateScanNumber(
+  node: WorkflowNode,
+  path: string,
+  value: number,
+  spec: ScanDimensionSpec,
+): Diagnostic[] {
+  const diagnostics: Diagnostic[] = [];
+  if (!Number.isFinite(value)) {
+    diagnostics.push(paramError(node, path, "取值必须是有限数字"));
+    return diagnostics;
+  }
+  const constraints = spec.constraints;
+  if (constraints === undefined) {
+    return diagnostics;
+  }
+  if (constraints.integer === true && !Number.isInteger(value)) {
+    diagnostics.push(paramError(node, path, "取值必须是整数"));
+  }
+  if (constraints.min !== undefined && value < constraints.min) {
+    diagnostics.push(paramError(node, path, `取值不能小于 ${constraints.min}`));
+  }
+  if (constraints.max !== undefined && value > constraints.max) {
+    diagnostics.push(paramError(node, path, `取值不能大于 ${constraints.max}`));
   }
   return diagnostics;
 }
@@ -968,20 +1068,22 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
   },
   enum: {
     kind: "enum",
-    displayName: "枚举",
+    displayName: "枚举扫描",
     region: "configuration",
     ports: {
       inputs: [fragmentPort("in", "single")],
       outputs: [fragmentPort("out", "group", Number.POSITIVE_INFINITY)],
     },
     paramFields: {
-      path: { type: "string", required: true },
-      value_type: { type: "string", required: true },
+      dimension: { type: "string" },
+      path_params: { type: "object" },
+      path: { type: "string" },
+      value_type: { type: "string" },
       values: { type: "list", required: true },
     },
     defaultParams: {
-      path: "",
-      value_type: "asset",
+      dimension: "character.asset_key",
+      path_params: { slot: 1 },
       values: [{ item_id: "e-1", value: "", label: null }],
     },
     fragment: () => null,
@@ -990,20 +1092,29 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
   },
   range: {
     kind: "range",
-    displayName: "区间",
+    displayName: "区间扫描",
     region: "configuration",
     ports: {
       inputs: [fragmentPort("in", "single")],
       outputs: [fragmentPort("out", "group", Number.POSITIVE_INFINITY)],
     },
     paramFields: {
-      path: { type: "string", required: true },
+      dimension: { type: "string" },
+      path_params: { type: "object" },
+      path: { type: "string" },
       start: { type: "number", required: true },
       end: { type: "number", required: true },
       step: { type: "number", required: true },
       label: { type: "string" },
     },
-    defaultParams: { path: "", start: 1, end: 10, step: 1, label: null },
+    defaultParams: {
+      dimension: "character.level",
+      path_params: { slot: 1 },
+      start: 1,
+      end: 90,
+      step: 1,
+      label: null,
+    },
     fragment: () => null,
     groupFragments: rangeGroupFragments,
     validate: validateRange,

@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { ELEMENT_COLORS, ELEMENT_LABELS } from "../../theme/elements";
-import { RESISTANCE_ELEMENT_KEYS } from "../../workflow/registry";
+import { RESISTANCE_ELEMENT_KEYS } from "../../workflow/vocabularies";
 import { FieldRow, InlineError, NumberField, TextField } from "../common/fields";
 import type { NodeEditorProps } from "./common";
 import { asNumber, asString, firstError, isPlainObject } from "./common";

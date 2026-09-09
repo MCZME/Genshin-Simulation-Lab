@@ -7,9 +7,9 @@ import {
   ANALYSIS_VIEW_KINDS,
   CONFIG_INPUT_KINDS,
   CONFIG_RUN_SETTING_KINDS,
+  CONFIG_SCAN_KINDS,
   CONFIG_TARGET_KINDS,
   CONFIG_TEAM_KINDS,
-  CONFIG_VARIANT_KINDS,
   nodeKindColor,
 } from "../nodes/registry";
 
@@ -66,8 +66,8 @@ export function ObjectPanel({ onDragStart, onCollapse }: ObjectPanelProps) {
         {CONFIG_INPUT_KINDS.map((kind) => (
           <PanelItem key={kind} kind={kind} onDragStart={onDragStart} />
         ))}
-        <h3 className="panel-subtitle">变体扫描</h3>
-        {CONFIG_VARIANT_KINDS.map((kind) => (
+        <h3 className="panel-subtitle">参数扫描</h3>
+        {CONFIG_SCAN_KINDS.map((kind) => (
           <PanelItem key={kind} kind={kind} onDragStart={onDragStart} />
         ))}
       </div>

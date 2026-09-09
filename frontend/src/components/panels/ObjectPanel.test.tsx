@@ -30,7 +30,7 @@ describe("ObjectPanel", () => {
       "队伍配置",
       "目标配置",
       "操作输入",
-      "变体扫描",
+      "参数扫描",
     ]);
     expect(labels).toEqual([
       "根节点",

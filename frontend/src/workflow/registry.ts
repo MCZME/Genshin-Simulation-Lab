@@ -301,12 +301,17 @@ function variantPathInfo(
 }
 
 function enumGroupFragments(node: WorkflowNode): FragmentSource[] {
-  const { path, valueType } = variantPathInfo(node);
+  const { path, valueType, spec } = variantPathInfo(node);
   const values = Array.isArray(node.params.values) ? (node.params.values as EnumValue[]) : [];
   return values.map((item) => ({
     item_id: item.item_id,
     path,
-    value: enumValueToFragment(item.value, valueType),
+    // 维度模式 asset 维度路径指向 .asset_key 字段，值直接写字符串；
+    // 自定义模式 asset 值保持 { asset_key } 对象语义（路径由用户指定）。
+    value:
+      spec !== null && spec.valueType === "asset"
+        ? String(item.value)
+        : enumValueToFragment(item.value, valueType),
   }));
 }
 

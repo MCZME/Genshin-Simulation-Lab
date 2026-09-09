@@ -431,6 +431,26 @@ describe("validateWorkflow", () => {
     expect(startError?.message).toBe("起点必须是整数");
   });
 
+  it("区间端点超维度上下限报 PARAM_INVALID", () => {
+    const rangeNode = makeNode("range", "range", {
+      dimension: "weapon.refinement",
+      path_params: { slot: 1 },
+      start: 0,
+      end: 8,
+      step: 1,
+    });
+    const definition = makeDefinition([makeRegion()], [rangeNode], []);
+    const diagnostics = validateWorkflow(definition);
+    const startError = diagnostics.find(
+      (item) => item.path === "start" && item.code === "PARAM_INVALID",
+    );
+    const endError = diagnostics.find(
+      (item) => item.path === "end" && item.code === "PARAM_INVALID",
+    );
+    expect(startError?.message).toBe("起点不能小于 1");
+    expect(endError?.message).toBe("终点不能大于 5");
+  });
+
   it("普通节点自定义路径语法错误时报 PARAM_INVALID", () => {
     const definition = makeDefinition(
       [makeRegion()],

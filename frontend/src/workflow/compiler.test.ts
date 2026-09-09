@@ -355,7 +355,7 @@ describe("compileConfigurationRegion", () => {
     expect(constellations).toEqual([0, 6]);
   });
 
-  it("维度模式资产枚举产出 asset_key 片段", () => {
+  it("维度模式资产枚举写 asset_key 字段", () => {
     const enumNode = makeNode("enum", "enum", {
       dimension: "weapon.asset_key",
       path_params: { slot: 1 },
@@ -375,6 +375,84 @@ describe("compileConfigurationRegion", () => {
     expect(result.ok).toBe(true);
     const team = result.members[0].input.team as Array<Record<string, unknown>>;
     expect((team[0].weapon as Record<string, unknown>).asset_key).toBe("weapon:11512");
+  });
+
+  it("资产维度枚举与武器节点串联只替换 asset_key 字段", () => {
+    // 链式：root → weapon（整体片段）→ enum（字段级扫描）→ 边界。
+    // setPath 为叶子级替换：weapon 片段的 level/refinement 必须保留。
+    const weaponNode = makeNode("weapon", "weapon", {
+      slot: 1,
+      asset: "weapon:15502",
+      level: 90,
+      refinement: 3,
+    });
+    const enumNode = makeNode("enum", "enum", {
+      dimension: "weapon.asset_key",
+      path_params: { slot: 1 },
+      values: [
+        { item_id: "w-1", value: "weapon:11512", label: null },
+        { item_id: "w-2", value: "weapon:14415", label: null },
+      ],
+    });
+    const edges = [
+      makeEdge("e0", "root", "out", "weapon", "in"),
+      makeEdge("e1", "weapon", "out", "enum", "in"),
+      makeEdge("e2", "enum", "out", "region-1", "out"),
+      makeEdge("e3", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [makeNode("root", "root"), weaponNode, enumNode, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(2);
+    expect(
+      result.diagnostics.some((item) => item.code === "PATH_OVERRIDE"),
+    ).toBe(false);
+    for (const member of result.members) {
+      const team = member.input.team as Array<Record<string, unknown>>;
+      const weapon = team[0].weapon as Record<string, unknown>;
+      expect(weapon.level).toBe(90);
+      expect(weapon.refinement).toBe(3);
+    }
+    const assetKeys = result.members.map((member) => {
+      const team = member.input.team as Array<Record<string, unknown>>;
+      return (team[0].weapon as Record<string, unknown>).asset_key;
+    });
+    expect(assetKeys).toEqual(["weapon:11512", "weapon:14415"]);
+  });
+
+  it("资产维度枚举与角色节点并联合并保留等级", () => {
+    const charNode = makeNode("char", "character", {
+      slot: 1,
+      asset: "character:barbara",
+      level: 80,
+    });
+    const enumNode = makeNode("enum", "enum", {
+      dimension: "character.asset_key",
+      path_params: { slot: 1 },
+      values: [{ item_id: "c-1", value: "character:kaeya", label: null }],
+    });
+    const edges = [
+      makeEdge("e1", "char", "out", "region-1", "out"),
+      makeEdge("e2", "enum", "out", "region-1", "out"),
+      makeEdge("e3", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [charNode, enumNode, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    const team = result.members[0].input.team as Array<Record<string, unknown>>;
+    const character = team[0].character as Record<string, unknown>;
+    expect(character.asset_key).toBe("character:kaeya");
+    expect(character.level).toBe(80);
   });
 
   it("维度模式区间节点按契约小数存储百分比维度", () => {

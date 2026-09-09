@@ -27,19 +27,19 @@ describe("EnumEditor", () => {
 
   it("维度模式显示推导路径", () => {
     render(<EnumEditor node={assetDimensionNode} onChange={() => {}} />);
-    expect(screen.getByText("team[0].character")).toBeTruthy();
+    expect(screen.getByText("team[0].character.asset_key")).toBeTruthy();
     expect(screen.getByText("常用维度").className).toContain("active");
   });
 
-  it("切换到自定义路径携带当前推导路径与值类型", () => {
+  it("切换到自定义路径携带当前推导路径与字符串值类型", () => {
     const onChange = vi.fn();
     render(<EnumEditor node={assetDimensionNode} onChange={onChange} />);
     fireEvent.click(screen.getByText("自定义路径"));
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
         dimension: null,
-        path: "team[0].character",
-        value_type: "asset",
+        path: "team[0].character.asset_key",
+        value_type: "string",
       }),
     );
   });
@@ -74,6 +74,44 @@ describe("EnumEditor", () => {
     expect(screen.getByText("自定义路径").className).toContain("active");
     expect(screen.getByDisplayValue("team[0].character.constellation")).toBeTruthy();
     expect(screen.getByDisplayValue("数值")).toBeTruthy();
+  });
+
+  it("百分比维度取值按百分比显示存储的小数值", () => {
+    render(
+      <EnumEditor
+        node={makeNode("enum", {
+          dimension: "target.resistance",
+          path_params: { target_index: 0, choice: "pyro" },
+          values: [{ item_id: "e-1", value: 0.4, label: null }],
+        })}
+        onChange={() => {}}
+      />,
+    );
+    expect(screen.getByText("40%")).toBeTruthy();
+  });
+
+  it("词条呈现方式切换时重置取值", () => {
+    const onChange = vi.fn();
+    render(
+      <EnumEditor
+        node={makeNode("enum", {
+          dimension: "artifact.stats",
+          path_params: { slot: 1, choice: "flat_atk" },
+          values: [{ item_id: "e-1", value: 100, label: null }],
+        })}
+        onChange={onChange}
+      />,
+    );
+    // flat_atk（原值）→ crit_rate（百分比）：呈现变化，取值重置为维度默认。
+    fireEvent.change(screen.getByDisplayValue("固定攻击力"), {
+      target: { value: "crit_rate" },
+    });
+    expect(onChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        path_params: { slot: 1, choice: "crit_rate" },
+        values: [{ item_id: "e-2", value: 0, label: null }],
+      }),
+    );
   });
 });
 

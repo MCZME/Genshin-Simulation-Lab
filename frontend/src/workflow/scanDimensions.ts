@@ -81,8 +81,9 @@ export const SCAN_DIMENSIONS: ReadonlyArray<ScanDimensionSpec> = [
     dimension_key: "character.asset_key",
     displayName: "角色",
     category: "角色",
-    // asset 值类型产出 { asset_key } 对象，路径为 character 对象本身。
-    pathTemplate: "team[{slot}].character",
+    // 指向 .asset_key 字段：与 character 节点片段（整体对象）组合时只替换该字段，
+    // 保留 level/constellation/talents；值直接写 asset_key 字符串。
+    pathTemplate: "team[{slot}].character.asset_key",
     pathParams: [{ param: "slot", label: "槽位" }],
     valueType: "asset",
     assetType: "characters",
@@ -144,8 +145,9 @@ export const SCAN_DIMENSIONS: ReadonlyArray<ScanDimensionSpec> = [
     dimension_key: "weapon.asset_key",
     displayName: "武器",
     category: "武器",
-    // asset 值类型产出 { asset_key } 对象，路径为 weapon 对象本身。
-    pathTemplate: "team[{slot}].weapon",
+    // 指向 .asset_key 字段：与 weapon 节点片段组合时只替换该字段；
+    // 值直接写 asset_key 字符串。
+    pathTemplate: "team[{slot}].weapon.asset_key",
     pathParams: [{ param: "slot", label: "槽位" }],
     valueType: "asset",
     assetType: "weapons",

@@ -168,7 +168,22 @@ export function EnumEditor({ node, onChange, fieldErrors = {} }: NodeEditorProps
   }
 
   function updatePathParam(name: string, value: unknown) {
-    onChange({ ...params, path_params: { ...pathParams, [name]: value } });
+    const nextPathParams = { ...pathParams, [name]: value };
+    // 呈现方式变化（如词条在原值与百分比间切换）时重置取值，避免存储语义突变。
+    if (
+      spec !== null &&
+      dimensionPresentation(spec, nextPathParams) !== presentation
+    ) {
+      onChange({
+        ...params,
+        path_params: nextPathParams,
+        values: [
+          { item_id: nextEnumId(values), value: defaultEnumValue(spec), label: null },
+        ],
+      });
+      return;
+    }
+    onChange({ ...params, path_params: nextPathParams });
   }
 
   function applyDimension(key: string) {
@@ -189,8 +204,15 @@ export function EnumEditor({ node, onChange, fieldErrors = {} }: NodeEditorProps
       return;
     }
     if (next === "custom") {
-      // 以当前推导路径与值类型作为自定义起点
-      onChange({ ...params, dimension: null, path: resolvedPath, value_type: valueType });
+      // 以当前推导路径与值类型作为自定义起点。维度 asset 值是裸字符串
+      // （字段级路径）；自定义模式的 asset 值语义是 { asset_key } 对象
+      // （对象级路径），切换时按字符串携带以免值语义错位。
+      onChange({
+        ...params,
+        dimension: null,
+        path: resolvedPath,
+        value_type: spec?.valueType === "asset" ? "string" : valueType,
+      });
       return;
     }
     const first = scanDimensionOptions("enum")[0];
@@ -218,11 +240,13 @@ export function EnumEditor({ node, onChange, fieldErrors = {} }: NodeEditorProps
     }
     if (valueType === "number") {
       const stored = typeof item.value === "number" ? item.value : Number(item.value);
+      const constraintMin = mode === "dimension" ? spec?.constraints?.min : undefined;
+      const constraintMax = mode === "dimension" ? spec?.constraints?.max : undefined;
       return (
         <NumberField
           value={Number.isFinite(stored) ? toDisplayValue(presentation, stored) : null}
-          min={mode === "dimension" ? spec?.constraints?.min : undefined}
-          max={mode === "dimension" ? spec?.constraints?.max : undefined}
+          min={constraintMin !== undefined ? toDisplayValue(presentation, constraintMin) : undefined}
+          max={constraintMax !== undefined ? toDisplayValue(presentation, constraintMax) : undefined}
           format={percent ? (value) => `${value}%` : undefined}
           onChange={(value) =>
             setValueAt(index, toStoredValue(presentation, value ?? 0))
@@ -335,7 +359,27 @@ export function RangeEditor({ node, onChange, fieldErrors = {} }: NodeEditorProp
   const percent = presentation === "percent";
 
   function updatePathParam(name: string, value: unknown) {
-    onChange({ ...params, path_params: { ...pathParams, [name]: value } });
+    const nextPathParams = { ...pathParams, [name]: value };
+    // 呈现方式变化（如词条在原值与百分比间切换）时按维度默认区间重置。
+    if (
+      spec !== null &&
+      dimensionPresentation(spec, nextPathParams) !== presentation
+    ) {
+      const rangeDefault = spec.constraints?.rangeDefault ?? {
+        start: 1,
+        end: 10,
+        step: 1,
+      };
+      onChange({
+        ...params,
+        path_params: nextPathParams,
+        start: rangeDefault.start,
+        end: rangeDefault.end,
+        step: rangeDefault.step,
+      });
+      return;
+    }
+    onChange({ ...params, path_params: nextPathParams });
   }
 
   function applyDimension(key: string) {
@@ -386,10 +430,12 @@ export function RangeEditor({ node, onChange, fieldErrors = {} }: NodeEditorProp
 
   function rangeFieldProps(field: "start" | "end" | "step", fallbackDisplay: number) {
     const stored = asNumber(params[field]);
+    const constraintMin = mode === "dimension" ? spec?.constraints?.min : undefined;
+    const constraintMax = mode === "dimension" ? spec?.constraints?.max : undefined;
     return {
       value: stored === null ? null : toDisplayValue(presentation, stored),
-      min: mode === "dimension" ? spec?.constraints?.min : undefined,
-      max: mode === "dimension" ? spec?.constraints?.max : undefined,
+      min: constraintMin !== undefined ? toDisplayValue(presentation, constraintMin) : undefined,
+      max: constraintMax !== undefined ? toDisplayValue(presentation, constraintMax) : undefined,
       format: percent ? ((value: number) => `${value}%`) : undefined,
       onChange: (value: number | null) => updateRangeField(field, fallbackDisplay, value),
     };

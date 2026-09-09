@@ -16,7 +16,7 @@ export const COLORS = {
     teamConfig: "#f59e0b",
     targetConfig: "#22c55e",
     inputSequence: "#14b8a6",
-    variantScan: "#f97316",
+    paramScan: "#f97316",
     simulation: "#6366f1",
     dataSource: "#3b82f6",
     dataProcessing: "#a855f7",

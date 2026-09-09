@@ -326,6 +326,165 @@ describe("compileConfigurationRegion", () => {
     expect(team[0].character).toBeUndefined();
   });
 
+  it("维度模式枚举节点按维度推导路径写入取值", () => {
+    const enumNode = makeNode("enum", "enum", {
+      dimension: "character.constellation",
+      path_params: { slot: 2 },
+      values: [
+        { item_id: "e-1", value: 0, label: null },
+        { item_id: "e-2", value: 6, label: null },
+      ],
+    });
+    const edges = [
+      makeEdge("e1", "enum", "out", "region-1", "out"),
+      makeEdge("e2", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [enumNode, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(2);
+    const constellations = result.members.map((member) => {
+      const team = member.input.team as Array<Record<string, unknown>>;
+      return (team[1].character as Record<string, unknown>).constellation;
+    });
+    expect(constellations).toEqual([0, 6]);
+  });
+
+  it("维度模式资产枚举写 asset_key 字段", () => {
+    const enumNode = makeNode("enum", "enum", {
+      dimension: "weapon.asset_key",
+      path_params: { slot: 1 },
+      values: [{ item_id: "w-1", value: "weapon:11512", label: null }],
+    });
+    const edges = [
+      makeEdge("e1", "enum", "out", "region-1", "out"),
+      makeEdge("e2", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [enumNode, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    const team = result.members[0].input.team as Array<Record<string, unknown>>;
+    expect((team[0].weapon as Record<string, unknown>).asset_key).toBe("weapon:11512");
+  });
+
+  it("资产维度枚举与武器节点串联只替换 asset_key 字段", () => {
+    // 链式：root → weapon（整体片段）→ enum（字段级扫描）→ 边界。
+    // setPath 为叶子级替换：weapon 片段的 level/refinement 必须保留。
+    const weaponNode = makeNode("weapon", "weapon", {
+      slot: 1,
+      asset: "weapon:15502",
+      level: 90,
+      refinement: 3,
+    });
+    const enumNode = makeNode("enum", "enum", {
+      dimension: "weapon.asset_key",
+      path_params: { slot: 1 },
+      values: [
+        { item_id: "w-1", value: "weapon:11512", label: null },
+        { item_id: "w-2", value: "weapon:14415", label: null },
+      ],
+    });
+    const edges = [
+      makeEdge("e0", "root", "out", "weapon", "in"),
+      makeEdge("e1", "weapon", "out", "enum", "in"),
+      makeEdge("e2", "enum", "out", "region-1", "out"),
+      makeEdge("e3", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [makeNode("root", "root"), weaponNode, enumNode, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(2);
+    expect(
+      result.diagnostics.some((item) => item.code === "PATH_OVERRIDE"),
+    ).toBe(false);
+    for (const member of result.members) {
+      const team = member.input.team as Array<Record<string, unknown>>;
+      const weapon = team[0].weapon as Record<string, unknown>;
+      expect(weapon.level).toBe(90);
+      expect(weapon.refinement).toBe(3);
+    }
+    const assetKeys = result.members.map((member) => {
+      const team = member.input.team as Array<Record<string, unknown>>;
+      return (team[0].weapon as Record<string, unknown>).asset_key;
+    });
+    expect(assetKeys).toEqual(["weapon:11512", "weapon:14415"]);
+  });
+
+  it("资产维度枚举与角色节点并联合并保留等级", () => {
+    const charNode = makeNode("char", "character", {
+      slot: 1,
+      asset: "character:barbara",
+      level: 80,
+    });
+    const enumNode = makeNode("enum", "enum", {
+      dimension: "character.asset_key",
+      path_params: { slot: 1 },
+      values: [{ item_id: "c-1", value: "character:kaeya", label: null }],
+    });
+    const edges = [
+      makeEdge("e1", "char", "out", "region-1", "out"),
+      makeEdge("e2", "enum", "out", "region-1", "out"),
+      makeEdge("e3", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [charNode, enumNode, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    const team = result.members[0].input.team as Array<Record<string, unknown>>;
+    const character = team[0].character as Record<string, unknown>;
+    expect(character.asset_key).toBe("character:kaeya");
+    expect(character.level).toBe(80);
+  });
+
+  it("维度模式区间节点按契约小数存储百分比维度", () => {
+    const rangeNode = makeNode("range", "range", {
+      dimension: "target.resistance",
+      path_params: { target_index: 0, choice: "pyro" },
+      start: 0,
+      end: 0.4,
+      step: 0.2,
+    });
+    const edges = [
+      makeEdge("e1", "range", "out", "region-1", "out"),
+      makeEdge("e2", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [rangeNode, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(3);
+    const resistances = result.members.map((member) => {
+      const targets = (member.input.scene as Record<string, unknown>).targets as Array<
+        Record<string, unknown>
+      >;
+      return (targets[0].resistance as Record<string, unknown>).pyro;
+    });
+    expect(resistances).toEqual([0, 0.2, 0.4]);
+  });
+
   it("枚举与区间按不同路径叉乘且最后一组变化最快", () => {
     const enumNode = makeNode("enum", "enum", {
       path: "team[0].character",

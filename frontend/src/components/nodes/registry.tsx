@@ -128,8 +128,8 @@ const NODE_CATEGORY_OF: Record<string, NodeCategory> = {
   artifact: "teamConfig",
   target: "targetConfig",
   input_trace: "inputSequence",
-  enum: "variantScan",
-  range: "variantScan",
+  enum: "paramScan",
+  range: "paramScan",
   simulation: "simulation",
   data_provider: "dataSource",
   fetch: "dataSource",
@@ -181,15 +181,15 @@ export const CONFIG_TARGET_KINDS = ["target"] as const;
 /** 配置区域：操作输入。 */
 export const CONFIG_INPUT_KINDS = ["input_trace"] as const;
 
-/** 配置区域：变体扫描。 */
-export const CONFIG_VARIANT_KINDS = ["enum", "range"] as const;
+/** 配置区域：参数扫描。 */
+export const CONFIG_SCAN_KINDS = ["enum", "range"] as const;
 
 export const CONFIG_NODE_KINDS = [
   ...CONFIG_RUN_SETTING_KINDS,
   ...CONFIG_TEAM_KINDS,
   ...CONFIG_TARGET_KINDS,
   ...CONFIG_INPUT_KINDS,
-  ...CONFIG_VARIANT_KINDS,
+  ...CONFIG_SCAN_KINDS,
 ] as const;
 
 /** 分析区域：取数节点。 */

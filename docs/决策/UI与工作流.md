@@ -146,9 +146,11 @@ RunState 结构与运行链路（2026-08-22、2026-08-23 确认）：
 > 状态：生效（部分被 D-036 / D-051 修订）
 
 - 节点颜色从「每节点类型一色」改为「**每类节点一色**」：同类节点共享一个主色，颜色表示节点在数据流中的角色，不按具体类型平铺。
-- 节点分类：运行设置（root / meta / run_options）、队伍配置（character / weapon / artifact）、目标配置（target）、操作输入（input_trace）、变体扫描（enum / range）、模拟执行（simulation）、数据获取（data_provider / fetch）、数据加工（filter / project / sort / aggregate / limit / join / compute / single）、展示配置（table_config / pie_config / bar_config）、展示视图（表格 / pie / bar / 单项详情节点族）。2026-08-29 起 `timeline` / `timeline_config` 移除，见 D-036。
+- 节点分类：运行设置（root / meta / run_options）、队伍配置（character / weapon / artifact）、目标配置（target）、操作输入（input_trace）、参数扫描（enum / range，原名「变体扫描」，见 D-067）、模拟执行（simulation）、数据获取（data_provider / fetch）、数据加工（filter / project / sort / aggregate / limit / join / compute / single）、展示配置（table_config / pie_config / bar_config）、展示视图（表格 / pie / bar / 单项详情节点族）。2026-08-29 起 `timeline` / `timeline_config` 移除，见 D-036。
 - 类别色落在 `theme/tokens.ts` 的 `COLORS.nodeCategory`；`nodeKindColor` 按类别映射取色，未注册节点仍回落灰色；画布对象面板、节点卡、拖拽预览与小地图共用同一套类别色。
 - 区域不属于节点类别：配置区域/分析区域继续使用区域色（配置蓝 #2563eb、分析紫 #7c3aed）；面板与小地图中的区域对象同步修正为区域色，不再回落灰色。
+
+变更记录：2026-09-09 类别名「变体扫描」更名「参数扫描」，类别色键同步 `variantScan` → `paramScan`（D-067）。
 
 ### D-036 单项详情节点与时间呈现（2026-08-29）
 
@@ -233,7 +235,8 @@ RunState 结构与运行链路（2026-08-22、2026-08-23 确认）：
 - 配置节点面板由单一列表改为按既有节点类别分组展示：运行设置
   （`root` / `meta` / `run_options`）、队伍配置（`character` /
   `weapon` / `artifact`）、目标配置（`target`）、操作输入
-  （`input_trace`）、变体扫描（`enum` / `range`）。
+  （`input_trace`）、参数扫描（`enum` / `range`，原名「变体扫描」，
+  见 D-067）。
 - 节点类别与类别色沿用 D-034，未新增或调整；只改变节点面板的分组呈现与
   列表顺序。
 - 本次仅调整 UI 展示元数据与面板分组，不改 `node_kind`、端口、配置区域
@@ -241,6 +244,8 @@ RunState 结构与运行链路（2026-08-22、2026-08-23 确认）：
 
 风险标注：纯前端节点面板调整。分组常量见 `frontend/src/components/nodes/registry.tsx`，
 面板呈现见 `frontend/src/components/panels/ObjectPanel.tsx`。
+
+变更记录：2026-09-09 分组名「变体扫描」更名「参数扫描」（D-067）。
 
 ### D-054 展示配置节点改为数据链转发节点（2026-09-03）
 
@@ -301,3 +306,42 @@ RunState 结构与运行链路（2026-08-22、2026-08-23 确认）：
 [分析区域设计](../架构/UI/分析区域设计.md) 3、6 与
 [节点与区域契约](../契约/ui/节点与区域契约.md)、
 [分析系统契约](../契约/分析系统契约.md)。
+
+### D-067 参数扫描节点引入扫描维度词汇表（2026-09-09）
+
+> 状态：生效
+
+- 节点类别「变体扫描」更名「参数扫描」（parameter sweep）：「变体」是
+  编译器实现术语（输入文档的不同副本），对用户无指向；用户视角扫描的是
+  等级、命座、精炼、抗性等参数。类别内部键同步 `variantScan` →
+  `paramScan`；节点名「枚举扫描」「区间扫描」与编辑器「扫描维度」不变。
+  编译器术语（变体展开、变体编译、变体成员）保留，属不同层概念。
+
+- `enum` / `range` 节点参数新增 `dimension`（维度 key）与 `path_params`（路径参数）：
+  `dimension` 非空时为维度模式，目标路径与值类型由扫描维度注册表推导；
+  为空时为自定义模式，手填路径与值类型（原行为）。参数扫描节点尚无存量使用，
+  旧参数结构不做迁移，缺 `dimension` 即按自定义模式解释。
+- 扫描维度注册表（`frontend/src/workflow/scanDimensions.ts`）是维度唯一事实源：
+  每个维度声明路径模板、路径参数（槽位/目标索引/词汇表选择）、值类型、
+  数值约束、默认区间与呈现方式；维度路径必须以 registry 对应节点片段的
+  默认路径为前缀（测试联动锁定）。首批 10 个维度覆盖角色/武器/圣遗物/目标
+  的高频扫描项；asset 维度仅支持 `enum`，路径指向 `.asset_key` 字段、
+  值直接写 asset_key 字符串，与 character/weapon 节点片段（整体对象写入）
+  串联或并联时仅替换该字段、保留等级等其余配置。
+- 词条、元素、天赋键词汇表上移 `workflow/vocabularies.ts` 单一事实源，
+  registry 校验、team/target 编辑器与扫描维度共享，不再各自定义。
+- percent 呈现约定与圣遗物/目标抗性编辑器一致：界面按百分比显示、
+  存储小数倍率；维度约束（整数、上下限）在节点校验阶段执行。
+- 编译产物不变（仍是 path+value 片段），后端与模拟输入契约零改动；
+  `enum` / `range` 显示名改为「枚举扫描」「区间扫描」。
+
+原因：原设计要求用户手写内部契约路径并自判值类型，路径不可发现、
+错误延迟到运行后端才暴露；高频扫描维度（等级/命座/精炼等）无预设。
+替代方案：仅做路径自动补全（无约束校验与预设体验）、合并为单一
+`variant_scan` 节点（需迁移投影端口语义），均被否决；维度词汇表 +
+保留自定义路径在可发现性与灵活性间平衡最好。
+
+承载：[节点与区域契约](../契约/ui/节点与区域契约.md) 5.1、7；
+实现见 `frontend/src/workflow/scanDimensions.ts`。
+
+变更记录：2026-09-09 首次落地。

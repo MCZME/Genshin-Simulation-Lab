@@ -337,6 +337,120 @@ describe("validateWorkflow", () => {
     expect(codes(definition).filter((code) => code === "PARAM_INVALID").length).toBeGreaterThanOrEqual(2);
   });
 
+  it("维度模式合法配置无错误", () => {
+    const enumNode = makeNode("enum", "enum", {
+      dimension: "character.constellation",
+      path_params: { slot: 1 },
+      values: [
+        { item_id: "e-1", value: 0, label: null },
+        { item_id: "e-2", value: 6, label: null },
+      ],
+    });
+    const rangeNode = makeNode("range", "range", {
+      dimension: "target.resistance",
+      path_params: { target_index: 0, choice: "pyro" },
+      start: 0,
+      end: 0.4,
+      step: 0.1,
+    });
+    const definition = makeDefinition([makeRegion()], [enumNode, rangeNode], []);
+    expect(codes(definition)).not.toContain("PARAM_INVALID");
+  });
+
+  it("未知扫描维度报 PARAM_INVALID", () => {
+    const enumNode = makeNode("enum", "enum", {
+      dimension: "not_a_dimension",
+      path_params: {},
+      values: [{ item_id: "e-1", value: 1, label: null }],
+    });
+    const definition = makeDefinition([makeRegion()], [enumNode], []);
+    const diagnostics = validateWorkflow(definition);
+    const dimensionError = diagnostics.find(
+      (item) => item.path === "dimension" && item.code === "PARAM_INVALID",
+    );
+    expect(dimensionError?.message).toBe("未知扫描维度");
+  });
+
+  it("仅支持枚举的维度用于区间节点时报错", () => {
+    const rangeNode = makeNode("range", "range", {
+      dimension: "character.asset_key",
+      path_params: { slot: 1 },
+      start: 1,
+      end: 10,
+      step: 1,
+    });
+    const definition = makeDefinition([makeRegion()], [rangeNode], []);
+    const diagnostics = validateWorkflow(definition);
+    const dimensionError = diagnostics.find(
+      (item) => item.path === "dimension" && item.code === "PARAM_INVALID",
+    );
+    expect(dimensionError?.message).toBe("该维度不支持区间扫描");
+  });
+
+  it("维度路径参数槽位越界报 PARAM_INVALID", () => {
+    const enumNode = makeNode("enum", "enum", {
+      dimension: "character.level",
+      path_params: { slot: 5 },
+      values: [{ item_id: "e-1", value: 90, label: null }],
+    });
+    const definition = makeDefinition([makeRegion()], [enumNode], []);
+    const diagnostics = validateWorkflow(definition);
+    const paramError = diagnostics.find(
+      (item) => item.path === "path_params" && item.code === "PARAM_INVALID",
+    );
+    expect(paramError?.message).toContain("槽位");
+  });
+
+  it("枚举取值超维度约束报 PARAM_INVALID", () => {
+    const enumNode = makeNode("enum", "enum", {
+      dimension: "character.constellation",
+      path_params: { slot: 1 },
+      values: [{ item_id: "e-1", value: 7, label: null }],
+    });
+    const definition = makeDefinition([makeRegion()], [enumNode], []);
+    const diagnostics = validateWorkflow(definition);
+    const valueError = diagnostics.find(
+      (item) => item.path === "values[0].value" && item.code === "PARAM_INVALID",
+    );
+    expect(valueError?.message).toBe("取值不能大于 6");
+  });
+
+  it("区间端点违反维度整数约束报 PARAM_INVALID", () => {
+    const rangeNode = makeNode("range", "range", {
+      dimension: "character.level",
+      path_params: { slot: 1 },
+      start: 0.5,
+      end: 90,
+      step: 1,
+    });
+    const definition = makeDefinition([makeRegion()], [rangeNode], []);
+    const diagnostics = validateWorkflow(definition);
+    const startError = diagnostics.find(
+      (item) => item.path === "start" && item.code === "PARAM_INVALID",
+    );
+    expect(startError?.message).toBe("起点必须是整数");
+  });
+
+  it("区间端点超维度上下限报 PARAM_INVALID", () => {
+    const rangeNode = makeNode("range", "range", {
+      dimension: "weapon.refinement",
+      path_params: { slot: 1 },
+      start: 0,
+      end: 8,
+      step: 1,
+    });
+    const definition = makeDefinition([makeRegion()], [rangeNode], []);
+    const diagnostics = validateWorkflow(definition);
+    const startError = diagnostics.find(
+      (item) => item.path === "start" && item.code === "PARAM_INVALID",
+    );
+    const endError = diagnostics.find(
+      (item) => item.path === "end" && item.code === "PARAM_INVALID",
+    );
+    expect(startError?.message).toBe("起点不能小于 1");
+    expect(endError?.message).toBe("终点不能大于 5");
+  });
+
   it("普通节点自定义路径语法错误时报 PARAM_INVALID", () => {
     const definition = makeDefinition(
       [makeRegion()],

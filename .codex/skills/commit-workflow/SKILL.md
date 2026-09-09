@@ -190,34 +190,10 @@ PR 是本项目最小审查单位。撰写 PR 说明或 GitHub 工作交接时�
 - 风险类型，尤其是架构、契约、资产 schema、结果 schema、数值行为或迁移风险
 - 验证命令和结果
 - 文档同步情况
-- AI 参与范围
 
 清楚标注不确定或高风险事项，不要把它们描述成已经定论。
 
-PR 模板已落地为 `.github/PULL_REQUEST_TEMPLATE.md`，内容如下：
-
-```markdown
-## 目标
-
-## 修改范围
-
-## 风险
-- [ ] 无
-- [ ] 架构边界 / 配置契约
-- [ ] 资产库 schema / 结果库结构
-- [ ] 游戏机制与数值
-
-## 验证
-- [ ] backend：ruff / pyright / pytest（按改动范围）
-- [ ] frontend：lint / typecheck / test（按改动范围）
-- [ ] 未运行，原因：
-
-## 文档同步
-- [ ] 不需要
-- [ ] 已同步 docs/ 或本 skill
-
-## AI 参与说明
-```
+PR 模板已落地为 `.github/PULL_REQUEST_TEMPLATE.md`
 
 ## 合并策略
 

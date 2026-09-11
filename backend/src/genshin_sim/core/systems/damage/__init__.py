@@ -39,6 +39,7 @@ from genshin_sim.core.systems.damage.keys import (
     DEFAULT_FORMULA_KEY,
     FORMULA_KEY_GENERAL,
     FORMULA_KEY_LUNAR_REACTION,
+    FORMULA_KEY_STELLAR_REACTION,
     FORMULA_KEY_TRANSFORMATIVE_REACTION,
     KNOWN_FORMULA_KEYS,
     REACTION_TAG_PREFIX,
@@ -96,6 +97,11 @@ from genshin_sim.core.systems.damage.policies import (
 )
 from genshin_sim.core.systems.damage.profiles import DamageProfileRegistry
 from genshin_sim.core.systems.damage.resolver import DamageResolutionSession, DamageResolver
+from genshin_sim.core.systems.damage.stellar import (
+    StellarReactionDamageInput,
+    StellarReactionDamageResolution,
+    resolve_stellar_reaction_damage,
+)
 from genshin_sim.core.systems.damage.tags import (
     DAMAGE_TAG_CHARGED_ATTACK,
     DAMAGE_TAG_DIRECT_DAMAGE,
@@ -157,6 +163,7 @@ __all__ = [
     "DuplicateDamageFormulaError",
     "FORMULA_KEY_GENERAL",
     "FORMULA_KEY_LUNAR_REACTION",
+    "FORMULA_KEY_STELLAR_REACTION",
     "FORMULA_KEY_TRANSFORMATIVE_REACTION",
     "KNOWN_FORMULA_KEYS",
     "REACTION_TAG_PREFIX",
@@ -178,6 +185,9 @@ __all__ = [
     "LunarReactionDamageMode",
     "LunarReactionDamageResolution",
     "LunarReactionParticipantInput",
+    "StellarReactionDamageInput",
+    "StellarReactionDamageResolution",
+    "resolve_stellar_reaction_damage",
     "IdentityGeneralReactionZonePolicy",
     "InvalidDamageScalingError",
     "ResistanceResolution",

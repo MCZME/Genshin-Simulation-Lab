@@ -34,6 +34,7 @@ from genshin_sim.core.systems.damage.keys import (
     FORMULA_KEY_TRANSFORMATIVE_REACTION,
     KNOWN_FORMULA_KEYS,
 )
+from genshin_sim.core.systems.damage.stellar import StellarReactionDamageInput
 
 _CHARACTER_TARGET_DAMAGE_TAGS = frozenset(
     {
@@ -435,6 +436,7 @@ class DamageRequest:
     transformative_reaction: TransformativeReactionInput | None = None
     catalyze_reaction: CatalyzeReactionInput | None = None
     lunar_reaction: LunarReactionDamageInput | None = None
+    stellar_reaction: StellarReactionDamageInput | None = None
 
     def __post_init__(self) -> None:
         """冻结集合字段，并校验第一版直接伤害的边界条件。"""
@@ -445,6 +447,17 @@ class DamageRequest:
             raise DamageValidationError("frame 必须是非负整数")
         if self.formula_key not in KNOWN_FORMULA_KEYS:
             raise DamageValidationError("formula_key 不受支持")
+        if self.stellar_reaction is not None and not isinstance(
+            self.stellar_reaction, StellarReactionDamageInput
+        ):
+            raise DamageValidationError("stellar_reaction 必须是 StellarReactionDamageInput")
+        if self.formula_key == "damage_formula.stellar_reaction" and self.stellar_reaction is None:
+            raise DamageValidationError("星烁伤害必须提供 StellarReactionDamageInput")
+        if (
+            self.formula_key != "damage_formula.stellar_reaction"
+            and self.stellar_reaction is not None
+        ):
+            raise DamageValidationError("非星烁伤害不能提供 StellarReactionDamageInput")
         _validate_non_empty_text(self.main_attack_tag, "main_attack_tag")
         if self.source_ref.kind is not AttributeSubjectKind.CHARACTER:
             raise DamageValidationError("伤害来源第一版必须是角色主体")

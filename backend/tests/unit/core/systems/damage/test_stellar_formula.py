@@ -1,9 +1,67 @@
+from typing import Any, cast
+
 import pytest
 
+from genshin_sim.core.attributes import (
+    STAT_HP_MAX,
+    AttributeSubjectRef,
+    RuntimeSourceKind,
+    RuntimeSourceRef,
+)
+from genshin_sim.core.elements import Element
 from genshin_sim.core.systems.damage import (
     StellarReactionDamageInput,
     resolve_stellar_reaction_damage,
 )
+from genshin_sim.core.systems.damage.errors import DamageValidationError
+from genshin_sim.core.systems.damage.models import (
+    DamageRequest,
+    DamageScalingTerm,
+    LunarReactionDamageInput,
+    LunarReactionDamageMode,
+    LunarReactionParticipantInput,
+)
+
+SOURCE = AttributeSubjectRef.character("character:slot_1")
+TARGET = AttributeSubjectRef.target("target:star")
+
+
+def _make_damage_request(**overrides: Any) -> DamageRequest:
+    fields: dict[str, Any] = dict(
+        request_id="request:stellar",
+        frame=0,
+        formula_key="damage_formula.stellar_reaction",
+        main_attack_tag="reaction.stellar_conduct",
+        impact_key="impact:stellar",
+        source_ref=SOURCE,
+        target_ref=TARGET,
+        source_level=90,
+        target_level=90,
+        element=Element.ELECTRO,
+        source_context=RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.stellar"),
+        stellar_reaction=StellarReactionDamageInput(
+            mode="character_direct",
+            scaling_value=1,
+            stellar_base_multiplier=1,
+        ),
+    )
+    fields.update(overrides)
+    return DamageRequest(**cast(Any, fields))
+
+
+def _lunar_input() -> LunarReactionDamageInput:
+    return LunarReactionDamageInput(
+        reaction_profile_key="reaction_profile.lunar.direct",
+        mode=LunarReactionDamageMode.CHARACTER_DIRECT,
+        participants=(
+            LunarReactionParticipantInput(
+                participant_ref=AttributeSubjectRef.character("character:slot_2"),
+                source_level=90,
+                scaling_terms=(DamageScalingTerm("hp", STAT_HP_MAX, 1.0),),
+            ),
+        ),
+        reaction_multiplier=2.0,
+    )
 
 
 def test_stellar_direct_formula_uses_specialized_zones() -> None:
@@ -29,3 +87,25 @@ def test_stellar_direct_formula_uses_specialized_zones() -> None:
 def test_stellar_formula_rejects_unknown_mode() -> None:
     with pytest.raises(ValueError, match="mode"):
         StellarReactionDamageInput("ordinary", 1, 1)
+
+
+def test_damage_request_requires_stellar_input_for_stellar_formula() -> None:
+    fields: dict = {"stellar_reaction": None}
+    with pytest.raises(DamageValidationError, match="必须提供 StellarReactionDamageInput"):
+        _make_damage_request(**fields)
+
+
+def test_damage_request_rejects_stellar_mixed_with_other_reaction_inputs() -> None:
+    with pytest.raises(DamageValidationError, match="星烁伤害不能同时携带其他反应输入"):
+        _make_damage_request(lunar_reaction=_lunar_input())
+
+    with pytest.raises(DamageValidationError, match="非星烁伤害不能提供"):
+        _make_damage_request(
+            formula_key="damage_formula.lunar_reaction",
+            lunar_reaction=_lunar_input(),
+        )
+
+
+def test_damage_request_stellar_input_kind_is_enforced() -> None:
+    with pytest.raises(DamageValidationError, match="必须是 StellarReactionDamageInput"):
+        _make_damage_request(stellar_reaction=object())  # type: ignore[arg-type]

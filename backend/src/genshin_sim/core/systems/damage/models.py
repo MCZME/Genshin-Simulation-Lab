@@ -458,6 +458,19 @@ class DamageRequest:
             and self.stellar_reaction is not None
         ):
             raise DamageValidationError("非星烁伤害不能提供 StellarReactionDamageInput")
+        if self.stellar_reaction is not None:
+            conflict_fields = (
+                "amplifying_reaction",
+                "secondary_amplifying_reaction",
+                "transformative_reaction",
+                "catalyze_reaction",
+                "lunar_reaction",
+            )
+            conflicts = [name for name in conflict_fields if getattr(self, name) is not None]
+            if conflicts:
+                raise DamageValidationError(
+                    f"星烁伤害不能同时携带其他反应输入：{', '.join(conflicts)}"
+                )
         _validate_non_empty_text(self.main_attack_tag, "main_attack_tag")
         if self.source_ref.kind is not AttributeSubjectKind.CHARACTER:
             raise DamageValidationError("伤害来源第一版必须是角色主体")

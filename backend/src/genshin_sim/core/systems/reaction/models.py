@@ -1762,6 +1762,55 @@ class LunarStormCloudStatePlanningIntent:
 
 
 @dataclass(frozen=True, slots=True)
+class PolestarFieldStatePlanningIntent:
+    """星超导 occurrence 对极星辉域创建/刷新的确定性候选意图。
+
+    意图始终描述"以本次触发位置新建领域"的候选；是否保留既有领域实例、
+    只刷新生命周期，由跨系统协调计划根据领域内外判定决定。
+    """
+
+    intent_ref: str
+    parent_occurrence_ref: str
+    instance_ref: ReactionStateInstanceRef
+    subject_ref: ElementalSubjectRef
+    space_entity_ref: str
+    trigger_source_ref: ElementalSourceRef
+    team_ref: str
+    created_frame: int
+    expires_at_frame: int
+    excluded_attack_ref: str | None = None
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.intent_ref, "intent_ref"),
+            (self.parent_occurrence_ref, "parent_occurrence_ref"),
+            (self.space_entity_ref, "space_entity_ref"),
+            (self.team_ref, "team_ref"),
+        ):
+            _text(value, name)
+        if not isinstance(self.instance_ref, ReactionStateInstanceRef):
+            raise ValueError("instance_ref 必须是 ReactionStateInstanceRef")
+        expected_instance_ref = f"reaction-state:polestar-field:{self.parent_occurrence_ref}"
+        if self.instance_ref.value != expected_instance_ref:
+            raise ValueError("极星辉域 instance_ref 必须由 occurrence_ref 确定性派生")
+        expected_space_entity_ref = f"reaction_object:polestar_field:{self.parent_occurrence_ref}"
+        if self.space_entity_ref != expected_space_entity_ref:
+            raise ValueError("极星辉域 space_entity_ref 必须由 occurrence_ref 确定性派生")
+        if not isinstance(self.subject_ref, ElementalSubjectRef):
+            raise ValueError("subject_ref 必须是 ElementalSubjectRef")
+        if not isinstance(self.trigger_source_ref, ElementalSourceRef):
+            raise ValueError("trigger_source_ref 必须是 ElementalSourceRef")
+        for field_name in ("created_frame", "expires_at_frame"):
+            value = getattr(self, field_name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{field_name} 必须是非负整数")
+        if self.expires_at_frame != self.created_frame + 420:
+            raise ValueError("极星辉域生命周期必须固定为 420 帧")
+        if self.excluded_attack_ref is not None:
+            _text(self.excluded_attack_ref, "excluded_attack_ref")
+
+
+@dataclass(frozen=True, slots=True)
 class LunarCrystallizeStatePlanningIntent:
     """月结晶 occurrence 对月笼集合与共享累计器的确定性候选意图。"""
 
@@ -1918,6 +1967,7 @@ class ReactionOccurrence:
     crystallize_shard_state_creation: CrystallizeShardStateCreationIntent | None = None
     dendro_core_state_creation: DendroCoreStateCreationIntent | None = None
     lunar_storm_cloud_state_planning: LunarStormCloudStatePlanningIntent | None = None
+    polestar_field_state_planning: PolestarFieldStatePlanningIntent | None = None
     lunar_crystallize_planning: LunarCrystallizeStatePlanningIntent | None = None
     spatial_entity_creation: SpatialEntityCreationEffect | None = None
     parallel_aura_consumption: ParallelAuraConsumption | None = None
@@ -1979,20 +2029,31 @@ class ReactionOccurrence:
         shard_creation = self.crystallize_shard_state_creation
         core_creation = self.dendro_core_state_creation
         cloud_planning = self.lunar_storm_cloud_state_planning
+        polestar_planning = self.polestar_field_state_planning
         lunar_crystallize_planning = self.lunar_crystallize_planning
         spatial_creation = self.spatial_entity_creation
         if shard_creation is not None and core_creation is not None:
             raise ValueError("一个 occurrence 不能同时创建晶片和草原核")
         if cloud_planning is not None and (shard_creation is not None or core_creation is not None):
             raise ValueError("一个 occurrence 不能同时创建晶片、草原核和雷暴云")
-        if lunar_crystallize_planning is not None and (
+        if polestar_planning is not None and (
             shard_creation is not None or core_creation is not None or cloud_planning is not None
         ):
-            raise ValueError("一个 occurrence 不能同时创建晶片、草原核、雷暴云和月结晶月笼")
+            raise ValueError("一个 occurrence 不能同时创建晶片、草原核、雷暴云和极星辉域")
+        if lunar_crystallize_planning is not None and (
+            shard_creation is not None
+            or core_creation is not None
+            or cloud_planning is not None
+            or polestar_planning is not None
+        ):
+            raise ValueError(
+                "一个 occurrence 不能同时创建晶片、草原核、雷暴云、极星辉域和月结晶月笼"
+            )
         if lunar_crystallize_planning is not None and spatial_creation is not None:
             raise ValueError("月结晶月笼使用多实体空间创建，不使用单实体空间创建声明")
         state_creation_count = sum(
-            item is not None for item in (shard_creation, core_creation, cloud_planning)
+            item is not None
+            for item in (shard_creation, core_creation, cloud_planning, polestar_planning)
         )
         if (state_creation_count == 0) != (spatial_creation is None):
             raise ValueError("Reaction State 与空间创建声明必须同时存在或同时缺失")
@@ -2052,6 +2113,25 @@ class ReactionOccurrence:
                 or cloud_planning.expires_at_frame != spatial_creation.expires_at_frame
             ):
                 raise ValueError("雷暴云 State 与空间创建声明的生命周期必须一致")
+        if polestar_planning is not None:
+            if not isinstance(polestar_planning, PolestarFieldStatePlanningIntent):
+                raise ValueError("polestar_field_state_planning 必须是强类型规划意图")
+            if not isinstance(spatial_creation, SpatialEntityCreationEffect):
+                raise ValueError("spatial_entity_creation 必须是强类型空间创建声明")
+            assert spatial_creation is not None
+            if polestar_planning.parent_occurrence_ref != self.occurrence_ref:
+                raise ValueError("极星辉域规划意图必须引用所属 occurrence_ref")
+            if spatial_creation.parent_occurrence_ref != self.occurrence_ref:
+                raise ValueError("极星辉域空间创建声明必须引用所属 occurrence_ref")
+            if polestar_planning.space_entity_ref != spatial_creation.space_entity_ref:
+                raise ValueError("极星辉域 State 与空间创建声明必须使用相同 entity ref")
+            if polestar_planning.instance_ref.value != spatial_creation.source_key:
+                raise ValueError("极星辉域空间创建声明必须反向引用 State instance ref")
+            if (
+                polestar_planning.created_frame != spatial_creation.created_frame
+                or polestar_planning.expires_at_frame != spatial_creation.expires_at_frame
+            ):
+                raise ValueError("极星辉域 State 与空间创建声明的生命周期必须一致")
         if lunar_crystallize_planning is not None:
             if not isinstance(lunar_crystallize_planning, LunarCrystallizeStatePlanningIntent):
                 raise ValueError("lunar_crystallize_planning 必须是强类型规划意图")

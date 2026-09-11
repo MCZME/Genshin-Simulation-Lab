@@ -25,6 +25,7 @@ EXPECTED_REACTION_KEYS = {
     "reaction.quicken",
     "reaction.shattered",
     "reaction.spread",
+    "reaction.stellar_conduct",
     "reaction.superconduct",
     "reaction.swirl",
     "reaction.vaporize",

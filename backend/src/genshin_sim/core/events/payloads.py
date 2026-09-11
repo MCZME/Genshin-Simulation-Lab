@@ -606,8 +606,10 @@ def _reaction_state_to_dict(record: ReactionStateRecord | None) -> dict[str, obj
         LunarCageState,
         LunarCrystallizeAccumulatorState,
         LunarStormCloudState,
+        PolestarFieldState,
         QuickenState,
         SprawlingShotState,
+        StellarConductCounterState,
     )
 
     if isinstance(record, ElectroChargedState):
@@ -730,6 +732,36 @@ def _reaction_state_to_dict(record: ReactionStateRecord | None) -> dict[str, obj
                 for item in record.pending_records
             ],
             "max_layers": record.max_layers,
+            "next_required_frame": record.next_required_frame,
+            "revision": record.revision,
+        }
+    if isinstance(record, PolestarFieldState):
+        return {
+            "instance_ref": record.instance_ref.value,
+            "space_entity_ref": record.space_entity_ref,
+            "created_by_occurrence_ref": record.created_by_occurrence_ref,
+            "trigger_source_ref": record.trigger_source_ref.to_dict(),
+            "team_ref": record.team_ref,
+            "created_frame": record.created_frame,
+            "expires_at_frame": record.expires_at_frame,
+            "next_required_frame": record.next_required_frame,
+            "revision": record.revision,
+        }
+    if isinstance(record, StellarConductCounterState):
+        return {
+            "instance_ref": record.instance_ref.value,
+            "team_ref": record.team_ref,
+            "subject": {
+                "kind": record.subject_ref.kind.value,
+                "entity_id": record.subject_ref.entity_id,
+            },
+            "window_start_frame": record.window_start_frame,
+            "next_settlement_frame": record.next_settlement_frame,
+            "window_index": record.window_index,
+            "pending_count": record.pending_count,
+            "settled_stacks": record.settled_stacks,
+            "recorded_record_refs": list(record.recorded_record_refs),
+            "excluded_attack_refs": list(record.excluded_attack_refs),
             "next_required_frame": record.next_required_frame,
             "revision": record.revision,
         }

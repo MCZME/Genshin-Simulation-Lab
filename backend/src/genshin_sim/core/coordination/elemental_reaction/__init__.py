@@ -35,6 +35,7 @@ from genshin_sim.core.coordination.elemental_reaction.lifecycle import (
     DendroCoreExpiryResult,
     LunarCageExpiryCoordinator,
     LunarStormCloudExpiryCoordinator,
+    PolestarFieldExpiryCoordinator,
     ReactionBoundEntityExpiryCoordinator,
     ReactionBoundEntityLifecycleError,
 )
@@ -116,6 +117,14 @@ from genshin_sim.core.coordination.elemental_reaction.status import (
     ReactionStatusBuffAdapter,
     superconduct_buff_definition,
 )
+from genshin_sim.core.coordination.elemental_reaction.stellar_conduct import (
+    PolestarFieldPlanResult,
+    StellarConductAttachmentRecording,
+    StellarConductAttachmentRecordingOutcome,
+    StellarConductPlanningError,
+    plan_polestar_field_occurrence,
+    record_stellar_conduct_attachment,
+)
 
 __all__ = [
     "DamageImpactWork",
@@ -143,6 +152,7 @@ __all__ = [
     "DendroCoreExpiryResult",
     "LunarCageExpiryCoordinator",
     "LunarStormCloudExpiryCoordinator",
+    "PolestarFieldExpiryCoordinator",
     "ElementalInteractionBatchKind",
     "ElementalInteractionBatchRecord",
     "ElementalInteractionCoordinator",
@@ -200,4 +210,10 @@ __all__ = [
     "validate_elemental_state_links",
     "validate_reaction_state_space_bindings",
     "validate_reaction_state_space_terminalizations",
+    "PolestarFieldPlanResult",
+    "StellarConductAttachmentRecording",
+    "StellarConductAttachmentRecordingOutcome",
+    "StellarConductPlanningError",
+    "plan_polestar_field_occurrence",
+    "record_stellar_conduct_attachment",
 ]

@@ -78,6 +78,7 @@ from genshin_sim.core.systems.reaction.states import (
     LunarCageState,
     LunarCrystallizeAccumulatorState,
     LunarStormCloudState,
+    PolestarFieldState,
     QuickenState,
     ReactionStateCommitReceipt,
     ReactionStateInstanceRef,
@@ -88,6 +89,7 @@ from genshin_sim.core.systems.reaction.states import (
     ReactionStateSlotKey,
     ReactionStateSnapshot,
     SprawlingShotState,
+    StellarConductCounterState,
 )
 
 
@@ -324,6 +326,8 @@ class ReactionRuntime:
             LunarCrystallizeAccumulatorState,
         ] = {}
         self._sprawling_shot_records: dict[ReactionStateInstanceRef, SprawlingShotState] = {}
+        self._polestar_field_records: dict[ReactionStateInstanceRef, PolestarFieldState] = {}
+        self._stellar_conduct_counter_records: dict[str, StellarConductCounterState] = {}
         self._state_instance_sequence = 0
         self._dendro_core_creation_sequence = 0
         self._normalized_through_frame = 0
@@ -467,6 +471,40 @@ class ReactionRuntime:
             raise ValueError("team_ref 必须是非空字符串")
         return self._lunar_crystallize_accumulator_records.get(team_ref)
 
+    def polestar_field_state_for(
+        self,
+        instance_ref: ReactionStateInstanceRef,
+    ) -> PolestarFieldState | None:
+        if not isinstance(instance_ref, ReactionStateInstanceRef):
+            raise ValueError("instance_ref 必须是 ReactionStateInstanceRef")
+        return self._polestar_field_records.get(instance_ref)
+
+    def active_polestar_fields(
+        self,
+        *,
+        team_ref: str | None = None,
+    ) -> tuple[PolestarFieldState, ...]:
+        if team_ref is not None and (not isinstance(team_ref, str) or not team_ref.strip()):
+            raise ValueError("team_ref 必须是非空字符串或 None")
+        return tuple(
+            sorted(
+                (
+                    record
+                    for record in self._polestar_field_records.values()
+                    if team_ref is None or record.team_ref == team_ref
+                ),
+                key=lambda item: (item.created_frame, item.instance_ref.value),
+            )
+        )
+
+    def stellar_conduct_counter_state_for(
+        self,
+        team_ref: str,
+    ) -> StellarConductCounterState | None:
+        if not isinstance(team_ref, str) or not team_ref.strip():
+            raise ValueError("team_ref 必须是非空字符串")
+        return self._stellar_conduct_counter_records.get(team_ref)
+
     def active_dendro_cores(self, *, pool_scope: str | None = None) -> tuple[DendroCoreState, ...]:
         if pool_scope is not None and (not isinstance(pool_scope, str) or not pool_scope.strip()):
             raise ValueError("pool_scope 必须是非空字符串或 None")
@@ -560,6 +598,8 @@ class ReactionRuntime:
         _lunar_cage_index(projected_records.values())
         _lunar_crystallize_accumulator_index(projected_records.values())
         _sprawling_shot_index(projected_records.values())
+        _polestar_field_index(projected_records.values())
+        _stellar_conduct_counter_index(projected_records.values())
 
     def commit_prevalidated_state_plan(
         self,
@@ -582,6 +622,10 @@ class ReactionRuntime:
                 next_records.values()
             )
             self._sprawling_shot_records = _sprawling_shot_index(next_records.values())
+            self._polestar_field_records = _polestar_field_index(next_records.values())
+            self._stellar_conduct_counter_records = _stellar_conduct_counter_index(
+                next_records.values()
+            )
             self._version += 1
         self._state_instance_sequence = plan.next_state_instance_sequence
         self._dendro_core_creation_sequence = plan.next_dendro_core_creation_sequence
@@ -1807,6 +1851,32 @@ def _lunar_crystallize_accumulator_index(
             continue
         if record.team_ref in index:
             raise ReactionStoreConflictError("重复的 LunarCrystallizeAccumulatorState team_ref")
+        index[record.team_ref] = record
+    return index
+
+
+def _polestar_field_index(
+    records: Iterable[ReactionStateRecord],
+) -> dict[ReactionStateInstanceRef, PolestarFieldState]:
+    index: dict[ReactionStateInstanceRef, PolestarFieldState] = {}
+    for record in records:
+        if not isinstance(record, PolestarFieldState):
+            continue
+        if record.instance_ref in index:
+            raise ReactionStoreConflictError("重复的 PolestarFieldState instance_ref")
+        index[record.instance_ref] = record
+    return index
+
+
+def _stellar_conduct_counter_index(
+    records: Iterable[ReactionStateRecord],
+) -> dict[str, StellarConductCounterState]:
+    index: dict[str, StellarConductCounterState] = {}
+    for record in records:
+        if not isinstance(record, StellarConductCounterState):
+            continue
+        if record.team_ref in index:
+            raise ReactionStoreConflictError("重复的 StellarConductCounterState team_ref")
         index[record.team_ref] = record
     return index
 

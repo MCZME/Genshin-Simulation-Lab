@@ -44,6 +44,8 @@ from genshin_sim.core.coordination.elemental_reaction.spatial import (
     validate_dendro_core_space_terminalizations,
     validate_lunar_cage_space_bindings,
     validate_lunar_storm_cloud_space_bindings,
+    validate_polestar_field_space_bindings,
+    validate_polestar_field_space_terminalizations,
     validate_reaction_state_space_bindings,
 )
 from genshin_sim.core.coordination.elemental_reaction.state_frame import (
@@ -52,6 +54,9 @@ from genshin_sim.core.coordination.elemental_reaction.state_frame import (
 from genshin_sim.core.coordination.elemental_reaction.state_planning import (
     ReactionStatePlanningAdapterRegistry,
     create_default_state_planning_adapter_registry,
+)
+from genshin_sim.core.coordination.elemental_reaction.stellar_conduct import (
+    plan_polestar_field_occurrence,
 )
 from genshin_sim.core.coordination.elemental_reaction.step_planning import (
     _plan_depleted_frozen_state_removal,
@@ -400,12 +405,14 @@ class ElementalInteractionCoordinator:
                         shard_intent = occurrence.crystallize_shard_state_creation
                         core_intent = occurrence.dendro_core_state_creation
                         cloud_intent = occurrence.lunar_storm_cloud_state_planning
+                        polestar_intent = occurrence.polestar_field_state_planning
                         lunar_crystallize_intent = occurrence.lunar_crystallize_planning
                         spatial_effect = occurrence.spatial_entity_creation
                         if (
                             shard_intent is None
                             and core_intent is None
                             and cloud_intent is None
+                            and polestar_intent is None
                             and lunar_crystallize_intent is None
                         ):
                             continue
@@ -459,6 +466,16 @@ class ElementalInteractionCoordinator:
                                 state_planner=state_planner,
                                 spatial_planner=spatial_planner,
                                 intent=cloud_intent,
+                                spatial_effect=spatial_effect,
+                            )
+                        elif polestar_intent is not None:
+                            assert spatial_effect is not None
+                            assert polestar_intent is not None
+                            plan_polestar_field_occurrence(
+                                context=context,
+                                state_planner=state_planner,
+                                spatial_planner=spatial_planner,
+                                intent=polestar_intent,
                                 spatial_effect=spatial_effect,
                             )
                         else:
@@ -628,6 +645,8 @@ class ElementalInteractionCoordinator:
             validate_dendro_core_space_terminalizations(state_plan, space_plan)
             validate_lunar_storm_cloud_space_bindings(state_plan, space_plan)
             validate_lunar_cage_space_bindings(state_plan, space_plan)
+            validate_polestar_field_space_bindings(state_plan, space_plan)
+            validate_polestar_field_space_terminalizations(state_plan, space_plan)
         prepared_damage_records = (
             self.damage_handler.prepare_impact_request(
                 context,
@@ -862,9 +881,7 @@ def _catalyze_impact_qualification(
     if profile_registry is None:
         return None
     try:
-        formula_key = profile_registry.resolve_for_main_attack_tag(
-            spec.main_attack_tag
-        ).formula_key
+        formula_key = profile_registry.resolve_for_main_attack_tag(spec.main_attack_tag).formula_key
     except UnsupportedDamageFormulaError:
         # Damage 预检会在当前 batch 报告缺失反应标签映射。
         return None

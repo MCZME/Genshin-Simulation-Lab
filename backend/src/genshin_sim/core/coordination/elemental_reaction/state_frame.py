@@ -50,6 +50,7 @@ from genshin_sim.core.systems.reaction import (
     LunarCageState,
     LunarStormCloudAttackRootWork,
     LunarStormCloudState,
+    PolestarFieldState,
     QuickenState,
     QuickenStateTerminationIntent,
     QuickenStateTerminationReason,
@@ -64,6 +65,8 @@ from genshin_sim.core.systems.reaction import (
     ReactionSubjectUnavailableNotice,
     ReactionTriggerContext,
     ScheduledReactionRootWork,
+    StellarConductCounterSettlementRootWork,
+    StellarConductCounterState,
 )
 from genshin_sim.core.systems.reaction.mechanics.frozen import (
     MIN_FREEZE_DECAY_RATE,
@@ -97,6 +100,7 @@ class ElementalStateFrameCoordinator:
         dendro_core_expiry_coordinator: DendroCoreExpiryCoordinator | None = None,
         lunar_storm_cloud_expiry_coordinator: LunarStormCloudExpiryPort | None = None,
         lunar_cage_expiry_coordinator: LunarCageExpiryPort | None = None,
+        polestar_field_expiry_coordinator: LunarStormCloudExpiryPort | None = None,
     ) -> None:
         self.aura_runtime = aura_runtime
         self.icd_runtime = icd_runtime
@@ -105,6 +109,7 @@ class ElementalStateFrameCoordinator:
         self.dendro_core_expiry_coordinator = dendro_core_expiry_coordinator
         self.lunar_storm_cloud_expiry_coordinator = lunar_storm_cloud_expiry_coordinator
         self.lunar_cage_expiry_coordinator = lunar_cage_expiry_coordinator
+        self.polestar_field_expiry_coordinator = polestar_field_expiry_coordinator
         self._burning_state_frame_adapter = (
             None
             if reaction_runtime is None
@@ -156,10 +161,20 @@ class ElementalStateFrameCoordinator:
                 frame,
                 root_order_start=len(burning_result.scheduled_roots) + len(electro_roots),
             )
+            stellar_roots = self._normalize_stellar_conduct_counter_settlements(
+                context,
+                frame,
+                root_order_start=(
+                    len(burning_result.scheduled_roots)
+                    + len(electro_roots)
+                    + len(lunar_cloud_roots)
+                ),
+            )
             scheduled_roots = (
                 *burning_result.scheduled_roots,
                 *electro_roots,
                 *lunar_cloud_roots,
+                *stellar_roots,
             )
             reaction_managed_aura_adjustment_refs = (
                 burning_result.reaction_managed_aura_adjustment_refs
@@ -174,11 +189,16 @@ class ElementalStateFrameCoordinator:
                 context,
                 frame,
             )
+            polestar_lifecycle_works = self._normalize_expired_polestar_fields(
+                context,
+                frame,
+            )
             lifecycle_works = (
                 *crystallize_lifecycle_works,
                 *dendro_expiry_result.works,
                 *lunar_cloud_lifecycle_works,
                 *lunar_cage_lifecycle_works,
+                *polestar_lifecycle_works,
             )
             lifecycle_effect_groups = dendro_expiry_result.effect_groups
             lifecycle_occurrences = dendro_expiry_result.occurrences
@@ -561,6 +581,100 @@ class ElementalStateFrameCoordinator:
             for state in due_states
         )
         return self.lunar_storm_cloud_expiry_coordinator.expire(
+            context,
+            frame=frame,
+            works=works,
+        )
+
+    def _normalize_stellar_conduct_counter_settlements(
+        self,
+        context,
+        frame: int,
+        *,
+        root_order_start: int = 0,
+    ) -> tuple[ScheduledReactionRootWork, ...]:
+        """将本帧 due 的星超导 4 秒窗口结算冻结为稳定根工作并推进窗口。
+
+        结算只做状态快照：保存本周期层数、清空窗口计数、推进下一周期；
+        不生成公共反应伤害，辉映 Buff 更新由跨系统协调承担。
+        """
+
+        assert self.reaction_runtime is not None
+        states = tuple(
+            record
+            for record in self.reaction_runtime.state_records
+            if isinstance(record, StellarConductCounterState)
+            and record.next_settlement_frame == frame
+        )
+        if not states:
+            return ()
+        batch_id = f"stellar-conduct-counter-frame:{frame}"
+        state_planner = self.reaction_runtime.begin_state_batch(frame, batch_id)
+        roots: list[ScheduledReactionRootWork] = []
+        for state in states:
+            root_order = root_order_start + len(roots)
+            roots.append(
+                StellarConductCounterSettlementRootWork(
+                    work_id=(
+                        f"reaction-state:{state.instance_ref.value}:frame:{frame}:"
+                        f"stellar_conduct_counter_settlement:{state.window_index}"
+                    ),
+                    frame=frame,
+                    root_order=root_order,
+                    state_instance_ref=state.instance_ref,
+                    subject_ref=state.subject_ref,
+                    window_index=state.window_index,
+                )
+            )
+            state_planner.settle_stellar_conduct_counter(
+                team_ref=state.team_ref,
+                frame=frame,
+            )
+        plan = state_planner.seal()
+        if not plan.changes:
+            return ()
+        self.reaction_runtime.validate_state_plan(plan)
+        receipt = self.reaction_runtime.commit_prevalidated_state_plan(plan)
+        if context is not None:
+            with self.aura_runtime.event_publication_guard():
+                self.reaction_runtime.publish_committed_state_facts(context, receipt)
+        return tuple(roots)
+
+    def _normalize_expired_polestar_fields(
+        self,
+        context,
+        frame: int,
+    ) -> tuple[ReactionStateLifecycleWork, ...]:
+        assert self.reaction_runtime is not None
+        due_states = tuple(
+            sorted(
+                (
+                    state
+                    for state in self.reaction_runtime.state_records
+                    if isinstance(state, PolestarFieldState)
+                    and state.next_required_frame == frame
+                    and state.expires_at_frame == frame
+                ),
+                key=lambda state: (state.created_frame, state.instance_ref.value),
+            )
+        )
+        if not due_states:
+            return ()
+        if self.polestar_field_expiry_coordinator is None:
+            raise ElementalInteractionError("到期极星辉域缺少生命周期协调器")
+        works = tuple(
+            ReactionStateLifecycleWork(
+                work_ref=f"reaction-state:{state.instance_ref.value}:frame:{frame}:expire",
+                frame=frame,
+                state_instance_ref=state.instance_ref,
+                state_slot=state.slot_key.slot,
+                scope_key=state.slot_key.scope_key,
+                operation=ReactionStateLifecycleOperation.EXPIRE,
+                cause_ref=f"reaction-state:{state.instance_ref.value}:frame:{frame}:expire",
+            )
+            for state in due_states
+        )
+        return self.polestar_field_expiry_coordinator.expire(
             context,
             frame=frame,
             works=works,

@@ -50,6 +50,7 @@ from genshin_sim.core.systems.reaction.mechanics.shattered import (
     shattered_definition,
     shattered_gate_definitions,
 )
+from genshin_sim.core.systems.reaction.mechanics.stellar_conduct import stellar_conduct_definition
 from genshin_sim.core.systems.reaction.mechanics.superconduct import (
     superconduct_definition,
     superconduct_gate_definitions,
@@ -86,6 +87,7 @@ def create_default_reaction_bootstrap() -> ReactionBootstrap:
                 melt_definition(),
                 overloaded_definition(),
                 superconduct_definition(),
+                stellar_conduct_definition(),
                 frozen_definition(),
                 shattered_definition(),
                 electro_charged_definition(),

@@ -26,6 +26,7 @@ if TYPE_CHECKING:
         DendroCoreStateCreationIntent,
         DynamicTransformativeScalingBasis,
         LunarStormCloudStatePlanningIntent,
+        PolestarFieldStatePlanningIntent,
     )
 
 
@@ -46,6 +47,8 @@ class ReactionStateSlot(StrEnum):
     LUNAR_CAGE = "lunar_cage"
     LUNAR_CRYSTALLIZE_ACCUMULATOR = "lunar_crystallize_accumulator"
     SPRAWLING_SHOT = "sprawling_shot"
+    STELLAR_CONDUCT_FIELD = "stellar_conduct_field"
+    STELLAR_CONDUCT_COUNTER = "stellar_conduct_counter"
 
 
 class ScheduledStateTickKind(StrEnum):
@@ -55,6 +58,7 @@ class ScheduledStateTickKind(StrEnum):
     BURNING_DAMAGE = "burning_damage"
     BURNING_PYRO_APPLICATION = "burning_pyro_application"
     LUNAR_STORM_CLOUD_ATTACK = "lunar_storm_cloud_attack"
+    STELLAR_CONDUCT_COUNTER_SETTLEMENT = "stellar_conduct_counter_settlement"
 
 
 class CrystallizeShardLifecycleState(StrEnum):
@@ -789,6 +793,148 @@ class SprawlingShotState:
         )
 
 
+STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES = 420
+STELLAR_CONDUCT_COUNTER_WINDOW_FRAMES = 240
+_STELLAR_CONDUCT_ATTACHMENT_ELEMENTS = frozenset({Element.CRYO, Element.ELECTRO})
+
+
+@dataclass(frozen=True, slots=True)
+class PolestarFieldState:
+    """极星辉域的生命周期与所属队伍；领域圆心由 Space 实体位置持有。"""
+
+    instance_ref: ReactionStateInstanceRef
+    space_entity_ref: str
+    subject_ref: ElementalSubjectRef
+    created_by_occurrence_ref: str
+    trigger_source_ref: ElementalSourceRef
+    team_ref: str
+    created_frame: int
+    expires_at_frame: int
+    revision: int = 1
+
+    def __post_init__(self) -> None:
+        expected = f"reaction-state:polestar-field:{self.created_by_occurrence_ref}"
+        if self.instance_ref.value != expected:
+            raise ValueError("极星辉域 instance_ref 必须由 occurrence_ref 确定性派生")
+        expected_space = f"reaction_object:polestar_field:{self.created_by_occurrence_ref}"
+        if self.space_entity_ref != expected_space:
+            raise ValueError("极星辉域 space_entity_ref 必须由 occurrence_ref 确定性派生")
+        if self.expires_at_frame < self.created_frame + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES:
+            raise ValueError("极星辉域生命周期必须为最近一次触发后 420 帧")
+        if not isinstance(self.trigger_source_ref, ElementalSourceRef):
+            raise ValueError("trigger_source_ref 必须是 ElementalSourceRef")
+        for value, name in (
+            (self.team_ref, "team_ref"),
+            (self.space_entity_ref, "space_entity_ref"),
+            (self.created_by_occurrence_ref, "created_by_occurrence_ref"),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} 必须是非空字符串")
+        _frame(self.created_frame, "created_frame")
+        _frame(self.expires_at_frame, "expires_at_frame")
+        if self.revision <= 0:
+            raise ValueError("极星辉域 revision 必须为正整数")
+
+    @property
+    def next_required_frame(self) -> int:
+        return self.expires_at_frame
+
+    @property
+    def slot_key(self) -> ReactionStateSlotKey:
+        return ReactionStateSlotKey(
+            self.subject_ref,
+            ReactionStateSlot.STELLAR_CONDUCT_FIELD,
+            ReactionStateScopeKey(self.instance_ref.value),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class StellarConductAttachmentRecord:
+    """一次攻击/判定聚合出的队伍共享附着记录。"""
+
+    record_ref: str
+    attack_ref: str
+    element: Element
+    frame: int
+    target_refs: tuple[ElementalSubjectRef, ...]
+
+    def __post_init__(self) -> None:
+        for value, name in ((self.record_ref, "record_ref"), (self.attack_ref, "attack_ref")):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} 必须是非空字符串")
+        if self.element not in _STELLAR_CONDUCT_ATTACHMENT_ELEMENTS:
+            raise ValueError("星超导附着记录元素必须是冰或雷")
+        _frame(self.frame, "frame")
+        targets = tuple(self.target_refs)
+        if not targets or any(not isinstance(item, ElementalSubjectRef) for item in targets):
+            raise ValueError("target_refs 必须是非空的 ElementalSubjectRef 序列")
+        if len(set(targets)) != len(targets):
+            raise ValueError("target_refs 不能重复")
+        object.__setattr__(self, "target_refs", targets)
+
+
+@dataclass(frozen=True, slots=True)
+class StellarConductCounterState:
+    """队伍共享的星超导附着计数；窗口跨领域刷新继承，不绑定 Field 实例。"""
+
+    instance_ref: ReactionStateInstanceRef
+    subject_ref: ElementalSubjectRef
+    team_ref: str
+    window_start_frame: int
+    next_settlement_frame: int
+    window_index: int = 1
+    pending_count: int = 0
+    settled_stacks: int = 0
+    recorded_record_refs: tuple[str, ...] = ()
+    excluded_attack_refs: tuple[str, ...] = ()
+    revision: int = 1
+
+    def __post_init__(self) -> None:
+        expected = f"reaction-state:stellar-conduct-counter:{self.team_ref}"
+        if self.instance_ref.value != expected:
+            raise ValueError("星超导计数 instance_ref 必须由 team_ref 确定性派生")
+        if not isinstance(self.subject_ref, ElementalSubjectRef):
+            raise ValueError("subject_ref 必须是 ElementalSubjectRef")
+        if not isinstance(self.team_ref, str) or not self.team_ref.strip():
+            raise ValueError("team_ref 必须是非空字符串")
+        _frame(self.window_start_frame, "window_start_frame")
+        if (
+            self.next_settlement_frame
+            != self.window_start_frame + STELLAR_CONDUCT_COUNTER_WINDOW_FRAMES
+        ):
+            raise ValueError("星超导计数窗口必须固定为 240 帧")
+        if self.window_index <= 0 or self.pending_count < 0 or self.settled_stacks < 0:
+            raise ValueError("星超导计数值必须为非负数且窗口序号为正整数")
+        if self.revision <= 0:
+            raise ValueError("星超导计数 revision 必须为正整数")
+        for value, name in (
+            (self.recorded_record_refs, "recorded_record_refs"),
+            (self.excluded_attack_refs, "excluded_attack_refs"),
+        ):
+            refs = tuple(value)
+            if any(not isinstance(item, str) or not item.strip() for item in refs):
+                raise ValueError(f"{name} 必须是非空字符串序列")
+            if len(set(refs)) != len(refs):
+                raise ValueError(f"{name} 不能重复")
+            object.__setattr__(self, name, refs)
+
+    @property
+    def stacks(self) -> int:
+        return min(self.settled_stacks, 12)
+
+    @property
+    def next_required_frame(self) -> int:
+        return self.next_settlement_frame
+
+    @property
+    def slot_key(self) -> ReactionStateSlotKey:
+        return ReactionStateSlotKey(
+            self.subject_ref,
+            ReactionStateSlot.STELLAR_CONDUCT_COUNTER,
+            ReactionStateScopeKey(self.team_ref),
+        )
+
+
 type ReactionStateRecord = (
     BurningState
     | CrystallizeShardState
@@ -799,8 +945,10 @@ type ReactionStateRecord = (
     | LunarCageState
     | LunarCrystallizeAccumulatorState
     | LunarStormCloudState
+    | PolestarFieldState
     | QuickenState
     | SprawlingShotState
+    | StellarConductCounterState
 )
 _REACTION_STATE_RECORD_TYPES = (
     BurningState,
@@ -812,8 +960,10 @@ _REACTION_STATE_RECORD_TYPES = (
     LunarCageState,
     LunarCrystallizeAccumulatorState,
     LunarStormCloudState,
+    PolestarFieldState,
     QuickenState,
     SprawlingShotState,
+    StellarConductCounterState,
 )
 
 
@@ -1098,8 +1248,70 @@ class LunarStormCloudAttackRootWork:
         return cause_ref
 
 
+@dataclass(frozen=True, slots=True)
+class StellarConductCounterSettlementRootWork:
+    """星超导 4 秒计数窗口的周期结算根工作；不生成公共反应伤害。"""
+
+    work_id: str
+    frame: int
+    root_order: int
+    state_instance_ref: ReactionStateInstanceRef
+    subject_ref: ElementalSubjectRef
+    window_index: int
+    cause: ScheduledStateTickCause | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.work_id, str) or not self.work_id.strip():
+            raise ValueError("work_id 必须是非空字符串")
+        _frame(self.frame, "frame")
+        _frame(self.root_order, "root_order")
+        _frame(self.window_index, "window_index")
+        if self.window_index <= 0:
+            raise ValueError("window_index 必须为正整数")
+        expected_work_id = (
+            f"reaction-state:{self.state_instance_ref.value}:"
+            f"frame:{self.frame}:"
+            f"stellar_conduct_counter_settlement:{self.window_index}"
+        )
+        if self.work_id != expected_work_id:
+            raise ValueError(
+                "星超导结算 root 的 work_id 必须由 state instance、frame 和窗口序号确定性派生"
+            )
+        cause = self.cause or ScheduledStateTickCause(
+            state_instance_ref=self.state_instance_ref,
+            scheduled_frame=self.frame,
+            tick_kind=ScheduledStateTickKind.STELLAR_CONDUCT_COUNTER_SETTLEMENT,
+            tick_index=self.window_index,
+        )
+        if not isinstance(cause, ScheduledStateTickCause):
+            raise ValueError("cause 必须是 ScheduledStateTickCause")
+        if (
+            cause.state_instance_ref != self.state_instance_ref
+            or cause.scheduled_frame != self.frame
+            or cause.tick_kind is not ScheduledStateTickKind.STELLAR_CONDUCT_COUNTER_SETTLEMENT
+            or cause.tick_index != self.window_index
+        ):
+            raise ValueError("星超导结算 root 的 cause 必须与 root identity 一致")
+        object.__setattr__(self, "cause", cause)
+
+    @property
+    def state_slot(self) -> ReactionStateSlot:
+        return ReactionStateSlot.STELLAR_CONDUCT_COUNTER
+
+    @property
+    def cause_ref(self) -> str:
+        assert self.cause is not None
+        cause_ref = self.cause.cause_ref
+        if cause_ref is None:
+            raise RuntimeError("已验证的 scheduled cause 缺少 cause_ref")
+        return cause_ref
+
+
 type ScheduledReactionRootWork = (
-    ElectroChargedTickRootWork | BurningCycleRootWork | LunarStormCloudAttackRootWork
+    ElectroChargedTickRootWork
+    | BurningCycleRootWork
+    | LunarStormCloudAttackRootWork
+    | StellarConductCounterSettlementRootWork
 )
 
 
@@ -1125,6 +1337,7 @@ class ReactionStateLifecycleWork:
             ReactionStateSlot.DENDRO_CORE,
             ReactionStateSlot.LUNAR_STORM_CLOUD,
             ReactionStateSlot.LUNAR_CAGE,
+            ReactionStateSlot.STELLAR_CONDUCT_FIELD,
         }:
             raise ValueError("lifecycle work 只支持绑定空间实体的 Reaction State")
         if self.operation is not ReactionStateLifecycleOperation.EXPIRE:
@@ -1867,6 +2080,277 @@ class ReactionStatePlanner:
         )
         self._working[state.slot_key] = state
         return consumed, state
+
+    def polestar_field_for(
+        self,
+        instance_ref: ReactionStateInstanceRef,
+    ) -> PolestarFieldState | None:
+        if not isinstance(instance_ref, ReactionStateInstanceRef):
+            raise ValueError("instance_ref 必须是 ReactionStateInstanceRef")
+        return next(
+            (
+                item
+                for item in self._working.values()
+                if isinstance(item, PolestarFieldState) and item.instance_ref == instance_ref
+            ),
+            None,
+        )
+
+    def active_polestar_fields(
+        self,
+        *,
+        team_ref: str | None = None,
+    ) -> tuple[PolestarFieldState, ...]:
+        if team_ref is not None and (not isinstance(team_ref, str) or not team_ref.strip()):
+            raise ValueError("team_ref 必须是非空字符串或 None")
+        return tuple(
+            sorted(
+                (
+                    item
+                    for item in self._working.values()
+                    if isinstance(item, PolestarFieldState)
+                    and (team_ref is None or item.team_ref == team_ref)
+                ),
+                key=lambda item: (item.created_frame, item.instance_ref.value),
+            )
+        )
+
+    def create_polestar_field(
+        self,
+        intent: PolestarFieldStatePlanningIntent,
+    ) -> PolestarFieldState:
+        """接受星超导 occurrence 声明的确定性极星辉域创建意图。"""
+
+        from genshin_sim.core.systems.reaction.models import (
+            PolestarFieldStatePlanningIntent,
+        )
+
+        self._assert_open()
+        if not isinstance(intent, PolestarFieldStatePlanningIntent):
+            raise ValueError("intent 必须是 PolestarFieldStatePlanningIntent")
+        if intent.created_frame != self.frame:
+            raise ValueError("极星辉域创建意图帧必须与 State 批次一致")
+        if self.polestar_field_for(intent.instance_ref) is not None:
+            raise ValueError("极星辉域 instance_ref 已存在")
+        state = PolestarFieldState(
+            instance_ref=intent.instance_ref,
+            space_entity_ref=intent.space_entity_ref,
+            subject_ref=intent.subject_ref,
+            created_by_occurrence_ref=intent.parent_occurrence_ref,
+            trigger_source_ref=intent.trigger_source_ref,
+            team_ref=intent.team_ref,
+            created_frame=intent.created_frame,
+            expires_at_frame=intent.expires_at_frame,
+        )
+        if state.slot_key in self._working:
+            raise ValueError("极星辉域 State slot 已存在")
+        self._working[state.slot_key] = state
+        return state
+
+    def replace_polestar_field(
+        self,
+        *,
+        instance_ref: ReactionStateInstanceRef,
+        expires_at_frame: int,
+    ) -> PolestarFieldState:
+        """域内重触发刷新存在时间；保留实例身份、圆心投影与创建帧。"""
+
+        self._assert_open()
+        before = self.polestar_field_for(instance_ref)
+        if before is None:
+            raise ValueError("不存在可刷新的 PolestarFieldState")
+        _frame(expires_at_frame, "expires_at_frame")
+        if expires_at_frame < before.expires_at_frame:
+            raise ValueError("极星辉域刷新不能缩短 expires_at_frame")
+        state = PolestarFieldState(
+            instance_ref=before.instance_ref,
+            space_entity_ref=before.space_entity_ref,
+            subject_ref=before.subject_ref,
+            created_by_occurrence_ref=before.created_by_occurrence_ref,
+            trigger_source_ref=before.trigger_source_ref,
+            team_ref=before.team_ref,
+            created_frame=before.created_frame,
+            expires_at_frame=expires_at_frame,
+            revision=before.revision + 1,
+        )
+        self._working[state.slot_key] = state
+        return state
+
+    def remove_polestar_field(
+        self,
+        *,
+        instance_ref: ReactionStateInstanceRef,
+    ) -> PolestarFieldState:
+        self._assert_open()
+        before = self.polestar_field_for(instance_ref)
+        if before is None:
+            raise ValueError("不存在可终结的 PolestarFieldState")
+        del self._working[before.slot_key]
+        return before
+
+    def stellar_conduct_counter_for(self, team_ref: str) -> StellarConductCounterState | None:
+        if not isinstance(team_ref, str) or not team_ref.strip():
+            raise ValueError("team_ref 必须是非空字符串")
+        return next(
+            (
+                item
+                for item in self._working.values()
+                if isinstance(item, StellarConductCounterState) and item.team_ref == team_ref
+            ),
+            None,
+        )
+
+    def create_stellar_conduct_counter(
+        self,
+        *,
+        team_ref: str,
+        subject_ref: ElementalSubjectRef,
+        frame: int,
+        excluded_attack_refs: tuple[str, ...] = (),
+    ) -> StellarConductCounterState:
+        """星超导会话开始时创建队伍共享计数；窗口自创建帧起算。"""
+
+        self._assert_open()
+        if not isinstance(team_ref, str) or not team_ref.strip():
+            raise ValueError("team_ref 必须是非空字符串")
+        if not isinstance(subject_ref, ElementalSubjectRef):
+            raise ValueError("subject_ref 必须是 ElementalSubjectRef")
+        _frame(frame, "frame")
+        if self.stellar_conduct_counter_for(team_ref) is not None:
+            raise ValueError("星超导计数已存在，必须使用替换或追加入口")
+        state = StellarConductCounterState(
+            instance_ref=ReactionStateInstanceRef(
+                f"reaction-state:stellar-conduct-counter:{team_ref}"
+            ),
+            subject_ref=subject_ref,
+            team_ref=team_ref,
+            window_start_frame=frame,
+            next_settlement_frame=frame + STELLAR_CONDUCT_COUNTER_WINDOW_FRAMES,
+            window_index=1,
+            pending_count=0,
+            settled_stacks=0,
+            recorded_record_refs=(),
+            excluded_attack_refs=tuple(dict.fromkeys(excluded_attack_refs)),
+        )
+        if state.slot_key in self._working:
+            raise ValueError("星超导计数 State slot 已存在")
+        self._working[state.slot_key] = state
+        return state
+
+    def append_stellar_conduct_attachment_record(
+        self,
+        *,
+        team_ref: str,
+        record: StellarConductAttachmentRecord,
+    ) -> StellarConductCounterState:
+        """追加一条聚合附着记录；同一 record_ref 不能重复计数。"""
+
+        self._assert_open()
+        if not isinstance(team_ref, str) or not team_ref.strip():
+            raise ValueError("team_ref 必须是非空字符串")
+        if not isinstance(record, StellarConductAttachmentRecord):
+            raise ValueError("record 必须是 StellarConductAttachmentRecord")
+        before = self.stellar_conduct_counter_for(team_ref)
+        if before is None:
+            raise ValueError("星超导计数缺少活动 Counter State")
+        if record.record_ref in before.recorded_record_refs:
+            raise ValueError("星超导附着记录 record_ref 不能重复计数")
+        state = StellarConductCounterState(
+            instance_ref=before.instance_ref,
+            subject_ref=before.subject_ref,
+            team_ref=before.team_ref,
+            window_start_frame=before.window_start_frame,
+            next_settlement_frame=before.next_settlement_frame,
+            window_index=before.window_index,
+            pending_count=before.pending_count + 1,
+            settled_stacks=before.settled_stacks,
+            recorded_record_refs=(*before.recorded_record_refs, record.record_ref),
+            excluded_attack_refs=before.excluded_attack_refs,
+            revision=before.revision + 1,
+        )
+        self._working[state.slot_key] = state
+        return state
+
+    def replace_stellar_conduct_counter_exclusions(
+        self,
+        *,
+        team_ref: str,
+        excluded_attack_refs: tuple[str, ...],
+    ) -> StellarConductCounterState:
+        """新领域生成时更新排除的触发攻击身份；排除只在首个窗口生效。"""
+
+        self._assert_open()
+        if not isinstance(team_ref, str) or not team_ref.strip():
+            raise ValueError("team_ref 必须是非空字符串")
+        before = self.stellar_conduct_counter_for(team_ref)
+        if before is None:
+            raise ValueError("星超导计数缺少活动 Counter State")
+        state = StellarConductCounterState(
+            instance_ref=before.instance_ref,
+            subject_ref=before.subject_ref,
+            team_ref=before.team_ref,
+            window_start_frame=before.window_start_frame,
+            next_settlement_frame=before.next_settlement_frame,
+            window_index=before.window_index,
+            pending_count=before.pending_count,
+            settled_stacks=before.settled_stacks,
+            recorded_record_refs=before.recorded_record_refs,
+            excluded_attack_refs=tuple(dict.fromkeys(excluded_attack_refs)),
+            revision=before.revision + 1,
+        )
+        self._working[state.slot_key] = state
+        return state
+
+    def settle_stellar_conduct_counter(
+        self,
+        *,
+        team_ref: str,
+        frame: int,
+    ) -> StellarConductCounterState:
+        """4 秒周期到期结算：快照层数、清空窗口计数并推进下一周期。"""
+
+        self._assert_open()
+        if not isinstance(team_ref, str) or not team_ref.strip():
+            raise ValueError("team_ref 必须是非空字符串")
+        _frame(frame, "frame")
+        before = self.stellar_conduct_counter_for(team_ref)
+        if before is None:
+            raise ValueError("星超导计数缺少活动 Counter State")
+        if frame != before.next_settlement_frame:
+            raise ValueError("星超导计数结算必须在 next_settlement_frame 执行")
+        state = StellarConductCounterState(
+            instance_ref=before.instance_ref,
+            subject_ref=before.subject_ref,
+            team_ref=before.team_ref,
+            window_start_frame=before.next_settlement_frame,
+            next_settlement_frame=(
+                before.next_settlement_frame + STELLAR_CONDUCT_COUNTER_WINDOW_FRAMES
+            ),
+            window_index=before.window_index + 1,
+            pending_count=0,
+            settled_stacks=before.pending_count,
+            recorded_record_refs=(),
+            excluded_attack_refs=(),
+            revision=before.revision + 1,
+        )
+        self._working[state.slot_key] = state
+        return state
+
+    def remove_stellar_conduct_counter(
+        self,
+        *,
+        team_ref: str,
+    ) -> StellarConductCounterState:
+        """共享会话结束（领域到期且无重触发）时移除队伍共享计数。"""
+
+        self._assert_open()
+        if not isinstance(team_ref, str) or not team_ref.strip():
+            raise ValueError("team_ref 必须是非空字符串")
+        before = self.stellar_conduct_counter_for(team_ref)
+        if before is None:
+            raise ValueError("不存在可终结的 StellarConductCounterState")
+        del self._working[before.slot_key]
+        return before
 
     def create_sprawling_shot(self, state: SprawlingShotState) -> SprawlingShotState:
         self._assert_open()

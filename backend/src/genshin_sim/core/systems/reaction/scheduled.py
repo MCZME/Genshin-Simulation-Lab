@@ -51,6 +51,8 @@ from genshin_sim.core.systems.reaction.states import (
     LunarStormCloudState,
     ReactionStateRecord,
     ScheduledReactionRootWork,
+    StellarConductCounterSettlementRootWork,
+    StellarConductCounterState,
 )
 
 
@@ -218,6 +220,42 @@ class LunarStormCloudScheduledRootAdapter:
         )
 
 
+class StellarConductScheduledRootAdapter:
+    """将星超导 4 秒计数结算投影为无公共伤害的结算声明。
+
+    结算的公共结果是更新层数相关系数与状态快照，事实由
+    REACTION_STATE_CHANGED 事件承载；辉映 Buff 的统一更新由跨系统协调完成。
+    """
+
+    adapter_key = "reaction_scheduled_root_adapter.stellar_conduct"
+
+    @property
+    def root_type(self) -> type[object]:
+        return StellarConductCounterSettlementRootWork
+
+    def prepare(
+        self,
+        root: ScheduledReactionRootWork,
+        state_records: tuple[ReactionStateRecord, ...],
+    ) -> ScheduledRootAdapterResult:
+        if not isinstance(root, StellarConductCounterSettlementRootWork):
+            raise ValueError(
+                "星超导 scheduled adapter 只接受 StellarConductCounterSettlementRootWork"
+            )
+        state = next(
+            (
+                record
+                for record in state_records
+                if isinstance(record, StellarConductCounterState)
+                and record.instance_ref == root.state_instance_ref
+            ),
+            None,
+        )
+        if state is None:
+            return ScheduledRootAdapterResult("cancelled_state_ended")
+        return ScheduledRootAdapterResult("prepared")
+
+
 def create_default_scheduled_reaction_root_adapter_registry() -> (
     ScheduledReactionRootAdapterRegistry
 ):
@@ -226,6 +264,7 @@ def create_default_scheduled_reaction_root_adapter_registry() -> (
             ElectroChargedScheduledRootAdapter(),
             BurningScheduledRootAdapter(),
             LunarStormCloudScheduledRootAdapter(),
+            StellarConductScheduledRootAdapter(),
         )
     )
 

@@ -57,6 +57,7 @@ from genshin_sim.core.systems.reaction.models import (
     FreezeResistanceObservation,
     LunarCrystallizeStatePlanningIntent,
     LunarStormCloudStatePlanningIntent,
+    PolestarFieldStatePlanningIntent,
     ReactionCommitReceipt,
     ReactionEvaluationRequest,
     ReactionGeneratedImpact,
@@ -84,6 +85,7 @@ from genshin_sim.core.systems.reaction.states import (
     LunarCrystallizeAccumulatorState,
     LunarCrystallizeOccurrenceRecord,
     LunarStormCloudState,
+    PolestarFieldState,
     QuickenState,
     ReactionStateCommitReceipt,
     ReactionStateInstanceRef,
@@ -91,6 +93,8 @@ from genshin_sim.core.systems.reaction.states import (
     ReactionStateMutationPlan,
     ReactionStateRecord,
     SprawlingShotState,
+    StellarConductAttachmentRecord,
+    StellarConductCounterState,
 )
 from genshin_sim.core.systems.shield import (
     ShieldGrantCommitReceipt,
@@ -309,6 +313,22 @@ class ReactionStateInteractionPort(ReactionFramePort, Protocol):
         self,
         team_ref: str,
     ) -> LunarCrystallizeAccumulatorState | None: ...
+
+    def polestar_field_state_for(
+        self,
+        instance_ref: ReactionStateInstanceRef,
+    ) -> PolestarFieldState | None: ...
+
+    def active_polestar_fields(
+        self,
+        *,
+        team_ref: str | None = None,
+    ) -> tuple[PolestarFieldState, ...]: ...
+
+    def stellar_conduct_counter_state_for(
+        self,
+        team_ref: str,
+    ) -> StellarConductCounterState | None: ...
 
     def sprawling_shot_state_for(
         self,
@@ -530,6 +550,69 @@ class ReactionStateBatchPlanningPort(Protocol):
         *,
         instance_ref: ReactionStateInstanceRef,
     ) -> LunarStormCloudState: ...
+
+    def polestar_field_for(
+        self,
+        instance_ref: ReactionStateInstanceRef,
+    ) -> PolestarFieldState | None: ...
+
+    def active_polestar_fields(
+        self,
+        *,
+        team_ref: str | None = None,
+    ) -> tuple[PolestarFieldState, ...]: ...
+
+    def create_polestar_field(
+        self,
+        intent: PolestarFieldStatePlanningIntent,
+    ) -> PolestarFieldState: ...
+
+    def replace_polestar_field(
+        self,
+        *,
+        instance_ref: ReactionStateInstanceRef,
+        expires_at_frame: int,
+    ) -> PolestarFieldState: ...
+
+    def remove_polestar_field(
+        self,
+        *,
+        instance_ref: ReactionStateInstanceRef,
+    ) -> PolestarFieldState: ...
+
+    def stellar_conduct_counter_for(self, team_ref: str) -> StellarConductCounterState | None: ...
+
+    def create_stellar_conduct_counter(
+        self,
+        *,
+        team_ref: str,
+        subject_ref: ElementalSubjectRef,
+        frame: int,
+        excluded_attack_refs: tuple[str, ...] = (),
+    ) -> StellarConductCounterState: ...
+
+    def append_stellar_conduct_attachment_record(
+        self,
+        *,
+        team_ref: str,
+        record: StellarConductAttachmentRecord,
+    ) -> StellarConductCounterState: ...
+
+    def replace_stellar_conduct_counter_exclusions(
+        self,
+        *,
+        team_ref: str,
+        excluded_attack_refs: tuple[str, ...],
+    ) -> StellarConductCounterState: ...
+
+    def settle_stellar_conduct_counter(
+        self,
+        *,
+        team_ref: str,
+        frame: int,
+    ) -> StellarConductCounterState: ...
+
+    def remove_stellar_conduct_counter(self, *, team_ref: str) -> StellarConductCounterState: ...
 
     def create_sprawling_shot(self, state: SprawlingShotState) -> SprawlingShotState: ...
 

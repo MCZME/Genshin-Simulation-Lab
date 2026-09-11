@@ -20,6 +20,7 @@ from genshin_sim.core.coordination.elemental_reaction.spatial import (
     validate_dendro_core_space_terminalizations,
     validate_lunar_cage_space_terminalizations,
     validate_lunar_storm_cloud_space_terminalizations,
+    validate_polestar_field_space_terminalizations,
     validate_reaction_state_space_terminalizations,
 )
 from genshin_sim.core.elements import Element, ElementalSourceRef
@@ -31,6 +32,7 @@ from genshin_sim.core.systems.reaction import (
     DendroCoreTerminationReason,
     LunarCageState,
     LunarStormCloudState,
+    PolestarFieldState,
     ReactionStateInstanceRef,
     ReactionStateLifecycleOperation,
     ReactionStateLifecycleWork,
@@ -352,6 +354,91 @@ class LunarStormCloudExpiryCoordinator:
         return tuple(states)
 
 
+class PolestarFieldExpiryCoordinator:
+    """在到期帧原子移除极星辉域 State、Space 实体与队伍共享计数。
+
+    领域到期意味着星超导共享会话结束：辉映·星超导 Buff 的统一移除
+    由后续 Buff 系统接线承担，此处先终结 Reaction 侧共享状态。
+    """
+
+    def __init__(
+        self,
+        *,
+        reaction_state_port: ReactionStateInteractionPort,
+        spatial_planning_port: ReactionSpatialPlanningPort,
+    ) -> None:
+        self.reaction_state_port = reaction_state_port
+        self.spatial_planning_port = spatial_planning_port
+
+    def expire(
+        self,
+        context: object,
+        *,
+        frame: int,
+        works: tuple[ReactionStateLifecycleWork, ...],
+    ) -> tuple[ReactionStateLifecycleWork, ...]:
+        if not works:
+            return ()
+        states = self._active_states_for_expiry(frame, works)
+        state_planner = self.reaction_state_port.begin_state_batch(
+            frame,
+            f"polestar-field-expiry:{frame}",
+        )
+        space_planner = self.spatial_planning_port.begin_batch(
+            operation_id=f"polestar-field-expiry:{frame}",
+            frame=frame,
+        )
+        removed_team_refs: set[str] = set()
+        for state in states:
+            state_planner.remove_polestar_field(instance_ref=state.instance_ref)
+            space_planner.prepare_remove(state.space_entity_ref)
+            removed_team_refs.add(state.team_ref)
+        for team_ref in sorted(removed_team_refs):
+            if state_planner.stellar_conduct_counter_for(team_ref) is not None:
+                state_planner.remove_stellar_conduct_counter(team_ref=team_ref)
+        _commit_polestar_field_expiry(
+            self.reaction_state_port,
+            self.spatial_planning_port,
+            context,
+            state_planner.seal(),
+            space_planner.seal(),
+        )
+        return works
+
+    def _active_states_for_expiry(
+        self,
+        frame: int,
+        works: tuple[ReactionStateLifecycleWork, ...],
+    ) -> tuple[PolestarFieldState, ...]:
+        seen_work_refs: set[str] = set()
+        seen_state_refs: set[ReactionStateInstanceRef] = set()
+        states: list[PolestarFieldState] = []
+        for work in works:
+            if (
+                work.frame != frame
+                or work.operation is not ReactionStateLifecycleOperation.EXPIRE
+                or work.state_slot.value != "stellar_conduct_field"
+            ):
+                raise ReactionBoundEntityLifecycleError("极星辉域到期 work 不一致")
+            if work.work_ref in seen_work_refs or work.state_instance_ref in seen_state_refs:
+                raise ReactionBoundEntityLifecycleError("极星辉域到期 work 重复")
+            seen_work_refs.add(work.work_ref)
+            seen_state_refs.add(work.state_instance_ref)
+            state = self.reaction_state_port.polestar_field_state_for(work.state_instance_ref)
+            if state is None:
+                raise ReactionBoundEntityLifecycleError("到期极星辉域 State 不存在")
+            if (
+                state.expires_at_frame != frame
+                or state.slot_key.slot is not work.state_slot
+                or state.slot_key.scope_key != work.scope_key
+            ):
+                raise ReactionBoundEntityLifecycleError(
+                    "到期极星辉域 State 与 lifecycle work 不一致"
+                )
+            states.append(state)
+        return tuple(states)
+
+
 class LunarCageExpiryCoordinator:
     """在到期帧原子移除月笼 State 与对应 Space 实体。"""
 
@@ -551,6 +638,26 @@ def _commit_lunar_storm_cloud_expiry(
     reaction_state_port.validate_state_plan(state_plan)
     spatial_planning_port.validate(space_plan)
     validate_lunar_storm_cloud_space_terminalizations(state_plan, space_plan)
+    state_receipt = reaction_state_port.commit_prevalidated_state_plan(state_plan)
+    spatial_planning_port.commit_prevalidated(space_plan)
+    if context is not None:
+        with spatial_planning_port.event_publication_guard():
+            reaction_state_port.publish_committed_state_facts(context, state_receipt)
+            publish_space_entity_facts(context, space_plan)
+
+
+def _commit_polestar_field_expiry(
+    reaction_state_port: ReactionStateInteractionPort,
+    spatial_planning_port: ReactionSpatialPlanningPort,
+    context: object,
+    state_plan,
+    space_plan,
+) -> None:
+    """验证两个领域的完整前值后，提交极星辉域终态、共享计数移除与 Space 删除。"""
+
+    reaction_state_port.validate_state_plan(state_plan)
+    spatial_planning_port.validate(space_plan)
+    validate_polestar_field_space_terminalizations(state_plan, space_plan)
     state_receipt = reaction_state_port.commit_prevalidated_state_plan(state_plan)
     spatial_planning_port.commit_prevalidated(space_plan)
     if context is not None:

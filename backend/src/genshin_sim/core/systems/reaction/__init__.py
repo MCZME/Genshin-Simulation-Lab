@@ -18,6 +18,13 @@ from genshin_sim.core.systems.reaction.gates import (
     ReactionDamageGateSlotKey,
     ReactionDamageGateSnapshot,
 )
+from genshin_sim.core.systems.reaction.mechanics.stellar_conduct import (
+    STELLAR_CONDUCT_CAPABILITY_KEY,
+    STELLAR_CONDUCT_COUNTER_STATE_KEY,
+    STELLAR_CONDUCT_HANDLER_KEY,
+    STELLAR_CONDUCT_REACTION_KEY,
+    STELLAR_CONDUCT_TEAM_SCOPE,
+)
 from genshin_sim.core.systems.reaction.models import (
     AdditiveReactionProfile,
     AmplifyingReactionProfile,
@@ -55,6 +62,7 @@ from genshin_sim.core.systems.reaction.models import (
     OccurrenceCause,
     ParallelAuraConsumption,
     PersistentIncomingAuraApplicationEffect,
+    PolestarFieldStatePlanningIntent,
     QuickenStateCoverageIntent,
     QuickenStateEstablishmentIntent,
     QuickenStateTerminationIntent,
@@ -144,6 +152,7 @@ from genshin_sim.core.systems.reaction.states import (
     LunarCrystallizeOccurrenceRecord,
     LunarStormCloudAttackRootWork,
     LunarStormCloudState,
+    PolestarFieldState,
     QuickenState,
     ReactionStateChange,
     ReactionStateCommitReceipt,
@@ -161,6 +170,9 @@ from genshin_sim.core.systems.reaction.states import (
     ScheduledStateTickKind,
     SprawlingShotResolution,
     SprawlingShotState,
+    StellarConductAttachmentRecord,
+    StellarConductCounterSettlementRootWork,
+    StellarConductCounterState,
 )
 
 __all__ = [
@@ -178,6 +190,7 @@ __all__ = [
     "LunarCrystallizeStatePlanningIntent",
     "LunarElectroChargedReactionProfile",
     "LunarStormCloudStatePlanningIntent",
+    "PolestarFieldStatePlanningIntent",
     "BurningStateEstablishmentIntent",
     "BurningStateMaintenanceIntent",
     "BurningStateTerminationIntent",
@@ -308,4 +321,14 @@ __all__ = [
     "ScheduledStateTickKind",
     "ReactionBootstrap",
     "create_default_reaction_bootstrap",
+    "STELLAR_CONDUCT_CAPABILITY_KEY",
+    "STELLAR_CONDUCT_COUNTER_STATE_KEY",
+    "STELLAR_CONDUCT_HANDLER_KEY",
+    "STELLAR_CONDUCT_REACTION_KEY",
+    "STELLAR_CONDUCT_TEAM_SCOPE",
+    "PolestarFieldState",
+    "PolestarFieldStatePlanningIntent",
+    "StellarConductAttachmentRecord",
+    "StellarConductCounterSettlementRootWork",
+    "StellarConductCounterState",
 ]

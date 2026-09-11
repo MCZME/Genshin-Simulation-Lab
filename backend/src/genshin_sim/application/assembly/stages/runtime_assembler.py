@@ -85,6 +85,7 @@ from genshin_sim.core.coordination.elemental_reaction import (
     ElementalStateFrameCoordinator,
     LunarCageExpiryCoordinator,
     LunarStormCloudExpiryCoordinator,
+    PolestarFieldExpiryCoordinator,
     ReactionBoundEntityExpiryCoordinator,
     ReactionSpatialPlanningAdapter,
 )
@@ -648,6 +649,10 @@ class RuntimeAssembler:
                 spatial_planning_port=reaction_spatial_planning_port,
             ),
             lunar_cage_expiry_coordinator=LunarCageExpiryCoordinator(
+                reaction_state_port=reaction_runtime,
+                spatial_planning_port=reaction_spatial_planning_port,
+            ),
+            polestar_field_expiry_coordinator=PolestarFieldExpiryCoordinator(
                 reaction_state_port=reaction_runtime,
                 spatial_planning_port=reaction_spatial_planning_port,
             ),

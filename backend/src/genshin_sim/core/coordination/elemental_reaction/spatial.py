@@ -23,6 +23,7 @@ from genshin_sim.core.systems.reaction import (
     DendroCoreState,
     LunarCageState,
     LunarStormCloudState,
+    PolestarFieldState,
     ReactionMutationPlan,
     SpatialEntityCreationEffect,
 )
@@ -380,6 +381,74 @@ def validate_lunar_storm_cloud_space_terminalizations(
             or entity.lifecycle.created_frame != state.created_frame
         ):
             raise ReactionStateBindingConflictError("雷暴云终结与空间实体删除 binding 不一致")
+
+
+def validate_polestar_field_space_bindings(
+    state_plan: ReactionStateMutationPlan,
+    space_plan: SpaceEntityMutationPlan,
+) -> None:
+    """校验极星辉域 State 与 REACTION_OBJECT 创建一一对应。
+
+    只校验新建领域；域内刷新保留原实例，不产生新的空间创建声明。
+    """
+
+    expected_by_slot = {record.slot_key: record for record in state_plan.expected_records}
+    states = tuple(
+        state
+        for state in state_plan.replacement_records
+        if isinstance(state, PolestarFieldState) and state.slot_key not in expected_by_slot
+    )
+    entities = tuple(
+        entity
+        for entity in space_plan.creations
+        if entity.kind is SpatialEntityKind.REACTION_OBJECT
+        and (entity.source_key or "").startswith("reaction-state:polestar-field:")
+    )
+    if not states and not entities:
+        return
+    if len(states) != len(entities):
+        raise ReactionStateBindingConflictError("极星辉域 State 与 REACTION_OBJECT 数量不一致")
+    entities_by_id = {entity.entity_id: entity for entity in entities}
+    if len(entities_by_id) != len(entities):
+        raise ReactionStateBindingConflictError("极星辉域空间 binding 重复")
+    for state in states:
+        entity = entities_by_id.get(state.space_entity_ref)
+        if entity is None or (
+            entity.kind is not SpatialEntityKind.REACTION_OBJECT
+            or entity.source_key != state.instance_ref.value
+            or entity.lifecycle.created_frame != state.created_frame
+            or entity.lifecycle.expires_at_frame != state.expires_at_frame
+        ):
+            raise ReactionStateBindingConflictError("极星辉域 State 与空间实体 binding 不一致")
+
+
+def validate_polestar_field_space_terminalizations(
+    state_plan: ReactionStateMutationPlan,
+    space_plan: SpaceEntityMutationPlan,
+) -> None:
+    """校验极星辉域从活动投影移除时必定移除同一 Space 实体。"""
+
+    expected_fields = tuple(
+        state
+        for state in state_plan.expected_records
+        if isinstance(state, PolestarFieldState) and state.slot_key in state_plan.removed_slot_keys
+    )
+    if not expected_fields:
+        return
+    if len(expected_fields) != len(space_plan.removals):
+        raise ReactionStateBindingConflictError("极星辉域终结与空间实体删除数量不一致")
+    removals_by_ref = {entity.entity_id: entity for entity in space_plan.removals}
+    if len(removals_by_ref) != len(space_plan.removals):
+        raise ReactionStateBindingConflictError("极星辉域空间删除 binding 重复")
+    for state in expected_fields:
+        entity = removals_by_ref.get(state.space_entity_ref)
+        if entity is None or (
+            entity.kind is not SpatialEntityKind.REACTION_OBJECT
+            or entity.entity_id != state.space_entity_ref
+            or entity.source_key != state.instance_ref.value
+            or entity.lifecycle.created_frame != state.created_frame
+        ):
+            raise ReactionStateBindingConflictError("极星辉域终结与空间实体删除 binding 不一致")
 
 
 def validate_lunar_cage_space_terminalizations(

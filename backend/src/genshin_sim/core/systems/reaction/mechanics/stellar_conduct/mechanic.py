@@ -7,7 +7,6 @@ from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
     STELLAR_CONDUCT_CAPABILITY_KEY,
     STELLAR_CONDUCT_CRYO_ON_ELECTRO_PROFILE_KEY,
     STELLAR_CONDUCT_ELECTRO_ON_CRYO_PROFILE_KEY,
-    STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
     STELLAR_CONDUCT_FIELD_SPATIAL_PROFILE_KEY,
     STELLAR_CONDUCT_FIELD_STATE_KEY,
     STELLAR_CONDUCT_HANDLER_KEY,
@@ -27,7 +26,10 @@ from genshin_sim.core.systems.reaction.models import (
     SpatialEntityCreationEffect,
     StateReactionProfile,
 )
-from genshin_sim.core.systems.reaction.states import ReactionStateInstanceRef
+from genshin_sim.core.systems.reaction.states import (
+    STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
+    ReactionStateInstanceRef,
+)
 
 
 def stellar_conduct_direct_multiplier(stacks: int) -> float:

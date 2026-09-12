@@ -31,6 +31,7 @@ from genshin_sim.core.systems.damage.errors import (
 from genshin_sim.core.systems.damage.keys import (
     FORMULA_KEY_GENERAL,
     FORMULA_KEY_LUNAR_REACTION,
+    FORMULA_KEY_STELLAR_REACTION,
     FORMULA_KEY_TRANSFORMATIVE_REACTION,
     KNOWN_FORMULA_KEYS,
 )
@@ -451,12 +452,9 @@ class DamageRequest:
             self.stellar_reaction, StellarReactionDamageInput
         ):
             raise DamageValidationError("stellar_reaction 必须是 StellarReactionDamageInput")
-        if self.formula_key == "damage_formula.stellar_reaction" and self.stellar_reaction is None:
+        if self.formula_key == FORMULA_KEY_STELLAR_REACTION and self.stellar_reaction is None:
             raise DamageValidationError("星烁伤害必须提供 StellarReactionDamageInput")
-        if (
-            self.formula_key != "damage_formula.stellar_reaction"
-            and self.stellar_reaction is not None
-        ):
+        if self.formula_key != FORMULA_KEY_STELLAR_REACTION and self.stellar_reaction is not None:
             raise DamageValidationError("非星烁伤害不能提供 StellarReactionDamageInput")
         if self.stellar_reaction is not None:
             conflict_fields = (

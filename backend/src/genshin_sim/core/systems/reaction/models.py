@@ -25,6 +25,7 @@ from genshin_sim.core.systems.reaction.establishment_gates import (
     ReactionEstablishmentGateResolution,
 )
 from genshin_sim.core.systems.reaction.states import (
+    STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
     BurningState,
     ElectroChargedState,
     FrozenState,
@@ -1804,7 +1805,7 @@ class PolestarFieldStatePlanningIntent:
             value = getattr(self, field_name)
             if isinstance(value, bool) or not isinstance(value, int) or value < 0:
                 raise ValueError(f"{field_name} 必须是非负整数")
-        if self.expires_at_frame != self.created_frame + 420:
+        if self.expires_at_frame != self.created_frame + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES:
             raise ValueError("极星辉域生命周期必须固定为 420 帧")
         if self.excluded_attack_ref is not None:
             _text(self.excluded_attack_ref, "excluded_attack_ref")

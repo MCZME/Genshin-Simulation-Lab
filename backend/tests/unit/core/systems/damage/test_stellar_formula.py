@@ -10,6 +10,7 @@ from genshin_sim.core.attributes import (
 )
 from genshin_sim.core.elements import Element
 from genshin_sim.core.systems.damage import (
+    FORMULA_KEY_STELLAR_REACTION,
     StellarReactionDamageInput,
     resolve_stellar_reaction_damage,
 )
@@ -30,7 +31,7 @@ def _make_damage_request(**overrides: Any) -> DamageRequest:
     fields: dict[str, Any] = dict(
         request_id="request:stellar",
         frame=0,
-        formula_key="damage_formula.stellar_reaction",
+        formula_key=FORMULA_KEY_STELLAR_REACTION,
         main_attack_tag="reaction.stellar_conduct",
         impact_key="impact:stellar",
         source_ref=SOURCE,

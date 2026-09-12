@@ -24,6 +24,7 @@ from genshin_sim.core.coordination.elemental_reaction.protocols import (
     AuraIcdFramePort,
     LunarCageExpiryPort,
     LunarStormCloudExpiryPort,
+    PolestarFieldExpiryPort,
     ReactionBoundEntityExpiryPort,
     ReactionStateInteractionPort,
 )
@@ -100,7 +101,7 @@ class ElementalStateFrameCoordinator:
         dendro_core_expiry_coordinator: DendroCoreExpiryCoordinator | None = None,
         lunar_storm_cloud_expiry_coordinator: LunarStormCloudExpiryPort | None = None,
         lunar_cage_expiry_coordinator: LunarCageExpiryPort | None = None,
-        polestar_field_expiry_coordinator: LunarStormCloudExpiryPort | None = None,
+        polestar_field_expiry_coordinator: PolestarFieldExpiryPort | None = None,
     ) -> None:
         self.aura_runtime = aura_runtime
         self.icd_runtime = icd_runtime

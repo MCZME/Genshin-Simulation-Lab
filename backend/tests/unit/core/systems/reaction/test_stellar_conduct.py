@@ -2,6 +2,7 @@ import pytest
 
 from genshin_sim.core.elements import (
     AuraAmount,
+    AuraKind,
     Element,
     ElementalSourceRef,
     ElementalSubjectRef,
@@ -79,6 +80,24 @@ def _apply_electro_aura() -> AuraRuntime:
     return runtime
 
 
+def _apply_cryo_aura() -> AuraRuntime:
+    runtime = AuraRuntime()
+    runtime.apply(
+        AuraApplicationRequest(
+            "aura:cryo",
+            "aura:cryo:application",
+            "impact:aura:cryo",
+            0,
+            0,
+            SOURCE,
+            TARGET,
+            Element.CRYO,
+            AuraStrength.WEAK,
+        )
+    )
+    return runtime
+
+
 def _observation() -> TransformativeSourceObservation:
     return TransformativeSourceObservation(
         source_ref=SOURCE,
@@ -134,6 +153,29 @@ def test_stellar_conduct_rule_declares_field_plan_without_reaction_damage() -> N
     assert intent.excluded_attack_ref == "impact:stellar-conduct"
     transition = result.occurrence.transition
     assert transition.aura_consumed == transition.incoming_consumed
+
+
+def test_stellar_conduct_rule_accepts_electro_on_cryo_direction() -> None:
+    result = (
+        create_default_reaction_bootstrap()
+        .create_runtime()
+        .evaluate(
+            _request(
+                _apply_cryo_aura(),
+                incoming=Element.ELECTRO,
+            )
+        )
+    )
+
+    assert result.occurrence is not None
+    assert result.occurrence.reaction_key == STELLAR_CONDUCT_REACTION_KEY
+    assert result.occurrence.direction_key == "stellar_incoming_electro_on_cryo"
+    assert result.occurrence.polestar_field_state_planning is not None
+    transition = result.occurrence.transition
+    assert transition.aura_kind is AuraKind.CRYO
+    assert transition.aura_consumed == transition.incoming_consumed == AuraAmount("4/5")
+    assert transition.incoming_remaining == AuraAmount("1/5")
+    assert transition.aura_remaining.is_zero
 
 
 def test_stellar_conduct_falls_back_to_superconduct_without_capability() -> None:

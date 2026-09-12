@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from dataclasses import replace
 from typing import cast
 
 import pytest
@@ -16,12 +17,16 @@ from genshin_sim.core.coordination.elemental_reaction.lifecycle import (
 )
 from genshin_sim.core.coordination.elemental_reaction.spatial import (
     ReactionSpatialPlanningAdapter,
+    ReactionStateBindingConflictError,
+    validate_polestar_field_space_bindings,
+    validate_polestar_field_space_terminalizations,
 )
 from genshin_sim.core.coordination.elemental_reaction.stellar_conduct import (
     PolestarFieldPlanOutcome,
     StellarConductPlanningError,
 )
 from genshin_sim.core.elements import Element, ElementalSourceRef, ElementalSubjectRef
+from genshin_sim.core.entity_states import EntityLifecycle
 from genshin_sim.core.simulation import SimulationContext
 from genshin_sim.core.space import Space, SpatialEntity, SpatialEntityKind, Vector3
 from genshin_sim.core.systems.aura import AuraRuntime
@@ -37,12 +42,14 @@ from genshin_sim.core.systems.reaction import (
     create_default_reaction_bootstrap,
 )
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
-    STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
     STELLAR_CONDUCT_FIELD_SPATIAL_PROFILE_KEY,
     STELLAR_CONDUCT_FIELD_STATE_KEY,
     STELLAR_CONDUCT_TEAM_SCOPE,
 )
-from genshin_sim.core.systems.reaction.states import STELLAR_CONDUCT_COUNTER_WINDOW_FRAMES
+from genshin_sim.core.systems.reaction.states import (
+    STELLAR_CONDUCT_COUNTER_WINDOW_FRAMES,
+    STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
+)
 
 SOURCE = ElementalSourceRef("character:slot_1")
 TARGET_1 = ElementalSubjectRef.target("target:target_1")
@@ -215,7 +222,18 @@ def test_plan_refreshes_field_when_retrigger_inside_radius() -> None:
     assert counter.excluded_attack_refs == ("impact:occurrence:1",)
     assert len(state_planner.active_polestar_fields()) == 1
     assert spatial_planner.creation_receipts == ()
-    assert spatial_planner.seal().removals == ()
+    space_plan = spatial_planner.seal()
+    assert space_plan.removals == ()
+    assert space_plan.creations == ()
+    assert [entity.entity_id for entity in space_plan.updates] == [first.space_entity_ref]
+
+    runtime.commit_prevalidated_state_plan(state_planner.seal())
+    spatial_adapter.commit_prevalidated(space_plan)
+    synced = space.get_entity(first.space_entity_ref)
+    assert synced is not None
+    assert synced.lifecycle.created_frame == 0
+    assert synced.lifecycle.expires_at_frame == 30 + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES
+    assert synced.position == Vector3(0.0, 0.0, 0.0)
 
 
 def test_plan_replaces_field_when_retrigger_outside_radius() -> None:
@@ -279,6 +297,239 @@ def test_plan_rejects_missing_anchor() -> None:
             spatial_planner=spatial_planner,
             intent=intent,
             spatial_effect=_spatial_effect(intent),
+        )
+
+
+def test_plan_same_batch_refresh_replaces_pending_creation() -> None:
+    runtime, space, context = _fixtures((TARGET_1, Vector3(0.0, 0.0, 0.0)))
+    state_planner = runtime.begin_state_batch(0, "polestar:plan:0")
+    spatial_planner = ReactionSpatialPlanningAdapter(space).begin_batch(
+        operation_id="polestar:plan:0", frame=0
+    )
+
+    first = _intent("occurrence:1")
+    plan_polestar_field_occurrence(
+        context=context,
+        state_planner=state_planner,
+        spatial_planner=spatial_planner,
+        intent=first,
+        spatial_effect=_spatial_effect(first),
+    )
+    second = _intent("occurrence:2", TARGET_1, frame=0)
+    result = plan_polestar_field_occurrence(
+        context=context,
+        state_planner=state_planner,
+        spatial_planner=spatial_planner,
+        intent=second,
+        spatial_effect=_spatial_effect(second),
+    )
+
+    assert result.outcome is PolestarFieldPlanOutcome.REFRESHED
+    assert state_planner.active_polestar_fields()[0].instance_ref == first.instance_ref
+    space_plan = spatial_planner.seal()
+    assert len(space_plan.creations) == 1
+    assert space_plan.updates == ()
+    runtime.commit_prevalidated_state_plan(state_planner.seal())
+    spatial_adapter = ReactionSpatialPlanningAdapter(space)
+    spatial_adapter.commit_prevalidated(space_plan)
+    entity = space.get_entity(first.space_entity_ref)
+    assert entity is not None
+    assert entity.lifecycle.expires_at_frame == STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES
+
+
+def test_plan_same_batch_recording_reads_pending_creation_projection() -> None:
+    runtime, space, context = _fixtures((TARGET_1, Vector3(0.0, 0.0, 0.0)))
+    state_planner = runtime.begin_state_batch(0, "polestar:record:0")
+    spatial_planner = ReactionSpatialPlanningAdapter(space).begin_batch(
+        operation_id="polestar:record:0", frame=0
+    )
+    intent = _intent("occurrence:1")
+    anchor = space.get_entity(TARGET_1.entity_id)
+    assert anchor is not None
+    plan_polestar_field_occurrence(
+        context=context,
+        state_planner=state_planner,
+        spatial_planner=spatial_planner,
+        intent=intent,
+        spatial_effect=_spatial_effect(intent),
+    )
+
+    recorded = record_stellar_conduct_attachment(
+        context=context,
+        state_planner=state_planner,
+        team_ref=STELLAR_CONDUCT_TEAM_SCOPE,
+        record=_record("record:1", (TARGET_1,)),
+        spatial_planner=spatial_planner,
+    )
+    assert recorded.outcome is StellarConductAttachmentRecordingOutcome.RECORDED
+
+    with pytest.raises(StellarConductPlanningError, match="缺少 Space 投影"):
+        record_stellar_conduct_attachment(
+            context=context,
+            state_planner=state_planner,
+            team_ref=STELLAR_CONDUCT_TEAM_SCOPE,
+            record=_record("record:2", (TARGET_1,)),
+        )
+
+
+def _commit_field_fixture(
+    runtime: ReactionRuntime,
+    space: Space,
+    context: _FakeContext,
+    intent: PolestarFieldStatePlanningIntent,
+) -> None:
+    """在 frame 0 创建并提交领域 State、计数与 Space 实体。"""
+
+    spatial_adapter = ReactionSpatialPlanningAdapter(space)
+    state_planner = runtime.begin_state_batch(0, "polestar:fixture:state")
+    spatial_planner = spatial_adapter.begin_batch(operation_id="polestar:fixture:space", frame=0)
+    plan_polestar_field_occurrence(
+        context=context,
+        state_planner=state_planner,
+        spatial_planner=spatial_planner,
+        intent=intent,
+        spatial_effect=_spatial_effect(intent),
+    )
+    runtime.commit_prevalidated_state_plan(state_planner.seal())
+    spatial_adapter.commit_prevalidated(spatial_planner.seal())
+
+
+def test_polestar_field_binding_validators_accept_consistent_plans() -> None:
+    runtime, space, context = _fixtures((TARGET_1, Vector3(0.0, 0.0, 0.0)))
+    spatial_adapter = ReactionSpatialPlanningAdapter(space)
+    intent = _intent("occurrence:1")
+    _commit_field_fixture(runtime, space, context, intent)
+
+    runtime.update_frame(None, 30)
+    space.update_frame(cast(SimulationContext, None), 30)
+    refresh_state_planner = runtime.begin_state_batch(30, "polestar:binding:refresh")
+    refresh_spatial_planner = spatial_adapter.begin_batch(
+        operation_id="polestar:binding:refresh", frame=30
+    )
+    refresh_state_planner.replace_polestar_field(
+        instance_ref=intent.instance_ref,
+        expires_at_frame=30 + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
+    )
+    entity = space.get_entity(intent.space_entity_ref)
+    assert entity is not None
+    refresh_spatial_planner.prepare_update(
+        replace(
+            entity,
+            lifecycle=EntityLifecycle(
+                created_frame=entity.lifecycle.created_frame,
+                expires_at_frame=30 + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
+            ),
+        )
+    )
+    refresh_state_plan = refresh_state_planner.seal()
+    refresh_space_plan = refresh_spatial_planner.seal()
+    validate_polestar_field_space_bindings(refresh_state_plan, refresh_space_plan)
+    runtime.commit_prevalidated_state_plan(refresh_state_plan)
+    spatial_adapter.commit_prevalidated(refresh_space_plan)
+
+    runtime.update_frame(None, 240)
+    settle_planner = runtime.begin_state_batch(240, "polestar:binding:settle")
+    settle_planner.settle_stellar_conduct_counter(team_ref=STELLAR_CONDUCT_TEAM_SCOPE, frame=240)
+    runtime.commit_prevalidated_state_plan(settle_planner.seal())
+
+    runtime.update_frame(None, 450)
+    space.update_frame(cast(SimulationContext, None), 450)
+    expiry_state_planner = runtime.begin_state_batch(450, "polestar:binding:expire")
+    expiry_spatial_planner = spatial_adapter.begin_batch(
+        operation_id="polestar:binding:expire", frame=450
+    )
+    expiry_state_planner.remove_polestar_field(instance_ref=intent.instance_ref)
+    expiry_spatial_planner.prepare_remove(intent.space_entity_ref)
+    expiry_state_plan = expiry_state_planner.seal()
+    expiry_space_plan = expiry_spatial_planner.seal()
+    validate_polestar_field_space_terminalizations(expiry_state_plan, expiry_space_plan)
+
+
+def test_polestar_field_binding_validators_reject_inconsistent_plans() -> None:
+    runtime, space, context = _fixtures((TARGET_1, Vector3(0.0, 0.0, 0.0)))
+    spatial_adapter = ReactionSpatialPlanningAdapter(space)
+    intent = _intent("occurrence:1")
+
+    create_state_planner = runtime.begin_state_batch(0, "polestar:binding:bad-create")
+    create_spatial_planner = spatial_adapter.begin_batch(
+        operation_id="polestar:binding:bad-create", frame=0
+    )
+    create_state_planner.create_polestar_field(intent)
+    anchor = space.get_entity(TARGET_1.entity_id)
+    assert anchor is not None
+    create_spatial_planner.prepare_create(_spatial_effect(intent), anchor=anchor)
+    create_state_plan = create_state_planner.seal()
+    create_space_plan = create_spatial_planner.seal()
+    tampered_space_plan = replace(
+        create_space_plan,
+        creations=(
+            replace(
+                create_space_plan.creations[0],
+                lifecycle=EntityLifecycle(created_frame=0, expires_at_frame=999),
+            ),
+        ),
+    )
+    with pytest.raises(ReactionStateBindingConflictError, match="binding 不一致"):
+        validate_polestar_field_space_bindings(create_state_plan, tampered_space_plan)
+
+    retry_state_planner = runtime.begin_state_batch(0, "polestar:binding:create-retry")
+    retry_state_planner.create_polestar_field(intent)
+    runtime.commit_prevalidated_state_plan(retry_state_planner.seal())
+    spatial_adapter.commit_prevalidated(create_space_plan)
+    retry_counter_planner = runtime.begin_state_batch(0, "polestar:binding:create-retry-counter")
+    retry_counter_planner.create_stellar_conduct_counter(
+        team_ref=STELLAR_CONDUCT_TEAM_SCOPE,
+        subject_ref=intent.subject_ref,
+        frame=0,
+    )
+    runtime.commit_prevalidated_state_plan(retry_counter_planner.seal())
+
+    runtime.update_frame(None, 30)
+    space.update_frame(cast(SimulationContext, None), 30)
+    refresh_state_planner = runtime.begin_state_batch(30, "polestar:binding:bad-refresh")
+    refresh_state_planner.replace_polestar_field(
+        instance_ref=intent.instance_ref,
+        expires_at_frame=30 + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
+    )
+    refresh_state_plan = refresh_state_planner.seal()
+    empty_space_plan = spatial_adapter.begin_batch(
+        operation_id="polestar:binding:bad-refresh", frame=30
+    ).seal()
+    with pytest.raises(ReactionStateBindingConflictError, match="数量不一致"):
+        validate_polestar_field_space_bindings(refresh_state_plan, empty_space_plan)
+
+    stale_update_planner = spatial_adapter.begin_batch(
+        operation_id="polestar:binding:bad-refresh-update", frame=30
+    )
+    entity = space.get_entity(intent.space_entity_ref)
+    assert entity is not None
+    stale_update_planner.prepare_update(
+        replace(
+            entity,
+            lifecycle=EntityLifecycle(
+                created_frame=entity.lifecycle.created_frame,
+                expires_at_frame=30 + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES + 1,
+            ),
+        )
+    )
+    with pytest.raises(ReactionStateBindingConflictError, match="binding 不一致"):
+        validate_polestar_field_space_bindings(refresh_state_plan, stale_update_planner.seal())
+
+    runtime.update_frame(None, 240)
+    settle_planner = runtime.begin_state_batch(240, "polestar:binding:settle")
+    settle_planner.settle_stellar_conduct_counter(team_ref=STELLAR_CONDUCT_TEAM_SCOPE, frame=240)
+    runtime.commit_prevalidated_state_plan(settle_planner.seal())
+
+    runtime.update_frame(None, 420)
+    space.update_frame(cast(SimulationContext, None), 420)
+    expiry_state_planner = runtime.begin_state_batch(420, "polestar:binding:bad-expire")
+    expiry_state_planner.remove_polestar_field(instance_ref=intent.instance_ref)
+    with pytest.raises(ReactionStateBindingConflictError, match="数量不一致"):
+        validate_polestar_field_space_terminalizations(
+            expiry_state_planner.seal(),
+            spatial_adapter.begin_batch(
+                operation_id="polestar:binding:bad-expire", frame=420
+            ).seal(),
         )
 
 

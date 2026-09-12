@@ -724,6 +724,8 @@ class ReactionSpatialBatchPlanningPort(Protocol):
 
     def prepare_create_entity(self, entity: SpatialEntity) -> SpatialEntity: ...
 
+    def prepare_update(self, entity: SpatialEntity) -> SpatialEntity: ...
+
     def prepare_remove(self, entity_id: str) -> SpatialEntity: ...
 
     def cancel_create(self, entity_id: str) -> None: ...
@@ -803,6 +805,18 @@ class LunarStormCloudExpiryPort(Protocol):
 
 class LunarCageExpiryPort(Protocol):
     """月笼到期时终结 State/Space 的唯一写入口。"""
+
+    def expire(
+        self,
+        context: object,
+        *,
+        frame: int,
+        works: tuple[ReactionStateLifecycleWork, ...],
+    ) -> tuple[ReactionStateLifecycleWork, ...]: ...
+
+
+class PolestarFieldExpiryPort(Protocol):
+    """极星辉域到期时终结 State/Space 与队伍共享计数的唯一写入口。"""
 
     def expire(
         self,

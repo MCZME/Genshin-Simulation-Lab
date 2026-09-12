@@ -17,13 +17,14 @@ def _validate_operation_id(value: str) -> None:
 
 @dataclass(frozen=True, slots=True)
 class SpaceEntityMutationPlan:
-    """只支持实体创建与删除的可预校验 Space 变更计划。"""
+    """支持实体创建、更新与删除的可预校验 Space 变更计划。"""
 
     operation_id: str
     frame: int
     expected_entity_version: int
     creations: tuple[SpatialEntity, ...] = ()
     removals: tuple[SpatialEntity, ...] = ()
+    updates: tuple[SpatialEntity, ...] = ()
 
     def __post_init__(self) -> None:
         _validate_operation_id(self.operation_id)
@@ -33,23 +34,34 @@ class SpaceEntityMutationPlan:
             raise TypeError("空间实体创建项必须全部是 SpatialEntity")
         if any(not isinstance(entity, SpatialEntity) for entity in self.removals):
             raise TypeError("空间实体删除项必须全部是 SpatialEntity")
+        if any(not isinstance(entity, SpatialEntity) for entity in self.updates):
+            raise TypeError("空间实体更新项必须全部是 SpatialEntity")
 
         creations = tuple(sorted(self.creations, key=lambda entity: entity.entity_id))
         removals = tuple(sorted(self.removals, key=lambda entity: entity.entity_id))
+        updates = tuple(sorted(self.updates, key=lambda entity: entity.entity_id))
         creation_ids = tuple(entity.entity_id for entity in creations)
         removal_ids = tuple(entity.entity_id for entity in removals)
+        update_ids = tuple(entity.entity_id for entity in updates)
         if len(creation_ids) != len(set(creation_ids)):
             raise ValueError("空间实体计划包含重复创建 id")
         if len(removal_ids) != len(set(removal_ids)):
             raise ValueError("空间实体计划包含重复删除 id")
+        if len(update_ids) != len(set(update_ids)):
+            raise ValueError("空间实体计划包含重复更新 id")
         if set(creation_ids) & set(removal_ids):
             raise ValueError("同一空间实体 id 不能同时创建和删除")
+        if set(update_ids) & set(creation_ids):
+            raise ValueError("同一空间实体 id 不能同时创建和更新")
+        if set(update_ids) & set(removal_ids):
+            raise ValueError("同一空间实体 id 不能同时更新和删除")
         object.__setattr__(self, "creations", creations)
         object.__setattr__(self, "removals", removals)
+        object.__setattr__(self, "updates", updates)
 
     @property
     def is_empty(self) -> bool:
-        return not self.creations and not self.removals
+        return not self.creations and not self.removals and not self.updates
 
 
 @dataclass(frozen=True, slots=True)

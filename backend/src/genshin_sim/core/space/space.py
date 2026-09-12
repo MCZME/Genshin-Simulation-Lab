@@ -107,6 +107,9 @@ class Space:
         for entity in plan.removals:
             if self._entities.get(entity.entity_id) != entity:
                 raise SpaceEntityPlanConflictError("空间实体删除前值冲突")
+        for entity in plan.updates:
+            if entity.entity_id not in self._entities:
+                raise SpaceEntityPlanConflictError("空间实体更新前值不存在")
         return None
 
     def commit_prevalidated_entity_plan(
@@ -122,6 +125,8 @@ class Space:
         for entity in plan.removals:
             del next_entities[entity.entity_id]
         for entity in plan.creations:
+            next_entities[entity.entity_id] = entity
+        for entity in plan.updates:
             next_entities[entity.entity_id] = entity
         if not plan.is_empty:
             self._entities = next_entities
@@ -227,6 +232,7 @@ class SpaceEntityMutationPlanner:
         self._working_entities = dict(space._entities)
         self._creations: dict[str, SpatialEntity] = {}
         self._removals: dict[str, SpatialEntity] = {}
+        self._updates: dict[str, SpatialEntity] = {}
         self._sealed = False
 
     def create(self, entity: SpatialEntity) -> SpatialEntity:
@@ -235,6 +241,25 @@ class SpaceEntityMutationPlanner:
             raise SpaceEntityPlanConflictError("空间实体创建 id 已存在")
         self._working_entities[entity.entity_id] = entity
         self._creations[entity.entity_id] = entity
+        return entity
+
+    def update(self, entity: SpatialEntity) -> SpatialEntity:
+        """在工作投影中刷新一个已登记实体的投影值。
+
+        更新本批次尚未提交的创建项时，直接替换该创建项本身。
+        """
+
+        self._ensure_unsealed()
+        if entity.entity_id in self._removals:
+            raise SpaceEntityPlanConflictError("同一空间实体 id 不能同时更新和删除")
+        if entity.entity_id in self._creations:
+            self._working_entities[entity.entity_id] = entity
+            self._creations[entity.entity_id] = entity
+            return entity
+        if entity.entity_id not in self._working_entities:
+            raise SpaceEntityPlanConflictError("空间实体更新前值不存在")
+        self._working_entities[entity.entity_id] = entity
+        self._updates[entity.entity_id] = entity
         return entity
 
     def remove(self, entity_id: str) -> SpatialEntity:
@@ -247,6 +272,7 @@ class SpaceEntityMutationPlanner:
             msg = f"未知空间实体 id：{entity_id}"
             raise KeyError(msg) from exc
         self._removals[entity_id] = entity
+        self._updates.pop(entity_id, None)
         return entity
 
     def cancel_create(self, entity_id: str) -> None:
@@ -267,6 +293,7 @@ class SpaceEntityMutationPlanner:
             expected_entity_version=self._space.entity_version,
             creations=tuple(self._creations.values()),
             removals=tuple(self._removals.values()),
+            updates=tuple(self._updates.values()),
         )
 
     def _ensure_unsealed(self) -> None:

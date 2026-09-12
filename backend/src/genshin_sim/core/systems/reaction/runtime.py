@@ -865,6 +865,10 @@ class ReactionRuntime:
             next_state_records.values()
         )
         self._sprawling_shot_records = _sprawling_shot_index(next_state_records.values())
+        self._polestar_field_records = _polestar_field_index(next_state_records.values())
+        self._stellar_conduct_counter_records = _stellar_conduct_counter_index(
+            next_state_records.values()
+        )
         self._state_instance_sequence = state_plan.next_state_instance_sequence
         self._dendro_core_creation_sequence = state_plan.next_dendro_core_creation_sequence
         self._committed_gate_operation_ids.add(gate_plan.operation_id)

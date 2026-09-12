@@ -7,7 +7,7 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from enum import StrEnum
 from typing import Any
 
@@ -15,10 +15,10 @@ from genshin_sim.core.coordination.elemental_reaction.protocols import (
     ReactionSpatialBatchPlanningPort,
     ReactionStateBatchPlanningPort,
 )
+from genshin_sim.core.entity_states import EntityLifecycle
 from genshin_sim.core.space import SpatialEntity
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
     STELLAR_CONDUCT_FIELD_RADIUS,
-    STELLAR_CONDUCT_TEAM_SCOPE,
 )
 from genshin_sim.core.systems.reaction.models import (
     PolestarFieldStatePlanningIntent,
@@ -30,8 +30,6 @@ from genshin_sim.core.systems.reaction.states import (
     StellarConductAttachmentRecord,
     StellarConductCounterState,
 )
-
-COUNTER_TEAM_SCOPE = STELLAR_CONDUCT_TEAM_SCOPE
 
 
 class StellarConductPlanningError(RuntimeError):
@@ -96,11 +94,13 @@ def plan_polestar_field_occurrence(
     intent: PolestarFieldStatePlanningIntent,
     spatial_effect: SpatialEntityCreationEffect,
 ) -> PolestarFieldPlanResult:
-    """域内重触发只刷新领域时间；域外重触发替换旧领域并继承共享计数。
+    """域内重触发只刷新领域时间并同步 Space 投影；域外重触发替换旧领域并继承共享计数。
 
     领域圆心固定在触发反应的敌人当时位置，与角色位置无关；同一队伍
     至多存在一个极星辉域。队伍共享计数不绑定 Field 实例，领域替换时
     继续继承 4 秒窗口，只有会话首次创建才写入排除的触发攻击身份。
+    域内刷新保留实例、圆心与创建帧，同步延展 State 与 Space 实体的
+    存在时间，避免空间投影提前失活。
     """
 
     if context.space_runtime is None:
@@ -122,6 +122,15 @@ def plan_polestar_field_occurrence(
         state_planner.replace_polestar_field(
             instance_ref=existing.instance_ref,
             expires_at_frame=intent.expires_at_frame,
+        )
+        spatial_planner.prepare_update(
+            replace(
+                entity,
+                lifecycle=EntityLifecycle(
+                    created_frame=entity.lifecycle.created_frame,
+                    expires_at_frame=intent.expires_at_frame,
+                ),
+            )
         )
         return PolestarFieldPlanResult(PolestarFieldPlanOutcome.REFRESHED)
 
@@ -150,11 +159,14 @@ def record_stellar_conduct_attachment(
     state_planner: ReactionStateBatchPlanningPort,
     team_ref: str,
     record: StellarConductAttachmentRecord,
+    spatial_planner: ReactionSpatialBatchPlanningPort | None = None,
 ) -> StellarConductAttachmentRecording:
     """按队伍共享规则记录一次领域内冰/雷附着；不满足条件时给出确定性结果。
 
     一次攻击对多个敌人的附着由调用方聚合为一条记录；同一 record_ref
     重放、被排除的触发攻击与领域外目标都不会推进窗口层数。
+    领域可能在本批次内刚创建：调用方持有未提交的空间批次时必须把
+    ``spatial_planner`` 一并传入，否则无法读取同批次创建的领域投影。
     """
 
     if context.space_runtime is None:
@@ -177,7 +189,7 @@ def record_stellar_conduct_attachment(
         return StellarConductAttachmentRecording(
             counter, StellarConductAttachmentRecordingOutcome.DUPLICATE_RECORD
         )
-    center = _field_space_entity(context, None, field).position
+    center = _field_space_entity(context, spatial_planner, field).position
     for target_ref in record.target_refs:
         entity = context.space_runtime.get_entity(target_ref.entity_id)
         if entity is not None and entity.position.distance_xz_to(center) <= (

@@ -3,18 +3,49 @@ from typing import Any, cast
 import pytest
 
 from genshin_sim.core.attributes import (
+    RESISTANCE_ELECTRO,
+    STAT_ELEMENTAL_MASTERY,
     STAT_HP_MAX,
+    AttributeQueryContext,
+    AttributeResolver,
     AttributeSubjectRef,
+    BaseAttributeContribution,
+    BaseAttributeSet,
+    ModifierProviderIndex,
     RuntimeSourceKind,
     RuntimeSourceRef,
+    TraceLevel,
+    create_public_attribute_registry,
 )
 from genshin_sim.core.elements import Element
+from genshin_sim.core.entity_states import (
+    CharacterRuntimeState,
+    TargetRuntimeCollection,
+    TargetRuntimeState,
+)
+from genshin_sim.core.impacts import DamageImpactSpec, ImpactKind, ImpactRequest
+from genshin_sim.core.simulation import SimulationContext, TeamRuntimeState
+from genshin_sim.core.space import Space, SpatialEntity, SpatialEntityKind, Vector3
+from genshin_sim.core.space.runtime import SpaceRuntime
 from genshin_sim.core.systems.damage import (
     FORMULA_KEY_STELLAR_REACTION,
+    DamageFormulaContext,
+    DamageProfile,
+    DamageProfileRegistry,
+    DamageQuery,
+    DamageRequestHandler,
+    DamageResolver,
+    FixedCriticalDecisionProvider,
+    StandardResistancePolicy,
     StellarReactionDamageInput,
+    create_default_damage_formula_registry,
     resolve_stellar_reaction_damage,
 )
-from genshin_sim.core.systems.damage.errors import DamageValidationError
+from genshin_sim.core.systems.damage.errors import (
+    DamageFormulaInputError,
+    DamageValidationError,
+)
+from genshin_sim.core.systems.damage.formulas import StellarReactionDamageFormula
 from genshin_sim.core.systems.damage.models import (
     DamageRequest,
     DamageScalingTerm,
@@ -22,6 +53,8 @@ from genshin_sim.core.systems.damage.models import (
     LunarReactionDamageMode,
     LunarReactionParticipantInput,
 )
+from genshin_sim.core.systems.damage.modifiers import DamageModifierIndex
+from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
 
 SOURCE = AttributeSubjectRef.character("character:slot_1")
 TARGET = AttributeSubjectRef.target("target:star")
@@ -110,3 +143,258 @@ def test_damage_request_rejects_stellar_mixed_with_other_reaction_inputs() -> No
 def test_damage_request_stellar_input_kind_is_enforced() -> None:
     with pytest.raises(DamageValidationError, match="必须是 StellarReactionDamageInput"):
         _make_damage_request(stellar_reaction=object())  # type: ignore[arg-type]
+
+
+def test_stellar_request_rejects_scaling_terms_and_flat_base() -> None:
+    with pytest.raises(DamageValidationError, match="星烁伤害不能携带普通倍率或 flat base"):
+        _make_damage_request(
+            scaling_terms=(DamageScalingTerm("atk", STAT_HP_MAX, 1.0),),
+        )
+    with pytest.raises(DamageValidationError, match="星烁伤害不能携带普通倍率或 flat base"):
+        _make_damage_request(flat_base_damage=10.0)
+
+
+def _attribute_resolver(
+    *,
+    elemental_mastery: float = 200.0,
+    electro_resistance: float = 0.1,
+) -> AttributeResolver:
+    registry = create_public_attribute_registry()
+    return AttributeResolver(
+        definitions=registry,
+        base_attributes=BaseAttributeSet(
+            (
+                (
+                    SOURCE,
+                    BaseAttributeContribution(
+                        STAT_ELEMENTAL_MASTERY,
+                        elemental_mastery,
+                        RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.stellar"),
+                    ),
+                ),
+                (
+                    TARGET,
+                    BaseAttributeContribution(
+                        RESISTANCE_ELECTRO,
+                        electro_resistance,
+                        RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.stellar"),
+                    ),
+                ),
+            )
+        ),
+        modifier_index=ModifierProviderIndex((), registry=registry),
+    )
+
+
+def _stellar_query(
+    attribute_resolver: AttributeResolver,
+    **request_overrides: Any,
+) -> DamageQuery:
+    request = _make_damage_request(**request_overrides)
+    tags = request.tags
+    return DamageQuery(
+        request=request,
+        source_attribute_context=AttributeQueryContext(
+            tags=tags,
+            target_ref=TARGET,
+        ),
+        target_attribute_context=AttributeQueryContext(
+            tags=tags,
+            source_ref=RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.stellar"),
+        ),
+    )
+
+
+def test_stellar_formula_resolves_with_live_mastery_crit_and_resistance() -> None:
+    attribute_resolver = _attribute_resolver()
+    query = _stellar_query(
+        attribute_resolver,
+        stellar_reaction=StellarReactionDamageInput(
+            mode="character_direct",
+            scaling_value=100,
+            stellar_base_multiplier=1.45,
+            stellar_base_bonus=0.1,
+            stellar_bonus=0.2,
+            stellar_authority_multiplier=1.5,
+            direct_stellar_feather_addition=10,
+            stellar_ascension_bonus=0.1,
+        ),
+    )
+    formula = StellarReactionDamageFormula()
+    session = DamageResolutionSession(attribute_resolver, query)
+    modifiers = DamageModifierIndex(()).collect(query, session)
+    resolution = formula.resolve(
+        DamageFormulaContext(
+            query=query,
+            session=session,
+            modifiers=modifiers,
+            trace_level=TraceLevel.FULL,
+        )
+    )
+
+    mastery_bonus = 6 * 200 / 2200
+    expected_core = 100 * 1.45 * 1.1 * (1 + mastery_bonus + 0.2) * 1.5 + 10
+    resistance_multiplier = StandardResistancePolicy().resolve(0.1).multiplier
+    expected_official = expected_core * 1.0 * resistance_multiplier * 1.1
+    assert resolution.official_damage == pytest.approx(expected_official)
+    assert resolution.final_damage == pytest.approx(expected_official)
+    assert resolution.elemental_mastery == pytest.approx(200.0)
+    assert resolution.mastery_bonus == pytest.approx(mastery_bonus)
+    assert resolution.critical is not None
+    assert resolution.critical.multiplier == pytest.approx(1.0)
+    assert resolution.resistance is not None
+    assert resolution.resistance.multiplier == pytest.approx(resistance_multiplier)
+    assert resolution.source_attribute_trace
+    assert resolution.target_attribute_trace
+
+
+def test_stellar_formula_rejects_composite_mode_and_modifiers() -> None:
+    attribute_resolver = _attribute_resolver()
+    query = _stellar_query(
+        attribute_resolver,
+        stellar_reaction=StellarReactionDamageInput(
+            mode="reaction_composite",
+            scaling_value=100,
+            stellar_base_multiplier=1.45,
+        ),
+    )
+    formula = StellarReactionDamageFormula()
+    session = DamageResolutionSession(attribute_resolver, query)
+    modifiers = DamageModifierIndex(()).collect(query, session)
+    with pytest.raises(DamageFormulaInputError, match="reaction_composite"):
+        formula.resolve(
+            DamageFormulaContext(
+                query=query,
+                session=session,
+                modifiers=modifiers,
+                trace_level=TraceLevel.FULL,
+            )
+        )
+
+
+def test_default_formula_registry_contains_stellar_formula() -> None:
+    registry = create_default_damage_formula_registry()
+    assert isinstance(registry.require(FORMULA_KEY_STELLAR_REACTION), StellarReactionDamageFormula)
+
+
+def test_stellar_profile_maps_main_attack_tag_to_stellar_formula() -> None:
+    registry = DamageProfileRegistry(
+        (DamageProfile(FORMULA_KEY_STELLAR_REACTION, frozenset({"reaction.stellar_conduct"})),)
+    )
+    profile = registry.resolve_for_main_attack_tag("reaction.stellar_conduct")
+    assert profile.formula_key == FORMULA_KEY_STELLAR_REACTION
+
+
+def test_damage_handler_resolves_stellar_reactions_mapping() -> None:
+    registry = create_public_attribute_registry()
+    attribute_resolver = AttributeResolver(
+        definitions=registry,
+        base_attributes=BaseAttributeSet(
+            (
+                (
+                    SOURCE,
+                    BaseAttributeContribution(
+                        STAT_ELEMENTAL_MASTERY,
+                        200.0,
+                        RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.stellar"),
+                    ),
+                ),
+                (
+                    TARGET,
+                    BaseAttributeContribution(
+                        RESISTANCE_ELECTRO,
+                        0.0,
+                        RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.stellar"),
+                    ),
+                ),
+            )
+        ),
+        modifier_index=ModifierProviderIndex((), registry=registry),
+    )
+    profile_registry = DamageProfileRegistry(
+        (DamageProfile(FORMULA_KEY_STELLAR_REACTION, frozenset({"reaction.stellar_conduct"})),)
+    )
+    handler = DamageRequestHandler(
+        DamageResolver(
+            attribute_resolver=attribute_resolver,
+            formula_registry=create_default_damage_formula_registry(
+                critical_decision_provider=FixedCriticalDecisionProvider()
+            ),
+        ),
+        profile_registry=profile_registry,
+    )
+    target = TargetRuntimeState("star", level=90, spatial_entity_id="target:star")
+    context = SimulationContext(
+        space_runtime=SpaceRuntime(
+            space=Space(
+                (
+                    SpatialEntity(
+                        "target:star",
+                        SpatialEntityKind.TARGET,
+                        Vector3(0.0, 0.0, 0.0),
+                    ),
+                )
+            ),
+            team_state=TeamRuntimeState(
+                (
+                    CharacterRuntimeState(
+                        1, "character:test", 90, combat_entity_id="character:slot_1"
+                    ),
+                )
+            ),
+            targets=TargetRuntimeCollection((target,)),
+        )
+    )
+    request = ImpactRequest(
+        frame=10,
+        kind=ImpactKind.DAMAGE,
+        impact_key="action.stellar_direct",
+        owner_slot=1,
+        request_id="root:stellar-direct:1",
+        target_refs=("star",),
+        damage_spec=DamageImpactSpec(
+            impact_ref="impact:stellar-direct:1",
+            main_attack_tag="reaction.stellar_conduct",
+            element=Element.ELECTRO,
+        ),
+    )
+
+    results = handler.handle_impact_request(
+        context,
+        request,
+        stellar_reactions={
+            "star": StellarReactionDamageInput(
+                mode="character_direct",
+                scaling_value=100,
+                stellar_base_multiplier=1.45,
+                elemental_mastery=200,
+            )
+        },
+    )
+
+    assert len(results) == 1
+    result = results[0]
+    assert result.formula_key == FORMULA_KEY_STELLAR_REACTION
+    assert result.stellar_reaction_resolution is not None
+    mastery_bonus = 6 * 200 / 2200
+    expected = 100 * 1.45 * (1 + mastery_bonus)
+    assert result.stellar_reaction_resolution.official_damage == pytest.approx(expected)
+    assert result.final_damage == pytest.approx(expected)
+    payload = result.to_dict()
+    stellar_payload = cast(dict[str, object], payload["stellar_reaction"])
+    assert stellar_payload is not None
+    assert stellar_payload["mode"] == "character_direct"
+
+    audit = result.to_audit_dict()
+    reaction_audit = cast(dict[str, object], audit["reaction"])
+    assert reaction_audit["kind"] == "stellar"
+    assert reaction_audit["elemental_mastery"] == pytest.approx(200.0)
+    assert reaction_audit["mastery_bonus"] == pytest.approx(mastery_bonus)
+    assert reaction_audit["stellar_base_multiplier"] == pytest.approx(1.45)
+    assert reaction_audit["crit_outcome"] == "non_critical"
+    assert reaction_audit["crit_multiplier"] == pytest.approx(1.0)
+    assert reaction_audit["resistance_multiplier"] is not None
+    assert reaction_audit["official_damage"] == pytest.approx(expected)
+    assert reaction_audit["final_damage"] == pytest.approx(expected)
+    assert isinstance(audit["critical"], dict)
+    assert isinstance(audit["resistance"], dict)

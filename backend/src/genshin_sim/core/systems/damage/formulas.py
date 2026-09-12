@@ -32,6 +32,7 @@ from genshin_sim.core.systems.damage.errors import (
 from genshin_sim.core.systems.damage.keys import (
     FORMULA_KEY_GENERAL,
     FORMULA_KEY_LUNAR_REACTION,
+    FORMULA_KEY_STELLAR_REACTION,
     FORMULA_KEY_TRANSFORMATIVE_REACTION,
     KNOWN_FORMULA_KEYS,
 )
@@ -69,6 +70,10 @@ from genshin_sim.core.systems.damage.policies import (
     StandardGeneralReactionZonePolicy,
     StandardResistancePolicy,
     StandardScalingZonePolicy,
+)
+from genshin_sim.core.systems.damage.stellar import (
+    StellarReactionDamageResolution,
+    resolve_stellar_reaction_damage,
 )
 
 if TYPE_CHECKING:
@@ -643,6 +648,89 @@ class LunarReactionDamageFormula:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class StellarReactionDamageFormula:
+    """星烁独立完整公式的结算分支。
+
+    星烁专属区间来自强类型 ``StellarReactionDamageInput``；元素精通、暴击
+    与目标抗性由本公式在当前帧实时读取并生成独立审计。公式不接受普通
+    ``DamageModifierTerm``；``reaction_composite`` 模式留待星扩散阶段启用。
+    """
+
+    critical_policy: CriticalZonePolicy = field(default_factory=StandardCriticalZonePolicy)
+    resistance_policy: StandardResistancePolicy = field(default_factory=StandardResistancePolicy)
+    debug_adjustment: DebugDamageAdjustment = field(default_factory=DebugDamageAdjustment)
+
+    @property
+    def formula_spec(self) -> DamageFormulaSpec:
+        """星烁公式暂不接受普通 Damage modifier stage。"""
+
+        return DamageFormulaSpec(
+            formula_key=FORMULA_KEY_STELLAR_REACTION,
+            allowed_modifier_stages=frozenset(),
+        )
+
+    def resolve(self, context: DamageFormulaContext) -> StellarReactionDamageResolution:
+        query = context.query
+        request = query.request
+        if request.formula_key is not FORMULA_KEY_STELLAR_REACTION:
+            raise DamageFormulaInputError("StellarReactionDamageFormula 只能处理星烁伤害")
+        stellar = request.stellar_reaction
+        if stellar is None:
+            raise DamageFormulaInputError("星烁伤害缺少 StellarReactionDamageInput")
+        if context.modifiers.applied_terms or context.modifiers.rejected_terms:
+            raise DamageFormulaInputError("星烁伤害不接受普通 Damage modifier")
+        if stellar.mode != "character_direct":
+            raise DamageFormulaInputError("星烁 reaction_composite 模式留待星扩散阶段启用")
+
+        mastery_trace = context.session.resolve_source(STAT_ELEMENTAL_MASTERY)
+        elemental_mastery = validate_damage_float(
+            mastery_trace.final_value,
+            "stellar elemental_mastery",
+        )
+        if elemental_mastery < 0:
+            raise DamageResolutionError("星烁元素精通不能为负数")
+        mastery_bonus = 6.0 * elemental_mastery / (elemental_mastery + 2000.0)
+        critical, critical_trace, _ = self.critical_policy.resolve(query, context.session, ())
+        resistance_attribute = context.session.resolve_target(
+            ELEMENT_TO_RESISTANCE_KEY[request.element.value]
+        )
+        resistance = self.resistance_policy.resolve(resistance_attribute.final_value)
+
+        # 输入中的精通/暴击/抗性是调用方预冻结快照；结算分支始终以实时读取覆盖。
+        resolved_input = replace(
+            stellar,
+            elemental_mastery=elemental_mastery,
+            critical_multiplier=critical.multiplier,
+            resistance_multiplier=resistance.multiplier,
+        )
+        pure = resolve_stellar_reaction_damage(resolved_input)
+        debug_multiplier = self.debug_adjustment.multiplier
+        final_damage = pure.damage * debug_multiplier
+        if not math.isfinite(final_damage) or final_damage < 0:
+            raise DamageResolutionError("星烁最终伤害必须是有限非负数")
+        source_trace = [mastery_trace, *critical_trace]
+        if context.trace_level is TraceLevel.NONE:
+            source_attribute_trace = ()
+            target_attribute_trace = ()
+        else:
+            source_attribute_trace = tuple(_unique_resolutions(source_trace))
+            target_attribute_trace = (resistance_attribute,)
+        return StellarReactionDamageResolution(
+            resolved_input,
+            pure.damage,
+            elemental_mastery=elemental_mastery,
+            mastery_bonus=mastery_bonus,
+            critical=critical,
+            resistance=resistance,
+            official_damage=pure.damage,
+            debug_multiplier=debug_multiplier,
+            final_damage=final_damage,
+            source_attribute_trace=source_attribute_trace,
+            target_attribute_trace=target_attribute_trace,
+        )
+
+
 def _lunar_component_query(
     query: DamageQuery,
     reaction: LunarReactionDamageInput,
@@ -751,6 +839,7 @@ def create_default_damage_formula_registry(
             critical_policy=critical_policy,
         )
     )
+    formulas.append(StellarReactionDamageFormula(critical_policy=critical_policy))
     return DamageFormulaRegistry(tuple(formulas))
 
 

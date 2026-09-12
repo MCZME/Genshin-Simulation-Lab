@@ -90,6 +90,7 @@ from genshin_sim.core.systems.reaction.states import (
     ReactionStateSnapshot,
     SprawlingShotState,
     StellarConductCounterState,
+    StellarSwirlVortexState,
 )
 
 
@@ -328,6 +329,10 @@ class ReactionRuntime:
         self._sprawling_shot_records: dict[ReactionStateInstanceRef, SprawlingShotState] = {}
         self._polestar_field_records: dict[ReactionStateInstanceRef, PolestarFieldState] = {}
         self._stellar_conduct_counter_records: dict[str, StellarConductCounterState] = {}
+        self._stellar_swirl_vortex_records: dict[
+            ReactionStateInstanceRef,
+            StellarSwirlVortexState,
+        ] = {}
         self._state_instance_sequence = 0
         self._dendro_core_creation_sequence = 0
         self._normalized_through_frame = 0
@@ -505,6 +510,32 @@ class ReactionRuntime:
             raise ValueError("team_ref 必须是非空字符串")
         return self._stellar_conduct_counter_records.get(team_ref)
 
+    def stellar_swirl_vortex_state_for(
+        self,
+        instance_ref: ReactionStateInstanceRef,
+    ) -> StellarSwirlVortexState | None:
+        if not isinstance(instance_ref, ReactionStateInstanceRef):
+            raise ValueError("instance_ref 必须是 ReactionStateInstanceRef")
+        return self._stellar_swirl_vortex_records.get(instance_ref)
+
+    def active_stellar_swirl_vortexes(
+        self,
+        *,
+        scope_ref: str | None = None,
+    ) -> tuple[StellarSwirlVortexState, ...]:
+        if scope_ref is not None and (not isinstance(scope_ref, str) or not scope_ref.strip()):
+            raise ValueError("scope_ref 必须是非空字符串或 None")
+        return tuple(
+            sorted(
+                (
+                    record
+                    for record in self._stellar_swirl_vortex_records.values()
+                    if scope_ref is None or record.scope_ref == scope_ref
+                ),
+                key=lambda item: (item.created_frame, item.instance_ref.value),
+            )
+        )
+
     def active_dendro_cores(self, *, pool_scope: str | None = None) -> tuple[DendroCoreState, ...]:
         if pool_scope is not None and (not isinstance(pool_scope, str) or not pool_scope.strip()):
             raise ValueError("pool_scope 必须是非空字符串或 None")
@@ -626,6 +657,7 @@ class ReactionRuntime:
             self._stellar_conduct_counter_records = _stellar_conduct_counter_index(
                 next_records.values()
             )
+            self._stellar_swirl_vortex_records = _stellar_swirl_vortex_index(next_records.values())
             self._version += 1
         self._state_instance_sequence = plan.next_state_instance_sequence
         self._dendro_core_creation_sequence = plan.next_dendro_core_creation_sequence
@@ -867,6 +899,9 @@ class ReactionRuntime:
         self._sprawling_shot_records = _sprawling_shot_index(next_state_records.values())
         self._polestar_field_records = _polestar_field_index(next_state_records.values())
         self._stellar_conduct_counter_records = _stellar_conduct_counter_index(
+            next_state_records.values()
+        )
+        self._stellar_swirl_vortex_records = _stellar_swirl_vortex_index(
             next_state_records.values()
         )
         self._state_instance_sequence = state_plan.next_state_instance_sequence
@@ -1882,6 +1917,19 @@ def _stellar_conduct_counter_index(
         if record.team_ref in index:
             raise ReactionStoreConflictError("重复的 StellarConductCounterState team_ref")
         index[record.team_ref] = record
+    return index
+
+
+def _stellar_swirl_vortex_index(
+    records: Iterable[ReactionStateRecord],
+) -> dict[ReactionStateInstanceRef, StellarSwirlVortexState]:
+    index: dict[ReactionStateInstanceRef, StellarSwirlVortexState] = {}
+    for record in records:
+        if not isinstance(record, StellarSwirlVortexState):
+            continue
+        if record.instance_ref in index:
+            raise ReactionStoreConflictError("重复的 StellarSwirlVortexState instance_ref")
+        index[record.instance_ref] = record
     return index
 
 

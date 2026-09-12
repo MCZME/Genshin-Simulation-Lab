@@ -13,6 +13,8 @@ from genshin_sim.core.coordination.elemental_reaction.errors import (
 from genshin_sim.core.coordination.elemental_reaction.lifecycle import (
     DendroCoreExpiryCoordinator,
     DendroCoreExpiryResult,
+    StellarSwirlVortexExpiryCoordinator,
+    StellarSwirlVortexExpiryResult,
 )
 from genshin_sim.core.coordination.elemental_reaction.links import (
     BurningStateLinkBatchCoordinator,
@@ -68,6 +70,7 @@ from genshin_sim.core.systems.reaction import (
     ScheduledReactionRootWork,
     StellarConductCounterSettlementRootWork,
     StellarConductCounterState,
+    StellarSwirlVortexState,
 )
 from genshin_sim.core.systems.reaction.mechanics.frozen import (
     MIN_FREEZE_DECAY_RATE,
@@ -102,6 +105,7 @@ class ElementalStateFrameCoordinator:
         lunar_storm_cloud_expiry_coordinator: LunarStormCloudExpiryPort | None = None,
         lunar_cage_expiry_coordinator: LunarCageExpiryPort | None = None,
         polestar_field_expiry_coordinator: PolestarFieldExpiryPort | None = None,
+        stellar_swirl_vortex_expiry_coordinator: StellarSwirlVortexExpiryCoordinator | None = None,
     ) -> None:
         self.aura_runtime = aura_runtime
         self.icd_runtime = icd_runtime
@@ -111,6 +115,7 @@ class ElementalStateFrameCoordinator:
         self.lunar_storm_cloud_expiry_coordinator = lunar_storm_cloud_expiry_coordinator
         self.lunar_cage_expiry_coordinator = lunar_cage_expiry_coordinator
         self.polestar_field_expiry_coordinator = polestar_field_expiry_coordinator
+        self.stellar_swirl_vortex_expiry_coordinator = stellar_swirl_vortex_expiry_coordinator
         self._burning_state_frame_adapter = (
             None
             if reaction_runtime is None
@@ -194,14 +199,22 @@ class ElementalStateFrameCoordinator:
                 context,
                 frame,
             )
+            stellar_swirl_lifecycle_works = self._normalize_expired_stellar_swirl_vortexes(
+                context,
+                frame,
+            )
             lifecycle_works = (
                 *crystallize_lifecycle_works,
                 *dendro_expiry_result.works,
                 *lunar_cloud_lifecycle_works,
                 *lunar_cage_lifecycle_works,
                 *polestar_lifecycle_works,
+                *stellar_swirl_lifecycle_works.works,
             )
-            lifecycle_effect_groups = dendro_expiry_result.effect_groups
+            lifecycle_effect_groups = (
+                *dendro_expiry_result.effect_groups,
+                *stellar_swirl_lifecycle_works.effect_groups,
+            )
             lifecycle_occurrences = dendro_expiry_result.occurrences
         record = ElementalStateFrameRecord(
             frame,
@@ -676,6 +689,46 @@ class ElementalStateFrameCoordinator:
             for state in due_states
         )
         return self.polestar_field_expiry_coordinator.expire(
+            context,
+            frame=frame,
+            works=works,
+        )
+
+    def _normalize_expired_stellar_swirl_vortexes(
+        self,
+        context,
+        frame: int,
+    ) -> StellarSwirlVortexExpiryResult:
+        assert self.reaction_runtime is not None
+        due_states = tuple(
+            sorted(
+                (
+                    state
+                    for state in self.reaction_runtime.state_records
+                    if isinstance(state, StellarSwirlVortexState)
+                    and state.next_required_frame == frame
+                    and state.expires_at_frame == frame
+                ),
+                key=lambda state: (state.created_frame, state.instance_ref.value),
+            )
+        )
+        if not due_states:
+            return StellarSwirlVortexExpiryResult((), ())
+        if self.stellar_swirl_vortex_expiry_coordinator is None:
+            raise ElementalInteractionError("到期星辉风旋缺少生命周期协调器")
+        works = tuple(
+            ReactionStateLifecycleWork(
+                work_ref=f"reaction-state:{state.instance_ref.value}:frame:{frame}:expire",
+                frame=frame,
+                state_instance_ref=state.instance_ref,
+                state_slot=state.slot_key.slot,
+                scope_key=state.slot_key.scope_key,
+                operation=ReactionStateLifecycleOperation.EXPIRE,
+                cause_ref=f"reaction-state:{state.instance_ref.value}:frame:{frame}:expire",
+            )
+            for state in due_states
+        )
+        return self.stellar_swirl_vortex_expiry_coordinator.expire(
             context,
             frame=frame,
             works=works,

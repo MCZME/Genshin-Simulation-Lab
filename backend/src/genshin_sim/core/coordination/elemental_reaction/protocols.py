@@ -17,7 +17,12 @@ from genshin_sim.core.coordination.elemental_reaction.models import (
 from genshin_sim.core.coordination.elemental_reaction.spatial import (
     ReactionSpatialCreationReceipt,
 )
-from genshin_sim.core.elements import AuraAmount, AuraKind, ElementalSubjectRef
+from genshin_sim.core.elements import (
+    AuraAmount,
+    AuraKind,
+    ElementalSourceRef,
+    ElementalSubjectRef,
+)
 from genshin_sim.core.events import GameEvent
 from genshin_sim.core.impacts import ImpactRequest
 from genshin_sim.core.space import SpaceEntityCommitReceipt, SpaceEntityMutationPlan, SpatialEntity
@@ -56,6 +61,7 @@ from genshin_sim.core.systems.damage import (
     SecondaryAmplifyingReactionInput,
     TransformativeReactionInput,
 )
+from genshin_sim.core.systems.damage.stellar import StellarReactionDamageInput
 from genshin_sim.core.systems.reaction.gates import ReactionDamageGatePlanner
 from genshin_sim.core.systems.reaction.models import (
     CrystallizeShardStateCreationIntent,
@@ -71,6 +77,7 @@ from genshin_sim.core.systems.reaction.models import (
     ReactionGeneratedImpactBatch,
     ReactionMutationPlan,
     ReactionResolution,
+    StellarSwirlVortexStatePlanningIntent,
 )
 from genshin_sim.core.systems.reaction.resources import (
     LunarBloomDewState,
@@ -102,6 +109,7 @@ from genshin_sim.core.systems.reaction.states import (
     SprawlingShotState,
     StellarConductAttachmentRecord,
     StellarConductCounterState,
+    StellarSwirlVortexState,
 )
 from genshin_sim.core.systems.shield import (
     ShieldGrantCommitReceipt,
@@ -336,6 +344,11 @@ class ReactionStateInteractionPort(ReactionFramePort, Protocol):
         self,
         team_ref: str,
     ) -> StellarConductCounterState | None: ...
+
+    def stellar_swirl_vortex_state_for(
+        self,
+        instance_ref: ReactionStateInstanceRef,
+    ) -> StellarSwirlVortexState | None: ...
 
     def sprawling_shot_state_for(
         self,
@@ -587,6 +600,33 @@ class ReactionStateBatchPlanningPort(Protocol):
         instance_ref: ReactionStateInstanceRef,
     ) -> PolestarFieldState: ...
 
+    def active_stellar_swirl_vortexes(
+        self,
+        *,
+        scope_ref: str | None = None,
+    ) -> tuple[StellarSwirlVortexState, ...]: ...
+
+    def create_stellar_swirl_vortex(
+        self,
+        intent: StellarSwirlVortexStatePlanningIntent,
+    ) -> StellarSwirlVortexState: ...
+
+    def level_up_stellar_swirl_vortex(
+        self,
+        *,
+        instance_ref: ReactionStateInstanceRef,
+        frame: int,
+        reaction_source_ref: ElementalSourceRef,
+        reaction_occurrence_ref: str,
+        participant_refs: tuple[ElementalSourceRef, ...],
+    ) -> StellarSwirlVortexState: ...
+
+    def remove_stellar_swirl_vortex(
+        self,
+        *,
+        instance_ref: ReactionStateInstanceRef,
+    ) -> StellarSwirlVortexState: ...
+
     def stellar_conduct_counter_for(self, team_ref: str) -> StellarConductCounterState | None: ...
 
     def create_stellar_conduct_counter(
@@ -699,6 +739,7 @@ class DamageImpactPlanningPort(Protocol):
         transformative_reactions: Mapping[str, TransformativeReactionInput] | None = None,
         catalyze_reactions: Mapping[str, CatalyzeReactionInput] | None = None,
         lunar_reactions: Mapping[str, LunarReactionDamageInput] | None = None,
+        stellar_reactions: Mapping[str, StellarReactionDamageInput] | None = None,
     ) -> tuple[DamageResolutionRecord, ...]: ...
 
     def commit_prepared_records(self, records: tuple[DamageResolutionRecord, ...]) -> None: ...

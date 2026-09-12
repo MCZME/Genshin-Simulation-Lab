@@ -27,6 +27,7 @@ if TYPE_CHECKING:
         DynamicTransformativeScalingBasis,
         LunarStormCloudStatePlanningIntent,
         PolestarFieldStatePlanningIntent,
+        StellarSwirlVortexStatePlanningIntent,
     )
 
 
@@ -49,6 +50,7 @@ class ReactionStateSlot(StrEnum):
     SPRAWLING_SHOT = "sprawling_shot"
     STELLAR_CONDUCT_FIELD = "stellar_conduct_field"
     STELLAR_CONDUCT_COUNTER = "stellar_conduct_counter"
+    STELLAR_SWIRL_VORTEX = "stellar_swirl_vortex"
 
 
 class ScheduledStateTickKind(StrEnum):
@@ -795,6 +797,10 @@ class SprawlingShotState:
 
 STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES = 420
 STELLAR_CONDUCT_COUNTER_WINDOW_FRAMES = 240
+# 星辉风旋生命周期（约 3 秒基线）、等级上限与参与者账本上限。
+STELLAR_SWIRL_VORTEX_LIFETIME_FRAMES = 180
+STELLAR_SWIRL_VORTEX_MAX_LEVEL = 6
+STELLAR_SWIRL_PARTICIPANT_LIMIT = 4
 _STELLAR_CONDUCT_ATTACHMENT_ELEMENTS = frozenset({Element.CRYO, Element.ELECTRO})
 
 
@@ -935,6 +941,137 @@ class StellarConductCounterState:
         )
 
 
+@dataclass(frozen=True, slots=True)
+class StellarSwirlParticipantEntry:
+    """风旋生命周期内一名参与者的首次/最近参与帧。"""
+
+    participant_ref: ElementalSourceRef
+    first_reaction_frame: int
+    last_reaction_frame: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.participant_ref, ElementalSourceRef):
+            raise ValueError("participant_ref 必须是 ElementalSourceRef")
+        _frame(self.first_reaction_frame, "first_reaction_frame")
+        _frame(self.last_reaction_frame, "last_reaction_frame")
+        if self.last_reaction_frame < self.first_reaction_frame:
+            raise ValueError("last_reaction_frame 不能早于 first_reaction_frame")
+
+
+def _stellar_swirl_participant_order_key(
+    entry: StellarSwirlParticipantEntry,
+) -> tuple[int, str, str]:
+    return (
+        entry.first_reaction_frame,
+        entry.participant_ref.source_key,
+        entry.participant_ref.instance_id or "",
+    )
+
+
+def merge_stellar_swirl_participant_entries(
+    existing: tuple[StellarSwirlParticipantEntry, ...],
+    reaction_participants: tuple[ElementalSourceRef, ...],
+    frame: int,
+) -> tuple[StellarSwirlParticipantEntry, ...]:
+    """把一次星扩散·风的参与者并入账本；按首次参与帧升序保留前 4 名。
+
+    账本以"参与过星扩散·风反应"为准：已有参与者只推进最近参与帧，
+    新参与者以当前帧记首次参与。结构性至多 4 名（队伍角色），超出时按
+    首次参与帧升序保留前 4 作为确定性兜底。
+    """
+
+    by_ref: dict[ElementalSourceRef, StellarSwirlParticipantEntry] = {
+        entry.participant_ref: entry for entry in existing
+    }
+    for ref in reaction_participants:
+        current = by_ref.get(ref)
+        by_ref[ref] = (
+            StellarSwirlParticipantEntry(ref, frame, frame)
+            if current is None
+            else StellarSwirlParticipantEntry(
+                ref, current.first_reaction_frame, max(current.last_reaction_frame, frame)
+            )
+        )
+    merged = tuple(
+        sorted(by_ref.values(), key=_stellar_swirl_participant_order_key)[
+            :STELLAR_SWIRL_PARTICIPANT_LIMIT
+        ]
+    )
+    return merged
+
+
+@dataclass(frozen=True, slots=True)
+class StellarSwirlVortexState:
+    """星辉风旋的全场唯一生命周期与参与者账本；锚点位置由 Space 实体持有。"""
+
+    instance_ref: ReactionStateInstanceRef
+    space_entity_ref: str
+    subject_ref: ElementalSubjectRef
+    created_by_occurrence_ref: str
+    trigger_source_ref: ElementalSourceRef
+    scope_ref: str
+    level: int
+    last_reaction_source_ref: ElementalSourceRef
+    last_reaction_occurrence_ref: str
+    participants: tuple[StellarSwirlParticipantEntry, ...]
+    created_frame: int
+    expires_at_frame: int
+    revision: int = 1
+
+    def __post_init__(self) -> None:
+        expected = f"reaction-state:stellar-swirl-vortex:{self.created_by_occurrence_ref}"
+        if self.instance_ref.value != expected:
+            raise ValueError("星辉风旋 instance_ref 必须由 occurrence_ref 确定性派生")
+        expected_space = f"reaction_object:stellar_swirl_vortex:{self.created_by_occurrence_ref}"
+        if self.space_entity_ref != expected_space:
+            raise ValueError("星辉风旋 space_entity_ref 必须由 occurrence_ref 确定性派生")
+        if not isinstance(self.trigger_source_ref, ElementalSourceRef):
+            raise ValueError("trigger_source_ref 必须是 ElementalSourceRef")
+        if not isinstance(self.last_reaction_source_ref, ElementalSourceRef):
+            raise ValueError("last_reaction_source_ref 必须是 ElementalSourceRef")
+        for value, name in (
+            (self.scope_ref, "scope_ref"),
+            (self.space_entity_ref, "space_entity_ref"),
+            (self.created_by_occurrence_ref, "created_by_occurrence_ref"),
+            (self.last_reaction_occurrence_ref, "last_reaction_occurrence_ref"),
+        ):
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"{name} 必须是非空字符串")
+        if self.level < 1 or self.level > STELLAR_SWIRL_VORTEX_MAX_LEVEL:
+            raise ValueError("星辉风旋等级必须在 1~6 之间")
+        if self.expires_at_frame != self.created_frame + STELLAR_SWIRL_VORTEX_LIFETIME_FRAMES:
+            raise ValueError("星辉风旋生命周期必须固定为 180 帧")
+        _frame(self.created_frame, "created_frame")
+        _frame(self.expires_at_frame, "expires_at_frame")
+        if self.revision <= 0:
+            raise ValueError("星辉风旋 revision 必须为正整数")
+        participants = tuple(self.participants)
+        if any(not isinstance(item, StellarSwirlParticipantEntry) for item in participants):
+            raise ValueError("participants 必须是 StellarSwirlParticipantEntry 序列")
+        if len({item.participant_ref for item in participants}) != len(participants):
+            raise ValueError("星辉风旋参与者账本不能重复")
+        if len(participants) > STELLAR_SWIRL_PARTICIPANT_LIMIT:
+            raise ValueError("星辉风旋参与者账本至多保留 4 名")
+        if participants != tuple(sorted(participants, key=_stellar_swirl_participant_order_key)):
+            raise ValueError("星辉风旋参与者账本必须按首次参与帧升序存储")
+        object.__setattr__(self, "participants", participants)
+
+    @property
+    def next_required_frame(self) -> int:
+        return self.expires_at_frame
+
+    @property
+    def slot_key(self) -> ReactionStateSlotKey:
+        # slot 按实例作用域分区（与极星辉域一致）；battle 全场唯一由
+        # scope_ref 字段查询 + 唯一性守卫承担，lifecycle work 的 scope_key
+        # 必须由 instance_ref 确定性派生。
+        return ReactionStateSlotKey(
+            self.subject_ref,
+            ReactionStateSlot.STELLAR_SWIRL_VORTEX,
+            ReactionStateScopeKey(self.instance_ref.value),
+        )
+
+
 type ReactionStateRecord = (
     BurningState
     | CrystallizeShardState
@@ -949,6 +1086,7 @@ type ReactionStateRecord = (
     | QuickenState
     | SprawlingShotState
     | StellarConductCounterState
+    | StellarSwirlVortexState
 )
 _REACTION_STATE_RECORD_TYPES = (
     BurningState,
@@ -964,6 +1102,7 @@ _REACTION_STATE_RECORD_TYPES = (
     QuickenState,
     SprawlingShotState,
     StellarConductCounterState,
+    StellarSwirlVortexState,
 )
 
 
@@ -1338,6 +1477,7 @@ class ReactionStateLifecycleWork:
             ReactionStateSlot.LUNAR_STORM_CLOUD,
             ReactionStateSlot.LUNAR_CAGE,
             ReactionStateSlot.STELLAR_CONDUCT_FIELD,
+            ReactionStateSlot.STELLAR_SWIRL_VORTEX,
         }:
             raise ValueError("lifecycle work 只支持绑定空间实体的 Reaction State")
         if self.operation is not ReactionStateLifecycleOperation.EXPIRE:
@@ -2349,6 +2489,135 @@ class ReactionStatePlanner:
         before = self.stellar_conduct_counter_for(team_ref)
         if before is None:
             raise ValueError("不存在可终结的 StellarConductCounterState")
+        del self._working[before.slot_key]
+        return before
+
+    def stellar_swirl_vortex_for(
+        self, instance_ref: ReactionStateInstanceRef
+    ) -> StellarSwirlVortexState | None:
+        return next(
+            (
+                item
+                for item in self._working.values()
+                if isinstance(item, StellarSwirlVortexState) and item.instance_ref == instance_ref
+            ),
+            None,
+        )
+
+    def active_stellar_swirl_vortexes(
+        self,
+        *,
+        scope_ref: str | None = None,
+    ) -> tuple[StellarSwirlVortexState, ...]:
+        if scope_ref is not None and (not isinstance(scope_ref, str) or not scope_ref.strip()):
+            raise ValueError("scope_ref 必须是非空字符串或 None")
+        return tuple(
+            sorted(
+                (
+                    item
+                    for item in self._working.values()
+                    if isinstance(item, StellarSwirlVortexState)
+                    and (scope_ref is None or item.scope_ref == scope_ref)
+                ),
+                key=lambda item: (item.created_frame, item.instance_ref.value),
+            )
+        )
+
+    def create_stellar_swirl_vortex(
+        self,
+        intent: StellarSwirlVortexStatePlanningIntent,
+    ) -> StellarSwirlVortexState:
+        """接受星扩散 occurrence 声明的确定性风旋创建意图。"""
+
+        from genshin_sim.core.systems.reaction.models import (
+            StellarSwirlVortexStatePlanningIntent,
+        )
+
+        self._assert_open()
+        if not isinstance(intent, StellarSwirlVortexStatePlanningIntent):
+            raise ValueError("intent 必须是 StellarSwirlVortexStatePlanningIntent")
+        if intent.created_frame != self.frame:
+            raise ValueError("星辉风旋创建意图帧必须与 State 批次一致")
+        if self.stellar_swirl_vortex_for(intent.instance_ref) is not None:
+            raise ValueError("星辉风旋 instance_ref 已存在")
+        state = StellarSwirlVortexState(
+            instance_ref=intent.instance_ref,
+            space_entity_ref=intent.space_entity_ref,
+            subject_ref=intent.subject_ref,
+            created_by_occurrence_ref=intent.parent_occurrence_ref,
+            trigger_source_ref=intent.trigger_source_ref,
+            scope_ref=intent.scope_ref,
+            level=1,
+            last_reaction_source_ref=intent.trigger_source_ref,
+            last_reaction_occurrence_ref=intent.parent_occurrence_ref,
+            participants=merge_stellar_swirl_participant_entries(
+                (), intent.reaction_participants, intent.created_frame
+            ),
+            created_frame=intent.created_frame,
+            expires_at_frame=intent.expires_at_frame,
+        )
+        if state.slot_key in self._working:
+            raise ValueError("星辉风旋 State slot 已存在")
+        self._working[state.slot_key] = state
+        return state
+
+    def level_up_stellar_swirl_vortex(
+        self,
+        *,
+        instance_ref: ReactionStateInstanceRef,
+        frame: int,
+        reaction_source_ref: ElementalSourceRef,
+        reaction_occurrence_ref: str,
+        participant_refs: tuple[ElementalSourceRef, ...],
+    ) -> StellarSwirlVortexState:
+        """星扩散·风使既有风旋等级 +1；升级不移动锚点、不刷新爆炸计时。"""
+
+        self._assert_open()
+        _frame(frame, "frame")
+        if not isinstance(reaction_source_ref, ElementalSourceRef):
+            raise ValueError("reaction_source_ref 必须是 ElementalSourceRef")
+        if not isinstance(reaction_occurrence_ref, str) or not reaction_occurrence_ref.strip():
+            raise ValueError("reaction_occurrence_ref 必须是非空字符串")
+        if not participant_refs or reaction_source_ref.source_key not in {
+            item.source_key for item in participant_refs
+        }:
+            raise ValueError("风旋升级的参与者必须包含本次反应触发者")
+        before = self.stellar_swirl_vortex_for(instance_ref)
+        if before is None:
+            raise ValueError("不存在可升级的 StellarSwirlVortexState")
+        if before.level + 1 > STELLAR_SWIRL_VORTEX_MAX_LEVEL:
+            raise ValueError("星辉风旋等级达到上限，必须立即爆炸终结")
+        if frame < before.created_frame:
+            raise ValueError("风旋升级帧不能早于创建帧")
+        state = StellarSwirlVortexState(
+            instance_ref=before.instance_ref,
+            space_entity_ref=before.space_entity_ref,
+            subject_ref=before.subject_ref,
+            created_by_occurrence_ref=before.created_by_occurrence_ref,
+            trigger_source_ref=before.trigger_source_ref,
+            scope_ref=before.scope_ref,
+            level=before.level + 1,
+            last_reaction_source_ref=reaction_source_ref,
+            last_reaction_occurrence_ref=reaction_occurrence_ref,
+            participants=merge_stellar_swirl_participant_entries(
+                before.participants, participant_refs, frame
+            ),
+            created_frame=before.created_frame,
+            expires_at_frame=before.expires_at_frame,
+            revision=before.revision + 1,
+        )
+        self._working[state.slot_key] = state
+        return state
+
+    def remove_stellar_swirl_vortex(
+        self,
+        *,
+        instance_ref: ReactionStateInstanceRef,
+    ) -> StellarSwirlVortexState:
+        self._assert_open()
+        before = self.stellar_swirl_vortex_for(instance_ref)
+        if before is None:
+            raise ValueError("不存在可终结的 StellarSwirlVortexState")
         del self._working[before.slot_key]
         return before
 

@@ -88,6 +88,7 @@ from genshin_sim.core.coordination.elemental_reaction import (
     PolestarFieldExpiryCoordinator,
     ReactionBoundEntityExpiryCoordinator,
     ReactionSpatialPlanningAdapter,
+    StellarSwirlVortexExpiryCoordinator,
 )
 from genshin_sim.core.coordination.elemental_reaction.observers import (
     CharacterCrystallizeSourceObserver,
@@ -99,6 +100,9 @@ from genshin_sim.core.coordination.elemental_reaction.status import (
 )
 from genshin_sim.core.coordination.elemental_reaction.stellar_buffs import (
     stellar_radiance_buff_definition,
+)
+from genshin_sim.core.coordination.elemental_reaction.stellar_swirl_buffs import (
+    stellar_swirl_radiance_buff_definition,
 )
 from genshin_sim.core.coordination.resonance_reaction import ResonanceReactionStage
 from genshin_sim.core.entity_states import (
@@ -217,6 +221,9 @@ from genshin_sim.core.systems.reaction import create_default_reaction_bootstrap
 from genshin_sim.core.systems.reaction.mechanics.burning import (
     burning_pyro_aura_application_profile,
 )
+from genshin_sim.core.systems.reaction.mechanics.stellar_swirl import (
+    stellar_swirl_ice_aura_application_profile,
+)
 from genshin_sim.core.systems.reaction.mechanics.swirl import (
     SwirlGeneratedImpactDamageInputAdapter,
     swirl_aura_application_profile,
@@ -289,6 +296,7 @@ class RuntimeAssembler:
                 *content_bundle.buff_definitions,
                 superconduct_buff_definition(),
                 stellar_radiance_buff_definition(),
+                stellar_swirl_radiance_buff_definition(),
                 *create_resonance_buff_definitions(),
             )
         )
@@ -660,6 +668,10 @@ class RuntimeAssembler:
                 reaction_state_port=reaction_runtime,
                 spatial_planning_port=reaction_spatial_planning_port,
             ),
+            stellar_swirl_vortex_expiry_coordinator=StellarSwirlVortexExpiryCoordinator(
+                reaction_state_port=reaction_runtime,
+                spatial_planning_port=reaction_spatial_planning_port,
+            ),
         )
         elemental_interaction_coordinator = ElementalInteractionCoordinator(
             aura_runtime=aura_runtime,
@@ -701,6 +713,7 @@ class RuntimeAssembler:
                 (
                     swirl_aura_application_profile(),
                     burning_pyro_aura_application_profile(),
+                    stellar_swirl_ice_aura_application_profile(),
                 )
             ),
         )

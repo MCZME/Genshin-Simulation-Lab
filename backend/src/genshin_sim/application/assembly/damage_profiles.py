@@ -36,6 +36,9 @@ from genshin_sim.core.systems.reaction.mechanics.shattered import (
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct import (
     STELLAR_CONDUCT_REACTION_KEY,
 )
+from genshin_sim.core.systems.reaction.mechanics.stellar_swirl import (
+    stellar_swirl_damage_profiles,
+)
 from genshin_sim.core.systems.reaction.mechanics.superconduct import (
     superconduct_damage_profile,
 )
@@ -72,5 +75,6 @@ def create_default_damage_profile_registry() -> DamageProfileRegistry:
             *lunar_electro_charged_damage_profiles(),
             *lunar_crystallize_damage_profiles(),
             stellar_reaction_damage_profile(),
+            *stellar_swirl_damage_profiles(),
         )
     )

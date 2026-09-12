@@ -98,6 +98,8 @@ from genshin_sim.core.systems.reaction.models import (
     ScheduledStateTickCause,
     SpatialEntityCreationEffect,
     StateReactionProfile,
+    StellarReactionDamageImpactEffect,
+    StellarSwirlVortexStatePlanningIntent,
     SwirlEmissionSelection,
     TransformativeReactionProfile,
     TransformativeSourceObservation,
@@ -173,6 +175,8 @@ from genshin_sim.core.systems.reaction.states import (
     StellarConductAttachmentRecord,
     StellarConductCounterSettlementRootWork,
     StellarConductCounterState,
+    StellarSwirlParticipantEntry,
+    StellarSwirlVortexState,
 )
 
 __all__ = [
@@ -191,6 +195,8 @@ __all__ = [
     "LunarElectroChargedReactionProfile",
     "LunarStormCloudStatePlanningIntent",
     "PolestarFieldStatePlanningIntent",
+    "StellarReactionDamageImpactEffect",
+    "StellarSwirlVortexStatePlanningIntent",
     "BurningStateEstablishmentIntent",
     "BurningStateMaintenanceIntent",
     "BurningStateTerminationIntent",
@@ -331,4 +337,6 @@ __all__ = [
     "StellarConductAttachmentRecord",
     "StellarConductCounterSettlementRootWork",
     "StellarConductCounterState",
+    "StellarSwirlParticipantEntry",
+    "StellarSwirlVortexState",
 ]

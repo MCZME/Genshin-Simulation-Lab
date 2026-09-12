@@ -55,6 +55,7 @@ from genshin_sim.core.systems.damage.models import (
 )
 from genshin_sim.core.systems.damage.modifiers import DamageModifierIndex
 from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+from genshin_sim.core.systems.damage.stellar import StellarReactionParticipantInput
 
 SOURCE = AttributeSubjectRef.character("character:slot_1")
 TARGET = AttributeSubjectRef.target("target:star")
@@ -261,7 +262,7 @@ def test_stellar_formula_rejects_composite_mode_and_modifiers() -> None:
     formula = StellarReactionDamageFormula()
     session = DamageResolutionSession(attribute_resolver, query)
     modifiers = DamageModifierIndex(()).collect(query, session)
-    with pytest.raises(DamageFormulaInputError, match="reaction_composite"):
+    with pytest.raises(DamageFormulaInputError, match="必须提供参与者列表"):
         formula.resolve(
             DamageFormulaContext(
                 query=query,
@@ -270,6 +271,178 @@ def test_stellar_formula_rejects_composite_mode_and_modifiers() -> None:
                 trace_level=TraceLevel.FULL,
             )
         )
+
+
+def test_stellar_input_rejects_participant_shape_violations() -> None:
+    with pytest.raises(ValueError, match="不能携带参与者列表"):
+        StellarReactionDamageInput(
+            mode="character_direct",
+            scaling_value=1,
+            stellar_base_multiplier=1,
+            participants=(
+                StellarReactionParticipantInput(
+                    participant_ref=SOURCE,
+                    source_level=90,
+                    reaction_base_value=1.0,
+                ),
+            ),
+        )
+    with pytest.raises(ValueError, match="不能重复角色"):
+        StellarReactionDamageInput(
+            mode="reaction_composite",
+            scaling_value=0,
+            stellar_base_multiplier=0.75,
+            participants=(
+                StellarReactionParticipantInput(
+                    participant_ref=SOURCE,
+                    source_level=90,
+                    reaction_base_value=1.0,
+                ),
+                StellarReactionParticipantInput(
+                    participant_ref=SOURCE,
+                    source_level=90,
+                    reaction_base_value=2.0,
+                ),
+            ),
+        )
+
+
+_PARTICIPANT_A = AttributeSubjectRef.character("character:slot_1")
+_PARTICIPANT_B = AttributeSubjectRef.character("character:slot_2")
+
+
+def _composite_resolver(
+    mastery_a: float = 200.0,
+    mastery_b: float = 100.0,
+) -> AttributeResolver:
+    registry = create_public_attribute_registry()
+    return AttributeResolver(
+        definitions=registry,
+        base_attributes=BaseAttributeSet(
+            (
+                (
+                    _PARTICIPANT_A,
+                    BaseAttributeContribution(
+                        STAT_ELEMENTAL_MASTERY,
+                        mastery_a,
+                        RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.stellar"),
+                    ),
+                ),
+                (
+                    _PARTICIPANT_B,
+                    BaseAttributeContribution(
+                        STAT_ELEMENTAL_MASTERY,
+                        mastery_b,
+                        RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.stellar"),
+                    ),
+                ),
+                (
+                    TARGET,
+                    BaseAttributeContribution(
+                        RESISTANCE_ELECTRO,
+                        0.1,
+                        RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.stellar"),
+                    ),
+                ),
+            )
+        ),
+        modifier_index=ModifierProviderIndex((), registry=registry),
+    )
+
+
+def _participant(entity_id: AttributeSubjectRef, base_value: float) -> Any:
+    return StellarReactionParticipantInput(
+        participant_ref=entity_id,
+        source_level=90,
+        reaction_base_value=base_value,
+    )
+
+
+def test_stellar_formula_composite_settles_per_participant_with_weights() -> None:
+    attribute_resolver = _composite_resolver()
+    query = _stellar_query(
+        attribute_resolver,
+        stellar_reaction=StellarReactionDamageInput(
+            mode="reaction_composite",
+            scaling_value=0,
+            stellar_base_multiplier=0.75,
+            participants=(
+                _participant(_PARTICIPANT_A, 10.0),
+                _participant(_PARTICIPANT_B, 5.0),
+            ),
+        ),
+    )
+    formula = StellarReactionDamageFormula()
+    session = DamageResolutionSession(attribute_resolver, query)
+    modifiers = DamageModifierIndex(()).collect(query, session)
+    resolution = formula.resolve(
+        DamageFormulaContext(
+            query=query,
+            session=session,
+            modifiers=modifiers,
+            trace_level=TraceLevel.FULL,
+        )
+    )
+
+    resistance_multiplier = StandardResistancePolicy().resolve(0.1).multiplier
+    damage_a = 10.0 * 0.75 * (1 + 6 * 200 / 2200) * 1.0 * resistance_multiplier
+    damage_b = 5.0 * 0.75 * (1 + 6 * 100 / 2100) * 1.0 * resistance_multiplier
+    assert len(resolution.components) == 2
+    # 折前伤害从高到低稳定排序：A 排名第一拿 0.60，B 拿 0.30。
+    assert resolution.components[0].participant_ref.entity_id == _PARTICIPANT_A.entity_id
+    assert resolution.components[0].weight == pytest.approx(0.60)
+    assert resolution.components[0].component_damage == pytest.approx(damage_a)
+    assert resolution.components[1].participant_ref.entity_id == _PARTICIPANT_B.entity_id
+    assert resolution.components[1].weight == pytest.approx(0.30)
+    assert resolution.components[1].component_damage == pytest.approx(damage_b)
+    expected_official = 0.60 * damage_a + 0.30 * damage_b
+    assert resolution.official_damage == pytest.approx(expected_official)
+    assert resolution.final_damage == pytest.approx(expected_official)
+    assert resolution.components[0].source_attribute_trace
+    assert resolution.components[0].target_attribute_trace
+
+
+def test_stellar_formula_composite_sorts_by_damage_and_truncates_to_four() -> None:
+    attribute_resolver = _composite_resolver()
+    participants = tuple(
+        _participant(AttributeSubjectRef.character(f"character:slot_{index}"), 1.0)
+        for index in range(1, 6)
+    )
+    # 第二名参与者数值最高：排序后应排第一并拿 0.60 权重。
+    boosted = StellarReactionParticipantInput(
+        participant_ref=AttributeSubjectRef.character("character:slot_2"),
+        source_level=90,
+        reaction_base_value=50.0,
+    )
+    participants = (participants[0], boosted, *participants[2:])
+    query = _stellar_query(
+        attribute_resolver,
+        stellar_reaction=StellarReactionDamageInput(
+            mode="reaction_composite",
+            scaling_value=0,
+            stellar_base_multiplier=0.75,
+            participants=participants,
+        ),
+    )
+    formula = StellarReactionDamageFormula()
+    session = DamageResolutionSession(attribute_resolver, query)
+    modifiers = DamageModifierIndex(()).collect(query, session)
+    resolution = formula.resolve(
+        DamageFormulaContext(
+            query=query,
+            session=session,
+            modifiers=modifiers,
+            trace_level=TraceLevel.NONE,
+        )
+    )
+
+    assert len(resolution.components) == 4
+    assert resolution.components[0].participant_ref.entity_id == "character:slot_2"
+    assert resolution.components[0].weight == pytest.approx(0.60)
+    # 排名 3~4 的权重为 0.05；第 5 名被截断。
+    assert resolution.components[2].weight == pytest.approx(0.05)
+    assert resolution.components[3].weight == pytest.approx(0.05)
+    assert resolution.components[0].source_attribute_trace == ()
 
 
 def test_default_formula_registry_contains_stellar_formula() -> None:

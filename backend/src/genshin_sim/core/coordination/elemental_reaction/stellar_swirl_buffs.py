@@ -1,0 +1,104 @@
+"""辉映·星扩散 Buff 的跨系统计划。
+
+该模块是星扩散写协调的 Buff 侧窄入口：只依据星扩散·风触发的 occurrence
+与 capability 资格证据，生成确定性的 Buff 申请，不拥有长期状态。
+辉映·星扩散 Buff 与辉映·星超导 Buff 可同时存在，Buff 层不做跨
+Definition 互斥；同时满足两种辉映条件时的生效优先级由角色侧读取逻辑承担。
+"""
+
+from __future__ import annotations
+
+from collections.abc import Sequence
+
+from genshin_sim.core.attributes import (
+    STELLAR_SWIRL_DIRECT_BASE_MULTIPLIER,
+    AttributeSubjectKind,
+    AttributeSubjectRef,
+    ModifierStage,
+    RuntimeSourceKind,
+    RuntimeSourceRef,
+)
+from genshin_sim.core.systems.buff import (
+    ApplyBuffRequest,
+    BuffApplicationPolicy,
+    BuffAttributeModifierTemplate,
+    BuffDefinition,
+    BuffModifierValue,
+    BuffValueRefreshPolicy,
+)
+from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
+    STELLAR_SWIRL_VORTEX_SCOPE,
+)
+
+STELLAR_SWIRL_RADIANCE_BUFF_DEFINITION_KEY = "buff.reaction.stellar_swirl.radiance"
+STELLAR_SWIRL_RADIANCE_BUFF_MECHANIC_KEY = "reaction.stellar_swirl"
+STELLAR_SWIRL_RADIANCE_BUFF_HANDLER_KEY = "reaction_handler.stellar_swirl.radiance"
+STELLAR_SWIRL_RADIANCE_BUFF_CONFLICT_KEY = "buff_conflict.reaction.stellar_swirl.radiance"
+STELLAR_SWIRL_RADIANCE_DIRECT_MULTIPLIER_TERM_KEY = "stellar.swirl.radiance.direct_base_multiplier"
+# 辉映·星扩散 Buff 的存续基线（约 8 秒，480 帧）；精确帧边界待来源化冻结。
+STELLAR_SWIRL_RADIANCE_DURATION_FRAMES = 480
+# 直伤星烁基础系数证据固定为 1，具体倍率由角色侧能力与公式承担。
+STELLAR_SWIRL_RADIANCE_DIRECT_MULTIPLIER_VALUE = 1.0
+
+
+def stellar_swirl_radiance_buff_definition() -> BuffDefinition:
+    """辉映·星扩散 Buff：星扩散·风触发的角色侧投影，携带直伤系数证据。"""
+
+    return BuffDefinition(
+        definition_key=STELLAR_SWIRL_RADIANCE_BUFF_DEFINITION_KEY,
+        mechanic_key=STELLAR_SWIRL_RADIANCE_BUFF_MECHANIC_KEY,
+        handler_key=STELLAR_SWIRL_RADIANCE_BUFF_HANDLER_KEY,
+        conflict_key=STELLAR_SWIRL_RADIANCE_BUFF_CONFLICT_KEY,
+        target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
+        application_policy=BuffApplicationPolicy.REFRESH,
+        value_refresh_policy=BuffValueRefreshPolicy.REPLACE_LATEST,
+        max_stacks=1,
+        attribute_modifiers=(
+            BuffAttributeModifierTemplate(
+                term_key=STELLAR_SWIRL_RADIANCE_DIRECT_MULTIPLIER_TERM_KEY,
+                target_key=STELLAR_SWIRL_DIRECT_BASE_MULTIPLIER,
+                stage=ModifierStage.FLAT_ADD,
+            ),
+        ),
+        tags=frozenset({STELLAR_SWIRL_RADIANCE_BUFF_MECHANIC_KEY}),
+        display_name="辉映·星扩散",
+    )
+
+
+def plan_stellar_swirl_radiance_buff_requests(
+    *,
+    frame: int,
+    occurrence_ref: str,
+    character_refs: Sequence[AttributeSubjectRef],
+    order_start: int = 0,
+) -> tuple[ApplyBuffRequest, ...]:
+    """为具备辉映·星扩散资格的角色生成统一刷新的 Buff 申请。
+
+    每次星扩散·风触发后按固定基线 ``STELLAR_SWIRL_RADIANCE_DURATION_FRAMES``
+    申请或刷新；多次触发按 ``REFRESH`` 顺延，词条数值固定为 ``1.0``。
+    """
+
+    source_context = RuntimeSourceRef(
+        RuntimeSourceKind.MECHANIC,
+        STELLAR_SWIRL_RADIANCE_BUFF_MECHANIC_KEY,
+        STELLAR_SWIRL_VORTEX_SCOPE,
+    )
+    ordered_refs = sorted(character_refs, key=lambda item: item.entity_id)
+    return tuple(
+        ApplyBuffRequest(
+            request_id=f"{occurrence_ref}:stellar-swirl-radiance:{ref.entity_id}",
+            frame=frame,
+            order=order_start + order,
+            definition_key=STELLAR_SWIRL_RADIANCE_BUFF_DEFINITION_KEY,
+            target_ref=ref,
+            source_context=source_context,
+            duration_frames=STELLAR_SWIRL_RADIANCE_DURATION_FRAMES,
+            modifier_values=(
+                BuffModifierValue(
+                    STELLAR_SWIRL_RADIANCE_DIRECT_MULTIPLIER_TERM_KEY,
+                    STELLAR_SWIRL_RADIANCE_DIRECT_MULTIPLIER_VALUE,
+                ),
+            ),
+        )
+        for order, ref in enumerate(ordered_refs)
+    )

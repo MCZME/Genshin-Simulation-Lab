@@ -22,6 +22,7 @@ from genshin_sim.core.coordination.elemental_reaction.spatial import (
     validate_lunar_storm_cloud_space_terminalizations,
     validate_polestar_field_space_terminalizations,
     validate_reaction_state_space_terminalizations,
+    validate_stellar_swirl_vortex_space_terminalizations,
 )
 from genshin_sim.core.elements import Element, ElementalSourceRef
 from genshin_sim.core.systems.reaction import (
@@ -36,9 +37,13 @@ from genshin_sim.core.systems.reaction import (
     ReactionStateInstanceRef,
     ReactionStateLifecycleOperation,
     ReactionStateLifecycleWork,
+    StellarSwirlVortexState,
 )
 from genshin_sim.core.systems.reaction.mechanics.bloom import (
     bloom_explosion_terminal_reaction,
+)
+from genshin_sim.core.systems.reaction.mechanics.stellar_swirl import (
+    stellar_swirl_explosion_effect_group,
 )
 from genshin_sim.core.systems.reaction.models import ReactionEffectGroup, ReactionOccurrence
 from genshin_sim.core.systems.shield import (
@@ -439,6 +444,107 @@ class PolestarFieldExpiryCoordinator:
         return tuple(states)
 
 
+@dataclass(frozen=True, slots=True)
+class StellarSwirlVortexExpiryResult:
+    """到期风旋的已提交生命周期工作及其下一轮爆炸声明。"""
+
+    works: tuple[ReactionStateLifecycleWork, ...]
+    effect_groups: tuple[ReactionEffectGroup, ...] = ()
+
+
+class StellarSwirlVortexExpiryCoordinator:
+    """在到期帧原子移除星辉风旋 State 与 Space 实体并声明冰爆炸。
+
+    风旋爆炸不被视为触发反应：Effect group 以生命周期内最后一次星扩散·风
+    的 occurrence 为因果锚点，伤害源与参与者来自风旋账本，无跨风旋继承。
+    """
+
+    def __init__(
+        self,
+        *,
+        reaction_state_port: ReactionStateInteractionPort,
+        spatial_planning_port: ReactionSpatialPlanningPort,
+    ) -> None:
+        self.reaction_state_port = reaction_state_port
+        self.spatial_planning_port = spatial_planning_port
+
+    def expire(
+        self,
+        context: object,
+        *,
+        frame: int,
+        works: tuple[ReactionStateLifecycleWork, ...],
+    ) -> StellarSwirlVortexExpiryResult:
+        if not works:
+            return StellarSwirlVortexExpiryResult((), ())
+        states = self._active_states_for_expiry(frame, works)
+        state_planner = self.reaction_state_port.begin_state_batch(
+            frame,
+            f"stellar-swirl-vortex-expiry:{frame}",
+        )
+        space_planner = self.spatial_planning_port.begin_batch(
+            operation_id=f"stellar-swirl-vortex-expiry:{frame}",
+            frame=frame,
+        )
+        effect_groups: list[ReactionEffectGroup] = []
+        for state in states:
+            state_planner.remove_stellar_swirl_vortex(instance_ref=state.instance_ref)
+            removed_entity = space_planner.prepare_remove(state.space_entity_ref)
+            effect_groups.append(
+                stellar_swirl_explosion_effect_group(
+                    effect_group_ref=(
+                        f"stellar-swirl-vortex-expiry:{state.instance_ref.value}:frame:{frame}"
+                    ),
+                    parent_occurrence_ref=state.last_reaction_occurrence_ref,
+                    anchor_position=removed_entity.position,
+                    level=state.level,
+                    trigger_source_ref=state.last_reaction_source_ref,
+                    participant_refs=tuple(entry.participant_ref for entry in state.participants),
+                )
+            )
+        _commit_stellar_swirl_vortex_expiry(
+            self.reaction_state_port,
+            self.spatial_planning_port,
+            context,
+            state_planner.seal(),
+            space_planner.seal(),
+        )
+        return StellarSwirlVortexExpiryResult(tuple(works), tuple(effect_groups))
+
+    def _active_states_for_expiry(
+        self,
+        frame: int,
+        works: tuple[ReactionStateLifecycleWork, ...],
+    ) -> tuple[StellarSwirlVortexState, ...]:
+        seen_work_refs: set[str] = set()
+        seen_state_refs: set[ReactionStateInstanceRef] = set()
+        states: list[StellarSwirlVortexState] = []
+        for work in works:
+            if (
+                work.frame != frame
+                or work.operation is not ReactionStateLifecycleOperation.EXPIRE
+                or work.state_slot.value != "stellar_swirl_vortex"
+            ):
+                raise ReactionBoundEntityLifecycleError("星辉风旋到期 work 不一致")
+            if work.work_ref in seen_work_refs or work.state_instance_ref in seen_state_refs:
+                raise ReactionBoundEntityLifecycleError("星辉风旋到期 work 重复")
+            seen_work_refs.add(work.work_ref)
+            seen_state_refs.add(work.state_instance_ref)
+            state = self.reaction_state_port.stellar_swirl_vortex_state_for(work.state_instance_ref)
+            if state is None:
+                raise ReactionBoundEntityLifecycleError("到期星辉风旋 State 不存在")
+            if (
+                state.expires_at_frame != frame
+                or state.slot_key.slot is not work.state_slot
+                or state.slot_key.scope_key != work.scope_key
+            ):
+                raise ReactionBoundEntityLifecycleError(
+                    "到期星辉风旋 State 与 lifecycle work 不一致"
+                )
+            states.append(state)
+        return tuple(states)
+
+
 class LunarCageExpiryCoordinator:
     """在到期帧原子移除月笼 State 与对应 Space 实体。"""
 
@@ -658,6 +764,26 @@ def _commit_polestar_field_expiry(
     reaction_state_port.validate_state_plan(state_plan)
     spatial_planning_port.validate(space_plan)
     validate_polestar_field_space_terminalizations(state_plan, space_plan)
+    state_receipt = reaction_state_port.commit_prevalidated_state_plan(state_plan)
+    spatial_planning_port.commit_prevalidated(space_plan)
+    if context is not None:
+        with spatial_planning_port.event_publication_guard():
+            reaction_state_port.publish_committed_state_facts(context, state_receipt)
+            publish_space_entity_facts(context, space_plan)
+
+
+def _commit_stellar_swirl_vortex_expiry(
+    reaction_state_port: ReactionStateInteractionPort,
+    spatial_planning_port: ReactionSpatialPlanningPort,
+    context: object,
+    state_plan,
+    space_plan,
+) -> None:
+    """验证两个领域的完整前值后，提交风旋终态与 Space 删除。"""
+
+    reaction_state_port.validate_state_plan(state_plan)
+    spatial_planning_port.validate(space_plan)
+    validate_stellar_swirl_vortex_space_terminalizations(state_plan, space_plan)
     state_receipt = reaction_state_port.commit_prevalidated_state_plan(state_plan)
     spatial_planning_port.commit_prevalidated(space_plan)
     if context is not None:

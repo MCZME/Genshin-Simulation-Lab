@@ -26,6 +26,7 @@ from genshin_sim.core.systems.reaction.establishment_gates import (
 )
 from genshin_sim.core.systems.reaction.states import (
     STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
+    STELLAR_SWIRL_VORTEX_LIFETIME_FRAMES,
     BurningState,
     ElectroChargedState,
     FrozenState,
@@ -1038,6 +1039,102 @@ class LunarReactionDamageImpactEffect:
 
 
 @dataclass(frozen=True, slots=True)
+class StellarReactionDamageImpactEffect:
+    """星烁反应声明的复合伤害 Effect，不泄漏 Damage 侧输入模型。
+
+    ``trigger_source_ref`` 是本段星烁伤害的唯一伤害源；``participant_refs``
+    是至多 4 名只参与计算的伤害计算参与者。星扩散·风单体即时结算，
+    星扩散·冰爆炸按风旋等级选择范围并附着冰元素。
+    """
+
+    effect_ref: str
+    effect_group_ref: str
+    effect_order: int
+    parent_occurrence_ref: str | None
+    main_attack_tag: str
+    damage_profile_key: str
+    damage_element: Element
+    damage_kind_key: str
+    stellar_base_multiplier: float
+    trigger_source_ref: ElementalSourceRef
+    participant_refs: tuple[ElementalSourceRef, ...]
+    can_crit: bool = True
+    gate_definition_key: str | None = None
+    attached_aura_element: Element | None = None
+    attached_aura_amount: AuraAmount | None = None
+    aura_application_profile_key: str | None = None
+    audit_tags: tuple[str, ...] = ()
+    cause: ReactionEffectCause | None = None
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.effect_ref, "effect_ref"),
+            (self.effect_group_ref, "effect_group_ref"),
+            (self.main_attack_tag, "main_attack_tag"),
+            (self.damage_profile_key, "damage_profile_key"),
+            (self.damage_kind_key, "damage_kind_key"),
+        ):
+            _text(value, name)
+        if (
+            isinstance(self.effect_order, bool)
+            or not isinstance(self.effect_order, int)
+            or self.effect_order < 0
+        ):
+            raise ValueError("effect_order 必须是非负整数")
+        if not isinstance(self.damage_element, Element):
+            raise ValueError("星烁 Damage Impact 必须使用 Element")
+        multiplier = _finite_non_negative(self.stellar_base_multiplier, "stellar_base_multiplier")
+        if multiplier <= 0:
+            raise ValueError("星烁基础系数必须为正数")
+        if not isinstance(self.trigger_source_ref, ElementalSourceRef):
+            raise ValueError("星烁 Damage Impact 的伤害源必须是 ElementalSourceRef")
+        raw_participants = tuple(self.participant_refs)
+        if not raw_participants or any(
+            not isinstance(item, ElementalSourceRef) for item in raw_participants
+        ):
+            raise ValueError("星烁 Damage Impact 必须具有非空参与者序列")
+        if any(not item.source_key.startswith("character:") for item in raw_participants):
+            raise ValueError("星烁 Damage Impact 的参与者必须来自角色 source_key")
+        if len({item.source_key for item in raw_participants}) != len(raw_participants):
+            raise ValueError("星烁 Damage Impact 的参与者不能重复角色")
+        canonical_participants = tuple(
+            sorted(raw_participants, key=lambda item: (item.source_key, item.instance_id or ""))
+        )
+        if not isinstance(self.can_crit, bool):
+            raise ValueError("星烁 Damage Impact 的 can_crit 必须是布尔值")
+        if self.gate_definition_key is not None:
+            _text(self.gate_definition_key, "gate_definition_key")
+        if (self.attached_aura_element is None) != (self.attached_aura_amount is None):
+            raise ValueError("星烁附着声明必须同时提供元素与元素量")
+        if self.attached_aura_element is not None:
+            if not isinstance(self.attached_aura_element, Element):
+                raise ValueError("星烁附着元素必须是 Element")
+            if not isinstance(self.attached_aura_amount, AuraAmount) or (
+                self.attached_aura_amount.is_zero
+            ):
+                raise ValueError("星烁附着元素量必须为正的 AuraAmount")
+            if self.aura_application_profile_key is None:
+                raise ValueError("星烁附着声明必须提供 Aura Application Profile key")
+        if self.aura_application_profile_key is not None:
+            _text(self.aura_application_profile_key, "aura_application_profile_key")
+        cause = self.cause or (
+            OccurrenceCause(self.parent_occurrence_ref)
+            if self.parent_occurrence_ref is not None
+            else None
+        )
+        if not isinstance(cause, OccurrenceCause | ScheduledStateTickCause):
+            raise ValueError("星烁 Damage Impact 必须具有 ReactionEffectCause")
+        occurrence_ref = cause.occurrence_ref if isinstance(cause, OccurrenceCause) else None
+        if self.parent_occurrence_ref is not None and self.parent_occurrence_ref != occurrence_ref:
+            raise ValueError("星烁 Damage Impact 的 occurrence 投影必须与 cause 一致")
+        object.__setattr__(self, "stellar_base_multiplier", multiplier)
+        object.__setattr__(self, "participant_refs", canonical_participants)
+        object.__setattr__(self, "parent_occurrence_ref", occurrence_ref)
+        object.__setattr__(self, "cause", cause)
+        object.__setattr__(self, "audit_tags", tuple(self.audit_tags))
+
+
+@dataclass(frozen=True, slots=True)
 class LunarStormCloudAttackEffect:
     """雷暴云周期攻击声明；参与者在攻击结算时按目标 Aura 冻结。"""
 
@@ -1315,6 +1412,7 @@ type ReactionEffect = (
     | LunarReactionDamageImpactEffect
     | LunarStormCloudAttackEffect
     | ReactionStatusEffect
+    | StellarReactionDamageImpactEffect
 )
 
 
@@ -1812,6 +1910,73 @@ class PolestarFieldStatePlanningIntent:
 
 
 @dataclass(frozen=True, slots=True)
+class StellarSwirlVortexStatePlanningIntent:
+    """星扩散 occurrence 对星辉风旋创建的确定性候选意图。
+
+    意图始终描述"以本次反应目标为锚点、等级 1 创建"的候选；是否保留既有
+    风旋只升级、还是先爆炸终结，由跨系统协调计划根据风旋现状决定。
+    意图冻结本次星扩散·风的参与者集合（触发者 + 冰 Aura 活跃贡献者）。
+    """
+
+    intent_ref: str
+    parent_occurrence_ref: str
+    instance_ref: ReactionStateInstanceRef
+    subject_ref: ElementalSubjectRef
+    space_entity_ref: str
+    trigger_source_ref: ElementalSourceRef
+    scope_ref: str
+    created_frame: int
+    expires_at_frame: int
+    reaction_participants: tuple[ElementalSourceRef, ...] = ()
+
+    def __post_init__(self) -> None:
+        for value, name in (
+            (self.intent_ref, "intent_ref"),
+            (self.parent_occurrence_ref, "parent_occurrence_ref"),
+            (self.space_entity_ref, "space_entity_ref"),
+            (self.scope_ref, "scope_ref"),
+        ):
+            _text(value, name)
+        if not isinstance(self.instance_ref, ReactionStateInstanceRef):
+            raise ValueError("instance_ref 必须是 ReactionStateInstanceRef")
+        expected_instance_ref = f"reaction-state:stellar-swirl-vortex:{self.parent_occurrence_ref}"
+        if self.instance_ref.value != expected_instance_ref:
+            raise ValueError("星辉风旋 instance_ref 必须由 occurrence_ref 确定性派生")
+        expected_space_entity_ref = (
+            f"reaction_object:stellar_swirl_vortex:{self.parent_occurrence_ref}"
+        )
+        if self.space_entity_ref != expected_space_entity_ref:
+            raise ValueError("星辉风旋 space_entity_ref 必须由 occurrence_ref 确定性派生")
+        if not isinstance(self.subject_ref, ElementalSubjectRef):
+            raise ValueError("subject_ref 必须是 ElementalSubjectRef")
+        if not isinstance(self.trigger_source_ref, ElementalSourceRef):
+            raise ValueError("trigger_source_ref 必须是 ElementalSourceRef")
+        for field_name in ("created_frame", "expires_at_frame"):
+            value = getattr(self, field_name)
+            if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+                raise ValueError(f"{field_name} 必须是非负整数")
+        if self.expires_at_frame != self.created_frame + STELLAR_SWIRL_VORTEX_LIFETIME_FRAMES:
+            raise ValueError("星辉风旋生命周期必须固定为 180 帧")
+        participants = tuple(self.reaction_participants)
+        if any(not isinstance(item, ElementalSourceRef) for item in participants):
+            raise ValueError("reaction_participants 必须是 ElementalSourceRef 序列")
+        if len({item.source_key for item in participants}) != len(participants):
+            raise ValueError("reaction_participants 不能重复角色")
+        if self.trigger_source_ref.source_key not in {item.source_key for item in participants}:
+            raise ValueError("星辉风旋意图的参与者必须包含本次反应触发者")
+        object.__setattr__(
+            self,
+            "reaction_participants",
+            tuple(
+                sorted(
+                    participants,
+                    key=lambda item: (item.source_key, item.instance_id or ""),
+                )
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class LunarCrystallizeStatePlanningIntent:
     """月结晶 occurrence 对月笼集合与共享累计器的确定性候选意图。"""
 
@@ -1969,6 +2134,7 @@ class ReactionOccurrence:
     dendro_core_state_creation: DendroCoreStateCreationIntent | None = None
     lunar_storm_cloud_state_planning: LunarStormCloudStatePlanningIntent | None = None
     polestar_field_state_planning: PolestarFieldStatePlanningIntent | None = None
+    stellar_swirl_vortex_state_planning: StellarSwirlVortexStatePlanningIntent | None = None
     lunar_crystallize_planning: LunarCrystallizeStatePlanningIntent | None = None
     spatial_entity_creation: SpatialEntityCreationEffect | None = None
     parallel_aura_consumption: ParallelAuraConsumption | None = None
@@ -2031,6 +2197,7 @@ class ReactionOccurrence:
         core_creation = self.dendro_core_state_creation
         cloud_planning = self.lunar_storm_cloud_state_planning
         polestar_planning = self.polestar_field_state_planning
+        vortex_planning = self.stellar_swirl_vortex_state_planning
         lunar_crystallize_planning = self.lunar_crystallize_planning
         spatial_creation = self.spatial_entity_creation
         if shard_creation is not None and core_creation is not None:
@@ -2050,11 +2217,27 @@ class ReactionOccurrence:
             raise ValueError(
                 "一个 occurrence 不能同时创建晶片、草原核、雷暴云、极星辉域和月结晶月笼"
             )
+        if vortex_planning is not None and (
+            shard_creation is not None
+            or core_creation is not None
+            or cloud_planning is not None
+            or polestar_planning is not None
+            or lunar_crystallize_planning is not None
+        ):
+            raise ValueError(
+                "一个 occurrence 不能同时创建晶片、草原核、雷暴云、极星辉域、月结晶月笼和星辉风旋"
+            )
         if lunar_crystallize_planning is not None and spatial_creation is not None:
             raise ValueError("月结晶月笼使用多实体空间创建，不使用单实体空间创建声明")
         state_creation_count = sum(
             item is not None
-            for item in (shard_creation, core_creation, cloud_planning, polestar_planning)
+            for item in (
+                shard_creation,
+                core_creation,
+                cloud_planning,
+                polestar_planning,
+                vortex_planning,
+            )
         )
         if (state_creation_count == 0) != (spatial_creation is None):
             raise ValueError("Reaction State 与空间创建声明必须同时存在或同时缺失")
@@ -2133,6 +2316,25 @@ class ReactionOccurrence:
                 or polestar_planning.expires_at_frame != spatial_creation.expires_at_frame
             ):
                 raise ValueError("极星辉域 State 与空间创建声明的生命周期必须一致")
+        if vortex_planning is not None:
+            if not isinstance(vortex_planning, StellarSwirlVortexStatePlanningIntent):
+                raise ValueError("stellar_swirl_vortex_state_planning 必须是强类型规划意图")
+            if not isinstance(spatial_creation, SpatialEntityCreationEffect):
+                raise ValueError("spatial_entity_creation 必须是强类型空间创建声明")
+            assert spatial_creation is not None
+            if vortex_planning.parent_occurrence_ref != self.occurrence_ref:
+                raise ValueError("星辉风旋规划意图必须引用所属 occurrence_ref")
+            if spatial_creation.parent_occurrence_ref != self.occurrence_ref:
+                raise ValueError("星辉风旋空间创建声明必须引用所属 occurrence_ref")
+            if vortex_planning.space_entity_ref != spatial_creation.space_entity_ref:
+                raise ValueError("星辉风旋 State 与空间创建声明必须使用相同 entity ref")
+            if vortex_planning.instance_ref.value != spatial_creation.source_key:
+                raise ValueError("星辉风旋空间创建声明必须反向引用 State instance ref")
+            if (
+                vortex_planning.created_frame != spatial_creation.created_frame
+                or vortex_planning.expires_at_frame != spatial_creation.expires_at_frame
+            ):
+                raise ValueError("星辉风旋 State 与空间创建声明的生命周期必须一致")
         if lunar_crystallize_planning is not None:
             if not isinstance(lunar_crystallize_planning, LunarCrystallizeStatePlanningIntent):
                 raise ValueError("lunar_crystallize_planning 必须是强类型规划意图")

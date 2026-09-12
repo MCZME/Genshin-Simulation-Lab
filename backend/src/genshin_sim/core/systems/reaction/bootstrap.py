@@ -51,6 +51,10 @@ from genshin_sim.core.systems.reaction.mechanics.shattered import (
     shattered_gate_definitions,
 )
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct import stellar_conduct_definition
+from genshin_sim.core.systems.reaction.mechanics.stellar_swirl import (
+    stellar_swirl_definition,
+    stellar_swirl_gate_definitions,
+)
 from genshin_sim.core.systems.reaction.mechanics.superconduct import (
     superconduct_definition,
     superconduct_gate_definitions,
@@ -88,6 +92,7 @@ def create_default_reaction_bootstrap() -> ReactionBootstrap:
                 overloaded_definition(),
                 superconduct_definition(),
                 stellar_conduct_definition(),
+                stellar_swirl_definition(),
                 frozen_definition(),
                 shattered_definition(),
                 electro_charged_definition(),
@@ -115,6 +120,7 @@ def create_default_reaction_bootstrap() -> ReactionBootstrap:
             *burning_gate_definitions(),
             *bloom_gate_definitions(),
             *lunar_electro_charged_gate_definitions(),
+            *stellar_swirl_gate_definitions(),
         ),
         establishment_gate_definitions=(crystallize_establishment_gate_definition(),),
     )

@@ -72,8 +72,13 @@ from genshin_sim.core.systems.damage.policies import (
     StandardScalingZonePolicy,
 )
 from genshin_sim.core.systems.damage.stellar import (
+    STELLAR_COMPOSITE_PARTICIPANT_LIMIT,
+    StellarReactionComponentResolution,
+    StellarReactionDamageInput,
     StellarReactionDamageResolution,
+    StellarReactionParticipantInput,
     resolve_stellar_reaction_damage,
+    resolve_stellar_zone_damage,
 )
 
 if TYPE_CHECKING:
@@ -680,8 +685,12 @@ class StellarReactionDamageFormula:
             raise DamageFormulaInputError("星烁伤害缺少 StellarReactionDamageInput")
         if context.modifiers.applied_terms or context.modifiers.rejected_terms:
             raise DamageFormulaInputError("星烁伤害不接受普通 Damage modifier")
+        if stellar.mode == "reaction_composite":
+            if not stellar.participants:
+                raise DamageFormulaInputError("反应星烁复合伤害必须提供参与者列表")
+            return self._resolve_reaction_composite(context, query, stellar)
         if stellar.mode != "character_direct":
-            raise DamageFormulaInputError("星烁 reaction_composite 模式留待星扩散阶段启用")
+            raise DamageFormulaInputError("星烁伤害 mode 不受支持")
 
         mastery_trace = context.session.resolve_source(STAT_ELEMENTAL_MASTERY)
         elemental_mastery = validate_damage_float(
@@ -726,6 +735,124 @@ class StellarReactionDamageFormula:
             official_damage=pure.damage,
             debug_multiplier=debug_multiplier,
             final_damage=final_damage,
+            source_attribute_trace=source_attribute_trace,
+            target_attribute_trace=target_attribute_trace,
+        )
+
+    def _resolve_reaction_composite(
+        self,
+        context: DamageFormulaContext,
+        query: DamageQuery,
+        stellar: StellarReactionDamageInput,
+    ) -> StellarReactionDamageResolution:
+        """逐参与者结算单人伤害，稳定排序取前 4 名后按固定权重聚合。"""
+
+        raw_components = tuple(
+            self._resolve_stellar_component(context, query, stellar, participant)
+            for participant in stellar.participants
+        )
+        ordered_components = tuple(
+            sorted(
+                raw_components,
+                key=lambda item: (-item.component_damage, item.participant_ref.entity_id),
+            )[:STELLAR_COMPOSITE_PARTICIPANT_LIMIT]
+        )
+        weighted_components = tuple(
+            replace(
+                component,
+                weight=_stellar_component_weight(index),
+                weighted_damage=component.component_damage * _stellar_component_weight(index),
+            )
+            for index, component in enumerate(ordered_components)
+        )
+        official_damage = math.fsum(component.weighted_damage for component in weighted_components)
+        debug_multiplier = self.debug_adjustment.multiplier
+        final_damage = official_damage * debug_multiplier
+        if not math.isfinite(final_damage) or final_damage < 0:
+            raise DamageResolutionError("星烁最终伤害必须是有限非负数")
+        top = weighted_components[0]
+        source_trace = [
+            trace for component in weighted_components for trace in component.source_attribute_trace
+        ]
+        target_trace = [
+            trace for component in weighted_components for trace in component.target_attribute_trace
+        ]
+        if context.trace_level is TraceLevel.NONE:
+            source_attribute_trace = ()
+            target_attribute_trace = ()
+        else:
+            source_attribute_trace = tuple(_unique_resolutions(source_trace))
+            target_attribute_trace = tuple(_unique_resolutions(target_trace))
+        return StellarReactionDamageResolution(
+            replace(stellar, elemental_mastery=top.elemental_mastery),
+            official_damage,
+            elemental_mastery=top.elemental_mastery,
+            mastery_bonus=top.mastery_bonus,
+            critical=top.critical,
+            resistance=top.resistance,
+            official_damage=official_damage,
+            debug_multiplier=debug_multiplier,
+            final_damage=final_damage,
+            components=weighted_components,
+            source_attribute_trace=source_attribute_trace,
+            target_attribute_trace=target_attribute_trace,
+        )
+
+    def _resolve_stellar_component(
+        self,
+        context: DamageFormulaContext,
+        query: DamageQuery,
+        stellar: StellarReactionDamageInput,
+        participant: StellarReactionParticipantInput,
+    ) -> StellarReactionComponentResolution:
+        component_query = _stellar_component_query(query, participant)
+        component_session = _new_damage_session(context, component_query)
+        mastery_trace = component_session.resolve_source(STAT_ELEMENTAL_MASTERY)
+        elemental_mastery = validate_damage_float(
+            mastery_trace.final_value,
+            "stellar elemental_mastery",
+        )
+        if elemental_mastery < 0:
+            raise DamageResolutionError("星烁元素精通不能为负数")
+        mastery_bonus = 6.0 * elemental_mastery / (elemental_mastery + 2000.0)
+        critical, critical_trace, _ = self.critical_policy.resolve(
+            component_query,
+            component_session,
+            (),
+        )
+        resistance_attribute = component_session.resolve_target(
+            ELEMENT_TO_RESISTANCE_KEY[query.request.element.value]
+        )
+        resistance = self.resistance_policy.resolve(resistance_attribute.final_value)
+        component_damage = resolve_stellar_zone_damage(
+            scaling_value=participant.reaction_base_value,
+            stellar_base_multiplier=stellar.stellar_base_multiplier,
+            elemental_mastery=elemental_mastery,
+            stellar_base_bonus=participant.stellar_base_bonus,
+            stellar_bonus=participant.stellar_bonus,
+            stellar_authority_multiplier=participant.stellar_authority_multiplier,
+            feather_addition=participant.stellar_feather_addition,
+            critical_multiplier=critical.multiplier,
+            resistance_multiplier=resistance.multiplier,
+            stellar_ascension_bonus=participant.stellar_ascension_bonus,
+        )
+        if context.trace_level is TraceLevel.NONE:
+            source_attribute_trace = ()
+            target_attribute_trace = ()
+        else:
+            source_attribute_trace = tuple(_unique_resolutions([mastery_trace, *critical_trace]))
+            target_attribute_trace = (resistance_attribute,)
+        return StellarReactionComponentResolution(
+            participant_ref=participant.participant_ref,
+            source_level=participant.source_level,
+            reaction_base_value=participant.reaction_base_value,
+            elemental_mastery=elemental_mastery,
+            mastery_bonus=mastery_bonus,
+            critical=critical,
+            resistance=resistance,
+            component_damage=component_damage,
+            weight=0.0,
+            weighted_damage=0.0,
             source_attribute_trace=source_attribute_trace,
             target_attribute_trace=target_attribute_trace,
         )
@@ -785,6 +912,54 @@ def _new_damage_session(
         query,
         context.trace_level,
     )
+
+
+def _stellar_component_query(
+    query: DamageQuery,
+    participant: StellarReactionParticipantInput,
+) -> DamageQuery:
+    """为一个星烁角色组分创建独立的属性查询与请求投影。"""
+
+    request = query.request
+    component_request = DamageRequest(
+        request_id=f"{request.request_id}:participant:{participant.participant_ref.entity_id}",
+        frame=request.frame,
+        formula_key=FORMULA_KEY_GENERAL,
+        main_attack_tag=request.main_attack_tag,
+        impact_key=request.impact_key,
+        source_ref=participant.participant_ref,
+        target_ref=request.target_ref,
+        source_level=participant.source_level,
+        target_level=request.target_level,
+        element=request.element,
+        source_context=request.source_context,
+        tags=request.tags,
+        can_crit=participant.can_crit,
+    )
+    tags = component_request.tags
+    return DamageQuery(
+        request=component_request,
+        source_attribute_context=AttributeQueryContext(
+            tags=tags,
+            source_ref=request.source_context,
+            target_ref=request.target_ref,
+        ),
+        target_attribute_context=AttributeQueryContext(
+            tags=tags,
+            source_ref=request.source_context,
+            target_ref=participant.participant_ref,
+        ),
+    )
+
+
+def _stellar_component_weight(index: int) -> float:
+    """返回星烁复合伤害按完整单人伤害排序后的固定权重。"""
+
+    if index == 0:
+        return 0.60
+    if index == 1:
+        return 0.30
+    return 0.05
 
 
 def _lunar_component_weight(mode: LunarReactionDamageMode, index: int) -> float:

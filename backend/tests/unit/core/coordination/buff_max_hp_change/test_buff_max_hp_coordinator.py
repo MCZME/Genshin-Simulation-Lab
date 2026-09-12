@@ -406,8 +406,7 @@ def test_reentrant_apply_from_event_raises_reentrancy_error():
     assert world.health_runtime.get_max_hp(CHARACTER, 10) == 1500.0
     assert world.health_runtime.get_current_hp(CHARACTER) == pytest.approx(1500.0)
     assert (
-        world.buff_store.active(10, target_ref=CHARACTER, definition_key=atk.definition_key)
-        == ()
+        world.buff_store.active(10, target_ref=CHARACTER, definition_key=atk.definition_key) == ()
     )
 
 

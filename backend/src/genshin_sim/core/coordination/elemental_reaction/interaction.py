@@ -5,6 +5,7 @@ from __future__ import annotations
 from contextlib import nullcontext
 from dataclasses import dataclass
 
+from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.coordination.elemental_reaction.errors import (
     ElementalInteractionError,
 )
@@ -48,6 +49,8 @@ from genshin_sim.core.coordination.elemental_reaction.spatial import (
     validate_polestar_field_space_bindings,
     validate_polestar_field_space_terminalizations,
     validate_reaction_state_space_bindings,
+    validate_stellar_swirl_vortex_space_bindings,
+    validate_stellar_swirl_vortex_space_terminalizations,
 )
 from genshin_sim.core.coordination.elemental_reaction.state_frame import (
     ElementalStateFrameCoordinator,
@@ -62,6 +65,12 @@ from genshin_sim.core.coordination.elemental_reaction.stellar_buffs import (
 from genshin_sim.core.coordination.elemental_reaction.stellar_conduct import (
     plan_polestar_field_occurrence,
     record_stellar_conduct_attachment,
+)
+from genshin_sim.core.coordination.elemental_reaction.stellar_swirl import (
+    plan_stellar_swirl_vortex_occurrence,
+)
+from genshin_sim.core.coordination.elemental_reaction.stellar_swirl_buffs import (
+    plan_stellar_swirl_radiance_buff_requests,
 )
 from genshin_sim.core.coordination.elemental_reaction.step_planning import (
     _plan_depleted_frozen_state_removal,
@@ -141,6 +150,9 @@ from genshin_sim.core.systems.reaction.mechanics.shattered.mechanic import (
 )
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
     STELLAR_CONDUCT_TEAM_SCOPE,
+)
+from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
+    STELLAR_SWIRL_CAPABILITY_KEY,
 )
 from genshin_sim.core.systems.reaction.states import StellarConductAttachmentRecord
 
@@ -328,6 +340,7 @@ class ElementalInteractionCoordinator:
         additional_effect_groups: list[ReactionEffectGroup] = []
         additional_occurrences: list[ReactionOccurrence] = []
         polestar_occurrence_ref: str | None = None
+        stellar_swirl_occurrence_ref: str | None = None
         attachment_targets_by_element: dict[Element, list[ElementalSubjectRef]] = {}
         for work in works:
             target = _target_for(context, work.target_ref)
@@ -422,6 +435,7 @@ class ElementalInteractionCoordinator:
                         core_intent = occurrence.dendro_core_state_creation
                         cloud_intent = occurrence.lunar_storm_cloud_state_planning
                         polestar_intent = occurrence.polestar_field_state_planning
+                        vortex_intent = occurrence.stellar_swirl_vortex_state_planning
                         lunar_crystallize_intent = occurrence.lunar_crystallize_planning
                         spatial_effect = occurrence.spatial_entity_creation
                         if (
@@ -429,6 +443,7 @@ class ElementalInteractionCoordinator:
                             and core_intent is None
                             and cloud_intent is None
                             and polestar_intent is None
+                            and vortex_intent is None
                             and lunar_crystallize_intent is None
                         ):
                             continue
@@ -495,6 +510,19 @@ class ElementalInteractionCoordinator:
                                 intent=polestar_intent,
                                 spatial_effect=spatial_effect,
                             )
+                        elif vortex_intent is not None:
+                            assert spatial_effect is not None
+                            assert vortex_intent is not None
+                            stellar_swirl_occurrence_ref = occurrence.occurrence_ref
+                            vortex_result = plan_stellar_swirl_vortex_occurrence(
+                                context=context,
+                                state_planner=state_planner,
+                                spatial_planner=spatial_planner,
+                                intent=vortex_intent,
+                                spatial_effect=spatial_effect,
+                            )
+                            if vortex_result.exploded:
+                                additional_effect_groups.extend(vortex_result.effect_groups)
                         else:
                             assert lunar_crystallize_intent is not None
                             lunar_result = plan_lunar_crystallize_occurrence(
@@ -663,6 +691,29 @@ class ElementalInteractionCoordinator:
         else:
             stellar_apply_plan = None
             stellar_remove_plans = ()
+        stellar_swirl_apply_plan = None
+        if stellar_swirl_occurrence_ref is not None:
+            if self.stellar_buff_port is None:
+                raise ElementalInteractionError("星扩散触发缺少 Buff 规划端口")
+            swirl_character_refs = tuple(
+                AttributeSubjectRef.character(provider.entity_id)
+                for provider in _reaction_capability_providers_for(
+                    self.reaction_eligibility_port,
+                    frame=request.frame,
+                    team_ref=PLAYER_TEAM_DENDRO_CORE_POOL_SCOPE,
+                    capability_key=STELLAR_SWIRL_CAPABILITY_KEY,
+                )
+            )
+            swirl_apply_requests = plan_stellar_swirl_radiance_buff_requests(
+                frame=request.frame,
+                occurrence_ref=stellar_swirl_occurrence_ref,
+                character_refs=swirl_character_refs,
+            )
+            stellar_swirl_apply_plan = (
+                self.stellar_buff_port.prepare_apply(swirl_apply_requests)
+                if swirl_apply_requests
+                else None
+            )
         for element in sorted(attachment_targets_by_element, key=lambda item: item.value):
             record_stellar_conduct_attachment(
                 context=context,
@@ -711,12 +762,17 @@ class ElementalInteractionCoordinator:
             validate_lunar_cage_space_bindings(state_plan, space_plan)
             validate_polestar_field_space_bindings(state_plan, space_plan)
             validate_polestar_field_space_terminalizations(state_plan, space_plan)
+            validate_stellar_swirl_vortex_space_bindings(state_plan, space_plan)
+            validate_stellar_swirl_vortex_space_terminalizations(state_plan, space_plan)
         if stellar_apply_plan is not None:
             assert stellar_buff_port is not None
             stellar_buff_port.validate(stellar_apply_plan)
         for stellar_remove_plan in stellar_remove_plans:
             assert stellar_buff_port is not None
             stellar_buff_port.validate(stellar_remove_plan)
+        if stellar_swirl_apply_plan is not None:
+            assert self.stellar_buff_port is not None
+            self.stellar_buff_port.validate(stellar_swirl_apply_plan)
         prepared_damage_records = (
             self.damage_handler.prepare_impact_request(
                 context,
@@ -746,6 +802,12 @@ class ElementalInteractionCoordinator:
             stellar_remove_receipts = tuple(
                 stellar_buff_port.commit_prevalidated(stellar_remove_plan)
                 for stellar_remove_plan in stellar_remove_plans
+            )
+        stellar_swirl_receipt = None
+        if stellar_swirl_apply_plan is not None:
+            assert self.stellar_buff_port is not None
+            stellar_swirl_receipt = self.stellar_buff_port.commit_prevalidated(
+                stellar_swirl_apply_plan
             )
         if prepared_damage_records:
             self.damage_handler.commit_prepared_records(prepared_damage_records)
@@ -860,6 +922,9 @@ class ElementalInteractionCoordinator:
             for stellar_remove_receipt in stellar_remove_receipts:
                 assert stellar_buff_port is not None
                 stellar_buff_port.publish_committed_facts(stellar_remove_receipt)
+            if stellar_swirl_receipt is not None:
+                assert self.stellar_buff_port is not None
+                self.stellar_buff_port.publish_committed_facts(stellar_swirl_receipt)
             if prepared_damage_records:
                 self.damage_handler.publish_committed_facts(context, prepared_damage_records)
             context.events.publish(
@@ -1001,6 +1066,18 @@ def _reaction_capability_keys_for(
         return frozenset()
     view = port.evidence_for(frame, team_ref)
     return frozenset(item.capability_key for item in view.evidence)
+
+
+def _reaction_capability_providers_for(
+    port: ReactionEligibilityReadPort | None,
+    *,
+    frame: int,
+    team_ref: str,
+    capability_key: str,
+) -> tuple[ElementalSubjectRef, ...]:
+    if port is None:
+        return ()
+    return port.evidence_for(frame, team_ref).providers_for(capability_key)
 
 
 def _intent_from_damage_spec(spec: DamageImpactSpec) -> _ElementalImpactIntent:

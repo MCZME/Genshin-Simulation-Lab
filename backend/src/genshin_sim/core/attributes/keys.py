@@ -48,6 +48,8 @@ BONUS_DAMAGE_DENDRO = AttributeKey("bonus.damage.dendro")
 
 # 星超导辉映 Buff 投影的直伤星烁基础系数证据；角色能力据此组装直伤星烁输入。
 STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER = AttributeKey("stellar.conduct.direct_base_multiplier")
+# 星扩散辉映 Buff 投影的直伤星烁基础系数证据；与星超导键并存，读取优先级由角色侧执行。
+STELLAR_SWIRL_DIRECT_BASE_MULTIPLIER = AttributeKey("stellar.swirl.direct_base_multiplier")
 
 RESISTANCE_PHYSICAL = AttributeKey("resistance.physical")
 RESISTANCE_PYRO = AttributeKey("resistance.pyro")
@@ -81,6 +83,7 @@ PUBLIC_ATTRIBUTE_KEYS = (
     BONUS_DAMAGE_GEO,
     BONUS_DAMAGE_DENDRO,
     STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER,
+    STELLAR_SWIRL_DIRECT_BASE_MULTIPLIER,
     RESISTANCE_PHYSICAL,
     RESISTANCE_PYRO,
     RESISTANCE_HYDRO,

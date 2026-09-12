@@ -28,6 +28,7 @@ from genshin_sim.core.systems.reaction.states import (
     ScheduledStateTickCause,
     SprawlingShotState,
     StellarConductCounterState,
+    StellarSwirlVortexState,
 )
 
 
@@ -269,6 +270,29 @@ def _state_record_to_dict(record: ReactionStateRecord) -> dict[str, object]:
                 "settled_stacks": record.settled_stacks,
                 "recorded_record_refs": list(record.recorded_record_refs),
                 "excluded_attack_refs": list(record.excluded_attack_refs),
+                "revision": record.revision,
+            }
+        )
+    elif isinstance(record, StellarSwirlVortexState):
+        payload.update(
+            {
+                "space_entity_ref": record.space_entity_ref,
+                "created_by_occurrence_ref": record.created_by_occurrence_ref,
+                "trigger_source_ref": record.trigger_source_ref.to_dict(),
+                "scope_ref": record.scope_ref,
+                "level": record.level,
+                "last_reaction_source_ref": record.last_reaction_source_ref.to_dict(),
+                "last_reaction_occurrence_ref": record.last_reaction_occurrence_ref,
+                "participants": [
+                    {
+                        "participant_ref": item.participant_ref.to_dict(),
+                        "first_reaction_frame": item.first_reaction_frame,
+                        "last_reaction_frame": item.last_reaction_frame,
+                    }
+                    for item in record.participants
+                ],
+                "created_frame": record.created_frame,
+                "expires_at_frame": record.expires_at_frame,
                 "revision": record.revision,
             }
         )

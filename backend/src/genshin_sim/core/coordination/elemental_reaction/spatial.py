@@ -26,6 +26,7 @@ from genshin_sim.core.systems.reaction import (
     PolestarFieldState,
     ReactionMutationPlan,
     SpatialEntityCreationEffect,
+    StellarSwirlVortexState,
 )
 from genshin_sim.core.systems.reaction.states import (
     CrystallizeShardLifecycleState,
@@ -519,6 +520,75 @@ def validate_lunar_cage_space_terminalizations(
             or entity.lifecycle.created_frame != state.created_frame
         ):
             raise ReactionStateBindingConflictError("月笼终结与空间实体删除 binding 不一致")
+
+
+def validate_stellar_swirl_vortex_space_bindings(
+    state_plan: ReactionStateMutationPlan,
+    space_plan: SpaceEntityMutationPlan,
+) -> None:
+    """校验星扩散当前 batch 的风旋与 REACTION_OBJECT 创建一一对应。
+
+    只校验新创建的风旋；升级是既有实例的原地替换（锚点与生命周期不变），
+    不要求空间创建或更新。
+    """
+
+    expected_by_slot = {record.slot_key: record for record in state_plan.expected_records}
+    states = tuple(
+        state
+        for state in state_plan.replacement_records
+        if isinstance(state, StellarSwirlVortexState) and state.slot_key not in expected_by_slot
+    )
+    entities = tuple(
+        entity
+        for entity in space_plan.creations
+        if entity.kind is SpatialEntityKind.REACTION_OBJECT
+        and (entity.source_key or "").startswith("reaction-state:stellar-swirl-vortex:")
+    )
+    if not states and not entities:
+        return
+    if len(states) != len(entities):
+        raise ReactionStateBindingConflictError("星辉风旋 State 与 REACTION_OBJECT 数量不一致")
+    entities_by_id = {entity.entity_id: entity for entity in entities}
+    if len(entities_by_id) != len(entities):
+        raise ReactionStateBindingConflictError("星辉风旋空间 binding 重复")
+    for state in states:
+        entity = entities_by_id.get(state.space_entity_ref)
+        if entity is None or (
+            entity.kind is not SpatialEntityKind.REACTION_OBJECT
+            or entity.source_key != state.instance_ref.value
+            or entity.lifecycle.created_frame != state.created_frame
+            or entity.lifecycle.expires_at_frame != state.expires_at_frame
+        ):
+            raise ReactionStateBindingConflictError("星辉风旋 State 与空间实体 binding 不一致")
+
+
+def validate_stellar_swirl_vortex_space_terminalizations(
+    state_plan: ReactionStateMutationPlan,
+    space_plan: SpaceEntityMutationPlan,
+) -> None:
+    """校验星辉风旋从活动投影移除时必定移除同一 Space 实体。"""
+
+    expected_vortexes = tuple(
+        state
+        for state in state_plan.expected_records
+        if isinstance(state, StellarSwirlVortexState)
+        and state.slot_key in state_plan.removed_slot_keys
+    )
+    if not expected_vortexes:
+        return
+    if len(expected_vortexes) != len(space_plan.removals):
+        raise ReactionStateBindingConflictError("星辉风旋终结与空间实体删除数量不一致")
+    removals_by_ref = {entity.entity_id: entity for entity in space_plan.removals}
+    if len(removals_by_ref) != len(space_plan.removals):
+        raise ReactionStateBindingConflictError("星辉风旋空间删除 binding 重复")
+    for state in expected_vortexes:
+        entity = removals_by_ref.get(state.space_entity_ref)
+        if entity is None or (
+            entity.kind is not SpatialEntityKind.REACTION_OBJECT
+            or entity.source_key != state.instance_ref.value
+            or entity.lifecycle.created_frame != state.created_frame
+        ):
+            raise ReactionStateBindingConflictError("星辉风旋终结与空间实体删除 binding 不一致")
 
 
 def validate_reaction_state_space_terminalizations(

@@ -46,6 +46,9 @@ BONUS_DAMAGE_ANEMO = AttributeKey("bonus.damage.anemo")
 BONUS_DAMAGE_GEO = AttributeKey("bonus.damage.geo")
 BONUS_DAMAGE_DENDRO = AttributeKey("bonus.damage.dendro")
 
+# 星超导辉映 Buff 投影的直伤星烁基础系数证据；角色能力据此组装直伤星烁输入。
+STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER = AttributeKey("stellar.conduct.direct_base_multiplier")
+
 RESISTANCE_PHYSICAL = AttributeKey("resistance.physical")
 RESISTANCE_PYRO = AttributeKey("resistance.pyro")
 RESISTANCE_HYDRO = AttributeKey("resistance.hydro")
@@ -77,6 +80,7 @@ PUBLIC_ATTRIBUTE_KEYS = (
     BONUS_DAMAGE_ANEMO,
     BONUS_DAMAGE_GEO,
     BONUS_DAMAGE_DENDRO,
+    STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER,
     RESISTANCE_PHYSICAL,
     RESISTANCE_PYRO,
     RESISTANCE_HYDRO,

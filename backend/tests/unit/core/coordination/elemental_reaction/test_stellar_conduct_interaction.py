@@ -1,8 +1,11 @@
 # 单一关注点：星超导在元素交互协调器中的全链路闭环。
 from __future__ import annotations
 
+import pytest
+
 from genshin_sim.core.attributes import (
     AttributeResolver,
+    AttributeSubjectRef,
     BaseAttributeSet,
     ModifierProviderIndex,
     create_public_attribute_registry,
@@ -18,6 +21,16 @@ from genshin_sim.core.coordination.elemental_reaction.capabilities import (
 )
 from genshin_sim.core.coordination.elemental_reaction.observers import (
     CharacterTransformativeSourceObserver,
+)
+from genshin_sim.core.coordination.elemental_reaction.status import (
+    SUPERCONDUCT_BUFF_DEFINITION_KEY,
+    superconduct_buff_definition,
+)
+from genshin_sim.core.coordination.elemental_reaction.stellar_buffs import (
+    STELLAR_FIELD_RESIST_SOURCE_KEY,
+    STELLAR_RADIANCE_BUFF_DEFINITION_KEY,
+    STELLAR_RADIANCE_PERSISTENCE_FRAMES,
+    stellar_radiance_buff_definition,
 )
 from genshin_sim.core.elements import (
     AuraAmount,
@@ -36,6 +49,12 @@ from genshin_sim.core.space import Space, SpatialEntity, SpatialEntityKind, Vect
 from genshin_sim.core.space.runtime import SpaceRuntime
 from genshin_sim.core.systems.aura import AuraRuntime, AuraStrength
 from genshin_sim.core.systems.aura_icd import AuraIcdRuntime
+from genshin_sim.core.systems.buff import (
+    BuffDefinitionRegistry,
+    BuffResolver,
+    BuffRuntime,
+    BuffStore,
+)
 from genshin_sim.core.systems.reaction import (
     PolestarFieldState,
     ReactionRuntime,
@@ -45,6 +64,7 @@ from genshin_sim.core.systems.reaction import (
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct import (
     STELLAR_CONDUCT_CAPABILITY_KEY,
 )
+from genshin_sim.core.systems.reaction.states import STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES
 
 TARGET_ENTITY_ID = "target:star"
 
@@ -82,8 +102,19 @@ class _NoDamageHandler:
 
 
 class _PreparedStellarCoordinator:
-    def __init__(self, *, capability_enabled: bool = True) -> None:
-        target = TargetRuntimeState("star", spatial_entity_id=TARGET_ENTITY_ID)
+    def __init__(
+        self,
+        *,
+        capability_enabled: bool = True,
+        extra_targets: tuple[tuple[str, str, Vector3], ...] = (),
+    ) -> None:
+        targets = (
+            TargetRuntimeState("star", spatial_entity_id=TARGET_ENTITY_ID),
+            *(
+                TargetRuntimeState(target_id, spatial_entity_id=spatial_entity_id)
+                for target_id, spatial_entity_id, _ in extra_targets
+            ),
+        )
         space = Space(
             (
                 SpatialEntity(
@@ -91,12 +122,29 @@ class _PreparedStellarCoordinator:
                     SpatialEntityKind.TARGET,
                     Vector3(0.0, 0.0, 0.0),
                 ),
+                *(
+                    SpatialEntity(
+                        spatial_entity_id,
+                        SpatialEntityKind.TARGET,
+                        position,
+                    )
+                    for _, spatial_entity_id, position in extra_targets
+                ),
             )
         )
         self.space_runtime = SpaceRuntime(
             space=space,
-            team_state=TeamRuntimeState((CharacterRuntimeState(1, "character:test", 90),)),
-            targets=TargetRuntimeCollection((target,)),
+            team_state=TeamRuntimeState(
+                (
+                    CharacterRuntimeState(
+                        1,
+                        "character:test",
+                        90,
+                        combat_entity_id="character:test",
+                    ),
+                )
+            ),
+            targets=TargetRuntimeCollection(targets),
         )
         self.context = SimulationContext(space_runtime=self.space_runtime)
         attribute_registry = create_public_attribute_registry()
@@ -109,6 +157,14 @@ class _PreparedStellarCoordinator:
         self.icd_runtime = AuraIcdRuntime()
         self.reaction_runtime = create_default_reaction_bootstrap().create_runtime()
         self.spatial_planning_port = ReactionSpatialPlanningAdapter(space)
+        self.buff_runtime = BuffRuntime(
+            definition_registry=BuffDefinitionRegistry(
+                (superconduct_buff_definition(), stellar_radiance_buff_definition())
+            ),
+            resolver=BuffResolver(),
+            buff_store=BuffStore(),
+            event_engine=self.context.events,
+        )
         self.frame_coordinator = ElementalStateFrameCoordinator(
             self.aura_runtime,
             self.icd_runtime,
@@ -125,10 +181,17 @@ class _PreparedStellarCoordinator:
             ),
             reaction_eligibility_port=_FixedCapabilityPort(enabled=capability_enabled),
             spatial_planning_port=self.spatial_planning_port,
+            stellar_buff_port=self.buff_runtime,
         )
         self._application_sequence = 0
 
-    def apply_element(self, element: Element, *, frame: int) -> ImpactRequest:
+    def apply_element(
+        self,
+        element: Element,
+        *,
+        frame: int,
+        target_refs: tuple[str, ...] = ("star",),
+    ) -> ImpactRequest:
         self._application_sequence += 1
         return ImpactRequest(
             frame=frame,
@@ -136,7 +199,7 @@ class _PreparedStellarCoordinator:
             impact_key=f"test.stellar.{element.value}",
             owner_slot=1,
             request_id=f"root:stellar:{element.value}:{self._application_sequence}",
-            target_refs=("star",),
+            target_refs=target_refs,
             elemental_application_spec=ElementalApplicationSpec(
                 impact_ref=f"impact:{element.value}:{self._application_sequence}",
                 element=element,
@@ -251,3 +314,140 @@ def test_stellar_conduct_interaction_falls_back_to_superconduct_without_capabili
         for state in prepared.reaction_runtime.state_records
     )
     assert prepared.reaction_runtime.stellar_conduct_counter_state_for("player_team") is None
+
+
+def _radiance_record(runtime: BuffRuntime, frame: int):
+    records = runtime.reader.active(
+        frame,
+        definition_key=STELLAR_RADIANCE_BUFF_DEFINITION_KEY,
+    )
+    assert len(records) == 1
+    return records[0]
+
+
+def test_stellar_conduct_interaction_applies_and_refreshes_radiance_buff() -> None:
+    prepared = _PreparedStellarCoordinator()
+    prepared.coordinator.handle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.ELECTRO, frame=0),
+    )
+    prepared.coordinator.handle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.CRYO, frame=0),
+    )
+
+    record = _radiance_record(prepared.buff_runtime, 0)
+    assert record.state.target_ref.entity_id == "character:test"
+    assert record.expires_at_frame == STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES + (
+        STELLAR_RADIANCE_PERSISTENCE_FRAMES
+    )
+    values = {item.template.term_key: item.value for item in record.state.resolved_modifiers}
+    assert values["stellar.conduct.radiance.cryo_bonus"] == pytest.approx(0.20)
+    assert values["stellar.conduct.radiance.electro_bonus"] == pytest.approx(0.20)
+    assert values["stellar.conduct.radiance.direct_base_multiplier"] == pytest.approx(1.0)
+
+    prepared.coordinator.handle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.ELECTRO, frame=30),
+    )
+    prepared.coordinator.handle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.CRYO, frame=30),
+    )
+    refreshed = _radiance_record(prepared.buff_runtime, 30)
+    assert refreshed.instance_ref == record.instance_ref
+    assert refreshed.last_applied_frame == 30
+    assert refreshed.expires_at_frame == 30 + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES + (
+        STELLAR_RADIANCE_PERSISTENCE_FRAMES
+    )
+
+
+def test_stellar_conduct_interaction_radiance_outlives_field_by_persistence_window() -> None:
+    prepared = _PreparedStellarCoordinator()
+    prepared.coordinator.handle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.ELECTRO, frame=0),
+    )
+    prepared.coordinator.handle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.CRYO, frame=0),
+    )
+    record = _radiance_record(prepared.buff_runtime, 0)
+    field_expires = STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES
+
+    assert record.is_active_at(field_expires)
+    assert record.is_active_at(field_expires + STELLAR_RADIANCE_PERSISTENCE_FRAMES - 1)
+    assert not record.is_active_at(field_expires + STELLAR_RADIANCE_PERSISTENCE_FRAMES)
+
+
+def test_stellar_conduct_interaction_applies_field_resistance_inside_only() -> None:
+    prepared = _PreparedStellarCoordinator(
+        extra_targets=(("far", "target:far", Vector3(30.0, 0.0, 0.0)),),
+    )
+    prepared.coordinator.handle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.ELECTRO, frame=0, target_refs=("star", "far")),
+    )
+    prepared.coordinator.handle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.CRYO, frame=0),
+    )
+
+    for frame, entity_id in ((0, TARGET_ENTITY_ID), (0, "target:far")):
+        records = prepared.buff_runtime.reader.active(
+            frame,
+            target_ref=AttributeSubjectRef.target(entity_id),
+            definition_key=SUPERCONDUCT_BUFF_DEFINITION_KEY,
+        )
+        if entity_id == TARGET_ENTITY_ID:
+            assert len(records) == 1
+            assert records[0].state.source_context.source_key == (STELLAR_FIELD_RESIST_SOURCE_KEY)
+            assert records[0].expires_at_frame == STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES
+        else:
+            assert records == ()
+
+
+def test_stellar_conduct_interaction_records_attachment_after_field_creation() -> None:
+    prepared = _PreparedStellarCoordinator()
+    prepared.coordinator.handle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.ELECTRO, frame=0),
+    )
+    prepared.coordinator.handle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.CRYO, frame=0),
+    )
+    counter = prepared.reaction_runtime.stellar_conduct_counter_state_for("player_team")
+    assert counter is not None
+    assert counter.pending_count == 0
+
+    prepared.coordinator.handle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.CRYO, frame=10),
+    )
+    counter = prepared.reaction_runtime.stellar_conduct_counter_state_for("player_team")
+    assert counter is not None
+    assert counter.pending_count == 1
+    assert counter.recorded_record_refs == ("root:stellar:cryo:3:stellar-attachment:cryo",)
+
+
+def test_stellar_conduct_interaction_excludes_creating_attack_attachment() -> None:
+    prepared = _PreparedStellarCoordinator(
+        extra_targets=(("near", "target:near", Vector3(5.0, 0.0, 0.0)),),
+    )
+    # 先手雷附着两个目标（尚无会话，不产生记录）。
+    prepared.coordinator.handle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.ELECTRO, frame=0, target_refs=("star", "near")),
+    )
+    # 同一攻击在 star 触发星超导、并在 near 产生冰附着：整条记录被排除。
+    prepared.coordinator.handle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.CRYO, frame=0, target_refs=("star", "near")),
+    )
+
+    counter = prepared.reaction_runtime.stellar_conduct_counter_state_for("player_team")
+    assert counter is not None
+    assert counter.pending_count == 0
+    assert counter.recorded_record_refs == ()
+    assert counter.excluded_attack_refs == ("root:stellar:cryo:2",)

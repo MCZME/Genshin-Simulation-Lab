@@ -66,6 +66,9 @@ from genshin_sim.core.coordination.elemental_reaction.state_planning import (
 from genshin_sim.core.coordination.elemental_reaction.status import (
     ReactionStatusBuffAdapter,
 )
+from genshin_sim.core.coordination.elemental_reaction.stellar_buffs import (
+    plan_radiance_buff_requests,
+)
 from genshin_sim.core.coordination.elemental_reaction.step_planning import (
     _plan_depleted_frozen_state_removal,
     _plan_depleted_quicken_state_removal,
@@ -141,6 +144,8 @@ from genshin_sim.core.systems.reaction import (
     ScheduledReactionRootAdapterRegistry,
     ScheduledReactionRootWork,
     ScheduledStateTickCause,
+    StellarConductCounterSettlementRootWork,
+    StellarConductCounterState,
     SwirlEmissionSelection,
     TransformativeSourceObservation,
     create_default_scheduled_reaction_root_adapter_registry,
@@ -490,12 +495,65 @@ class ElementalSettlementCoordinator:
         self._publish_scheduled_root_fact(context, root_record)
         if adapter_result.outcome == "cancelled_state_ended":
             return
+        if isinstance(root, StellarConductCounterSettlementRootWork):
+            self._refresh_stellar_radiance_buffs(context, root)
         self._settle_follow_up_groups(
             context,
             root_record,
             groups=adapter_result.effect_groups,
             generated_batches=adapter_result.generated_impact_batches,
         )
+
+    def _refresh_stellar_radiance_buffs(
+        self,
+        context,
+        root: StellarConductCounterSettlementRootWork,
+    ) -> None:
+        """4 秒窗口结算后统一刷新队伍角色的辉映·星烁 Buff 数值快照。
+
+        结算本身只做计数状态快照；此处把最新层数对应的冰/雷普通增伤与
+        直伤系数证据统一写入队伍角色的辉映 Buff，不生成公共反应伤害。
+        """
+
+        assert self.reaction_runtime is not None
+        counter = next(
+            (
+                record
+                for record in self.reaction_runtime.state_records
+                if isinstance(record, StellarConductCounterState)
+                and record.instance_ref == root.state_instance_ref
+            ),
+            None,
+        )
+        if counter is None or context is None or context.space_runtime is None:
+            return
+        if self.buff_runtime is None:
+            raise ElementalInteractionError("星超导计数结算缺少 Buff 运行时")
+        fields = self.reaction_runtime.active_polestar_fields(team_ref=counter.team_ref)
+        if len(fields) > 1:
+            raise ElementalInteractionError("同一队伍同时存在多个极星辉域")
+        if not fields:
+            return
+        requests = plan_radiance_buff_requests(
+            frame=root.frame,
+            occurrence_ref=root.work_id,
+            character_refs=tuple(
+                AttributeSubjectRef.character(character.combat_entity_id)
+                for character in context.space_runtime.team_state.characters
+            ),
+            settled_stacks=counter.settled_stacks,
+            field_expires_at_frame=fields[0].expires_at_frame,
+        )
+        if not requests:
+            return
+        buff_plan = self.buff_runtime.prepare_apply(requests)
+        self.buff_runtime.validate(buff_plan)
+        receipt = self.buff_runtime.commit_prevalidated(buff_plan)
+        self._publishing_facts = True
+        try:
+            self.buff_runtime.publish_committed_facts(receipt)
+        finally:
+            self._publishing_facts = False
 
     def _publish_scheduled_root_fact(
         self,
@@ -2876,6 +2934,8 @@ def _scheduled_root_tick_index(root: ScheduledReactionRootWork) -> int | None:
         return root.scheduled_tick_index
     if isinstance(root, LunarStormCloudAttackRootWork):
         return root.tick_index
+    if isinstance(root, StellarConductCounterSettlementRootWork):
+        return root.window_index
     raise ElementalInteractionError("Scheduled Reaction root 类型不受支持")
 
 
@@ -2891,6 +2951,10 @@ def _scheduled_root_causes(
             raise ElementalInteractionError("Burning scheduled root 缺少 cause")
         return root.causes
     if isinstance(root, LunarStormCloudAttackRootWork):
+        if root.cause is None:
+            raise ElementalInteractionError("Scheduled Reaction root 缺少 cause")
+        return (root.cause,)
+    if isinstance(root, StellarConductCounterSettlementRootWork):
         if root.cause is None:
             raise ElementalInteractionError("Scheduled Reaction root 缺少 cause")
         return (root.cause,)

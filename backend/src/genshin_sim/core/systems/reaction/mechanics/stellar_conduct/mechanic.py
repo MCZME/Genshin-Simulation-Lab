@@ -73,6 +73,9 @@ class StellarConductRule:
         occurrence_ref = f"{request.interaction_id}:occurrence:{request.order}"
         instance_ref = ReactionStateInstanceRef(f"reaction-state:polestar-field:{occurrence_ref}")
         spatial_ref = f"reaction_object:polestar_field:{occurrence_ref}"
+        # 排除身份是整次攻击的根 work id（与附着记录的 attack_ref 同一身份空间），
+        # 使同一攻击同时触发星超导并在其他目标附着时整条记录都不计数。
+        attack_ref = request.source_ref.instance_id
         field_planning = PolestarFieldStatePlanningIntent(
             intent_ref=f"{occurrence_ref}:polestar-field-plan",
             parent_occurrence_ref=occurrence_ref,
@@ -83,7 +86,7 @@ class StellarConductRule:
             team_ref=STELLAR_CONDUCT_TEAM_SCOPE,
             created_frame=request.frame,
             expires_at_frame=request.frame + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
-            excluded_attack_ref=request.target_impact_ref,
+            excluded_attack_ref=attack_ref,
         )
         occurrence = ReactionOccurrence(
             occurrence_ref=occurrence_ref,

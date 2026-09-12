@@ -36,6 +36,7 @@ from genshin_sim.core.coordination.elemental_reaction.protocols import (
     ReactionEligibilityReadPort,
     ReactionSpatialPlanningPort,
     ReactionStateInteractionPort,
+    StellarConductBuffPlanningPort,
 )
 from genshin_sim.core.coordination.elemental_reaction.spatial import (
     ReactionSpatialPlanningAdapter,
@@ -55,8 +56,12 @@ from genshin_sim.core.coordination.elemental_reaction.state_planning import (
     ReactionStatePlanningAdapterRegistry,
     create_default_state_planning_adapter_registry,
 )
+from genshin_sim.core.coordination.elemental_reaction.stellar_buffs import (
+    plan_stellar_conduct_buff_changes,
+)
 from genshin_sim.core.coordination.elemental_reaction.stellar_conduct import (
     plan_polestar_field_occurrence,
+    record_stellar_conduct_attachment,
 )
 from genshin_sim.core.coordination.elemental_reaction.step_planning import (
     _plan_depleted_frozen_state_removal,
@@ -134,6 +139,13 @@ from genshin_sim.core.systems.reaction.mechanics.lunar_bloom.keys import (
 from genshin_sim.core.systems.reaction.mechanics.shattered.mechanic import (
     SHATTERED_REACTION_KEY,
 )
+from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
+    STELLAR_CONDUCT_TEAM_SCOPE,
+)
+from genshin_sim.core.systems.reaction.states import StellarConductAttachmentRecord
+
+# 星超导附着计数只关心敌人被施加的冰/雷元素附着。
+_STELLAR_ATTACHMENT_ELEMENTS = frozenset({Element.CRYO, Element.ELECTRO})
 
 
 @dataclass(frozen=True, slots=True)
@@ -171,6 +183,7 @@ class ElementalInteractionCoordinator:
         reaction_eligibility_port: ReactionEligibilityReadPort | None = None,
         spatial_planning_port: ReactionSpatialPlanningPort | None = None,
         state_planning_adapter_registry: ReactionStatePlanningAdapterRegistry | None = None,
+        stellar_buff_port: StellarConductBuffPlanningPort | None = None,
     ) -> None:
         self.aura_runtime = aura_runtime
         self.icd_runtime = icd_runtime
@@ -186,6 +199,7 @@ class ElementalInteractionCoordinator:
         self.crystallize_source_observer = crystallize_source_observer
         self.reaction_eligibility_port = reaction_eligibility_port
         self.spatial_planning_port = spatial_planning_port
+        self.stellar_buff_port = stellar_buff_port
         self.state_planning_adapter_registry = (
             state_planning_adapter_registry or create_default_state_planning_adapter_registry()
         )
@@ -313,6 +327,8 @@ class ElementalInteractionCoordinator:
         catalyze_adjustments: dict[str, CatalyzeReactionInput] = {}
         additional_effect_groups: list[ReactionEffectGroup] = []
         additional_occurrences: list[ReactionOccurrence] = []
+        polestar_occurrence_ref: str | None = None
+        attachment_targets_by_element: dict[Element, list[ElementalSubjectRef]] = {}
         for work in works:
             target = _target_for(context, work.target_ref)
             subject_ref = ElementalSubjectRef.target(target.spatial_entity_id)
@@ -471,6 +487,7 @@ class ElementalInteractionCoordinator:
                         elif polestar_intent is not None:
                             assert spatial_effect is not None
                             assert polestar_intent is not None
+                            polestar_occurrence_ref = occurrence.occurrence_ref
                             plan_polestar_field_occurrence(
                                 context=context,
                                 state_planner=state_planner,
@@ -526,6 +543,10 @@ class ElementalInteractionCoordinator:
                                     effective_raw_amount=(occurrence.transition.incoming_remaining),
                                 )
                             )
+                            if incoming_element in _STELLAR_ATTACHMENT_ELEMENTS:
+                                attachment_targets_by_element.setdefault(
+                                    incoming_element, []
+                                ).append(subject_ref)
                         if occurrence.reaction_key == FROZEN_REACTION_KEY:
                             _plan_frozen_state_application(
                                 aura_planner=aura_planner,
@@ -613,6 +634,49 @@ class ElementalInteractionCoordinator:
                         effective_raw_amount=incoming_amount,
                     )
                 )
+                if incoming_element in _STELLAR_ATTACHMENT_ELEMENTS:
+                    attachment_targets_by_element.setdefault(incoming_element, []).append(
+                        subject_ref
+                    )
+        stellar_buff_port: StellarConductBuffPlanningPort | None = None
+        if polestar_occurrence_ref is not None:
+            stellar_buff_port = self.stellar_buff_port
+            if stellar_buff_port is None:
+                raise ElementalInteractionError("星超导触发缺少 Buff 规划端口")
+            buff_changes = plan_stellar_conduct_buff_changes(
+                context=context,
+                buff_port=stellar_buff_port,
+                state_planner=state_planner,
+                frame=request.frame,
+                occurrence_ref=polestar_occurrence_ref,
+                spatial_planner=spatial_planner,
+            )
+            stellar_apply_plan = (
+                stellar_buff_port.prepare_apply(buff_changes.apply_requests)
+                if buff_changes.apply_requests
+                else None
+            )
+            stellar_remove_plans = tuple(
+                stellar_buff_port.prepare_remove(remove_request)
+                for remove_request in buff_changes.remove_requests
+            )
+        else:
+            stellar_apply_plan = None
+            stellar_remove_plans = ()
+        for element in sorted(attachment_targets_by_element, key=lambda item: item.value):
+            record_stellar_conduct_attachment(
+                context=context,
+                state_planner=state_planner,
+                team_ref=STELLAR_CONDUCT_TEAM_SCOPE,
+                record=StellarConductAttachmentRecord(
+                    record_ref=f"{root_work_id}:stellar-attachment:{element.value}",
+                    attack_ref=root_work_id,
+                    element=element,
+                    frame=request.frame,
+                    target_refs=tuple(attachment_targets_by_element[element]),
+                ),
+                spatial_planner=spatial_planner,
+            )
         icd_plan = icd_planner.seal()
         aura_plan = aura_planner.seal()
         reaction_plan = reaction_planner.seal()
@@ -647,6 +711,12 @@ class ElementalInteractionCoordinator:
             validate_lunar_cage_space_bindings(state_plan, space_plan)
             validate_polestar_field_space_bindings(state_plan, space_plan)
             validate_polestar_field_space_terminalizations(state_plan, space_plan)
+        if stellar_apply_plan is not None:
+            assert stellar_buff_port is not None
+            stellar_buff_port.validate(stellar_apply_plan)
+        for stellar_remove_plan in stellar_remove_plans:
+            assert stellar_buff_port is not None
+            stellar_buff_port.validate(stellar_remove_plan)
         prepared_damage_records = (
             self.damage_handler.prepare_impact_request(
                 context,
@@ -666,6 +736,17 @@ class ElementalInteractionCoordinator:
         if space_plan is not None:
             assert spatial_adapter is not None
             spatial_adapter.commit_prevalidated(space_plan)
+        stellar_apply_receipt = None
+        if stellar_apply_plan is not None:
+            assert stellar_buff_port is not None
+            stellar_apply_receipt = stellar_buff_port.commit_prevalidated(stellar_apply_plan)
+        stellar_remove_receipts = ()
+        if stellar_remove_plans:
+            assert stellar_buff_port is not None
+            stellar_remove_receipts = tuple(
+                stellar_buff_port.commit_prevalidated(stellar_remove_plan)
+                for stellar_remove_plan in stellar_remove_plans
+            )
         if prepared_damage_records:
             self.damage_handler.commit_prepared_records(prepared_damage_records)
         record = ElementalInteractionBatchRecord(
@@ -773,6 +854,12 @@ class ElementalInteractionCoordinator:
                 context,
                 reaction_store_receipt.state_receipt,
             )
+            if stellar_apply_receipt is not None:
+                assert stellar_buff_port is not None
+                stellar_buff_port.publish_committed_facts(stellar_apply_receipt)
+            for stellar_remove_receipt in stellar_remove_receipts:
+                assert stellar_buff_port is not None
+                stellar_buff_port.publish_committed_facts(stellar_remove_receipt)
             if prepared_damage_records:
                 self.damage_handler.publish_committed_facts(context, prepared_damage_records)
             context.events.publish(

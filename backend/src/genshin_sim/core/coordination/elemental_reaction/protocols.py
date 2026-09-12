@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager
 from typing import Protocol
 
@@ -40,6 +40,13 @@ from genshin_sim.core.systems.aura_icd.models import (
     IcdImpactRequest,
     IcdMutationPlan,
     IcdResolution,
+)
+from genshin_sim.core.systems.buff import (
+    ApplyBuffRequest,
+    BuffCommitReceipt,
+    BuffMutationPlan,
+    BuffStoreReader,
+    RemoveBuffRequest,
 )
 from genshin_sim.core.systems.damage import (
     AmplifyingReactionInput,
@@ -885,3 +892,23 @@ class ReactionEligibilityReadPort(Protocol):
     """Reaction 读取队伍 capability 准入证据的窄端口。"""
 
     def evidence_for(self, frame: int, team_ref: str) -> ReactionEligibilityView: ...
+
+
+class StellarConductBuffPlanningPort(Protocol):
+    """星超导协调统一创建/刷新/移除辉映 Buff 与领域减抗所需的 Buff 窄端口。"""
+
+    def prepare_apply(
+        self,
+        requests: Sequence[ApplyBuffRequest],
+    ) -> BuffMutationPlan: ...
+
+    def prepare_remove(self, request: RemoveBuffRequest) -> BuffMutationPlan: ...
+
+    def validate(self, plan: BuffMutationPlan) -> None: ...
+
+    def commit_prevalidated(self, plan: BuffMutationPlan) -> BuffCommitReceipt: ...
+
+    def publish_committed_facts(self, receipt: BuffCommitReceipt) -> None: ...
+
+    @property
+    def reader(self) -> BuffStoreReader: ...

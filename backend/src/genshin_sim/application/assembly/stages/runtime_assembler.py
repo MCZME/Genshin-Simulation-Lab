@@ -97,6 +97,9 @@ from genshin_sim.core.coordination.elemental_reaction.status import (
     ReactionStatusBuffAdapter,
     superconduct_buff_definition,
 )
+from genshin_sim.core.coordination.elemental_reaction.stellar_buffs import (
+    stellar_radiance_buff_definition,
+)
 from genshin_sim.core.coordination.resonance_reaction import ResonanceReactionStage
 from genshin_sim.core.entity_states import (
     CharacterRuntimeState,
@@ -285,6 +288,7 @@ class RuntimeAssembler:
             (
                 *content_bundle.buff_definitions,
                 superconduct_buff_definition(),
+                stellar_radiance_buff_definition(),
                 *create_resonance_buff_definitions(),
             )
         )
@@ -671,6 +675,7 @@ class RuntimeAssembler:
             ),
             reaction_eligibility_port=reaction_eligibility_port,
             spatial_planning_port=reaction_spatial_planning_port,
+            stellar_buff_port=buff_runtime,
         )
         bloom_core_trigger_coordinator = BloomCoreTriggerCoordinator(
             reaction_state_port=reaction_runtime,

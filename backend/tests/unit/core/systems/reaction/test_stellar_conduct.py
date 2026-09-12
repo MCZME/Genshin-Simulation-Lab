@@ -33,7 +33,7 @@ from genshin_sim.core.systems.reaction.models import (
     TransformativeSourceObservation,
 )
 
-SOURCE = ElementalSourceRef("character:slot_1")
+SOURCE = ElementalSourceRef("character:slot_1", "root:stellar-conduct")
 CHARACTER_SOURCES = (SOURCE,)
 TARGET = ElementalSubjectRef.target("target:star")
 
@@ -150,7 +150,7 @@ def test_stellar_conduct_rule_declares_field_plan_without_reaction_damage() -> N
     assert intent.team_ref == STELLAR_CONDUCT_TEAM_SCOPE
     assert intent.created_frame == 7
     assert intent.expires_at_frame == 7 + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES
-    assert intent.excluded_attack_ref == "impact:stellar-conduct"
+    assert intent.excluded_attack_ref == "root:stellar-conduct"
     transition = result.occurrence.transition
     assert transition.aura_consumed == transition.incoming_consumed
 

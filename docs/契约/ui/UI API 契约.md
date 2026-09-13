@@ -498,6 +498,11 @@
 - `team.characters` 只放角色身份，不放生命和能量。
 - `characters[].health` 与 `characters[].energy` 是角色状态。
 - `characters[].attributes` 的每一项为公开属性 key -> `{ value, applied_terms }`。
+- `characters[].buffs` 的每一项为状态效果实例快照，带 `instance_ref`（`domain_key` + `sequence`）、`definition_key`、`display_name`、`target_ref`（`{ kind, entity_id }`）、`stack_count`、`expires_at_frame` 等状态效果契约字段。
+- 队伍作用域 Buff 按主体投影到角色视角：`target_ref.kind` 为 `team` 的实例投影到队伍内每个角色的 `buffs`；为 `active_character` 的实例只投影到当前场上角色（`active: true`）；`character` / `target` 主体保持领域侧精确匹配，不投影。
+  - 投影产生的条目额外带 `scope` 字段（取值 `team` / `active_character`），角色自身条目不带该字段；前端可据此区分「自己的 Buff」与「来自队伍的整队 / 前台效果」。
+  - 投影是展示层只读展开，同一队伍作用域实例会在多个角色的 `buffs` 中重复出现；属性数值的正确性由 `characters[].attributes` 承载，`buffs` 仅供列表展示。
+  - 队伍作用域 id 从快照实际携带的 `target_ref.entity_id` 收集，前端不应硬编码该值。
 - `coverage` 是必填字段，逐组说明折叠状态；语义见[结果存储系统设计](../../架构/结果存储系统设计.md)第 8 节。
 - 会话不存在：`404 not_found`。
 - `frame` 为负或超出运行范围：`404 frame_out_of_range`。

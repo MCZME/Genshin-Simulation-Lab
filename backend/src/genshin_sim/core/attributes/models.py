@@ -28,6 +28,8 @@ def normalize_zero(value: float) -> float:
 class AttributeSubjectKind(StrEnum):
     CHARACTER = "character"
     TARGET = "target"
+    TEAM = "team"
+    ACTIVE_CHARACTER = "active_character"
 
 
 class RuntimeSourceKind(StrEnum):
@@ -77,6 +79,23 @@ class AttributeSubjectRef:
     @classmethod
     def target(cls, entity_id: str) -> AttributeSubjectRef:
         return cls(AttributeSubjectKind.TARGET, entity_id)
+
+    @classmethod
+    def team(cls, team_ref: str) -> AttributeSubjectRef:
+        """队伍作用域主体：作用于队伍全部角色，主体是队伍作用域本身。"""
+
+        return cls(AttributeSubjectKind.TEAM, team_ref)
+
+    @classmethod
+    def active_character(cls, team_ref: str) -> AttributeSubjectRef:
+        """队伍作用域主体：只作用于当前场上角色，主体仍是队伍作用域。
+
+        该 kind 与队伍实体的空间 kind 同名但不同域：这里保存的是队伍稳定
+        作用域 id，不是空间实体 id；解析"当前场上角色是谁"由消费方或窄
+        active-character 读取端口承担。
+        """
+
+        return cls(AttributeSubjectKind.ACTIVE_CHARACTER, team_ref)
 
     def to_dict(self) -> dict[str, str]:
         return {"kind": self.kind.value, "entity_id": self.entity_id}

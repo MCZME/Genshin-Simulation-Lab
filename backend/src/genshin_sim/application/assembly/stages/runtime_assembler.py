@@ -26,6 +26,7 @@ from genshin_sim.application.assembly.models import (
     energy_element_from_asset,
 )
 from genshin_sim.application.assembly.moonsign import build_moonsign_bundle
+from genshin_sim.application.assembly.ports import TeamScopeProjectionAdapter
 from genshin_sim.application.assembly.reaction_capabilities import (
     build_static_reaction_eligibility_port,
 )
@@ -35,6 +36,7 @@ from genshin_sim.content import (
     DENDRO_EM_20_TRIGGER_KEYS,
     DENDRO_EM_30_TRIGGER_KEYS,
     ELECTRO_PARTICLE_TRIGGER_KEYS,
+    PLAYER_TEAM_SCOPE,
     RESONANCE_DENDRO_EM_20_BUFF_KEY,
     RESONANCE_DENDRO_EM_30_BUFF_KEY,
     RESONANCE_GEO_RES_SHRED_BUFF_KEY,
@@ -360,6 +362,14 @@ class RuntimeAssembler:
             AttributeSubjectRef.character(character.combat_entity_id)
             for character in team_state.characters
         )
+        team_scope_projection_port = TeamScopeProjectionAdapter(
+            team_state,
+            team_ref=PLAYER_TEAM_SCOPE,
+        )
+        for provider in buff_attribute_providers:
+            binder = getattr(provider, "bind_runtime_ports", None)
+            if binder is not None:
+                binder(team_scope_projection_port=team_scope_projection_port)
         attribute_panel_synchronizer = AttributePanelSynchronizer(
             attribute_runtime.resolver,
             attribute_subject_refs,
@@ -776,7 +786,7 @@ class RuntimeAssembler:
         resonance_reaction_stage = ResonanceReactionStage(
             resonance_runtime=resonance_runtime,
             intent_queue=intent_queue,
-            team_slots=tuple(character.slot for character in team_state.characters),
+            team_scope_ref=PLAYER_TEAM_SCOPE,
             electro_particle_triggers=ELECTRO_PARTICLE_TRIGGER_KEYS,
             dendro_em_30_triggers=DENDRO_EM_30_TRIGGER_KEYS,
             dendro_em_20_triggers=DENDRO_EM_20_TRIGGER_KEYS,

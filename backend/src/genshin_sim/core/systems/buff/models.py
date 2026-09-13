@@ -44,8 +44,13 @@ def validate_frame(frame: int, field_name: str = "frame") -> None:
 def validate_subject_ref(ref: AttributeSubjectRef, field_name: str) -> None:
     if not isinstance(ref, AttributeSubjectRef):
         raise BuffValidationError(f"{field_name} 必须是 AttributeSubjectRef")
-    if ref.kind not in {AttributeSubjectKind.CHARACTER, AttributeSubjectKind.TARGET}:
-        raise BuffValidationError(f"{field_name} 只支持角色或目标主体")
+    if ref.kind not in {
+        AttributeSubjectKind.CHARACTER,
+        AttributeSubjectKind.TARGET,
+        AttributeSubjectKind.TEAM,
+        AttributeSubjectKind.ACTIVE_CHARACTER,
+    }:
+        raise BuffValidationError(f"{field_name} 只支持角色、目标或队伍作用域主体")
 
 
 def subject_ref_to_dict(ref: AttributeSubjectRef) -> dict[str, str]:

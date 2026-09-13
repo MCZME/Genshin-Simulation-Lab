@@ -81,12 +81,17 @@ def _shield_entity_id(instance: dict[str, Any]) -> str | None:
 
 
 class _InstanceGroup:
-    """按稳定实例 id 折叠的一组实例，并记录每条实例归属的实体。"""
+    """按稳定实例 id 折叠的一组实例，并记录每条实例归属的实体。
+
+    归属除了 ``entity_id`` 之外还保留 ``kind``（默认 ``character``），
+    供队伍作用域主体（``team`` / ``active_character``）向队员投影使用。
+    """
 
     def __init__(self, entity_id_of: Callable[[dict[str, Any]], str | None]) -> None:
         self.entity_id_of = entity_id_of
         self.instances: dict[str, dict[str, Any]] = {}
         self.owners: dict[str, str | None] = {}
+        self.owner_kinds: dict[str, str] = {}
 
     def upsert(self, instance: object) -> None:
         if not isinstance(instance, dict):
@@ -96,6 +101,10 @@ class _InstanceGroup:
             return
         self.instances[key] = instance
         self.owners[key] = self.entity_id_of(instance)
+        self.owner_kinds[key] = self._kind_of(instance)
+
+    def _kind_of(self, instance: dict[str, Any]) -> str:
+        return "character"
 
     def remove(self, refs: object) -> None:
         if not isinstance(refs, tuple | list):
@@ -105,6 +114,7 @@ class _InstanceGroup:
             if key is not None:
                 self.instances.pop(key, None)
                 self.owners.pop(key, None)
+                self.owner_kinds.pop(key, None)
 
     def update_fields(self, ref: object, fields: dict[str, object]) -> None:
         key = _instance_key(ref)
@@ -133,6 +143,78 @@ class _InstanceGroup:
         return result
 
 
+class _BuffInstanceGroup(_InstanceGroup):
+    """Buff 实例折叠组，额外支持队伍作用域主体向队员的只读投影。
+
+    队伍作用域 Buff 只挂一份（``target_ref.kind`` 为 ``team`` 或
+    ``active_character``，``entity_id`` 是队伍作用域 id）。帧状态是角色
+    视角，因此：
+
+    - ``team`` 记录投影到队伍内每个角色；
+    - ``active_character`` 记录只投影到当前场上角色；
+    - ``character`` / ``target`` 主体保持精确匹配。
+
+    投影是展示层只读展开，不改变领域侧「主体精确相等」的读取语义。投影
+    产生的条目额外带 ``scope`` 标注（``team`` / ``active_character``），
+    非投影条目不带该字段，供前端区分「属于我自己的 Buff」与「来自队伍的
+    整体效果」。
+    """
+
+    def _kind_of(self, instance: dict[str, Any]) -> str:
+        ref = instance.get("target_ref")
+        if not isinstance(ref, dict):
+            return "character"
+        kind = ref.get("kind")
+        return kind if isinstance(kind, str) else "character"
+
+    @staticmethod
+    def _projected(instance: dict[str, Any], scope: str) -> dict[str, Any]:
+        entry = dict(instance)
+        entry["scope"] = scope
+        return entry
+
+    def entries_for(
+        self,
+        entity_id: str,
+        fallback_owner: str | None = None,
+        *,
+        team_scope_refs: frozenset[str] = frozenset(),
+        active_entity_id: str | None = None,
+    ) -> list[dict[str, Any]]:
+        result: list[dict[str, Any]] = []
+        for key, instance in sorted(
+            self.instances.items(), key=lambda item: _instance_sort_key(item[0])
+        ):
+            kind = self.owner_kinds.get(key, "character")
+            owner = self.owners.get(key)
+            if kind == "team":
+                if owner is not None and owner in team_scope_refs:
+                    result.append(self._projected(instance, "team"))
+                continue
+            if kind == "active_character":
+                if owner is not None and owner in team_scope_refs and entity_id == active_entity_id:
+                    result.append(self._projected(instance, "active_character"))
+                continue
+            if owner is None:
+                owner = fallback_owner
+            if owner == entity_id:
+                result.append(dict(instance))
+        return result
+
+    def team_scope_refs(self) -> frozenset[str]:
+        """当前折叠到的队伍作用域 id 集合（来自存在的队伍作用域记录）。
+
+        单玩家队伍场景下通常只有一个；这里按记录实际携带的 ``entity_id``
+        收集，避免在投影层硬编码队伍作用域常量或 import content。
+        """
+
+        return frozenset(
+            owner
+            for key, owner in self.owners.items()
+            if owner is not None and self.owner_kinds.get(key) in ("team", "active_character")
+        )
+
+
 def _instance_sort_key(key: str) -> tuple[str, int]:
     domain, _, sequence = key.partition(":")
     return (domain, int(sequence) if sequence.isdigit() else 0)
@@ -147,7 +229,7 @@ class _FoldState:
         self.health: dict[str, dict[str, Any]] = {}
         self.energy: dict[str, dict[str, Any]] = {}
         self.attributes: dict[str, dict[str, Any]] = {}
-        self.buffs = _InstanceGroup(_buff_entity_id)
+        self.buffs = _BuffInstanceGroup(_buff_entity_id)
         self.shields = _InstanceGroup(_shield_entity_id)
         self.infusions = _InstanceGroup(_infusion_entity_id)
         self.cooldowns: dict[tuple[str, str, str], dict[str, Any]] = {}
@@ -440,6 +522,7 @@ def _build_response(
         None,
     )
     identity = sorted(state.characters.values(), key=lambda item: item.get("slot") or 0)
+    team_scope_refs = state.buffs.team_scope_refs()
 
     team_characters = [
         {
@@ -480,7 +563,11 @@ def _build_response(
                     ),
                 },
                 "attributes": dict(state.attributes.get(entity_id, {})),
-                "buffs": state.buffs.entries_for(entity_id),
+                "buffs": state.buffs.entries_for(
+                    entity_id,
+                    team_scope_refs=team_scope_refs,
+                    active_entity_id=active_entity_id,
+                ),
                 "shields": state.shields.entries_for(entity_id, fallback_owner=active_entity_id),
                 "infusion": state.infusions.entries_for(entity_id),
                 "cooldowns": [

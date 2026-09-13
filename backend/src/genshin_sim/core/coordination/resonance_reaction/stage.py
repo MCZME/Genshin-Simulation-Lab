@@ -50,7 +50,7 @@ class ResonanceReactionStage:
         *,
         resonance_runtime: ResonanceRuntime,
         intent_queue: IntentQueue,
-        team_slots: Iterable[int],
+        team_scope_ref: str,
         electro_particle_triggers: Iterable[str],
         dendro_em_30_triggers: Iterable[str],
         dendro_em_20_triggers: Iterable[str],
@@ -64,9 +64,10 @@ class ResonanceReactionStage:
     ) -> None:
         self._runtime = resonance_runtime
         self._queue = intent_queue
-        self._team_slots = tuple(sorted(team_slots))
-        if not self._team_slots or any(slot <= 0 for slot in self._team_slots):
-            raise ResonanceValidationError("队伍槽位必须是非空正整数集合")
+        self._team_scope_ref = team_scope_ref
+        if not isinstance(team_scope_ref, str) or not team_scope_ref.strip():
+            raise ResonanceValidationError("队伍作用域 id 必须是非空字符串")
+        self._dendro_target_ref = AttributeSubjectRef.team(team_scope_ref)
         self._electro_triggers = _require_trigger_keys(
             electro_particle_triggers, "双雷触发反应集合"
         )
@@ -158,30 +159,28 @@ class ResonanceReactionStage:
             value = 20.0
         else:
             return
-        for slot in self._team_slots:
-            request = ApplyBuffRequest(
-                request_id=(f"resonance.dendro:{occurrence.occurrence_ref}:slot_{slot}"),
-                frame=frame,
-                order=slot,
-                definition_key=definition_key,
-                target_ref=AttributeSubjectRef.character(f"character:slot_{slot}"),
-                source_context=RuntimeSourceRef(
-                    RuntimeSourceKind.SYSTEM,
-                    "resonance.dendro",
-                    occurrence.occurrence_ref,
-                ),
-                duration_frames=360,
-                modifier_values=(BuffModifierValue("elemental_mastery", value),),
-            )
-            self._enqueue(
-                context,
-                intent_id=(
-                    f"resonance.dendro:{occurrence.occurrence_ref}:"
-                    f"slot_{slot}:{frame}:{event_index}"
-                ),
-                source_ref="resonance.dendro",
-                payload=request,
-            )
+        # 双草精通作用于整队：挂队伍作用域一份，由属性侧投影到队伍内每个角色，
+        # 不再逐槽位展开。
+        request = ApplyBuffRequest(
+            request_id=f"resonance.dendro:{occurrence.occurrence_ref}",
+            frame=frame,
+            order=0,
+            definition_key=definition_key,
+            target_ref=self._dendro_target_ref,
+            source_context=RuntimeSourceRef(
+                RuntimeSourceKind.SYSTEM,
+                "resonance.dendro",
+                occurrence.occurrence_ref,
+            ),
+            duration_frames=360,
+            modifier_values=(BuffModifierValue("elemental_mastery", value),),
+        )
+        self._enqueue(
+            context,
+            intent_id=(f"resonance.dendro:{occurrence.occurrence_ref}:{frame}:{event_index}"),
+            source_ref="resonance.dendro",
+            payload=request,
+        )
 
     def _handle_geo_res_shred(
         self,

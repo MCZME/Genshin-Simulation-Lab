@@ -19,6 +19,7 @@ from genshin_sim.content.team.resonance import (
     DENDRO_EM_20_TRIGGER_KEYS,
     DENDRO_EM_30_TRIGGER_KEYS,
     ELECTRO_PARTICLE_TRIGGER_KEYS,
+    PLAYER_TEAM_SCOPE,
     RESONANCE_DENDRO_EM_20_BUFF_KEY,
     RESONANCE_DENDRO_EM_30_BUFF_KEY,
     RESONANCE_GEO_RES_SHRED_BUFF_KEY,
@@ -163,24 +164,21 @@ def test_dendro_resonance_em_buffs_use_30_and_20_independent_definitions():
     )
 
     intents = queue.drain_sorted()
-    assert len(intents) == 8
     requests = [cast(ApplyBuffRequest, intent.payload) for intent in intents]
+    # golden 只锁定数值基线；入队条数与主体 kind 等结构事实由
+    # tests/unit/core/coordination/resonance_reaction/ 锁定。
     em_30 = [
         request for request in requests if request.definition_key == RESONANCE_DENDRO_EM_30_BUFF_KEY
     ]
     em_20 = [
         request for request in requests if request.definition_key == RESONANCE_DENDRO_EM_20_BUFF_KEY
     ]
-    assert len(em_30) == 4
-    assert len(em_20) == 4
-    assert all(
-        request.modifier_values[0].value == 30.0 and request.duration_frames == 360
-        for request in em_30
-    )
-    assert all(
-        request.modifier_values[0].value == 20.0 and request.duration_frames == 360
-        for request in em_20
-    )
+    assert len(em_30) == 1
+    assert len(em_20) == 1
+    assert em_30[0].modifier_values[0].value == 30.0
+    assert em_30[0].duration_frames == 360
+    assert em_20[0].modifier_values[0].value == 20.0
+    assert em_20[0].duration_frames == 360
 
 
 def test_geo_resonance_res_shred_uses_15s_geo_res_reduction():
@@ -230,7 +228,7 @@ def _stage(
     stage = ResonanceReactionStage(
         resonance_runtime=runtime,
         intent_queue=queue,
-        team_slots=(1, 2, 3, 4),
+        team_scope_ref=PLAYER_TEAM_SCOPE,
         electro_particle_triggers=ELECTRO_PARTICLE_TRIGGER_KEYS,
         dendro_em_30_triggers=DENDRO_EM_30_TRIGGER_KEYS,
         dendro_em_20_triggers=DENDRO_EM_20_TRIGGER_KEYS,

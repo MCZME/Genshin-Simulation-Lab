@@ -121,7 +121,12 @@ class BuffDefinition:
         target_kinds = frozenset(self.target_kinds)
         if not target_kinds:
             raise BuffValidationError("target_kinds 不能为空")
-        allowed = {AttributeSubjectKind.CHARACTER, AttributeSubjectKind.TARGET}
+        allowed = {
+            AttributeSubjectKind.CHARACTER,
+            AttributeSubjectKind.TARGET,
+            AttributeSubjectKind.TEAM,
+            AttributeSubjectKind.ACTIVE_CHARACTER,
+        }
         for kind in target_kinds:
             if kind not in allowed:
                 raise BuffValidationError(f"Buff target kind 不受支持：{kind!r}")

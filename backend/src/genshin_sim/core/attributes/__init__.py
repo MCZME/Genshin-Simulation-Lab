@@ -97,6 +97,7 @@ from genshin_sim.core.attributes.panel import (
     panel_entries_to_dict,
     resolve_panel,
 )
+from genshin_sim.core.attributes.ports import TeamScopeProjectionPort
 from genshin_sim.core.attributes.protocols import (
     AttributeReader,
     ModifierProvider,
@@ -188,6 +189,7 @@ __all__ = [
     "STAT_HP_MAX",
     "StaticModifierProvider",
     "TOTAL_STAT_KEYS",
+    "TeamScopeProjectionPort",
     "TraceLevel",
     "UnknownAttributeError",
     "UnsupportedOwnerError",

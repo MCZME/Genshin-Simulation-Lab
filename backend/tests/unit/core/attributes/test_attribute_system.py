@@ -170,6 +170,23 @@ def test_character_and_target_subject_support_is_validated():
         resolver.resolve(AttributeQuery(TARGET, STAT_ATK_TOTAL, frame=1))
 
 
+def test_team_scope_subject_kinds_are_distinct_identities():
+    team = AttributeSubjectRef.team("player_team")
+    active_character = AttributeSubjectRef.active_character("player_team")
+    character_with_same_id = AttributeSubjectRef.character("player_team")
+
+    assert team.kind is AttributeSubjectKind.TEAM
+    assert active_character.kind is AttributeSubjectKind.ACTIVE_CHARACTER
+    # 两个队伍作用域主体共用同一个队伍作用域 id，只有作用范围不同。
+    assert team.entity_id == active_character.entity_id == "player_team"
+    assert team.to_dict() == {"kind": "team", "entity_id": "player_team"}
+    assert active_character.to_dict() == {"kind": "active_character", "entity_id": "player_team"}
+    # 同名实体 id 不跨 kind 相等：队伍作用域主体与角色主体互不混淆。
+    assert character_with_same_id != team
+    assert character_with_same_id != active_character
+    assert team != active_character
+
+
 def test_missing_value_policy_uses_default_or_raises():
     default_key = AttributeKey("character.test.default_value")
     required_key = AttributeKey("character.test.required_value")

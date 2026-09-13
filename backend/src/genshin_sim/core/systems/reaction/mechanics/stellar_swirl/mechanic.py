@@ -87,9 +87,7 @@ def stellar_swirl_wind_participants(
     }
     if request.source_ref.source_key.startswith("character:"):
         character_source_keys.add(request.source_ref.source_key)
-    source_keys = {
-        request.source_ref.source_key
-    } & character_source_keys
+    source_keys = {request.source_ref.source_key} & character_source_keys
     cryo = request.observed_aura.component_for(AuraKind.CRYO)
     if cryo is not None:
         source_keys.update(

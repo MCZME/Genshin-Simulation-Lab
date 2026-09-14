@@ -151,7 +151,7 @@ def test_movement_runtime_start_jump_rejects_invalid_arguments():
 
     with pytest.raises(MovementRuntimeError, match="upward_velocity 必须是正数"):
         movement.start_jump(ctx, ACTIVE_CHARACTER_ENTITY_ID, 0.0, frame=1)
-    with pytest.raises(MovementRuntimeError, match="upward_velocity 必须是数字"):
+    with pytest.raises(MovementRuntimeError, match="upward_velocity 必须是有限数字"):
         movement.start_jump(ctx, ACTIVE_CHARACTER_ENTITY_ID, cast(float, "8.0"), frame=1)
     with pytest.raises(MovementRuntimeError, match="起跳实体不存在"):
         movement.start_jump(ctx, "player:missing", 8.0, frame=1)

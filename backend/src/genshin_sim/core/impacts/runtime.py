@@ -15,6 +15,7 @@ from genshin_sim.core.events import EventType, GameEvent
 from genshin_sim.core.events.payloads import SpaceEntityCreatedPayload
 from genshin_sim.core.impacts.dispatcher import ImpactDispatcher
 from genshin_sim.core.impacts.models import ActionImpactContext, ImpactKind, ImpactRequest
+from genshin_sim.core.movement import MovementImpactRequestHandler
 from genshin_sim.core.protocols import FrameUpdatable
 from genshin_sim.core.space import (
     CircleArea,
@@ -42,7 +43,6 @@ from genshin_sim.core.systems.infusion.handler import (
     InfusionImpactRecord,
     InfusionImpactRequestHandler,
 )
-from genshin_sim.core.systems.movement import MovementImpactRequestHandler
 from genshin_sim.core.systems.shield import ShieldGrantRecord, ShieldImpactRequestHandler
 
 

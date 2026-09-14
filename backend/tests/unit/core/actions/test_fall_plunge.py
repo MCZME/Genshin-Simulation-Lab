@@ -11,6 +11,7 @@ from genshin_sim.core.entity_states import (
     TargetRuntimeCollection,
     TargetRuntimeState,
 )
+from genshin_sim.core.movement import MovementRuntime
 from genshin_sim.core.simulation import SimulationContext, TeamRuntimeState
 from genshin_sim.core.space import (
     ACTIVE_CHARACTER_ENTITY_ID,
@@ -20,7 +21,6 @@ from genshin_sim.core.space import (
     Vector3,
 )
 from genshin_sim.core.space.runtime import SpaceRuntime
-from genshin_sim.core.systems.movement import MovementRuntime
 
 
 def test_fall_plunge_action_emits_impacts_on_movement_facts():

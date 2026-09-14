@@ -1,4 +1,4 @@
-"""Movement 领域枚举。"""
+"""Movement 位移设施枚举。"""
 
 from __future__ import annotations
 

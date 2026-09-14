@@ -1,4 +1,4 @@
-"""Movement 领域状态模型。"""
+"""Movement 位移设施状态模型。"""
 
 from __future__ import annotations
 

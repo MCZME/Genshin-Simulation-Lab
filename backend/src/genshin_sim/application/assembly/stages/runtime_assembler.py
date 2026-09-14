@@ -119,6 +119,10 @@ from genshin_sim.core.impacts import (
     ImpactRequestDispatcher,
     ImpactRuntime,
 )
+from genshin_sim.core.movement import (
+    MovementImpactRequestHandler,
+    MovementRuntime,
+)
 from genshin_sim.core.rules import (
     RuleActivation,
     RuleEngine,
@@ -214,10 +218,6 @@ from genshin_sim.core.systems.infusion import (
     InfusionRuntime,
     InfusionStore,
     InfusionSystemError,
-)
-from genshin_sim.core.systems.movement import (
-    MovementImpactRequestHandler,
-    MovementRuntime,
 )
 from genshin_sim.core.systems.reaction import create_default_reaction_bootstrap
 from genshin_sim.core.systems.reaction.mechanics.burning import (

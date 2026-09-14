@@ -25,6 +25,7 @@ from genshin_sim.core.actions.models import (
     TargetingSpec,
 )
 from genshin_sim.core.events import EventType, GameEvent, TeamSwitchedPayload
+from genshin_sim.core.movement import MovementFact, MovementRuntime
 from genshin_sim.core.space.space import ACTIVE_CHARACTER_ENTITY_ID
 from genshin_sim.core.systems.cooldown import (
     CooldownDurationTerm,
@@ -34,7 +35,6 @@ from genshin_sim.core.systems.cooldown import (
     CooldownSubjectRef,
     StartCooldownRequest,
 )
-from genshin_sim.core.systems.movement import MovementFact, MovementRuntime
 
 if TYPE_CHECKING:
     pass
@@ -185,10 +185,10 @@ class TimedImpactAction:
 
 @dataclass(frozen=True, slots=True)
 class FallPlungeAction:
-    """事件驱动下落动作：按 Movement 事实在碰撞/落地帧当场发出影响点。
+    """事件驱动下落动作：按位移设施事实在碰撞/落地帧当场发出影响点。
 
-    动作本身不写位移，也不预排影响帧；垂直运动由 ``MovementSystem`` 每帧
-    推进。``on_update`` 读取 Movement 当前帧事实：``COLLIDED`` 发出下坠碰撞
+    动作本身不写位移，也不预排影响帧；垂直运动由 ``core/movement`` 每帧
+    推进。``on_update`` 读取该设施当前帧事实：``COLLIDED`` 发出下坠碰撞
     影响点（每个下落过程一次），``LANDED`` 发出落地影响点并结束动作。
     """
 

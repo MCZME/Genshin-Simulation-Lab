@@ -46,10 +46,10 @@ class SpaceRuntime(FrameUpdatable):
         entity_id: str,
         position: Vector3,
     ) -> SpatialEntity | None:
-        """动作系统独占的位移写入口：更新指定空间实体的位置。
+        """位移设施独占的写入口：更新指定空间实体的位置。
 
-        只有动作产生的位移可以通过本入口写入位置；其他领域来源不得直接修改
-        Space 实体位置，需要位移时先形成动作意图。
+        `core/movement` 的垂直运动推进是本入口的唯一使用者；其他模块不得直接
+        修改 Space 实体位置，需要位移时通过 `ImpactKind.MOVEMENT` 意图表达。
         """
 
         if not isinstance(position, Vector3):

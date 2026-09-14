@@ -5,6 +5,9 @@ STELLAR_SWIRL_HANDLER_KEY = "reaction_handler.stellar_swirl"
 STELLAR_SWIRL_CAPABILITY_KEY = "reaction_capability:stellar_swirl"
 STELLAR_SWIRL_VORTEX_STATE_KEY = "reaction_state.stellar_swirl_vortex"
 STELLAR_SWIRL_VORTEX_SCOPE = "battle"
+# 跳跃能力 Buff 挂载的位置级队伍作用域 id；与星超导队伍作用域、装配期
+# ``PLAYER_TEAM_SCOPE`` 一致，不从空间实体 id 推导。
+STELLAR_SWIRL_TEAM_SCOPE = "player_team"
 STELLAR_SWIRL_VORTEX_SPATIAL_PROFILE_KEY = "reaction_spatial_profile.stellar_swirl_vortex"
 STELLAR_SWIRL_INCOMING_ANEMO_ON_CRYO = "stellar_incoming_anemo_on_cryo"
 # 反向方向（风元素自附着敌人被冰攻击触发）依赖 AuraKind 扩展 ANEMO，本期预留不注册。

@@ -48,6 +48,7 @@ from genshin_sim.core.simulation.input import InputSessionBoundary, InputSession
 
 if TYPE_CHECKING:
     from genshin_sim.core.simulation import SimulationContext
+    from genshin_sim.core.systems.buff.protocols import BuffReader
 
 
 class ActionManager(FrameUpdatable):
@@ -60,11 +61,13 @@ class ActionManager(FrameUpdatable):
         interpreter_registry: ActionInterpreterRegistry,
         action_registry: ActionRegistry,
         ability_condition_port: CharacterAbilityConditionPort | None = None,
+        buff_reader: BuffReader | None = None,
     ) -> None:
         self.input_trace = input_trace
         self.interpreter_registry = interpreter_registry
         self.action_registry = action_registry
         self._ability_condition_port = ability_condition_port
+        self._buff_reader = buff_reader
         self._sessions: dict[int, RuntimeInputSession] = {}
         self._instances: list[ActionInstance] = []
         self._decisions: list[ActionDecision] = []
@@ -283,6 +286,7 @@ class ActionManager(FrameUpdatable):
             ActionInterpretationContext(
                 simulation=context,
                 ability_condition_port=self._ability_condition_port,
+                buff_reader=self._buff_reader,
             ),
             view,
         )

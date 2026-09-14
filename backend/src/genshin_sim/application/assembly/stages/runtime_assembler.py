@@ -104,6 +104,7 @@ from genshin_sim.core.coordination.elemental_reaction.stellar_buffs import (
     stellar_radiance_buff_definition,
 )
 from genshin_sim.core.coordination.elemental_reaction.stellar_swirl_buffs import (
+    stellar_swirl_jump_boost_buff_definition,
     stellar_swirl_radiance_buff_definition,
 )
 from genshin_sim.core.coordination.resonance_reaction import ResonanceReactionStage
@@ -168,6 +169,7 @@ from genshin_sim.core.systems.aura_icd import (
 )
 from genshin_sim.core.systems.buff import (
     BuffImpactRequestHandler,
+    BuffRemovalImpactRequestHandler,
     BuffResolver,
     BuffRuntime,
     BuffStore,
@@ -299,6 +301,7 @@ class RuntimeAssembler:
                 superconduct_buff_definition(),
                 stellar_radiance_buff_definition(),
                 stellar_swirl_radiance_buff_definition(),
+                stellar_swirl_jump_boost_buff_definition(),
                 *create_resonance_buff_definitions(),
             )
         )
@@ -583,6 +586,7 @@ class RuntimeAssembler:
             ),
         )
         buff_handler = BuffImpactRequestHandler(buff_max_hp_coordinator)
+        buff_removal_handler = BuffRemovalImpactRequestHandler(buff_runtime)
         try:
             infusion_registry = InfusionDefinitionRegistry(content_bundle.infusion_definitions)
             infusion_store = InfusionStore()
@@ -614,6 +618,7 @@ class RuntimeAssembler:
         context.register_system(buff_runtime)
         context.register_system(buff_max_hp_coordinator)
         context.register_system(buff_handler)
+        context.register_system(buff_removal_handler)
         context.register_system(infusion_runtime)
         context.register_system(infusion_handler)
         context.register_system(shield_runtime)
@@ -758,6 +763,7 @@ class RuntimeAssembler:
             damage_handler=damage_handler,
             shield_handler=shield_handler,
             buff_handler=buff_handler,
+            buff_removal_handler=buff_removal_handler,
             healing_handler=healing_impact_handler,
             character_aura_handler=character_aura_handler,
             energy_handler=energy_handler,

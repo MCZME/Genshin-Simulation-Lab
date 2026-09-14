@@ -1,7 +1,8 @@
 # 单一关注点：星扩散在元素交互协调器中的全链路闭环。
 # 覆盖：风触发替代普通扩散、风伤害结算、风旋等级按目标累加、同帧风伤害
 # 去重、6 级爆炸冰伤害与 1U 冰附着、附着触发星超导的后续反应链路、
-# 辉映·星扩散 Buff 的申请与 REFRESH 顺延。
+# 辉映·星扩散 Buff 的申请与 REFRESH 顺延、爆炸范围内前台角色的关系过滤与
+# 位置级跳跃能力 Buff。
 from __future__ import annotations
 
 import pytest
@@ -11,6 +12,8 @@ from genshin_sim.application.assembly.damage_profiles import (
 )
 from genshin_sim.core.attributes import (
     AttributeResolver,
+    AttributeSubjectKind,
+    AttributeSubjectRef,
     BaseAttributeSet,
     ModifierProviderIndex,
     create_public_attribute_registry,
@@ -19,6 +22,7 @@ from genshin_sim.core.coordination.elemental_reaction import (
     ElementalInteractionCoordinator,
     ElementalStateFrameCoordinator,
     ReactionSpatialPlanningAdapter,
+    ReactionTargetRelation,
     StellarSwirlVortexExpiryCoordinator,
 )
 from genshin_sim.core.coordination.elemental_reaction.capabilities import (
@@ -38,9 +42,12 @@ from genshin_sim.core.coordination.elemental_reaction.stellar_buffs import (
     stellar_radiance_buff_definition,
 )
 from genshin_sim.core.coordination.elemental_reaction.stellar_swirl_buffs import (
+    STELLAR_SWIRL_JUMP_BOOST_BUFF_DEFINITION_KEY,
+    STELLAR_SWIRL_JUMP_BOOST_DURATION_FRAMES,
     STELLAR_SWIRL_RADIANCE_BUFF_DEFINITION_KEY,
     STELLAR_SWIRL_RADIANCE_DIRECT_MULTIPLIER_TERM_KEY,
     STELLAR_SWIRL_RADIANCE_DURATION_FRAMES,
+    stellar_swirl_jump_boost_buff_definition,
     stellar_swirl_radiance_buff_definition,
 )
 from genshin_sim.core.elements import (
@@ -57,12 +64,19 @@ from genshin_sim.core.entity_states import (
 )
 from genshin_sim.core.events import (
     DamageResolvedPayload,
+    ElementalInteractionResolvedPayload,
     EventType,
     ReactionOccurredPayload,
 )
 from genshin_sim.core.impacts import ElementalApplicationSpec, ImpactKind, ImpactRequest
 from genshin_sim.core.simulation import SimulationContext, TeamRuntimeState
-from genshin_sim.core.space import Space, SpatialEntity, SpatialEntityKind, Vector3
+from genshin_sim.core.space import (
+    ACTIVE_CHARACTER_ENTITY_ID,
+    Space,
+    SpatialEntity,
+    SpatialEntityKind,
+    Vector3,
+)
 from genshin_sim.core.space.runtime import SpaceRuntime
 from genshin_sim.core.systems.aura import (
     AuraApplicationProfileRegistry,
@@ -125,13 +139,22 @@ class _PreparedSwirlCoordinator:
             ("star", TARGET_1_ENTITY_ID, Vector3(0.0, 0.0, 0.0)),
             ("moon", TARGET_2_ENTITY_ID, Vector3(5.0, 0.0, 0.0)),
         ),
+        active_character_position: Vector3 | None = None,
     ) -> None:
-        space = Space(
-            tuple(
-                SpatialEntity(spatial_entity_id, SpatialEntityKind.TARGET, position)
-                for _, spatial_entity_id, position in targets
+        entities = [
+            SpatialEntity(spatial_entity_id, SpatialEntityKind.TARGET, position)
+            for _, spatial_entity_id, position in targets
+        ]
+        if active_character_position is not None:
+            entities.append(
+                SpatialEntity(
+                    ACTIVE_CHARACTER_ENTITY_ID,
+                    SpatialEntityKind.ACTIVE_CHARACTER,
+                    position=active_character_position,
+                    active_slot=1,
+                )
             )
-        )
+        space = Space(tuple(entities))
         self.space_runtime = SpaceRuntime(
             space=space,
             team_state=TeamRuntimeState(
@@ -168,6 +191,7 @@ class _PreparedSwirlCoordinator:
                     superconduct_buff_definition(),
                     stellar_radiance_buff_definition(),
                     stellar_swirl_radiance_buff_definition(),
+                    stellar_swirl_jump_boost_buff_definition(),
                 )
             ),
             resolver=BuffResolver(),
@@ -280,6 +304,12 @@ class _PreparedSwirlCoordinator:
         return self.buff_runtime.reader.active(
             frame,
             definition_key=STELLAR_SWIRL_RADIANCE_BUFF_DEFINITION_KEY,
+        )
+
+    def jump_boost_buffs(self, frame: int):
+        return self.buff_runtime.reader.active(
+            frame,
+            definition_key=STELLAR_SWIRL_JUMP_BOOST_BUFF_DEFINITION_KEY,
         )
 
 
@@ -472,3 +502,107 @@ def test_swirl_interaction_refreshes_radiance_buff_on_repeated_wind_trigger() ->
     record = records[0]
     assert record.last_applied_frame == 100
     assert record.expires_at_frame == 100 + STELLAR_SWIRL_RADIANCE_DURATION_FRAMES
+
+
+def test_swirl_explosion_blocks_active_character_in_radius() -> None:
+    """爆炸范围内的前台角色不是敌对关系：不受冰伤害、不被 1U 冰附着。
+
+    爆炸 selection 显式声明 ``hostile_effect`` 资格策略，不继承
+    ``AreaAroundPositionSelection`` 的 ``bloom_damage`` 默认值，因此"不自伤"
+    由意图表达保证，而非依赖伤害 Effect 类型的白名单联合。
+    """
+
+    prepared = _PreparedSwirlCoordinator(active_character_position=Vector3(1.0, 0.0, 0.0))
+    prepared.settlement.settle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.CRYO, frame=0),
+    )
+    prepared.settlement.settle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.ANEMO, frame=0),
+    )
+    prepared.settlement.update_frame(prepared.context, STELLAR_SWIRL_VORTEX_LIFETIME_FRAMES)
+
+    # 等级 1 爆炸半径 6：T1（锚点，距离 0）、前台角色（距离 1）与
+    # T2（距离 5）都在范围内，但只有两个敌人各承受一段冰伤害。
+    character_outcomes = tuple(
+        outcome
+        for event in prepared.context.events.frame_events
+        if event.event_type is EventType.ELEMENTAL_INTERACTION_RESOLVED
+        and isinstance(event.payload, ElementalInteractionResolvedPayload)
+        for outcome in event.payload.record.target_effect_outcomes
+        if outcome.subject_ref.entity_id == ACTIVE_CHARACTER_ENTITY_ID
+    )
+    # 角色确实进入了爆炸范围目标集合，只是被关系过滤挡下（断言非空转）。
+    assert character_outcomes
+    assert all(item.relation is ReactionTargetRelation.SELF for item in character_outcomes)
+    assert all(item.damage_outcome == "blocked_relation" for item in character_outcomes)
+
+    resolutions = prepared.stellar_resolutions()
+    assert len(resolutions) == 3
+    assert prepared.cryo_aura_amount(TARGET_1_ENTITY_ID) == AuraAmount("4/5")
+    assert prepared.cryo_aura_amount(TARGET_2_ENTITY_ID) == AuraAmount("4/5")
+    character_aura = prepared.aura_runtime.view(
+        ElementalSubjectRef.character(ACTIVE_CHARACTER_ENTITY_ID)
+    )
+    assert character_aura.component_for(AuraKind.CRYO) is None
+
+
+def _explode_at_lifetime(prepared: _PreparedSwirlCoordinator) -> None:
+    prepared.settlement.settle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.CRYO, frame=0),
+    )
+    prepared.settlement.settle_aura_impact(
+        prepared.context,
+        prepared.apply_element(Element.ANEMO, frame=0),
+    )
+    prepared.settlement.update_frame(prepared.context, STELLAR_SWIRL_VORTEX_LIFETIME_FRAMES)
+
+
+def test_swirl_explosion_grants_jump_boost_to_hit_active_character() -> None:
+    """爆炸命中范围内的前台角色时，按位置级队伍作用域授予跳跃能力 Buff。"""
+
+    prepared = _PreparedSwirlCoordinator(active_character_position=Vector3(1.0, 0.0, 0.0))
+    _explode_at_lifetime(prepared)
+
+    records = prepared.jump_boost_buffs(STELLAR_SWIRL_VORTEX_LIFETIME_FRAMES)
+    assert len(records) == 1
+    record = records[0]
+    # 位置级主体：谁在前台谁享受，切人后由新前台自然接管。
+    assert record.state.target_ref == AttributeSubjectRef.active_character("player_team")
+    assert record.state.target_ref.kind is AttributeSubjectKind.ACTIVE_CHARACTER
+    assert record.expires_at_frame == (
+        STELLAR_SWIRL_VORTEX_LIFETIME_FRAMES + STELLAR_SWIRL_JUMP_BOOST_DURATION_FRAMES
+    )
+    # marker_only：Movement 尚无跳跃能力模型，不声明任何属性词条。
+    assert record.state.resolved_modifiers == ()
+
+
+def test_swirl_explosion_outside_radius_grants_no_jump_boost() -> None:
+    """角色不在爆炸范围内时不授予跳跃能力 Buff。"""
+
+    prepared = _PreparedSwirlCoordinator(active_character_position=Vector3(20.0, 0.0, 0.0))
+    _explode_at_lifetime(prepared)
+
+    assert prepared.jump_boost_buffs(STELLAR_SWIRL_VORTEX_LIFETIME_FRAMES) == ()
+
+
+def test_swirl_level_six_explosion_also_grants_jump_boost() -> None:
+    """6 级立即爆炸与到期爆炸产出同一形态的 Effect group，同样授予跳跃 Buff。"""
+
+    prepared = _PreparedSwirlCoordinator(active_character_position=Vector3(1.0, 0.0, 0.0))
+    for _ in range(6):
+        prepared.settlement.settle_aura_impact(
+            prepared.context,
+            prepared.apply_element(Element.CRYO, frame=0),
+        )
+        prepared.settlement.settle_aura_impact(
+            prepared.context,
+            prepared.apply_element(Element.ANEMO, frame=0),
+        )
+
+    assert prepared.vortex() is None
+    records = prepared.jump_boost_buffs(0)
+    assert len(records) == 1
+    assert records[0].expires_at_frame == STELLAR_SWIRL_JUMP_BOOST_DURATION_FRAMES

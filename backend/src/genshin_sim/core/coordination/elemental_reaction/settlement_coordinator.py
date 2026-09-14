@@ -69,6 +69,9 @@ from genshin_sim.core.coordination.elemental_reaction.status import (
 from genshin_sim.core.coordination.elemental_reaction.stellar_buffs import (
     plan_radiance_buff_requests,
 )
+from genshin_sim.core.coordination.elemental_reaction.stellar_swirl_buffs import (
+    plan_stellar_swirl_jump_boost_request,
+)
 from genshin_sim.core.coordination.elemental_reaction.step_planning import (
     _plan_depleted_frozen_state_removal,
     _plan_depleted_quicken_state_removal,
@@ -1888,6 +1891,26 @@ class ElementalSettlementCoordinator:
                     )
                 )
 
+        # 星扩散冰爆炸命中角色：位置级跳跃能力 Buff 走独立通道，与伤害/附着
+        # 通道分离。角色在 effect 循环内被 hostile 资格策略挡下（blocked_relation），
+        # 这里只对"确实在爆炸范围内"的角色补一条 ACTIVE_CHARACTER 主体记录。
+        #
+        # 依赖前提：``reaction_target.hostile_effect`` 必须把范围内的非敌对目标
+        # 保留在 target 集合里、并以 ``ReactionTargetRelation.SELF`` 暴露，而不是
+        # 直接过滤掉非敌对目标。若该资格策略日后改成过滤，本分支会静默失效。
+        if has_stellar_attachment and any(
+            eligibility.relation is ReactionTargetRelation.SELF for eligibility in targets
+        ):
+            status_requests.append(
+                plan_stellar_swirl_jump_boost_request(
+                    frame=root_record.frame,
+                    effect_group_ref=group.effect_group_ref,
+                    # 与状态申请的 target_order 语义不同，这里取现有最大 order + 1，
+                    # 保证排在既有申请之后且不会撞号。
+                    order=max((request.order for request in status_requests), default=-1) + 1,
+                )
+            )
+
         gate_plan = gate_planner.seal()
         aura_plan = None if aura_planner is None else aura_planner.seal()
         if reaction_planner is None:
@@ -3427,7 +3450,10 @@ def _with_effect_outcome(
 ) -> ReactionTargetEffectOutcome:
     if isinstance(
         effect,
-        GeneratedDamageImpactEffect | LunarReactionDamageImpactEffect | LunarStormCloudAttackEffect,
+        GeneratedDamageImpactEffect
+        | LunarReactionDamageImpactEffect
+        | StellarReactionDamageImpactEffect
+        | LunarStormCloudAttackEffect,
     ):
         return _with_damage_outcome(outcome, value, gate_resolution_ref=outcome.gate_resolution_ref)
     return _with_status_outcome(outcome, value, outcome.buff_request_id)

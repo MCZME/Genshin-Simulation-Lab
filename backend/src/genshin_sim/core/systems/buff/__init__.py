@@ -31,6 +31,9 @@ from genshin_sim.core.systems.buff.handler import (
     BuffApplicationRecord,
     BuffApplyManyPort,
     BuffImpactRequestHandler,
+    BuffRemovalImpactRequestHandler,
+    BuffRemovalRecord,
+    BuffRemovePort,
 )
 from genshin_sim.core.systems.buff.models import (
     ApplyBuffRequest,
@@ -86,8 +89,11 @@ __all__ = [
     "BuffReader",
     "BuffReentrancyError",
     "BuffRecord",
+    "BuffRemovalImpactRequestHandler",
     "BuffRemovalReason",
+    "BuffRemovalRecord",
     "BuffRemovalResult",
+    "BuffRemovePort",
     "BuffResolvedAttributeModifier",
     "BuffResolver",
     "BuffRuntime",

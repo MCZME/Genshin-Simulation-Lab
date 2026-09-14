@@ -278,10 +278,15 @@ def stellar_swirl_explosion_effect_group(
         # 爆炸组可能与其因果锚点 occurrence 的风伤害组同根结算，
         # emission_order 固定为 1 以避免结算 work_id 冲突。
         emission_order=1,
+        # 爆炸只作用于敌对目标：显式声明 hostile 资格策略，不继承
+        # ``AreaAroundPositionSelection`` 的 ``bloom_damage`` 默认值，避免
+        # "不自伤"依赖伤害 Effect 类型联合而非意图表达。范围内角色改由
+        # 跳跃能力 Buff 通道承接，不受冰伤害、不被附着。
         target_selection=AreaAroundPositionSelection(
             selection_ref=f"{effect_group_ref}:target-selection",
             center=anchor_position,
             radius=radius,
+            eligibility_policy_key="reaction_target.hostile_effect",
         ),
         effects=(effect,),
     )

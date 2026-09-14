@@ -109,6 +109,7 @@ def _manager(
     actions: tuple[TimedImpactAction, ...],
     *,
     ability_condition_port=None,
+    buff_reader=None,
 ) -> ActionManager:
     registry = ActionInterpreterRegistry()
     registry.register("keyboard.e", ActiveCharacterInterpreterSelector({1: interpreter}))
@@ -118,6 +119,7 @@ def _manager(
         interpreter_registry=registry,
         action_registry=ActionRegistry(actions),
         ability_condition_port=ability_condition_port,
+        buff_reader=buff_reader,
     )
 
 
@@ -377,6 +379,52 @@ def test_action_manager_passes_ability_condition_port_to_interpreter():
         interpreter.contexts[0],
     )
     assert interpretation_context.ability_condition_port is port
+
+
+class _RecordingBuffReader:
+    """记录查询的最小 Buff 只读端口替身。"""
+
+    def __init__(self) -> None:
+        self.queries: list[tuple[int, object, str | None]] = []
+
+    def active(
+        self,
+        frame: int,
+        target_ref=None,
+        definition_key: str | None = None,
+        mechanic_key: str | None = None,
+    ) -> tuple[object, ...]:
+        self.queries.append((frame, target_ref, definition_key))
+        return ()
+
+
+def test_action_manager_passes_buff_reader_to_interpreter():
+    """动作解释器拿到 Buff 只读端口：角色侧可自行查询并按结果决定行为参数。"""
+
+    interpreter = ReleaseStartInterpreter({"keyboard.e": "character.test.skill"})
+    reader = _RecordingBuffReader()
+    manager = _manager(
+        [
+            KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
+            KeyInputFrame(3, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
+        ],
+        interpreter,
+        (TimedImpactAction(action_key="character.test.skill"),),
+        buff_reader=reader,
+    )
+
+    manager.update_frame(_context(), 1)
+
+    assert interpreter.contexts
+    interpretation_context = cast(
+        ActionInterpretationContext,
+        interpreter.contexts[0],
+    )
+    buff_reader = interpretation_context.buff_reader
+    assert buff_reader is reader
+    assert buff_reader is not None
+    buff_reader.active(1, None, "buff.test.consumable")
+    assert reader.queries == [(1, None, "buff.test.consumable")]
 
 
 def test_timed_action_starts_cooldown_at_configured_frame():

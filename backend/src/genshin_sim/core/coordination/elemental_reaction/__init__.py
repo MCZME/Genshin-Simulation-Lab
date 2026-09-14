@@ -134,7 +134,9 @@ from genshin_sim.core.coordination.elemental_reaction.stellar_swirl import (
     plan_stellar_swirl_vortex_occurrence,
 )
 from genshin_sim.core.coordination.elemental_reaction.stellar_swirl_buffs import (
+    plan_stellar_swirl_jump_boost_request,
     plan_stellar_swirl_radiance_buff_requests,
+    stellar_swirl_jump_boost_buff_definition,
     stellar_swirl_radiance_buff_definition,
 )
 
@@ -234,6 +236,8 @@ __all__ = [
     "plan_polestar_field_occurrence",
     "plan_stellar_swirl_vortex_occurrence",
     "plan_stellar_swirl_radiance_buff_requests",
+    "plan_stellar_swirl_jump_boost_request",
     "stellar_swirl_radiance_buff_definition",
+    "stellar_swirl_jump_boost_buff_definition",
     "record_stellar_conduct_attachment",
 ]

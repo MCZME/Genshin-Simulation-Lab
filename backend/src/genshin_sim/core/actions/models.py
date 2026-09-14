@@ -27,14 +27,16 @@ if TYPE_CHECKING:
     from genshin_sim.core.actions.interpreters import ActionInterpreter
     from genshin_sim.core.actions.protocols import Action
     from genshin_sim.core.simulation import SimulationContext
+    from genshin_sim.core.systems.buff.protocols import BuffReader
 
 
 @dataclass(frozen=True, slots=True)
 class ActionInterpretationContext:
-    """传给角色能力解释器的只读上下文（含公共条件端口）。"""
+    """传给角色能力解释器的只读上下文（含公共条件端口与 Buff 只读端口）。"""
 
     simulation: SimulationContext
     ability_condition_port: CharacterAbilityConditionPort | None = None
+    buff_reader: BuffReader | None = None
 
 
 @dataclass(frozen=True, slots=True)

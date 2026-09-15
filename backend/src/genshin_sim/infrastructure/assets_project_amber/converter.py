@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -15,7 +14,6 @@ from genshin_sim.infrastructure.assets_project_amber._characters import (
     _build_character_effect_payloads,
     _build_character_level_stats,
     _build_talent_scalings,
-    _talent_scaling_to_manifest,
 )
 from genshin_sim.infrastructure.assets_project_amber._common import (
     _hash_cache_inputs,
@@ -36,6 +34,15 @@ from genshin_sim.infrastructure.assets_project_amber.fetcher import (
     PROJECT_AMBER_SOURCE_NAME,
     PROJECT_AMBER_SOURCE_VERSION,
 )
+from genshin_sim.infrastructure.assets_sqlite.manifest import (
+    HANDLER_OVERLAY_UPDATED_AT,
+    AssetManifest,
+    dump_asset_manifest,
+)
+from genshin_sim.infrastructure.assets_sqlite.manifest_baseline import (
+    AssetManifestDiff,
+    apply_manifest_baseline,
+)
 from genshin_sim.infrastructure.assets_sqlite.schema import ASSET_SCHEMA_VERSION
 
 PROJECT_AMBER_MANIFEST_IMPORTER_VERSION = "project-amber-yatta-manifest-converter-1"
@@ -54,12 +61,21 @@ class ProjectAmberManifestBuildSummary:
     talent_scaling_count: int
     effect_payload_count: int
     content_hash: str
+    diff: AssetManifestDiff
+    degraded_affixes: tuple[str, ...] = ()
 
 
 def build_asset_manifest_from_project_amber_cache(
     source_cache_dir: str | Path,
     output_path: str | Path,
 ) -> ProjectAmberManifestBuildSummary:
+    """从 raw source cache 全量重建标准资产 manifest。
+
+    manifest 每次全量重建，但 handler 覆盖是叠加在生成物上的本地状态：若
+    ``output_path`` 上已有 manifest，则以其为基线继承 handler 绑定，并给出本次
+    更新相对基线的差异（新增 / 消失 / 内容变化资产、继承与丢弃的绑定）。
+    """
+
     cache_dir = Path(source_cache_dir)
     target_path = Path(output_path)
 
@@ -84,33 +100,40 @@ def build_asset_manifest_from_project_amber_cache(
     talent_scalings = _build_talent_scalings(cache_dir, characters)
     weapons = _build_weapons(weapon_index)
     weapon_level_stats = _build_weapon_level_stats(cache_dir, weapons, weapon_curve)
+    degraded_affixes: list[str] = []
     effect_payloads = (
         *_build_character_effect_payloads(cache_dir, characters),
-        *_build_weapon_effect_payloads(cache_dir, weapons),
+        *_build_weapon_effect_payloads(
+            cache_dir,
+            weapons,
+            degraded_affixes=degraded_affixes,
+        ),
     )
     artifact_sets = _build_artifact_sets(reliquary_index)
     artifact_set_bonuses = _build_artifact_set_bonuses(reliquary_index, artifact_sets)
     content_hash = str(cache_meta.get("content_hash") or _hash_cache_inputs(cache_dir))
 
-    manifest = {
-        "schema_version": 1,
-        "kind": "asset_manifest",
-        "meta": _build_asset_meta(cache_meta, content_hash),
-        "characters": [asdict(item) for item in characters],
-        "character_level_stats": [asdict(item) for item in character_level_stats],
-        "weapons": [asdict(item) for item in weapons],
-        "weapon_level_stats": [asdict(item) for item in weapon_level_stats],
-        "artifact_sets": [asdict(item) for item in artifact_sets],
-        "artifact_set_bonuses": [asdict(item) for item in artifact_set_bonuses],
-        "talent_scalings": [_talent_scaling_to_manifest(item) for item in talent_scalings],
-        "effect_payloads": [asdict(item) for item in effect_payloads],
-    }
-
-    target_path.parent.mkdir(parents=True, exist_ok=True)
-    target_path.write_text(
-        json.dumps(manifest, ensure_ascii=False, indent=2, sort_keys=True) + "\n",
-        encoding="utf-8",
+    rows = AssetManifest(
+        meta=_build_asset_meta(cache_meta, content_hash),
+        characters=characters,
+        character_level_stats=character_level_stats,
+        weapons=weapons,
+        weapon_level_stats=weapon_level_stats,
+        artifact_sets=artifact_sets,
+        artifact_set_bonuses=artifact_set_bonuses,
+        talent_scalings=talent_scalings,
+        effect_payloads=effect_payloads,
     )
+    merged, diff = apply_manifest_baseline(target_path, rows)
+    if diff.baseline_handler_overlay_updated_at is not None:
+        merged = replace(
+            merged,
+            meta={
+                **merged.meta,
+                HANDLER_OVERLAY_UPDATED_AT: diff.baseline_handler_overlay_updated_at,
+            },
+        )
+    dump_asset_manifest(merged, target_path)
 
     return ProjectAmberManifestBuildSummary(
         output_path=target_path,
@@ -124,6 +147,8 @@ def build_asset_manifest_from_project_amber_cache(
         talent_scaling_count=len(talent_scalings),
         effect_payload_count=len(effect_payloads),
         content_hash=content_hash,
+        diff=diff,
+        degraded_affixes=tuple(degraded_affixes),
     )
 
 

@@ -176,6 +176,12 @@ def _add_assets_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
         default=DEFAULT_ASSET_MANIFEST,
         help="输出资产 manifest JSON 路径。",
     )
+    build_manifest_parser.add_argument(
+        "--max-changes",
+        type=int,
+        default=20,
+        help="最多打印的变更明细数量。",
+    )
     build_manifest_parser.set_defaults(handler=_cmd_assets_build_manifest)
 
     audit_manifest_parser = assets_subparsers.add_parser(
@@ -468,7 +474,60 @@ def _cmd_assets_build_manifest(args: argparse.Namespace) -> int:
     print(f"talent_scalings: {summary.talent_scaling_count}")
     print(f"effect_payloads: {summary.effect_payload_count}")
     print(f"content_hash: {summary.content_hash}")
+    _print_manifest_baseline_report(summary.diff, max_changes=max(0, int(args.max_changes)))
+    if summary.degraded_affixes:
+        print(
+            f"降级的武器效果: {len(summary.degraded_affixes)} 条"
+            "（原文模板保留，未写 components）"
+        )
+        for item in summary.degraded_affixes:
+            print(f"- [降级] {item}")
     return 0
+
+
+def _print_manifest_baseline_report(diff: Any, *, max_changes: int) -> None:
+    """打印上一版 manifest 的继承结果与本次更新差异。"""
+
+    if not diff.baseline_available:
+        if diff.baseline_error:
+            print(f"基线 manifest 不可用，未继承 handler 覆盖：{diff.baseline_error}")
+        else:
+            print("基线 manifest 不存在：全新构建，未继承 handler 覆盖")
+        return
+
+    print(f"基线 manifest: {diff.baseline_path}")
+    for label, changes in (
+        ("角色", diff.characters),
+        ("武器", diff.weapons),
+        ("圣遗物套装", diff.artifact_sets),
+    ):
+        print(
+            f"{label}变更: 新增 {len(changes.added)} / 消失 {len(changes.removed)} "
+            f"/ 内容变化 {len(changes.changed)}"
+        )
+        for tag, keys in (
+            ("新增", changes.added),
+            ("消失", changes.removed),
+            ("内容变化", changes.changed),
+        ):
+            _print_capped_manifest_details(tag, keys, max_changes)
+
+    print(f"handler 覆盖继承: {len(diff.carried_bindings)} 条")
+    _print_capped_manifest_details("继承", diff.carried_bindings, max_changes)
+    if diff.dropped_bindings:
+        print(f"handler 覆盖丢弃（目标已不在新 manifest 中）: {len(diff.dropped_bindings)} 条")
+        _print_capped_manifest_details("丢弃", diff.dropped_bindings, max_changes)
+    if diff.binding_conflicts:
+        print(f"handler 覆盖冲突（保留新构建值）: {len(diff.binding_conflicts)} 条")
+        _print_capped_manifest_details("冲突", diff.binding_conflicts, max_changes)
+
+
+def _print_capped_manifest_details(tag: str, values: Any, max_changes: int) -> None:
+    for value in values[:max_changes]:
+        print(f"- [{tag}] {value}")
+    omitted = len(values) - max_changes
+    if omitted > 0:
+        print(f"- [{tag}] ... 还有 {omitted} 个未打印")
 
 
 def _cmd_assets_audit_manifest(args: argparse.Namespace) -> int:

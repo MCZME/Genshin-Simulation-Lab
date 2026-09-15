@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import re
 from collections.abc import Mapping
-from dataclasses import asdict
 from pathlib import Path
 from typing import Any
 
@@ -146,12 +145,6 @@ def _build_talent_scalings(
                 )
             )
     return tuple(rows)
-
-
-def _talent_scaling_to_manifest(item: TalentScalingEntry) -> dict[str, Any]:
-    row = asdict(item)
-    row.pop("entry_id", None)
-    return row
 
 
 def _map_core_talent_key(source_talent_key: str, talent: Mapping[str, Any]) -> str | None:

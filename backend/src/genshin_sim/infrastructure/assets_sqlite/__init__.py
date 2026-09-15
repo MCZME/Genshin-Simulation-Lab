@@ -7,6 +7,7 @@ from genshin_sim.infrastructure.assets_sqlite.manifest import (
     AssetManifest,
     apply_handler_binding_to_manifest,
     build_asset_database_from_manifest,
+    dump_asset_manifest,
     load_asset_manifest,
     sync_asset_manifest_handler_bindings,
     validate_handler_binding_in_manifest,
@@ -16,6 +17,11 @@ from genshin_sim.infrastructure.assets_sqlite.manifest_audit import (
     AssetManifestAuditReport,
     audit_asset_manifest,
     audit_loaded_asset_manifest,
+)
+from genshin_sim.infrastructure.assets_sqlite.manifest_baseline import (
+    AssetGroupChanges,
+    AssetManifestDiff,
+    apply_manifest_baseline,
 )
 from genshin_sim.infrastructure.assets_sqlite.repository import SQLiteAssetRepository
 from genshin_sim.infrastructure.assets_sqlite.schema import (
@@ -36,12 +42,16 @@ __all__ = [
     "AssetManifest",
     "AssetManifestAuditIssue",
     "AssetManifestAuditReport",
+    "AssetManifestDiff",
+    "AssetGroupChanges",
     "SQLiteAssetRepository",
     "SQLiteAssetDataWriter",
     "apply_handler_binding_to_manifest",
+    "apply_manifest_baseline",
     "audit_asset_manifest",
     "audit_loaded_asset_manifest",
     "build_asset_database_from_manifest",
+    "dump_asset_manifest",
     "init_asset_database",
     "load_asset_manifest",
     "sync_asset_manifest_handler_bindings",

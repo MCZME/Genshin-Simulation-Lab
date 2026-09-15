@@ -5,12 +5,14 @@ import json
 
 import pytest
 
-from genshin_sim.assets import AssetValidationError
+from genshin_sim.assets import AssetValidationError, HandlerBinding
 from genshin_sim.infrastructure.assets_project_amber import (
     build_asset_manifest_from_project_amber_cache,
 )
 from genshin_sim.infrastructure.assets_sqlite import (
     SQLiteAssetRepository,
+    apply_handler_binding_to_manifest,
+    audit_asset_manifest,
     build_asset_database_from_manifest,
     load_asset_manifest,
 )
@@ -194,6 +196,141 @@ def test_build_asset_manifest_rejects_characters_without_burst_cost_source(tmp_p
 
     with pytest.raises(AssetValidationError, match="cache 文件"):
         build_asset_manifest_from_project_amber_cache(cache_dir, manifest_path)
+
+
+def test_build_asset_manifest_reports_missing_baseline(tmp_path):
+    cache_dir = tmp_path / "cache"
+    manifest_path = tmp_path / "manifest.json"
+    _write_project_amber_cache(cache_dir, include_details=True)
+
+    summary = build_asset_manifest_from_project_amber_cache(cache_dir, manifest_path)
+
+    assert summary.diff.baseline_available is False
+    assert summary.diff.baseline_error is None
+    assert summary.diff.carried_bindings == ()
+    assert summary.diff.has_asset_changes is False
+
+
+def test_build_asset_manifest_carries_handler_overlay_across_rebuild(tmp_path):
+    cache_dir = tmp_path / "cache"
+    manifest_path = tmp_path / "manifest.json"
+    _write_project_amber_cache(cache_dir, include_details=True)
+    build_asset_manifest_from_project_amber_cache(cache_dir, manifest_path)
+    constellation = next(
+        item
+        for item in load_asset_manifest(manifest_path).effect_payloads
+        if item.effect_kind == "constellation"
+    )
+    apply_handler_binding_to_manifest(
+        manifest_path,
+        HandlerBinding(
+            kind="character",
+            key="character:10000002",
+            handler_key="character.test",
+        ),
+    )
+    apply_handler_binding_to_manifest(
+        manifest_path,
+        HandlerBinding(
+            kind="effect",
+            key=constellation.effect_key,
+            handler_key="character.test.constellation.c1",
+        ),
+    )
+
+    summary = build_asset_manifest_from_project_amber_cache(cache_dir, manifest_path)
+    rebuilt = load_asset_manifest(manifest_path)
+
+    assert summary.diff.baseline_available is True
+    assert len(summary.diff.carried_bindings) == 2
+    assert summary.diff.binding_conflicts == ()
+    assert summary.diff.has_asset_changes is False
+    assert rebuilt.characters[0].handler_key == "character.test"
+    assert constellation.effect_key in {
+        item.effect_key
+        for item in rebuilt.effect_payloads
+        if item.handler_key == "character.test.constellation.c1"
+    }
+    assert rebuilt.meta["handler_overlay_updated_at"]
+
+
+def test_build_asset_manifest_reports_removed_assets(tmp_path):
+    cache_dir = tmp_path / "cache"
+    manifest_path = tmp_path / "manifest.json"
+    _write_project_amber_cache(cache_dir, include_details=True)
+    build_asset_manifest_from_project_amber_cache(cache_dir, manifest_path)
+
+    weapon_index_path = cache_dir / "weapon" / "index.json"
+    weapon_index = json.loads(weapon_index_path.read_text(encoding="utf-8"))
+    del weapon_index["data"]["items"]["11512"]
+    _write_json(weapon_index_path, weapon_index)
+
+    summary = build_asset_manifest_from_project_amber_cache(cache_dir, manifest_path)
+
+    assert summary.weapon_count == 0
+    assert summary.diff.weapons.removed == ("weapon:11512",)
+    assert summary.diff.weapons.added == ()
+    assert summary.diff.weapons.changed == ()
+
+
+def test_build_asset_manifest_reports_added_assets(tmp_path):
+    cache_dir = tmp_path / "cache"
+    manifest_path = tmp_path / "manifest.json"
+    _write_project_amber_cache(cache_dir, include_details=True)
+    build_asset_manifest_from_project_amber_cache(cache_dir, manifest_path)
+
+    weapon_index_path = cache_dir / "weapon" / "index.json"
+    weapon_index = json.loads(weapon_index_path.read_text(encoding="utf-8"))
+    weapon_index["data"]["items"]["11601"] = {
+        "id": 11601,
+        "rank": 4,
+        "name": "新增单手剑",
+        "type": "WEAPON_SWORD_ONE_HAND",
+    }
+    _write_json(weapon_index_path, weapon_index)
+    detail = json.loads((cache_dir / "weapon" / "11512.json").read_text(encoding="utf-8"))
+    detail["data"]["id"] = 11601
+    detail["data"]["name"] = "新增单手剑"
+    detail["data"]["rank"] = 4
+    _write_json(cache_dir / "weapon" / "11601.json", detail)
+
+    summary = build_asset_manifest_from_project_amber_cache(cache_dir, manifest_path)
+
+    assert summary.weapon_count == 2
+    assert summary.diff.weapons.added == ("weapon:11601",)
+    assert summary.diff.weapons.removed == ()
+    assert summary.diff.weapons.changed == ()
+    assert summary.diff.characters.added == ()
+    assert summary.diff.carried_bindings == ()
+
+
+def test_build_asset_manifest_degrades_affix_with_inconsistent_highlights(tmp_path):
+    cache_dir = tmp_path / "cache"
+    manifest_path = tmp_path / "manifest.json"
+    _write_project_amber_cache(cache_dir, include_details=True)
+    detail_path = cache_dir / "weapon" / "11512.json"
+    detail = json.loads(detail_path.read_text(encoding="utf-8"))
+    detail["data"]["affix"]["111512"]["upgrade"]["0"] = (
+        "造成的伤害提高<color=#99FFFFFF>12%</color>，持续<color=#99FFFFFF>3</color>秒。"
+        "该效果每<color=#99FFFFFF>12</color>秒触发一次。"
+    )
+    _write_json(detail_path, detail)
+
+    summary = build_asset_manifest_from_project_amber_cache(cache_dir, manifest_path)
+    manifest = load_asset_manifest(manifest_path)
+
+    assert len(summary.degraded_affixes) == 1
+    assert "weapon:11512:passive:111512" in summary.degraded_affixes[0]
+
+    payload = next(item for item in manifest.effect_payloads if item.owner_key == "weapon:11512")
+    assert "components" not in payload.params
+    assert payload.params["components_unavailable"] == "inconsistent_highlight_count"
+    assert len(payload.params["source_templates"]) == 5
+    assert payload.params["refinement_min"] == 1
+    assert payload.params["refinement_max"] == 5
+
+    assert audit_asset_manifest(manifest_path).ok
+    build_asset_database_from_manifest(tmp_path / "assets.db", manifest_path)
 
 
 def _write_project_amber_cache(cache_dir, *, include_details: bool) -> None:

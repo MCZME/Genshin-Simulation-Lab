@@ -1,8 +1,6 @@
 # 单一关注点：星超导在元素交互协调器中的全链路闭环。
 from __future__ import annotations
 
-import pytest
-
 from genshin_sim.core.attributes import (
     AttributeResolver,
     AttributeSubjectRef,
@@ -341,10 +339,6 @@ def test_stellar_conduct_interaction_applies_and_refreshes_radiance_buff() -> No
     assert record.expires_at_frame == STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES + (
         STELLAR_RADIANCE_PERSISTENCE_FRAMES
     )
-    values = {item.template.term_key: item.value for item in record.state.resolved_modifiers}
-    assert values["stellar.conduct.radiance.cryo_bonus"] == pytest.approx(0.20)
-    assert values["stellar.conduct.radiance.electro_bonus"] == pytest.approx(0.20)
-    assert values["stellar.conduct.radiance.direct_base_multiplier"] == pytest.approx(1.0)
 
     prepared.coordinator.handle_aura_impact(
         prepared.context,

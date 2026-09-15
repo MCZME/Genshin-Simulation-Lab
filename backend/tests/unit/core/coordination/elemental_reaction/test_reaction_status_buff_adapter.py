@@ -19,5 +19,6 @@ def test_builtin_reaction_status_definitions_do_not_touch_max_hp_closure():
     definition = superconduct_buff_definition()
 
     assert all(
-        template.target_key not in max_hp_upstream for template in definition.attribute_modifiers
+        template.target_key not in max_hp_upstream
+        for template in definition.attribute_modifiers
     )

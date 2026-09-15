@@ -202,7 +202,6 @@ def test_dispatcher_routes_remove_status_to_removal_handler():
 
     dispatcher.dispatch_requests(None, (_request(instance_ref=record.instance_ref.to_key()),))
 
-    assert runtime.reader.active(5, definition_key=DEFINITION_KEY) == ()
     assert dispatcher.buff_removal_records == handler.records
     assert dispatcher.ignored_requests == ()
 

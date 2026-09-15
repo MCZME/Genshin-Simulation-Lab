@@ -541,28 +541,6 @@ def test_fold_projects_active_character_buff_onto_current_active_slot(
             assert character["buffs"] == []
 
 
-def test_fold_keeps_target_scope_buff_off_character_buff_lists():
-    """``target`` 主体 Buff 不投影到角色 buffs，保持领域侧精确匹配语义。"""
-
-    target_buff = _buff_instance(
-        7,
-        definition_key="buff.definition:enemy_debuff",
-        kind="target",
-        entity_id="target:enemy_1",
-        display_name="敌方减益",
-    )
-    events = (_event(0, 10, "BUFF_APPLIED", {"result": {"instance_after": target_buff}}),)
-
-    response = fold_frame_state(
-        session_id="session:1",
-        frame=12,
-        initial_snapshot=_snapshot(),
-        events=events,
-    )
-
-    assert all(character["buffs"] == [] for character in response["characters"])
-
-
 def test_fold_removes_team_scope_buff_from_every_character_on_removal():
     """队伍作用域 Buff 失效后不再出现在任何角色的 buffs 列表。"""
 

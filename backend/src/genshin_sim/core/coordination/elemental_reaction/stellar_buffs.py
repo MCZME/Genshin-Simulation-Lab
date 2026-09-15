@@ -28,7 +28,7 @@ from genshin_sim.core.coordination.elemental_reaction.status import (
 )
 from genshin_sim.core.coordination.elemental_reaction.stellar_conduct import (
     StellarConductPlanningError,
-    _field_space_entity,
+    field_space_entity,
 )
 from genshin_sim.core.systems.buff import (
     ApplyBuffRequest,
@@ -181,7 +181,7 @@ def plan_stellar_conduct_buff_changes(
     counter = state_planner.stellar_conduct_counter_for(STELLAR_CONDUCT_TEAM_SCOPE)
     if counter is None:
         raise StellarConductPlanningError("星超导 Buff 计划缺少队伍共享计数")
-    center = _field_space_entity(context, spatial_planner, field).position
+    center = field_space_entity(context, spatial_planner, field).position
 
     character_refs = tuple(
         AttributeSubjectRef.character(character.combat_entity_id)

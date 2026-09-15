@@ -924,6 +924,8 @@ def _stellar_component_query(
     component_request = DamageRequest(
         request_id=f"{request.request_id}:participant:{participant.participant_ref.entity_id}",
         frame=request.frame,
+        # 组分请求只为读取该参与者的属性上下文，公式键不参与星烁结算语义；
+        # 沿用 lunar 组分请求的 FORMULA_KEY_GENERAL 先例。
         formula_key=FORMULA_KEY_GENERAL,
         main_attack_tag=request.main_attack_tag,
         impact_key=request.impact_key,

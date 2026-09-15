@@ -1897,7 +1897,9 @@ class ElementalSettlementCoordinator:
         #
         # 依赖前提：``reaction_target.hostile_effect`` 必须把范围内的非敌对目标
         # 保留在 target 集合里、并以 ``ReactionTargetRelation.SELF`` 暴露，而不是
-        # 直接过滤掉非敌对目标。若该资格策略日后改成过滤，本分支会静默失效。
+        # 直接过滤掉非敌对目标。若该资格策略日后改成过滤，本分支会静默失效；
+        # 该前提已由 test_stellar_swirl_interaction 中"爆炸挡下前台角色"与
+        # "命中前台角色授予跳跃 Buff"两条用例锁定。
         if has_stellar_attachment and any(
             eligibility.relation is ReactionTargetRelation.SELF for eligibility in targets
         ):

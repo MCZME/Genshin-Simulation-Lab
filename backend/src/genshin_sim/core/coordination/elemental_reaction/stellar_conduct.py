@@ -2,7 +2,8 @@
 
 该模块是星超导写协调的 Reaction 侧窄入口：只组合 ReactionState、Space
 与领域条件证据，形成确定性计划，不拥有长期状态，不推进结算周期。
-辉映·星超导 Buff 的统一创建/刷新/移除由后续 Buff 系统接线承担。
+辉映·星超导 Buff 的统一创建/刷新/移除由配套的 ``stellar_buffs`` 模块
+计划函数承担，随交互批次统一提交。
 """
 
 from __future__ import annotations
@@ -98,7 +99,8 @@ def plan_polestar_field_occurrence(
 
     领域圆心固定在触发反应的敌人当时位置，与角色位置无关；同一队伍
     至多存在一个极星辉域。队伍共享计数不绑定 Field 实例，领域替换时
-    继续继承 4 秒窗口，只有会话首次创建才写入排除的触发攻击身份。
+    继续继承当前窗口。排除的触发攻击身份在领域创建与域外替换时写入，
+    域内刷新不重写；排除只影响当前计数窗口，窗口结算时清空。
     域内刷新保留实例、圆心与创建帧，同步延展 State 与 Space 实体的
     存在时间，避免空间投影提前失活。
     """
@@ -116,7 +118,7 @@ def plan_polestar_field_occurrence(
         spatial_planner.prepare_create(spatial_effect, anchor=anchor)
         return PolestarFieldPlanResult(PolestarFieldPlanOutcome.CREATED)
 
-    entity = _field_space_entity(context, spatial_planner, existing)
+    entity = field_space_entity(context, spatial_planner, existing)
     distance = entity.position.distance_xz_to(anchor.position)
     if distance <= STELLAR_CONDUCT_FIELD_RADIUS:
         state_planner.replace_polestar_field(
@@ -189,7 +191,7 @@ def record_stellar_conduct_attachment(
         return StellarConductAttachmentRecording(
             counter, StellarConductAttachmentRecordingOutcome.DUPLICATE_RECORD
         )
-    center = _field_space_entity(context, spatial_planner, field).position
+    center = field_space_entity(context, spatial_planner, field).position
     for target_ref in record.target_refs:
         entity = context.space_runtime.get_entity(target_ref.entity_id)
         if entity is not None and entity.position.distance_xz_to(center) <= (
@@ -217,7 +219,7 @@ def _require_unique_field(
     return fields[0] if fields else None
 
 
-def _field_space_entity(
+def field_space_entity(
     context: Any,
     spatial_planner: ReactionSpatialBatchPlanningPort | None,
     field: PolestarFieldState,

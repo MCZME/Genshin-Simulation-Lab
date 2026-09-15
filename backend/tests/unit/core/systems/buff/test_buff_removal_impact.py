@@ -73,29 +73,24 @@ def _request(
     )
 
 
-def test_removal_impact_consumes_active_buff_by_compact_ref():
+@pytest.mark.parametrize(
+    ("as_dict",),
+    ((False,), (True,)),
+    ids=("compact_ref", "instance_ref_object"),
+)
+def test_removal_impact_consumes_active_buff(as_dict: bool) -> None:
     runtime = _runtime()
     handler = BuffRemovalImpactRequestHandler(runtime)
     _apply(runtime)
     record = runtime.reader.active(0, definition_key=DEFINITION_KEY)[0]
+    instance_ref = record.instance_ref.to_dict() if as_dict else record.instance_ref.to_key()
 
-    handler.handle_impact_request(None, _request(instance_ref=record.instance_ref.to_key()))
+    handler.handle_impact_request(None, _request(instance_ref=instance_ref))
 
     assert runtime.reader.active(5, definition_key=DEFINITION_KEY) == ()
     result = handler.records[0].result
     assert result.reason is BuffRemovalReason.CONSUMED
     assert result.instance_ref == record.instance_ref
-
-
-def test_removal_impact_accepts_instance_ref_object():
-    runtime = _runtime()
-    handler = BuffRemovalImpactRequestHandler(runtime)
-    _apply(runtime)
-    record = runtime.reader.active(0, definition_key=DEFINITION_KEY)[0]
-
-    handler.handle_impact_request(None, _request(instance_ref=record.instance_ref.to_dict()))
-
-    assert runtime.reader.active(5, definition_key=DEFINITION_KEY) == ()
 
 
 def test_removal_impact_reason_is_explicit_and_defaults_to_consumed():

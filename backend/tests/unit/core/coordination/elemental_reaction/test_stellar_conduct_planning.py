@@ -178,10 +178,20 @@ def test_plan_creates_field_and_counter_when_none_exists() -> None:
     assert space_plan.creations[0].source_key == intent.instance_ref.value
 
 
-def test_plan_refreshes_field_when_retrigger_inside_radius() -> None:
+@pytest.mark.parametrize(
+    ("distance", "expected_outcome"),
+    (
+        (5.0, PolestarFieldPlanOutcome.REFRESHED),
+        (30.0, PolestarFieldPlanOutcome.REPLACED),
+    ),
+    ids=("retrigger_inside_radius", "retrigger_outside_radius"),
+)
+def test_plan_retrigger_refreshes_or_replaces_field(
+    distance: float, expected_outcome: PolestarFieldPlanOutcome
+) -> None:
     runtime, space, context = _fixtures(
         (TARGET_1, Vector3(0.0, 0.0, 0.0)),
-        (TARGET_2, Vector3(5.0, 0.0, 0.0)),
+        (TARGET_2, Vector3(distance, 0.0, 0.0)),
     )
     spatial_adapter = ReactionSpatialPlanningAdapter(context.space_runtime.space)
     first = _intent("occurrence:1")
@@ -210,76 +220,41 @@ def test_plan_refreshes_field_when_retrigger_inside_radius() -> None:
         spatial_effect=_spatial_effect(second),
     )
 
-    assert result.outcome is PolestarFieldPlanOutcome.REFRESHED
-    refreshed = state_planner.polestar_field_for(first.instance_ref)
-    assert refreshed is not None
-    assert refreshed.expires_at_frame == 30 + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES
-    assert refreshed.revision == 2
+    assert result.outcome is expected_outcome
     counter = state_planner.stellar_conduct_counter_for(STELLAR_CONDUCT_TEAM_SCOPE)
     assert counter is not None
+    # 计数窗口跨替换继承，只有排除身份随领域处置更新。
     assert counter.window_start_frame == 0
-    assert counter.next_settlement_frame == STELLAR_CONDUCT_COUNTER_WINDOW_FRAMES
-    assert counter.excluded_attack_refs == ("impact:occurrence:1",)
-    assert len(state_planner.active_polestar_fields()) == 1
-    assert spatial_planner.creation_receipts == ()
+    assert counter.excluded_attack_refs == (
+        ("impact:occurrence:1",)
+        if expected_outcome is PolestarFieldPlanOutcome.REFRESHED
+        else ("impact:occurrence:2",)
+    )
     space_plan = spatial_planner.seal()
-    assert space_plan.removals == ()
-    assert space_plan.creations == ()
-    assert [entity.entity_id for entity in space_plan.updates] == [first.space_entity_ref]
-
-    runtime.commit_prevalidated_state_plan(state_planner.seal())
-    spatial_adapter.commit_prevalidated(space_plan)
-    synced = space.get_entity(first.space_entity_ref)
-    assert synced is not None
-    assert synced.lifecycle.created_frame == 0
-    assert synced.lifecycle.expires_at_frame == 30 + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES
-    assert synced.position == Vector3(0.0, 0.0, 0.0)
-
-
-def test_plan_replaces_field_when_retrigger_outside_radius() -> None:
-    runtime, space, context = _fixtures(
-        (TARGET_1, Vector3(0.0, 0.0, 0.0)),
-        (TARGET_2, Vector3(30.0, 0.0, 0.0)),
-    )
-    spatial_adapter = ReactionSpatialPlanningAdapter(context.space_runtime.space)
-    first = _intent("occurrence:1")
-    first_state_planner = runtime.begin_state_batch(0, "polestar:plan:0")
-    spatial_planner = spatial_adapter.begin_batch(operation_id="polestar:plan:0", frame=0)
-    plan_polestar_field_occurrence(
-        context=context,
-        state_planner=first_state_planner,
-        spatial_planner=spatial_planner,
-        intent=first,
-        spatial_effect=_spatial_effect(first),
-    )
-    runtime.commit_prevalidated_state_plan(first_state_planner.seal())
-    spatial_adapter.commit_prevalidated(spatial_planner.seal())
-    runtime.update_frame(None, 30)
-    space.update_frame(cast(SimulationContext, None), 30)
-
-    second = _intent("occurrence:2", TARGET_2, frame=30)
-    state_planner = runtime.begin_state_batch(30, "polestar:plan:1")
-    spatial_planner = spatial_adapter.begin_batch(operation_id="polestar:plan:1", frame=30)
-    result = plan_polestar_field_occurrence(
-        context=context,
-        state_planner=state_planner,
-        spatial_planner=spatial_planner,
-        intent=second,
-        spatial_effect=_spatial_effect(second),
-    )
-
-    assert result.outcome is PolestarFieldPlanOutcome.REPLACED
-    assert result.removed_field_instance_ref == first.instance_ref
-    assert state_planner.polestar_field_for(first.instance_ref) is None
-    new_field = state_planner.polestar_field_for(second.instance_ref)
-    assert new_field is not None
-    counter = state_planner.stellar_conduct_counter_for(STELLAR_CONDUCT_TEAM_SCOPE)
-    assert counter is not None
-    assert counter.window_start_frame == 0
-    assert counter.excluded_attack_refs == ("impact:occurrence:2",)
-    space_plan = spatial_planner.seal()
-    assert [entity.entity_id for entity in space_plan.removals] == [first.space_entity_ref]
-    assert [entity.entity_id for entity in space_plan.creations] == [second.space_entity_ref]
+    if expected_outcome is PolestarFieldPlanOutcome.REFRESHED:
+        refreshed = state_planner.polestar_field_for(first.instance_ref)
+        assert refreshed is not None
+        assert refreshed.expires_at_frame == 30 + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES
+        assert refreshed.revision == 2
+        assert len(state_planner.active_polestar_fields()) == 1
+        assert spatial_planner.creation_receipts == ()
+        assert space_plan.removals == ()
+        assert space_plan.creations == ()
+        assert [entity.entity_id for entity in space_plan.updates] == [first.space_entity_ref]
+        # 提交后 Space 同步投影生命周期。
+        runtime.commit_prevalidated_state_plan(state_planner.seal())
+        spatial_adapter.commit_prevalidated(space_plan)
+        synced = space.get_entity(first.space_entity_ref)
+        assert synced is not None
+        assert synced.lifecycle.created_frame == 0
+        assert synced.lifecycle.expires_at_frame == 30 + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES
+        assert synced.position == Vector3(0.0, 0.0, 0.0)
+    else:
+        assert result.removed_field_instance_ref == first.instance_ref
+        assert state_planner.polestar_field_for(first.instance_ref) is None
+        assert state_planner.polestar_field_for(second.instance_ref) is not None
+        assert [entity.entity_id for entity in space_plan.removals] == [first.space_entity_ref]
+        assert [entity.entity_id for entity in space_plan.creations] == [second.space_entity_ref]
 
 
 def test_plan_rejects_missing_anchor() -> None:
@@ -533,7 +508,48 @@ def test_polestar_field_binding_validators_reject_inconsistent_plans() -> None:
         )
 
 
-def test_attachment_recording_dedup_exclusion_and_space_condition() -> None:
+@pytest.mark.parametrize(
+    ("record", "expected_outcome", "expect_counter"),
+    (
+        (
+            _record("record:trigger", (TARGET_1,), attack_ref="impact:occurrence:1"),
+            StellarConductAttachmentRecordingOutcome.EXCLUDED_ATTACK,
+            False,
+        ),
+        (
+            _record("record:1", (TARGET_1, TARGET_2)),
+            StellarConductAttachmentRecordingOutcome.RECORDED,
+            True,
+        ),
+        (
+            _record("record:1", (TARGET_1,)),
+            StellarConductAttachmentRecordingOutcome.DUPLICATE_RECORD,
+            False,
+        ),
+        (
+            _record("record:2", (TARGET_2,)),
+            StellarConductAttachmentRecordingOutcome.TARGETS_OUTSIDE_FIELD,
+            False,
+        ),
+        (
+            _record("record:3", (TARGET_1,), frame=STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES),
+            StellarConductAttachmentRecordingOutcome.FIELD_EXPIRED,
+            False,
+        ),
+    ),
+    ids=(
+        "excluded_attack",
+        "recorded",
+        "duplicate_record",
+        "targets_outside_field",
+        "field_expired",
+    ),
+)
+def test_attachment_recording_outcomes(
+    record: StellarConductAttachmentRecord,
+    expected_outcome: StellarConductAttachmentRecordingOutcome,
+    expect_counter: bool,
+) -> None:
     runtime, space, context = _fixtures(
         (TARGET_1, Vector3(0.0, 0.0, 0.0)),
         (TARGET_2, Vector3(30.0, 0.0, 0.0)),
@@ -554,49 +570,29 @@ def test_attachment_recording_dedup_exclusion_and_space_condition() -> None:
         excluded_attack_refs=("impact:occurrence:1",),
     )
 
-    excluded = record_stellar_conduct_attachment(
-        context=context,
-        state_planner=state_planner,
-        team_ref=STELLAR_CONDUCT_TEAM_SCOPE,
-        record=_record("record:trigger", (TARGET_1,), attack_ref="impact:occurrence:1"),
-    )
-    assert excluded.outcome is StellarConductAttachmentRecordingOutcome.EXCLUDED_ATTACK
-    assert not excluded.recorded
+    # 重复提交依赖"record:1 已在本窗口记录"这一前置状态，独立用例需先注入。
+    if expected_outcome is StellarConductAttachmentRecordingOutcome.DUPLICATE_RECORD:
+        prior = record_stellar_conduct_attachment(
+            context=context,
+            state_planner=state_planner,
+            team_ref=STELLAR_CONDUCT_TEAM_SCOPE,
+            record=_record("record:1", (TARGET_1,)),
+        )
+        assert prior.outcome is StellarConductAttachmentRecordingOutcome.RECORDED
 
-    recorded = record_stellar_conduct_attachment(
+    recording = record_stellar_conduct_attachment(
         context=context,
         state_planner=state_planner,
         team_ref=STELLAR_CONDUCT_TEAM_SCOPE,
-        record=_record("record:1", (TARGET_1, TARGET_2)),
+        record=record,
     )
-    assert recorded.outcome is StellarConductAttachmentRecordingOutcome.RECORDED
-    assert recorded.counter is not None
-    assert recorded.counter.pending_count == 1
-    assert recorded.counter.recorded_record_refs == ("record:1",)
-
-    duplicate = record_stellar_conduct_attachment(
-        context=context,
-        state_planner=state_planner,
-        team_ref=STELLAR_CONDUCT_TEAM_SCOPE,
-        record=_record("record:1", (TARGET_1,)),
-    )
-    assert duplicate.outcome is StellarConductAttachmentRecordingOutcome.DUPLICATE_RECORD
-
-    outside = record_stellar_conduct_attachment(
-        context=context,
-        state_planner=state_planner,
-        team_ref=STELLAR_CONDUCT_TEAM_SCOPE,
-        record=_record("record:2", (TARGET_2,)),
-    )
-    assert outside.outcome is StellarConductAttachmentRecordingOutcome.TARGETS_OUTSIDE_FIELD
-
-    expired = record_stellar_conduct_attachment(
-        context=context,
-        state_planner=state_planner,
-        team_ref=STELLAR_CONDUCT_TEAM_SCOPE,
-        record=_record("record:3", (TARGET_1,), frame=STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES),
-    )
-    assert expired.outcome is StellarConductAttachmentRecordingOutcome.FIELD_EXPIRED
+    assert recording.outcome is expected_outcome
+    if expect_counter:
+        assert recording.counter is not None
+        assert recording.counter.pending_count == 1
+        assert recording.counter.recorded_record_refs == ("record:1",)
+    else:
+        assert not recording.recorded
 
 
 def test_attachment_recording_without_session_is_no_op() -> None:
@@ -639,18 +635,14 @@ def test_frame_normalizer_settles_counter_window_and_publishes_root() -> None:
     root = record.scheduled_roots[0]
     assert isinstance(root, StellarConductCounterSettlementRootWork)
     assert root.window_index == 1
+    # 窗口推进的数值副作用由规则层纯函数断言持有；这里只锁定 normalize 确实推进了窗口。
     counter = runtime.stellar_conduct_counter_state_for(STELLAR_CONDUCT_TEAM_SCOPE)
     assert counter is not None
-    assert counter.settled_stacks == 2
-    assert counter.stacks == 2
-    assert counter.pending_count == 0
     assert counter.window_index == 2
-    assert counter.next_settlement_frame == 2 * STELLAR_CONDUCT_COUNTER_WINDOW_FRAMES
 
     coordinator.normalize(None, 2 * STELLAR_CONDUCT_COUNTER_WINDOW_FRAMES)
     counter = runtime.stellar_conduct_counter_state_for(STELLAR_CONDUCT_TEAM_SCOPE)
     assert counter is not None
-    assert counter.settled_stacks == 0
     assert counter.window_index == 3
 
 

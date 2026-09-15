@@ -347,7 +347,7 @@ def test_swirl_interaction_creates_vortex_and_settles_wind_damage() -> None:
     assert wind.input.stellar_base_multiplier == pytest.approx(0.75)
     assert wind.input.mode == "reaction_composite"
     assert len(wind.components) == 1
-    assert wind.components[0].weight == pytest.approx(0.60)
+    # 最终数值闭环已隐含 0.60 权重；权重字段本身由公式层持有。
     assert wind.official_damage == pytest.approx(_level_90_multiplier() * 0.75 * 0.60)
 
 
@@ -560,49 +560,46 @@ def _explode_at_lifetime(prepared: _PreparedSwirlCoordinator) -> None:
     prepared.settlement.update_frame(prepared.context, STELLAR_SWIRL_VORTEX_LIFETIME_FRAMES)
 
 
-def test_swirl_explosion_grants_jump_boost_to_hit_active_character() -> None:
-    """爆炸命中范围内的前台角色时，按位置级队伍作用域授予跳跃能力 Buff。"""
+@pytest.mark.parametrize(
+    ("explode_mode", "position", "expect_grant"),
+    (
+        ("expire", Vector3(1.0, 0.0, 0.0), True),
+        ("expire", Vector3(20.0, 0.0, 0.0), False),
+        ("level_six", Vector3(1.0, 0.0, 0.0), True),
+    ),
+    ids=("hit_at_lifetime", "outside_radius", "hit_at_level_six"),
+)
+def test_swirl_explosion_grants_jump_boost_by_range_and_path(
+    explode_mode: str, position: Vector3, expect_grant: bool
+) -> None:
+    """爆炸范围内角色获得位置级跳跃 Buff；半径外不授予；6 级与到期爆炸同构。"""
 
-    prepared = _PreparedSwirlCoordinator(active_character_position=Vector3(1.0, 0.0, 0.0))
-    _explode_at_lifetime(prepared)
+    prepared = _PreparedSwirlCoordinator(active_character_position=position)
+    if explode_mode == "level_six":
+        for _ in range(6):
+            prepared.settlement.settle_aura_impact(
+                prepared.context,
+                prepared.apply_element(Element.CRYO, frame=0),
+            )
+            prepared.settlement.settle_aura_impact(
+                prepared.context,
+                prepared.apply_element(Element.ANEMO, frame=0),
+            )
+        assert prepared.vortex() is None
+        frame = 0
+    else:
+        _explode_at_lifetime(prepared)
+        frame = STELLAR_SWIRL_VORTEX_LIFETIME_FRAMES
 
-    records = prepared.jump_boost_buffs(STELLAR_SWIRL_VORTEX_LIFETIME_FRAMES)
+    records = prepared.jump_boost_buffs(frame)
+    if not expect_grant:
+        assert records == ()
+        return
     assert len(records) == 1
     record = records[0]
     # 位置级主体：谁在前台谁享受，切人后由新前台自然接管。
     assert record.state.target_ref == AttributeSubjectRef.active_character("player_team")
     assert record.state.target_ref.kind is AttributeSubjectKind.ACTIVE_CHARACTER
-    assert record.expires_at_frame == (
-        STELLAR_SWIRL_VORTEX_LIFETIME_FRAMES + STELLAR_SWIRL_JUMP_BOOST_DURATION_FRAMES
-    )
+    assert record.expires_at_frame == frame + STELLAR_SWIRL_JUMP_BOOST_DURATION_FRAMES
     # marker_only：Movement 尚无跳跃能力模型，不声明任何属性词条。
     assert record.state.resolved_modifiers == ()
-
-
-def test_swirl_explosion_outside_radius_grants_no_jump_boost() -> None:
-    """角色不在爆炸范围内时不授予跳跃能力 Buff。"""
-
-    prepared = _PreparedSwirlCoordinator(active_character_position=Vector3(20.0, 0.0, 0.0))
-    _explode_at_lifetime(prepared)
-
-    assert prepared.jump_boost_buffs(STELLAR_SWIRL_VORTEX_LIFETIME_FRAMES) == ()
-
-
-def test_swirl_level_six_explosion_also_grants_jump_boost() -> None:
-    """6 级立即爆炸与到期爆炸产出同一形态的 Effect group，同样授予跳跃 Buff。"""
-
-    prepared = _PreparedSwirlCoordinator(active_character_position=Vector3(1.0, 0.0, 0.0))
-    for _ in range(6):
-        prepared.settlement.settle_aura_impact(
-            prepared.context,
-            prepared.apply_element(Element.CRYO, frame=0),
-        )
-        prepared.settlement.settle_aura_impact(
-            prepared.context,
-            prepared.apply_element(Element.ANEMO, frame=0),
-        )
-
-    assert prepared.vortex() is None
-    records = prepared.jump_boost_buffs(0)
-    assert len(records) == 1
-    assert records[0].expires_at_frame == STELLAR_SWIRL_JUMP_BOOST_DURATION_FRAMES

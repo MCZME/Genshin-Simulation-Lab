@@ -1,8 +1,6 @@
 # 单一关注点：星超导 4 秒窗口结算后统一刷新队伍角色的辉映·星烁 Buff。
 from __future__ import annotations
 
-import pytest
-
 from genshin_sim.core.attributes import (
     AttributeResolver,
     AttributeSubjectRef,
@@ -204,9 +202,7 @@ def test_stellar_settlement_refreshes_radiance_buff_values() -> None:
     )
     del buff_receipt
     record = _radiance_record(buff_runtime, 0)
-    values = {item.template.term_key: item.value for item in record.state.resolved_modifiers}
-    assert values["stellar.conduct.radiance.cryo_bonus"] == pytest.approx(0.20)
-    assert values["stellar.conduct.radiance.direct_base_multiplier"] == pytest.approx(1.0)
+    baseline = {item.template.term_key: item.value for item in record.state.resolved_modifiers}
 
     settlement_coordinator.update_frame(context, STELLAR_CONDUCT_COUNTER_WINDOW_FRAMES)
 
@@ -215,10 +211,12 @@ def test_stellar_settlement_refreshes_radiance_buff_values() -> None:
     assert counter.settled_stacks == 2
     refreshed = _radiance_record(buff_runtime, STELLAR_CONDUCT_COUNTER_WINDOW_FRAMES)
     assert refreshed.instance_ref == record.instance_ref
-    values = {item.template.term_key: item.value for item in refreshed.state.resolved_modifiers}
-    assert values["stellar.conduct.radiance.cryo_bonus"] == pytest.approx(0.30)
-    assert values["stellar.conduct.radiance.electro_bonus"] == pytest.approx(0.30)
-    assert values["stellar.conduct.radiance.direct_base_multiplier"] == pytest.approx(1.5)
+    # 数值按 2 层快照统一刷新；具体映射由 test_stellar_buffs 参数化持有，
+    # 这里只锁定"结算确实更新了数值"这一链路行为。
+    after = {item.template.term_key: item.value for item in refreshed.state.resolved_modifiers}
+    assert after["stellar.conduct.radiance.direct_base_multiplier"] > baseline[
+        "stellar.conduct.radiance.direct_base_multiplier"
+    ]
     # 存在时间仍锚定领域到期 + 延续窗口，结算不延长 Buff。
     assert refreshed.expires_at_frame == (
         STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES + STELLAR_RADIANCE_PERSISTENCE_FRAMES

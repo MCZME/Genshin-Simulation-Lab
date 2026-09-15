@@ -26,7 +26,7 @@ from genshin_sim.core.attributes import (
     create_public_attribute_registry,
 )
 from genshin_sim.core.attributes.resolver import AttributeResolver
-from genshin_sim.core.events import EventEngine, EventType
+from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import ImpactKind, ImpactRequest
 from genshin_sim.core.systems.buff import (
     ApplyBuffRequest,
@@ -35,7 +35,6 @@ from genshin_sim.core.systems.buff import (
     BuffAttributeModifierProvider,
     BuffAttributeModifierTemplate,
     BuffDefinition,
-    BuffDefinitionRegistry,
     BuffImpactContractError,
     BuffImpactRequestHandler,
     BuffInstanceRef,
@@ -43,15 +42,14 @@ from genshin_sim.core.systems.buff import (
     BuffPlanConflictError,
     BuffReentrancyError,
     BuffRemovalReason,
-    BuffResolver,
     BuffRuntime,
     BuffStackScaling,
-    BuffStore,
     BuffStoreReader,
     BuffSystemError,
     BuffValueRefreshPolicy,
     RemoveBuffRequest,
 )
+from tests.helpers.buff import build_buff_runtime
 
 CHARACTER = AttributeSubjectRef.character("character:slot_1")
 CHARACTER_2 = AttributeSubjectRef.character("character:slot_2")
@@ -542,14 +540,7 @@ class _Context:
 
 
 def _runtime(*definitions: BuffDefinition) -> BuffRuntime:
-    registry = BuffDefinitionRegistry(tuple(definitions))
-    store = BuffStore()
-    return BuffRuntime(
-        definition_registry=registry,
-        buff_store=store,
-        resolver=BuffResolver(),
-        event_engine=EventEngine(),
-    )
+    return build_buff_runtime(*definitions)
 
 
 def _definition(

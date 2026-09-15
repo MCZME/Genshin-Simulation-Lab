@@ -18,7 +18,11 @@ from genshin_sim.core.systems.buff.errors import BuffImpactContractError
 from genshin_sim.core.systems.buff.models import (
     ApplyBuffRequest,
     BuffApplicationResult,
+    BuffInstanceRef,
     BuffModifierValue,
+    BuffRemovalReason,
+    BuffRemovalResult,
+    RemoveBuffRequest,
 )
 
 if TYPE_CHECKING:
@@ -37,12 +41,26 @@ class BuffApplyManyPort(Protocol):
     ) -> tuple[BuffApplicationResult, ...]: ...
 
 
+class BuffRemovePort(Protocol):
+    """Buff 显式移除入口的窄端口，由 `BuffRuntime` 满足。"""
+
+    def remove(self, request: RemoveBuffRequest) -> BuffRemovalResult: ...
+
+
 @dataclass(frozen=True, slots=True)
 class BuffApplicationRecord:
     frame: int
     impact_request: ImpactRequest
     buff_requests: tuple[ApplyBuffRequest, ...]
     results: tuple[BuffApplicationResult, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class BuffRemovalRecord:
+    frame: int
+    impact_request: ImpactRequest
+    removal_request: RemoveBuffRequest
+    result: BuffRemovalResult
 
 
 class BuffImpactRequestHandler:
@@ -142,6 +160,127 @@ class BuffImpactRequestHandler:
                 )
             )
         return tuple(requests)
+
+
+class BuffRemovalImpactRequestHandler:
+    """把 REMOVE_STATUS ImpactRequest 转换为显式 Buff 移除请求。
+
+    消费方（当前是角色的动作侧）先按主体读到活动记录，再把该记录的实例身份
+    交给本入口；这里只做契约适配，不查询活动记录、不推断该移除哪一条。
+    """
+
+    def __init__(self, runtime: BuffRemovePort) -> None:
+        self.runtime = runtime
+        self._records: list[BuffRemovalRecord] = []
+
+    @property
+    def records(self) -> tuple[BuffRemovalRecord, ...]:
+        return tuple(self._records)
+
+    @staticmethod
+    def has_removal_contract(request: ImpactRequest) -> bool:
+        return isinstance(request.params.get("buff_remove"), Mapping)
+
+    def handle_impact_request(
+        self,
+        context,
+        request: ImpactRequest,
+    ) -> BuffRemovalResult:
+        del context
+        payload = request.params.get("buff_remove")
+        if not isinstance(payload, Mapping):
+            msg = "REMOVE_STATUS ImpactRequest 缺少 params.buff_remove 对象"
+            raise BuffImpactContractError(msg)
+        _reject_unknown_fields(payload, allowed={"instance_ref", "reason"})
+        instance_ref = _instance_ref(payload.get("instance_ref"))
+        reason = _removal_reason(payload.get("reason"))
+        removal_request = RemoveBuffRequest(
+            request_id=_buff_removal_request_id(
+                source_impact_point_id=request.source_impact_point_id,
+                impact_request_id=request.request_id,
+            ),
+            frame=request.frame,
+            instance_ref=instance_ref,
+            reason=reason,
+        )
+        result = self.runtime.remove(removal_request)
+        self._records.append(
+            BuffRemovalRecord(
+                frame=request.frame,
+                impact_request=request,
+                removal_request=removal_request,
+                result=result,
+            )
+        )
+        return result
+
+
+def _instance_ref(value: object) -> BuffInstanceRef:
+    """解析实例身份：支持 ``"buff:12"`` 紧凑串与 ``{"domain_key", "sequence"}`` 对象。"""
+
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            raise BuffImpactContractError("buff_remove.instance_ref 必须是非空字符串")
+        domain_key, separator, sequence_text = text.partition(":")
+        if not separator:
+            domain_key, sequence_text = "buff", domain_key
+        try:
+            sequence = int(sequence_text)
+        except ValueError as exc:
+            raise BuffImpactContractError("buff_remove.instance_ref.sequence 必须是正整数") from exc
+        return BuffInstanceRef(
+            sequence=_instance_sequence(sequence),
+            domain_key=domain_key,
+        )
+    if isinstance(value, Mapping):
+        _reject_unknown_fields(value, allowed={"domain_key", "sequence"})
+        domain_key = value.get("domain_key", "buff")
+        if not isinstance(domain_key, str) or not domain_key.strip():
+            raise BuffImpactContractError("buff_remove.instance_ref.domain_key 必须是非空字符串")
+        return BuffInstanceRef(
+            sequence=_instance_sequence(value.get("sequence")),
+            domain_key=domain_key,
+        )
+    raise BuffImpactContractError("buff_remove.instance_ref 必须是紧凑串或对象")
+
+
+def _instance_sequence(value: object) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise BuffImpactContractError("buff_remove.instance_ref.sequence 必须是正整数")
+    return value
+
+
+def _removal_reason(value: object) -> BuffRemovalReason:
+    if value is None:
+        return BuffRemovalReason.CONSUMED
+    if not isinstance(value, str):
+        raise BuffImpactContractError("buff_remove.reason 必须是字符串")
+    try:
+        reason = BuffRemovalReason(value)
+    except ValueError as exc:
+        raise BuffImpactContractError(f"buff_remove.reason 不受支持：{value}") from exc
+    if reason not in {
+        BuffRemovalReason.DISPELLED,
+        BuffRemovalReason.CONSUMED,
+        BuffRemovalReason.EXPLICIT,
+    }:
+        raise BuffImpactContractError(f"buff_remove.reason 不受支持：{value}")
+    return reason
+
+
+def _buff_removal_request_id(
+    *,
+    source_impact_point_id: str | None,
+    impact_request_id: str | None,
+) -> str:
+    source = source_impact_point_id or impact_request_id
+    if source is None:
+        raise BuffImpactContractError(
+            "REMOVE_STATUS ImpactRequest 必须提供 source_impact_point_id 或 request_id"
+        )
+    request_component = impact_request_id or ""
+    return f"buff-remove:{len(source)}:{source}:{len(request_component)}:{request_component}"
 
 
 def _reject_unknown_fields(payload: Mapping[str, object], *, allowed: set[str]) -> None:

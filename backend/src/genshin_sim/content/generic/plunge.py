@@ -2,7 +2,7 @@
 
 低空/高空阈值是跨角色统一的临时数据，统一资料确认后替换；攻击数据（形状、
 区域、偏移、攻击标签、元素量）按武器类型通用资料表维护，当前为法器通用
-数据。垂直运动由 ``core/systems/movement`` 统一推进。
+数据。垂直运动由 ``core/movement`` 统一推进。
 """
 
 from __future__ import annotations

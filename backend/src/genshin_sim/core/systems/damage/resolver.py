@@ -30,6 +30,8 @@ from genshin_sim.core.systems.damage.models import (
     DefenseResolution,
     GeneralDamageResolution,
     LunarReactionDamageResolution,
+    ResistanceResolution,
+    StellarReactionDamageResolution,
     TransformativeReactionResolution,
 )
 from genshin_sim.core.systems.damage.modifiers import (
@@ -183,12 +185,77 @@ def _validate_formula_stages(
 def _build_damage_result(
     query: DamageQuery,
     resolution: (
-        GeneralDamageResolution | TransformativeReactionResolution | LunarReactionDamageResolution
+        GeneralDamageResolution
+        | TransformativeReactionResolution
+        | LunarReactionDamageResolution
+        | StellarReactionDamageResolution
     ),
     modifiers: DamageModifierCollection,
     trace_level: TraceLevel,
 ) -> DamageResult:
     """把公式专属 resolution 映射回第一轮兼容的扁平结果模型。"""
+
+    if isinstance(resolution, StellarReactionDamageResolution):
+        return DamageResult(
+            request_id=query.request.request_id,
+            frame=query.request.frame,
+            formula_key=query.request.formula_key,
+            main_attack_tag=query.request.main_attack_tag,
+            source_ref=query.request.source_ref,
+            target_ref=query.request.target_ref,
+            element=query.request.element,
+            base_damage=resolution.input.scaling_value,
+            base_damage_additions=(),
+            damage_bonus_multiplier=1.0,
+            crit_outcome=(
+                CritOutcome.NOT_APPLICABLE
+                if resolution.critical is None
+                else resolution.critical.outcome
+            ),
+            crit_rate=0.0 if resolution.critical is None else resolution.critical.crit_rate,
+            crit_damage=(0.0 if resolution.critical is None else resolution.critical.crit_damage),
+            crit_multiplier=(
+                resolution.input.critical_multiplier
+                if resolution.critical is None
+                else resolution.critical.multiplier
+            ),
+            reaction_multiplier=1.0,
+            defense=DefenseResolution(
+                source_level=query.request.source_level,
+                target_level=query.request.target_level,
+                defense_reduction=0.0,
+                defense_ignore=0.0,
+                multiplier=1.0,
+            ),
+            resistance=(
+                ResistanceResolution(
+                    resistance=resolution.input.resistance_multiplier,
+                    multiplier=resolution.input.resistance_multiplier,
+                )
+                if resolution.resistance is None
+                else resolution.resistance
+            ),
+            official_damage=resolution.official_damage,
+            debug_multiplier=resolution.debug_multiplier,
+            final_damage=resolution.final_damage,
+            damage_name=query.request.damage_name,
+            stellar_reaction_resolution=resolution,
+            critical_zone=resolution.critical,
+            source_attribute_trace=(
+                () if trace_level is TraceLevel.NONE else resolution.source_attribute_trace
+            ),
+            target_attribute_trace=(
+                () if trace_level is TraceLevel.NONE else resolution.target_attribute_trace
+            ),
+            applied_terms=(),
+            rejected_terms=(),
+            trace_level=trace_level,
+            trace_metadata={
+                "stellar_mode": resolution.input.mode,
+                "stellar_base_multiplier": resolution.input.stellar_base_multiplier,
+                "stellar_mastery_bonus": resolution.mastery_bonus,
+            },
+        )
 
     if isinstance(resolution, LunarReactionDamageResolution):
         return DamageResult(

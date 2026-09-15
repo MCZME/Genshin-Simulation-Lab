@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from genshin_sim.core.attributes import AttributeSubjectRef
+from genshin_sim.core.attributes import AttributeSubjectKind, AttributeSubjectRef
 from genshin_sim.core.elements import AuraKind, ElementalSubjectKind, ElementalSubjectRef
 from genshin_sim.core.simulation.team import TeamRuntimeState
 from genshin_sim.core.systems.reaction.runtime import ReactionRuntime
@@ -77,3 +77,33 @@ class LunarCagePresenceReadAdapter:
 
     def has_active_lunar_cage(self) -> bool:
         return bool(self._reaction_runtime.active_lunar_cages())
+
+
+class TeamScopeProjectionAdapter:
+    """用队伍运行态回答角色主体所属队伍作用域与当前场上角色判定。
+
+    队伍作用域 id 由装配期显式传入，不在此处硬编码，也不从空间实体 id 推导。
+    """
+
+    def __init__(self, team_state: TeamRuntimeState, *, team_ref: str) -> None:
+        self._team_state = team_state
+        self._team_ref = team_ref
+
+    def team_scope_for(self, character_ref: AttributeSubjectRef) -> str | None:
+        if self._character(character_ref) is None:
+            return None
+        return self._team_ref
+
+    def is_active_character(self, character_ref: AttributeSubjectRef) -> bool:
+        character = self._character(character_ref)
+        if character is None:
+            return False
+        return character.slot == self._team_state.active_slot
+
+    def _character(self, character_ref: AttributeSubjectRef):
+        if character_ref.kind is not AttributeSubjectKind.CHARACTER:
+            return None
+        for character in self._team_state.characters:
+            if character.combat_entity_id == character_ref.entity_id:
+                return character
+        return None

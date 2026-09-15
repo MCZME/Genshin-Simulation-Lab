@@ -25,6 +25,8 @@ EXPECTED_REACTION_KEYS = {
     "reaction.quicken",
     "reaction.shattered",
     "reaction.spread",
+    "reaction.stellar_conduct",
+    "reaction.stellar_swirl",
     "reaction.superconduct",
     "reaction.swirl",
     "reaction.vaporize",
@@ -38,6 +40,7 @@ EXPECTED_DAMAGE_GATE_KEYS = {
     "reaction_gate.overloaded.damage",
     "reaction_gate.shattered.damage",
     "reaction_gate.superconduct.damage",
+    "reaction_gate.stellar_swirl.wind",
     "reaction_gate.swirl.cryo.damage",
     "reaction_gate.swirl.electro.damage",
     "reaction_gate.swirl.hydro.damage",
@@ -75,10 +78,7 @@ def test_burning_specific_profiles_and_gate_registered_in_default_bootstrap() ->
     bootstrap = create_default_reaction_bootstrap()
 
     assert burning_gate_definitions()[0] in bootstrap.damage_gate_definitions
-    assert (
-        burning_damage_profile().formula_key
-        == FORMULA_KEY_TRANSFORMATIVE_REACTION
-    )
+    assert burning_damage_profile().formula_key == FORMULA_KEY_TRANSFORMATIVE_REACTION
     assert (
         burning_pyro_aura_application_profile().profile_key
         == BURNING_PYRO_AURA_APPLICATION_PROFILE_KEY

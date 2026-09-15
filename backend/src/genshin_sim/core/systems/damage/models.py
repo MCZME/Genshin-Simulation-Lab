@@ -31,8 +31,13 @@ from genshin_sim.core.systems.damage.errors import (
 from genshin_sim.core.systems.damage.keys import (
     FORMULA_KEY_GENERAL,
     FORMULA_KEY_LUNAR_REACTION,
+    FORMULA_KEY_STELLAR_REACTION,
     FORMULA_KEY_TRANSFORMATIVE_REACTION,
     KNOWN_FORMULA_KEYS,
+)
+from genshin_sim.core.systems.damage.stellar import (
+    StellarReactionDamageInput,
+    StellarReactionDamageResolution,
 )
 
 _CHARACTER_TARGET_DAMAGE_TAGS = frozenset(
@@ -435,6 +440,7 @@ class DamageRequest:
     transformative_reaction: TransformativeReactionInput | None = None
     catalyze_reaction: CatalyzeReactionInput | None = None
     lunar_reaction: LunarReactionDamageInput | None = None
+    stellar_reaction: StellarReactionDamageInput | None = None
 
     def __post_init__(self) -> None:
         """冻结集合字段，并校验第一版直接伤害的边界条件。"""
@@ -445,6 +451,27 @@ class DamageRequest:
             raise DamageValidationError("frame 必须是非负整数")
         if self.formula_key not in KNOWN_FORMULA_KEYS:
             raise DamageValidationError("formula_key 不受支持")
+        if self.stellar_reaction is not None and not isinstance(
+            self.stellar_reaction, StellarReactionDamageInput
+        ):
+            raise DamageValidationError("stellar_reaction 必须是 StellarReactionDamageInput")
+        if self.formula_key == FORMULA_KEY_STELLAR_REACTION and self.stellar_reaction is None:
+            raise DamageValidationError("星烁伤害必须提供 StellarReactionDamageInput")
+        if self.formula_key != FORMULA_KEY_STELLAR_REACTION and self.stellar_reaction is not None:
+            raise DamageValidationError("非星烁伤害不能提供 StellarReactionDamageInput")
+        if self.stellar_reaction is not None:
+            conflict_fields = (
+                "amplifying_reaction",
+                "secondary_amplifying_reaction",
+                "transformative_reaction",
+                "catalyze_reaction",
+                "lunar_reaction",
+            )
+            conflicts = [name for name in conflict_fields if getattr(self, name) is not None]
+            if conflicts:
+                raise DamageValidationError(
+                    f"星烁伤害不能同时携带其他反应输入：{', '.join(conflicts)}"
+                )
         _validate_non_empty_text(self.main_attack_tag, "main_attack_tag")
         if self.source_ref.kind is not AttributeSubjectKind.CHARACTER:
             raise DamageValidationError("伤害来源第一版必须是角色主体")
@@ -528,6 +555,8 @@ class DamageRequest:
                 raise DamageValidationError("非剧变伤害不能提供二次增幅反应输入")
             if self.amplifying_reaction is not None and self.catalyze_reaction is not None:
                 raise DamageValidationError("通用公式不能同时携带增幅与激化输入")
+        if self.formula_key is FORMULA_KEY_STELLAR_REACTION and (terms or flat_base_damage != 0):
+            raise DamageValidationError("星烁伤害不能携带普通倍率或 flat base")
         if self.catalyze_reaction is not None:
             if not isinstance(self.catalyze_reaction, CatalyzeReactionInput):
                 raise DamageValidationError("catalyze_reaction 不受支持")
@@ -1255,7 +1284,10 @@ class CatalyzeReactionResolution:
 
 
 type DamageFormulaResolution = (
-    GeneralDamageResolution | TransformativeReactionResolution | LunarReactionDamageResolution
+    GeneralDamageResolution
+    | TransformativeReactionResolution
+    | LunarReactionDamageResolution
+    | StellarReactionDamageResolution
 )
 
 
@@ -1288,6 +1320,7 @@ class DamageResult:
     secondary_amplifying_resolution: SecondaryAmplifyingReactionResolution | None = None
     catalyze_reaction_resolution: CatalyzeReactionResolution | None = None
     lunar_reaction_resolution: LunarReactionDamageResolution | None = None
+    stellar_reaction_resolution: StellarReactionDamageResolution | None = None
     component_results: tuple[DamageComponentResult, ...] = ()
     source_attribute_trace: tuple[AttributeResolution, ...] = ()
     target_attribute_trace: tuple[AttributeResolution, ...] = ()
@@ -1346,6 +1379,11 @@ class DamageResult:
             LunarReactionDamageResolution,
         ):
             raise DamageValidationError("lunar_reaction_resolution 不受支持")
+        if self.stellar_reaction_resolution is not None and not isinstance(
+            self.stellar_reaction_resolution,
+            StellarReactionDamageResolution,
+        ):
+            raise DamageValidationError("stellar_reaction_resolution 不受支持")
         if self.damage_bonus_zone is not None and not isinstance(
             self.damage_bonus_zone,
             DamageBonusZoneResolution,
@@ -1361,6 +1399,11 @@ class DamageResult:
             and self.formula_key is not FORMULA_KEY_LUNAR_REACTION
         ):
             raise DamageValidationError("只有月曜伤害可以携带 lunar_reaction_resolution")
+        if (
+            self.stellar_reaction_resolution is not None
+            and self.formula_key is not FORMULA_KEY_STELLAR_REACTION
+        ):
+            raise DamageValidationError("只有星烁伤害可以携带 stellar_reaction_resolution")
         object.__setattr__(self, "base_damage_additions", tuple(self.base_damage_additions))
         object.__setattr__(self, "component_results", tuple(self.component_results))
         object.__setattr__(self, "source_attribute_trace", tuple(self.source_attribute_trace))
@@ -1400,6 +1443,7 @@ class DamageResult:
             ),
             "catalyze_reaction": _catalyze_reaction_to_dict(self.catalyze_reaction_resolution),
             "lunar_reaction": _lunar_reaction_to_dict(self.lunar_reaction_resolution),
+            "stellar_reaction": _stellar_reaction_to_dict(self.stellar_reaction_resolution),
             "defense_multiplier": self.defense.multiplier,
             "resistance_multiplier": self.resistance.multiplier,
             "final_multiplier": self.final_multiplier,
@@ -1463,6 +1507,14 @@ def _audit_reaction_to_dict(result: DamageResult) -> dict[str, object] | None:
         lunar_payload = _lunar_reaction_to_dict(result.lunar_reaction_resolution)
         if lunar_payload is not None:
             return {"kind": "lunar", **lunar_payload}
+        return None
+    if (
+        result.formula_key is FORMULA_KEY_STELLAR_REACTION
+        and result.stellar_reaction_resolution is not None
+    ):
+        stellar_payload = _stellar_reaction_to_dict(result.stellar_reaction_resolution)
+        if stellar_payload is not None:
+            return {"kind": "stellar", **stellar_payload}
         return None
     if result.catalyze_reaction_resolution is not None:
         catalyze_payload = _catalyze_reaction_to_dict(result.catalyze_reaction_resolution)
@@ -1566,6 +1618,14 @@ def _catalyze_reaction_to_dict(
 
 def _lunar_reaction_to_dict(
     resolution: LunarReactionDamageResolution | None,
+) -> dict[str, object] | None:
+    if resolution is None:
+        return None
+    return resolution.to_dict()
+
+
+def _stellar_reaction_to_dict(
+    resolution: StellarReactionDamageResolution | None,
 ) -> dict[str, object] | None:
     if resolution is None:
         return None

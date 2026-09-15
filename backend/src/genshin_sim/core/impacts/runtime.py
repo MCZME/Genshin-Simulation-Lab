@@ -15,6 +15,7 @@ from genshin_sim.core.events import EventType, GameEvent
 from genshin_sim.core.events.payloads import SpaceEntityCreatedPayload
 from genshin_sim.core.impacts.dispatcher import ImpactDispatcher
 from genshin_sim.core.impacts.models import ActionImpactContext, ImpactKind, ImpactRequest
+from genshin_sim.core.movement import MovementImpactRequestHandler
 from genshin_sim.core.protocols import FrameUpdatable
 from genshin_sim.core.space import (
     CircleArea,
@@ -29,7 +30,12 @@ from genshin_sim.core.systems.aura import (
     CharacterAuraImpactRecord,
     CharacterAuraImpactRequestHandler,
 )
-from genshin_sim.core.systems.buff import BuffApplicationRecord, BuffImpactRequestHandler
+from genshin_sim.core.systems.buff import (
+    BuffApplicationRecord,
+    BuffImpactRequestHandler,
+    BuffRemovalImpactRequestHandler,
+    BuffRemovalRecord,
+)
 from genshin_sim.core.systems.damage import DamageRequestHandler, DamageResolutionRecord
 from genshin_sim.core.systems.energy import EnergyImpactRecord, EnergyImpactRequestHandler
 from genshin_sim.core.systems.healing import (
@@ -42,7 +48,6 @@ from genshin_sim.core.systems.infusion.handler import (
     InfusionImpactRecord,
     InfusionImpactRequestHandler,
 )
-from genshin_sim.core.systems.movement import MovementImpactRequestHandler
 from genshin_sim.core.systems.shield import ShieldGrantRecord, ShieldImpactRequestHandler
 
 
@@ -107,6 +112,7 @@ class ImpactRequestDispatcher:
         damage_handler: DamageRequestHandler | None = None,
         shield_handler: ShieldImpactRequestHandler | None = None,
         buff_handler: BuffImpactRequestHandler | None = None,
+        buff_removal_handler: BuffRemovalImpactRequestHandler | None = None,
         healing_handler: HealingImpactRequestHandler | None = None,
         character_aura_handler: CharacterAuraImpactRequestHandler | None = None,
         energy_handler: EnergyImpactRequestHandler | None = None,
@@ -118,6 +124,7 @@ class ImpactRequestDispatcher:
         self.damage_handler = damage_handler
         self.shield_handler = shield_handler
         self.buff_handler = buff_handler
+        self.buff_removal_handler = buff_removal_handler
         self.healing_handler = healing_handler
         self.character_aura_handler = character_aura_handler
         self.energy_handler = energy_handler
@@ -160,6 +167,12 @@ class ImpactRequestDispatcher:
         if self.buff_handler is None:
             return ()
         return self.buff_handler.records
+
+    @property
+    def buff_removal_records(self) -> tuple[BuffRemovalRecord, ...]:
+        if self.buff_removal_handler is None:
+            return ()
+        return self.buff_removal_handler.records
 
     @property
     def healing_records(self) -> tuple[HealingImpactRecord, ...]:
@@ -207,6 +220,9 @@ class ImpactRequestDispatcher:
                 continue
             if request.kind is ImpactKind.APPLY_STATUS:
                 self._handle_apply_status_request(context, request)
+                continue
+            if request.kind is ImpactKind.REMOVE_STATUS:
+                self._handle_remove_status_request(context, request)
                 continue
             if request.kind is ImpactKind.HEAL:
                 self._handle_heal_request(context, request)
@@ -402,6 +418,27 @@ class ImpactRequestDispatcher:
             )
             return
         self.buff_handler.handle_impact_request(context, request)
+
+    def _handle_remove_status_request(self, context, request: ImpactRequest) -> None:
+        if self.buff_removal_handler is None:
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="状态移除请求处理器尚未接入",
+                )
+            )
+            return
+        if not self.buff_removal_handler.has_removal_contract(request):
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="状态移除请求缺少 params.buff_remove 契约",
+                )
+            )
+            return
+        self.buff_removal_handler.handle_impact_request(context, request)
 
     def _handle_heal_request(self, context, request: ImpactRequest) -> None:
         if self.healing_handler is None:

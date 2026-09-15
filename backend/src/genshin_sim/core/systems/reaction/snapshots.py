@@ -22,10 +22,13 @@ from genshin_sim.core.systems.reaction.states import (
     LunarCageState,
     LunarCrystallizeAccumulatorState,
     LunarStormCloudState,
+    PolestarFieldState,
     QuickenState,
     ReactionStateRecord,
     ScheduledStateTickCause,
     SprawlingShotState,
+    StellarConductCounterState,
+    StellarSwirlVortexState,
 )
 
 
@@ -241,6 +244,55 @@ def _state_record_to_dict(record: ReactionStateRecord) -> dict[str, object]:
                     "entity_id": record.selected_target_ref.entity_id,
                 },
                 "created_frame": record.created_frame,
+                "revision": record.revision,
+            }
+        )
+    elif isinstance(record, PolestarFieldState):
+        payload.update(
+            {
+                "space_entity_ref": record.space_entity_ref,
+                "created_by_occurrence_ref": record.created_by_occurrence_ref,
+                "trigger_source_ref": record.trigger_source_ref.to_dict(),
+                "team_ref": record.team_ref,
+                "created_frame": record.created_frame,
+                "expires_at_frame": record.expires_at_frame,
+                "revision": record.revision,
+            }
+        )
+    elif isinstance(record, StellarConductCounterState):
+        payload.update(
+            {
+                "team_ref": record.team_ref,
+                "window_start_frame": record.window_start_frame,
+                "next_settlement_frame": record.next_settlement_frame,
+                "window_index": record.window_index,
+                "pending_count": record.pending_count,
+                "settled_stacks": record.settled_stacks,
+                "recorded_record_refs": list(record.recorded_record_refs),
+                "excluded_attack_refs": list(record.excluded_attack_refs),
+                "revision": record.revision,
+            }
+        )
+    elif isinstance(record, StellarSwirlVortexState):
+        payload.update(
+            {
+                "space_entity_ref": record.space_entity_ref,
+                "created_by_occurrence_ref": record.created_by_occurrence_ref,
+                "trigger_source_ref": record.trigger_source_ref.to_dict(),
+                "scope_ref": record.scope_ref,
+                "level": record.level,
+                "last_reaction_source_ref": record.last_reaction_source_ref.to_dict(),
+                "last_reaction_occurrence_ref": record.last_reaction_occurrence_ref,
+                "participants": [
+                    {
+                        "participant_ref": item.participant_ref.to_dict(),
+                        "first_reaction_frame": item.first_reaction_frame,
+                        "last_reaction_frame": item.last_reaction_frame,
+                    }
+                    for item in record.participants
+                ],
+                "created_frame": record.created_frame,
+                "expires_at_frame": record.expires_at_frame,
                 "revision": record.revision,
             }
         )

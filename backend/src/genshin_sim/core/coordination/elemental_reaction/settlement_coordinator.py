@@ -66,6 +66,12 @@ from genshin_sim.core.coordination.elemental_reaction.state_planning import (
 from genshin_sim.core.coordination.elemental_reaction.status import (
     ReactionStatusBuffAdapter,
 )
+from genshin_sim.core.coordination.elemental_reaction.stellar_buffs import (
+    plan_radiance_buff_requests,
+)
+from genshin_sim.core.coordination.elemental_reaction.stellar_swirl_buffs import (
+    plan_stellar_swirl_jump_boost_request,
+)
 from genshin_sim.core.coordination.elemental_reaction.step_planning import (
     _plan_depleted_frozen_state_removal,
     _plan_depleted_quicken_state_removal,
@@ -83,6 +89,7 @@ from genshin_sim.core.elements import (
     ElementalSourceRef,
     ElementalSubjectKind,
     ElementalSubjectRef,
+    TransformativeReactionSourceKind,
 )
 from genshin_sim.core.events import (
     AuraAppliedPayload,
@@ -111,6 +118,11 @@ from genshin_sim.core.systems.damage import (
     LunarReactionParticipantInput,
     SecondaryAmplifyingReactionInput,
     TransformativeReactionInput,
+)
+from genshin_sim.core.systems.damage.level_multipliers import transformative_level_multiplier
+from genshin_sim.core.systems.damage.stellar import (
+    StellarReactionDamageInput,
+    StellarReactionParticipantInput,
 )
 from genshin_sim.core.systems.moonsign import LunarDamageBonusPort
 from genshin_sim.core.systems.reaction import (
@@ -141,6 +153,9 @@ from genshin_sim.core.systems.reaction import (
     ScheduledReactionRootAdapterRegistry,
     ScheduledReactionRootWork,
     ScheduledStateTickCause,
+    StellarConductCounterSettlementRootWork,
+    StellarConductCounterState,
+    StellarReactionDamageImpactEffect,
     SwirlEmissionSelection,
     TransformativeSourceObservation,
     create_default_scheduled_reaction_root_adapter_registry,
@@ -357,6 +372,28 @@ class ElementalSettlementCoordinator:
             self._settled_lifecycle_effect_group_refs.add(group.effect_group_ref)
             occurrence = lifecycle_occurrences_by_group_ref.get(group.effect_group_ref)
             if occurrence is None:
+                if group.effects and all(
+                    isinstance(effect, StellarReactionDamageImpactEffect)
+                    for effect in group.effects
+                ):
+                    # 风旋爆炸不被视为触发反应：无终态 occurrence，不发 REACTION_OCCURRED。
+                    root_work_id = f"reaction-lifecycle:{group.effect_group_ref}"
+                    root_record = ElementalInteractionBatchRecord(
+                        batch_id=f"reaction-lifecycle-root:{group.effect_group_ref}",
+                        root_work_id=root_work_id,
+                        frame=frame_record.frame,
+                        settlement_round=0,
+                        work_ids=(root_work_id,),
+                        icd_request_ids=(),
+                        aura_transition_interaction_ids=(),
+                        reaction_occurrence_refs=(),
+                        damage_request_ids=(),
+                        batch_kind=ElementalInteractionBatchKind.SCHEDULED_REACTION_ROOT,
+                        parent_occurrence_refs=_parent_occurrence_refs_for_cause(group.cause),
+                    )
+                    self._records.append(root_record)
+                    self._settle_follow_up_groups(context, root_record, groups=(group,))
+                    continue
                 raise ElementalInteractionError("草原核生命周期 Effect group 缺少终态 occurrence")
             root_work_id = f"reaction-lifecycle:{group.effect_group_ref}"
             root_record = ElementalInteractionBatchRecord(
@@ -490,12 +527,65 @@ class ElementalSettlementCoordinator:
         self._publish_scheduled_root_fact(context, root_record)
         if adapter_result.outcome == "cancelled_state_ended":
             return
+        if isinstance(root, StellarConductCounterSettlementRootWork):
+            self._refresh_stellar_radiance_buffs(context, root)
         self._settle_follow_up_groups(
             context,
             root_record,
             groups=adapter_result.effect_groups,
             generated_batches=adapter_result.generated_impact_batches,
         )
+
+    def _refresh_stellar_radiance_buffs(
+        self,
+        context,
+        root: StellarConductCounterSettlementRootWork,
+    ) -> None:
+        """4 秒窗口结算后统一刷新队伍角色的辉映·星烁 Buff 数值快照。
+
+        结算本身只做计数状态快照；此处把最新层数对应的冰/雷普通增伤与
+        直伤系数证据统一写入队伍角色的辉映 Buff，不生成公共反应伤害。
+        """
+
+        assert self.reaction_runtime is not None
+        counter = next(
+            (
+                record
+                for record in self.reaction_runtime.state_records
+                if isinstance(record, StellarConductCounterState)
+                and record.instance_ref == root.state_instance_ref
+            ),
+            None,
+        )
+        if counter is None or context is None or context.space_runtime is None:
+            return
+        if self.buff_runtime is None:
+            raise ElementalInteractionError("星超导计数结算缺少 Buff 运行时")
+        fields = self.reaction_runtime.active_polestar_fields(team_ref=counter.team_ref)
+        if len(fields) > 1:
+            raise ElementalInteractionError("同一队伍同时存在多个极星辉域")
+        if not fields:
+            return
+        requests = plan_radiance_buff_requests(
+            frame=root.frame,
+            occurrence_ref=root.work_id,
+            character_refs=tuple(
+                AttributeSubjectRef.character(character.combat_entity_id)
+                for character in context.space_runtime.team_state.characters
+            ),
+            settled_stacks=counter.settled_stacks,
+            field_expires_at_frame=fields[0].expires_at_frame,
+        )
+        if not requests:
+            return
+        buff_plan = self.buff_runtime.prepare_apply(requests)
+        self.buff_runtime.validate(buff_plan)
+        receipt = self.buff_runtime.commit_prevalidated(buff_plan)
+        self._publishing_facts = True
+        try:
+            self.buff_runtime.publish_committed_facts(receipt)
+        finally:
+            self._publishing_facts = False
 
     def _publish_scheduled_root_fact(
         self,
@@ -1450,9 +1540,14 @@ class ElementalSettlementCoordinator:
             isinstance(effect, GeneratedDamageImpactEffect) and effect.strike_type is not None
             for effect in group.effects
         )
-        if has_strike_effect and self.aura_runtime is None:
+        has_stellar_attachment = any(
+            isinstance(effect, StellarReactionDamageImpactEffect)
+            and effect.attached_aura_element is not None
+            for effect in group.effects
+        )
+        if (has_strike_effect or has_stellar_attachment) and self.aura_runtime is None:
             raise ElementalInteractionError("带打击类型的 Reaction Effect 缺少 Aura Runtime")
-        if not has_strike_effect:
+        if not (has_strike_effect or has_stellar_attachment):
             aura_planner = None
         else:
             assert self.aura_runtime is not None
@@ -1470,12 +1565,16 @@ class ElementalSettlementCoordinator:
         status_requests = []
         generated_damage: GeneratedDamageImpactEffect | None = None
         lunar_damage: LunarReactionDamageImpactEffect | None = None
+        stellar_damage: StellarReactionDamageImpactEffect | None = None
         damage_inputs: dict[str, TransformativeReactionInput] = {}
         damage_target_refs: list[str] = []
         damage_subject_refs: dict[int, ElementalSubjectRef] = {}
         lunar_damage_inputs: dict[str, LunarReactionDamageInput] = {}
         lunar_damage_target_refs: list[str] = []
         lunar_damage_subject_refs: dict[int, ElementalSubjectRef] = {}
+        stellar_damage_inputs: dict[str, StellarReactionDamageInput] = {}
+        stellar_damage_target_refs: list[str] = []
+        stellar_damage_subject_refs: dict[int, ElementalSubjectRef] = {}
         outcomes: dict[int, ReactionTargetEffectOutcome] = {}
         gate_resolution_refs: list[str] = []
 
@@ -1680,6 +1779,57 @@ class ElementalSettlementCoordinator:
                             None if resolution is None else resolution.resolution_ref
                         ),
                     )
+                elif isinstance(effect, StellarReactionDamageImpactEffect):
+                    if ReactionTargetCapability.DAMAGE not in eligibility.capabilities:
+                        outcomes[target_order] = _with_effect_outcome(
+                            outcomes[target_order],
+                            effect,
+                            "unsupported_damage_capability",
+                        )
+                        continue
+                    stellar_damage = effect
+                    damage_subject_ref = _damage_target_subject_ref(
+                        context,
+                        group,
+                        eligibility,
+                    )
+                    resolution = None
+                    if effect.gate_definition_key is not None:
+                        gate_request = ReactionDamageGateRequest(
+                            gate_request_ref=f"{effect.effect_ref}:target:{target_order}:gate",
+                            frame=root_record.frame,
+                            definition=self.reaction_runtime.gate_definition(
+                                effect.gate_definition_key
+                            ),
+                            trigger_source_ref=ElementalSourceRef(
+                                effect.trigger_source_ref.source_key
+                            ),
+                            damage_target_ref=damage_subject_ref,
+                            parent_occurrence_ref=effect.parent_occurrence_ref,
+                            parent_effect_ref=effect.effect_ref,
+                            cause=effect.cause,
+                        )
+                        resolution = gate_planner.prepare(gate_request)
+                        gate_resolution_refs.append(resolution.resolution_ref)
+                        if resolution.decision is ReactionDamageGateDecision.BLOCKED:
+                            outcomes[target_order] = _with_damage_outcome(
+                                outcomes[target_order],
+                                "blocked_by_gate",
+                                gate_resolution_ref=resolution.resolution_ref,
+                            )
+                            continue
+                    stellar_damage_target_refs.append(damage_subject_ref.entity_id)
+                    stellar_damage_subject_refs[target_order] = damage_subject_ref
+                    stellar_damage_inputs[damage_subject_ref.entity_id] = _stellar_input(
+                        context, effect
+                    )
+                    outcomes[target_order] = _with_damage_outcome(
+                        outcomes[target_order],
+                        "prepared",
+                        gate_resolution_ref=(
+                            None if resolution is None else resolution.resolution_ref
+                        ),
+                    )
                 elif isinstance(effect, ReactionStatusEffect):
                     if ReactionTargetCapability.ATTRIBUTE_STATUS not in eligibility.capabilities:
                         outcomes[target_order] = _with_effect_outcome(
@@ -1701,17 +1851,77 @@ class ElementalSettlementCoordinator:
                         outcomes[target_order], "prepared", request.request_id
                     )
 
+        # 星扩散冰爆炸的 1U 冰附着：在封存前计划进同批次 Aura 计划。
+        if (
+            stellar_damage is not None
+            and stellar_damage.attached_aura_element is not None
+            and stellar_damage_subject_refs
+        ):
+            assert aura_planner is not None
+            assert stellar_damage.aura_application_profile_key is not None
+            assert stellar_damage.attached_aura_amount is not None
+            aura_profile = self.aura_application_profile_registry.require(
+                stellar_damage.aura_application_profile_key
+            )
+            if (
+                aura_profile.decay_profile_policy
+                is not AuraDecayProfilePolicy.REGULAR_FROM_RAW_AMOUNT
+            ):
+                raise ElementalInteractionError("星烁附着只支持常规原始元素量衰减 Profile")
+            decay_profile = aura_profile.resolve_decay_profile(
+                base_strength=AuraStrength.WEAK,
+                effective_raw_amount=stellar_damage.attached_aura_amount,
+            )
+            for target_order in sorted(stellar_damage_subject_refs):
+                aura_planner.apply(
+                    AuraApplicationRequest(
+                        request_id=f"{stellar_damage.effect_ref}:target:{target_order}:aura",
+                        application_id=(
+                            f"{stellar_damage.effect_ref}:target:{target_order}:application"
+                        ),
+                        impact_ref=stellar_damage.effect_ref,
+                        frame=root_record.frame,
+                        order=target_order * 10_000,
+                        source_ref=stellar_damage.trigger_source_ref,
+                        target_ref=stellar_damage_subject_refs[target_order],
+                        element=stellar_damage.attached_aura_element,
+                        base_strength=AuraStrength.WEAK,
+                        effective_raw_amount=stellar_damage.attached_aura_amount,
+                        decay_profile=decay_profile,
+                    )
+                )
+
+        # 星扩散冰爆炸命中角色：位置级跳跃能力 Buff 走独立通道，与伤害/附着
+        # 通道分离。角色在 effect 循环内被 hostile 资格策略挡下（blocked_relation），
+        # 这里只对"确实在爆炸范围内"的角色补一条 ACTIVE_CHARACTER 主体记录。
+        #
+        # 依赖前提：``reaction_target.hostile_effect`` 必须把范围内的非敌对目标
+        # 保留在 target 集合里、并以 ``ReactionTargetRelation.SELF`` 暴露，而不是
+        # 直接过滤掉非敌对目标。若该资格策略日后改成过滤，本分支会静默失效；
+        # 该前提已由 test_stellar_swirl_interaction 中"爆炸挡下前台角色"与
+        # "命中前台角色授予跳跃 Buff"两条用例锁定。
+        if has_stellar_attachment and any(
+            eligibility.relation is ReactionTargetRelation.SELF for eligibility in targets
+        ):
+            status_requests.append(
+                plan_stellar_swirl_jump_boost_request(
+                    frame=root_record.frame,
+                    effect_group_ref=group.effect_group_ref,
+                    # 与状态申请的 target_order 语义不同，这里取现有最大 order + 1，
+                    # 保证排在既有申请之后且不会撞号。
+                    order=max((request.order for request in status_requests), default=-1) + 1,
+                )
+            )
+
         gate_plan = gate_planner.seal()
+        aura_plan = None if aura_planner is None else aura_planner.seal()
         if reaction_planner is None:
             reaction_plan = None
-            aura_plan = None
             state_plan = None
             store_plan = None
         else:
-            assert aura_planner is not None
             assert state_planner is not None
             reaction_plan = reaction_planner.seal()
-            aura_plan = aura_planner.seal()
             state_plan = state_planner.seal()
             store_plan = ReactionStoreMutationPlan(
                 gate_plan,
@@ -1811,6 +2021,47 @@ class ElementalSettlementCoordinator:
                         gate_resolution_ref=outcome.gate_resolution_ref,
                         damage_request_id=record.result.request_id,
                     )
+        if stellar_damage is not None and stellar_damage_target_refs:
+            owner_slot = _character_owner_slot(stellar_damage.trigger_source_ref)
+            damage_request = ImpactRequest(
+                frame=root_record.frame,
+                kind=ImpactKind.DAMAGE,
+                impact_key=stellar_damage.damage_profile_key,
+                owner_slot=owner_slot,
+                request_id=f"{stellar_damage.effect_ref}:impact",
+                target_refs=tuple(stellar_damage_target_refs),
+                damage_spec=DamageImpactSpec(
+                    impact_ref=f"{stellar_damage.effect_ref}:impact",
+                    main_attack_tag=stellar_damage.main_attack_tag,
+                    element=stellar_damage.damage_element,
+                    # 星烁复合伤害的暴击由公式内逐参与者决策承担。
+                    can_crit=False,
+                    display_name=_reaction_damage_display_name(stellar_damage.damage_profile_key),
+                ),
+            )
+            stellar_records = self.damage_handler.prepare_impact_request(
+                context,
+                damage_request,
+                stellar_reactions=stellar_damage_inputs,
+            )
+            damage_records = (*damage_records, *stellar_records)
+            for target_order, outcome in tuple(outcomes.items()):
+                if (
+                    outcome.damage_outcome == "prepared"
+                    and target_order in stellar_damage_subject_refs
+                ):
+                    damage_subject_ref = stellar_damage_subject_refs[target_order]
+                    record = next(
+                        item
+                        for item in stellar_records
+                        if item.damage_request.target_ref.entity_id == damage_subject_ref.entity_id
+                    )
+                    outcomes[target_order] = _with_damage_outcome(
+                        outcome,
+                        "applied",
+                        gate_resolution_ref=outcome.gate_resolution_ref,
+                        damage_request_id=record.result.request_id,
+                    )
 
         character_damage_plans = self._prepare_character_damage_plans(damage_records)
 
@@ -1821,9 +2072,7 @@ class ElementalSettlementCoordinator:
             assert aura_plan is not None
             assert state_plan is not None
             assert store_plan is not None
-            assert self.aura_runtime is not None
             self.reaction_runtime.validate(reaction_plan)
-            self.aura_runtime.validate(aura_plan)
             self.reaction_runtime.validate_store_mutation_plan(store_plan)
             validate_elemental_state_links(
                 aura_plan.replacements,
@@ -1835,15 +2084,15 @@ class ElementalSettlementCoordinator:
         if self.character_damage_taken_coordinator is not None:
             for character_damage_plan in character_damage_plans:
                 self.character_damage_taken_coordinator.validate(character_damage_plan)
+        if aura_plan is not None:
+            assert self.aura_runtime is not None
+            self.aura_runtime.commit_prevalidated(aura_plan)
         if reaction_plan is None:
             state_commit_receipt = None
             self.reaction_runtime.commit_prevalidated_gate_plan(gate_plan)
         else:
-            assert aura_plan is not None
             assert store_plan is not None
-            assert self.aura_runtime is not None
             self.reaction_runtime.commit_prevalidated(reaction_plan)
-            self.aura_runtime.commit_prevalidated(aura_plan)
             store_receipt = self.reaction_runtime.commit_prevalidated_store_mutation_plan(
                 store_plan
             )
@@ -2876,6 +3125,8 @@ def _scheduled_root_tick_index(root: ScheduledReactionRootWork) -> int | None:
         return root.scheduled_tick_index
     if isinstance(root, LunarStormCloudAttackRootWork):
         return root.tick_index
+    if isinstance(root, StellarConductCounterSettlementRootWork):
+        return root.window_index
     raise ElementalInteractionError("Scheduled Reaction root 类型不受支持")
 
 
@@ -2891,6 +3142,10 @@ def _scheduled_root_causes(
             raise ElementalInteractionError("Burning scheduled root 缺少 cause")
         return root.causes
     if isinstance(root, LunarStormCloudAttackRootWork):
+        if root.cause is None:
+            raise ElementalInteractionError("Scheduled Reaction root 缺少 cause")
+        return (root.cause,)
+    if isinstance(root, StellarConductCounterSettlementRootWork):
         if root.cause is None:
             raise ElementalInteractionError("Scheduled Reaction root 缺少 cause")
         return (root.cause,)
@@ -3021,6 +3276,49 @@ def _lunar_participant_inputs_from_refs(
             )
         )
     return tuple(participants)
+
+
+def _stellar_participant_inputs(
+    context,
+    effect: StellarReactionDamageImpactEffect,
+) -> tuple[StellarReactionParticipantInput, ...]:
+    """按风旋账本参与者构造星烁复合输入；基础值按自身等级系数冻结。"""
+
+    if context.space_runtime is None:
+        raise ElementalInteractionError("星烁伤害参与者缺少 SpaceRuntime")
+    participants: list[StellarReactionParticipantInput] = []
+    for participant_ref in effect.participant_refs:
+        owner_slot = _character_owner_slot(participant_ref)
+        character = context.space_runtime.team_state.get_character(owner_slot)
+        if character is None:
+            raise ElementalInteractionError("星烁伤害参与者角色不存在")
+        _, level_multiplier = transformative_level_multiplier(
+            TransformativeReactionSourceKind.CHARACTER,
+            character.level,
+        )
+        participants.append(
+            StellarReactionParticipantInput(
+                participant_ref=AttributeSubjectRef.character(participant_ref.source_key),
+                source_level=character.level,
+                reaction_base_value=level_multiplier,
+                can_crit=effect.can_crit,
+            )
+        )
+    return tuple(participants)
+
+
+def _stellar_input(
+    context,
+    effect: StellarReactionDamageImpactEffect,
+) -> StellarReactionDamageInput:
+    """把星烁 Damage Impact 映射为一名目标的复合模式星烁公式输入。"""
+
+    return StellarReactionDamageInput(
+        mode="reaction_composite",
+        scaling_value=0.0,
+        stellar_base_multiplier=effect.stellar_base_multiplier,
+        participants=_stellar_participant_inputs(context, effect),
+    )
 
 
 def _transformative_input(
@@ -3154,7 +3452,10 @@ def _with_effect_outcome(
 ) -> ReactionTargetEffectOutcome:
     if isinstance(
         effect,
-        GeneratedDamageImpactEffect | LunarReactionDamageImpactEffect | LunarStormCloudAttackEffect,
+        GeneratedDamageImpactEffect
+        | LunarReactionDamageImpactEffect
+        | StellarReactionDamageImpactEffect
+        | LunarStormCloudAttackEffect,
     ):
         return _with_damage_outcome(outcome, value, gate_resolution_ref=outcome.gate_resolution_ref)
     return _with_status_outcome(outcome, value, outcome.buff_request_id)

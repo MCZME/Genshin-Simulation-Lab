@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager
 from typing import Protocol
 
@@ -17,7 +17,12 @@ from genshin_sim.core.coordination.elemental_reaction.models import (
 from genshin_sim.core.coordination.elemental_reaction.spatial import (
     ReactionSpatialCreationReceipt,
 )
-from genshin_sim.core.elements import AuraAmount, AuraKind, ElementalSubjectRef
+from genshin_sim.core.elements import (
+    AuraAmount,
+    AuraKind,
+    ElementalSourceRef,
+    ElementalSubjectRef,
+)
 from genshin_sim.core.events import GameEvent
 from genshin_sim.core.impacts import ImpactRequest
 from genshin_sim.core.space import SpaceEntityCommitReceipt, SpaceEntityMutationPlan, SpatialEntity
@@ -41,6 +46,13 @@ from genshin_sim.core.systems.aura_icd.models import (
     IcdMutationPlan,
     IcdResolution,
 )
+from genshin_sim.core.systems.buff import (
+    ApplyBuffRequest,
+    BuffCommitReceipt,
+    BuffMutationPlan,
+    BuffStoreReader,
+    RemoveBuffRequest,
+)
 from genshin_sim.core.systems.damage import (
     AmplifyingReactionInput,
     CatalyzeReactionInput,
@@ -49,6 +61,7 @@ from genshin_sim.core.systems.damage import (
     SecondaryAmplifyingReactionInput,
     TransformativeReactionInput,
 )
+from genshin_sim.core.systems.damage.stellar import StellarReactionDamageInput
 from genshin_sim.core.systems.reaction.gates import ReactionDamageGatePlanner
 from genshin_sim.core.systems.reaction.models import (
     CrystallizeShardStateCreationIntent,
@@ -57,12 +70,14 @@ from genshin_sim.core.systems.reaction.models import (
     FreezeResistanceObservation,
     LunarCrystallizeStatePlanningIntent,
     LunarStormCloudStatePlanningIntent,
+    PolestarFieldStatePlanningIntent,
     ReactionCommitReceipt,
     ReactionEvaluationRequest,
     ReactionGeneratedImpact,
     ReactionGeneratedImpactBatch,
     ReactionMutationPlan,
     ReactionResolution,
+    StellarSwirlVortexStatePlanningIntent,
 )
 from genshin_sim.core.systems.reaction.resources import (
     LunarBloomDewState,
@@ -84,6 +99,7 @@ from genshin_sim.core.systems.reaction.states import (
     LunarCrystallizeAccumulatorState,
     LunarCrystallizeOccurrenceRecord,
     LunarStormCloudState,
+    PolestarFieldState,
     QuickenState,
     ReactionStateCommitReceipt,
     ReactionStateInstanceRef,
@@ -91,6 +107,9 @@ from genshin_sim.core.systems.reaction.states import (
     ReactionStateMutationPlan,
     ReactionStateRecord,
     SprawlingShotState,
+    StellarConductAttachmentRecord,
+    StellarConductCounterState,
+    StellarSwirlVortexState,
 )
 from genshin_sim.core.systems.shield import (
     ShieldGrantCommitReceipt,
@@ -309,6 +328,27 @@ class ReactionStateInteractionPort(ReactionFramePort, Protocol):
         self,
         team_ref: str,
     ) -> LunarCrystallizeAccumulatorState | None: ...
+
+    def polestar_field_state_for(
+        self,
+        instance_ref: ReactionStateInstanceRef,
+    ) -> PolestarFieldState | None: ...
+
+    def active_polestar_fields(
+        self,
+        *,
+        team_ref: str | None = None,
+    ) -> tuple[PolestarFieldState, ...]: ...
+
+    def stellar_conduct_counter_state_for(
+        self,
+        team_ref: str,
+    ) -> StellarConductCounterState | None: ...
+
+    def stellar_swirl_vortex_state_for(
+        self,
+        instance_ref: ReactionStateInstanceRef,
+    ) -> StellarSwirlVortexState | None: ...
 
     def sprawling_shot_state_for(
         self,
@@ -531,6 +571,96 @@ class ReactionStateBatchPlanningPort(Protocol):
         instance_ref: ReactionStateInstanceRef,
     ) -> LunarStormCloudState: ...
 
+    def polestar_field_for(
+        self,
+        instance_ref: ReactionStateInstanceRef,
+    ) -> PolestarFieldState | None: ...
+
+    def active_polestar_fields(
+        self,
+        *,
+        team_ref: str | None = None,
+    ) -> tuple[PolestarFieldState, ...]: ...
+
+    def create_polestar_field(
+        self,
+        intent: PolestarFieldStatePlanningIntent,
+    ) -> PolestarFieldState: ...
+
+    def replace_polestar_field(
+        self,
+        *,
+        instance_ref: ReactionStateInstanceRef,
+        expires_at_frame: int,
+    ) -> PolestarFieldState: ...
+
+    def remove_polestar_field(
+        self,
+        *,
+        instance_ref: ReactionStateInstanceRef,
+    ) -> PolestarFieldState: ...
+
+    def active_stellar_swirl_vortexes(
+        self,
+        *,
+        scope_ref: str | None = None,
+    ) -> tuple[StellarSwirlVortexState, ...]: ...
+
+    def create_stellar_swirl_vortex(
+        self,
+        intent: StellarSwirlVortexStatePlanningIntent,
+    ) -> StellarSwirlVortexState: ...
+
+    def level_up_stellar_swirl_vortex(
+        self,
+        *,
+        instance_ref: ReactionStateInstanceRef,
+        frame: int,
+        reaction_source_ref: ElementalSourceRef,
+        reaction_occurrence_ref: str,
+        participant_refs: tuple[ElementalSourceRef, ...],
+    ) -> StellarSwirlVortexState: ...
+
+    def remove_stellar_swirl_vortex(
+        self,
+        *,
+        instance_ref: ReactionStateInstanceRef,
+    ) -> StellarSwirlVortexState: ...
+
+    def stellar_conduct_counter_for(self, team_ref: str) -> StellarConductCounterState | None: ...
+
+    def create_stellar_conduct_counter(
+        self,
+        *,
+        team_ref: str,
+        subject_ref: ElementalSubjectRef,
+        frame: int,
+        excluded_attack_refs: tuple[str, ...] = (),
+    ) -> StellarConductCounterState: ...
+
+    def append_stellar_conduct_attachment_record(
+        self,
+        *,
+        team_ref: str,
+        record: StellarConductAttachmentRecord,
+    ) -> StellarConductCounterState: ...
+
+    def replace_stellar_conduct_counter_exclusions(
+        self,
+        *,
+        team_ref: str,
+        excluded_attack_refs: tuple[str, ...],
+    ) -> StellarConductCounterState: ...
+
+    def settle_stellar_conduct_counter(
+        self,
+        *,
+        team_ref: str,
+        frame: int,
+    ) -> StellarConductCounterState: ...
+
+    def remove_stellar_conduct_counter(self, *, team_ref: str) -> StellarConductCounterState: ...
+
     def create_sprawling_shot(self, state: SprawlingShotState) -> SprawlingShotState: ...
 
     def remove_sprawling_shot(
@@ -609,6 +739,7 @@ class DamageImpactPlanningPort(Protocol):
         transformative_reactions: Mapping[str, TransformativeReactionInput] | None = None,
         catalyze_reactions: Mapping[str, CatalyzeReactionInput] | None = None,
         lunar_reactions: Mapping[str, LunarReactionDamageInput] | None = None,
+        stellar_reactions: Mapping[str, StellarReactionDamageInput] | None = None,
     ) -> tuple[DamageResolutionRecord, ...]: ...
 
     def commit_prepared_records(self, records: tuple[DamageResolutionRecord, ...]) -> None: ...
@@ -640,6 +771,8 @@ class ReactionSpatialBatchPlanningPort(Protocol):
     def prepare_create(self, effect, *, anchor: SpatialEntity) -> object: ...
 
     def prepare_create_entity(self, entity: SpatialEntity) -> SpatialEntity: ...
+
+    def prepare_update(self, entity: SpatialEntity) -> SpatialEntity: ...
 
     def prepare_remove(self, entity_id: str) -> SpatialEntity: ...
 
@@ -730,6 +863,18 @@ class LunarCageExpiryPort(Protocol):
     ) -> tuple[ReactionStateLifecycleWork, ...]: ...
 
 
+class PolestarFieldExpiryPort(Protocol):
+    """极星辉域到期时终结 State/Space 与队伍共享计数的唯一写入口。"""
+
+    def expire(
+        self,
+        context: object,
+        *,
+        frame: int,
+        works: tuple[ReactionStateLifecycleWork, ...],
+    ) -> tuple[ReactionStateLifecycleWork, ...]: ...
+
+
 class ReactionGeneratedImpactDamageInputAdapter(Protocol):
     """由 Reaction 机制把派生 Impact 映射为 Damage 所需的剧变公式输入。"""
 
@@ -788,3 +933,23 @@ class ReactionEligibilityReadPort(Protocol):
     """Reaction 读取队伍 capability 准入证据的窄端口。"""
 
     def evidence_for(self, frame: int, team_ref: str) -> ReactionEligibilityView: ...
+
+
+class StellarConductBuffPlanningPort(Protocol):
+    """星超导协调统一创建/刷新/移除辉映 Buff 与领域减抗所需的 Buff 窄端口。"""
+
+    def prepare_apply(
+        self,
+        requests: Sequence[ApplyBuffRequest],
+    ) -> BuffMutationPlan: ...
+
+    def prepare_remove(self, request: RemoveBuffRequest) -> BuffMutationPlan: ...
+
+    def validate(self, plan: BuffMutationPlan) -> None: ...
+
+    def commit_prevalidated(self, plan: BuffMutationPlan) -> BuffCommitReceipt: ...
+
+    def publish_committed_facts(self, receipt: BuffCommitReceipt) -> None: ...
+
+    @property
+    def reader(self) -> BuffStoreReader: ...

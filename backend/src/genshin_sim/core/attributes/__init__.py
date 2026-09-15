@@ -61,6 +61,8 @@ from genshin_sim.core.attributes.keys import (
     STAT_ENERGY_RECHARGE,
     STAT_HP_BASE,
     STAT_HP_MAX,
+    STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER,
+    STELLAR_SWIRL_DIRECT_BASE_MULTIPLIER,
     TOTAL_STAT_KEYS,
     AttributeKey,
     attribute_key,
@@ -95,6 +97,7 @@ from genshin_sim.core.attributes.panel import (
     panel_entries_to_dict,
     resolve_panel,
 )
+from genshin_sim.core.attributes.ports import TeamScopeProjectionPort
 from genshin_sim.core.attributes.protocols import (
     AttributeReader,
     ModifierProvider,
@@ -177,6 +180,8 @@ __all__ = [
     "STAT_CRIT_DAMAGE",
     "STAT_CRIT_RATE",
     "STAT_DEF_BASE",
+    "STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER",
+    "STELLAR_SWIRL_DIRECT_BASE_MULTIPLIER",
     "STAT_DEF_TOTAL",
     "STAT_ELEMENTAL_MASTERY",
     "STAT_ENERGY_RECHARGE",
@@ -184,6 +189,7 @@ __all__ = [
     "STAT_HP_MAX",
     "StaticModifierProvider",
     "TOTAL_STAT_KEYS",
+    "TeamScopeProjectionPort",
     "TraceLevel",
     "UnknownAttributeError",
     "UnsupportedOwnerError",

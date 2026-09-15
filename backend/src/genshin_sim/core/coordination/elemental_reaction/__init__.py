@@ -35,8 +35,11 @@ from genshin_sim.core.coordination.elemental_reaction.lifecycle import (
     DendroCoreExpiryResult,
     LunarCageExpiryCoordinator,
     LunarStormCloudExpiryCoordinator,
+    PolestarFieldExpiryCoordinator,
     ReactionBoundEntityExpiryCoordinator,
     ReactionBoundEntityLifecycleError,
+    StellarSwirlVortexExpiryCoordinator,
+    StellarSwirlVortexExpiryResult,
 )
 from genshin_sim.core.coordination.elemental_reaction.links import (
     BurningStateLinkBatchCoordinator,
@@ -116,6 +119,26 @@ from genshin_sim.core.coordination.elemental_reaction.status import (
     ReactionStatusBuffAdapter,
     superconduct_buff_definition,
 )
+from genshin_sim.core.coordination.elemental_reaction.stellar_conduct import (
+    PolestarFieldPlanResult,
+    StellarConductAttachmentRecording,
+    StellarConductAttachmentRecordingOutcome,
+    StellarConductPlanningError,
+    plan_polestar_field_occurrence,
+    record_stellar_conduct_attachment,
+)
+from genshin_sim.core.coordination.elemental_reaction.stellar_swirl import (
+    StellarSwirlPlanningError,
+    StellarSwirlVortexPlanOutcome,
+    StellarSwirlVortexPlanResult,
+    plan_stellar_swirl_vortex_occurrence,
+)
+from genshin_sim.core.coordination.elemental_reaction.stellar_swirl_buffs import (
+    plan_stellar_swirl_jump_boost_request,
+    plan_stellar_swirl_radiance_buff_requests,
+    stellar_swirl_jump_boost_buff_definition,
+    stellar_swirl_radiance_buff_definition,
+)
 
 __all__ = [
     "DamageImpactWork",
@@ -143,6 +166,8 @@ __all__ = [
     "DendroCoreExpiryResult",
     "LunarCageExpiryCoordinator",
     "LunarStormCloudExpiryCoordinator",
+    "PolestarFieldExpiryCoordinator",
+    "StellarSwirlVortexExpiryCoordinator",
     "ElementalInteractionBatchKind",
     "ElementalInteractionBatchRecord",
     "ElementalInteractionCoordinator",
@@ -200,4 +225,19 @@ __all__ = [
     "validate_elemental_state_links",
     "validate_reaction_state_space_bindings",
     "validate_reaction_state_space_terminalizations",
+    "PolestarFieldPlanResult",
+    "StellarConductAttachmentRecording",
+    "StellarConductAttachmentRecordingOutcome",
+    "StellarConductPlanningError",
+    "StellarSwirlPlanningError",
+    "StellarSwirlVortexExpiryResult",
+    "StellarSwirlVortexPlanOutcome",
+    "StellarSwirlVortexPlanResult",
+    "plan_polestar_field_occurrence",
+    "plan_stellar_swirl_vortex_occurrence",
+    "plan_stellar_swirl_radiance_buff_requests",
+    "plan_stellar_swirl_jump_boost_request",
+    "stellar_swirl_radiance_buff_definition",
+    "stellar_swirl_jump_boost_buff_definition",
+    "record_stellar_conduct_attachment",
 ]

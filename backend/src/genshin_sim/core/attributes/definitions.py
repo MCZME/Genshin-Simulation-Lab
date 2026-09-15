@@ -198,13 +198,28 @@ class AttributeDefinitionRegistry:
 
 
 def create_public_attribute_registry() -> AttributeDefinitionRegistry:
+    # 全部公开属性都接受队伍作用域主体：`team` 投影到队伍内每个角色，
+    # `active_character` 只投影到当前场上角色。这里不设属性白名单，因为
+    # 队伍级效果的属性目标由内容侧定义决定，属性侧只负责表达"允许被投影"。
+    team_scope = frozenset({AttributeSubjectKind.TEAM, AttributeSubjectKind.ACTIVE_CHARACTER})
     owner_both = frozenset({AttributeSubjectKind.CHARACTER, AttributeSubjectKind.TARGET})
-    character_only = frozenset({AttributeSubjectKind.CHARACTER})
+    character_only = frozenset(
+        {
+            AttributeSubjectKind.CHARACTER,
+            AttributeSubjectKind.TEAM,
+            AttributeSubjectKind.ACTIVE_CHARACTER,
+        }
+    )
     definitions: list[AttributeDefinition] = [
-        AttributeDefinition(STAT_HP_BASE, owner_both, "base_sum"),
+        AttributeDefinition(STAT_HP_BASE, owner_both | team_scope, "base_sum"),
         AttributeDefinition(STAT_ATK_BASE, character_only, "base_sum"),
-        AttributeDefinition(STAT_DEF_BASE, owner_both, "base_sum"),
-        AttributeDefinition(STAT_HP_MAX, owner_both, "total_stat", dependencies=(STAT_HP_BASE,)),
+        AttributeDefinition(STAT_DEF_BASE, owner_both | team_scope, "base_sum"),
+        AttributeDefinition(
+            STAT_HP_MAX,
+            owner_both | team_scope,
+            "total_stat",
+            dependencies=(STAT_HP_BASE,),
+        ),
         AttributeDefinition(
             STAT_ATK_TOTAL,
             character_only,
@@ -213,7 +228,7 @@ def create_public_attribute_registry() -> AttributeDefinitionRegistry:
         ),
         AttributeDefinition(
             STAT_DEF_TOTAL,
-            owner_both,
+            owner_both | team_scope,
             "total_stat",
             dependencies=(STAT_DEF_BASE,),
         ),
@@ -233,11 +248,11 @@ def create_public_attribute_registry() -> AttributeDefinitionRegistry:
     )
     for key in additive_keys:
         if str(key).startswith("resistance."):
-            owners = owner_both
+            owners = owner_both | team_scope
         elif key == BONUS_SHIELD_STRENGTH:
             owners = character_only
         else:
-            owners = owner_both
+            owners = owner_both | team_scope
         definitions.append(AttributeDefinition(key, owners, "additive", default_value=0.0))
     return AttributeDefinitionRegistry(tuple(definitions))
 

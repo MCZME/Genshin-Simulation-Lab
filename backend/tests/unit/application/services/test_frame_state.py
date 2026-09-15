@@ -91,6 +91,26 @@ def _event(ordinal: int, frame: int, event_type: str, data: dict[str, object]) -
     return RecordedEvent(ordinal=ordinal, frame=frame, event_type=event_type, data=data)
 
 
+def _buff_instance(
+    sequence: int,
+    *,
+    definition_key: str,
+    kind: str,
+    entity_id: str,
+    display_name: str,
+) -> dict[str, object]:
+    """构造帧状态折叠用的状态效果实例快照（只含投影所需字段）。"""
+
+    return {
+        "instance_ref": {"domain_key": "buff", "sequence": sequence},
+        "definition_key": definition_key,
+        "display_name": display_name,
+        "target_ref": {"kind": kind, "entity_id": entity_id},
+        "stack_count": 1,
+        "expires_at_frame": 100,
+    }
+
+
 def test_baseline_frame_zero_reports_team_attributes_and_coverage():
     response = fold_frame_state(
         session_id="session:1",
@@ -421,6 +441,134 @@ def test_fold_removes_instances_on_removal_events():
 
     assert response["characters"][0]["buffs"] == []
     assert response["characters"][0]["shields"] == []
+
+
+def test_fold_projects_team_scope_buff_onto_every_character():
+    """``team`` 主体 Buff 投影到队伍内每个角色的 buffs 列表。"""
+
+    team_buff = _buff_instance(
+        7,
+        definition_key="buff.definition:resonance_dendro",
+        kind="team",
+        entity_id="player_team",
+        display_name="蔓生之草",
+    )
+    character_buff = _buff_instance(
+        8,
+        definition_key="buff.definition:self_only",
+        kind="character",
+        entity_id="character:slot_1",
+        display_name="只属于一号位",
+    )
+    events = (
+        _event(0, 10, "BUFF_APPLIED", {"result": {"instance_after": team_buff}}),
+        _event(1, 11, "BUFF_APPLIED", {"result": {"instance_after": character_buff}}),
+    )
+
+    response = fold_frame_state(
+        session_id="session:1",
+        frame=12,
+        initial_snapshot=_snapshot(),
+        events=events,
+    )
+
+    by_slot = {character["slot"]: character for character in response["characters"]}
+    assert [entry["definition_key"] for entry in by_slot[1]["buffs"]] == [
+        "buff.definition:resonance_dendro",
+        "buff.definition:self_only",
+    ]
+    assert [entry["definition_key"] for entry in by_slot[2]["buffs"]] == [
+        "buff.definition:resonance_dendro",
+    ]
+    # 投影条目带 scope 标注，角色自身条目不带。
+    assert [entry.get("scope") for entry in by_slot[1]["buffs"]] == ["team", None]
+    assert [entry.get("scope") for entry in by_slot[2]["buffs"]] == ["team"]
+
+
+@pytest.mark.parametrize(
+    ("switch_events", "active_slot_with_buff"),
+    (
+        ((), 1),
+        (
+            (
+                _event(
+                    1,
+                    11,
+                    "TEAM_SWITCHED",
+                    {"requested_slot": 2, "previous_slot": 1, "active_slot": 2, "accepted": True},
+                ),
+            ),
+            2,
+        ),
+    ),
+    ids=("initial_active_slot_1", "after_switch_to_slot_2"),
+)
+def test_fold_projects_active_character_buff_onto_current_active_slot(
+    switch_events: tuple[RecordedEvent, ...],
+    active_slot_with_buff: int,
+):
+    """``active_character`` 主体 Buff 只投影到当前场上角色，切人后跟随新前台。"""
+
+    active_buff = _buff_instance(
+        7,
+        definition_key="buff.definition:on_field_only",
+        kind="active_character",
+        entity_id="player_team",
+        display_name="仅前台",
+    )
+    events = (
+        _event(0, 10, "BUFF_APPLIED", {"result": {"instance_after": active_buff}}),
+        *switch_events,
+    )
+
+    response = fold_frame_state(
+        session_id="session:1",
+        frame=12,
+        initial_snapshot=_snapshot(),
+        events=events,
+    )
+
+    by_slot = {character["slot"]: character for character in response["characters"]}
+    assert by_slot[active_slot_with_buff]["active"] is True
+    assert [entry["definition_key"] for entry in by_slot[active_slot_with_buff]["buffs"]] == [
+        "buff.definition:on_field_only"
+    ]
+    assert [entry["scope"] for entry in by_slot[active_slot_with_buff]["buffs"]] == [
+        "active_character"
+    ]
+    for slot, character in by_slot.items():
+        if slot != active_slot_with_buff:
+            assert character["buffs"] == []
+
+
+def test_fold_removes_team_scope_buff_from_every_character_on_removal():
+    """队伍作用域 Buff 失效后不再出现在任何角色的 buffs 列表。"""
+
+    team_buff = _buff_instance(
+        7,
+        definition_key="buff.definition:resonance_dendro",
+        kind="team",
+        entity_id="player_team",
+        display_name="蔓生之草",
+    )
+    events = (
+        _event(0, 10, "BUFF_APPLIED", {"result": {"instance_after": team_buff}}),
+        _event(
+            1,
+            11,
+            "BUFF_REMOVED",
+            {"result": {"instance_ref": {"domain_key": "buff", "sequence": 7}}},
+        ),
+    )
+
+    response = fold_frame_state(
+        session_id="session:1",
+        frame=12,
+        initial_snapshot=_snapshot(),
+        events=events,
+    )
+
+    assert all(character["buffs"] == [] for character in response["characters"])
 
 
 def test_fold_rejects_snapshot_without_providers():

@@ -15,7 +15,7 @@ from genshin_sim.core.attributes import (
 )
 
 
-def test_shield_strength_is_character_only_public_additive_attribute():
+def test_shield_strength_is_character_side_public_additive_attribute():
     registry = create_public_attribute_registry()
     definition = registry.get(BONUS_SHIELD_STRENGTH)
     resolver = AttributeResolver(
@@ -24,7 +24,15 @@ def test_shield_strength_is_character_only_public_additive_attribute():
         modifier_index=ModifierProviderIndex((), registry=registry),
     )
 
-    assert definition.owner_kinds == frozenset({AttributeSubjectKind.CHARACTER})
+    # 护盾强效是角色侧属性：不接受目标主体，但和其余公开属性一样接受队伍作用域主体。
+    assert AttributeSubjectKind.TARGET not in definition.owner_kinds
+    assert definition.owner_kinds == frozenset(
+        {
+            AttributeSubjectKind.CHARACTER,
+            AttributeSubjectKind.TEAM,
+            AttributeSubjectKind.ACTIVE_CHARACTER,
+        }
+    )
     assert definition.policy_key == "additive"
     assert (
         resolver.resolve(

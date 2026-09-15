@@ -5,12 +5,14 @@ from __future__ import annotations
 FORMULA_KEY_GENERAL = "damage_formula.general"
 FORMULA_KEY_TRANSFORMATIVE_REACTION = "damage_formula.transformative_reaction"
 FORMULA_KEY_LUNAR_REACTION = "damage_formula.lunar_reaction"
+FORMULA_KEY_STELLAR_REACTION = "damage_formula.stellar_reaction"
 
 KNOWN_FORMULA_KEYS = frozenset(
     {
         FORMULA_KEY_GENERAL,
         FORMULA_KEY_TRANSFORMATIVE_REACTION,
         FORMULA_KEY_LUNAR_REACTION,
+        FORMULA_KEY_STELLAR_REACTION,
     }
 )
 

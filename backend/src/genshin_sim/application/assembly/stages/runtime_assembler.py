@@ -26,6 +26,7 @@ from genshin_sim.application.assembly.models import (
     energy_element_from_asset,
 )
 from genshin_sim.application.assembly.moonsign import build_moonsign_bundle
+from genshin_sim.application.assembly.ports import TeamScopeProjectionAdapter
 from genshin_sim.application.assembly.reaction_capabilities import (
     build_static_reaction_eligibility_port,
 )
@@ -35,6 +36,7 @@ from genshin_sim.content import (
     DENDRO_EM_20_TRIGGER_KEYS,
     DENDRO_EM_30_TRIGGER_KEYS,
     ELECTRO_PARTICLE_TRIGGER_KEYS,
+    PLAYER_TEAM_SCOPE,
     RESONANCE_DENDRO_EM_20_BUFF_KEY,
     RESONANCE_DENDRO_EM_30_BUFF_KEY,
     RESONANCE_GEO_RES_SHRED_BUFF_KEY,
@@ -85,8 +87,10 @@ from genshin_sim.core.coordination.elemental_reaction import (
     ElementalStateFrameCoordinator,
     LunarCageExpiryCoordinator,
     LunarStormCloudExpiryCoordinator,
+    PolestarFieldExpiryCoordinator,
     ReactionBoundEntityExpiryCoordinator,
     ReactionSpatialPlanningAdapter,
+    StellarSwirlVortexExpiryCoordinator,
 )
 from genshin_sim.core.coordination.elemental_reaction.observers import (
     CharacterCrystallizeSourceObserver,
@@ -95,6 +99,13 @@ from genshin_sim.core.coordination.elemental_reaction.observers import (
 from genshin_sim.core.coordination.elemental_reaction.status import (
     ReactionStatusBuffAdapter,
     superconduct_buff_definition,
+)
+from genshin_sim.core.coordination.elemental_reaction.stellar_buffs import (
+    stellar_radiance_buff_definition,
+)
+from genshin_sim.core.coordination.elemental_reaction.stellar_swirl_buffs import (
+    stellar_swirl_jump_boost_buff_definition,
+    stellar_swirl_radiance_buff_definition,
 )
 from genshin_sim.core.coordination.resonance_reaction import ResonanceReactionStage
 from genshin_sim.core.entity_states import (
@@ -108,6 +119,10 @@ from genshin_sim.core.impacts import (
     ImpactDispatcher,
     ImpactRequestDispatcher,
     ImpactRuntime,
+)
+from genshin_sim.core.movement import (
+    MovementImpactRequestHandler,
+    MovementRuntime,
 )
 from genshin_sim.core.rules import (
     RuleActivation,
@@ -154,6 +169,7 @@ from genshin_sim.core.systems.aura_icd import (
 )
 from genshin_sim.core.systems.buff import (
     BuffImpactRequestHandler,
+    BuffRemovalImpactRequestHandler,
     BuffResolver,
     BuffRuntime,
     BuffStore,
@@ -205,13 +221,12 @@ from genshin_sim.core.systems.infusion import (
     InfusionStore,
     InfusionSystemError,
 )
-from genshin_sim.core.systems.movement import (
-    MovementImpactRequestHandler,
-    MovementRuntime,
-)
 from genshin_sim.core.systems.reaction import create_default_reaction_bootstrap
 from genshin_sim.core.systems.reaction.mechanics.burning import (
     burning_pyro_aura_application_profile,
+)
+from genshin_sim.core.systems.reaction.mechanics.stellar_swirl import (
+    stellar_swirl_ice_aura_application_profile,
 )
 from genshin_sim.core.systems.reaction.mechanics.swirl import (
     SwirlGeneratedImpactDamageInputAdapter,
@@ -284,6 +299,9 @@ class RuntimeAssembler:
             (
                 *content_bundle.buff_definitions,
                 superconduct_buff_definition(),
+                stellar_radiance_buff_definition(),
+                stellar_swirl_radiance_buff_definition(),
+                stellar_swirl_jump_boost_buff_definition(),
                 *create_resonance_buff_definitions(),
             )
         )
@@ -347,6 +365,14 @@ class RuntimeAssembler:
             AttributeSubjectRef.character(character.combat_entity_id)
             for character in team_state.characters
         )
+        team_scope_projection_port = TeamScopeProjectionAdapter(
+            team_state,
+            team_ref=PLAYER_TEAM_SCOPE,
+        )
+        for provider in buff_attribute_providers:
+            binder = getattr(provider, "bind_runtime_ports", None)
+            if binder is not None:
+                binder(team_scope_projection_port=team_scope_projection_port)
         attribute_panel_synchronizer = AttributePanelSynchronizer(
             attribute_runtime.resolver,
             attribute_subject_refs,
@@ -560,6 +586,7 @@ class RuntimeAssembler:
             ),
         )
         buff_handler = BuffImpactRequestHandler(buff_max_hp_coordinator)
+        buff_removal_handler = BuffRemovalImpactRequestHandler(buff_runtime)
         try:
             infusion_registry = InfusionDefinitionRegistry(content_bundle.infusion_definitions)
             infusion_store = InfusionStore()
@@ -591,6 +618,7 @@ class RuntimeAssembler:
         context.register_system(buff_runtime)
         context.register_system(buff_max_hp_coordinator)
         context.register_system(buff_handler)
+        context.register_system(buff_removal_handler)
         context.register_system(infusion_runtime)
         context.register_system(infusion_handler)
         context.register_system(shield_runtime)
@@ -651,6 +679,14 @@ class RuntimeAssembler:
                 reaction_state_port=reaction_runtime,
                 spatial_planning_port=reaction_spatial_planning_port,
             ),
+            polestar_field_expiry_coordinator=PolestarFieldExpiryCoordinator(
+                reaction_state_port=reaction_runtime,
+                spatial_planning_port=reaction_spatial_planning_port,
+            ),
+            stellar_swirl_vortex_expiry_coordinator=StellarSwirlVortexExpiryCoordinator(
+                reaction_state_port=reaction_runtime,
+                spatial_planning_port=reaction_spatial_planning_port,
+            ),
         )
         elemental_interaction_coordinator = ElementalInteractionCoordinator(
             aura_runtime=aura_runtime,
@@ -666,6 +702,7 @@ class RuntimeAssembler:
             ),
             reaction_eligibility_port=reaction_eligibility_port,
             spatial_planning_port=reaction_spatial_planning_port,
+            stellar_buff_port=buff_runtime,
         )
         bloom_core_trigger_coordinator = BloomCoreTriggerCoordinator(
             reaction_state_port=reaction_runtime,
@@ -691,6 +728,7 @@ class RuntimeAssembler:
                 (
                     swirl_aura_application_profile(),
                     burning_pyro_aura_application_profile(),
+                    stellar_swirl_ice_aura_application_profile(),
                 )
             ),
         )
@@ -725,6 +763,7 @@ class RuntimeAssembler:
             damage_handler=damage_handler,
             shield_handler=shield_handler,
             buff_handler=buff_handler,
+            buff_removal_handler=buff_removal_handler,
             healing_handler=healing_impact_handler,
             character_aura_handler=character_aura_handler,
             energy_handler=energy_handler,
@@ -753,7 +792,7 @@ class RuntimeAssembler:
         resonance_reaction_stage = ResonanceReactionStage(
             resonance_runtime=resonance_runtime,
             intent_queue=intent_queue,
-            team_slots=tuple(character.slot for character in team_state.characters),
+            team_scope_ref=PLAYER_TEAM_SCOPE,
             electro_particle_triggers=ELECTRO_PARTICLE_TRIGGER_KEYS,
             dendro_em_30_triggers=DENDRO_EM_30_TRIGGER_KEYS,
             dendro_em_20_triggers=DENDRO_EM_20_TRIGGER_KEYS,

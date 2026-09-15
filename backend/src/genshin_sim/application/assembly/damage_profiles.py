@@ -8,7 +8,11 @@ runtime 装配阶段只消费本模块产出的注册表，不直接内联构造
 
 from __future__ import annotations
 
-from genshin_sim.core.systems.damage import DamageProfileRegistry
+from genshin_sim.core.systems.damage import (
+    FORMULA_KEY_STELLAR_REACTION,
+    DamageProfileRegistry,
+)
+from genshin_sim.core.systems.damage.models import DamageProfile
 from genshin_sim.core.systems.reaction.mechanics.bloom import bloom_damage_profiles
 from genshin_sim.core.systems.reaction.mechanics.burning import burning_damage_profile
 from genshin_sim.core.systems.reaction.mechanics.electro_charged import (
@@ -29,10 +33,30 @@ from genshin_sim.core.systems.reaction.mechanics.overloaded import (
 from genshin_sim.core.systems.reaction.mechanics.shattered import (
     shattered_damage_profile,
 )
+from genshin_sim.core.systems.reaction.mechanics.stellar_conduct import (
+    STELLAR_CONDUCT_REACTION_KEY,
+)
+from genshin_sim.core.systems.reaction.mechanics.stellar_swirl import (
+    stellar_swirl_damage_profiles,
+)
 from genshin_sim.core.systems.reaction.mechanics.superconduct import (
     superconduct_damage_profile,
 )
 from genshin_sim.core.systems.reaction.mechanics.swirl import swirl_damage_profile
+
+
+def stellar_reaction_damage_profile() -> DamageProfile:
+    """星烁直伤主攻击标签到独立星烁公式的稳定映射。
+
+    这不是反应侧的普通 Reaction Damage Profile：星超导不注册 Damage kind
+    或 Damage Gate，此映射只承担主攻击标签到 ``damage_formula.stellar_reaction``
+    的公式选择。
+    """
+
+    return DamageProfile(
+        FORMULA_KEY_STELLAR_REACTION,
+        frozenset({STELLAR_CONDUCT_REACTION_KEY}),
+    )
 
 
 def create_default_damage_profile_registry() -> DamageProfileRegistry:
@@ -50,5 +74,7 @@ def create_default_damage_profile_registry() -> DamageProfileRegistry:
             *lunar_bloom_damage_profiles(),
             *lunar_electro_charged_damage_profiles(),
             *lunar_crystallize_damage_profiles(),
+            stellar_reaction_damage_profile(),
+            *stellar_swirl_damage_profiles(),
         )
     )

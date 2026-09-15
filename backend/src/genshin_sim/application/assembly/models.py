@@ -55,6 +55,7 @@ if TYPE_CHECKING:
         ImpactRequestDispatcher,
         ImpactRuntime,
     )
+    from genshin_sim.core.movement import MovementRuntime
     from genshin_sim.core.protocols import FrameUpdatable
     from genshin_sim.core.simulation import (
         FramePipeline,
@@ -100,7 +101,6 @@ if TYPE_CHECKING:
         InfusionStore,
     )
     from genshin_sim.core.systems.moonsign import MoonsignRuntime, MoonsignStore
-    from genshin_sim.core.systems.movement import MovementRuntime
     from genshin_sim.core.systems.reaction import ReactionRuntime
     from genshin_sim.core.systems.resonance import ResonanceRuntime, ResonanceStore
     from genshin_sim.core.systems.shield import (

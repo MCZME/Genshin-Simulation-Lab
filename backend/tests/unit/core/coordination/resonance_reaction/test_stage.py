@@ -31,6 +31,8 @@ from tests.helpers.resonance_ports import (
 ELECTRO_TRIGGERS = frozenset({"reaction.electro_charged"})
 EM_30_TRIGGERS = frozenset({"reaction.bloom"})
 EM_20_TRIGGERS = frozenset({"reaction.aggravate"})
+# core 层不依赖 content：这里只需一个稳定的队伍作用域 id 字面量。
+TEAM_SCOPE_REF = "player_team"
 
 
 def _stage(
@@ -48,7 +50,7 @@ def _stage(
     return ResonanceReactionStage(
         resonance_runtime=runtime,
         intent_queue=queue,
-        team_slots=(1, 2),
+        team_scope_ref=TEAM_SCOPE_REF,
         electro_particle_triggers=ELECTRO_TRIGGERS,
         dendro_em_30_triggers=EM_30_TRIGGERS,
         dendro_em_20_triggers=EM_20_TRIGGERS,
@@ -84,7 +86,7 @@ def test_stage_enqueues_single_electro_particle_within_cooldown():
     assert queue.pending_count == 1
 
 
-def test_stage_enqueues_dendro_em_30_for_all_slots():
+def test_stage_enqueues_single_dendro_em_30_for_whole_team():
     queue = IntentQueue()
     stage = _stage(("resonance.dendro",), queue)
 
@@ -96,18 +98,14 @@ def test_stage_enqueues_dendro_em_30_for_all_slots():
     )
 
     intents = queue.drain_sorted()
-    assert len(intents) == 2
-    assert {intent.kind for intent in intents} == {IntentKind.BUFF}
-    requests = [cast(ApplyBuffRequest, intent.payload) for intent in intents]
-    assert all(isinstance(request, ApplyBuffRequest) for request in requests)
-    assert {request.definition_key for request in requests} == {
-        "buff.definition:resonance.dendro.em_30"
-    }
-    assert {request.target_ref.entity_id for request in requests} == {
-        "character:slot_1",
-        "character:slot_2",
-    }
-    assert all(request.modifier_values[0].term_key == "elemental_mastery" for request in requests)
+    # 双草精通挂队伍作用域一份，不再逐槽位展开。
+    assert len(intents) == 1
+    assert intents[0].kind is IntentKind.BUFF
+    request = cast(ApplyBuffRequest, intents[0].payload)
+    assert request.definition_key == "buff.definition:resonance.dendro.em_30"
+    assert request.target_ref == AttributeSubjectRef.team(TEAM_SCOPE_REF)
+    assert request.modifier_values[0].term_key == "elemental_mastery"
+    assert request.modifier_values[0].value == 30.0
 
 
 def test_stage_uses_em_20_for_aggravate():
@@ -122,9 +120,11 @@ def test_stage_uses_em_20_for_aggravate():
     )
 
     requests = [cast(ApplyBuffRequest, intent.payload) for intent in queue.drain_sorted()]
+    assert len(requests) == 1
     assert all(
         request.definition_key == "buff.definition:resonance.dendro.em_20" for request in requests
     )
+    assert requests[0].modifier_values[0].value == 20.0
 
 
 def test_stage_ignores_reactions_when_resonances_inactive():

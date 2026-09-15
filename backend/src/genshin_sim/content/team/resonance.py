@@ -81,6 +81,9 @@ RESONANCE_DENDRO_EM_30_BUFF_KEY = "buff.definition:resonance.dendro.em_30"
 RESONANCE_DENDRO_EM_20_BUFF_KEY = "buff.definition:resonance.dendro.em_20"
 RESONANCE_GEO_RES_SHRED_BUFF_KEY = "buff.definition:resonance.geo.res_shred"
 
+# 玩家队伍的稳定作用域 id：队伍级效果（如双草全队精通）的队伍作用域挂载身份。
+PLAYER_TEAM_SCOPE = "player_team"
+
 ELECTRO_PARTICLE_TRIGGER_KEYS = frozenset(
     {
         SUPERCONDUCT_REACTION_KEY,
@@ -208,7 +211,11 @@ def create_resonance_definitions() -> tuple[ResonanceDefinition, ...]:
 
 
 def create_resonance_buff_definitions() -> tuple[BuffDefinition, ...]:
-    """双草反应触发的全队精通与双岩命中减抗 Buff 定义。"""
+    """双草反应触发的全队精通（队伍作用域）与双岩命中减抗 Buff 定义。
+
+    双草精通作用于整队，挂 `TEAM` 主体一份，由属性侧投影到队伍内每个角色；
+    双岩减抗是对被打敌人的状态，保持 `TARGET` 主体。
+    """
 
     em_template = BuffAttributeModifierTemplate(
         term_key="elemental_mastery",
@@ -230,7 +237,7 @@ def create_resonance_buff_definitions() -> tuple[BuffDefinition, ...]:
             mechanic_key="resonance.dendro.em_30",
             handler_key="resonance.dendro",
             conflict_key="resonance.dendro.em_30",
-            target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
+            target_kinds=frozenset({AttributeSubjectKind.TEAM}),
             application_policy=BuffApplicationPolicy.REFRESH,
             value_refresh_policy=BuffValueRefreshPolicy.REPLACE_LATEST,
             max_stacks=1,
@@ -243,7 +250,7 @@ def create_resonance_buff_definitions() -> tuple[BuffDefinition, ...]:
             mechanic_key="resonance.dendro.em_20",
             handler_key="resonance.dendro",
             conflict_key="resonance.dendro.em_20",
-            target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
+            target_kinds=frozenset({AttributeSubjectKind.TEAM}),
             application_policy=BuffApplicationPolicy.REFRESH,
             value_refresh_policy=BuffValueRefreshPolicy.REPLACE_LATEST,
             max_stacks=1,

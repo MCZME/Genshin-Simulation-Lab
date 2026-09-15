@@ -23,6 +23,7 @@ from genshin_sim.core.systems.damage.errors import (
 from genshin_sim.core.systems.damage.keys import (
     FORMULA_KEY_GENERAL,
     FORMULA_KEY_LUNAR_REACTION,
+    FORMULA_KEY_STELLAR_REACTION,
 )
 from genshin_sim.core.systems.damage.models import (
     _CHARACTER_TARGET_DAMAGE_TAGS,
@@ -33,6 +34,7 @@ from genshin_sim.core.systems.damage.models import (
     DamageResult,
     LunarReactionDamageInput,
     SecondaryAmplifyingReactionInput,
+    StellarReactionDamageInput,
     TransformativeReactionInput,
 )
 from genshin_sim.core.systems.damage.profiles import DamageProfileRegistry
@@ -97,6 +99,7 @@ class DamageRequestHandler:
         transformative_reactions: Mapping[str, TransformativeReactionInput] | None = None,
         catalyze_reactions: Mapping[str, CatalyzeReactionInput] | None = None,
         lunar_reactions: Mapping[str, LunarReactionDamageInput] | None = None,
+        stellar_reactions: Mapping[str, StellarReactionDamageInput] | None = None,
     ) -> tuple[DamageResult, ...]:
         """预检并提交一次 Damage Impact 的全部目标结果。"""
 
@@ -108,6 +111,7 @@ class DamageRequestHandler:
             transformative_reactions=transformative_reactions,
             catalyze_reactions=catalyze_reactions,
             lunar_reactions=lunar_reactions,
+            stellar_reactions=stellar_reactions,
         )
         self.commit_prepared(context, records)
         return tuple(record.result for record in records)
@@ -124,6 +128,7 @@ class DamageRequestHandler:
         transformative_reactions: Mapping[str, TransformativeReactionInput] | None = None,
         catalyze_reactions: Mapping[str, CatalyzeReactionInput] | None = None,
         lunar_reactions: Mapping[str, LunarReactionDamageInput] | None = None,
+        stellar_reactions: Mapping[str, StellarReactionDamageInput] | None = None,
     ) -> tuple[DamageResolutionRecord, ...]:
         """只解析 DamageRequest 和 DamageResult，不记录或发布领域事实。"""
 
@@ -162,6 +167,7 @@ class DamageRequestHandler:
                     transformative_reactions is not None
                     or secondary_amplifying_reactions is not None
                     or lunar_reactions is not None
+                    or stellar_reactions is not None
                 )
                 else RuntimeSourceKind.ACTION
             ),
@@ -223,6 +229,15 @@ class DamageRequestHandler:
             )
             if lunar_reaction is not None and formula_key is not FORMULA_KEY_LUNAR_REACTION:
                 raise DamageValidationError("DamageProfile 未选择月曜完整公式")
+            stellar_reaction = (
+                None
+                if stellar_reactions is None
+                else stellar_reactions.get(target_ref_value)
+                or stellar_reactions.get(target_id)
+                or stellar_reactions.get(target_spatial_entity_id)
+            )
+            if stellar_reaction is not None and formula_key is not FORMULA_KEY_STELLAR_REACTION:
+                raise DamageValidationError("DamageProfile 未选择星烁完整公式")
             catalyze_reaction = (
                 None
                 if catalyze_reactions is None
@@ -266,6 +281,7 @@ class DamageRequestHandler:
                 transformative_reaction=transformative_reaction,
                 catalyze_reaction=catalyze_reaction,
                 lunar_reaction=lunar_reaction,
+                stellar_reaction=stellar_reaction,
             )
             query = DamageQuery(
                 request=damage_request,

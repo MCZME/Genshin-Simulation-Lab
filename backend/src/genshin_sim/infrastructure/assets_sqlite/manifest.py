@@ -163,7 +163,7 @@ def apply_handler_binding_to_manifest(
     updated, changed = _apply_handler_bindings(manifest, (binding,))
     if not changed:
         return Path(manifest_path)
-    return _dump_asset_manifest(updated, manifest_path)
+    return dump_asset_manifest(updated, manifest_path)
 
 
 def sync_asset_manifest_handler_bindings(
@@ -176,7 +176,7 @@ def sync_asset_manifest_handler_bindings(
     updated, changed = _apply_handler_bindings(manifest, bindings)
     if not changed:
         return Path(manifest_path)
-    return _dump_asset_manifest(updated, manifest_path)
+    return dump_asset_manifest(updated, manifest_path)
 
 
 def _apply_handler_bindings(
@@ -292,7 +292,9 @@ def _replace_handler_field(
     return items, False, False
 
 
-def _dump_asset_manifest(manifest: AssetManifest, manifest_path: str | Path) -> Path:
+def dump_asset_manifest(manifest: AssetManifest, manifest_path: str | Path) -> Path:
+    """原子写入标准资产 manifest；``talent_scalings`` 不落库内自增 id。"""
+
     payload = {
         "schema_version": ASSET_MANIFEST_SCHEMA_VERSION,
         "kind": ASSET_MANIFEST_KIND,

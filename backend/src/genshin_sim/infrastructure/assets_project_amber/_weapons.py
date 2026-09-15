@@ -86,6 +86,8 @@ def _build_weapon_level_stats(
 def _build_weapon_effect_payloads(
     cache_dir: Path,
     weapons: tuple[WeaponAsset, ...],
+    *,
+    degraded_affixes: list[str],
 ) -> tuple[EffectPayload, ...]:
     rows: list[EffectPayload] = []
     for weapon in weapons:
@@ -105,6 +107,7 @@ def _build_weapon_effect_payloads(
                     affix_id=str(affix_id),
                     affix=affix,
                     item_path=f"weapon/{weapon.source_id}.affix[{affix_id}]",
+                    degraded_affixes=degraded_affixes,
                 )
             )
     return tuple(rows)
@@ -116,14 +119,41 @@ def _build_weapon_effect_payload(
     affix_id: str,
     affix: Mapping[str, Any],
     item_path: str,
+    degraded_affixes: list[str],
 ) -> EffectPayload:
     affix_name = _required_str(affix, "name", item_path)
     upgrade = _require_mapping(affix.get("upgrade"), f"{item_path}.upgrade")
     refinements = _weapon_affix_refinements(upgrade, item_path)
     highlighted_values = [_affix_highlight_values(text) for _refinement, text in refinements]
     highlight_count = len(highlighted_values[0]) if highlighted_values else 0
-    if any(len(values) != highlight_count for values in highlighted_values):
-        raise AssetValidationError(f"{item_path}.upgrade 高亮参数数量必须在所有精炼等级中一致")
+    # 高亮数量在各精炼等级间必须一致才能拼成矩形参数表；不一致时源站描述模板
+    # 本身存在差异（如某一级仍是旧版文案），此时只保留原文模板而不猜测数值。
+    components_available = all(
+        len(values) == highlight_count for values in highlighted_values
+    )
+    if not components_available:
+        degraded_affixes.append(
+            f"{weapon.asset_key}:passive:{affix_id}（{weapon.name}）"
+            f"各精炼等级高亮参数数量不一致 {[len(values) for values in highlighted_values]}，"
+            "只保留原文模板，不写 components"
+        )
+
+    params: dict[str, object] = {
+        "schema_version": 1,
+        "source": "project-amber-yatta",
+        "source_affix_id": affix_id,
+        "name": affix_name,
+        "refinement_min": refinements[0][0],
+        "refinement_max": refinements[-1][0],
+        "source_templates": {str(refinement): text for refinement, text in refinements},
+    }
+    if components_available:
+        params["components"] = [
+            _weapon_affix_component(position, highlighted_values)
+            for position in range(highlight_count)
+        ]
+    else:
+        params["components_unavailable"] = "inconsistent_highlight_count"
 
     return EffectPayload(
         effect_key=f"{weapon.asset_key}:passive:{affix_id}",
@@ -131,19 +161,7 @@ def _build_weapon_effect_payload(
         owner_key=weapon.asset_key,
         effect_kind="passive",
         handler_key=_WEAPON_PASSIVE_HANDLER_KEY,
-        params={
-            "schema_version": 1,
-            "source": "project-amber-yatta",
-            "source_affix_id": affix_id,
-            "name": affix_name,
-            "refinement_min": refinements[0][0],
-            "refinement_max": refinements[-1][0],
-            "source_templates": {str(refinement): text for refinement, text in refinements},
-            "components": [
-                _weapon_affix_component(position, highlighted_values)
-                for position in range(highlight_count)
-            ],
-        },
+        params=params,
     )
 
 

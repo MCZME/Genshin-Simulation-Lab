@@ -1,55 +1,99 @@
 ---
 name: commit-workflow
-description: 本仓库的提交、分支和 PR 工作流。用于准备提交、拆分或修正最近提交、选择提交信息、检查分支名、总结验证结果，或根据本 skill 撰写 PR/合并说明。
+description: 本仓库的提交、分支、Issue 和 PR 工作流。用于准备提交、拆分或修正最近提交、选择提交信息、检查分支名、创建或处理 Issue、判断一个问题该走 Issue 还是 PR、总结验证结果，或根据本 skill 撰写 PR/合并说明。
 ---
 
 # 提交工作流
 
 ## 适用范围
 
-将此 skill 作为本仓库 Git 与 GitHub 工作流的唯一正文来源。提交、分支、Issue、PR、合并、检查和阶段管理规则统一维护在这里，不在 `AGENTS.md` 或 `docs/` 中重复保存。
+本 skill 是本仓库 Git 与 GitHub 工作流的唯一正文来源。提交、分支、Issue、PR、合并与检查规则统一维护在这里，不在 `AGENTS.md` 或 `docs/` 中重复保存。
 
 ## 基本原则
 
-- GitHub 作为代码审查、任务记录和阶段管理入口。
-- `main` 保持为稳定主线，不直接提交日常开发改动。
-- 每个 Pull Request 只处理一个明确主题，避免混入无关重构。
-- 涉及架构、契约、资产库、结果库、数值机制或迁移策略的变更，必须在 PR 中明确标注风险并同步相关文档。
-- AI 参与的改动也必须经过同样的分支、提交、检查和审查流程。
+- GitHub 作为代码审查、任务记录和进度管理入口。
+- 个人开发者定位，流程保持轻量：不启用分支保护、不预建 Issue 模板与标签集合；纪律性要求由本 skill 约定承载，CI 是唯一强制兜底。
+- 分支与 PR 的强制要求针对 AI 开发；维护者可自行决定是否使用分支，允许直推 `main`。
+- 每个 Pull Request 或 Issue 只处理一个明确主题，避免混入无关改动。
+- 涉及架构、契约、资产库、结果库或数值机制的变更，必须明确标注风险并同步相关文档。
+- AI 参与的改动经过与人工改动一致的分支、提交、检查和记录流程。
 
-## 提交前检查
+## 分支
 
-暂存前检查工作区：
+### 命名
 
-```powershell
-git status --short
-git diff --stat
-git diff --cached --stat
+分支名使用英文小写字母、数字和短横线：
+
+```text
+<type>/<short-english-topic>
+ai/<short-english-topic>
 ```
 
-区分用户已有改动和 AI 本次改动。不要回滚、覆盖或暂存无关的用户改动。
+AI 主导的工作使用 `ai/` 前缀。不要使用中文、空格或下划线。
 
-按一个可审查主题组织改动。如果工作区同时包含规划文档和代码实现，优先拆成不同提交；除非文档是该实现对应的直接契约更新。
+示例：
 
-提交前按改动范围运行适用检查。
-
-backend/ 下：
-
-```powershell
-uv run pytest
-uv run ruff check
-uv run pyright
+```text
+feat/config-validation
+fix/core-event-order
+docs/github-workflow
+ai/project-initialization
 ```
 
-frontend/ 下：
+### 使用规则
 
-```powershell
-pnpm lint
-pnpm typecheck
-pnpm test
+- AI 开发必须在单独分支进行，不直接修改 `main`。
+- 维护者可直接在 `main` 提交，不受分支限制；是否使用分支由维护者自行决定。
+- 不启用分支保护。
+- 分支粒度按**可独立验收的功能**切分，不按"完成某个角色/某个大模块"切分。一个分支对应一个可以单独验收的能力，使其能与其他分支并行推进。
+- 分支名不表达内容版本；内容当前状态由 content 的 `version` 参数独立表达。
+
+## Issue 与 PR 的分工
+
+**核心判据：有没有代码可提交。**
+
+| 情况 | 载体 | 说明 |
+| --- | --- | --- |
+| 一个功能需要多个 PR | Issue | 先讨论清楚，再进入开发 |
+| 单一或简单的功能 | PR | 直接开 PR，不建 Issue |
+| 一个问题的修复要拆多个 PR | Issue 作为父任务 | PR 引用该 Issue，全部合并后才关闭 |
+| 待办、需要后续完成的内容 | Issue | 没有代码可提交，PR 无法承载 |
+
+### 创建权限
+
+- 维护者与 AI 都可以创建 Issue。
+- **AI 创建 Issue 前必须获得维护者同意**。AI 遇到应当创建 Issue 的情况时，先向维护者提出，不自行创建。
+- Issue 的具体开法不做统一限制，由当时情况决定；基础要求是创建时打上标签（见下）。
+
+## Issue 标签
+
+标签用于在不打开 Issue 的情况下筛选和管理 Issue 列表，属于项目管理维度。
+
+设计原则：
+
+- 每个维度必须解决一个实际筛选问题，不为分类而分类。
+- 标签数量保持最少，少到每次创建 Issue 时都能记得打完。
+- 不预建整套标签；用到时再在 GitHub 上创建。
+
+推荐维度：
+
+**状态**（对应阻塞与在制情况）
+
+```text
+status:blocked       卡住：缺少可信来源、缺少前置设计等
+status:ready         可以开始
+status:in-progress   正在做
 ```
 
-纯文档改动可以不运行代码检查，但需要在最终回复或 PR 说明中明确说明。
+**优先级**
+
+```text
+priority:high
+priority:medium
+priority:low
+```
+
+一个 Issue 打一个状态标签加一个优先级标签。其他维度（模块、风险等）按需临时新增，不预建。
 
 ## 提交信息
 
@@ -67,40 +111,38 @@ feat fix docs refactor test chore build ci perf ai
 
 AI 协作规范、skill、agent 配置等 AI 协作资产统一使用 `ai` 类型。
 
-需要表达模块或主题时，使用简短英文 `scope`，例如 `core`、`assets`、`config`、`github`、`migration`。
+需要表达模块或主题时，使用简短英文 `scope`，例如 `core`、`content`、`assets`、`config`、`github`。
 
 摘要使用中文，保持简短、明确，只表达一件事。
 
 示例：
 
 ```text
-docs(github): 补充 PR 与分支管理规范
-docs(migration): 记录存量工作流迁移安排
-feat(core): 建立事件与上下文骨架
-test(core): 补充事件队列最小用例
-ai(skill): 提取提交工作流规范
+feat(content): 接入芭芭拉元素战技
+test(reactions): 补充超导反应 golden case
+docs(contract): 补充护盾系统契约边界
+ai(skill): 收敛提交工作流范围
 ```
 
 如果存在破坏性变更，在正文或 footer 中写 `BREAKING CHANGE:`。
 
 生成文件、锁文件和依赖变更应与需要它们的改动放在同一个提交中。
 
-首次提交建议使用：
+## 提交前检查
 
-```text
-chore: 初始化项目骨架、文档规范与测试基础
+暂存前检查工作区：
+
+```powershell
+git status --short
+git diff --stat
+git diff --cached --stat
 ```
 
-## 拆分提交
+区分维护者已有改动和 AI 本次改动。不要回滚、覆盖或暂存无关的改动。
 
-使用小而聚焦的主题提交：
+按一个可审查主题组织改动。如果工作区同时包含规划文档和代码实现，优先拆成不同提交；除非文档是该实现对应的直接契约更新。
 
-- `docs(...)` 用于纯文档的策略、规划、规范和记录。
-- `feat(...)` 或 `fix(...)` 用于行为变化和实现。
-- `test(...)` 用于不随实现一起提交的纯测试补充。
-- `chore(...)` 用于不改变产品行为的项目维护。
-
-如果刚创建的本地提交混入多个主题，在最终交付前改写它：
+如果刚创建的本地提交混入多个主题，在交付前改写它：
 
 ```powershell
 git reset --soft HEAD~1
@@ -109,146 +151,110 @@ git add <topic-files>
 git commit -m "type(scope): 中文摘要"
 ```
 
-对每个主题重复暂存和提交。若沙箱阻止写入 Git 元数据，请请求授权。
+对每个主题重复暂存和提交。若沙箱阻止写入 Git 元数据，请求授权。
 
-## 分支命名
+## 验证要求
 
-分支名使用英文小写字母、数字和短横线：
+本地按改动范围运行窄路径，CI 全量兜底。
 
-```text
-<type>/<short-english-topic>
-ai/<short-english-topic>
+backend/ 下：
+
+```powershell
+uv run ruff check
+uv run pyright
+uv run pytest tests/unit
+uv run pytest tests/integration
+uv run pytest tests/golden
 ```
 
-AI 主导的工作使用 `ai/` 前缀。不要使用中文、空格或下划线。
+frontend/ 下：
 
-示例：
-
-```text
-docs/github-workflow
-feat/config-validation
-fix/core-event-order
-ai/project-initialization
+```powershell
+pnpm lint
+pnpm typecheck
+pnpm test
 ```
 
-如果用户要求直接翻译现有中文分支名，保留前缀，并将主题翻译为简短的英文短横线命名。
+纯文档或 skill 改动可以不运行代码检查，但需在交付说明或 PR 中明确说明。
 
-## Issue 管理
+小修改只运行与改动对应的窄测试路径；全量 `pytest` 仅在大改动或改动横跨多个模块时运行。
 
-Issue 用于记录待办、缺陷、迁移任务、设计讨论和验收目标。标签不预建，以下为参考命名，用到哪个在 GitHub 上手动创建：
+涉及复杂数值逻辑时，应优先补充 golden case 或最小可复现实例。
 
-```text
-type:feat
-type:fix
-type:docs
-type:test
-type:refactor
-type:chore
+如果工具不可用或检查失败，不得伪造结果，应写明原因和当前状态。
 
-area:core
-area:content
-area:assets
-area:application
-area:infrastructure
-area:analysis
-area:ui
-area:cli
-area:docs
+## Issue 说明
 
-risk:architecture
-risk:contract
-risk:numerical
-risk:migration
+Issue 用于记录需要讨论的功能规划、需要后续完成的待办，以及没有代码可提交的问题。
 
-status:needs-confirmation
-status:blocked
-status:ready
-status:review
-```
+**Issue 的内容不做格式限制**，由创建者按当时情况自由书写。不要求固定的章节、字段或模板结构。
 
-标签使用原则：
-
-- `type:*` 表示任务性质。
-- `area:*` 表示主要影响模块。
-- `risk:*` 表示需要额外审查的风险类别。
-- `status:*` 表示当前处理状态。
-
-涉及以下内容的 Issue，应优先标记 `status:needs-confirmation`：
-
-- 顶层模块职责或依赖方向变化。
-- `SimulationConfig`、资产库 schema 或结果库核心结构变化。
-- 原神角色、武器、圣遗物、反应、敌人等具体机制数值。
-- 新增外部数据源、抓取流程、依赖库或服务。
-- 删除数据文件或重写大范围模块。
+唯一的基础要求是：创建 Issue 时打上标签（状态与优先级，见上）。
 
 ## PR 说明
 
-PR 是本项目最小审查单位。撰写 PR 说明或 GitHub 工作交接时，包含：
+PR 是代码改动的最小审查与合入单位。一个 PR 只处理一个主题。撰写 PR 说明时包含：
 
 - 目标
 - 修改范围
-- 风险类型，尤其是架构、契约、资产 schema、结果 schema、数值行为或迁移风险
+- 关联 Issue（如适用）
+- 风险类型，尤其是架构、契约、资产 schema、结果库 schema、数值行为风险
 - 验证命令和结果
 - 文档同步情况
 
 清楚标注不确定或高风险事项，不要把它们描述成已经定论。
 
-PR 模板已落地为 `.github/PULL_REQUEST_TEMPLATE.md`
+PR 模板已落地为 `.github/PULL_REQUEST_TEMPLATE.md`。
+
+## Issue 与 PR 的评论
+
+评论与直接编辑原文都可能用到，二者做的事不同。Issue 与 PR 共用本判据。
+
+**核心判据：这次改动是否改变了原本在说的东西。**
+
+| 情况 | 做法 | 说明 |
+| --- | --- | --- |
+| 同一件事的取值或表述变了 | **直接编辑原文** | 例如武器攻击力从 `100` 改为 `120`、修正措辞、补充范围说明。原文与评论表达的是同一命题，改掉更干净 |
+| 新增了原本没有的内容 | **新增评论** | 例如原本只实现武器，后来在其中加入一个 Buff。原本没有这件事，写进原文会让后来读者以为一开始就是这么设计的 |
+| 原结论被推翻或方向改变 | **新增评论** | 保留原结论与改变的原因，再按需同步正文 |
+
+理由：GitHub 的编辑历史记录的是"改了哪些字"，评论记录的是"为什么后来加了这件事"。前者是文本 diff，后者是意图。新增内容若直接写进原文，丢失的是"这是后来才加的"这一事实。
+
+补充规则：
+
+- 直接编辑原文时，不需要在正文里保留变更历史；历史由 Git 编辑记录与评论承载。
+- 评论内容不做格式限制。
+- 本判据用于应对讨论完成后的临时变化。正常流程是创建 Issue 或 PR 之前先讨论清楚内容，不把它当作日常操作。
+- 判断不清时，选择新增评论：多留一条过程记录，比丢失变更原因更容易接受。
 
 ## 合并策略
 
-- 推荐使用 Squash merge 合并 PR，让主线历史保持按主题聚合。
+- 使用 Squash merge 合并 PR，让主线历史保持按主题聚合。
 - Squash 后的提交信息仍需符合 `type(scope): 中文摘要`。
-- Draft PR 用于提前暴露方向、CI 结果和审查问题；未满足验收标准前不合并。
-- 重要契约或架构 PR 合并前，应至少完成一次人工确认。
+- Draft PR 用于提前暴露方向、CI 结果和待确认问题；未满足验收标准前不合并。
+- 合并由维护者决定。维护者按 CI 结果判断，不要求逐行审查。
 
-## 版本与发布
+## 版本
 
-- git tag 是项目唯一版本号；代码内不维护包版本常量（`pyproject.toml` 的 version 仅为打包样板，frontend 为私有应用不发布）。
-- tag 与里程碑挂钩：M1 完成 → `v0.1.0`，M2 → `v0.2.0`，依此类推；只在 main 上、CI 通过后打 tag。
-- Release notes 手动撰写，从该版本区间的 PR 列表与提交归纳；不引入自动生成工具。
-- 旧项目历史保留在本地 `backup-old` 分支，不推送远程。
+- `git tag` 是项目唯一版本号；代码内不维护包版本常量（`pyproject.toml` 的 `version` 仅为打包样板，frontend 为私有应用不发布）。
+- 只在 `main` 上、CI 通过后打 tag。
+- Release notes 手动撰写，从该版本区间的 PR 列表与提交归纳，不引入自动生成工具。
 
 ## 检查要求
 
-代码 PR 至少按改动范围运行相关检查（命令见「提交前检查」）；CI 在 PR 与 main push 时运行全量检查兜底：
+CI 在 PR 与 `main` push 时运行全量检查兜底（定义在 `.github/workflows/ci.yml`）：
 
-- backend job：`uv sync --frozen` 后运行 ruff check、pyright、pytest 全量。
-- frontend job：`pnpm install --frozen-lockfile` 后运行 lint、typecheck、test 全量。
+- backend：`uv sync --frozen` 后运行 ruff check、pyright、pytest 全量。
+- frontend：`pnpm install --frozen-lockfile` 后运行 lint、typecheck、test 全量。
 
-本地求快（窄路径），CI 求全（全量）；CI 定义在 `.github/workflows/ci.yml`。
-
-文档或 skill-only 改动可不运行代码检查，但应在最终回复或 PR 中说明。
-
-如果工具不可用或检查失败，不得伪造结果，应写明原因和当前状态。
-
-涉及复杂数值逻辑时，应优先补充 golden case 或最小可复现实例。
-
-## 阶段管理
-
-使用 GitHub Milestones 管理阶段目标（尚未建立，待实际启用 Issue 管理任务时再建）：
-
-```text
-M0 项目骨架与规范
-M1 资产库最小闭环
-M2 SimulationConfig 与组装
-M3 core 仿真最小闭环
-M4 结果库与分析
-M5 CLI / UI MVP
-```
-
-每个 Milestone 应包含：
-
-- 目标范围
-- 必要文档
-- 主要 Issue 或 PR
-- 阶段验收标准
+本地求快（窄路径），CI 求全（全量）。
 
 ## AI 协作补充
 
-- AI 主导的工作优先使用 `ai/` 分支。
-- AI 协作规范、skill、agent 配置等 AI 协作资产统一使用 `ai` 类型。
+- AI 主导的工作使用 `ai/` 分支，并在单独分支中开发，不直接修改 `main`。
+- AI 协作规范、skill、agent 配置等 AI 协作资产统一使用 `ai` 类型提交。
 - AI 生成或修改的代码仍需遵守模块边界、契约和测试要求。
-- AI 不应仅凭记忆实现游戏机制数值。
-- 涉及高风险内容时，AI 应在 Issue 或 PR 中标注不确定性，并请求人工确认。
+- AI 不应仅凭记忆实现游戏机制数值；缺少可信来源时不得补齐，应作为阻塞项提出。
+- AI 创建 Issue 前必须获得维护者同意。
+- 涉及高风险内容时，AI 应在 Issue 或 PR 中标注不确定性，并请求维护者确认。
 - AI 完成任务时应说明修改文件、行为变化、文档同步、检查结果和未解决风险。

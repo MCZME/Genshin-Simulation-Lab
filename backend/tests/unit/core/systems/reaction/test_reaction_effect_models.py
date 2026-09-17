@@ -30,7 +30,7 @@ def test_generated_damage_effect_supports_single_target_physical_transformative_
         effect_group_ref="group:shattered",
         effect_order=0,
         parent_occurrence_ref="occurrence:shattered",
-        main_attack_tag="reaction.shattered",
+        main_attack_tag="碎冰伤害",
         damage_profile_key="damage_profile.reaction.shattered",
         damage_element=Element.PHYSICAL,
         gate_definition_key="reaction_gate.shattered.damage",

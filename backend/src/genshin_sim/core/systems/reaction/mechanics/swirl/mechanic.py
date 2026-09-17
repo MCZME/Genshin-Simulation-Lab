@@ -49,6 +49,30 @@ HYDRO_SWIRL_GATE_DEFINITION_KEY = "reaction_gate.swirl.hydro.damage"
 ELECTRO_SWIRL_GATE_DEFINITION_KEY = "reaction_gate.swirl.electro.damage"
 CRYO_SWIRL_GATE_DEFINITION_KEY = "reaction_gate.swirl.cryo.damage"
 
+# 反应键承担反应身份；伤害标签按输出元素拆分，只作为 DamageProfile 的主攻击标签。
+SWIRL_PYRO_DAMAGE_TAG = "扩散火伤"
+SWIRL_HYDRO_DAMAGE_TAG = "扩散水伤"
+SWIRL_ELECTRO_DAMAGE_TAG = "扩散雷伤"
+SWIRL_CRYO_DAMAGE_TAG = "扩散冰伤"
+
+_SWIRL_DAMAGE_TAG_BY_ELEMENT = {
+    Element.PYRO: SWIRL_PYRO_DAMAGE_TAG,
+    Element.HYDRO: SWIRL_HYDRO_DAMAGE_TAG,
+    Element.ELECTRO: SWIRL_ELECTRO_DAMAGE_TAG,
+    Element.CRYO: SWIRL_CRYO_DAMAGE_TAG,
+}
+SWIRL_DAMAGE_TAGS = frozenset(_SWIRL_DAMAGE_TAG_BY_ELEMENT.values())
+
+
+def swirl_damage_tag_for_element(element: Element) -> str:
+    """返回扩散在指定输出元素下使用的主攻击标签。"""
+
+    tag = _SWIRL_DAMAGE_TAG_BY_ELEMENT.get(element)
+    if tag is None:
+        raise ValueError(f"扩散输出元素没有对应的伤害标签：{element}")
+    return tag
+
+
 PYRO_SWIRL = "incoming_anemo_on_pyro"
 HYDRO_SWIRL = "incoming_anemo_on_hydro"
 ELECTRO_SWIRL = "incoming_anemo_on_electro"
@@ -210,14 +234,18 @@ def _occurrence_for(
         effect_group_ref=group_ref,
         effect_order=0,
         parent_occurrence_ref=occurrence_ref,
-        main_attack_tag=SWIRL_REACTION_KEY,
+        main_attack_tag=swirl_damage_tag_for_element(profile.damage_element),
         damage_profile_key=profile.damage_profile_key,
         damage_element=profile.damage_element,
         gate_definition_key=profile.gate_definition_key,
         damage_kind_key=profile.damage_kind_key,
         captured_scaling_basis=basis,
         transformative_base_multiplier=profile.base_multiplier,
-        audit_tags=(SWIRL_REACTION_KEY, candidate.output_element.value, "center"),
+        audit_tags=(
+            swirl_damage_tag_for_element(profile.damage_element),
+            candidate.output_element.value,
+            "center",
+        ),
     )
     group = ReactionEffectGroup(
         effect_group_ref=group_ref,
@@ -555,13 +583,21 @@ def swirl_aura_application_profile() -> AuraApplicationProfile:
     )
 
 
-def swirl_damage_profile() -> DamageProfile:
-    """普通扩散使用的生产剧变 Damage Profile。"""
+def swirl_damage_profiles() -> tuple[DamageProfile, ...]:
+    """普通扩散四种输出元素各自的主攻击标签到生产剧变公式的映射。"""
 
-    return DamageProfile(
-        formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
-        main_attack_tags=frozenset({SWIRL_REACTION_KEY}),
-        reaction_capabilities=frozenset({DamageReactionCapability.SECONDARY_AMPLIFYING}),
+    return tuple(
+        DamageProfile(
+            formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
+            main_attack_tags=frozenset({tag}),
+            reaction_capabilities=frozenset({DamageReactionCapability.SECONDARY_AMPLIFYING}),
+        )
+        for tag in (
+            SWIRL_PYRO_DAMAGE_TAG,
+            SWIRL_HYDRO_DAMAGE_TAG,
+            SWIRL_ELECTRO_DAMAGE_TAG,
+            SWIRL_CRYO_DAMAGE_TAG,
+        )
     )
 
 
@@ -608,7 +644,7 @@ class SwirlGeneratedImpactDamageInputAdapter:
         component = impact.damage_component
         if component is None:
             raise ValueError("水扩散 emission 没有 Damage 组件")
-        if component.main_attack_tag != SWIRL_REACTION_KEY:
+        if component.main_attack_tag not in SWIRL_DAMAGE_TAGS:
             raise ValueError("扩散 Damage 组件必须使用普通扩散主攻击标签")
         if component.damage_profile_key != SWIRL_DAMAGE_PROFILE_KEY:
             raise ValueError("扩散 Damage 组件必须使用普通扩散 Damage Profile")
@@ -701,7 +737,7 @@ def _range_damage_component(
     if candidate.output_element is Element.HYDRO:
         return None
     return ReactionGeneratedImpactDamageComponent(
-        main_attack_tag=SWIRL_REACTION_KEY,
+        main_attack_tag=swirl_damage_tag_for_element(profile.damage_element),
         damage_profile_key=profile.damage_profile_key,
         damage_element=profile.damage_element,
         gate_definition_key=profile.gate_definition_key,

@@ -42,7 +42,8 @@ from genshin_sim.core.systems.reaction.mechanics.swirl import (
     SwirlGeneratedImpactDamageInputAdapter,
     SwirlSelectionError,
     swirl_aura_application_profile,
-    swirl_damage_profile,
+    swirl_damage_profiles,
+    swirl_damage_tag_for_element,
     swirl_definition,
     swirl_gate_definitions,
 )
@@ -191,17 +192,33 @@ def test_default_bootstrap_registers_swirl():
     assert SWIRL_REACTION_KEY in {definition.reaction_key for definition in definitions}
 
 
-def test_swirl_test_assembly_declares_regular_aura_profile_damage_profile_and_gates():
+def test_swirl_test_assembly_declares_regular_aura_profile_damage_profiles_and_gates():
     aura_profile = swirl_aura_application_profile()
-    damage_profile = swirl_damage_profile()
+    damage_profiles = swirl_damage_profiles()
     gates = swirl_gate_definitions()
 
     assert aura_profile.profile_key == "aura_application_profile.reaction.swirl"
-    assert damage_profile.formula_key == FORMULA_KEY_TRANSFORMATIVE_REACTION
-    assert damage_profile.main_attack_tags == frozenset({SWIRL_REACTION_KEY})
-    assert damage_profile.reaction_capabilities == frozenset(
-        {DamageReactionCapability.SECONDARY_AMPLIFYING}
-    )
+    # 主攻击标签按输出元素拆四个，各自独立映射到剧变公式。
+    assert {
+        element: swirl_damage_tag_for_element(element)
+        for element in (Element.PYRO, Element.HYDRO, Element.ELECTRO, Element.CRYO)
+    } == {
+        Element.PYRO: "扩散火伤",
+        Element.HYDRO: "扩散水伤",
+        Element.ELECTRO: "扩散雷伤",
+        Element.CRYO: "扩散冰伤",
+    }
+    assert {tag for profile in damage_profiles for tag in profile.main_attack_tags} == {
+        "扩散火伤",
+        "扩散水伤",
+        "扩散雷伤",
+        "扩散冰伤",
+    }
+    for profile in damage_profiles:
+        assert profile.formula_key == FORMULA_KEY_TRANSFORMATIVE_REACTION
+        assert profile.reaction_capabilities == frozenset(
+            {DamageReactionCapability.SECONDARY_AMPLIFYING}
+        )
     assert [gate.damage_kind_key for gate in gates] == [
         "reaction_damage.swirl.pyro",
         "reaction_damage.swirl.hydro",
@@ -209,6 +226,13 @@ def test_swirl_test_assembly_declares_regular_aura_profile_damage_profile_and_ga
         "reaction_damage.swirl.cryo",
     ]
     assert {(gate.window_frames, gate.max_damage_instances) for gate in gates} == {(30, 2)}
+
+
+def test_swirl_damage_tag_rejects_non_output_element():
+    """扩散输出元素只有火/水/雷/冰，其他元素必须报错而不是拿到兜底标签。"""
+
+    with pytest.raises(ValueError, match="扩散输出元素没有对应的伤害标签"):
+        swirl_damage_tag_for_element(Element.ANEMO)
 
 
 def test_swirl_range_damage_adapter_uses_the_captured_source_and_fixed_multiplier():

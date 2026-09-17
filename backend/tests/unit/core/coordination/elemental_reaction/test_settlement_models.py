@@ -418,7 +418,7 @@ def _impact(
         ),
         damage_component=(
             ReactionGeneratedImpactDamageComponent(
-                main_attack_tag="reaction.swirl",
+                main_attack_tag="扩散火伤",
                 damage_profile_key="damage_profile.reaction.swirl",
                 damage_element=Element.PYRO,
                 gate_definition_key="reaction_gate.swirl.damage",

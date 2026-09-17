@@ -42,10 +42,10 @@ from genshin_sim.core.systems.damage.stellar import (
 
 _CHARACTER_TARGET_DAMAGE_TAGS = frozenset(
     {
-        "reaction.bloom_explosion",
-        "reaction.hyperbloom",
-        "reaction.burgeon",
-        "reaction.lunar_bloom",
+        "原绽放伤害",
+        "超绽放伤害",
+        "烈绽放伤害",
+        "月绽放",
     }
 )
 

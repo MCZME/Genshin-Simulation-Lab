@@ -67,10 +67,11 @@ from genshin_sim.core.systems.damage.keys import (
 from genshin_sim.core.systems.damage.models import DamageQuery
 from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
-    STELLAR_CONDUCT_REACTION_KEY,
+    STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
+    STELLAR_CONDUCT_ELECTRO_DAMAGE_TAG,
 )
 from genshin_sim.core.systems.reaction.mechanics.superconduct.mechanic import (
-    SUPERCONDUCT_REACTION_KEY,
+    SUPERCONDUCT_DAMAGE_TAG,
 )
 
 DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY = "artifact.disenchantment_in_deep_shadow"
@@ -173,7 +174,7 @@ def _create_four_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
                 scope="superconduct",
                 stage=DamageModifierStage.TRANSFORMATIVE_REACTION_BONUS_ADD,
                 formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
-                main_attack_tag=SUPERCONDUCT_REACTION_KEY,
+                main_attack_tags=frozenset({SUPERCONDUCT_DAMAGE_TAG}),
                 bonus=superconduct_bonus,
                 display_name="影中沉凝的幻灭 4件套·超导增伤",
             ),
@@ -183,7 +184,9 @@ def _create_four_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
                 scope="stellar_conduct",
                 stage=DamageModifierStage.STELLAR_REACTION_BONUS_ADD,
                 formula_key=FORMULA_KEY_STELLAR_REACTION,
-                main_attack_tag=STELLAR_CONDUCT_REACTION_KEY,
+                main_attack_tags=frozenset(
+                    {STELLAR_CONDUCT_CRYO_DAMAGE_TAG, STELLAR_CONDUCT_ELECTRO_DAMAGE_TAG}
+                ),
                 bonus=stellar_conduct_bonus,
                 display_name="影中沉凝的幻灭 4件套·星超导增伤",
             ),
@@ -200,8 +203,9 @@ def _create_four_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
 class DisenchantmentInDeepShadowReactionBonusProvider:
     """4 件套 C1 / C2：装备者造成的指定反应伤害提升。
 
-    只对「装备者本人作为来源」且 ``main_attack_tag`` 命中指定反应的查询贡献
-    对应公式的专属阶段，因此天然区分超导与星超导，也不会误命中星扩散。
+    只对「装备者本人作为来源」且 ``main_attack_tag`` 命中指定反应标签集合的
+    查询贡献对应公式的专属阶段，因此天然区分超导与星超导、也不会误命中星扩散。
+    星超导直伤按伤害元素拆冰/雷两个标签，故用集合承接。
     """
 
     def __init__(
@@ -212,14 +216,14 @@ class DisenchantmentInDeepShadowReactionBonusProvider:
         scope: str,
         stage: DamageModifierStage,
         formula_key: str,
-        main_attack_tag: str,
+        main_attack_tags: frozenset[str],
         bonus: float,
         display_name: str,
     ) -> None:
         self._owner_ref = AttributeSubjectRef.character(owner_ref)
         self._stage = stage
         self._formula_key = formula_key
-        self._main_attack_tag = main_attack_tag
+        self._main_attack_tags = frozenset(main_attack_tags)
         self._bonus = bonus
         self._provider_key = f"{DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY}.4p.{scope}.slot:{slot}"
         self._source_ref = _source_ref(f"4p:{scope}", slot)
@@ -241,7 +245,7 @@ class DisenchantmentInDeepShadowReactionBonusProvider:
             return ()
         if request.formula_key != self._formula_key:
             return ()
-        if request.main_attack_tag != self._main_attack_tag:
+        if request.main_attack_tag not in self._main_attack_tags:
             return ()
         return (
             DamageModifierTerm(

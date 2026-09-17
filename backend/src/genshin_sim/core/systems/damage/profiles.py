@@ -4,11 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 
-from genshin_sim.core.systems.damage.errors import UnsupportedDamageFormulaError
-from genshin_sim.core.systems.damage.keys import (
-    DEFAULT_FORMULA_KEY,
-    REACTION_TAG_PREFIX,
-)
+from genshin_sim.core.systems.damage.keys import DEFAULT_FORMULA_KEY
 from genshin_sim.core.systems.damage.models import DamageProfile
 
 _DEFAULT_GENERAL_PROFILE = DamageProfile(DEFAULT_FORMULA_KEY, frozenset())
@@ -17,9 +13,9 @@ _DEFAULT_GENERAL_PROFILE = DamageProfile(DEFAULT_FORMULA_KEY, frozenset())
 class DamageProfileRegistry:
     """按主攻击标签解析 DamageProfile 映射。
 
-    显式注册只覆盖非通用公式（剧变、月曜等）；未注册的非反应命名空间标签
-    默认使用通用公式，``reaction.`` 前缀标签未注册时明确报错，防止反应
-    标签笔误静默降级为通用伤害。
+    显式注册覆盖非通用公式（剧变、月曜、星烁等）；**所有**未注册标签统一
+    默认使用通用公式，不按标签命名空间区分。反应伤害标签同样经此注册表
+    解析，其正确性由注册表内容与测试保证，不再依赖标签前缀判定。
     """
 
     def __init__(self, profiles: Iterable[DamageProfile] = ()) -> None:
@@ -38,16 +34,9 @@ class DamageProfileRegistry:
             self._profiles_by_tag[tag] = profile
 
     def resolve_for_main_attack_tag(self, main_attack_tag: str) -> DamageProfile:
-        """返回标签对应的映射；未注册标签按命名空间决定默认或报错。"""
+        """返回标签对应的映射；未注册标签一律默认通用公式。"""
 
-        try:
-            return self._profiles_by_tag[main_attack_tag]
-        except KeyError as exc:
-            if main_attack_tag.startswith(REACTION_TAG_PREFIX):
-                raise UnsupportedDamageFormulaError(
-                    f"反应标签未映射 DamageProfile：{main_attack_tag}"
-                ) from exc
-            return _DEFAULT_GENERAL_PROFILE
+        return self._profiles_by_tag.get(main_attack_tag, _DEFAULT_GENERAL_PROFILE)
 
     @property
     def profiles(self) -> tuple[DamageProfile, ...]:

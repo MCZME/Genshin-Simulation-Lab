@@ -5,6 +5,7 @@ from genshin_sim.core.systems.reaction.mechanics.lunar_crystallize.keys import (
     LUNAR_CRYSTALLIZE_CAPABILITY_KEY,
     LUNAR_CRYSTALLIZE_DAMAGE_KIND_KEY,
     LUNAR_CRYSTALLIZE_DAMAGE_PROFILE_KEY,
+    LUNAR_CRYSTALLIZE_DAMAGE_TAG,
     LUNAR_CRYSTALLIZE_REACTION_KEY,
 )
 from genshin_sim.core.systems.reaction.mechanics.lunar_crystallize.mechanic import (
@@ -17,6 +18,7 @@ __all__ = (
     "LUNAR_CRYSTALLIZE_CAPABILITY_KEY",
     "LUNAR_CRYSTALLIZE_DAMAGE_KIND_KEY",
     "LUNAR_CRYSTALLIZE_DAMAGE_PROFILE_KEY",
+    "LUNAR_CRYSTALLIZE_DAMAGE_TAG",
     "LUNAR_CRYSTALLIZE_REACTION_KEY",
     "lunar_crystallize_definition",
     "lunar_crystallize_damage_profiles",

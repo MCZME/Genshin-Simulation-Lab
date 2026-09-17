@@ -22,6 +22,8 @@ from genshin_sim.core.systems.reaction.models import (
 )
 
 SHATTERED_REACTION_KEY = "reaction.shattered"
+# 反应键承担反应身份；伤害标签只作为 DamageProfile 的主攻击标签。
+SHATTERED_DAMAGE_TAG = "碎冰伤害"
 SHATTERED_HANDLER_KEY = "reaction_handler.shattered"
 SHATTERED_PROFILE_KEY = "reaction_profile.shattered"
 SHATTERED_DAMAGE_PROFILE_KEY = "damage_profile.reaction.shattered"
@@ -70,7 +72,7 @@ class ShatteredRule:
             effect_group_ref=group_ref,
             effect_order=0,
             parent_occurrence_ref=occurrence_ref,
-            main_attack_tag=SHATTERED_REACTION_KEY,
+            main_attack_tag=SHATTERED_DAMAGE_TAG,
             damage_profile_key=SHATTERED_DAMAGE_PROFILE_KEY,
             damage_element=Element.PHYSICAL,
             gate_definition_key=SHATTERED_GATE_DEFINITION_KEY,
@@ -139,5 +141,5 @@ def shattered_damage_profile() -> DamageProfile:
 
     return DamageProfile(
         formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
-        main_attack_tags=frozenset({SHATTERED_REACTION_KEY}),
+        main_attack_tags=frozenset({SHATTERED_DAMAGE_TAG}),
     )

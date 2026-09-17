@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 LUNAR_CRYSTALLIZE_REACTION_KEY = "reaction.lunar_crystallize"
+# 反应键承担反应身份；伤害标签只作为 DamageProfile 的主攻击标签。
+LUNAR_CRYSTALLIZE_DAMAGE_TAG = "月结晶"
 LUNAR_CRYSTALLIZE_HANDLER_KEY = "reaction_handler.lunar_crystallize"
 
 LUNAR_INCOMING_GEO_ON_HYDRO = "lunar_incoming_geo_on_hydro"

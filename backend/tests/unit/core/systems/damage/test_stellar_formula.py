@@ -66,7 +66,7 @@ def _make_damage_request(**overrides: Any) -> DamageRequest:
         request_id="request:stellar",
         frame=0,
         formula_key=FORMULA_KEY_STELLAR_REACTION,
-        main_attack_tag="reaction.stellar_conduct",
+        main_attack_tag="星超导雷",
         impact_key="impact:stellar",
         source_ref=SOURCE,
         target_ref=TARGET,
@@ -452,9 +452,9 @@ def test_default_formula_registry_contains_stellar_formula() -> None:
 
 def test_stellar_profile_maps_main_attack_tag_to_stellar_formula() -> None:
     registry = DamageProfileRegistry(
-        (DamageProfile(FORMULA_KEY_STELLAR_REACTION, frozenset({"reaction.stellar_conduct"})),)
+        (DamageProfile(FORMULA_KEY_STELLAR_REACTION, frozenset({"星超导雷"})),)
     )
-    profile = registry.resolve_for_main_attack_tag("reaction.stellar_conduct")
+    profile = registry.resolve_for_main_attack_tag("星超导雷")
     assert profile.formula_key == FORMULA_KEY_STELLAR_REACTION
 
 
@@ -485,7 +485,7 @@ def test_damage_handler_resolves_stellar_reactions_mapping() -> None:
         modifier_index=ModifierProviderIndex((), registry=registry),
     )
     profile_registry = DamageProfileRegistry(
-        (DamageProfile(FORMULA_KEY_STELLAR_REACTION, frozenset({"reaction.stellar_conduct"})),)
+        (DamageProfile(FORMULA_KEY_STELLAR_REACTION, frozenset({"星超导雷"})),)
     )
     handler = DamageRequestHandler(
         DamageResolver(
@@ -527,7 +527,7 @@ def test_damage_handler_resolves_stellar_reactions_mapping() -> None:
         target_refs=("star",),
         damage_spec=DamageImpactSpec(
             impact_ref="impact:stellar-direct:1",
-            main_attack_tag="reaction.stellar_conduct",
+            main_attack_tag="星超导雷",
             element=Element.ELECTRO,
         ),
     )

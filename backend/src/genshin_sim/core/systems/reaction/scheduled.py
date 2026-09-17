@@ -9,23 +9,23 @@ from genshin_sim.core.elements import Element
 from genshin_sim.core.systems.reaction.mechanics.burning import (
     BURNING_DAMAGE_BASE_MULTIPLIER,
     BURNING_DAMAGE_KIND_KEY,
+    BURNING_DAMAGE_TAG,
     BURNING_GATE_DEFINITION_KEY,
     BURNING_PYRO_APPLICATION_AMOUNT,
     BURNING_PYRO_AURA_APPLICATION_PROFILE_KEY,
-    BURNING_REACTION_KEY,
 )
 from genshin_sim.core.systems.reaction.mechanics.electro_charged import (
     ELECTRO_CHARGED_BASE_MULTIPLIER,
     ELECTRO_CHARGED_DAMAGE_KIND_KEY,
+    ELECTRO_CHARGED_DAMAGE_TAG,
     ELECTRO_CHARGED_GATE_DEFINITION_KEY,
-    ELECTRO_CHARGED_REACTION_KEY,
 )
 from genshin_sim.core.systems.reaction.mechanics.lunar_electro_charged.keys import (
     LUNAR_ELECTRO_CHARGED_ATTACK_PROFILE_KEY,
     LUNAR_ELECTRO_CHARGED_DAMAGE_KIND_KEY,
     LUNAR_ELECTRO_CHARGED_DAMAGE_PROFILE_KEY,
+    LUNAR_ELECTRO_CHARGED_DAMAGE_TAG,
     LUNAR_ELECTRO_CHARGED_GATE_DEFINITION_KEY,
-    LUNAR_ELECTRO_CHARGED_REACTION_KEY,
     LUNAR_ELECTRO_CHARGED_REACTION_MULTIPLIER,
     LUNAR_STORM_CLOUD_ATTACK_RADIUS,
 )
@@ -279,14 +279,14 @@ def _electro_charged_tick_effect_group(
         effect_group_ref=group_ref,
         effect_order=0,
         parent_occurrence_ref=None,
-        main_attack_tag=ELECTRO_CHARGED_REACTION_KEY,
+        main_attack_tag=ELECTRO_CHARGED_DAMAGE_TAG,
         damage_profile_key=state.captured_scaling_basis.damage_profile_key,
         damage_element=Element.ELECTRO,
         gate_definition_key=ELECTRO_CHARGED_GATE_DEFINITION_KEY,
         damage_kind_key=ELECTRO_CHARGED_DAMAGE_KIND_KEY,
         captured_scaling_basis=state.captured_scaling_basis,
         transformative_base_multiplier=ELECTRO_CHARGED_BASE_MULTIPLIER,
-        audit_tags=(ELECTRO_CHARGED_REACTION_KEY, "scheduled_state_tick"),
+        audit_tags=(ELECTRO_CHARGED_DAMAGE_TAG, "scheduled_state_tick"),
         cause=root.cause,
     )
     return ReactionEffectGroup(
@@ -316,14 +316,14 @@ def _burning_tick_effect_group(
         effect_group_ref=group_ref,
         effect_order=0,
         parent_occurrence_ref=None,
-        main_attack_tag=BURNING_REACTION_KEY,
+        main_attack_tag=BURNING_DAMAGE_TAG,
         damage_profile_key=state.captured_scaling_basis.damage_profile_key,
         damage_element=Element.PYRO,
         gate_definition_key=BURNING_GATE_DEFINITION_KEY,
         damage_kind_key=BURNING_DAMAGE_KIND_KEY,
         captured_scaling_basis=state.captured_scaling_basis,
         transformative_base_multiplier=BURNING_DAMAGE_BASE_MULTIPLIER,
-        audit_tags=(BURNING_REACTION_KEY, "scheduled_state_tick"),
+        audit_tags=(BURNING_DAMAGE_TAG, "scheduled_state_tick"),
         cause=cause,
     )
     return ReactionEffectGroup(
@@ -392,7 +392,7 @@ def _lunar_storm_cloud_attack_effect_group(
         effect_ref=f"{group_ref}:effect:0",
         effect_group_ref=group_ref,
         effect_order=0,
-        main_attack_tag=LUNAR_ELECTRO_CHARGED_REACTION_KEY,
+        main_attack_tag=LUNAR_ELECTRO_CHARGED_DAMAGE_TAG,
         damage_profile_key=LUNAR_ELECTRO_CHARGED_DAMAGE_PROFILE_KEY,
         damage_element=Element.ELECTRO,
         damage_kind_key=LUNAR_ELECTRO_CHARGED_DAMAGE_KIND_KEY,
@@ -400,7 +400,7 @@ def _lunar_storm_cloud_attack_effect_group(
         reaction_profile_key=LUNAR_ELECTRO_CHARGED_ATTACK_PROFILE_KEY,
         reaction_multiplier=LUNAR_ELECTRO_CHARGED_REACTION_MULTIPLIER,
         gate_definition_key=LUNAR_ELECTRO_CHARGED_GATE_DEFINITION_KEY,
-        audit_tags=(LUNAR_ELECTRO_CHARGED_REACTION_KEY, "scheduled_state_tick"),
+        audit_tags=(LUNAR_ELECTRO_CHARGED_DAMAGE_TAG, "scheduled_state_tick"),
         cause=root.cause,
     )
     return ReactionEffectGroup(

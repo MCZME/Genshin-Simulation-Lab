@@ -23,6 +23,8 @@ from genshin_sim.core.systems.reaction.models import (
 )
 
 OVERLOADED_REACTION_KEY = "reaction.overloaded"
+# 反应键承担反应身份；伤害标签只作为 DamageProfile 的主攻击标签。
+OVERLOADED_DAMAGE_TAG = "超载伤害"
 OVERLOADED_HANDLER_KEY = "reaction_handler.overloaded"
 PYRO_ON_ELECTRO = "incoming_pyro_on_electro"
 ELECTRO_ON_PYRO = "incoming_electro_on_pyro"
@@ -77,7 +79,7 @@ class OverloadedRule:
             effect_group_ref=group_ref,
             effect_order=0,
             parent_occurrence_ref=occurrence_ref,
-            main_attack_tag=OVERLOADED_REACTION_KEY,
+            main_attack_tag=OVERLOADED_DAMAGE_TAG,
             damage_profile_key=profile.damage_profile_key,
             damage_element=profile.damage_element,
             gate_definition_key=profile.gate_definition_key,
@@ -172,7 +174,7 @@ def overloaded_damage_profile() -> DamageProfile:
 
     return DamageProfile(
         formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
-        main_attack_tags=frozenset({OVERLOADED_REACTION_KEY}),
+        main_attack_tags=frozenset({OVERLOADED_DAMAGE_TAG}),
     )
 
 

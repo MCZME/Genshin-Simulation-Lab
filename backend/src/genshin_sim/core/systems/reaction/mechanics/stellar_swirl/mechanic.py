@@ -27,7 +27,7 @@ from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
     STELLAR_SWIRL_ICE_BASE_MULTIPLIER_LOW,
     STELLAR_SWIRL_ICE_DAMAGE_KIND_KEY,
     STELLAR_SWIRL_ICE_DAMAGE_PROFILE_KEY,
-    STELLAR_SWIRL_ICE_DAMAGE_TAG_KEY,
+    STELLAR_SWIRL_ICE_DAMAGE_TAG,
     STELLAR_SWIRL_INCOMING_ANEMO_ON_CRYO,
     STELLAR_SWIRL_REACTION_KEY,
     STELLAR_SWIRL_VORTEX_SCOPE,
@@ -36,7 +36,7 @@ from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
     STELLAR_SWIRL_WIND_BASE_MULTIPLIER,
     STELLAR_SWIRL_WIND_DAMAGE_KIND_KEY,
     STELLAR_SWIRL_WIND_DAMAGE_PROFILE_KEY,
-    STELLAR_SWIRL_WIND_DAMAGE_TAG_KEY,
+    STELLAR_SWIRL_WIND_DAMAGE_TAG,
     STELLAR_SWIRL_WIND_GATE_DEFINITION_KEY,
     STELLAR_SWIRL_WIND_GATE_WINDOW_FRAMES,
 )
@@ -151,7 +151,7 @@ class StellarSwirlRule:
             effect_group_ref=group_ref,
             effect_order=0,
             parent_occurrence_ref=occurrence_ref,
-            main_attack_tag=STELLAR_SWIRL_WIND_DAMAGE_TAG_KEY,
+            main_attack_tag=STELLAR_SWIRL_WIND_DAMAGE_TAG,
             damage_profile_key=STELLAR_SWIRL_WIND_DAMAGE_PROFILE_KEY,
             damage_element=Element.ANEMO,
             damage_kind_key=STELLAR_SWIRL_WIND_DAMAGE_KIND_KEY,
@@ -257,7 +257,7 @@ def stellar_swirl_explosion_effect_group(
         effect_group_ref=effect_group_ref,
         effect_order=0,
         parent_occurrence_ref=parent_occurrence_ref,
-        main_attack_tag=STELLAR_SWIRL_ICE_DAMAGE_TAG_KEY,
+        main_attack_tag=STELLAR_SWIRL_ICE_DAMAGE_TAG,
         damage_profile_key=STELLAR_SWIRL_ICE_DAMAGE_PROFILE_KEY,
         damage_element=Element.CRYO,
         damage_kind_key=STELLAR_SWIRL_ICE_DAMAGE_KIND_KEY,
@@ -311,11 +311,11 @@ def stellar_swirl_damage_profiles() -> tuple[DamageProfile, ...]:
     return (
         DamageProfile(
             FORMULA_KEY_STELLAR_REACTION,
-            frozenset({STELLAR_SWIRL_WIND_DAMAGE_TAG_KEY}),
+            frozenset({STELLAR_SWIRL_WIND_DAMAGE_TAG}),
         ),
         DamageProfile(
             FORMULA_KEY_STELLAR_REACTION,
-            frozenset({STELLAR_SWIRL_ICE_DAMAGE_TAG_KEY}),
+            frozenset({STELLAR_SWIRL_ICE_DAMAGE_TAG}),
         ),
     )
 

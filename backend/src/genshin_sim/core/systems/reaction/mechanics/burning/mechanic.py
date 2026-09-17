@@ -27,6 +27,8 @@ from genshin_sim.core.systems.reaction.models import (
 )
 
 BURNING_REACTION_KEY = "reaction.burning"
+# 反应键承担反应身份；伤害标签只作为 DamageProfile 的主攻击标签。
+BURNING_DAMAGE_TAG = "燃烧伤害"
 BURNING_HANDLER_KEY = "reaction_handler.burning"
 PYRO_ON_DENDRO = "incoming_pyro_on_dendro"
 PYRO_ON_QUICKEN = "incoming_pyro_on_quicken"
@@ -145,7 +147,7 @@ class BurningRule:
             effect_group_ref=group_ref,
             effect_order=0,
             parent_occurrence_ref=occurrence_ref,
-            main_attack_tag=BURNING_REACTION_KEY,
+            main_attack_tag=BURNING_DAMAGE_TAG,
             damage_profile_key=profile.damage_profile_key,
             damage_element=Element.PYRO,
             gate_definition_key=profile.gate_definition_key,
@@ -277,7 +279,7 @@ def burning_damage_profile() -> DamageProfile:
 
     return DamageProfile(
         formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
-        main_attack_tags=frozenset({BURNING_REACTION_KEY}),
+        main_attack_tags=frozenset({BURNING_DAMAGE_TAG}),
     )
 
 

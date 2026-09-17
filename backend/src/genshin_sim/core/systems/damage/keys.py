@@ -18,6 +18,3 @@ KNOWN_FORMULA_KEYS = frozenset(
 
 # 未注册主攻击标签的默认公式：原神中直伤统一走通用公式。
 DEFAULT_FORMULA_KEY = FORMULA_KEY_GENERAL
-
-# 反应命名空间：该前缀下的标签必须显式注册映射，未注册时报错而不是静默降级。
-REACTION_TAG_PREFIX = "reaction."

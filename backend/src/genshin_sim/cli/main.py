@@ -477,8 +477,7 @@ def _cmd_assets_build_manifest(args: argparse.Namespace) -> int:
     _print_manifest_baseline_report(summary.diff, max_changes=max(0, int(args.max_changes)))
     if summary.degraded_affixes:
         print(
-            f"降级的武器效果: {len(summary.degraded_affixes)} 条"
-            "（原文模板保留，未写 components）"
+            f"降级的武器效果: {len(summary.degraded_affixes)} 条（原文模板保留，未写 components）"
         )
         for item in summary.degraded_affixes:
             print(f"- [降级] {item}")

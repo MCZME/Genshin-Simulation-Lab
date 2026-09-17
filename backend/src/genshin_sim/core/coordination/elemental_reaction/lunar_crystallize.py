@@ -24,9 +24,9 @@ from genshin_sim.core.systems.reaction.mechanics.lunar_crystallize.keys import (
     LUNAR_CAGE_STATE_KEY,
     LUNAR_CRYSTALLIZE_DAMAGE_KIND_KEY,
     LUNAR_CRYSTALLIZE_DAMAGE_PROFILE_KEY,
+    LUNAR_CRYSTALLIZE_DAMAGE_TAG,
     LUNAR_CRYSTALLIZE_HARMONY_ATTACK_PROFILE_KEY,
     LUNAR_CRYSTALLIZE_HARMONY_TRIGGER_COUNT,
-    LUNAR_CRYSTALLIZE_REACTION_KEY,
     LUNAR_CRYSTALLIZE_REACTION_MULTIPLIER,
 )
 from genshin_sim.core.systems.reaction.models import (
@@ -245,7 +245,7 @@ def _harmony_effect_group(
                 effect_group_ref=group_ref,
                 effect_order=index,
                 parent_occurrence_ref=consuming_occurrence_ref,
-                main_attack_tag=LUNAR_CRYSTALLIZE_REACTION_KEY,
+                main_attack_tag=LUNAR_CRYSTALLIZE_DAMAGE_TAG,
                 damage_profile_key=LUNAR_CRYSTALLIZE_DAMAGE_PROFILE_KEY,
                 damage_element=Element.GEO,
                 damage_kind_key=LUNAR_CRYSTALLIZE_DAMAGE_KIND_KEY,
@@ -257,7 +257,7 @@ def _harmony_effect_group(
                 reaction_bonus=0.0,
                 can_crit=True,
                 audit_tags=(
-                    LUNAR_CRYSTALLIZE_REACTION_KEY,
+                    LUNAR_CRYSTALLIZE_DAMAGE_TAG,
                     "lunar_cage_harmony",
                     cage.instance_ref.value,
                 ),

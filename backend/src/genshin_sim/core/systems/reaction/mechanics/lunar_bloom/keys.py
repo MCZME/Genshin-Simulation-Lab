@@ -1,6 +1,8 @@
 """月绽放反应的稳定 key。"""
 
 LUNAR_BLOOM_REACTION_KEY = "reaction.lunar_bloom"
+# 反应键承担反应身份；伤害标签只作为 DamageProfile 的主攻击标签。
+LUNAR_BLOOM_DAMAGE_TAG = "月绽放"
 LUNAR_BLOOM_HANDLER_KEY = "reaction_handler.lunar_bloom"
 
 LUNAR_HYDRO_ON_DENDRO = "lunar_incoming_hydro_on_dendro"

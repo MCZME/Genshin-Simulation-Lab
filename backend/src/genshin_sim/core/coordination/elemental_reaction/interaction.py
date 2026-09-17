@@ -117,7 +117,6 @@ from genshin_sim.core.systems.damage import (
     AmplifyingReactionInput,
     CatalyzeReactionInput,
 )
-from genshin_sim.core.systems.damage.errors import UnsupportedDamageFormulaError
 from genshin_sim.core.systems.damage.keys import (
     FORMULA_KEY_GENERAL,
 )
@@ -1032,11 +1031,8 @@ def _catalyze_impact_qualification(
     profile_registry = getattr(damage_handler, "profile_registry", None)
     if profile_registry is None:
         return None
-    try:
-        formula_key = profile_registry.resolve_for_main_attack_tag(spec.main_attack_tag).formula_key
-    except UnsupportedDamageFormulaError:
-        # Damage 预检会在当前 batch 报告缺失反应标签映射。
-        return None
+    # 未注册标签统一回落通用公式，因此不再有「缺失映射」需要单独放行。
+    formula_key = profile_registry.resolve_for_main_attack_tag(spec.main_attack_tag).formula_key
     if formula_key is not FORMULA_KEY_GENERAL:
         # 只有走通用公式的关联伤害具备激化资格；剧变/月曜伤害不进入激化。
         return None

@@ -144,7 +144,7 @@ class WorkflowService:
             workflow_id = self._new_id()
             try:
                 stored = self.store.create(workflow_id, definition)
-            except WorkflowAlreadyExistsError, FileExistsError:
+            except (WorkflowAlreadyExistsError, FileExistsError):
                 continue
             return self._to_detail(stored)
         raise WorkflowStoreError("workflow_id_conflict", "无法生成唯一的工作流 ID")

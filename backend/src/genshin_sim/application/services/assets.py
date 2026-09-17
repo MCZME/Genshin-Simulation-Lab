@@ -117,7 +117,7 @@ class AssetsService:
         for key in dict.fromkeys(keys):
             try:
                 asset = self.inspect_asset(key)
-            except KeyError, LookupError, ValueError:
+            except (KeyError, LookupError, ValueError):
                 continue
             items.append(self._to_list_item(asset, _asset_list_kind(key)))
         return tuple(items)

@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+from genshin_sim.content.artifacts.disenchantment_in_deep_shadow import (
+    DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY,
+    create_disenchantment_in_deep_shadow_content_unit,
+)
 from genshin_sim.content.artifacts.maiden_beloved import (
     MAIDEN_BELOVED_HANDLER_KEY,
     create_maiden_beloved_content_unit,
@@ -108,6 +112,10 @@ def create_default_content_unit_registry(
     registry.register_artifact_factory(
         MAIDEN_BELOVED_HANDLER_KEY,
         create_maiden_beloved_content_unit,
+    )
+    registry.register_artifact_factory(
+        DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY,
+        create_disenchantment_in_deep_shadow_content_unit,
     )
     registry.register_effect_factory(
         BARBARA_CONSTELLATION_C1_HANDLER_KEY,

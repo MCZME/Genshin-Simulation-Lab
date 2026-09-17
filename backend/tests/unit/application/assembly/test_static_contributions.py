@@ -8,6 +8,7 @@ from typing import Any, cast
 import pytest
 
 from genshin_sim.application.assembly.errors import InvalidRuntimePayloadError
+from genshin_sim.application.assembly.ports import TargetBuffPresenceReadAdapter
 from genshin_sim.application.assembly.stages.content_compiler import ContentCompiler
 from genshin_sim.application.assembly.stages.runtime_assembler import RuntimeAssembler
 from genshin_sim.content.definitions.content_unit import (
@@ -20,6 +21,7 @@ from genshin_sim.content.definitions.effects import (
     UnlockKind,
     UnlockSpec,
 )
+from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.systems.cooldown import (
     CooldownDurationOperation,
     CooldownDurationStage,
@@ -246,4 +248,107 @@ def test_assembler_binding_reports_provider_failure():
             cast(Any, _FakeContentBundle((unit,))),
             team_state=cast(Any, object()),
             created_object_runtime=cast(Any, object()),
+        )
+
+
+class _FakeBuffReader:
+    """最小 Buff 只读查询替身，记录收到的查询参数。"""
+
+    def __init__(self) -> None:
+        self.calls: list[tuple[int, Any, str]] = []
+
+    def active(
+        self,
+        frame: int,
+        target_ref: Any = None,
+        definition_key: str | None = None,
+        mechanic_key: str | None = None,
+    ) -> tuple[object, ...]:
+        del mechanic_key
+        self.calls.append((frame, target_ref, cast(str, definition_key)))
+        return ()
+
+
+class _FakeDamageProvider:
+    def __init__(self) -> None:
+        self.bound_port: object | None = None
+
+    def bind_runtime_ports(self, *, target_status_port: object) -> None:
+        self.bound_port = target_status_port
+
+
+def test_assembler_binds_runtime_damage_provider_ports():
+    """内容伤害 provider 在装配期拿到目标状态只读端口，且该端口确实转发到 Buff 查询。"""
+
+    provider = _FakeDamageProvider()
+    unit = ContentUnit(
+        owner_type=ContentUnitOwnerType.ARTIFACT,
+        owner_key="artifact_set:test",
+        handler_key="artifact.test",
+        version="dev-test",
+        slot=1,
+        damage_modifier_providers=(cast(Any, provider),),
+    )
+    reader = _FakeBuffReader()
+
+    RuntimeAssembler._bind_content_damage_provider_ports(
+        cast(Any, _FakeContentBundle((unit,))),
+        buff_reader=cast(Any, reader),
+    )
+
+    assert isinstance(provider.bound_port, TargetBuffPresenceReadAdapter)
+    target_ref = AttributeSubjectRef.target("target:star")
+    assert (
+        cast(Any, provider.bound_port).has_buff(
+            target_ref=target_ref,
+            definition_key="buff.reaction.superconduct.physical_resistance_reduction",
+            frame=7,
+        )
+        is False
+    )
+    assert reader.calls == [
+        (7, target_ref, "buff.reaction.superconduct.physical_resistance_reduction")
+    ]
+
+
+def test_assembler_damage_binding_skips_providers_without_binder():
+    """未声明 ``bind_runtime_ports`` 的伤害 provider 被跳过，不影响装配。"""
+
+    class _PlainProvider:
+        pass
+
+    unit = ContentUnit(
+        owner_type=ContentUnitOwnerType.ARTIFACT,
+        owner_key="artifact_set:test",
+        handler_key="artifact.test",
+        version="dev-test",
+        slot=1,
+        damage_modifier_providers=(cast(Any, _PlainProvider()),),
+    )
+
+    RuntimeAssembler._bind_content_damage_provider_ports(
+        cast(Any, _FakeContentBundle((unit,))),
+        buff_reader=cast(Any, _FakeBuffReader()),
+    )
+
+
+def test_assembler_damage_binding_reports_provider_failure():
+    class _BrokenProvider:
+        def bind_runtime_ports(self, **kwargs: object) -> None:
+            del kwargs
+            raise RuntimeError("boom")
+
+    unit = ContentUnit(
+        owner_type=ContentUnitOwnerType.ARTIFACT,
+        owner_key="artifact_set:test",
+        handler_key="artifact.test",
+        version="dev-test",
+        slot=1,
+        damage_modifier_providers=(cast(Any, _BrokenProvider()),),
+    )
+
+    with pytest.raises(InvalidRuntimePayloadError, match="绑定失败"):
+        RuntimeAssembler._bind_content_damage_provider_ports(
+            cast(Any, _FakeContentBundle((unit,))),
+            buff_reader=cast(Any, _FakeBuffReader()),
         )

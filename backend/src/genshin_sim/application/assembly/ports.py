@@ -5,6 +5,7 @@ from __future__ import annotations
 from genshin_sim.core.attributes import AttributeSubjectKind, AttributeSubjectRef
 from genshin_sim.core.elements import AuraKind, ElementalSubjectKind, ElementalSubjectRef
 from genshin_sim.core.simulation.team import TeamRuntimeState
+from genshin_sim.core.systems.buff.protocols import BuffReader
 from genshin_sim.core.systems.reaction.runtime import ReactionRuntime
 from genshin_sim.core.systems.shield.enums import ShieldProtectionKind
 from genshin_sim.core.systems.shield.runtime import ShieldRuntime
@@ -77,6 +78,31 @@ class LunarCagePresenceReadAdapter:
 
     def has_active_lunar_cage(self) -> bool:
         return bool(self._reaction_runtime.active_lunar_cages())
+
+
+class TargetBuffPresenceReadAdapter:
+    """通过 Buff 只读查询目标在指定帧是否持有某个已提交的 Buff 实例。
+
+    供内容侧条件伤害修饰使用：只回答存在性，不暴露 Buff 实例细节。
+    """
+
+    def __init__(self, buff_reader: BuffReader) -> None:
+        self._buff_reader = buff_reader
+
+    def has_buff(
+        self,
+        *,
+        target_ref: AttributeSubjectRef,
+        definition_key: str,
+        frame: int,
+    ) -> bool:
+        return bool(
+            self._buff_reader.active(
+                frame,
+                target_ref=target_ref,
+                definition_key=definition_key,
+            )
+        )
 
 
 class TeamScopeProjectionAdapter:

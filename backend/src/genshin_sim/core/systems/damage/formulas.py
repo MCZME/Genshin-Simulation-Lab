@@ -98,7 +98,16 @@ GENERAL_ALLOWED_MODIFIER_STAGES = frozenset(
         DamageModifierStage.RESISTANCE_ADD,
     }
 )
-TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES = frozenset[DamageModifierStage]()
+TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES = frozenset(
+    {
+        DamageModifierStage.TRANSFORMATIVE_REACTION_BONUS_ADD,
+    }
+)
+STELLAR_ALLOWED_MODIFIER_STAGES = frozenset(
+    {
+        DamageModifierStage.STELLAR_REACTION_BONUS_ADD,
+    }
+)
 
 
 @dataclass(frozen=True, slots=True)
@@ -381,8 +390,18 @@ class TransformativeReactionDamageFormula:
         reaction = request.transformative_reaction
         if reaction is None:
             raise DamageFormulaInputError("剧变伤害缺少 TransformativeReactionInput")
-        if context.modifiers.applied_terms or context.modifiers.rejected_terms:
+        modifier_terms = context.modifiers.applied_terms
+        if context.modifiers.rejected_terms:
             raise DamageFormulaInputError("剧变伤害不能使用普通伤害 modifier")
+        if any(
+            term.stage is not DamageModifierStage.TRANSFORMATIVE_REACTION_BONUS_ADD
+            for term in modifier_terms
+        ):
+            raise DamageFormulaInputError("剧变伤害不能使用普通伤害 modifier")
+        reaction_bonus = reaction.reaction_bonus + _sum_terms(
+            modifier_terms,
+            DamageModifierStage.TRANSFORMATIVE_REACTION_BONUS_ADD,
+        )
 
         resistance_attribute = context.session.resolve_target(
             ELEMENT_TO_RESISTANCE_KEY[request.element.value]
@@ -408,7 +427,7 @@ class TransformativeReactionDamageFormula:
         damage = (
             reaction.level_multiplier
             * reaction.base_multiplier
-            * (1 + reaction.mastery_bonus + reaction.reaction_bonus)
+            * (1 + reaction.mastery_bonus + reaction_bonus)
             * secondary_multiplier
             * resistance.multiplier
         )
@@ -668,11 +687,11 @@ class StellarReactionDamageFormula:
 
     @property
     def formula_spec(self) -> DamageFormulaSpec:
-        """星烁公式暂不接受普通 Damage modifier stage。"""
+        """星烁公式只接受星烁专属修饰项阶段。"""
 
         return DamageFormulaSpec(
             formula_key=FORMULA_KEY_STELLAR_REACTION,
-            allowed_modifier_stages=frozenset(),
+            allowed_modifier_stages=STELLAR_ALLOWED_MODIFIER_STAGES,
         )
 
     def resolve(self, context: DamageFormulaContext) -> StellarReactionDamageResolution:
@@ -683,12 +702,27 @@ class StellarReactionDamageFormula:
         stellar = request.stellar_reaction
         if stellar is None:
             raise DamageFormulaInputError("星烁伤害缺少 StellarReactionDamageInput")
-        if context.modifiers.applied_terms or context.modifiers.rejected_terms:
+        modifier_terms = context.modifiers.applied_terms
+        if context.modifiers.rejected_terms:
             raise DamageFormulaInputError("星烁伤害不接受普通 Damage modifier")
+        if any(
+            term.stage is not DamageModifierStage.STELLAR_REACTION_BONUS_ADD
+            for term in modifier_terms
+        ):
+            raise DamageFormulaInputError("星烁伤害不接受普通 Damage modifier")
+        stellar_bonus_add = _sum_terms(
+            modifier_terms,
+            DamageModifierStage.STELLAR_REACTION_BONUS_ADD,
+        )
         if stellar.mode == "reaction_composite":
             if not stellar.participants:
                 raise DamageFormulaInputError("反应星烁复合伤害必须提供参与者列表")
-            return self._resolve_reaction_composite(context, query, stellar)
+            return self._resolve_reaction_composite(
+                context,
+                query,
+                stellar,
+                stellar_bonus_add=stellar_bonus_add,
+            )
         if stellar.mode != "character_direct":
             raise DamageFormulaInputError("星烁伤害 mode 不受支持")
 
@@ -707,9 +741,11 @@ class StellarReactionDamageFormula:
         resistance = self.resistance_policy.resolve(resistance_attribute.final_value)
 
         # 输入中的精通/暴击/抗性是调用方预冻结快照；结算分支始终以实时读取覆盖。
+        # 专属修饰项并入 stellar_bonus（精通区加算位），不替换调用方冻结的基线值。
         resolved_input = replace(
             stellar,
             elemental_mastery=elemental_mastery,
+            stellar_bonus=stellar.stellar_bonus + stellar_bonus_add,
             critical_multiplier=critical.multiplier,
             resistance_multiplier=resistance.multiplier,
         )
@@ -744,11 +780,19 @@ class StellarReactionDamageFormula:
         context: DamageFormulaContext,
         query: DamageQuery,
         stellar: StellarReactionDamageInput,
+        *,
+        stellar_bonus_add: float = 0.0,
     ) -> StellarReactionDamageResolution:
         """逐参与者结算单人伤害，稳定排序取前 4 名后按固定权重聚合。"""
 
         raw_components = tuple(
-            self._resolve_stellar_component(context, query, stellar, participant)
+            self._resolve_stellar_component(
+                context,
+                query,
+                stellar,
+                participant,
+                stellar_bonus_add=stellar_bonus_add,
+            )
             for participant in stellar.participants
         )
         ordered_components = tuple(
@@ -804,6 +848,8 @@ class StellarReactionDamageFormula:
         query: DamageQuery,
         stellar: StellarReactionDamageInput,
         participant: StellarReactionParticipantInput,
+        *,
+        stellar_bonus_add: float = 0.0,
     ) -> StellarReactionComponentResolution:
         component_query = _stellar_component_query(query, participant)
         component_session = _new_damage_session(context, component_query)
@@ -829,7 +875,7 @@ class StellarReactionDamageFormula:
             stellar_base_multiplier=stellar.stellar_base_multiplier,
             elemental_mastery=elemental_mastery,
             stellar_base_bonus=participant.stellar_base_bonus,
-            stellar_bonus=participant.stellar_bonus,
+            stellar_bonus=participant.stellar_bonus + stellar_bonus_add,
             stellar_authority_multiplier=participant.stellar_authority_multiplier,
             feather_addition=participant.stellar_feather_addition,
             critical_multiplier=critical.multiplier,

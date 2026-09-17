@@ -26,7 +26,10 @@ from genshin_sim.application.assembly.models import (
     energy_element_from_asset,
 )
 from genshin_sim.application.assembly.moonsign import build_moonsign_bundle
-from genshin_sim.application.assembly.ports import TeamScopeProjectionAdapter
+from genshin_sim.application.assembly.ports import (
+    TargetBuffPresenceReadAdapter,
+    TeamScopeProjectionAdapter,
+)
 from genshin_sim.application.assembly.reaction_capabilities import (
     build_static_reaction_eligibility_port,
 )
@@ -169,6 +172,7 @@ from genshin_sim.core.systems.aura_icd import (
 )
 from genshin_sim.core.systems.buff import (
     BuffImpactRequestHandler,
+    BuffReader,
     BuffRemovalImpactRequestHandler,
     BuffResolver,
     BuffRuntime,
@@ -574,6 +578,10 @@ class RuntimeAssembler:
             )
         except BuffSystemError as exc:
             raise InvalidRuntimePayloadError(str(exc)) from exc
+        self._bind_content_damage_provider_ports(
+            content_bundle,
+            buff_reader=buff_runtime.reader,
+        )
         buff_max_hp_coordinator = BuffMaxHpChangeCoordinator(
             buff_port=buff_runtime,
             health_port=health_runtime,
@@ -974,6 +982,31 @@ class RuntimeAssembler:
             runtime_world=runtime_world,
             assets=assets,
         )
+
+    @staticmethod
+    def _bind_content_damage_provider_ports(
+        content_bundle: RuntimeContentBundle,
+        *,
+        buff_reader: BuffReader,
+    ) -> None:
+        """为声明了 ``bind_runtime_ports`` 的内容伤害 provider 注入只读运行端口。
+
+        必须在 ``buff_runtime`` 创建之后调用。绑定只发生在装配期；未绑定时
+        provider 的 ``contribute`` 必须返回空，因此条件效果不会在装配前生效。
+        """
+
+        target_status_port = TargetBuffPresenceReadAdapter(buff_reader)
+        for unit in content_bundle.content_units:
+            for provider in unit.damage_modifier_providers:
+                binder = getattr(provider, "bind_runtime_ports", None)
+                if binder is None:
+                    continue
+                try:
+                    binder(target_status_port=target_status_port)
+                except Exception as exc:
+                    raise InvalidRuntimePayloadError(
+                        f"伤害 provider 运行时端口绑定失败：{exc}"
+                    ) from exc
 
     @staticmethod
     def _bind_attribute_provider_ports(

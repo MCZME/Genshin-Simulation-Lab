@@ -128,9 +128,7 @@ def _build_weapon_effect_payload(
     highlight_count = len(highlighted_values[0]) if highlighted_values else 0
     # 高亮数量在各精炼等级间必须一致才能拼成矩形参数表；不一致时源站描述模板
     # 本身存在差异（如某一级仍是旧版文案），此时只保留原文模板而不猜测数值。
-    components_available = all(
-        len(values) == highlight_count for values in highlighted_values
-    )
+    components_available = all(len(values) == highlight_count for values in highlighted_values)
     if not components_available:
         degraded_affixes.append(
             f"{weapon.asset_key}:passive:{affix_id}（{weapon.name}）"

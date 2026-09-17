@@ -1,13 +1,16 @@
 """内置内容实现与新模型注册入口。"""
 
+from genshin_sim.content.artifacts.disenchantment_in_deep_shadow import (
+    DISENCHANTMENT_IN_DEEP_SHADOW_ASSET_KEY,
+    DISENCHANTMENT_IN_DEEP_SHADOW_CONTENT_VERSION,
+    DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY,
+    create_disenchantment_in_deep_shadow_content_unit,
+)
 from genshin_sim.content.artifacts.maiden_beloved import (
-    MAIDEN_BELOVED_4P_TERM_KEY,
     MAIDEN_BELOVED_ASSET_KEY,
     MAIDEN_BELOVED_CONTENT_VERSION,
     MAIDEN_BELOVED_HANDLER_KEY,
     create_maiden_beloved_content_unit,
-    maiden_beloved_4p_conflict_key,
-    maiden_beloved_4p_definition_key,
 )
 from genshin_sim.content.bootstrap_content_units import (
     BUILTIN_NOOP_CONTENT_HANDLER_KEYS,
@@ -239,8 +242,6 @@ __all__ = [
     "create_resonance_buff_definitions",
     "create_resonance_definitions",
     "create_waster_greatsword_content_unit",
-    "maiden_beloved_4p_conflict_key",
-    "maiden_beloved_4p_definition_key",
     "MOONSIGN_BONUS_CAP",
     "MOONSIGN_BONUS_DURATION_FRAMES",
     "MOONSIGN_SCALING_BY_ELEMENT",

@@ -12,6 +12,7 @@ from genshin_sim.core.systems.reaction.mechanics.dendro_core import (
 )
 from genshin_sim.core.systems.reaction.mechanics.lunar_bloom.keys import (
     LUNAR_BLOOM_CAPABILITY_KEY,
+    LUNAR_BLOOM_DAMAGE_TAG,
     LUNAR_BLOOM_DENDRO_ON_HYDRO_PROFILE_KEY,
     LUNAR_BLOOM_HANDLER_KEY,
     LUNAR_BLOOM_HYDRO_ON_DENDRO_PROFILE_KEY,
@@ -135,7 +136,7 @@ def lunar_bloom_damage_profiles() -> tuple[DamageProfile, ...]:
     return (
         DamageProfile(
             formula_key=FORMULA_KEY_LUNAR_REACTION,
-            main_attack_tags=frozenset({LUNAR_BLOOM_REACTION_KEY}),
+            main_attack_tags=frozenset({LUNAR_BLOOM_DAMAGE_TAG}),
         ),
     )
 

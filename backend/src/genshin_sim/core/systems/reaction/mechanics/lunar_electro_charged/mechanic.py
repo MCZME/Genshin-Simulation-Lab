@@ -9,6 +9,7 @@ from genshin_sim.core.systems.reaction.gates import ReactionDamageGateDefinition
 from genshin_sim.core.systems.reaction.mechanics.lunar_electro_charged.keys import (
     LUNAR_ELECTRO_CHARGED_CAPABILITY_KEY,
     LUNAR_ELECTRO_CHARGED_DAMAGE_KIND_KEY,
+    LUNAR_ELECTRO_CHARGED_DAMAGE_TAG,
     LUNAR_ELECTRO_CHARGED_ELECTRO_ON_HYDRO_PROFILE_KEY,
     LUNAR_ELECTRO_CHARGED_GATE_DEFINITION_KEY,
     LUNAR_ELECTRO_CHARGED_HANDLER_KEY,
@@ -172,7 +173,7 @@ def lunar_electro_charged_damage_profiles() -> tuple[DamageProfile, ...]:
     return (
         DamageProfile(
             formula_key=FORMULA_KEY_LUNAR_REACTION,
-            main_attack_tags=frozenset({LUNAR_ELECTRO_CHARGED_REACTION_KEY}),
+            main_attack_tags=frozenset({LUNAR_ELECTRO_CHARGED_DAMAGE_TAG}),
         ),
     )
 

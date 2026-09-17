@@ -16,13 +16,13 @@ STELLAR_SWIRL_ANEMO_ON_CRYO_PROFILE_KEY = "reaction_profile.stellar_swirl.incomi
 
 # 星扩散·风：单体即时风伤害；基础系数与去重窗口为当前实现基线，待来源化冻结。
 STELLAR_SWIRL_WIND_BASE_MULTIPLIER = 0.75
-STELLAR_SWIRL_WIND_DAMAGE_TAG_KEY = "reaction.stellar_swirl.wind"
+STELLAR_SWIRL_WIND_DAMAGE_TAG = "星扩散风"
 STELLAR_SWIRL_WIND_DAMAGE_PROFILE_KEY = "reaction_profile.stellar_swirl.wind"
 STELLAR_SWIRL_WIND_DAMAGE_KIND_KEY = "reaction_damage.stellar_swirl_wind"
 STELLAR_SWIRL_WIND_GATE_DEFINITION_KEY = "reaction_gate.stellar_swirl.wind"
 STELLAR_SWIRL_WIND_GATE_WINDOW_FRAMES = 30
 # 星扩散·冰：风旋爆炸冰伤害；两档圆柱 AOE 参数为资料数值，高度暂不参与空间查询。
-STELLAR_SWIRL_ICE_DAMAGE_TAG_KEY = "reaction.stellar_swirl.ice"
+STELLAR_SWIRL_ICE_DAMAGE_TAG = "星扩散冰"
 STELLAR_SWIRL_ICE_DAMAGE_PROFILE_KEY = "reaction_profile.stellar_swirl.ice"
 STELLAR_SWIRL_ICE_DAMAGE_KIND_KEY = "reaction_damage.stellar_swirl_ice"
 STELLAR_SWIRL_ICE_BASE_MULTIPLIER_LOW = 2.0

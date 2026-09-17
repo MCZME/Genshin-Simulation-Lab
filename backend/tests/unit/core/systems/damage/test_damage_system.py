@@ -212,7 +212,7 @@ def _transformative_query(
             request_id="damage:swirl:target:1",
             frame=10,
             formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
-            main_attack_tag="reaction.swirl",
+            main_attack_tag="扩散水伤",
             impact_key="impact.reaction.swirl.emission",
             source_ref=SOURCE,
             target_ref=TARGET,
@@ -752,34 +752,21 @@ def test_trace_level_changes_audit_only():
     assert none.applied_terms == ()
 
 
-def test_handler_requires_damage_spec_and_rejects_unknown_reaction_tag():
+def test_handler_requires_damage_spec():
     request_handler = DamageRequestHandler(DamageResolver(_attribute_resolver()))
 
     with pytest.raises(DamageValidationError, match="必须提供 damage_spec"):
         request_handler.handle_impact_request(_damage_context(), _damage_impact({}))
 
-    unknown_reaction = ImpactRequest(
-        frame=10,
-        kind=ImpactKind.DAMAGE,
-        impact_key="test.damage",
-        owner_slot=1,
-        target_refs=("target_1",),
-        damage_spec=DamageImpactSpec(
-            impact_ref="impact:test:1",
-            main_attack_tag="reaction.unknown",
-            element=Element.HYDRO,
-            scaling_terms=(DamageScalingTerm("hp", STAT_HP_MAX, 1.0),),
-            can_crit=False,
-        ),
-    )
-    with pytest.raises(UnsupportedDamageFormulaError, match="反应标签未映射"):
-        request_handler.handle_impact_request(
-            _damage_context(),
-            unknown_reaction,
-        )
 
+@pytest.mark.parametrize(
+    "main_attack_tag",
+    ["character.test.attack", "reaction.unknown"],
+    ids=["未注册的非反应标签", "未注册的反应标签"],
+)
+def test_handler_defaults_unregistered_main_attack_tag_to_general_formula(main_attack_tag):
+    """未注册标签不再报错，统一回落通用公式（不按命名空间区分）。"""
 
-def test_handler_defaults_unregistered_non_reaction_tag_to_general_formula():
     handler = DamageRequestHandler(DamageResolver(_attribute_resolver()))
     impact = ImpactRequest(
         frame=10,
@@ -789,7 +776,7 @@ def test_handler_defaults_unregistered_non_reaction_tag_to_general_formula():
         target_refs=("target_1",),
         damage_spec=DamageImpactSpec(
             impact_ref="impact:test:1",
-            main_attack_tag="character.test.attack",
+            main_attack_tag=main_attack_tag,
             element=Element.HYDRO,
             scaling_terms=(DamageScalingTerm("hp", STAT_HP_MAX, 1.0),),
             can_crit=False,
@@ -799,7 +786,7 @@ def test_handler_defaults_unregistered_non_reaction_tag_to_general_formula():
     records = handler.prepare_impact_request(_damage_context(), impact)
 
     assert records[0].damage_request.formula_key == FORMULA_KEY_GENERAL
-    assert records[0].damage_request.main_attack_tag == "character.test.attack"
+    assert records[0].damage_request.main_attack_tag == main_attack_tag
 
 
 def test_formula_stage_validation_rejects_terms_before_formula_resolution():

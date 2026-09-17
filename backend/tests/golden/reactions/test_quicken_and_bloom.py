@@ -368,7 +368,7 @@ def test_expired_core_removes_binding_then_settles_bloom_damage(
     assert assembled.reaction_runtime.dendro_core_state_for(core.instance_ref) is None
     assert assembled.space_runtime.get_entity(core.space_entity_ref) is None
     damage_record = assembled.damage_handler.records[-1]
-    assert damage_record.damage_request.main_attack_tag == "reaction.bloom_explosion"
+    assert damage_record.damage_request.main_attack_tag == "原绽放伤害"
     assert damage_record.damage_request.target_ref.entity_id == "target:target_1"
     character_record = _character_damage_record(assembled)
     assert character_record.result.reaction_details is not None
@@ -413,9 +413,7 @@ def test_sixth_core_evicts_oldest_and_settles_bloom_damage(
     assert created[0].instance_ref not in {core.instance_ref for core in active}
     assert [core.creation_sequence for core in active] == [2, 3, 4, 5, 6]
     assert assembled.space_runtime.get_entity(created[0].space_entity_ref) is None
-    assert assembled.damage_handler.records[-1].damage_request.main_attack_tag == (
-        "reaction.bloom_explosion"
-    )
+    assert assembled.damage_handler.records[-1].damage_request.main_attack_tag == ("原绽放伤害")
     occurrence = next(
         payload.occurrence
         for event in assembled.context.events.frame_events
@@ -451,9 +449,7 @@ def test_burgeon_contact_terminates_confirmed_core_and_settles_damage(
     assert not result.created_shot_refs
     assert assembled.reaction_runtime.dendro_core_state_for(core.instance_ref) is None
     assert assembled.space_runtime.get_entity(core.space_entity_ref) is None
-    assert assembled.damage_handler.records[-1].damage_request.main_attack_tag == (
-        "reaction.burgeon"
-    )
+    assert assembled.damage_handler.records[-1].damage_request.main_attack_tag == ("烈绽放伤害")
     character_record = _character_damage_record(assembled)
     assert character_record.result.reaction_details is not None
     assert character_record.result.reaction_details.base_multiplier == pytest.approx(0.15)
@@ -515,9 +511,7 @@ def test_hyperbloom_locks_target_then_settles_arrival_damage(
     assert len(arrival.effect_groups) == 1
     assert assembled.reaction_runtime.sprawling_shot_state_for(shot_ref) is None
     assert assembled.space_runtime.get_entity(shot.space_entity_ref) is None
-    assert assembled.damage_handler.records[-1].damage_request.main_attack_tag == (
-        "reaction.hyperbloom"
-    )
+    assert assembled.damage_handler.records[-1].damage_request.main_attack_tag == ("超绽放伤害")
     assert assembled.character_damage_taken_coordinator.records == ()
     assert len(arrival.occurrences) == 1
     assert arrival.occurrences[0].direction_key == "arrived"

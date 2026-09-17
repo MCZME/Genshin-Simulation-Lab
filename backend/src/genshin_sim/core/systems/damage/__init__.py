@@ -42,7 +42,6 @@ from genshin_sim.core.systems.damage.keys import (
     FORMULA_KEY_STELLAR_REACTION,
     FORMULA_KEY_TRANSFORMATIVE_REACTION,
     KNOWN_FORMULA_KEYS,
-    REACTION_TAG_PREFIX,
 )
 from genshin_sim.core.systems.damage.models import (
     AmplifyingReactionInput,
@@ -166,7 +165,6 @@ __all__ = [
     "FORMULA_KEY_STELLAR_REACTION",
     "FORMULA_KEY_TRANSFORMATIVE_REACTION",
     "KNOWN_FORMULA_KEYS",
-    "REACTION_TAG_PREFIX",
     "DAMAGE_TAG_CHARGED_ATTACK",
     "DAMAGE_TAG_DIRECT_DAMAGE",
     "DAMAGE_TAG_ELEMENTAL_BURST",

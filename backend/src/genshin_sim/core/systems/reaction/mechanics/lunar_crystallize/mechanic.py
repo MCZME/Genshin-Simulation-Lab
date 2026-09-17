@@ -12,6 +12,7 @@ from genshin_sim.core.systems.reaction.mechanics.lunar_crystallize.keys import (
     LUNAR_CAGE_TEAM_SCOPE,
     LUNAR_CRYSTALLIZE_CAPABILITY_KEY,
     LUNAR_CRYSTALLIZE_DAMAGE_KIND_KEY,
+    LUNAR_CRYSTALLIZE_DAMAGE_TAG,
     LUNAR_CRYSTALLIZE_GEO_ON_HYDRO_PROFILE_KEY,
     LUNAR_CRYSTALLIZE_HANDLER_KEY,
     LUNAR_CRYSTALLIZE_REACTION_KEY,
@@ -143,7 +144,7 @@ def lunar_crystallize_damage_profiles() -> tuple[DamageProfile, ...]:
     return (
         DamageProfile(
             formula_key=FORMULA_KEY_LUNAR_REACTION,
-            main_attack_tags=frozenset({LUNAR_CRYSTALLIZE_REACTION_KEY}),
+            main_attack_tags=frozenset({LUNAR_CRYSTALLIZE_DAMAGE_TAG}),
         ),
     )
 

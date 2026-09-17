@@ -3,6 +3,8 @@
 from genshin_sim.core.elements import AuraAmount
 
 LUNAR_ELECTRO_CHARGED_REACTION_KEY = "reaction.lunar_electro_charged"
+# 反应键承担反应身份；伤害标签只作为 DamageProfile 的主攻击标签。
+LUNAR_ELECTRO_CHARGED_DAMAGE_TAG = "月感电"
 LUNAR_ELECTRO_CHARGED_HANDLER_KEY = "reaction_handler.lunar_electro_charged"
 
 LUNAR_HYDRO_ON_ELECTRO = "lunar_incoming_hydro_on_electro"

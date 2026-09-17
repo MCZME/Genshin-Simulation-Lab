@@ -31,7 +31,7 @@ from genshin_sim.core.systems.reaction.mechanics.stellar_swirl import (
     STELLAR_SWIRL_INCOMING_CRYO_ON_ANEMO,
     STELLAR_SWIRL_REACTION_KEY,
     STELLAR_SWIRL_VORTEX_SCOPE,
-    STELLAR_SWIRL_WIND_DAMAGE_TAG_KEY,
+    STELLAR_SWIRL_WIND_DAMAGE_TAG,
     STELLAR_SWIRL_WIND_GATE_DEFINITION_KEY,
     StellarSwirlRule,
     stellar_swirl_definition,
@@ -175,7 +175,7 @@ def test_stellar_swirl_rule_declares_vortex_plan_and_wind_damage() -> None:
     assert len(group.effects) == 1
     effect = group.effects[0]
     assert isinstance(effect, StellarReactionDamageImpactEffect)
-    assert effect.main_attack_tag == STELLAR_SWIRL_WIND_DAMAGE_TAG_KEY
+    assert effect.main_attack_tag == STELLAR_SWIRL_WIND_DAMAGE_TAG
     assert effect.damage_element is Element.ANEMO
     assert effect.stellar_base_multiplier == pytest.approx(0.75)
     assert effect.trigger_source_ref == SOURCE

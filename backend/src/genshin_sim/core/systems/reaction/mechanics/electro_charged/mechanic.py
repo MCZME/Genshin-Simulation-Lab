@@ -24,6 +24,8 @@ from genshin_sim.core.systems.reaction.models import (
 )
 
 ELECTRO_CHARGED_REACTION_KEY = "reaction.electro_charged"
+# 反应键承担反应身份；伤害标签只作为 DamageProfile 的主攻击标签。
+ELECTRO_CHARGED_DAMAGE_TAG = "感电伤害"
 ELECTRO_CHARGED_HANDLER_KEY = "reaction_handler.electro_charged"
 HYDRO_ON_ELECTRO = "incoming_hydro_on_electro"
 ELECTRO_ON_HYDRO = "incoming_electro_on_hydro"
@@ -80,7 +82,7 @@ class ElectroChargedRule:
             effect_group_ref=group_ref,
             effect_order=0,
             parent_occurrence_ref=occurrence_ref,
-            main_attack_tag=ELECTRO_CHARGED_REACTION_KEY,
+            main_attack_tag=ELECTRO_CHARGED_DAMAGE_TAG,
             damage_profile_key=profile.damage_profile_key,
             damage_element=Element.ELECTRO,
             gate_definition_key=profile.gate_definition_key,
@@ -187,7 +189,7 @@ def electro_charged_damage_profile() -> DamageProfile:
 
     return DamageProfile(
         formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
-        main_attack_tags=frozenset({ELECTRO_CHARGED_REACTION_KEY}),
+        main_attack_tags=frozenset({ELECTRO_CHARGED_DAMAGE_TAG}),
     )
 
 

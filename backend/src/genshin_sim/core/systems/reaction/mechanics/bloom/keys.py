@@ -5,6 +5,11 @@ BLOOM_EXPLOSION_REACTION_KEY = "reaction.bloom_explosion"
 HYPERBLOOM_REACTION_KEY = "reaction.hyperbloom"
 BURGEON_REACTION_KEY = "reaction.burgeon"
 
+# 反应键承担反应身份；伤害标签只作为 DamageProfile 的主攻击标签。
+BLOOM_EXPLOSION_DAMAGE_TAG = "原绽放伤害"
+HYPERBLOOM_DAMAGE_TAG = "超绽放伤害"
+BURGEON_DAMAGE_TAG = "烈绽放伤害"
+
 BLOOM_HANDLER_KEY = "reaction_handler.bloom"
 HYPERBLOOM_HANDLER_KEY = "reaction_handler.hyperbloom"
 BURGEON_HANDLER_KEY = "reaction_handler.burgeon"

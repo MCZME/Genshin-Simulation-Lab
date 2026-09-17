@@ -10,15 +10,18 @@ from genshin_sim.core.systems.damage.keys import FORMULA_KEY_TRANSFORMATIVE_REAC
 from genshin_sim.core.systems.reaction.gates import ReactionDamageGateDefinition
 from genshin_sim.core.systems.reaction.mechanics.bloom.keys import (
     BLOOM_DENDRO_ON_HYDRO_PROFILE_KEY,
+    BLOOM_EXPLOSION_DAMAGE_TAG,
     BLOOM_EXPLOSION_REACTION_KEY,
     BLOOM_HANDLER_KEY,
     BLOOM_HYDRO_ON_DENDRO_PROFILE_KEY,
     BLOOM_HYDRO_ON_QUICKEN_PROFILE_KEY,
     BLOOM_REACTION_KEY,
+    BURGEON_DAMAGE_TAG,
     BURGEON_REACTION_KEY,
     DENDRO_ON_HYDRO,
     HYDRO_ON_DENDRO,
     HYDRO_ON_QUICKEN,
+    HYPERBLOOM_DAMAGE_TAG,
     HYPERBLOOM_REACTION_KEY,
 )
 from genshin_sim.core.systems.reaction.mechanics.bloom.profiles import (
@@ -175,15 +178,15 @@ def bloom_damage_profiles() -> tuple[DamageProfile, ...]:
     return (
         DamageProfile(
             formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
-            main_attack_tags=frozenset({BLOOM_EXPLOSION_REACTION_KEY}),
+            main_attack_tags=frozenset({BLOOM_EXPLOSION_DAMAGE_TAG}),
         ),
         DamageProfile(
             formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
-            main_attack_tags=frozenset({HYPERBLOOM_REACTION_KEY}),
+            main_attack_tags=frozenset({HYPERBLOOM_DAMAGE_TAG}),
         ),
         DamageProfile(
             formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
-            main_attack_tags=frozenset({BURGEON_REACTION_KEY}),
+            main_attack_tags=frozenset({BURGEON_DAMAGE_TAG}),
         ),
     )
 
@@ -417,6 +420,22 @@ def _terminal_reaction(
     return BloomTerminalReaction(occurrence, effect_group)
 
 
+_BLOOM_FAMILY_DAMAGE_TAG_BY_REACTION_KEY = {
+    BLOOM_EXPLOSION_REACTION_KEY: BLOOM_EXPLOSION_DAMAGE_TAG,
+    HYPERBLOOM_REACTION_KEY: HYPERBLOOM_DAMAGE_TAG,
+    BURGEON_REACTION_KEY: BURGEON_DAMAGE_TAG,
+}
+
+
+def bloom_family_damage_tag(reaction_key: str) -> str:
+    """返回绽放机制簇终态伤害使用的主攻击标签。"""
+
+    tag = _BLOOM_FAMILY_DAMAGE_TAG_BY_REACTION_KEY.get(reaction_key)
+    if tag is None:
+        raise ValueError(f"绽放机制簇反应没有对应的伤害标签：{reaction_key}")
+    return tag
+
+
 def _termination_effect_group(
     *,
     parent_occurrence_ref: str,
@@ -440,7 +459,7 @@ def _termination_effect_group(
         effect_group_ref=effect_group_ref,
         effect_order=0,
         parent_occurrence_ref=parent_occurrence_ref,
-        main_attack_tag=reaction_key,
+        main_attack_tag=bloom_family_damage_tag(reaction_key),
         damage_profile_key=profile.damage_profile_key,
         damage_element=profile.damage_element,
         gate_definition_key=profile.gate_definition_key,

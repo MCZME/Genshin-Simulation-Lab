@@ -23,6 +23,8 @@ from genshin_sim.core.systems.reaction.models import (
 )
 
 SUPERCONDUCT_REACTION_KEY = "reaction.superconduct"
+# 反应键承担反应身份；伤害标签只作为 DamageProfile 的主攻击标签。
+SUPERCONDUCT_DAMAGE_TAG = "超导伤害"
 SUPERCONDUCT_HANDLER_KEY = "reaction_handler.superconduct"
 CRYO_ON_ELECTRO = "incoming_cryo_on_electro"
 ELECTRO_ON_CRYO = "incoming_electro_on_cryo"
@@ -80,7 +82,7 @@ class SuperconductRule:
             effect_group_ref=group_ref,
             effect_order=0,
             parent_occurrence_ref=occurrence_ref,
-            main_attack_tag=SUPERCONDUCT_REACTION_KEY,
+            main_attack_tag=SUPERCONDUCT_DAMAGE_TAG,
             damage_profile_key=profile.damage_profile_key,
             damage_element=profile.damage_element,
             gate_definition_key=profile.gate_definition_key,
@@ -184,7 +186,7 @@ def superconduct_damage_profile() -> DamageProfile:
 
     return DamageProfile(
         formula_key=FORMULA_KEY_TRANSFORMATIVE_REACTION,
-        main_attack_tags=frozenset({SUPERCONDUCT_REACTION_KEY}),
+        main_attack_tags=frozenset({SUPERCONDUCT_DAMAGE_TAG}),
     )
 
 

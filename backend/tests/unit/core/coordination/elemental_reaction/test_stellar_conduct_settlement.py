@@ -214,9 +214,10 @@ def test_stellar_settlement_refreshes_radiance_buff_values() -> None:
     # 数值按 2 层快照统一刷新；具体映射由 test_stellar_buffs 参数化持有，
     # 这里只锁定"结算确实更新了数值"这一链路行为。
     after = {item.template.term_key: item.value for item in refreshed.state.resolved_modifiers}
-    assert after["stellar.conduct.radiance.direct_base_multiplier"] > baseline[
-        "stellar.conduct.radiance.direct_base_multiplier"
-    ]
+    assert (
+        after["stellar.conduct.radiance.direct_base_multiplier"]
+        > baseline["stellar.conduct.radiance.direct_base_multiplier"]
+    )
     # 存在时间仍锚定领域到期 + 延续窗口，结算不延长 Buff。
     assert refreshed.expires_at_frame == (
         STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES + STELLAR_RADIANCE_PERSISTENCE_FRAMES

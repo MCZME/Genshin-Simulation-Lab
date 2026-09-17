@@ -35,7 +35,8 @@ def test_damage_preflight_failure_does_not_commit_elemental_domain_state(
         target_refs=("target_1",),
         damage_spec=DamageImpactSpec(
             impact_ref="golden:invalid_damage",
-            main_attack_tag="reaction.missing.damage_profile",
+            # 超导伤害走剧变公式，但请求不携带剧变输入，属非法请求，用于触发伤害预检失败。
+            main_attack_tag="超导伤害",
             element=Element.HYDRO,
             scaling_terms=(DamageScalingTerm("atk", STAT_ATK_TOTAL, 1.0),),
             can_crit=False,
@@ -44,7 +45,7 @@ def test_damage_preflight_failure_does_not_commit_elemental_domain_state(
         ),
     )
 
-    with pytest.raises(DamageValidationError, match="反应标签未映射"):
+    with pytest.raises(DamageValidationError, match="剧变伤害必须提供 TransformativeReactionInput"):
         assembled.elemental_settlement_coordinator.settle_damage_impact(
             assembled.context,
             bad_request,

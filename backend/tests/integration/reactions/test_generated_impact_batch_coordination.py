@@ -427,7 +427,7 @@ def _single_electro_damage_batch(root_work_id: str) -> ReactionGeneratedImpactBa
                     reaction_profile_key="reaction_profile.test.generated",
                 ),
                 damage_component=ReactionGeneratedImpactDamageComponent(
-                    main_attack_tag="reaction.electro_charged",
+                    main_attack_tag="感电伤害",
                     damage_profile_key="damage_profile.reaction.electro_charged",
                     damage_element=Element.ELECTRO,
                     gate_definition_key="reaction_gate.electro_charged.damage",

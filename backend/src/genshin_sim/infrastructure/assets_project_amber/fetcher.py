@@ -286,7 +286,7 @@ def _read_existing_cache_file(path: Path, url: str) -> tuple[Mapping[str, Any], 
     try:
         text = path.read_text(encoding="utf-8")
         payload = json.loads(text)
-    except OSError, json.JSONDecodeError:
+    except (OSError, json.JSONDecodeError):
         return None
     if not isinstance(payload, Mapping):
         return None

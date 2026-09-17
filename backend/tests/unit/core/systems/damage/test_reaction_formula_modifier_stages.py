@@ -37,6 +37,7 @@ from genshin_sim.core.systems.damage import (
     FORMULA_KEY_TRANSFORMATIVE_REACTION,
     DamageFormulaContext,
     DamageQuery,
+    DamageResolver,
     TransformativeReactionInput,
 )
 from genshin_sim.core.systems.damage.enums import DamageModifierStage
@@ -337,3 +338,24 @@ def test_stellar_baseline_unchanged_without_terms() -> None:
     query = _stellar_query(stellar_bonus=0.2)
     resolution = StellarReactionDamageFormula().resolve(_context(query, _collect(query)))
     assert math.isclose(resolution.official_damage, 1600.0 * 1.2, abs_tol=1e-9)
+
+
+def test_unfiltered_provider_hard_fails_reaction_resolution() -> None:
+    """内容侧 provider 不自筛 formula_key 时，反应伤害结算会硬报错而非静默跳过。
+
+    这是「必须自筛公式」这条约束的成因：``DamageModifierIndex.collect`` 只校验
+    term 是否越出 provider 自身的 ``writes`` 声明，公式级白名单由
+    ``_validate_formula_stages`` 在进入公式体之前强制执行。因此一个无条件
+    返回普通阶段的 provider（例如双冰共鸣 ``ResonanceCryoCritDamageProvider``
+    这一形态）一旦在反应伤害查询上成交，整次结算直接失败。
+    """
+
+    query = _transformative_query()
+    resolver = DamageResolver(
+        attribute_resolver=_attribute_resolver(),
+        modifier_index=DamageModifierIndex(
+            (_provider(_term(DamageModifierStage.CRIT_RATE_ADD, 0.15)),)
+        ),
+    )
+    with pytest.raises(DamageProviderViolationError):
+        resolver.resolve(query)

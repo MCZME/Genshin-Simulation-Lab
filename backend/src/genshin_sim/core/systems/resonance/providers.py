@@ -18,6 +18,7 @@ from genshin_sim.core.systems.damage import (
     DamageModifierStage,
     DamageModifierTerm,
 )
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_GENERAL
 from genshin_sim.core.systems.resonance.errors import (
     ResonanceDefinitionNotFoundError,
     ResonanceValidationError,
@@ -85,7 +86,12 @@ def build_resonance_static_providers(
 
 
 class ResonanceCryoCritDamageProvider:
-    """双冰：攻击冰附着或冻结目标时暴击率 +15%。"""
+    """双冰：攻击冰附着或冻结目标时暴击率 +15%。
+
+    ``crit_rate_add`` 只属于通用公式的槽位；若不加公式过滤，provider 会在
+    剧变等反应伤害查询上成交，被 ``_validate_formula_stages`` 硬拒绝并让整次
+    结算失败。因此按 ``FORMULA_KEY_GENERAL`` 自筛。
+    """
 
     provider_spec = DamageModifierProviderSpec(
         provider_key="resonance.cryo.crit_rate",
@@ -106,6 +112,8 @@ class ResonanceCryoCritDamageProvider:
     def contribute(self, query, session):
         del session
         if not self._active or self._aura_frozen_port is None:
+            return ()
+        if query.request.formula_key is not FORMULA_KEY_GENERAL:
             return ()
         target_ref = query.request.target_ref
         if target_ref.kind is not AttributeSubjectKind.TARGET:
@@ -130,7 +138,11 @@ class ResonanceCryoCritDamageProvider:
 
 
 class ResonanceGeoDamageProvider:
-    """双岩：处于护盾庇护下或存在月笼时造成的伤害 +15%。"""
+    """双岩：处于护盾庇护下或存在月笼时造成的伤害 +15%。
+
+    与双冰同理，``damage_bonus_add`` 只属于通用公式，必须按
+    ``FORMULA_KEY_GENERAL`` 自筛，否则会在反应伤害查询上触发硬报错。
+    """
 
     provider_spec = DamageModifierProviderSpec(
         provider_key="resonance.geo.damage_bonus",
@@ -154,6 +166,8 @@ class ResonanceGeoDamageProvider:
     def contribute(self, query, session):
         del session
         if not self._active or self._shield_port is None or self._lunar_cage_port is None:
+            return ()
+        if query.request.formula_key is not FORMULA_KEY_GENERAL:
             return ()
         shielded = self._shield_port.has_active_shield(
             query.request.source_ref,

@@ -8,6 +8,7 @@ from genshin_sim.core.attributes import (
     AttributeSubjectKind,
     AttributeSubjectRef,
 )
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_GENERAL
 
 
 class FakeAuraFrozenPort:
@@ -55,6 +56,7 @@ def make_damage_modifier_query(
     source_kind: AttributeSubjectKind = AttributeSubjectKind.CHARACTER,
     target_kind: AttributeSubjectKind = AttributeSubjectKind.TARGET,
     frame: int = 70,
+    formula_key: str = FORMULA_KEY_GENERAL,
 ) -> SimpleNamespace:
     """构造伤害修饰 provider 查询替身。"""
 
@@ -73,5 +75,6 @@ def make_damage_modifier_query(
             source_ref=source_ref,
             target_ref=target_ref,
             frame=frame,
+            formula_key=formula_key,
         )
     )

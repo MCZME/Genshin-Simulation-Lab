@@ -22,7 +22,7 @@ SUPPORTED_CRIT_MODES = (CRIT_MODE_OFF, CRIT_MODE_RANDOM)
 class CritModeDefinition:
     """选择暴击判定模式。
 
-    ``off`` 固定不暴击（与默认行为一致），``random`` 按运行选项种子确定性随机判定。
+    ``off`` 固定不暴击（与默认行为一致），``random`` 按仿真随机源确定性随机判定。
     """
 
     rule_key = "crit_mode"
@@ -43,5 +43,5 @@ class CritModeDefinition:
     ) -> CriticalDecisionProvider:
         mode = activation.params.get("mode", CRIT_MODE_OFF)
         if mode == CRIT_MODE_RANDOM:
-            return SeededRandomCriticalDecisionProvider(context.seed)
+            return SeededRandomCriticalDecisionProvider(context.random_source)
         return FixedCriticalDecisionProvider(CritOutcome.NON_CRITICAL)

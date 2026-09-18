@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import math
-import random
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
@@ -31,6 +30,7 @@ from genshin_sim.core.systems.damage.models import (
 )
 
 if TYPE_CHECKING:
+    from genshin_sim.core.simulation.random_source import RandomSource
     from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
 
 
@@ -64,21 +64,25 @@ class FixedCriticalDecisionProvider:
 
 
 class SeededRandomCriticalDecisionProvider:
-    """按固定种子确定性随机决定暴击。"""
+    """按仿真随机源确定性随机决定暴击。
 
-    def __init__(self, seed: int = 0) -> None:
-        self.seed = seed
-        self._rng = random.Random(seed)
+    随机结果取自装配期注入的随机源，与仿真内其他随机机制共用同一条序列；
+    取值顺序由代码执行顺序决定。
+    """
+
+    def __init__(self, random_source: RandomSource) -> None:
+        self._random_source = random_source
 
     def decide(self, query: DamageQuery, effective_crit_rate: float) -> CritOutcome:
-        """按有效暴击率做一次确定性随机判定。"""
+        """按有效暴击率做一次确定性随机判定。
+
+        越界暴击率按边界收敛（`<= 0` 必不暴击、`>= 1` 必暴击），
+        中间区间委托随机源统一判定，不消耗序列的边界语义由随机源保证。
+        """
 
         del query
-        if effective_crit_rate <= 0.0:
-            return CritOutcome.NON_CRITICAL
-        if effective_crit_rate >= 1.0:
-            return CritOutcome.CRITICAL
-        if self._rng.random() < effective_crit_rate:
+        chance = min(max(effective_crit_rate, 0.0), 1.0)
+        if self._random_source.roll(chance):
             return CritOutcome.CRITICAL
         return CritOutcome.NON_CRITICAL
 

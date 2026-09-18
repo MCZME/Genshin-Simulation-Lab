@@ -6,6 +6,8 @@ from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import Any
 
+from genshin_sim.core.simulation.random_source import RandomSource
+
 
 @dataclass(frozen=True, slots=True)
 class RuleActivation:
@@ -19,4 +21,4 @@ class RuleActivation:
 class RuleResolutionContext:
     """规则解析时可读取的仿真级输入。"""
 
-    seed: int
+    random_source: RandomSource

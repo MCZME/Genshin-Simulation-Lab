@@ -9,6 +9,7 @@ from genshin_sim.core.events import EventEngine
 from genshin_sim.core.simulation.clock import FrameClock
 
 if TYPE_CHECKING:
+    from genshin_sim.core.simulation.random_source import RandomSource
     from genshin_sim.core.space.runtime import SpaceRuntime
 
 _SystemT = TypeVar("_SystemT")
@@ -34,6 +35,7 @@ class SimulationContext:
     clock: FrameClock = field(default_factory=FrameClock)
     events: EventEngine = field(default_factory=EventEngine)
     space_runtime: SpaceRuntime | None = None
+    random_source: RandomSource | None = None
     settlement_round: int = 0
     # TODO: 引入明确系统协议后，将这里收紧为具体运行时系统类型。
     _systems: list[object] = field(default_factory=list, init=False, repr=False)

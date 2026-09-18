@@ -150,6 +150,7 @@ class SynchronousSimulationExecutor:
             events=tuple(collected_events),
             initial_snapshot=_initial_snapshot(assembled),
             asset_version=asset_version,
+            seed=str(config.run_options.seed),
             started_at=started_at,
             finished_at=_utc_now(),
         )

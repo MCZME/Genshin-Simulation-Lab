@@ -11,16 +11,8 @@ from genshin_sim.application.execution import (
 from genshin_sim.application.input import SimulationInput
 from genshin_sim.assets import AssetRepository
 from genshin_sim.core.simulation import SimulationContext, SimulationResult, SimulationStopReason
-
-
-class FakeAssetRepository:
-    def get_meta(self) -> dict[str, str]:
-        return {
-            "schema_version": "1",
-            "data_version": "2026.08.1",
-            "source_version": "sources-1",
-            "importer_version": "importer-1",
-        }
+from tests.helpers.assembly import minimal_input
+from tests.helpers.asset_repository import FakeAssetRepository
 
 
 class StubSimulator:
@@ -61,47 +53,63 @@ class RecordingResultWriter:
         raise AssertionError("成功路径不应写入失败记录")
 
 
-def _minimal_input() -> SimulationInput:
-    return SimulationInput.from_mapping(
-        {
-            "schema_version": 2,
-            "kind": "simulation_input",
-            "meta": {"name": "demo", "description": ""},
-            "team": [],
-            "scene": {"player": {}, "targets": []},
-            "input_trace": [],
-            "rules": {"active": []},
-            "run_options": {"max_frames": 10},
-        }
+_ASSET_META = {
+    "schema_version": "1",
+    "data_version": "2026.08.1",
+    "source_version": "sources-1",
+    "importer_version": "importer-1",
+}
+
+
+def _input(seed: int | None = None) -> SimulationInput:
+    if seed is None:
+        return minimal_input()
+    return minimal_input(run_options={"max_frames": 10, "seed": seed})
+
+
+def _executor(
+    writer: RecordingResultWriter,
+    *,
+    with_asset_repository: bool = False,
+) -> SynchronousSimulationExecutor:
+    asset_repository: AssetRepository | None = None
+    if with_asset_repository:
+        asset_repository = cast(AssetRepository, FakeAssetRepository(meta=_ASSET_META))
+    return SynchronousSimulationExecutor(
+        cast(SimulationAssembler, StubAssembler()),
+        writer,
+        asset_repository=asset_repository,
     )
 
 
 def test_executor_writes_completed_run_with_asset_version():
     writer = RecordingResultWriter()
-    executor = SynchronousSimulationExecutor(
-        cast(SimulationAssembler, StubAssembler()),
-        writer,
-        asset_repository=cast(AssetRepository, FakeAssetRepository()),
-    )
+    executor = _executor(writer, with_asset_repository=True)
 
-    executor.execute_input(_minimal_input())
+    executor.execute_input(_input())
 
     assert len(writer.completed) == 1
     run = writer.completed[0]
     assert run.asset_version == "2026.08.1"
     assert run.content_version is None
-    assert run.seed is None
+    assert run.seed == "0"
     assert run.input_snapshot["kind"] == "simulation_input"
     assert run.summary.stop_reason == "COMPLETED"
 
 
+def test_executor_records_run_options_seed():
+    writer = RecordingResultWriter()
+    executor = _executor(writer, with_asset_repository=True)
+
+    executor.execute_input(_input(seed=42))
+
+    assert writer.completed[0].seed == "42"
+
+
 def test_executor_without_asset_repository_leaves_asset_version_empty():
     writer = RecordingResultWriter()
-    executor = SynchronousSimulationExecutor(
-        cast(SimulationAssembler, StubAssembler()),
-        writer,
-    )
+    executor = _executor(writer)
 
-    executor.execute_input(_minimal_input())
+    executor.execute_input(_input())
 
     assert writer.completed[0].asset_version is None

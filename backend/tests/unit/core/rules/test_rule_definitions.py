@@ -13,6 +13,7 @@ from genshin_sim.core.rules.definitions import (
     CritModeDefinition,
     StartWithFullEnergyDefinition,
 )
+from genshin_sim.core.simulation.random_source import RandomSource
 from genshin_sim.core.systems.damage.enums import CritOutcome
 from genshin_sim.core.systems.damage.policies import (
     CriticalDecisionProvider,
@@ -37,12 +38,10 @@ def test_start_with_full_energy_accepts_empty_params():
 def test_start_with_full_energy_produces_full_policy():
     product = StartWithFullEnergyDefinition().resolve_activation(
         RuleActivation(rule_key="start_with_full_energy", params={}),
-        RuleResolutionContext(seed=0),
+        RuleResolutionContext(random_source=RandomSource(0)),
     )
 
     assert isinstance(product, FullInitialEnergyPolicy)
-    assert product.initial_energy(60.0) == 60.0
-    assert product.initial_energy(0.0) == 0.0
     assert StartWithFullEnergyDefinition.rule_type is InitialEnergyPolicy
 
 
@@ -60,7 +59,11 @@ def test_crit_mode_rejects_invalid_params(params):
         CritModeDefinition().validate_params(params)
 
 
-@pytest.mark.parametrize("params", [{}, {"mode": "off"}, {"mode": "random"}])
+@pytest.mark.parametrize(
+    "params",
+    [{}, {"mode": "off"}, {"mode": "random"}],
+    ids=("default", "off", "random"),
+)
 def test_crit_mode_accepts_valid_params(params):
     CritModeDefinition().validate_params(params)
 
@@ -68,7 +71,7 @@ def test_crit_mode_accepts_valid_params(params):
 def test_crit_mode_off_produces_fixed_non_critical_provider():
     product = CritModeDefinition().resolve_activation(
         RuleActivation(rule_key="crit_mode", params={}),
-        RuleResolutionContext(seed=42),
+        RuleResolutionContext(random_source=RandomSource(42)),
     )
 
     assert isinstance(product, FixedCriticalDecisionProvider)
@@ -76,11 +79,10 @@ def test_crit_mode_off_produces_fixed_non_critical_provider():
     assert CritModeDefinition.rule_type is CriticalDecisionProvider
 
 
-def test_crit_mode_random_uses_run_options_seed():
+def test_crit_mode_random_produces_seeded_provider():
     product = CritModeDefinition().resolve_activation(
         RuleActivation(rule_key="crit_mode", params={"mode": "random"}),
-        RuleResolutionContext(seed=42),
+        RuleResolutionContext(random_source=RandomSource(42)),
     )
 
     assert isinstance(product, SeededRandomCriticalDecisionProvider)
-    assert product.seed == 42

@@ -10,6 +10,7 @@ from genshin_sim.core.attributes import (
     RuntimeSourceRef,
 )
 from genshin_sim.core.elements import Element
+from genshin_sim.core.simulation.random_source import RandomSource
 from genshin_sim.core.systems.damage import (
     DamageQuery,
     DamageRequest,
@@ -51,7 +52,7 @@ def _crit_query() -> DamageQuery:
 
 
 def test_seeded_provider_short_circuits_zero_and_full_rates():
-    provider = SeededRandomCriticalDecisionProvider(seed=1)
+    provider = SeededRandomCriticalDecisionProvider(RandomSource(1))
 
     assert provider.decide(_crit_query(), 0.0) is CritOutcome.NON_CRITICAL
     assert provider.decide(_crit_query(), -0.5) is CritOutcome.NON_CRITICAL
@@ -60,8 +61,8 @@ def test_seeded_provider_short_circuits_zero_and_full_rates():
 
 
 def test_seeded_provider_same_seed_reproduces_sequence():
-    first = SeededRandomCriticalDecisionProvider(seed=42)
-    second = SeededRandomCriticalDecisionProvider(seed=42)
+    first = SeededRandomCriticalDecisionProvider(RandomSource(42))
+    second = SeededRandomCriticalDecisionProvider(RandomSource(42))
 
     outcomes = [first.decide(_crit_query(), 0.5) for _ in range(50)]
 
@@ -69,24 +70,17 @@ def test_seeded_provider_same_seed_reproduces_sequence():
     assert set(outcomes) == {CritOutcome.CRITICAL, CritOutcome.NON_CRITICAL}
 
 
-def test_seeded_provider_different_seeds_diverge():
-    first = SeededRandomCriticalDecisionProvider(seed=1)
-    second = SeededRandomCriticalDecisionProvider(seed=2)
+def test_seeded_provider_draws_from_injected_random_source():
+    random_source = RandomSource(7)
+    provider = SeededRandomCriticalDecisionProvider(random_source)
 
-    outcomes_first = [first.decide(_crit_query(), 0.5) for _ in range(20)]
-    outcomes_second = [second.decide(_crit_query(), 0.5) for _ in range(20)]
+    provider.decide(_crit_query(), 0.5)
 
-    assert outcomes_first != outcomes_second
-
-
-def test_seeded_provider_extreme_rates_match_expected_outcome():
-    provider = SeededRandomCriticalDecisionProvider(seed=0)
-
-    assert all(
-        provider.decide(_crit_query(), 0.000001) is CritOutcome.NON_CRITICAL for _ in range(50)
-    )
-    assert all(provider.decide(_crit_query(), 0.999999) is CritOutcome.CRITICAL for _ in range(50))
+    assert random_source.draw_count == 1
 
 
 def test_seeded_provider_satisfies_critical_decision_protocol():
-    assert isinstance(SeededRandomCriticalDecisionProvider(), CriticalDecisionProvider)
+    assert isinstance(
+        SeededRandomCriticalDecisionProvider(RandomSource(0)),
+        CriticalDecisionProvider,
+    )

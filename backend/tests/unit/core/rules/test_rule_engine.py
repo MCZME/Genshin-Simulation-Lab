@@ -16,6 +16,7 @@ from genshin_sim.core.rules import (
     RuleValidationError,
     UnknownRuleKeyError,
 )
+from genshin_sim.core.simulation.random_source import RandomSource
 from genshin_sim.core.systems.energy.policies import (
     FullInitialEnergyPolicy,
     InitialEnergyPolicy,
@@ -70,7 +71,7 @@ def _engine(*definitions) -> RuleEngine:
 
 
 def _context() -> RuleResolutionContext:
-    return RuleResolutionContext(seed=7)
+    return RuleResolutionContext(random_source=RandomSource(7))
 
 
 def test_engine_resolves_activated_rules_into_type_bundle():

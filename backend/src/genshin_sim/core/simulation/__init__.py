@@ -32,6 +32,10 @@ from genshin_sim.core.simulation.pipeline import (
     FramePipelineRoundLimitError,
     PhaseHandlerBinding,
 )
+from genshin_sim.core.simulation.random_source import (
+    RandomSource,
+    RandomSourceError,
+)
 from genshin_sim.core.simulation.settlement import (
     DuplicateIntentHandlerError,
     FrameZeroIntentError,
@@ -79,6 +83,8 @@ __all__ = [
     "KeyEvent",
     "KeyPhase",
     "PhaseHandlerBinding",
+    "RandomSource",
+    "RandomSourceError",
     "RuntimeWorld",
     "SimulationContext",
     "SimulationResult",

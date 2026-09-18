@@ -148,6 +148,7 @@ from genshin_sim.core.simulation.intent_handlers import (
     ImpactIntentHandler,
 )
 from genshin_sim.core.simulation.intent_queue import IntentQueue
+from genshin_sim.core.simulation.random_source import RandomSource
 from genshin_sim.core.simulation.settlement import IntentSettlementRuntime
 from genshin_sim.core.snapshots.runtime import SnapshotRuntime
 from genshin_sim.core.space import (
@@ -295,7 +296,8 @@ class RuntimeAssembler:
         content_bundle: RuntimeContentBundle,
     ) -> AssembledSimulation:
         assets_by_slot = {bundle.slot: bundle for bundle in assets}
-        rule_bundle = self._resolve_rule_bundle(config)
+        random_source = RandomSource(config.run_options.seed)
+        rule_bundle = self._resolve_rule_bundle(config, random_source)
         reaction_eligibility_port = build_static_reaction_eligibility_port(
             content_bundle.content_units
         )
@@ -337,7 +339,7 @@ class RuntimeAssembler:
             else attribute_runtime_without_buffs
         )
 
-        context = SimulationContext()
+        context = SimulationContext(random_source=random_source)
         context.register_system(attribute_runtime.resolver)
         resonance_runtime = ResonanceRuntime(resonance_bundle.store, context.events)
         context.register_system(resonance_runtime)
@@ -1036,14 +1038,18 @@ class RuntimeAssembler:
                         f"属性 provider 运行时端口绑定失败：{exc}"
                     ) from exc
 
-    def _resolve_rule_bundle(self, config: SimulationInput) -> dict[type, Any]:
+    def _resolve_rule_bundle(
+        self,
+        config: SimulationInput,
+        random_source: RandomSource,
+    ) -> dict[type, Any]:
         """把激活规则解析为按规则类型索引的产物束。"""
 
         activations = tuple(
             RuleActivation(rule_key=item.rule_key, params=item.params)
             for item in config.rules.active
         )
-        context = RuleResolutionContext(seed=config.run_options.seed)
+        context = RuleResolutionContext(random_source=random_source)
         try:
             return self.rule_engine.resolve(activations, context)
         except RuleSystemError as exc:

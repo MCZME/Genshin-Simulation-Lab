@@ -99,7 +99,11 @@ class TestAttributeModifier:
         )
 
 
-def minimal_input(*, input_trace: list[dict[str, object]] | None = None) -> SimulationInput:
+def minimal_input(
+    *,
+    input_trace: list[dict[str, object]] | None = None,
+    run_options: dict[str, object] | None = None,
+) -> SimulationInput:
     return SimulationInput.from_mapping(
         {
             "schema_version": 2,
@@ -143,7 +147,7 @@ def minimal_input(*, input_trace: list[dict[str, object]] | None = None) -> Simu
             },
             "input_trace": [] if input_trace is None else input_trace,
             "rules": {"active": []},
-            "run_options": {"max_frames": 10},
+            "run_options": {"max_frames": 10} if run_options is None else run_options,
         }
     )
 

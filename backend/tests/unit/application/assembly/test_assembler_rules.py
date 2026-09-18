@@ -69,8 +69,15 @@ def test_assembler_applies_start_with_full_energy_rule():
     }
 
 
-def test_assembler_uses_fixed_non_critical_provider_by_default():
-    assembled = SimulationAssembler(FakeAssetRepository()).assemble(minimal_input())
+@pytest.mark.parametrize(
+    "active_rules",
+    [[], [{"rule": "crit_mode", "params": {"mode": "off"}}]],
+    ids=("no-rules", "crit-mode-off"),
+)
+def test_assembler_off_mode_matches_default_fixed_non_critical(active_rules):
+    assembled = SimulationAssembler(FakeAssetRepository()).assemble(
+        _input_with_rules(active_rules)
+    )
     provider = _decision_provider(assembled)
 
     assert isinstance(provider, FixedCriticalDecisionProvider)
@@ -87,17 +94,9 @@ def test_assembler_applies_crit_mode_random_rule_with_seed():
     provider = _decision_provider(assembled)
 
     assert isinstance(provider, SeededRandomCriticalDecisionProvider)
-    assert provider.seed == 42
-
-
-def test_assembler_applies_crit_mode_off_rule_as_fixed_non_critical():
-    assembled = SimulationAssembler(FakeAssetRepository()).assemble(
-        _input_with_rules([{"rule": "crit_mode", "params": {"mode": "off"}}])
-    )
-    provider = _decision_provider(assembled)
-
-    assert isinstance(provider, FixedCriticalDecisionProvider)
-    assert provider.outcome is CritOutcome.NON_CRITICAL
+    random_source = assembled.context.random_source
+    assert random_source is not None
+    assert random_source.seed == 42
 
 
 def test_assembler_applies_multiple_rules_together():

@@ -10,7 +10,6 @@ from __future__ import annotations
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
-    ContentUnitValidationError,
 )
 from genshin_sim.content.registries import WeaponContentUnitRequest
 from genshin_sim.core.attributes import (
@@ -26,7 +25,6 @@ from genshin_sim.core.attributes import (
 )
 
 ATTRIBUTE_PROBE_WEAPON_HANDLER_KEY = "weapon.testing.attribute_probe"
-ATTRIBUTE_PROBE_WEAPON_ASSET_KEY = "weapon:test_attribute_probe"
 ATTRIBUTE_PROBE_WEAPON_CONTENT_VERSION = "dev-attribute-probe-weapon"
 
 # 探针武器固定值：生命值上限 +1000、攻击力 +30%。
@@ -39,11 +37,6 @@ def create_attribute_probe_weapon_content_unit(
 ) -> ContentUnit:
     """属性探针武器内容单元工厂。"""
 
-    if request.weapon_key != ATTRIBUTE_PROBE_WEAPON_ASSET_KEY:
-        raise ContentUnitValidationError(
-            f"{ATTRIBUTE_PROBE_WEAPON_HANDLER_KEY!r} 只绑定 "
-            f"{ATTRIBUTE_PROBE_WEAPON_ASSET_KEY}，收到 {request.weapon_key!r}"
-        )
     owner_ref = AttributeSubjectRef.character(f"character:slot_{request.slot}")
     provider_key = f"{ATTRIBUTE_PROBE_WEAPON_HANDLER_KEY}.static.slot:{request.slot}"
     source_ref = RuntimeSourceRef(

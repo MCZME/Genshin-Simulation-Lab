@@ -41,7 +41,6 @@ from genshin_sim.core.systems.buff import (
 )
 
 ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY = "artifact.testing.attribute_probe"
-ATTRIBUTE_PROBE_ARTIFACT_ASSET_KEY = "artifact_set:test_attribute_probe"
 ATTRIBUTE_PROBE_ARTIFACT_CONTENT_VERSION = "dev-attribute-probe-artifact"
 
 ATTRIBUTE_PROBE_4P_TERM_KEY = f"{ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY}.4p.atk"
@@ -135,11 +134,6 @@ def create_attribute_probe_artifact_content_unit(
 ) -> ContentUnit:
     """属性探针套装内容单元工厂（按件数分支）。"""
 
-    if request.artifact_key != ATTRIBUTE_PROBE_ARTIFACT_ASSET_KEY:
-        raise ContentUnitValidationError(
-            f"{ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY!r} 只绑定 "
-            f"{ATTRIBUTE_PROBE_ARTIFACT_ASSET_KEY}，收到 {request.artifact_key!r}"
-        )
     if request.artifact_kind != "artifact_set_bonus":
         raise ContentUnitValidationError(
             f"{ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY} 只绑定套装效果，不绑定套装行"

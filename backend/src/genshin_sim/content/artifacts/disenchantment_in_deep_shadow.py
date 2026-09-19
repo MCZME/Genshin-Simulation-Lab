@@ -75,7 +75,6 @@ from genshin_sim.core.systems.reaction.mechanics.superconduct.mechanic import (
 )
 
 DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY = "artifact.disenchantment_in_deep_shadow"
-DISENCHANTMENT_IN_DEEP_SHADOW_ASSET_KEY = "artifact_set:15046"
 DISENCHANTMENT_IN_DEEP_SHADOW_CONTENT_VERSION = "dev-disenchantment-in-deep-shadow"
 
 DISENCHANTMENT_IN_DEEP_SHADOW_2P_AUDIT_TAG = "disenchantment_in_deep_shadow_2p"
@@ -87,11 +86,6 @@ def create_disenchantment_in_deep_shadow_content_unit(
 ) -> ContentUnit:
     """把影中沉凝的幻灭套装效果 payload 编译为 ContentUnit（按件数分支）。"""
 
-    if request.artifact_key != DISENCHANTMENT_IN_DEEP_SHADOW_ASSET_KEY:
-        raise ContentUnitValidationError(
-            f"{DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY} "
-            f"只接受影中沉凝的幻灭资产：{request.artifact_key}"
-        )
     if request.artifact_kind != "artifact_set_bonus":
         raise ContentUnitValidationError(
             f"{DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY} 只绑定套装效果，不绑定套装行"

@@ -51,7 +51,6 @@ from genshin_sim.core.systems.buff import (
 )
 
 MAIDEN_BELOVED_HANDLER_KEY = "artifact.maiden_beloved"
-MAIDEN_BELOVED_ASSET_KEY = "artifact_set:14004"
 MAIDEN_BELOVED_CONTENT_VERSION = "dev-maiden-beloved"
 
 MAIDEN_BELOVED_4P_TERM_KEY = f"{MAIDEN_BELOVED_HANDLER_KEY}.4p.incoming_healing"
@@ -144,10 +143,6 @@ def create_maiden_beloved_content_unit(
 ) -> ContentUnit:
     """把少女套装效果 payload 编译为 ContentUnit（按件数分支）。"""
 
-    if request.artifact_key != MAIDEN_BELOVED_ASSET_KEY:
-        raise ContentUnitValidationError(
-            f"{MAIDEN_BELOVED_HANDLER_KEY} 只接受被怜爱的少女资产：{request.artifact_key}"
-        )
     if request.artifact_kind != "artifact_set_bonus":
         raise ContentUnitValidationError(
             f"{MAIDEN_BELOVED_HANDLER_KEY} 只绑定套装效果，不绑定套装行"

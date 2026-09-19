@@ -50,6 +50,11 @@ from genshin_sim.content.weapons.polearm.beginner_protector import (
     BEGINNER_PROTECTOR_HANDLER_KEY,
     create_beginner_protector_content_unit,
 )
+from genshin_sim.content.weapons.polearm.favonius_lance import (
+    FAVONIUS_LANCE_HANDLER_KEY,
+    FAVONIUS_LANCE_PASSIVE_EFFECT_HANDLER_KEY,
+    create_favonius_lance_content_unit,
+)
 from genshin_sim.content.weapons.sword.dull_blade import (
     DULL_BLADE_HANDLER_KEY,
     create_dull_blade_content_unit,
@@ -113,6 +118,13 @@ def create_default_content_unit_registry(
         HUNTER_BOW_HANDLER_KEY,
         create_hunter_bow_content_unit,
     )
+    registry.register_weapon_factory(
+        FAVONIUS_LANCE_HANDLER_KEY,
+        create_favonius_lance_content_unit,
+    )
+    # 西风长枪被动的行为实现在武器内容单元上（效果通道不携带精炼等级），
+    # 效果行因此注册为空实现，不再沿用未实现占位键。
+    registry.register_empty_effect_handler(FAVONIUS_LANCE_PASSIVE_EFFECT_HANDLER_KEY)
     registry.register_artifact_factory(
         MAIDEN_BELOVED_HANDLER_KEY,
         create_maiden_beloved_content_unit,

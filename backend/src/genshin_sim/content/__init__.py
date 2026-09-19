@@ -112,6 +112,11 @@ from genshin_sim.content.team import (
     create_resonance_buff_definitions,
     create_resonance_definitions,
 )
+from genshin_sim.content.weapons.bow.favonius_warbow import (
+    FAVONIUS_WARBOW_HANDLER_KEY,
+    FAVONIUS_WARBOW_PASSIVE_EFFECT_HANDLER_KEY,
+    create_favonius_warbow_content_unit,
+)
 from genshin_sim.content.weapons.bow.hunter_bow import (
     HUNTER_BOW_HANDLER_KEY,
     create_hunter_bow_content_unit,
@@ -119,6 +124,16 @@ from genshin_sim.content.weapons.bow.hunter_bow import (
 from genshin_sim.content.weapons.catalyst.apprentice_notes import (
     APPRENTICE_NOTES_HANDLER_KEY,
     create_apprentice_notes_content_unit,
+)
+from genshin_sim.content.weapons.catalyst.favonius_codex import (
+    FAVONIUS_CODEX_HANDLER_KEY,
+    FAVONIUS_CODEX_PASSIVE_EFFECT_HANDLER_KEY,
+    create_favonius_codex_content_unit,
+)
+from genshin_sim.content.weapons.claymore.favonius_greatsword import (
+    FAVONIUS_GREATSWORD_HANDLER_KEY,
+    FAVONIUS_GREATSWORD_PASSIVE_EFFECT_HANDLER_KEY,
+    create_favonius_greatsword_content_unit,
 )
 from genshin_sim.content.weapons.claymore.waster_greatsword import (
     WASTER_GREATSWORD_HANDLER_KEY,
@@ -137,14 +152,27 @@ from genshin_sim.content.weapons.sword.dull_blade import (
     DULL_BLADE_HANDLER_KEY,
     create_dull_blade_content_unit,
 )
+from genshin_sim.content.weapons.sword.favonius_sword import (
+    FAVONIUS_SWORD_HANDLER_KEY,
+    FAVONIUS_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
+    create_favonius_sword_content_unit,
+)
 from genshin_sim.core.systems.buff import BuffDefinition
 
 __all__ = [
     "ArtifactContentUnitRequest",
     "APPRENTICE_NOTES_HANDLER_KEY",
     "BEGINNER_PROTECTOR_HANDLER_KEY",
+    "FAVONIUS_CODEX_HANDLER_KEY",
+    "FAVONIUS_CODEX_PASSIVE_EFFECT_HANDLER_KEY",
+    "FAVONIUS_GREATSWORD_HANDLER_KEY",
+    "FAVONIUS_GREATSWORD_PASSIVE_EFFECT_HANDLER_KEY",
     "FAVONIUS_LANCE_HANDLER_KEY",
     "FAVONIUS_LANCE_PASSIVE_EFFECT_HANDLER_KEY",
+    "FAVONIUS_SWORD_HANDLER_KEY",
+    "FAVONIUS_SWORD_PASSIVE_EFFECT_HANDLER_KEY",
+    "FAVONIUS_WARBOW_HANDLER_KEY",
+    "FAVONIUS_WARBOW_PASSIVE_EFFECT_HANDLER_KEY",
     "DENDRO_EM_20_TRIGGER_KEYS",
     "DENDRO_EM_30_TRIGGER_KEYS",
     "ELECTRO_PARTICLE_TRIGGER_KEYS",
@@ -233,7 +261,11 @@ __all__ = [
     "create_beginner_protector_content_unit",
     "create_default_content_unit_registry",
     "create_dull_blade_content_unit",
+    "create_favonius_codex_content_unit",
+    "create_favonius_greatsword_content_unit",
     "create_favonius_lance_content_unit",
+    "create_favonius_sword_content_unit",
+    "create_favonius_warbow_content_unit",
     "create_hunter_bow_content_unit",
     "create_maiden_beloved_content_unit",
     "create_resonance_buff_definitions",

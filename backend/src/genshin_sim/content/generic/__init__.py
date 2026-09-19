@@ -15,6 +15,16 @@ from genshin_sim.content.generic.constellations import (
     resolve_effect_specs,
     resolve_unlocked_constellations,
 )
+from genshin_sim.content.generic.favonius_windfall import (
+    WINDFALL_PARTICLE_COUNT,
+    WINDFALL_PICKUP_ELEMENT,
+    WINDFALL_PICKUP_KIND,
+    WINDFALL_TRAVEL_FRAMES_MAX,
+    WINDFALL_TRAVEL_FRAMES_MIN,
+    FavoniusWindfallError,
+    FavoniusWindfallHook,
+    windfall_parameters,
+)
 from genshin_sim.content.generic.plunge import (
     PLUNGE_COLLISION_AOE_OFFSET,
     PLUNGE_COLLISION_AOE_RADIUS,
@@ -68,6 +78,8 @@ __all__ = [
     "CompiledScalingComponent",
     "ConstellationMountError",
     "DuplicateEffectKeyError",
+    "FavoniusWindfallError",
+    "FavoniusWindfallHook",
     "InvalidPredicateParameterError",
     "Predicate",
     "PredicateContext",
@@ -92,6 +104,11 @@ __all__ = [
     "TimedActionSpec",
     "TimedActionSpecError",
     "TimedActionSpecValidationError",
+    "WINDFALL_PARTICLE_COUNT",
+    "WINDFALL_PICKUP_ELEMENT",
+    "WINDFALL_PICKUP_KIND",
+    "WINDFALL_TRAVEL_FRAMES_MAX",
+    "WINDFALL_TRAVEL_FRAMES_MIN",
     "all_of",
     "any_of",
     "build_timed_actions",
@@ -107,4 +124,5 @@ __all__ = [
     "resolve_unlocked_constellations",
     "stacks_above",
     "stacks_at_least",
+    "windfall_parameters",
 ]

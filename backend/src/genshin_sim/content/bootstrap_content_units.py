@@ -34,6 +34,11 @@ from genshin_sim.content.characters.mondstadt.barbara import (
     create_barbara_encore_effect,
 )
 from genshin_sim.content.registries import ContentUnitRegistry
+from genshin_sim.content.weapons.bow.favonius_warbow import (
+    FAVONIUS_WARBOW_HANDLER_KEY,
+    FAVONIUS_WARBOW_PASSIVE_EFFECT_HANDLER_KEY,
+    create_favonius_warbow_content_unit,
+)
 from genshin_sim.content.weapons.bow.hunter_bow import (
     HUNTER_BOW_HANDLER_KEY,
     create_hunter_bow_content_unit,
@@ -41,6 +46,16 @@ from genshin_sim.content.weapons.bow.hunter_bow import (
 from genshin_sim.content.weapons.catalyst.apprentice_notes import (
     APPRENTICE_NOTES_HANDLER_KEY,
     create_apprentice_notes_content_unit,
+)
+from genshin_sim.content.weapons.catalyst.favonius_codex import (
+    FAVONIUS_CODEX_HANDLER_KEY,
+    FAVONIUS_CODEX_PASSIVE_EFFECT_HANDLER_KEY,
+    create_favonius_codex_content_unit,
+)
+from genshin_sim.content.weapons.claymore.favonius_greatsword import (
+    FAVONIUS_GREATSWORD_HANDLER_KEY,
+    FAVONIUS_GREATSWORD_PASSIVE_EFFECT_HANDLER_KEY,
+    create_favonius_greatsword_content_unit,
 )
 from genshin_sim.content.weapons.claymore.waster_greatsword import (
     WASTER_GREATSWORD_HANDLER_KEY,
@@ -58,6 +73,11 @@ from genshin_sim.content.weapons.polearm.favonius_lance import (
 from genshin_sim.content.weapons.sword.dull_blade import (
     DULL_BLADE_HANDLER_KEY,
     create_dull_blade_content_unit,
+)
+from genshin_sim.content.weapons.sword.favonius_sword import (
+    FAVONIUS_SWORD_HANDLER_KEY,
+    FAVONIUS_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
+    create_favonius_sword_content_unit,
 )
 
 BUILTIN_NOOP_CONTENT_HANDLER_KEYS = (
@@ -118,13 +138,26 @@ def create_default_content_unit_registry(
         HUNTER_BOW_HANDLER_KEY,
         create_hunter_bow_content_unit,
     )
-    registry.register_weapon_factory(
-        FAVONIUS_LANCE_HANDLER_KEY,
-        create_favonius_lance_content_unit,
-    )
-    # 西风长枪被动的行为实现在武器内容单元上（效果通道不携带精炼等级），
-    # 效果行因此注册为空实现，不再沿用未实现占位键。
-    registry.register_empty_effect_handler(FAVONIUS_LANCE_PASSIVE_EFFECT_HANDLER_KEY)
+    # 西风系列五把武器各自一个内容包与一个 handler 键；判定、资产参数解读与钩子
+    # 实现是共用部件（``content/generic/favonius_windfall.py``），各包只声明自己的键。
+    for handler_key, factory in (
+        (FAVONIUS_SWORD_HANDLER_KEY, create_favonius_sword_content_unit),
+        (FAVONIUS_GREATSWORD_HANDLER_KEY, create_favonius_greatsword_content_unit),
+        (FAVONIUS_LANCE_HANDLER_KEY, create_favonius_lance_content_unit),
+        (FAVONIUS_CODEX_HANDLER_KEY, create_favonius_codex_content_unit),
+        (FAVONIUS_WARBOW_HANDLER_KEY, create_favonius_warbow_content_unit),
+    ):
+        registry.register_weapon_factory(handler_key, factory)
+    # 被动的行为实现在武器内容单元上（效果通道不携带精炼等级），效果行因此全部
+    # 注册为空实现，不再沿用未实现占位键。
+    for effect_handler_key in (
+        FAVONIUS_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
+        FAVONIUS_GREATSWORD_PASSIVE_EFFECT_HANDLER_KEY,
+        FAVONIUS_LANCE_PASSIVE_EFFECT_HANDLER_KEY,
+        FAVONIUS_CODEX_PASSIVE_EFFECT_HANDLER_KEY,
+        FAVONIUS_WARBOW_PASSIVE_EFFECT_HANDLER_KEY,
+    ):
+        registry.register_empty_effect_handler(effect_handler_key)
     registry.register_artifact_factory(
         MAIDEN_BELOVED_HANDLER_KEY,
         create_maiden_beloved_content_unit,

@@ -506,7 +506,6 @@ def barbara_favonius_lance_input_payload(
     refinement: int = 5,
     max_frames: int = 400,
     seed: int = 20260918,
-    crit_rate: float = 1.0,
 ) -> dict[str, object]:
     """芭芭拉 + 西风长枪的顺风而行验收配置。
 
@@ -536,7 +535,7 @@ def barbara_favonius_lance_input_payload(
                     "level": 90,
                     "refinement": refinement,
                 },
-                "artifacts": {"sets": [], "stats": {"crit_rate": crit_rate}},
+                "artifacts": {"sets": [], "stats": {"crit_rate": 1.0}},
             }
         ],
         "scene": single_target_scene(),

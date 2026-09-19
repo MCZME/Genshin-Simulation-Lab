@@ -242,6 +242,7 @@ class ContentCompiler:
             weapon_key=bundle.weapon.asset_key,
             slot=bundle.slot,
             refinement=slot_config.weapon.refinement,
+            params=self._weapon_effect_params(bundle),
             asset=bundle.weapon,
         )
         try:
@@ -250,6 +251,32 @@ class ContentCompiler:
             raise MissingRuntimeHandlerError(f"组装阶段缺少武器 handler：{handler_key}") from exc
         except ContentUnitValidationError as exc:
             raise InvalidRuntimePayloadError(str(exc)) from exc
+
+    @staticmethod
+    def _weapon_effect_params(bundle: RuntimeAssetBundle) -> dict[str, Any]:
+        """把该武器名下唯一的效果行参数原样交给武器内容工厂。
+
+        资产侧当前只提供「一把武器 0 或 1 条效果行」。这里只负责把数据交出去，
+        不约束 `components` 等字段的形状；如何解读由内容自行决定。多于一条时
+        单条 `params` 无法承载，通道本身需要重新设计，因此直接失败而不是取第一条。
+        """
+
+        assert bundle.weapon is not None
+        owned = [
+            payload
+            for payload in bundle.effect_payloads
+            if payload.owner_type == "weapon" and payload.owner_key == bundle.weapon.asset_key
+        ]
+        if not owned:
+            return {}
+        if len(owned) > 1:
+            raise InvalidRuntimePayloadError(
+                f"武器 {bundle.weapon.asset_key} 名下有 {len(owned)} 条效果行，"
+                "但武器内容通道只承载单条 params；新增多条前需要先重新设计该通道"
+            )
+        params = owned[0].params
+        ContentCompiler._validate_payload_params(owned[0].handler_key, params)
+        return dict(params)
 
     def _prepare_artifact_set(
         self,

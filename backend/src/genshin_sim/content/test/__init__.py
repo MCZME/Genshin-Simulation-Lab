@@ -22,13 +22,11 @@ from genshin_sim.content.test.characters.reaction_probe import (
     create_test_b_content_unit,
 )
 from genshin_sim.content.test.weapons.modifier_blade import (
-    MODIFIER_BLADE_ASSET_KEY,
     MODIFIER_BLADE_HANDLER_KEY,
     create_modifier_blade_content_unit,
 )
 
 __all__ = [
-    "MODIFIER_BLADE_ASSET_KEY",
     "MODIFIER_BLADE_HANDLER_KEY",
     "TEST_A_ACTION_KEY",
     "TEST_A_ASSET_KEY",

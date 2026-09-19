@@ -10,7 +10,6 @@ from __future__ import annotations
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
-    ContentUnitValidationError,
 )
 from genshin_sim.content.registries import WeaponContentUnitRequest
 from genshin_sim.content.test.modifiers import OwnerScopedStaticDamageModifierProvider
@@ -28,7 +27,6 @@ from genshin_sim.core.systems.damage import (
 )
 
 MODIFIER_BLADE_HANDLER_KEY = "weapon.testing.modifier_blade"
-MODIFIER_BLADE_ASSET_KEY = "weapon:test_modifier_blade"
 MODIFIER_BLADE_CONTENT_VERSION = "dev-modifier-blade"
 
 MODIFIER_BLADE_CRIT_RATE_GROUP_KEY = "testing.modifier_blade.crit_rate_highest"
@@ -50,11 +48,6 @@ def create_modifier_blade_content_unit(
 ) -> ContentUnit:
     """词条探针大剑内容单元工厂。"""
 
-    if request.weapon_key != MODIFIER_BLADE_ASSET_KEY:
-        raise ContentUnitValidationError(
-            f"handler {MODIFIER_BLADE_HANDLER_KEY!r} 只绑定 "
-            f"{MODIFIER_BLADE_ASSET_KEY}，收到 {request.weapon_key!r}"
-        )
     owner_ref = AttributeSubjectRef.character(f"character:slot_{request.slot}")
     source_ref = RuntimeSourceRef(RuntimeSourceKind.CONTENT, MODIFIER_BLADE_HANDLER_KEY)
 

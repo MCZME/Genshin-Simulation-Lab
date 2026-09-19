@@ -82,7 +82,6 @@ from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
 )
 
 HEART_OF_THE_FURNACE_HANDLER_KEY = "artifact.heart_of_the_furnace"
-HEART_OF_THE_FURNACE_ASSET_KEY = "artifact_set:15048"
 HEART_OF_THE_FURNACE_CONTENT_VERSION = "dev-heart-of-the-furnace"
 
 HEART_OF_THE_FURNACE_2P_AUDIT_TAG = "heart_of_the_furnace_2p"
@@ -132,11 +131,6 @@ def create_heart_of_the_furnace_content_unit(
 ) -> ContentUnit:
     """把炉火融炼之心套装效果 payload 编译为 ContentUnit（按件数分支）。"""
 
-    if request.artifact_key != HEART_OF_THE_FURNACE_ASSET_KEY:
-        raise ContentUnitValidationError(
-            f"{HEART_OF_THE_FURNACE_HANDLER_KEY} "
-            f"只接受炉火融炼之心资产：{request.artifact_key}"
-        )
     if request.artifact_kind != "artifact_set_bonus":
         raise ContentUnitValidationError(
             f"{HEART_OF_THE_FURNACE_HANDLER_KEY} 只绑定套装效果，不绑定套装行"

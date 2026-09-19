@@ -29,7 +29,6 @@ from genshin_sim.core.systems.damage import (
 )
 
 MODIFIER_SET_HANDLER_KEY = "artifact.testing.modifier_set"
-MODIFIER_SET_ASSET_KEY = "artifact_set:test_modifier_set"
 MODIFIER_SET_CONTENT_VERSION = "dev-modifier-set"
 
 MODIFIER_SET_2P_PROVIDER_KEY = f"{MODIFIER_SET_HANDLER_KEY}.2p.base_flat"
@@ -47,11 +46,6 @@ def create_modifier_set_content_unit(
 ) -> ContentUnit:
     """词条探针套装内容单元工厂（按件数分支）。"""
 
-    if request.artifact_key != MODIFIER_SET_ASSET_KEY:
-        raise ContentUnitValidationError(
-            f"handler {MODIFIER_SET_HANDLER_KEY!r} 只绑定 "
-            f"{MODIFIER_SET_ASSET_KEY}，收到 {request.artifact_key!r}"
-        )
     if request.artifact_kind != "artifact_set_bonus":
         raise ContentUnitValidationError(f"{MODIFIER_SET_HANDLER_KEY} 只绑定套装效果，不绑定套装行")
     if request.piece_count == 2:

@@ -9,11 +9,9 @@ from __future__ import annotations
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
-    ContentUnitValidationError,
 )
 from genshin_sim.content.registries import WeaponContentUnitRequest
 from genshin_sim.content.weapons.catalyst.apprentice_notes.data import (
-    APPRENTICE_NOTES_ASSET_KEY,
     APPRENTICE_NOTES_CONTENT_VERSION,
     APPRENTICE_NOTES_HANDLER_KEY,
 )
@@ -23,11 +21,7 @@ def create_apprentice_notes_content_unit(
     request: WeaponContentUnitRequest,
 ) -> ContentUnit:
     """学徒笔记 stat-only 内容单元工厂。"""
-    if request.weapon_key != APPRENTICE_NOTES_ASSET_KEY:
-        raise ContentUnitValidationError(
-            f"handler {APPRENTICE_NOTES_HANDLER_KEY!r} 只绑定 "
-            f"{APPRENTICE_NOTES_ASSET_KEY}，收到 {request.weapon_key!r}"
-        )
+
     return ContentUnit(
         owner_type=ContentUnitOwnerType.WEAPON,
         owner_key=request.weapon_key,

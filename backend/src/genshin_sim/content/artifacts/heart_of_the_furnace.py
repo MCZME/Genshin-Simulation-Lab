@@ -81,7 +81,10 @@ from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
     STELLAR_SWIRL_REACTION_KEY,
 )
 
-HEART_OF_THE_FURNACE_HANDLER_KEY = "artifact.heart_of_the_furnace"
+HEART_OF_THE_FURNACE_KEY_PREFIX = "artifact.heart_of_the_furnace"
+HEART_OF_THE_FURNACE_HANDLER_KEY = HEART_OF_THE_FURNACE_KEY_PREFIX
+HEART_OF_THE_FURNACE_2P_HANDLER_KEY = f"{HEART_OF_THE_FURNACE_KEY_PREFIX}.2p"
+HEART_OF_THE_FURNACE_4P_HANDLER_KEY = f"{HEART_OF_THE_FURNACE_KEY_PREFIX}.4p"
 HEART_OF_THE_FURNACE_CONTENT_VERSION = "dev-heart-of-the-furnace"
 
 HEART_OF_THE_FURNACE_2P_AUDIT_TAG = "heart_of_the_furnace_2p"
@@ -101,13 +104,13 @@ STELLAR_REACTION_KEYS = frozenset(
 def heart_of_the_furnace_4p_atk_definition_key(slot: int) -> str:
     """4 件套 B1（装备者攻击力）按穿戴者槽位区分的 Buff 定义键。"""
 
-    return f"{HEART_OF_THE_FURNACE_HANDLER_KEY}.4p.atk_percent.slot:{slot}"
+    return f"{HEART_OF_THE_FURNACE_KEY_PREFIX}.4p.atk_percent.slot:{slot}"
 
 
 def heart_of_the_furnace_4p_atk_conflict_key(slot: int) -> str:
     """4 件套 B1 的冲突键；按槽位区分，使不同穿戴者的自身加成互不干扰。"""
 
-    return f"{HEART_OF_THE_FURNACE_HANDLER_KEY}.4p.atk.slot:{slot}"
+    return f"{HEART_OF_THE_FURNACE_KEY_PREFIX}.4p.atk.slot:{slot}"
 
 
 def heart_of_the_furnace_4p_window_definition_key() -> str:
@@ -117,31 +120,78 @@ def heart_of_the_furnace_4p_window_definition_key() -> str:
     全队只应存在一份；多人穿戴同名套装时天然共享同一窗口（不叠加）。
     """
 
-    return f"{HEART_OF_THE_FURNACE_HANDLER_KEY}.4p.stellar_window"
+    return f"{HEART_OF_THE_FURNACE_KEY_PREFIX}.4p.stellar_window"
 
 
 def heart_of_the_furnace_4p_window_conflict_key() -> str:
     """4 件套 B2 标记 Buff 的冲突键；队伍级单一键。"""
 
-    return f"{HEART_OF_THE_FURNACE_HANDLER_KEY}.4p.stellar_window"
+    return f"{HEART_OF_THE_FURNACE_KEY_PREFIX}.4p.stellar_window"
 
 
-def create_heart_of_the_furnace_content_unit(
+def create_heart_of_the_furnace_identity_unit(
     request: ArtifactContentUnitRequest,
 ) -> ContentUnit:
-    """把炉火融炼之心套装效果 payload 编译为 ContentUnit（按件数分支）。"""
+    """炉火融炼之心套装身份单元：表明这个套装是什么，并拥有它的件数效果单元。"""
 
-    if request.artifact_kind != "artifact_set_bonus":
-        raise ContentUnitValidationError(
-            f"{HEART_OF_THE_FURNACE_HANDLER_KEY} 只绑定套装效果，不绑定套装行"
-        )
-    if request.piece_count == 2:
-        return _create_two_piece_unit(request)
-    if request.piece_count == 4:
-        return _create_four_piece_unit(request)
-    raise ContentUnitValidationError(
-        f"{HEART_OF_THE_FURNACE_HANDLER_KEY} 不支持 {request.piece_count} 件套"
+    _require_set_row(request, handler_key=HEART_OF_THE_FURNACE_HANDLER_KEY)
+    return ContentUnit(
+        owner_type=ContentUnitOwnerType.ARTIFACT,
+        owner_key=request.artifact_key,
+        handler_key=HEART_OF_THE_FURNACE_HANDLER_KEY,
+        version=HEART_OF_THE_FURNACE_CONTENT_VERSION,
+        slot=request.slot,
+        metadata={"purpose": "heart_of_the_furnace_set_identity"},
     )
+
+
+def create_heart_of_the_furnace_two_piece_unit(
+    request: ArtifactContentUnitRequest,
+) -> ContentUnit:
+    """炉火融炼之心 2 件套：装备者攻击力提高。"""
+
+    _require_piece_count(
+        request,
+        expected=2,
+        handler_key=HEART_OF_THE_FURNACE_2P_HANDLER_KEY,
+    )
+    return _create_two_piece_unit(request)
+
+
+def create_heart_of_the_furnace_four_piece_unit(
+    request: ArtifactContentUnitRequest,
+) -> ContentUnit:
+    """炉火融炼之心 4 件套：自身攻击力提升与全队星烁反应伤害窗口。"""
+
+    _require_piece_count(
+        request,
+        expected=4,
+        handler_key=HEART_OF_THE_FURNACE_4P_HANDLER_KEY,
+    )
+    return _create_four_piece_unit(request)
+
+
+def _require_piece_count(
+    request: ArtifactContentUnitRequest,
+    *,
+    expected: int,
+    handler_key: str,
+) -> None:
+    """件数效果键必须绑定到对应件数的效果行。"""
+
+    if request.piece_count != expected:
+        raise ContentUnitValidationError(
+            f"{handler_key} 只绑定 {expected} 件套效果，收到 {request.piece_count} 件"
+        )
+
+
+def _require_set_row(request: ArtifactContentUnitRequest, *, handler_key: str) -> None:
+    """套装索引行单元键只能绑定套装索引行，不能绑定件数效果行。"""
+
+    if request.piece_count is not None:
+        raise ContentUnitValidationError(
+            f"{handler_key} 只绑定套装索引行，收到 {request.piece_count} 件套效果行"
+        )
 
 
 def _owner_ref(slot: int) -> str:
@@ -151,7 +201,7 @@ def _owner_ref(slot: int) -> str:
 def _source_ref(scope: str, slot: int) -> RuntimeSourceRef:
     return RuntimeSourceRef(
         RuntimeSourceKind.CONTENT,
-        f"{HEART_OF_THE_FURNACE_HANDLER_KEY}:{scope}:slot:{slot}",
+        f"{HEART_OF_THE_FURNACE_KEY_PREFIX}:{scope}:slot:{slot}",
     )
 
 
@@ -164,7 +214,7 @@ def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
         purpose="2 件套攻击力加成",
     )
     subject_ref = AttributeSubjectRef.character(_owner_ref(request.slot))
-    provider_key = f"{HEART_OF_THE_FURNACE_HANDLER_KEY}.2p.atk_percent.slot:{request.slot}"
+    provider_key = f"{HEART_OF_THE_FURNACE_KEY_PREFIX}.2p.atk_percent.slot:{request.slot}"
     provider = StaticModifierProvider(
         ModifierProviderSpec(
             provider_key=provider_key,
@@ -187,7 +237,7 @@ def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
-        handler_key=HEART_OF_THE_FURNACE_HANDLER_KEY,
+        handler_key=HEART_OF_THE_FURNACE_2P_HANDLER_KEY,
         version=HEART_OF_THE_FURNACE_CONTENT_VERSION,
         slot=request.slot,
         attribute_providers=(provider,),
@@ -218,7 +268,7 @@ def _create_four_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
         atk_bonus=atk_percent,
         atk_definition_key=atk_definition_key,
         window_definition_key=window_definition_key,
-        term_key=f"{HEART_OF_THE_FURNACE_HANDLER_KEY}.4p.atk_percent",
+        term_key=f"{HEART_OF_THE_FURNACE_KEY_PREFIX}.4p.atk_percent",
     )
     atk_definition = _build_atk_buff_definition(
         definition_key=atk_definition_key,
@@ -233,7 +283,7 @@ def _create_four_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
-        handler_key=HEART_OF_THE_FURNACE_HANDLER_KEY,
+        handler_key=HEART_OF_THE_FURNACE_4P_HANDLER_KEY,
         version=HEART_OF_THE_FURNACE_CONTENT_VERSION,
         slot=request.slot,
         event_hooks=(hook,),
@@ -252,8 +302,8 @@ def _build_atk_buff_definition(
 
     return BuffDefinition(
         definition_key=definition_key,
-        mechanic_key=f"{HEART_OF_THE_FURNACE_HANDLER_KEY}.4p.atk_percent",
-        handler_key=HEART_OF_THE_FURNACE_HANDLER_KEY,
+        mechanic_key=f"{HEART_OF_THE_FURNACE_KEY_PREFIX}.4p.atk_percent",
+        handler_key=HEART_OF_THE_FURNACE_4P_HANDLER_KEY,
         conflict_key=conflict_key,
         target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
         application_policy=BuffApplicationPolicy.REFRESH,
@@ -262,7 +312,7 @@ def _build_atk_buff_definition(
         display_name="炉火融炼之心 4件套·攻击力",
         attribute_modifiers=(
             BuffAttributeModifierTemplate(
-                term_key=f"{HEART_OF_THE_FURNACE_HANDLER_KEY}.4p.atk_percent",
+                term_key=f"{HEART_OF_THE_FURNACE_KEY_PREFIX}.4p.atk_percent",
                 target_key=STAT_ATK_TOTAL,
                 stage=ModifierStage.PERCENT_ADD,
                 audit_tags=(HEART_OF_THE_FURNACE_4P_AUDIT_TAG,),
@@ -280,8 +330,8 @@ def _build_window_marker_definition(definition_key: str) -> BuffDefinition:
 
     return BuffDefinition(
         definition_key=definition_key,
-        mechanic_key=f"{HEART_OF_THE_FURNACE_HANDLER_KEY}.4p.stellar_window",
-        handler_key=HEART_OF_THE_FURNACE_HANDLER_KEY,
+        mechanic_key=f"{HEART_OF_THE_FURNACE_KEY_PREFIX}.4p.stellar_window",
+        handler_key=HEART_OF_THE_FURNACE_4P_HANDLER_KEY,
         conflict_key=heart_of_the_furnace_4p_window_conflict_key(),
         target_kinds=frozenset({AttributeSubjectKind.TEAM}),
         application_policy=BuffApplicationPolicy.REFRESH,
@@ -330,10 +380,10 @@ class HeartOfTheFurnaceTriggerHook:
         self._team_subject_ref = AttributeSubjectRef.team(STELLAR_CONDUCT_TEAM_SCOPE)
         self._source_ref = RuntimeSourceRef(
             RuntimeSourceKind.CONTENT,
-            f"{HEART_OF_THE_FURNACE_HANDLER_KEY}:4p:slot:{slot}",
+            f"{HEART_OF_THE_FURNACE_KEY_PREFIX}:4p:slot:{slot}",
         )
-        self.hook_key = f"{HEART_OF_THE_FURNACE_HANDLER_KEY}.4p:{owner_ref}"
-        self.state_key = HEART_OF_THE_FURNACE_HANDLER_KEY
+        self.hook_key = f"{HEART_OF_THE_FURNACE_KEY_PREFIX}.4p:{owner_ref}"
+        self.state_key = HEART_OF_THE_FURNACE_4P_HANDLER_KEY
         self.subscriptions = (
             "REACTION_OCCURRED",
             "DAMAGE_RESOLVED",
@@ -443,9 +493,7 @@ class HeartOfTheFurnaceStellarBonusProvider:
         self._window_definition_key = window_definition_key
         self._bonus = bonus
         self._team_subject_ref = AttributeSubjectRef.team(STELLAR_CONDUCT_TEAM_SCOPE)
-        self._provider_key = (
-            f"{HEART_OF_THE_FURNACE_HANDLER_KEY}.4p.stellar_bonus.slot:{slot}"
-        )
+        self._provider_key = f"{HEART_OF_THE_FURNACE_KEY_PREFIX}.4p.stellar_bonus.slot:{slot}"
         self._source_ref = _source_ref("4p:stellar_bonus", slot)
         self.provider_spec = DamageModifierProviderSpec(
             provider_key=self._provider_key,

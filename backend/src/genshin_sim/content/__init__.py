@@ -1,14 +1,18 @@
 """内置内容实现与新模型注册入口。"""
 
 from genshin_sim.content.artifacts.disenchantment_in_deep_shadow import (
+    DISENCHANTMENT_IN_DEEP_SHADOW_2P_HANDLER_KEY,
+    DISENCHANTMENT_IN_DEEP_SHADOW_4P_HANDLER_KEY,
     DISENCHANTMENT_IN_DEEP_SHADOW_CONTENT_VERSION,
-    DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY,
-    create_disenchantment_in_deep_shadow_content_unit,
+    create_disenchantment_in_deep_shadow_four_piece_unit,
+    create_disenchantment_in_deep_shadow_two_piece_unit,
 )
 from genshin_sim.content.artifacts.maiden_beloved import (
+    MAIDEN_BELOVED_2P_HANDLER_KEY,
+    MAIDEN_BELOVED_4P_HANDLER_KEY,
     MAIDEN_BELOVED_CONTENT_VERSION,
-    MAIDEN_BELOVED_HANDLER_KEY,
-    create_maiden_beloved_content_unit,
+    create_maiden_beloved_four_piece_unit,
+    create_maiden_beloved_two_piece_unit,
 )
 from genshin_sim.content.bootstrap_content_units import (
     BUILTIN_NOOP_CONTENT_HANDLER_KEYS,
@@ -115,7 +119,8 @@ from genshin_sim.content.team import (
 from genshin_sim.content.weapons.bow.favonius_warbow import (
     FAVONIUS_WARBOW_HANDLER_KEY,
     FAVONIUS_WARBOW_PASSIVE_EFFECT_HANDLER_KEY,
-    create_favonius_warbow_content_unit,
+    create_favonius_warbow_identity_unit,
+    create_favonius_warbow_passive_unit,
 )
 from genshin_sim.content.weapons.bow.hunter_bow import (
     HUNTER_BOW_HANDLER_KEY,
@@ -128,12 +133,14 @@ from genshin_sim.content.weapons.catalyst.apprentice_notes import (
 from genshin_sim.content.weapons.catalyst.favonius_codex import (
     FAVONIUS_CODEX_HANDLER_KEY,
     FAVONIUS_CODEX_PASSIVE_EFFECT_HANDLER_KEY,
-    create_favonius_codex_content_unit,
+    create_favonius_codex_identity_unit,
+    create_favonius_codex_passive_unit,
 )
 from genshin_sim.content.weapons.claymore.favonius_greatsword import (
     FAVONIUS_GREATSWORD_HANDLER_KEY,
     FAVONIUS_GREATSWORD_PASSIVE_EFFECT_HANDLER_KEY,
-    create_favonius_greatsword_content_unit,
+    create_favonius_greatsword_identity_unit,
+    create_favonius_greatsword_passive_unit,
 )
 from genshin_sim.content.weapons.claymore.waster_greatsword import (
     WASTER_GREATSWORD_HANDLER_KEY,
@@ -146,7 +153,8 @@ from genshin_sim.content.weapons.polearm.beginner_protector import (
 from genshin_sim.content.weapons.polearm.favonius_lance import (
     FAVONIUS_LANCE_HANDLER_KEY,
     FAVONIUS_LANCE_PASSIVE_EFFECT_HANDLER_KEY,
-    create_favonius_lance_content_unit,
+    create_favonius_lance_identity_unit,
+    create_favonius_lance_passive_unit,
 )
 from genshin_sim.content.weapons.sword.dull_blade import (
     DULL_BLADE_HANDLER_KEY,
@@ -155,7 +163,8 @@ from genshin_sim.content.weapons.sword.dull_blade import (
 from genshin_sim.content.weapons.sword.favonius_sword import (
     FAVONIUS_SWORD_HANDLER_KEY,
     FAVONIUS_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
-    create_favonius_sword_content_unit,
+    create_favonius_sword_identity_unit,
+    create_favonius_sword_passive_unit,
 )
 from genshin_sim.core.systems.buff import BuffDefinition
 
@@ -231,10 +240,13 @@ __all__ = [
     "HUNTER_BOW_HANDLER_KEY",
     "JSONValue",
     "MAIDEN_BELOVED_CONTENT_VERSION",
-    "MAIDEN_BELOVED_HANDLER_KEY",
+    "MAIDEN_BELOVED_2P_HANDLER_KEY",
+    "MAIDEN_BELOVED_4P_HANDLER_KEY",
     "DISENCHANTMENT_IN_DEEP_SHADOW_CONTENT_VERSION",
-    "DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY",
-    "create_disenchantment_in_deep_shadow_content_unit",
+    "DISENCHANTMENT_IN_DEEP_SHADOW_2P_HANDLER_KEY",
+    "DISENCHANTMENT_IN_DEEP_SHADOW_4P_HANDLER_KEY",
+    "create_disenchantment_in_deep_shadow_two_piece_unit",
+    "create_disenchantment_in_deep_shadow_four_piece_unit",
     "Modifier",
     "RESONANCE_DENDRO_EM_20_BUFF_KEY",
     "RESONANCE_DENDRO_EM_30_BUFF_KEY",
@@ -261,13 +273,19 @@ __all__ = [
     "create_beginner_protector_content_unit",
     "create_default_content_unit_registry",
     "create_dull_blade_content_unit",
-    "create_favonius_codex_content_unit",
-    "create_favonius_greatsword_content_unit",
-    "create_favonius_lance_content_unit",
-    "create_favonius_sword_content_unit",
-    "create_favonius_warbow_content_unit",
+    "create_favonius_codex_identity_unit",
+    "create_favonius_codex_passive_unit",
+    "create_favonius_greatsword_identity_unit",
+    "create_favonius_greatsword_passive_unit",
+    "create_favonius_lance_identity_unit",
+    "create_favonius_lance_passive_unit",
+    "create_favonius_sword_identity_unit",
+    "create_favonius_sword_passive_unit",
+    "create_favonius_warbow_identity_unit",
+    "create_favonius_warbow_passive_unit",
     "create_hunter_bow_content_unit",
-    "create_maiden_beloved_content_unit",
+    "create_maiden_beloved_two_piece_unit",
+    "create_maiden_beloved_four_piece_unit",
     "create_resonance_buff_definitions",
     "create_resonance_definitions",
     "create_waster_greatsword_content_unit",

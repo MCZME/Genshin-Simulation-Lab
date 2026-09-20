@@ -3,16 +3,28 @@
 from __future__ import annotations
 
 from genshin_sim.content.artifacts.disenchantment_in_deep_shadow import (
+    DISENCHANTMENT_IN_DEEP_SHADOW_2P_HANDLER_KEY,
+    DISENCHANTMENT_IN_DEEP_SHADOW_4P_HANDLER_KEY,
     DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY,
-    create_disenchantment_in_deep_shadow_content_unit,
+    create_disenchantment_in_deep_shadow_four_piece_unit,
+    create_disenchantment_in_deep_shadow_identity_unit,
+    create_disenchantment_in_deep_shadow_two_piece_unit,
 )
 from genshin_sim.content.artifacts.heart_of_the_furnace import (
+    HEART_OF_THE_FURNACE_2P_HANDLER_KEY,
+    HEART_OF_THE_FURNACE_4P_HANDLER_KEY,
     HEART_OF_THE_FURNACE_HANDLER_KEY,
-    create_heart_of_the_furnace_content_unit,
+    create_heart_of_the_furnace_four_piece_unit,
+    create_heart_of_the_furnace_identity_unit,
+    create_heart_of_the_furnace_two_piece_unit,
 )
 from genshin_sim.content.artifacts.maiden_beloved import (
+    MAIDEN_BELOVED_2P_HANDLER_KEY,
+    MAIDEN_BELOVED_4P_HANDLER_KEY,
     MAIDEN_BELOVED_HANDLER_KEY,
-    create_maiden_beloved_content_unit,
+    create_maiden_beloved_four_piece_unit,
+    create_maiden_beloved_identity_unit,
+    create_maiden_beloved_two_piece_unit,
 )
 from genshin_sim.content.characters.mondstadt.barbara import (
     BARBARA_CHARACTER_HANDLER_KEY,
@@ -37,7 +49,8 @@ from genshin_sim.content.registries import ContentUnitRegistry
 from genshin_sim.content.weapons.bow.favonius_warbow import (
     FAVONIUS_WARBOW_HANDLER_KEY,
     FAVONIUS_WARBOW_PASSIVE_EFFECT_HANDLER_KEY,
-    create_favonius_warbow_content_unit,
+    create_favonius_warbow_identity_unit,
+    create_favonius_warbow_passive_unit,
 )
 from genshin_sim.content.weapons.bow.hunter_bow import (
     HUNTER_BOW_HANDLER_KEY,
@@ -50,12 +63,14 @@ from genshin_sim.content.weapons.catalyst.apprentice_notes import (
 from genshin_sim.content.weapons.catalyst.favonius_codex import (
     FAVONIUS_CODEX_HANDLER_KEY,
     FAVONIUS_CODEX_PASSIVE_EFFECT_HANDLER_KEY,
-    create_favonius_codex_content_unit,
+    create_favonius_codex_identity_unit,
+    create_favonius_codex_passive_unit,
 )
 from genshin_sim.content.weapons.claymore.favonius_greatsword import (
     FAVONIUS_GREATSWORD_HANDLER_KEY,
     FAVONIUS_GREATSWORD_PASSIVE_EFFECT_HANDLER_KEY,
-    create_favonius_greatsword_content_unit,
+    create_favonius_greatsword_identity_unit,
+    create_favonius_greatsword_passive_unit,
 )
 from genshin_sim.content.weapons.claymore.waster_greatsword import (
     WASTER_GREATSWORD_HANDLER_KEY,
@@ -68,7 +83,8 @@ from genshin_sim.content.weapons.polearm.beginner_protector import (
 from genshin_sim.content.weapons.polearm.favonius_lance import (
     FAVONIUS_LANCE_HANDLER_KEY,
     FAVONIUS_LANCE_PASSIVE_EFFECT_HANDLER_KEY,
-    create_favonius_lance_content_unit,
+    create_favonius_lance_identity_unit,
+    create_favonius_lance_passive_unit,
 )
 from genshin_sim.content.weapons.sword.dull_blade import (
     DULL_BLADE_HANDLER_KEY,
@@ -77,7 +93,8 @@ from genshin_sim.content.weapons.sword.dull_blade import (
 from genshin_sim.content.weapons.sword.favonius_sword import (
     FAVONIUS_SWORD_HANDLER_KEY,
     FAVONIUS_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
-    create_favonius_sword_content_unit,
+    create_favonius_sword_identity_unit,
+    create_favonius_sword_passive_unit,
 )
 
 BUILTIN_NOOP_CONTENT_HANDLER_KEYS = (
@@ -141,35 +158,50 @@ def create_default_content_unit_registry(
     # 西风系列五把武器各自一个内容包与一个 handler 键；判定、资产参数解读与钩子
     # 实现是共用部件（``content/generic/favonius_windfall.py``），各包只声明自己的键。
     for handler_key, factory in (
-        (FAVONIUS_SWORD_HANDLER_KEY, create_favonius_sword_content_unit),
-        (FAVONIUS_GREATSWORD_HANDLER_KEY, create_favonius_greatsword_content_unit),
-        (FAVONIUS_LANCE_HANDLER_KEY, create_favonius_lance_content_unit),
-        (FAVONIUS_CODEX_HANDLER_KEY, create_favonius_codex_content_unit),
-        (FAVONIUS_WARBOW_HANDLER_KEY, create_favonius_warbow_content_unit),
+        (FAVONIUS_SWORD_HANDLER_KEY, create_favonius_sword_identity_unit),
+        (FAVONIUS_GREATSWORD_HANDLER_KEY, create_favonius_greatsword_identity_unit),
+        (FAVONIUS_LANCE_HANDLER_KEY, create_favonius_lance_identity_unit),
+        (FAVONIUS_CODEX_HANDLER_KEY, create_favonius_codex_identity_unit),
+        (FAVONIUS_WARBOW_HANDLER_KEY, create_favonius_warbow_identity_unit),
     ):
         registry.register_weapon_factory(handler_key, factory)
-    # 被动的行为实现在武器内容单元上（效果通道不携带精炼等级），效果行因此全部
-    # 注册为空实现，不再沿用未实现占位键。
-    for effect_handler_key in (
-        FAVONIUS_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
-        FAVONIUS_GREATSWORD_PASSIVE_EFFECT_HANDLER_KEY,
-        FAVONIUS_LANCE_PASSIVE_EFFECT_HANDLER_KEY,
-        FAVONIUS_CODEX_PASSIVE_EFFECT_HANDLER_KEY,
-        FAVONIUS_WARBOW_PASSIVE_EFFECT_HANDLER_KEY,
+    # 被动行为落在效果行绑定的单元上；精炼等级由武器索引行绑定的单元提供，
+    # 效果行不重复声明（见内容系统设计第 4.4 节）。
+    for handler_key, factory in (
+        (FAVONIUS_SWORD_PASSIVE_EFFECT_HANDLER_KEY, create_favonius_sword_passive_unit),
+        (
+            FAVONIUS_GREATSWORD_PASSIVE_EFFECT_HANDLER_KEY,
+            create_favonius_greatsword_passive_unit,
+        ),
+        (FAVONIUS_LANCE_PASSIVE_EFFECT_HANDLER_KEY, create_favonius_lance_passive_unit),
+        (FAVONIUS_CODEX_PASSIVE_EFFECT_HANDLER_KEY, create_favonius_codex_passive_unit),
+        (FAVONIUS_WARBOW_PASSIVE_EFFECT_HANDLER_KEY, create_favonius_warbow_passive_unit),
     ):
-        registry.register_empty_effect_handler(effect_handler_key)
-    registry.register_artifact_factory(
-        MAIDEN_BELOVED_HANDLER_KEY,
-        create_maiden_beloved_content_unit,
-    )
-    registry.register_artifact_factory(
-        DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY,
-        create_disenchantment_in_deep_shadow_content_unit,
-    )
-    registry.register_artifact_factory(
-        HEART_OF_THE_FURNACE_HANDLER_KEY,
-        create_heart_of_the_furnace_content_unit,
-    )
+        registry.register_effect_factory(handler_key, factory)
+    for handler_key, factory in (
+        (MAIDEN_BELOVED_HANDLER_KEY, create_maiden_beloved_identity_unit),
+        (MAIDEN_BELOVED_2P_HANDLER_KEY, create_maiden_beloved_two_piece_unit),
+        (MAIDEN_BELOVED_4P_HANDLER_KEY, create_maiden_beloved_four_piece_unit),
+        (
+            DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY,
+            create_disenchantment_in_deep_shadow_identity_unit,
+        ),
+        (
+            DISENCHANTMENT_IN_DEEP_SHADOW_2P_HANDLER_KEY,
+            create_disenchantment_in_deep_shadow_two_piece_unit,
+        ),
+        (
+            DISENCHANTMENT_IN_DEEP_SHADOW_4P_HANDLER_KEY,
+            create_disenchantment_in_deep_shadow_four_piece_unit,
+        ),
+        (
+            HEART_OF_THE_FURNACE_HANDLER_KEY,
+            create_heart_of_the_furnace_identity_unit,
+        ),
+        (HEART_OF_THE_FURNACE_2P_HANDLER_KEY, create_heart_of_the_furnace_two_piece_unit),
+        (HEART_OF_THE_FURNACE_4P_HANDLER_KEY, create_heart_of_the_furnace_four_piece_unit),
+    ):
+        registry.register_artifact_factory(handler_key, factory)
     registry.register_effect_factory(
         BARBARA_CONSTELLATION_C1_HANDLER_KEY,
         create_barbara_constellation_c1,

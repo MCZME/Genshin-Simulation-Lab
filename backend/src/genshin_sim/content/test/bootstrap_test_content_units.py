@@ -8,12 +8,20 @@ from __future__ import annotations
 
 from genshin_sim.content.registries import ContentUnitRegistry
 from genshin_sim.content.test.artifacts.attribute_probe import (
+    ATTRIBUTE_PROBE_ARTIFACT_2P_HANDLER_KEY,
+    ATTRIBUTE_PROBE_ARTIFACT_4P_HANDLER_KEY,
     ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY,
-    create_attribute_probe_artifact_content_unit,
+    create_attribute_probe_artifact_four_piece_unit,
+    create_attribute_probe_artifact_identity_unit,
+    create_attribute_probe_artifact_two_piece_unit,
 )
 from genshin_sim.content.test.artifacts.modifier_set import (
+    MODIFIER_SET_2P_HANDLER_KEY,
+    MODIFIER_SET_4P_HANDLER_KEY,
     MODIFIER_SET_HANDLER_KEY,
-    create_modifier_set_content_unit,
+    create_modifier_set_four_piece_unit,
+    create_modifier_set_identity_unit,
+    create_modifier_set_two_piece_unit,
 )
 from genshin_sim.content.test.characters.reaction_probe import (
     TEST_A_HANDLER_KEY,
@@ -50,11 +58,21 @@ def register_test_content_units(registry: ContentUnitRegistry) -> None:
         ATTRIBUTE_PROBE_WEAPON_HANDLER_KEY,
         create_attribute_probe_weapon_content_unit,
     )
-    registry.register_artifact_factory(
-        MODIFIER_SET_HANDLER_KEY,
-        create_modifier_set_content_unit,
-    )
-    registry.register_artifact_factory(
-        ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY,
-        create_attribute_probe_artifact_content_unit,
-    )
+    for handler_key, factory in (
+        (MODIFIER_SET_HANDLER_KEY, create_modifier_set_identity_unit),
+        (MODIFIER_SET_2P_HANDLER_KEY, create_modifier_set_two_piece_unit),
+        (MODIFIER_SET_4P_HANDLER_KEY, create_modifier_set_four_piece_unit),
+        (
+            ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY,
+            create_attribute_probe_artifact_identity_unit,
+        ),
+        (
+            ATTRIBUTE_PROBE_ARTIFACT_2P_HANDLER_KEY,
+            create_attribute_probe_artifact_two_piece_unit,
+        ),
+        (
+            ATTRIBUTE_PROBE_ARTIFACT_4P_HANDLER_KEY,
+            create_attribute_probe_artifact_four_piece_unit,
+        ),
+    ):
+        registry.register_artifact_factory(handler_key, factory)

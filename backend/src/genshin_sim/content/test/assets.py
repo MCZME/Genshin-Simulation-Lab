@@ -134,13 +134,13 @@ TEST_ARTIFACT_SET_ASSETS: tuple[ArtifactSetAsset, ...] = (
         asset_key="artifact_set:test_modifier_set",
         source_id="test_modifier_set",
         name="词条探针套装",
-        handler_key=None,
+        handler_key="artifact.testing.modifier_set",
     ),
     ArtifactSetAsset(
         asset_key="artifact_set:test_attribute_probe",
         source_id="test_attribute_probe",
         name="属性探针套装",
-        handler_key=None,
+        handler_key="artifact.testing.attribute_probe",
     ),
 )
 
@@ -154,7 +154,7 @@ TEST_ARTIFACT_SET_BONUSES: tuple[ArtifactSetBonus, ...] = (
     ArtifactSetBonus(
         artifact_set_key="artifact_set:test_modifier_set",
         piece_count=2,
-        handler_key="artifact.testing.modifier_set",
+        handler_key="artifact.testing.modifier_set.2p",
         params={
             "schema_version": 1,
             "components": [{"values": [120.0]}],
@@ -163,7 +163,7 @@ TEST_ARTIFACT_SET_BONUSES: tuple[ArtifactSetBonus, ...] = (
     ArtifactSetBonus(
         artifact_set_key="artifact_set:test_modifier_set",
         piece_count=4,
-        handler_key="artifact.testing.modifier_set",
+        handler_key="artifact.testing.modifier_set.4p",
         params={
             "schema_version": 1,
             "components": [{"values": [80.0]}, {"values": [0.2]}, {"values": [0.12]}],
@@ -172,7 +172,7 @@ TEST_ARTIFACT_SET_BONUSES: tuple[ArtifactSetBonus, ...] = (
     ArtifactSetBonus(
         artifact_set_key="artifact_set:test_attribute_probe",
         piece_count=2,
-        handler_key="artifact.testing.attribute_probe",
+        handler_key="artifact.testing.attribute_probe.2p",
         params={
             "schema_version": 1,
             "components": [{"values": [0.2]}],
@@ -181,7 +181,7 @@ TEST_ARTIFACT_SET_BONUSES: tuple[ArtifactSetBonus, ...] = (
     ArtifactSetBonus(
         artifact_set_key="artifact_set:test_attribute_probe",
         piece_count=4,
-        handler_key="artifact.testing.attribute_probe",
+        handler_key="artifact.testing.attribute_probe.4p",
         params={
             "schema_version": 1,
             "components": [{"values": [10.0]}, {"values": [0.3]}],

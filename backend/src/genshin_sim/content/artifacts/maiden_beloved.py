@@ -50,10 +50,13 @@ from genshin_sim.core.systems.buff import (
     BuffValueRefreshPolicy,
 )
 
-MAIDEN_BELOVED_HANDLER_KEY = "artifact.maiden_beloved"
+MAIDEN_BELOVED_KEY_PREFIX = "artifact.maiden_beloved"
+MAIDEN_BELOVED_HANDLER_KEY = MAIDEN_BELOVED_KEY_PREFIX
+MAIDEN_BELOVED_2P_HANDLER_KEY = f"{MAIDEN_BELOVED_KEY_PREFIX}.2p"
+MAIDEN_BELOVED_4P_HANDLER_KEY = f"{MAIDEN_BELOVED_KEY_PREFIX}.4p"
 MAIDEN_BELOVED_CONTENT_VERSION = "dev-maiden-beloved"
 
-MAIDEN_BELOVED_4P_TERM_KEY = f"{MAIDEN_BELOVED_HANDLER_KEY}.4p.incoming_healing"
+MAIDEN_BELOVED_4P_TERM_KEY = f"{MAIDEN_BELOVED_KEY_PREFIX}.4p.incoming_healing"
 
 FRAMES_PER_SECOND = 60
 
@@ -61,13 +64,13 @@ FRAMES_PER_SECOND = 60
 def maiden_beloved_4p_definition_key(slot: int) -> str:
     """4 件套按穿戴者槽位区分的 Buff 定义键。"""
 
-    return f"{MAIDEN_BELOVED_HANDLER_KEY}.4p.incoming_healing.slot:{slot}"
+    return f"{MAIDEN_BELOVED_KEY_PREFIX}.4p.incoming_healing.slot:{slot}"
 
 
 def maiden_beloved_4p_conflict_key(slot: int) -> str:
     """4 件套按穿戴者槽位区分的冲突键，保证不同穿戴者独立叠加。"""
 
-    return f"{MAIDEN_BELOVED_HANDLER_KEY}.4p.slot:{slot}"
+    return f"{MAIDEN_BELOVED_KEY_PREFIX}.4p.slot:{slot}"
 
 
 class MaidenBelovedPartyHealingBuffHook:
@@ -91,8 +94,8 @@ class MaidenBelovedPartyHealingBuffHook:
         self._definition_key = definition_key
         self._term_key = term_key
         self._source_key = source_key
-        self.hook_key = f"{MAIDEN_BELOVED_HANDLER_KEY}.4p:{owner_ref}"
-        self.state_key = MAIDEN_BELOVED_HANDLER_KEY
+        self.hook_key = f"{MAIDEN_BELOVED_4P_HANDLER_KEY}:{owner_ref}"
+        self.state_key = MAIDEN_BELOVED_4P_HANDLER_KEY
         self.subscriptions = ("ACTION_STARTED",)
         self.priority = 0
 
@@ -138,25 +141,28 @@ class MaidenBelovedPartyHealingBuffHook:
         return HookResult(buff_requests=requests)
 
 
-def create_maiden_beloved_content_unit(
+def create_maiden_beloved_identity_unit(
     request: ArtifactContentUnitRequest,
 ) -> ContentUnit:
-    """把少女套装效果 payload 编译为 ContentUnit（按件数分支）。"""
+    """被怜爱的少女套装身份单元：表明这个套装是什么，并拥有它的件数效果单元。"""
 
-    if request.artifact_kind != "artifact_set_bonus":
-        raise ContentUnitValidationError(
-            f"{MAIDEN_BELOVED_HANDLER_KEY} 只绑定套装效果，不绑定套装行"
-        )
-    if request.piece_count == 2:
-        return _create_two_piece_unit(request)
-    if request.piece_count == 4:
-        return _create_four_piece_unit(request)
-    raise ContentUnitValidationError(
-        f"{MAIDEN_BELOVED_HANDLER_KEY} 不支持 {request.piece_count} 件套"
+    _require_set_row(request, handler_key=MAIDEN_BELOVED_HANDLER_KEY)
+    return ContentUnit(
+        owner_type=ContentUnitOwnerType.ARTIFACT,
+        owner_key=request.artifact_key,
+        handler_key=MAIDEN_BELOVED_HANDLER_KEY,
+        version=MAIDEN_BELOVED_CONTENT_VERSION,
+        slot=request.slot,
+        metadata={"purpose": "maiden_beloved_set_identity"},
     )
 
 
-def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
+def create_maiden_beloved_two_piece_unit(
+    request: ArtifactContentUnitRequest,
+) -> ContentUnit:
+    """被怜爱的少女 2 件套：治疗加成提升。"""
+
+    _require_piece_count(request, expected=2, handler_key=MAIDEN_BELOVED_2P_HANDLER_KEY)
     (healing_bonus,) = _parse_component_values(
         request.params,
         count=1,
@@ -164,7 +170,7 @@ def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
     )
     owner_ref = f"character:slot_{request.slot}"
     subject_ref = AttributeSubjectRef.character(owner_ref)
-    provider_key = f"{MAIDEN_BELOVED_HANDLER_KEY}.2p.healing_bonus.slot:{request.slot}"
+    provider_key = f"{MAIDEN_BELOVED_KEY_PREFIX}.2p.healing_bonus.slot:{request.slot}"
     provider = StaticModifierProvider(
         ModifierProviderSpec(
             provider_key=provider_key,
@@ -180,7 +186,7 @@ def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
                 provider_key=provider_key,
                 source_ref=RuntimeSourceRef(
                     RuntimeSourceKind.CONTENT,
-                    f"{MAIDEN_BELOVED_HANDLER_KEY}:2p:slot:{request.slot}",
+                    f"{MAIDEN_BELOVED_KEY_PREFIX}:2p:slot:{request.slot}",
                 ),
                 audit_tags=("maiden_beloved_2p",),
             ),
@@ -190,7 +196,7 @@ def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
-        handler_key=MAIDEN_BELOVED_HANDLER_KEY,
+        handler_key=MAIDEN_BELOVED_2P_HANDLER_KEY,
         version=MAIDEN_BELOVED_CONTENT_VERSION,
         slot=request.slot,
         attribute_providers=(provider,),
@@ -198,7 +204,12 @@ def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
     )
 
 
-def _create_four_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
+def create_maiden_beloved_four_piece_unit(
+    request: ArtifactContentUnitRequest,
+) -> ContentUnit:
+    """被怜爱的少女 4 件套：施放战技/爆发后全队受治疗加成提升。"""
+
+    _require_piece_count(request, expected=4, handler_key=MAIDEN_BELOVED_4P_HANDLER_KEY)
     duration_seconds, incoming_bonus = _parse_component_values(
         request.params,
         count=2,
@@ -216,12 +227,12 @@ def _create_four_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
         incoming_bonus=incoming_bonus,
         definition_key=definition_key,
         term_key=MAIDEN_BELOVED_4P_TERM_KEY,
-        source_key=f"{MAIDEN_BELOVED_HANDLER_KEY}:4p:slot:{request.slot}",
+        source_key=f"{MAIDEN_BELOVED_KEY_PREFIX}:4p:slot:{request.slot}",
     )
     definition = BuffDefinition(
         definition_key=definition_key,
-        mechanic_key=f"{MAIDEN_BELOVED_HANDLER_KEY}.4p",
-        handler_key=MAIDEN_BELOVED_HANDLER_KEY,
+        mechanic_key=f"{MAIDEN_BELOVED_KEY_PREFIX}.4p",
+        handler_key=MAIDEN_BELOVED_4P_HANDLER_KEY,
         conflict_key=maiden_beloved_4p_conflict_key(request.slot),
         target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
         application_policy=BuffApplicationPolicy.REPLACE,
@@ -240,13 +251,36 @@ def _create_four_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
-        handler_key=MAIDEN_BELOVED_HANDLER_KEY,
+        handler_key=MAIDEN_BELOVED_4P_HANDLER_KEY,
         version=MAIDEN_BELOVED_CONTENT_VERSION,
         slot=request.slot,
         event_hooks=(hook,),
         buff_definitions=(definition,),
         metadata={"piece_count": 4, "purpose": "maiden_beloved_4p"},
     )
+
+
+def _require_piece_count(
+    request: ArtifactContentUnitRequest,
+    *,
+    expected: int,
+    handler_key: str,
+) -> None:
+    """件数效果键必须绑定到对应件数的效果行。"""
+
+    if request.piece_count != expected:
+        raise ContentUnitValidationError(
+            f"{handler_key} 只绑定 {expected} 件套效果，收到 {request.piece_count} 件"
+        )
+
+
+def _require_set_row(request: ArtifactContentUnitRequest, *, handler_key: str) -> None:
+    """套装索引行单元键只能绑定套装索引行，不能绑定件数效果行。"""
+
+    if request.piece_count is not None:
+        raise ContentUnitValidationError(
+            f"{handler_key} 只绑定套装索引行，收到 {request.piece_count} 件套效果行"
+        )
 
 
 def _parse_component_values(

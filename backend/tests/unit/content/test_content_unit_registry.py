@@ -61,7 +61,6 @@ def test_registry_requests_carry_compile_evidence():
         handler_key="artifact.test",
         artifact_key="artifact_set:1",
         slot=1,
-        artifact_kind="artifact_set_bonus",
         piece_count=4,
     )
 

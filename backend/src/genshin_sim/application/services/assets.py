@@ -212,6 +212,14 @@ class AssetsService:
                 bonuses = self.repository.get_artifact_set_bonuses(asset.asset_key)
             except Exception:
                 return False, "套装效果数据不可用"
+            if asset.handler_key is None and any(
+                registry.handler_status(bonus.handler_key)
+                is HandlerImplementationStatus.IMPLEMENTED
+                for bonus in bonuses
+            ):
+                # 索引行是这类资产的内容入口：效果行有真实实现时索引行必须同时绑定，
+                # 否则组装阶段会因件数效果单元没有拥有者而失败（见内容系统设计 4.4 节）。
+                return False, "套装索引行未绑定实现"
             if not all(
                 registry.handler_status(bonus.handler_key)
                 is HandlerImplementationStatus.IMPLEMENTED

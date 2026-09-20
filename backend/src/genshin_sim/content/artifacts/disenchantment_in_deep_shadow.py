@@ -74,50 +74,49 @@ from genshin_sim.core.systems.reaction.mechanics.superconduct.mechanic import (
     SUPERCONDUCT_DAMAGE_TAG,
 )
 
-DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY = "artifact.disenchantment_in_deep_shadow"
+DISENCHANTMENT_IN_DEEP_SHADOW_KEY_PREFIX = "artifact.disenchantment_in_deep_shadow"
+DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY = DISENCHANTMENT_IN_DEEP_SHADOW_KEY_PREFIX
+DISENCHANTMENT_IN_DEEP_SHADOW_2P_HANDLER_KEY = f"{DISENCHANTMENT_IN_DEEP_SHADOW_KEY_PREFIX}.2p"
+DISENCHANTMENT_IN_DEEP_SHADOW_4P_HANDLER_KEY = f"{DISENCHANTMENT_IN_DEEP_SHADOW_KEY_PREFIX}.4p"
 DISENCHANTMENT_IN_DEEP_SHADOW_CONTENT_VERSION = "dev-disenchantment-in-deep-shadow"
 
 DISENCHANTMENT_IN_DEEP_SHADOW_2P_AUDIT_TAG = "disenchantment_in_deep_shadow_2p"
 DISENCHANTMENT_IN_DEEP_SHADOW_4P_AUDIT_TAG = "disenchantment_in_deep_shadow_4p"
 
 
-def create_disenchantment_in_deep_shadow_content_unit(
+def create_disenchantment_in_deep_shadow_identity_unit(
     request: ArtifactContentUnitRequest,
 ) -> ContentUnit:
-    """把影中沉凝的幻灭套装效果 payload 编译为 ContentUnit（按件数分支）。"""
+    """影中沉凝的幻灭套装身份单元：表明这个套装是什么，并拥有它的件数效果单元。"""
 
-    if request.artifact_kind != "artifact_set_bonus":
-        raise ContentUnitValidationError(
-            f"{DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY} 只绑定套装效果，不绑定套装行"
-        )
-    if request.piece_count == 2:
-        return _create_two_piece_unit(request)
-    if request.piece_count == 4:
-        return _create_four_piece_unit(request)
-    raise ContentUnitValidationError(
-        f"{DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY} 不支持 {request.piece_count} 件套"
+    _require_set_row(request, handler_key=DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY)
+    return ContentUnit(
+        owner_type=ContentUnitOwnerType.ARTIFACT,
+        owner_key=request.artifact_key,
+        handler_key=DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY,
+        version=DISENCHANTMENT_IN_DEEP_SHADOW_CONTENT_VERSION,
+        slot=request.slot,
+        metadata={"purpose": "disenchantment_in_deep_shadow_set_identity"},
     )
 
 
-def _owner_ref(slot: int) -> str:
-    return f"character:slot_{slot}"
+def create_disenchantment_in_deep_shadow_two_piece_unit(
+    request: ArtifactContentUnitRequest,
+) -> ContentUnit:
+    """影中沉凝的幻灭 2 件套：攻击力提高 18%。"""
 
-
-def _source_ref(scope: str, slot: int) -> RuntimeSourceRef:
-    return RuntimeSourceRef(
-        RuntimeSourceKind.CONTENT,
-        f"{DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY}:{scope}:slot:{slot}",
+    _require_piece_count(
+        request,
+        expected=2,
+        handler_key=DISENCHANTMENT_IN_DEEP_SHADOW_2P_HANDLER_KEY,
     )
-
-
-def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
     (atk_percent,) = _parse_component_values(
         request.params,
         count=1,
         purpose="2 件套攻击力加成",
     )
     subject_ref = AttributeSubjectRef.character(_owner_ref(request.slot))
-    provider_key = f"{DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY}.2p.atk_percent.slot:{request.slot}"
+    provider_key = f"{DISENCHANTMENT_IN_DEEP_SHADOW_KEY_PREFIX}.2p.atk_percent.slot:{request.slot}"
     provider = StaticModifierProvider(
         ModifierProviderSpec(
             provider_key=provider_key,
@@ -140,7 +139,7 @@ def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
-        handler_key=DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY,
+        handler_key=DISENCHANTMENT_IN_DEEP_SHADOW_2P_HANDLER_KEY,
         version=DISENCHANTMENT_IN_DEEP_SHADOW_CONTENT_VERSION,
         slot=request.slot,
         attribute_providers=(provider,),
@@ -148,7 +147,16 @@ def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
     )
 
 
-def _create_four_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
+def create_disenchantment_in_deep_shadow_four_piece_unit(
+    request: ArtifactContentUnitRequest,
+) -> ContentUnit:
+    """影中沉凝的幻灭 4 件套：超导/星超导增伤与条件暴击率。"""
+
+    _require_piece_count(
+        request,
+        expected=4,
+        handler_key=DISENCHANTMENT_IN_DEEP_SHADOW_4P_HANDLER_KEY,
+    )
     superconduct_bonus, stellar_conduct_bonus, crit_rate = _parse_component_values(
         request.params,
         count=3,
@@ -158,7 +166,7 @@ def _create_four_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
-        handler_key=DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY,
+        handler_key=DISENCHANTMENT_IN_DEEP_SHADOW_4P_HANDLER_KEY,
         version=DISENCHANTMENT_IN_DEEP_SHADOW_CONTENT_VERSION,
         slot=request.slot,
         damage_modifier_providers=(
@@ -194,6 +202,40 @@ def _create_four_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
     )
 
 
+def _require_piece_count(
+    request: ArtifactContentUnitRequest,
+    *,
+    expected: int,
+    handler_key: str,
+) -> None:
+    """件数效果键必须绑定到对应件数的效果行。"""
+
+    if request.piece_count != expected:
+        raise ContentUnitValidationError(
+            f"{handler_key} 只绑定 {expected} 件套效果，收到 {request.piece_count} 件"
+        )
+
+
+def _require_set_row(request: ArtifactContentUnitRequest, *, handler_key: str) -> None:
+    """套装索引行单元键只能绑定套装索引行，不能绑定件数效果行。"""
+
+    if request.piece_count is not None:
+        raise ContentUnitValidationError(
+            f"{handler_key} 只绑定套装索引行，收到 {request.piece_count} 件套效果行"
+        )
+
+
+def _owner_ref(slot: int) -> str:
+    return f"character:slot_{slot}"
+
+
+def _source_ref(scope: str, slot: int) -> RuntimeSourceRef:
+    return RuntimeSourceRef(
+        RuntimeSourceKind.CONTENT,
+        f"{DISENCHANTMENT_IN_DEEP_SHADOW_KEY_PREFIX}:{scope}:slot:{slot}",
+    )
+
+
 class DisenchantmentInDeepShadowReactionBonusProvider:
     """4 件套 C1 / C2：装备者造成的指定反应伤害提升。
 
@@ -219,7 +261,7 @@ class DisenchantmentInDeepShadowReactionBonusProvider:
         self._formula_key = formula_key
         self._main_attack_tags = frozenset(main_attack_tags)
         self._bonus = bonus
-        self._provider_key = f"{DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY}.4p.{scope}.slot:{slot}"
+        self._provider_key = f"{DISENCHANTMENT_IN_DEEP_SHADOW_KEY_PREFIX}.4p.{scope}.slot:{slot}"
         self._source_ref = _source_ref(f"4p:{scope}", slot)
         self.provider_spec = DamageModifierProviderSpec(
             provider_key=self._provider_key,
@@ -266,7 +308,7 @@ class DisenchantmentInDeepShadowCritRateProvider:
     def __init__(self, *, owner_ref: str, slot: int, crit_rate: float) -> None:
         self._owner_ref = AttributeSubjectRef.character(owner_ref)
         self._crit_rate = crit_rate
-        self._provider_key = f"{DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY}.4p.crit_rate.slot:{slot}"
+        self._provider_key = f"{DISENCHANTMENT_IN_DEEP_SHADOW_KEY_PREFIX}.4p.crit_rate.slot:{slot}"
         self._source_ref = _source_ref("4p:crit_rate", slot)
         self.provider_spec = DamageModifierProviderSpec(
             provider_key=self._provider_key,

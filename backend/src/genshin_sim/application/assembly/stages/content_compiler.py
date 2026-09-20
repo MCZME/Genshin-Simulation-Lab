@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Mapping, Sequence
 from dataclasses import replace
 from typing import Any, cast
 
@@ -29,6 +29,7 @@ from genshin_sim.content.registries import (
     ContentUnitFactoryNotFoundError,
     ContentUnitRegistry,
     EffectContentUnitRequest,
+    EffectOwnerContext,
     WeaponContentUnitRequest,
 )
 from genshin_sim.core.actions import Action, ActionInterpreter
@@ -76,8 +77,13 @@ class ContentCompiler:
         units: list[ContentUnit] = []
         for bundle in bundles:
             slot_config = slot_configs[bundle.slot]
+            owner_contexts = self._owner_contexts(bundle, slot_config)
             raw_effect_units = [
-                self._prepare_effect(payload, slot=bundle.slot)
+                self._prepare_effect(
+                    payload,
+                    slot=bundle.slot,
+                    owner_contexts=owner_contexts,
+                )
                 for payload in bundle.effect_payloads
             ]
             effect_units = tuple(unit for unit in raw_effect_units if unit is not None)
@@ -101,6 +107,7 @@ class ContentCompiler:
                 unit = self._prepare_weapon(bundle, slot_config)
                 if unit is not None:
                     units.append(unit)
+            artifact_set_units: list[ContentUnit] = []
             for artifact_set in bundle.artifact_sets:
                 unit = self._prepare_artifact_set(
                     artifact_set,
@@ -108,16 +115,77 @@ class ContentCompiler:
                     slot_config,
                 )
                 if unit is not None:
-                    units.append(unit)
+                    artifact_set_units.append(unit)
+            artifact_bonus_units: list[ContentUnit] = []
             for bonus in bundle.artifact_bonuses:
                 unit = self._prepare_artifact_bonus(
                     bonus,
                     bundle.slot,
                 )
                 if unit is not None:
-                    units.append(unit)
+                    artifact_bonus_units.append(unit)
+            self._validate_artifact_unit_ownership(
+                artifact_set_units,
+                artifact_bonus_units,
+            )
+            units.extend(artifact_set_units)
+            units.extend(artifact_bonus_units)
             units.extend(effect_units)
         return tuple(units)
+
+    @staticmethod
+    def _validate_artifact_unit_ownership(
+        set_units: Sequence[ContentUnit],
+        bonus_units: Sequence[ContentUnit],
+    ) -> None:
+        """效果行绑定的单元必须有所属单元。
+
+        套装效果行产出单元意味着该套装的内容已经接入，此时它的索引行也必须绑定
+        单元键——索引行是这类资产的内容入口，绑定的单元是件数效果单元的拥有者。
+        索引行未绑定时件数效果行只应绑定占位键（不产出单元）。
+        """
+
+        owners_with_unit = {unit.owner_key for unit in set_units}
+        for unit in bonus_units:
+            if unit.owner_key not in owners_with_unit:
+                raise InvalidRuntimePayloadError(
+                    f"内容单元 {unit.handler_key} 所属套装 {unit.owner_key} "
+                    "没有绑定索引行单元"
+                )
+
+    @staticmethod
+    def _owner_contexts(
+        bundle: RuntimeAssetBundle,
+        slot_config: TeamSlotConfig,
+    ) -> dict[tuple[str, str], EffectOwnerContext]:
+        """按资产归属建立「效果行 owner -> 拥有者编译期上下文」的映射。
+
+        拥有者把被拥有单元所需的证据一并交给它：角色给命座与天赋等级，武器给精炼
+        等级，圣遗物套装给穿戴件数。这些取值来自配置与资产索引行，被拥有的单元
+        不需要在自己的效果行里重复声明。
+        """
+
+        contexts: dict[tuple[str, str], EffectOwnerContext] = {
+            ("character", bundle.character.asset_key): EffectOwnerContext(
+                constellation=slot_config.character.constellation,
+                talent_levels=dict(slot_config.character.talents),
+            ),
+        }
+        if bundle.weapon is not None:
+            contexts[("weapon", bundle.weapon.asset_key)] = EffectOwnerContext(
+                refinement=(
+                    slot_config.weapon.refinement if slot_config.weapon is not None else 1
+                ),
+            )
+        equipped_pieces = {
+            artifact_set.asset_key: artifact_set.pieces
+            for artifact_set in slot_config.artifacts.sets
+        }
+        for artifact_set in bundle.artifact_sets:
+            contexts[("artifact_set", artifact_set.asset_key)] = EffectOwnerContext(
+                piece_count=equipped_pieces.get(artifact_set.asset_key),
+            )
+        return contexts
 
     def _prepare_character(
         self,
@@ -293,7 +361,6 @@ class ContentCompiler:
             handler_key=handler_key,
             artifact_key=artifact_set.asset_key,
             slot=slot,
-            artifact_kind="artifact_set",
             asset=artifact_set,
         )
         try:
@@ -317,7 +384,6 @@ class ContentCompiler:
             handler_key=handler_key,
             artifact_key=bonus.artifact_set_key,
             slot=slot,
-            artifact_kind="artifact_set_bonus",
             piece_count=bonus.piece_count,
             params=bonus.params,
         )
@@ -333,6 +399,7 @@ class ContentCompiler:
         payload: object,
         *,
         slot: int,
+        owner_contexts: Mapping[tuple[str, str], EffectOwnerContext],
     ) -> ContentUnit | None:
         from genshin_sim.assets.models import EffectPayload
 
@@ -351,6 +418,10 @@ class ContentCompiler:
             slot=slot,
             params=payload.params,
             unlock_key=payload.unlock_key,
+            owner_context=owner_contexts.get(
+                (payload.owner_type, payload.owner_key),
+                EffectOwnerContext(),
+            ),
         )
         try:
             return self.content_unit_registry.create_effect(request)

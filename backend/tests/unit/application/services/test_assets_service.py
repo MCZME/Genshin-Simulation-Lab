@@ -153,6 +153,7 @@ def test_assets_service_artifact_set_with_real_handler_is_usable():
                 asset_key="artifact_set:real",
                 source_id="real",
                 name="Real Set",
+                handler_key="test.real_artifact_identity",
             ),
         ),
         artifact_set_bonuses=(
@@ -175,12 +176,47 @@ def test_assets_service_artifact_set_with_real_handler_is_usable():
     )
     registry = create_default_content_unit_registry()
     registry.register_artifact_factory("test.real_artifact", lambda request: None)
+    registry.register_artifact_factory("test.real_artifact_identity", lambda request: None)
     service = AssetsService(repository, content_unit_registry=registry)
 
     item = service.get_asset("artifact-sets", "real")
 
     assert item.usable is True
     assert item.status is None
+
+
+def test_assets_service_artifact_set_without_index_row_handler_is_unusable():
+    """索引行是内容入口：效果行有真实实现时索引行必须同时绑定。"""
+
+    repository = FakeAssetRepository(
+        meta={"schema_version": "1"},
+        artifact_sets=(
+            ArtifactSetAsset(
+                asset_key="artifact_set:orphan",
+                source_id="orphan",
+                name="Orphan Set",
+            ),
+        ),
+        artifact_set_bonuses=(
+            ArtifactSetBonus(
+                artifact_set_key="artifact_set:orphan",
+                piece_count=2,
+                handler_key="test.orphan_artifact_bonus",
+                params={},
+            ),
+        ),
+        characters=(),
+        weapons=(),
+        effect_payloads=(),
+    )
+    registry = create_default_content_unit_registry()
+    registry.register_artifact_factory("test.orphan_artifact_bonus", lambda request: None)
+    service = AssetsService(repository, content_unit_registry=registry)
+
+    item = service.get_asset("artifact-sets", "orphan")
+
+    assert item.usable is False
+    assert item.status == "套装索引行未绑定实现"
 
 
 def test_assets_service_inspects_by_asset_key_prefix():

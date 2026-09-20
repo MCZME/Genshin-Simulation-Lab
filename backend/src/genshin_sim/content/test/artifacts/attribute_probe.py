@@ -40,11 +40,14 @@ from genshin_sim.core.systems.buff import (
     BuffValueRefreshPolicy,
 )
 
-ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY = "artifact.testing.attribute_probe"
+ATTRIBUTE_PROBE_ARTIFACT_KEY_PREFIX = "artifact.testing.attribute_probe"
+ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY = ATTRIBUTE_PROBE_ARTIFACT_KEY_PREFIX
+ATTRIBUTE_PROBE_ARTIFACT_2P_HANDLER_KEY = f"{ATTRIBUTE_PROBE_ARTIFACT_KEY_PREFIX}.2p"
+ATTRIBUTE_PROBE_ARTIFACT_4P_HANDLER_KEY = f"{ATTRIBUTE_PROBE_ARTIFACT_KEY_PREFIX}.4p"
 ATTRIBUTE_PROBE_ARTIFACT_CONTENT_VERSION = "dev-attribute-probe-artifact"
 
-ATTRIBUTE_PROBE_4P_TERM_KEY = f"{ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY}.4p.atk"
-ATTRIBUTE_PROBE_4P_MECHANIC_KEY = f"{ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY}.4p.atk_buff"
+ATTRIBUTE_PROBE_4P_TERM_KEY = f"{ATTRIBUTE_PROBE_ARTIFACT_KEY_PREFIX}.4p.atk"
+ATTRIBUTE_PROBE_4P_MECHANIC_KEY = f"{ATTRIBUTE_PROBE_ARTIFACT_KEY_PREFIX}.4p.atk_buff"
 
 FRAMES_PER_SECOND = 60
 
@@ -52,13 +55,13 @@ FRAMES_PER_SECOND = 60
 def attribute_probe_4p_definition_key(slot: int) -> str:
     """4 件套按穿戴者槽位区分的 Buff 定义键。"""
 
-    return f"{ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY}.4p.atk.slot:{slot}"
+    return f"{ATTRIBUTE_PROBE_ARTIFACT_KEY_PREFIX}.4p.atk.slot:{slot}"
 
 
 def attribute_probe_4p_conflict_key(slot: int) -> str:
     """4 件套按穿戴者槽位区分的冲突键。"""
 
-    return f"{ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY}.4p.conflict.slot:{slot}"
+    return f"{ATTRIBUTE_PROBE_ARTIFACT_KEY_PREFIX}.4p.conflict.slot:{slot}"
 
 
 class AttributeProbeFourPieceBuffHook:
@@ -80,8 +83,8 @@ class AttributeProbeFourPieceBuffHook:
         self._atk_bonus = atk_bonus
         self._definition_key = definition_key
         self._source_key = source_key
-        self.hook_key = f"{ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY}.4p:{owner_ref}"
-        self.state_key = ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY
+        self.hook_key = f"{ATTRIBUTE_PROBE_ARTIFACT_4P_HANDLER_KEY}:{owner_ref}"
+        self.state_key = ATTRIBUTE_PROBE_ARTIFACT_4P_HANDLER_KEY
         self.subscriptions = ("ACTION_STARTED",)
         self.priority = 0
 
@@ -129,22 +132,69 @@ class AttributeProbeFourPieceBuffHook:
         )
 
 
-def create_attribute_probe_artifact_content_unit(
+def create_attribute_probe_artifact_identity_unit(
     request: ArtifactContentUnitRequest,
 ) -> ContentUnit:
-    """属性探针套装内容单元工厂（按件数分支）。"""
+    """属性探针套装身份单元：表明这个套装是什么，并拥有它的件数效果单元。"""
 
-    if request.artifact_kind != "artifact_set_bonus":
-        raise ContentUnitValidationError(
-            f"{ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY} 只绑定套装效果，不绑定套装行"
-        )
-    if request.piece_count == 2:
-        return _create_two_piece_unit(request)
-    if request.piece_count == 4:
-        return _create_four_piece_unit(request)
-    raise ContentUnitValidationError(
-        f"{ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY} 不支持 {request.piece_count} 件套"
+    _require_set_row(request, handler_key=ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY)
+    return ContentUnit(
+        owner_type=ContentUnitOwnerType.ARTIFACT,
+        owner_key=request.artifact_key,
+        handler_key=ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY,
+        version=ATTRIBUTE_PROBE_ARTIFACT_CONTENT_VERSION,
+        slot=request.slot,
+        metadata={"purpose": "testing_attribute_probe_identity"},
     )
+
+
+def create_attribute_probe_artifact_two_piece_unit(
+    request: ArtifactContentUnitRequest,
+) -> ContentUnit:
+    """属性探针套装 2 件套：防御加成。"""
+
+    _require_piece_count(
+        request,
+        expected=2,
+        handler_key=ATTRIBUTE_PROBE_ARTIFACT_2P_HANDLER_KEY,
+    )
+    return _create_two_piece_unit(request)
+
+
+def create_attribute_probe_artifact_four_piece_unit(
+    request: ArtifactContentUnitRequest,
+) -> ContentUnit:
+    """属性探针套装 4 件套：动作后攻击力 Buff。"""
+
+    _require_piece_count(
+        request,
+        expected=4,
+        handler_key=ATTRIBUTE_PROBE_ARTIFACT_4P_HANDLER_KEY,
+    )
+    return _create_four_piece_unit(request)
+
+
+def _require_piece_count(
+    request: ArtifactContentUnitRequest,
+    *,
+    expected: int,
+    handler_key: str,
+) -> None:
+    """件数效果键必须绑定到对应件数的效果行。"""
+
+    if request.piece_count != expected:
+        raise ContentUnitValidationError(
+            f"{handler_key} 只绑定 {expected} 件套效果，收到 {request.piece_count} 件"
+        )
+
+
+def _require_set_row(request: ArtifactContentUnitRequest, *, handler_key: str) -> None:
+    """套装索引行单元键只能绑定套装索引行，不能绑定件数效果行。"""
+
+    if request.piece_count is not None:
+        raise ContentUnitValidationError(
+            f"{handler_key} 只绑定套装索引行，收到 {request.piece_count} 件套效果行"
+        )
 
 
 def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
@@ -154,7 +204,7 @@ def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
         purpose="属性探针 2 件套防御加成",
     )
     owner_ref = AttributeSubjectRef.character(f"character:slot_{request.slot}")
-    provider_key = f"{ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY}.2p.def_percent.slot:{request.slot}"
+    provider_key = f"{ATTRIBUTE_PROBE_ARTIFACT_KEY_PREFIX}.2p.def_percent.slot:{request.slot}"
     provider = StaticModifierProvider(
         ModifierProviderSpec(
             provider_key=provider_key,
@@ -170,7 +220,7 @@ def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
                 provider_key=provider_key,
                 source_ref=RuntimeSourceRef(
                     RuntimeSourceKind.CONTENT,
-                    f"{ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY}:2p:slot:{request.slot}",
+                    f"{ATTRIBUTE_PROBE_ARTIFACT_KEY_PREFIX}:2p:slot:{request.slot}",
                 ),
                 audit_tags=("attribute_probe_2p_def_percent",),
             ),
@@ -180,7 +230,7 @@ def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
-        handler_key=ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY,
+        handler_key=ATTRIBUTE_PROBE_ARTIFACT_2P_HANDLER_KEY,
         version=ATTRIBUTE_PROBE_ARTIFACT_CONTENT_VERSION,
         slot=request.slot,
         attribute_providers=(provider,),
@@ -205,12 +255,12 @@ def _create_four_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
         duration_frames=duration_frames,
         atk_bonus=atk_percent,
         definition_key=definition_key,
-        source_key=f"{ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY}:4p:slot:{request.slot}",
+        source_key=f"{ATTRIBUTE_PROBE_ARTIFACT_KEY_PREFIX}:4p:slot:{request.slot}",
     )
     definition = BuffDefinition(
         definition_key=definition_key,
         mechanic_key=ATTRIBUTE_PROBE_4P_MECHANIC_KEY,
-        handler_key=ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY,
+        handler_key=ATTRIBUTE_PROBE_ARTIFACT_4P_HANDLER_KEY,
         conflict_key=attribute_probe_4p_conflict_key(request.slot),
         target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
         application_policy=BuffApplicationPolicy.REPLACE,
@@ -229,7 +279,7 @@ def _create_four_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
-        handler_key=ATTRIBUTE_PROBE_ARTIFACT_HANDLER_KEY,
+        handler_key=ATTRIBUTE_PROBE_ARTIFACT_4P_HANDLER_KEY,
         version=ATTRIBUTE_PROBE_ARTIFACT_CONTENT_VERSION,
         slot=request.slot,
         event_hooks=(hook,),

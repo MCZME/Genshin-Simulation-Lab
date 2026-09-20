@@ -28,11 +28,14 @@ from genshin_sim.core.systems.damage import (
     DamageModifierTerm,
 )
 
-MODIFIER_SET_HANDLER_KEY = "artifact.testing.modifier_set"
+MODIFIER_SET_KEY_PREFIX = "artifact.testing.modifier_set"
+MODIFIER_SET_HANDLER_KEY = MODIFIER_SET_KEY_PREFIX
+MODIFIER_SET_2P_HANDLER_KEY = f"{MODIFIER_SET_KEY_PREFIX}.2p"
+MODIFIER_SET_4P_HANDLER_KEY = f"{MODIFIER_SET_KEY_PREFIX}.4p"
 MODIFIER_SET_CONTENT_VERSION = "dev-modifier-set"
 
-MODIFIER_SET_2P_PROVIDER_KEY = f"{MODIFIER_SET_HANDLER_KEY}.2p.base_flat"
-MODIFIER_SET_4P_PROVIDER_KEY = f"{MODIFIER_SET_HANDLER_KEY}.4p"
+MODIFIER_SET_2P_PROVIDER_KEY = f"{MODIFIER_SET_KEY_PREFIX}.2p.base_flat"
+MODIFIER_SET_4P_PROVIDER_KEY = f"{MODIFIER_SET_KEY_PREFIX}.4p"
 
 # 探针套装固定值：2 件套基础伤害 +120；4 件套基础伤害 +80、减防 +20%、增伤 +12%。
 MODIFIER_SET_2P_BASE_FLAT_VALUE = 120.0
@@ -41,20 +44,61 @@ MODIFIER_SET_4P_DEFENSE_REDUCTION_VALUE = 0.2
 MODIFIER_SET_4P_DAMAGE_BONUS_VALUE = 0.12
 
 
-def create_modifier_set_content_unit(
+def create_modifier_set_identity_unit(
     request: ArtifactContentUnitRequest,
 ) -> ContentUnit:
-    """词条探针套装内容单元工厂（按件数分支）。"""
+    """词条探针套装身份单元：表明这个套装是什么，并拥有它的件数效果单元。"""
 
-    if request.artifact_kind != "artifact_set_bonus":
-        raise ContentUnitValidationError(f"{MODIFIER_SET_HANDLER_KEY} 只绑定套装效果，不绑定套装行")
-    if request.piece_count == 2:
-        return _create_two_piece_unit(request)
-    if request.piece_count == 4:
-        return _create_four_piece_unit(request)
-    raise ContentUnitValidationError(
-        f"{MODIFIER_SET_HANDLER_KEY} 不支持 {request.piece_count} 件套"
+    _require_set_row(request, handler_key=MODIFIER_SET_HANDLER_KEY)
+    return ContentUnit(
+        owner_type=ContentUnitOwnerType.ARTIFACT,
+        owner_key=request.artifact_key,
+        handler_key=MODIFIER_SET_HANDLER_KEY,
+        version=MODIFIER_SET_CONTENT_VERSION,
+        slot=request.slot,
+        metadata={"purpose": "testing_modifier_set_identity"},
     )
+
+
+def create_modifier_set_two_piece_unit(
+    request: ArtifactContentUnitRequest,
+) -> ContentUnit:
+    """词条探针套装 2 件套：基础伤害加值。"""
+
+    _require_piece_count(request, expected=2, handler_key=MODIFIER_SET_2P_HANDLER_KEY)
+    return _create_two_piece_unit(request)
+
+
+def create_modifier_set_four_piece_unit(
+    request: ArtifactContentUnitRequest,
+) -> ContentUnit:
+    """词条探针套装 4 件套：基础伤害加值、减防与增伤。"""
+
+    _require_piece_count(request, expected=4, handler_key=MODIFIER_SET_4P_HANDLER_KEY)
+    return _create_four_piece_unit(request)
+
+
+def _require_piece_count(
+    request: ArtifactContentUnitRequest,
+    *,
+    expected: int,
+    handler_key: str,
+) -> None:
+    """件数效果键必须绑定到对应件数的效果行。"""
+
+    if request.piece_count != expected:
+        raise ContentUnitValidationError(
+            f"{handler_key} 只绑定 {expected} 件套效果，收到 {request.piece_count} 件"
+        )
+
+
+def _require_set_row(request: ArtifactContentUnitRequest, *, handler_key: str) -> None:
+    """套装索引行单元键只能绑定套装索引行，不能绑定件数效果行。"""
+
+    if request.piece_count is not None:
+        raise ContentUnitValidationError(
+            f"{handler_key} 只绑定套装索引行，收到 {request.piece_count} 件套效果行"
+        )
 
 
 def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
@@ -62,7 +106,7 @@ def _create_two_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
-        handler_key=MODIFIER_SET_HANDLER_KEY,
+        handler_key=MODIFIER_SET_2P_HANDLER_KEY,
         version=MODIFIER_SET_CONTENT_VERSION,
         slot=request.slot,
         damage_modifier_providers=_providers(
@@ -84,7 +128,7 @@ def _create_four_piece_unit(request: ArtifactContentUnitRequest) -> ContentUnit:
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
-        handler_key=MODIFIER_SET_HANDLER_KEY,
+        handler_key=MODIFIER_SET_4P_HANDLER_KEY,
         version=MODIFIER_SET_CONTENT_VERSION,
         slot=request.slot,
         damage_modifier_providers=_providers(

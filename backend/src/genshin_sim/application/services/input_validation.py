@@ -16,7 +16,10 @@ from genshin_sim.application.errors import ConfigError
 from genshin_sim.application.input import SimulationInput, load_simulation_input
 from genshin_sim.assets import AssetError, AssetRepository
 from genshin_sim.content import create_default_content_unit_registry
-from genshin_sim.content.registries import ContentUnitRegistry
+from genshin_sim.content.registries import (
+    ContentUnitRegistry,
+    HandlerImplementationStatus,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -275,9 +278,27 @@ class BatchInputValidationService:
                     )
                 else:
                     all_bonuses = repository.get_artifact_set_bonuses(artifact_set.asset_key)
-                    for bonus in all_bonuses:
-                        if bonus.piece_count > artifact_config.pieces:
-                            continue
+                    equipped_bonuses = tuple(
+                        bonus
+                        for bonus in all_bonuses
+                        if bonus.piece_count <= artifact_config.pieces
+                    )
+                    # 索引行是这类资产的内容入口：效果行有真实实现时索引行必须同时
+                    # 绑定，否则组装阶段会因件数效果单元没有拥有者而失败。
+                    if artifact_set.handler_key is None and any(
+                        registry.handler_status(bonus.handler_key)
+                        is HandlerImplementationStatus.IMPLEMENTED
+                        for bonus in equipped_bonuses
+                    ):
+                        details.append(
+                            BatchDiagnostic(
+                                code="HANDLER_UNAVAILABLE",
+                                message="圣遗物套装索引行未绑定实现",
+                                item_id=item_id,
+                                path=artifact_path,
+                            )
+                        )
+                    for bonus in equipped_bonuses:
                         if not registry.has_artifact_handler(bonus.handler_key):
                             details.append(
                                 BatchDiagnostic(

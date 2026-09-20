@@ -127,12 +127,15 @@ class WeaponContentUnitRequest:
 
 @dataclass(frozen=True, slots=True)
 class ArtifactContentUnitRequest:
-    """圣遗物内容单元编译请求。"""
+    """圣遗物内容单元编译请求。
+
+    每个 ``handler_key`` 对应一个内容单元，因此这里的 ``piece_count`` 只作为
+    资产侧交叉校验：件数效果键必须与它绑定的效果行件数一致。
+    """
 
     handler_key: str
     artifact_key: str
     slot: int
-    artifact_kind: str = "artifact_set"
     piece_count: int | None = None
     params: Mapping[str, Any] = field(default_factory=dict)
     asset: Any | None = None
@@ -140,11 +143,39 @@ class ArtifactContentUnitRequest:
     def __post_init__(self) -> None:
         _require_non_empty(self.handler_key, "handler_key")
         _require_non_empty(self.artifact_key, "artifact_key")
-        _require_non_empty(self.artifact_kind, "artifact_kind")
         _require_positive_int(self.slot, "slot")
         if self.piece_count is not None:
             _require_non_negative_int(self.piece_count, "piece_count")
         object.__setattr__(self, "params", dict(self.params))
+
+
+@dataclass(frozen=True, slots=True)
+class EffectOwnerContext:
+    """拥有者交给被拥有单元的编译期上下文。
+
+    被拥有的单元不需要在自己的资产效果行里重复声明这些证据：拥有者的资产索引行
+    与配置已经确定它们，组装期据此填充。取值与拥有者类型对应——角色给命座与天赋
+    等级，武器给精炼等级，圣遗物套装给穿戴件数。
+
+    归属模型见 ``docs/架构/内容系统设计.md`` 第 4.4 节。
+    """
+
+    constellation: int = 0
+    talent_levels: Mapping[str, int] = field(default_factory=dict)
+    refinement: int | None = None
+    piece_count: int | None = None
+
+    def __post_init__(self) -> None:
+        _require_non_negative_int(self.constellation, "constellation")
+        talent_levels = dict(self.talent_levels)
+        for talent_key, level in talent_levels.items():
+            _require_non_empty(talent_key, "talent_levels key")
+            _require_positive_int(level, f"talent_levels.{talent_key}")
+        object.__setattr__(self, "talent_levels", talent_levels)
+        if self.refinement is not None:
+            _require_positive_int(self.refinement, "refinement")
+        if self.piece_count is not None:
+            _require_non_negative_int(self.piece_count, "piece_count")
 
 
 @dataclass(frozen=True, slots=True)
@@ -160,6 +191,7 @@ class EffectContentUnitRequest:
     params: Mapping[str, Any] = field(default_factory=dict)
     unlock_key: str | None = None
     asset: Any | None = None
+    owner_context: EffectOwnerContext = field(default_factory=EffectOwnerContext)
 
     def __post_init__(self) -> None:
         _require_non_empty(self.handler_key, "handler_key")
@@ -171,6 +203,8 @@ class EffectContentUnitRequest:
             _require_positive_int(self.slot, "slot")
         if self.unlock_key is not None:
             _require_non_empty(self.unlock_key, "unlock_key")
+        if not isinstance(self.owner_context, EffectOwnerContext):
+            raise ContentUnitRegistryError("owner_context 必须是 EffectOwnerContext")
         object.__setattr__(self, "params", dict(self.params))
 
 

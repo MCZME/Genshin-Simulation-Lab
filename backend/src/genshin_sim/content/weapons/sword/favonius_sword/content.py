@@ -1,7 +1,7 @@
 """西风剑内容单元编译入口。
 
-被动行为实现落在武器内容单元上而不是效果单元：``WeaponContentUnitRequest`` 携带
-精炼等级，而效果通道不携带，概率与触发间隔只能由武器内容单元确定。
+索引行单元承载这把武器「是什么」并拥有它的效果单元；被动「顺风而行」由效果行
+绑定的独立单元实现（``weapon.favonius_sword.passive``），精炼等级由拥有者提供。
 
 判定、资产参数解读与钩子实现是西风系列共用部件，位于
 ``content/generic/favonius_windfall.py``；本文件只负责把本武器的键与参数接进去。
@@ -15,34 +15,58 @@ from genshin_sim.content.definitions.content_unit import (
 )
 from genshin_sim.content.generic.favonius_windfall import (
     FavoniusWindfallHook,
-    windfall_parameters,
+    windfall_unit_inputs,
 )
-from genshin_sim.content.registries import WeaponContentUnitRequest
+from genshin_sim.content.registries import (
+    EffectContentUnitRequest,
+    WeaponContentUnitRequest,
+)
 from genshin_sim.content.weapons.sword.favonius_sword.data import (
     FAVONIUS_SWORD_CONTENT_VERSION,
     FAVONIUS_SWORD_HANDLER_KEY,
+    FAVONIUS_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
     FAVONIUS_SWORD_WINDFALL_IMPACT_KEY,
 )
 
 
-def create_favonius_sword_content_unit(
+def create_favonius_sword_identity_unit(
     request: WeaponContentUnitRequest,
 ) -> ContentUnit:
-    """西风剑内容单元工厂：基础属性之外贡献顺风而行钩子。"""
+    """西风剑索引行单元：表明这把武器是什么，并拥有它的效果单元。"""
 
-    probability, interval_frames = windfall_parameters(request.params, request.refinement)
     return ContentUnit(
         owner_type=ContentUnitOwnerType.WEAPON,
         owner_key=request.weapon_key,
         handler_key=FAVONIUS_SWORD_HANDLER_KEY,
         version=FAVONIUS_SWORD_CONTENT_VERSION,
         slot=request.slot,
+        metadata={"purpose": "favonius_sword_identity"},
+    )
+
+
+def create_favonius_sword_passive_unit(
+    request: EffectContentUnitRequest,
+) -> ContentUnit:
+    """西风剑被动「顺风而行」：暴击命中敌人时按概率产出无元素微粒。"""
+
+    slot, probability, interval_frames = windfall_unit_inputs(
+        FAVONIUS_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
+        params=request.params,
+        refinement=request.owner_context.refinement,
+        slot=request.slot,
+    )
+    return ContentUnit(
+        owner_type=ContentUnitOwnerType.WEAPON,
+        owner_key=request.owner_key,
+        handler_key=FAVONIUS_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
+        version=FAVONIUS_SWORD_CONTENT_VERSION,
+        slot=slot,
         event_hooks=(
             FavoniusWindfallHook(
-                handler_key=FAVONIUS_SWORD_HANDLER_KEY,
+                handler_key=FAVONIUS_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
                 impact_key=FAVONIUS_SWORD_WINDFALL_IMPACT_KEY,
-                owner_ref=f"character:slot_{request.slot}",
-                slot=request.slot,
+                owner_ref=f"character:slot_{slot}",
+                slot=slot,
                 probability=probability,
                 interval_frames=interval_frames,
             ),

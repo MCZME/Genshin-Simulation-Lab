@@ -187,6 +187,27 @@ def roll_travel_frames(random_source: RandomSource) -> int:
     return WINDFALL_TRAVEL_FRAMES_MIN + int(random_source.next() * span)
 
 
+def windfall_unit_inputs(
+    handler_key: str,
+    *,
+    params: Mapping[str, object],
+    refinement: int | None,
+    slot: int | None,
+) -> tuple[int, float, int]:
+    """取出顺风而行单元所需的（槽位, 触发概率, 触发间隔帧数）。
+
+    精炼等级由拥有者（武器索引行单元）提供，效果行不重复声明；缺失、越界或取值
+    非法都在组装阶段失败，不静默回退默认值。
+    """
+
+    if refinement is None:
+        raise ContentUnitValidationError(f"{handler_key} 缺少拥有者提供的精炼等级")
+    if slot is None:
+        raise ContentUnitValidationError(f"{handler_key} 缺少队伍槽位")
+    probability, interval_frames = windfall_parameters(params, refinement)
+    return slot, probability, interval_frames
+
+
 def windfall_parameters(
     params: Mapping[str, object],
     refinement: int,

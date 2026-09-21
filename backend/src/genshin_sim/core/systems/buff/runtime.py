@@ -244,9 +244,10 @@ class BuffRuntime:
     def _prepare_expiry_unchecked(self, frame: int) -> BuffMutationPlan | None:
         validate_frame(frame)
         due = self.buff_store.due_at(frame)
-        if not due:
+        layers_due = self.buff_store.layers_due_at(frame)
+        if not due and not layers_due:
             return None
-        replacements = tuple(
+        expired = tuple(
             replace(
                 record,
                 lifecycle_state=BuffLifecycleState.EXPIRED,
@@ -255,15 +256,18 @@ class BuffRuntime:
             )
             for record in due
         )
+        # 部分层到期只收缩记录，不发布移除事实：记录仍在活动状态，
+        # 「持有几层」由状态读取端口回答，不由事件承载。
+        tightened = tuple(_drop_expired_layers(record, frame) for record in layers_due)
         return BuffMutationPlan(
-            operation_id=_expire_operation_id(frame, due),
+            operation_id=_expire_operation_id(frame, (*layers_due, *due)),
             frame=frame,
             expected_store_version=self.buff_store.version,
             request_ids=(),
-            expected_records=due,
-            replacement_records=replacements,
+            expected_records=(*layers_due, *due),
+            replacement_records=(*tightened, *expired),
             application_results=(),
-            removal_results=tuple(removal_result_from_record(record) for record in replacements),
+            removal_results=tuple(removal_result_from_record(record) for record in expired),
         )
 
     def _prepare_remove_unchecked(self, request: RemoveBuffRequest) -> BuffMutationPlan:
@@ -329,6 +333,25 @@ class BuffRuntime:
                 self.event_engine.publish(event)
         finally:
             self._publishing_events = False
+
+
+def _drop_expired_layers(record: BuffRecord, frame: int) -> BuffRecord:
+    """丢弃已到期的层，返回收缩后的活动记录。"""
+
+    surviving = tuple(
+        layer_frame for layer_frame in record.state.layer_expires_at_frames if layer_frame > frame
+    )
+    if not surviving or len(surviving) == record.state.stack_count:
+        raise BuffValidationError(f"部分到期要求至少一层到期且仍有剩余层：{record.instance_ref}")
+    return replace(
+        record,
+        expires_at_frame=surviving[-1],
+        state=replace(
+            record.state,
+            stack_count=len(surviving),
+            layer_expires_at_frames=surviving,
+        ),
+    )
 
 
 def _requires_allocated_ref(

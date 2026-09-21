@@ -19,6 +19,7 @@ from genshin_sim.core.systems.buff.definitions import (
 )
 from genshin_sim.core.systems.buff.enums import (
     BuffApplicationOutcome,
+    BuffApplicationPolicy,
     BuffLifecycleState,
     BuffRemovalReason,
 )
@@ -153,6 +154,10 @@ class BuffState:
     source_context: RuntimeSourceRef
     stack_count: int
     max_stacks: int
+    # 逐层到期帧（非递减）。只有 stack_independent 策略填充；为空表示该实例不逐层计时，
+    # 整条记录的到期由 BuffRecord.expires_at_frame 单独表达。同一到期帧可出现多次，表示
+    # 数层将在同一帧同时消失（例如同帧内多次应用），这些层各自计入 stack_count。
+    layer_expires_at_frames: tuple[int, ...] = ()
     resolved_modifiers: tuple[BuffResolvedAttributeModifier, ...] = ()
     tags: frozenset[str] = frozenset()
 
@@ -166,8 +171,22 @@ class BuffState:
         validate_positive_int(self.max_stacks, "max_stacks")
         if self.stack_count > self.max_stacks:
             raise BuffValidationError("stack_count 不能大于 max_stacks")
+        layers = tuple(self.layer_expires_at_frames)
+        for frame in layers:
+            validate_frame(frame, "layer_expires_at_frames")
+        if tuple(sorted(layers)) != layers:
+            raise BuffValidationError("layer_expires_at_frames 必须非递减")
+        if layers and len(layers) != self.stack_count:
+            raise BuffValidationError("layer_expires_at_frames 数量必须等于 stack_count")
+        object.__setattr__(self, "layer_expires_at_frames", layers)
         object.__setattr__(self, "resolved_modifiers", tuple(self.resolved_modifiers))
         object.__setattr__(self, "tags", normalize_tags(self.tags, "buff state tags"))
+
+    @property
+    def next_layer_expires_at_frame(self) -> int | None:
+        """最近一层的到期帧；不逐层计时的实例返回 None。"""
+
+        return self.layer_expires_at_frames[0] if self.layer_expires_at_frames else None
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -178,6 +197,7 @@ class BuffState:
             "source_context": runtime_source_ref_to_dict(self.source_context),
             "stack_count": self.stack_count,
             "max_stacks": self.max_stacks,
+            "layer_expires_at_frames": self.layer_expires_at_frames,
             "resolved_modifiers": tuple(item.to_dict() for item in self.resolved_modifiers),
             "tags": tuple(sorted(self.tags)),
         }
@@ -213,6 +233,16 @@ class BuffRecord:
             raise BuffValidationError("state.max_stacks 必须等于 definition.max_stacks")
         if self.state.tags != self.definition.tags:
             raise BuffValidationError("state.tags 必须等于 definition.tags")
+        layers = self.state.layer_expires_at_frames
+        independently_timed = (
+            self.definition.application_policy is BuffApplicationPolicy.STACK_INDEPENDENT
+        )
+        if independently_timed and not layers:
+            raise BuffValidationError("stack_independent 实例必须携带逐层到期帧")
+        if not independently_timed and layers:
+            raise BuffValidationError("只有 stack_independent 实例可以携带逐层到期帧")
+        if layers and max(layers) != self.expires_at_frame:
+            raise BuffValidationError("逐层计时实例的 expires_at_frame 必须等于最后一层的到期帧")
         expected_terms = tuple(
             template.term_key for template in self.definition.attribute_modifiers
         )

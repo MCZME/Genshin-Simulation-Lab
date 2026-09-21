@@ -136,10 +136,16 @@ class BuffDefinition:
             raise BuffValidationError("value_refresh_policy 不受支持")
         validate_positive_int(self.max_stacks, "max_stacks")
         if (
-            self.application_policy is not BuffApplicationPolicy.STACK_REFRESH
+            self.application_policy
+            not in {
+                BuffApplicationPolicy.STACK_REFRESH,
+                BuffApplicationPolicy.STACK_INDEPENDENT,
+            }
             and self.max_stacks != 1
         ):
-            raise BuffValidationError("非 stack_refresh 策略要求 max_stacks == 1")
+            raise BuffValidationError(
+                "只有 stack_refresh 与 stack_independent 策略允许 max_stacks > 1"
+            )
         modifiers = tuple(self.attribute_modifiers)
         if self.marker_only and modifiers:
             raise BuffValidationError("marker_only 定义不能声明 attribute_modifiers")

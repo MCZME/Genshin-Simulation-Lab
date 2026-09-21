@@ -96,6 +96,20 @@ class BuffStore:
         validate_frame(frame)
         return tuple(record for record in self.active_records if record.expires_at_frame <= frame)
 
+    def layers_due_at(self, frame: int) -> tuple[BuffRecord, ...]:
+        """返回在指定帧有层到期、但整条记录尚未到期的活动记录。
+
+        整条到期由 ``due_at`` 承接，两者互斥。
+        """
+
+        validate_frame(frame)
+        return tuple(
+            record
+            for record in self.active_records
+            if record.state.next_layer_expires_at_frame is not None
+            and record.state.next_layer_expires_at_frame <= frame < record.expires_at_frame
+        )
+
     def conflicts(
         self,
         target_ref: AttributeSubjectRef,

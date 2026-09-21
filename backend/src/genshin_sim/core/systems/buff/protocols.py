@@ -17,9 +17,9 @@ class BuffReader(Protocol):
 
 
 class TargetBuffPresenceReadPort(Protocol):
-    """查询目标在指定帧是否持有某个已提交的 Buff 实例。
+    """查询目标在指定帧的 Buff 存在性与活动层数。
 
-    面向内容侧条件效果（武器、圣遗物等）的窄只读端口：只回答存在性，
+    面向内容侧条件效果（武器、圣遗物等）的窄只读端口：只回答存在性与层数，
     不暴露 Buff 实例细节，也不允许任何写入。
     """
 
@@ -30,3 +30,11 @@ class TargetBuffPresenceReadPort(Protocol):
         definition_key: str,
         frame: int,
     ) -> bool: ...
+
+    def active_stack_count(
+        self,
+        *,
+        target_ref: AttributeSubjectRef,
+        definition_key: str,
+        frame: int,
+    ) -> int: ...

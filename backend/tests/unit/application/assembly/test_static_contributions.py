@@ -311,6 +311,53 @@ def test_assembler_binds_runtime_damage_provider_ports():
     ]
 
 
+def test_target_buff_presence_adapter_sums_active_stack_count():
+    """``active_stack_count`` 返回匹配记录的活动层数之和，无匹配记录时为 0。"""
+
+    class _FakeStackRecord:
+        def __init__(self, stack_count: int) -> None:
+            self.state = _FakeStackState(stack_count)
+
+    class _FakeStackState:
+        def __init__(self, stack_count: int) -> None:
+            self.stack_count = stack_count
+
+    class _FakeLayeredBuffReader:
+        def __init__(self, records: tuple[object, ...]) -> None:
+            self._records = records
+
+        def active(
+            self,
+            frame: int,
+            target_ref: Any = None,
+            definition_key: str | None = None,
+            mechanic_key: str | None = None,
+        ) -> tuple[object, ...]:
+            del frame, target_ref, definition_key, mechanic_key
+            return self._records
+
+    target_ref = AttributeSubjectRef.character("character:slot_1")
+
+    assert (
+        TargetBuffPresenceReadAdapter(
+            cast(Any, _FakeLayeredBuffReader((_FakeStackRecord(3),)))
+        ).active_stack_count(
+            target_ref=target_ref,
+            definition_key="buff.layered.test",
+            frame=5,
+        )
+        == 3
+    )
+    assert (
+        TargetBuffPresenceReadAdapter(cast(Any, _FakeLayeredBuffReader(()))).active_stack_count(
+            target_ref=target_ref,
+            definition_key="buff.layered.test",
+            frame=5,
+        )
+        == 0
+    )
+
+
 def test_assembler_damage_binding_skips_providers_without_binder():
     """未声明 ``bind_runtime_ports`` 的伤害 provider 被跳过，不影响装配。"""
 

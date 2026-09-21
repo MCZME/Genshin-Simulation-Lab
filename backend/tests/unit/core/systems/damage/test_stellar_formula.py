@@ -230,6 +230,7 @@ def test_stellar_formula_resolves_with_live_mastery_crit_and_resistance() -> Non
             session=session,
             modifiers=modifiers,
             trace_level=TraceLevel.FULL,
+            modifier_collector=DamageModifierIndex(()).collect,
         )
     )
 
@@ -269,6 +270,7 @@ def test_stellar_formula_rejects_composite_mode_and_modifiers() -> None:
                 session=session,
                 modifiers=modifiers,
                 trace_level=TraceLevel.FULL,
+                modifier_collector=DamageModifierIndex(()).collect,
             )
         )
 
@@ -381,6 +383,7 @@ def test_stellar_formula_composite_settles_per_participant_with_weights() -> Non
             session=session,
             modifiers=modifiers,
             trace_level=TraceLevel.FULL,
+            modifier_collector=DamageModifierIndex(()).collect,
         )
     )
 
@@ -433,6 +436,7 @@ def test_stellar_formula_composite_sorts_by_damage_and_truncates_to_four() -> No
             session=session,
             modifiers=modifiers,
             trace_level=TraceLevel.NONE,
+            modifier_collector=DamageModifierIndex(()).collect,
         )
     )
 

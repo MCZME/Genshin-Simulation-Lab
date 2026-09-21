@@ -200,7 +200,7 @@ def test_damage_providers_skip_non_general_formulas(provider_factory):
     """通用阶段只属于通用公式。
 
     ``crit_rate_add`` 与 ``damage_bonus_add`` 都不在两个反应公式的
-    ``allowed_modifier_stages`` 内；若在这里成交，``_validate_formula_stages``
+    ``allowed_modifier_stages`` 内；若在这里成交，``validate_formula_modifier_stages``
     会在进入公式体之前抛错，导致整次反应伤害结算失败。
     """
 

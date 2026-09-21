@@ -33,6 +33,7 @@ from genshin_sim.core.systems.damage.formulas import (
     LunarReactionDamageFormula,
     TransformativeReactionDamageFormula,
     create_default_damage_formula_registry,
+    validate_formula_modifier_stages,
 )
 from genshin_sim.core.systems.damage.handler import DamageRequestHandler, DamageResolutionRecord
 from genshin_sim.core.systems.damage.keys import (
@@ -101,15 +102,6 @@ from genshin_sim.core.systems.damage.stellar import (
     StellarReactionDamageResolution,
     resolve_stellar_reaction_damage,
 )
-from genshin_sim.core.systems.damage.tags import (
-    DAMAGE_TAG_CHARGED_ATTACK,
-    DAMAGE_TAG_DIRECT_DAMAGE,
-    DAMAGE_TAG_ELEMENTAL_BURST,
-    DAMAGE_TAG_ELEMENTAL_SKILL,
-    DAMAGE_TAG_NORMAL_ATTACK,
-    DAMAGE_TAG_PLUNGING_ATTACK,
-    PUBLIC_DAMAGE_TAGS,
-)
 
 __all__ = [
     "ConflictingDamageModifierError",
@@ -165,12 +157,6 @@ __all__ = [
     "FORMULA_KEY_STELLAR_REACTION",
     "FORMULA_KEY_TRANSFORMATIVE_REACTION",
     "KNOWN_FORMULA_KEYS",
-    "DAMAGE_TAG_CHARGED_ATTACK",
-    "DAMAGE_TAG_DIRECT_DAMAGE",
-    "DAMAGE_TAG_ELEMENTAL_BURST",
-    "DAMAGE_TAG_ELEMENTAL_SKILL",
-    "DAMAGE_TAG_NORMAL_ATTACK",
-    "DAMAGE_TAG_PLUNGING_ATTACK",
     "DefenseResolution",
     "FixedCriticalDecisionProvider",
     "GeneralDamageFormula",
@@ -189,7 +175,6 @@ __all__ = [
     "IdentityGeneralReactionZonePolicy",
     "InvalidDamageScalingError",
     "ResistanceResolution",
-    "PUBLIC_DAMAGE_TAGS",
     "ScalingZoneResolution",
     "SecondaryAmplifyingReactionInput",
     "SecondaryAmplifyingReactionResolution",
@@ -206,4 +191,5 @@ __all__ = [
     "UnsupportedDamageFormulaError",
     "create_default_damage_formula_registry",
     "validate_damage_float",
+    "validate_formula_modifier_stages",
 ]

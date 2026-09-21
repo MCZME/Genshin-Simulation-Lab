@@ -21,8 +21,8 @@ from genshin_sim.core.systems.damage.errors import DamageProviderViolationError
 from genshin_sim.core.systems.damage.formulas import (
     DamageFormulaContext,
     DamageFormulaRegistry,
-    DamageFormulaSpec,
     create_default_damage_formula_registry,
+    validate_formula_modifier_stages,
 )
 from genshin_sim.core.systems.damage.models import (
     DamageQuery,
@@ -157,29 +157,17 @@ class DamageResolver:
         formula = self.formula_registry.require(query.request.formula_key)
         session = DamageResolutionSession(self.attribute_resolver, query, trace_level)
         modifiers = self.modifier_index.collect(query, session)
-        _validate_formula_stages(formula.formula_spec, modifiers)
+        validate_formula_modifier_stages(formula.formula_spec, modifiers)
         resolution = formula.resolve(
             DamageFormulaContext(
                 query=query,
                 session=session,
                 modifiers=modifiers,
                 trace_level=trace_level,
+                modifier_collector=self.modifier_index.collect,
             )
         )
         return _build_damage_result(query, resolution, modifiers, trace_level)
-
-
-def _validate_formula_stages(
-    formula_spec: DamageFormulaSpec,
-    modifiers: DamageModifierCollection,
-) -> None:
-    """确保 provider 实际返回的 term 都被当前完整公式允许。"""
-
-    for term in (*modifiers.applied_terms, *modifiers.rejected_terms):
-        if term.stage not in formula_spec.allowed_modifier_stages:
-            raise DamageProviderViolationError(
-                f"伤害公式 {formula_spec.formula_key} 不允许阶段：{term.stage.value}"
-            )
 
 
 def _build_damage_result(

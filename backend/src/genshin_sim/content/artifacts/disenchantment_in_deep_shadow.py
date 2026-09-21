@@ -24,7 +24,7 @@
   （星烁复合模式的组分查询走通用公式）。
 - C3 的目标状态经装配期注入的 ``TargetBuffPresenceReadPort`` 读取；未绑定时
   返回空，因此装配完成前不会生效。
-- 每个 provider 都自筛公式：越界阶段会被 ``_validate_formula_stages`` 硬拒绝
+- 每个 provider 都自筛公式：越界阶段会被 ``validate_formula_modifier_stages`` 硬拒绝
   并让整次结算失败，而不是静默跳过。
 """
 
@@ -298,7 +298,7 @@ class DisenchantmentInDeepShadowCritRateProvider:
     """4 件套 C3：攻击受到超导或星超导反应影响的敌人时，本次攻击暴击率提高。
 
     ``crit_rate_add`` 只属于通用公式；必须自筛公式，否则会在反应伤害查询上
-    被 ``_validate_formula_stages`` 硬拒绝并让整次结算失败。
+    被 ``validate_formula_modifier_stages`` 硬拒绝并让整次结算失败。
 
     条件判定只查一个 Buff 定义：普通超导与星超导极星辉域施加的是同一个
     ``buff.reaction.superconduct.physical_resistance_reduction``，因此两种来源

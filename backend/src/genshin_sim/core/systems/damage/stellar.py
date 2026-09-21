@@ -136,6 +136,9 @@ class StellarReactionComponentResolution:
     component_damage: float
     weight: float
     weighted_damage: float
+    # 该组分独立收集到的伤害修饰项。复合路径的修饰不进入顶层 applied_terms，
+    # 因此在此单独保留，使数值与审计重新对齐。
+    modifier_terms: tuple[Any, ...] = ()
     source_attribute_trace: tuple[Any, ...] = ()
     target_attribute_trace: tuple[Any, ...] = ()
 

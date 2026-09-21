@@ -29,7 +29,7 @@
 - B2 的伤害 provider **不做参与者去重**：星扩散复合路径会为每个参与者
   各取一份该加成，这是「队伍级效果对每个参与者生效」的正确语义。
 - 伤害 provider 未绑定运行端口时不贡献，因此装配完成前不会生效。
-- 伤害 provider 自筛公式：越界阶段会被 ``_validate_formula_stages``
+- 伤害 provider 自筛公式：越界阶段会被 ``validate_formula_modifier_stages``
   硬拒绝并让整次结算失败，而不是静默跳过。
 """
 

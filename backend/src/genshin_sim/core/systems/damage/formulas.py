@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from types import MappingProxyType
 from typing import TYPE_CHECKING, Protocol
@@ -24,6 +24,7 @@ from genshin_sim.core.systems.damage.enums import (
 )
 from genshin_sim.core.systems.damage.errors import (
     DamageFormulaInputError,
+    DamageProviderViolationError,
     DamageResolutionError,
     DuplicateDamageFormulaError,
     InvalidDamageScalingError,
@@ -84,6 +85,11 @@ from genshin_sim.core.systems.damage.stellar import (
 if TYPE_CHECKING:
     from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
 
+    # 组分查询的修饰收集入口签名：由 resolver 注入 ``index.collect``。
+    DamageModifierCollector = Callable[
+        [DamageQuery, DamageResolutionSession], DamageModifierCollection
+    ]
+
 
 GENERAL_ALLOWED_MODIFIER_STAGES = frozenset(
     {
@@ -106,6 +112,10 @@ TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES = frozenset(
 STELLAR_ALLOWED_MODIFIER_STAGES = frozenset(
     {
         DamageModifierStage.STELLAR_REACTION_BONUS_ADD,
+        # 暴击伤害与通用公式共用同一槽位：星烁伤害的暴击区本来就读取面板暴伤，
+        # 因此不另设专属阶段，作用范围由 provider 自筛 formula_key 决定，
+        # 与 crit_rate_add 的处理方式一致。
+        DamageModifierStage.CRIT_DAMAGE_ADD,
     }
 )
 
@@ -137,6 +147,10 @@ class DamageFormulaContext:
     session: DamageResolutionSession
     modifiers: DamageModifierCollection
     trace_level: TraceLevel
+    # 组分查询的修饰收集入口：由 resolver 注入 index.collect，供逐参与者结算
+    # 的公式对每个组分重新收集修饰。必填：复合路径的修饰完全由组分收集决定，
+    # 缺少收集入口就没有修饰可言，不允许静默退化。
+    modifier_collector: DamageModifierCollector
 
 
 class DamageFormula(Protocol):
@@ -390,14 +404,8 @@ class TransformativeReactionDamageFormula:
         reaction = request.transformative_reaction
         if reaction is None:
             raise DamageFormulaInputError("剧变伤害缺少 TransformativeReactionInput")
+        validate_formula_modifier_stages(self.formula_spec, context.modifiers)
         modifier_terms = context.modifiers.applied_terms
-        if context.modifiers.rejected_terms:
-            raise DamageFormulaInputError("剧变伤害不能使用普通伤害 modifier")
-        if any(
-            term.stage is not DamageModifierStage.TRANSFORMATIVE_REACTION_BONUS_ADD
-            for term in modifier_terms
-        ):
-            raise DamageFormulaInputError("剧变伤害不能使用普通伤害 modifier")
         reaction_bonus = reaction.reaction_bonus + _sum_terms(
             modifier_terms,
             DamageModifierStage.TRANSFORMATIVE_REACTION_BONUS_ADD,
@@ -514,8 +522,7 @@ class LunarReactionDamageFormula:
         reaction = request.lunar_reaction
         if reaction is None:
             raise DamageFormulaInputError("月曜伤害缺少 LunarReactionDamageInput")
-        if context.modifiers.applied_terms or context.modifiers.rejected_terms:
-            raise DamageFormulaInputError("月曜伤害暂不接受普通 Damage modifier")
+        validate_formula_modifier_stages(self.formula_spec, context.modifiers)
         if reaction.mode is LunarReactionDamageMode.CHARACTER_DIRECT:
             participant = reaction.participants[0]
             if not participant.scaling_terms and participant.flat_base_damage == 0:
@@ -702,14 +709,8 @@ class StellarReactionDamageFormula:
         stellar = request.stellar_reaction
         if stellar is None:
             raise DamageFormulaInputError("星烁伤害缺少 StellarReactionDamageInput")
+        validate_formula_modifier_stages(self.formula_spec, context.modifiers)
         modifier_terms = context.modifiers.applied_terms
-        if context.modifiers.rejected_terms:
-            raise DamageFormulaInputError("星烁伤害不接受普通 Damage modifier")
-        if any(
-            term.stage is not DamageModifierStage.STELLAR_REACTION_BONUS_ADD
-            for term in modifier_terms
-        ):
-            raise DamageFormulaInputError("星烁伤害不接受普通 Damage modifier")
         stellar_bonus_add = _sum_terms(
             modifier_terms,
             DamageModifierStage.STELLAR_REACTION_BONUS_ADD,
@@ -717,12 +718,7 @@ class StellarReactionDamageFormula:
         if stellar.mode == "reaction_composite":
             if not stellar.participants:
                 raise DamageFormulaInputError("反应星烁复合伤害必须提供参与者列表")
-            return self._resolve_reaction_composite(
-                context,
-                query,
-                stellar,
-                stellar_bonus_add=stellar_bonus_add,
-            )
+            return self._resolve_reaction_composite(context, query, stellar)
         if stellar.mode != "character_direct":
             raise DamageFormulaInputError("星烁伤害 mode 不受支持")
 
@@ -734,7 +730,11 @@ class StellarReactionDamageFormula:
         if elemental_mastery < 0:
             raise DamageResolutionError("星烁元素精通不能为负数")
         mastery_bonus = 6.0 * elemental_mastery / (elemental_mastery + 2000.0)
-        critical, critical_trace, _ = self.critical_policy.resolve(query, context.session, ())
+        critical, critical_trace, _ = self.critical_policy.resolve(
+            query,
+            context.session,
+            modifier_terms,
+        )
         resistance_attribute = context.session.resolve_target(
             ELEMENT_TO_RESISTANCE_KEY[request.element.value]
         )
@@ -780,10 +780,12 @@ class StellarReactionDamageFormula:
         context: DamageFormulaContext,
         query: DamageQuery,
         stellar: StellarReactionDamageInput,
-        *,
-        stellar_bonus_add: float = 0.0,
     ) -> StellarReactionDamageResolution:
-        """逐参与者结算单人伤害，稳定排序取前 4 名后按固定权重聚合。"""
+        """逐参与者结算单人伤害，稳定排序取前 4 名后按固定权重聚合。
+
+        每个组分是独立计算：修饰项按组分查询重新收集，因此只按来源自筛的
+        provider 只作用于对应参与者自己的那一份。
+        """
 
         raw_components = tuple(
             self._resolve_stellar_component(
@@ -791,7 +793,6 @@ class StellarReactionDamageFormula:
                 query,
                 stellar,
                 participant,
-                stellar_bonus_add=stellar_bonus_add,
             )
             for participant in stellar.participants
         )
@@ -848,11 +849,19 @@ class StellarReactionDamageFormula:
         query: DamageQuery,
         stellar: StellarReactionDamageInput,
         participant: StellarReactionParticipantInput,
-        *,
-        stellar_bonus_add: float = 0.0,
     ) -> StellarReactionComponentResolution:
         component_query = _stellar_component_query(query, participant)
         component_session = _new_damage_session(context, component_query)
+        # 逐参与者重新收集：组分查询的来源主体是该参与者，因此按 source_ref
+        # 自筛的 provider 只对它自己这份生效；不按来源过滤的 provider 则
+        # 对每个参与者各贡献一次（队伍级效果的既有语义）。
+        component_modifiers = context.modifier_collector(component_query, component_session)
+        validate_formula_modifier_stages(self.formula_spec, component_modifiers)
+        component_terms = component_modifiers.applied_terms
+        stellar_bonus_add = _sum_terms(
+            component_terms,
+            DamageModifierStage.STELLAR_REACTION_BONUS_ADD,
+        )
         mastery_trace = component_session.resolve_source(STAT_ELEMENTAL_MASTERY)
         elemental_mastery = validate_damage_float(
             mastery_trace.final_value,
@@ -864,7 +873,7 @@ class StellarReactionDamageFormula:
         critical, critical_trace, _ = self.critical_policy.resolve(
             component_query,
             component_session,
-            (),
+            component_terms,
         )
         resistance_attribute = component_session.resolve_target(
             ELEMENT_TO_RESISTANCE_KEY[query.request.element.value]
@@ -899,6 +908,7 @@ class StellarReactionDamageFormula:
             component_damage=component_damage,
             weight=0.0,
             weighted_damage=0.0,
+            modifier_terms=component_terms,
             source_attribute_trace=source_attribute_trace,
             target_attribute_trace=target_attribute_trace,
         )
@@ -960,28 +970,40 @@ def _new_damage_session(
     )
 
 
+def validate_formula_modifier_stages(
+    formula_spec: DamageFormulaSpec,
+    modifiers: DamageModifierCollection,
+) -> None:
+    """修饰项必须落在该公式的 ``allowed_modifier_stages`` 白名单内。
+
+    常规路径由 resolver 在入公式前调用一次；公式体内保留同构调用作为兜底，
+    因为公式也可以被直接调用。越界一律视为 provider 违规，不做静默忽略。
+    """
+
+    for term in (*modifiers.applied_terms, *modifiers.rejected_terms):
+        if term.stage not in formula_spec.allowed_modifier_stages:
+            raise DamageProviderViolationError(
+                f"伤害公式 {formula_spec.formula_key} 不允许阶段：{term.stage.value}"
+            )
+
+
 def _stellar_component_query(
     query: DamageQuery,
     participant: StellarReactionParticipantInput,
 ) -> DamageQuery:
-    """为一个星烁角色组分创建独立的属性查询与请求投影。"""
+    """为一个星烁角色组分创建独立的属性查询与请求投影。
+
+    只替换身份相关字段，公式键与星烁输入沿用整次请求：provider 按
+    ``source_ref`` 与 ``formula_key`` 自筛时，组分查询仍被识别为星烁伤害，
+    且归属是参与者自己。
+    """
 
     request = query.request
-    component_request = DamageRequest(
+    component_request = replace(
+        request,
         request_id=f"{request.request_id}:participant:{participant.participant_ref.entity_id}",
-        frame=request.frame,
-        # 组分请求只为读取该参与者的属性上下文，公式键不参与星烁结算语义；
-        # 沿用 lunar 组分请求的 FORMULA_KEY_GENERAL 先例。
-        formula_key=FORMULA_KEY_GENERAL,
-        main_attack_tag=request.main_attack_tag,
-        impact_key=request.impact_key,
         source_ref=participant.participant_ref,
-        target_ref=request.target_ref,
         source_level=participant.source_level,
-        target_level=request.target_level,
-        element=request.element,
-        source_context=request.source_context,
-        tags=request.tags,
         can_crit=participant.can_crit,
     )
     tags = component_request.tags

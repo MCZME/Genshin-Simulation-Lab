@@ -1,9 +1,10 @@
 """反应公式专属修饰项阶段的行为测试。
 
 剧变与星烁公式各自拥有一个专属 ``DamageModifierStage``，用于承载内容侧
-（圣遗物等）对反应伤害加成位的贡献。本模块覆盖四条边界：
+（圣遗物等）对反应伤害加成位的贡献；星烁另与通用公式共享 ``crit_damage_add``。
+本模块覆盖四条边界：
 
-1. 两公式的 ``allowed_modifier_stages`` 只含本公式专属阶段，且互不重叠；
+1. 两公式的 ``allowed_modifier_stages`` 只含本公式专属阶段，且互不重叠；星烁额外共享通用暴伤槽位；
 2. 携带普通阶段的 term 会被公式阶段校验拒绝；
 3. 专属阶段的 term 会并入公式的反应加成位（精通区加算），不替换冻结基线值；
 4. 通用、月曜与激化路径不受该改动影响。
@@ -49,6 +50,7 @@ from genshin_sim.core.systems.damage.formulas import (
     LunarReactionDamageFormula,
     StellarReactionDamageFormula,
     TransformativeReactionDamageFormula,
+    validate_formula_modifier_stages,
 )
 from genshin_sim.core.systems.damage.keys import FORMULA_KEY_GENERAL
 from genshin_sim.core.systems.damage.models import DamageModifierTerm, DamageRequest
@@ -58,10 +60,7 @@ from genshin_sim.core.systems.damage.modifiers import (
     DamageModifierProviderSpec,
     StaticDamageModifierProvider,
 )
-from genshin_sim.core.systems.damage.resolver import (
-    DamageResolutionSession,
-    _validate_formula_stages,
-)
+from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
 from genshin_sim.core.systems.damage.stellar import StellarReactionDamageInput
 
 SOURCE = AttributeSubjectRef.character("character:slot_1")
@@ -70,6 +69,7 @@ SOURCE_CONTEXT = RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.reaction_stage
 
 TRANSFORMATIVE_STAGE = DamageModifierStage.TRANSFORMATIVE_REACTION_BONUS_ADD
 STELLAR_STAGE = DamageModifierStage.STELLAR_REACTION_BONUS_ADD
+SHARED_CRIT_DAMAGE_STAGE = DamageModifierStage.CRIT_DAMAGE_ADD
 
 
 def _attribute_resolver() -> AttributeResolver:
@@ -200,14 +200,15 @@ def _context(query: DamageQuery, modifiers: Any) -> DamageFormulaContext:
         session=DamageResolutionSession(_attribute_resolver(), query),
         modifiers=modifiers,
         trace_level=TraceLevel.FULL,
+        modifier_collector=DamageModifierIndex(()).collect,
     )
 
 
 def test_reaction_stage_allowlists_are_formula_specific_and_disjoint() -> None:
-    """两公式白名单各自只含本公式专属阶段，互不重叠。"""
+    """白名单各自含本公式专属阶段；星烁额外共享通用暴伤槽位，两者互不重叠。"""
 
     assert frozenset({TRANSFORMATIVE_STAGE}) == TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES
-    assert frozenset({STELLAR_STAGE}) == STELLAR_ALLOWED_MODIFIER_STAGES
+    assert frozenset({STELLAR_STAGE, SHARED_CRIT_DAMAGE_STAGE}) == STELLAR_ALLOWED_MODIFIER_STAGES
     assert not TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES & STELLAR_ALLOWED_MODIFIER_STAGES
 
 
@@ -225,7 +226,7 @@ def test_formula_specs_expose_the_new_stages() -> None:
         frozenset({TRANSFORMATIVE_STAGE})
     )
     assert StellarReactionDamageFormula().formula_spec.allowed_modifier_stages == (
-        frozenset({STELLAR_STAGE})
+        frozenset({STELLAR_STAGE, SHARED_CRIT_DAMAGE_STAGE})
     )
 
 
@@ -280,7 +281,6 @@ def test_multiple_terms_on_same_stage_are_summed() -> None:
     (
         DamageModifierStage.DAMAGE_BONUS_ADD,
         DamageModifierStage.CRIT_RATE_ADD,
-        DamageModifierStage.CRIT_DAMAGE_ADD,
         DamageModifierStage.DEFENSE_REDUCTION,
         DamageModifierStage.RESISTANCE_ADD,
         DamageModifierStage.BASE_DAMAGE_FLAT_ADD,
@@ -295,7 +295,22 @@ def test_reaction_formulas_reject_ordinary_stages(stage: DamageModifierStage) ->
     ):
         modifiers = _collect(query, _term(stage, 0.1))
         with pytest.raises(DamageProviderViolationError):
-            _validate_formula_stages(formula_spec, modifiers)
+            validate_formula_modifier_stages(formula_spec, modifiers)
+
+
+def test_stellar_formula_shares_common_crit_damage_stage() -> None:
+    """暴伤是星烁与通用公式共享的槽位：星烁接受，剧变仍拒绝。"""
+
+    validate_formula_modifier_stages(
+        StellarReactionDamageFormula().formula_spec,
+        _collect(_stellar_query(), _term(SHARED_CRIT_DAMAGE_STAGE, 0.5)),
+    )
+
+    with pytest.raises(DamageProviderViolationError):
+        validate_formula_modifier_stages(
+            TransformativeReactionDamageFormula().formula_spec,
+            _collect(_transformative_query(), _term(SHARED_CRIT_DAMAGE_STAGE, 0.5)),
+        )
 
 
 def test_reaction_formulas_reject_each_others_stage() -> None:
@@ -303,14 +318,14 @@ def test_reaction_formulas_reject_each_others_stage() -> None:
 
     stellar_query = _stellar_query()
     with pytest.raises(DamageProviderViolationError):
-        _validate_formula_stages(
+        validate_formula_modifier_stages(
             StellarReactionDamageFormula().formula_spec,
             _collect(stellar_query, _term(TRANSFORMATIVE_STAGE, 0.8)),
         )
 
     transformative_query = _transformative_query()
     with pytest.raises(DamageProviderViolationError):
-        _validate_formula_stages(
+        validate_formula_modifier_stages(
             TransformativeReactionDamageFormula().formula_spec,
             _collect(transformative_query, _term(STELLAR_STAGE, 0.4)),
         )
@@ -345,7 +360,7 @@ def test_unfiltered_provider_hard_fails_reaction_resolution() -> None:
 
     这是「必须自筛公式」这条约束的成因：``DamageModifierIndex.collect`` 只校验
     term 是否越出 provider 自身的 ``writes`` 声明，公式级白名单由
-    ``_validate_formula_stages`` 在进入公式体之前强制执行。因此一个无条件
+    ``validate_formula_modifier_stages`` 在进入公式体之前强制执行。因此一个无条件
     返回普通阶段的 provider（例如双冰共鸣 ``ResonanceCryoCritDamageProvider``
     这一形态）一旦在反应伤害查询上成交，整次结算直接失败。
     """

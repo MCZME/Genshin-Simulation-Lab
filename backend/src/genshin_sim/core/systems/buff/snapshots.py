@@ -32,6 +32,8 @@ class BuffInstanceSnapshot:
     last_applied_frame: int
     expires_at_frame: int
     tags: frozenset[str]
+    # 逐层到期帧（严格升序）；不逐层计时的实例为空。
+    layer_expires_at_frames: tuple[int, ...] = ()
     # Buff 显示名：内容层提供，只进入展示投影，不作为身份或冲突依据。
     display_name: str | None = None
 
@@ -55,6 +57,7 @@ class BuffInstanceSnapshot:
             last_applied_frame=record.last_applied_frame,
             expires_at_frame=record.expires_at_frame,
             tags=state.tags,
+            layer_expires_at_frames=state.layer_expires_at_frames,
             display_name=definition.display_name,
         )
 
@@ -77,6 +80,7 @@ class BuffInstanceSnapshot:
             "created_frame": self.created_frame,
             "last_applied_frame": self.last_applied_frame,
             "expires_at_frame": self.expires_at_frame,
+            "layer_expires_at_frames": self.layer_expires_at_frames,
             "tags": tuple(sorted(self.tags)),
         }
 

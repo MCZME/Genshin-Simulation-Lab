@@ -41,7 +41,7 @@ class DamageModifierStage(StrEnum):
     RESISTANCE_ADD = "resistance_add"
 
     # 反应公式专属修饰项：由对应反应公式在自己的公式体内消费，不进入直伤槽位账单。
-    # 剧变与星烁各占一个独立阶段，两公式的 allowed_modifier_stages 白名单互不牵连。
+    # 剧变与星烁各占独立阶段，两公式的 allowed_modifier_stages 白名单互不牵连。
     TRANSFORMATIVE_REACTION_BONUS_ADD = "transformative_reaction_bonus_add"
     STELLAR_REACTION_BONUS_ADD = "stellar_reaction_bonus_add"
 

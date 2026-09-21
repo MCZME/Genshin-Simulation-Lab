@@ -149,8 +149,7 @@ class ContentCompiler:
         for unit in bonus_units:
             if unit.owner_key not in owners_with_unit:
                 raise InvalidRuntimePayloadError(
-                    f"内容单元 {unit.handler_key} 所属套装 {unit.owner_key} "
-                    "没有绑定索引行单元"
+                    f"内容单元 {unit.handler_key} 所属套装 {unit.owner_key} 没有绑定索引行单元"
                 )
 
     @staticmethod
@@ -173,9 +172,7 @@ class ContentCompiler:
         }
         if bundle.weapon is not None:
             contexts[("weapon", bundle.weapon.asset_key)] = EffectOwnerContext(
-                refinement=(
-                    slot_config.weapon.refinement if slot_config.weapon is not None else 1
-                ),
+                refinement=(slot_config.weapon.refinement if slot_config.weapon is not None else 1),
             )
         equipped_pieces = {
             artifact_set.asset_key: artifact_set.pieces

@@ -5,6 +5,7 @@ from __future__ import annotations
 from genshin_sim.core.attributes import AttributeSubjectKind, AttributeSubjectRef
 from genshin_sim.core.elements import AuraKind, ElementalSubjectKind, ElementalSubjectRef
 from genshin_sim.core.simulation.team import TeamRuntimeState
+from genshin_sim.core.systems.buff.models import BuffRecord
 from genshin_sim.core.systems.buff.protocols import BuffReader
 from genshin_sim.core.systems.reaction.runtime import ReactionRuntime
 from genshin_sim.core.systems.shield.enums import ShieldProtectionKind
@@ -81,13 +82,26 @@ class LunarCagePresenceReadAdapter:
 
 
 class TargetBuffPresenceReadAdapter:
-    """通过 Buff 只读查询目标在指定帧是否持有某个已提交的 Buff 实例。
+    """通过 Buff 只读查询目标在指定帧的 Buff 存在性与活动层数。
 
-    供内容侧条件伤害修饰使用：只回答存在性，不暴露 Buff 实例细节。
+    供内容侧条件伤害修饰使用：只回答存在性与层数，不暴露 Buff 实例细节。
     """
 
     def __init__(self, buff_reader: BuffReader) -> None:
         self._buff_reader = buff_reader
+
+    def _records(
+        self,
+        *,
+        target_ref: AttributeSubjectRef,
+        definition_key: str,
+        frame: int,
+    ) -> tuple[BuffRecord, ...]:
+        return self._buff_reader.active(
+            frame,
+            target_ref=target_ref,
+            definition_key=definition_key,
+        )
 
     def has_buff(
         self,
@@ -97,10 +111,32 @@ class TargetBuffPresenceReadAdapter:
         frame: int,
     ) -> bool:
         return bool(
-            self._buff_reader.active(
-                frame,
+            self._records(
                 target_ref=target_ref,
                 definition_key=definition_key,
+                frame=frame,
+            )
+        )
+
+    def active_stack_count(
+        self,
+        *,
+        target_ref: AttributeSubjectRef,
+        definition_key: str,
+        frame: int,
+    ) -> int:
+        """返回匹配记录的活动层数之和；无匹配记录时为 0。
+
+        单条 stack 记录时即该记录的 `stack_count`；同类 multi 实例并存时
+        求和，保证「叠加了几层」这一问法对两种表达都成立。
+        """
+
+        return sum(
+            record.state.stack_count
+            for record in self._records(
+                target_ref=target_ref,
+                definition_key=definition_key,
+                frame=frame,
             )
         )
 

@@ -580,7 +580,7 @@ class RuntimeAssembler:
             )
         except BuffSystemError as exc:
             raise InvalidRuntimePayloadError(str(exc)) from exc
-        self._bind_content_damage_provider_ports(
+        self._bind_content_runtime_ports(
             content_bundle,
             buff_reader=buff_runtime.reader,
         )
@@ -986,29 +986,29 @@ class RuntimeAssembler:
         )
 
     @staticmethod
-    def _bind_content_damage_provider_ports(
+    def _bind_content_runtime_ports(
         content_bundle: RuntimeContentBundle,
         *,
         buff_reader: BuffReader,
     ) -> None:
-        """为声明了 ``bind_runtime_ports`` 的内容伤害 provider 注入只读运行端口。
+        """为声明了 ``bind_runtime_ports`` 的内容对象注入只读运行端口。
 
-        必须在 ``buff_runtime`` 创建之后调用。绑定只发生在装配期；未绑定时
-        provider 的 ``contribute`` 必须返回空，因此条件效果不会在装配前生效。
+        覆盖伤害修饰 provider 与事件钩子：两者都可能需要读取目标 Buff 状态
+        （条件伤害加成、带层数条件的触发效果）。必须在 ``buff_runtime`` 创建
+        之后调用。绑定只发生在装配期；未绑定时实现必须自行判定为不生效，
+        因此条件效果不会在装配前触发。
         """
 
         target_status_port = TargetBuffPresenceReadAdapter(buff_reader)
         for unit in content_bundle.content_units:
-            for provider in unit.damage_modifier_providers:
-                binder = getattr(provider, "bind_runtime_ports", None)
+            for bindable in (*unit.damage_modifier_providers, *unit.event_hooks):
+                binder = getattr(bindable, "bind_runtime_ports", None)
                 if binder is None:
                     continue
                 try:
                     binder(target_status_port=target_status_port)
                 except Exception as exc:
-                    raise InvalidRuntimePayloadError(
-                        f"伤害 provider 运行时端口绑定失败：{exc}"
-                    ) from exc
+                    raise InvalidRuntimePayloadError(f"内容运行时端口绑定失败：{exc}") from exc
 
     @staticmethod
     def _bind_attribute_provider_ports(

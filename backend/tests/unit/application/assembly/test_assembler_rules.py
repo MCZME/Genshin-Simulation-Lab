@@ -75,9 +75,7 @@ def test_assembler_applies_start_with_full_energy_rule():
     ids=("no-rules", "crit-mode-off"),
 )
 def test_assembler_off_mode_matches_default_fixed_non_critical(active_rules):
-    assembled = SimulationAssembler(FakeAssetRepository()).assemble(
-        _input_with_rules(active_rules)
-    )
+    assembled = SimulationAssembler(FakeAssetRepository()).assemble(_input_with_rules(active_rules))
     provider = _decision_provider(assembled)
 
     assert isinstance(provider, FixedCriticalDecisionProvider)

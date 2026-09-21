@@ -269,7 +269,9 @@ class _FakeBuffReader:
         return ()
 
 
-class _FakeDamageProvider:
+class _FakeBindable:
+    """声明可选端口绑定的内容对象替身；provider 与事件钩子共用同一形参契约。"""
+
     def __init__(self) -> None:
         self.bound_port: object | None = None
 
@@ -280,7 +282,7 @@ class _FakeDamageProvider:
 def test_assembler_binds_runtime_damage_provider_ports():
     """内容伤害 provider 在装配期拿到目标状态只读端口，且该端口确实转发到 Buff 查询。"""
 
-    provider = _FakeDamageProvider()
+    provider = _FakeBindable()
     unit = ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key="artifact_set:test",
@@ -291,7 +293,7 @@ def test_assembler_binds_runtime_damage_provider_ports():
     )
     reader = _FakeBuffReader()
 
-    RuntimeAssembler._bind_content_damage_provider_ports(
+    RuntimeAssembler._bind_content_runtime_ports(
         cast(Any, _FakeContentBundle((unit,))),
         buff_reader=cast(Any, reader),
     )
@@ -311,6 +313,74 @@ def test_assembler_binds_runtime_damage_provider_ports():
     ]
 
 
+def test_assembler_binds_runtime_event_hook_ports():
+    """声明了 bind_runtime_ports 的事件钩子同样在装配期拿到目标状态只读端口。"""
+
+    hook = _FakeBindable()
+    unit = ContentUnit(
+        owner_type=ContentUnitOwnerType.WEAPON,
+        owner_key="weapon:test",
+        handler_key="weapon.test.passive",
+        version="dev-test",
+        slot=1,
+        event_hooks=(cast(Any, hook),),
+    )
+
+    RuntimeAssembler._bind_content_runtime_ports(
+        cast(Any, _FakeContentBundle((unit,))),
+        buff_reader=cast(Any, _FakeBuffReader()),
+    )
+
+    assert isinstance(hook.bound_port, TargetBuffPresenceReadAdapter)
+
+
+def test_target_buff_presence_adapter_sums_active_stack_count():
+    """``active_stack_count`` 返回匹配记录的活动层数之和，无匹配记录时为 0。"""
+
+    class _FakeStackRecord:
+        def __init__(self, stack_count: int) -> None:
+            self.state = _FakeStackState(stack_count)
+
+    class _FakeStackState:
+        def __init__(self, stack_count: int) -> None:
+            self.stack_count = stack_count
+
+    class _FakeLayeredBuffReader:
+        def __init__(self, records: tuple[object, ...]) -> None:
+            self._records = records
+
+        def active(
+            self,
+            frame: int,
+            target_ref: Any = None,
+            definition_key: str | None = None,
+            mechanic_key: str | None = None,
+        ) -> tuple[object, ...]:
+            del frame, target_ref, definition_key, mechanic_key
+            return self._records
+
+    target_ref = AttributeSubjectRef.character("character:slot_1")
+
+    assert (
+        TargetBuffPresenceReadAdapter(
+            cast(Any, _FakeLayeredBuffReader((_FakeStackRecord(3),)))
+        ).active_stack_count(
+            target_ref=target_ref,
+            definition_key="buff.layered.test",
+            frame=5,
+        )
+        == 3
+    )
+    assert (
+        TargetBuffPresenceReadAdapter(cast(Any, _FakeLayeredBuffReader(()))).active_stack_count(
+            target_ref=target_ref,
+            definition_key="buff.layered.test",
+            frame=5,
+        )
+        == 0
+    )
+
+
 def test_assembler_damage_binding_skips_providers_without_binder():
     """未声明 ``bind_runtime_ports`` 的伤害 provider 被跳过，不影响装配。"""
 
@@ -326,7 +396,7 @@ def test_assembler_damage_binding_skips_providers_without_binder():
         damage_modifier_providers=(cast(Any, _PlainProvider()),),
     )
 
-    RuntimeAssembler._bind_content_damage_provider_ports(
+    RuntimeAssembler._bind_content_runtime_ports(
         cast(Any, _FakeContentBundle((unit,))),
         buff_reader=cast(Any, _FakeBuffReader()),
     )
@@ -348,7 +418,7 @@ def test_assembler_damage_binding_reports_provider_failure():
     )
 
     with pytest.raises(InvalidRuntimePayloadError, match="绑定失败"):
-        RuntimeAssembler._bind_content_damage_provider_ports(
+        RuntimeAssembler._bind_content_runtime_ports(
             cast(Any, _FakeContentBundle((unit,))),
             buff_reader=cast(Any, _FakeBuffReader()),
         )

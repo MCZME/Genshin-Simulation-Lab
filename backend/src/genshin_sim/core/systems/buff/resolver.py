@@ -104,6 +104,8 @@ class BuffResolver:
             return self._refresh(definition, request, existing)
         if definition.application_policy is BuffApplicationPolicy.STACK_REFRESH:
             return self._stack_refresh(definition, request, existing)
+        if definition.application_policy is BuffApplicationPolicy.STACK_INDEPENDENT:
+            return self._stack_independent(definition, request, existing)
         raise BuffValidationError(f"不支持的 Buff 应用策略：{definition.application_policy.value}")
 
     def _create(
@@ -117,6 +119,9 @@ class BuffResolver:
         stack_count = 1
         if definition.application_policy is BuffApplicationPolicy.STACK_REFRESH:
             stack_count = min(request.stack_delta, definition.max_stacks)
+        layer_expires: tuple[int, ...] = ()
+        if definition.application_policy is BuffApplicationPolicy.STACK_INDEPENDENT:
+            layer_expires = (request.frame + request.duration_frames,)
         record = BuffRecord(
             instance_ref=allocated_ref,
             definition=definition,
@@ -130,6 +135,7 @@ class BuffResolver:
                 source_context=request.source_context,
                 stack_count=stack_count,
                 max_stacks=definition.max_stacks,
+                layer_expires_at_frames=layer_expires,
                 resolved_modifiers=resolved,
                 tags=definition.tags,
             ),
@@ -259,6 +265,61 @@ class BuffResolver:
             result=result,
         )
 
+    def _stack_independent(
+        self,
+        definition: BuffDefinition,
+        request: ApplyBuffRequest,
+        existing: BuffRecord,
+    ) -> BuffApplicationResolution:
+        """逐层独立计时：每层各自到期，满层时替换到期最早的一层。
+
+        层序列始终严格升序，因此「到期最早」即序列首项；`expires_at_frame`
+        取最后一层的到期帧，整条记录的活性由它表达。
+        """
+
+        layers = list(existing.state.layer_expires_at_frames)
+        if not layers:
+            raise BuffValidationError(
+                f"stack_independent 实例缺少逐层到期帧：{definition.definition_key!r}"
+            )
+        stacks_before = existing.state.stack_count
+        new_expiry = request.frame + request.duration_frames
+        if len(layers) >= definition.max_stacks:
+            layers.pop(0)
+            outcome = BuffApplicationOutcome.STACK_ROLLED
+        else:
+            outcome = BuffApplicationOutcome.STACKED
+        layers.append(new_expiry)
+        layers.sort()
+        resolved = _refreshed_modifiers(definition, request, existing)
+        refreshed = replace(
+            existing,
+            last_applied_frame=request.frame,
+            expires_at_frame=layers[-1],
+            state=replace(
+                existing.state,
+                stack_count=len(layers),
+                layer_expires_at_frames=tuple(layers),
+                resolved_modifiers=resolved,
+            ),
+        )
+        result = _application_result(
+            definition,
+            request,
+            outcome=outcome,
+            record=refreshed,
+            stacks_before=stacks_before,
+            expires_at_before=existing.expires_at_frame,
+            replaced=(),
+        )
+        return BuffApplicationResolution(
+            definition=definition,
+            request=request,
+            expected_records=(existing,),
+            replacement_records=(refreshed,),
+            result=result,
+        )
+
 
 def _validate_request_matches_definition(
     definition: BuffDefinition,
@@ -277,7 +338,7 @@ def _validate_request_matches_definition(
         definition.application_policy is not BuffApplicationPolicy.STACK_REFRESH
         and request.stack_delta != 1
     ):
-        raise BuffValidationError("非 stack_refresh 策略要求 stack_delta == 1")
+        raise BuffValidationError("只有 stack_refresh 策略允许 stack_delta 大于 1")
     if definition.marker_only:
         if request.modifier_values:
             raise BuffModifierBindingError("marker Buff 请求不能提供 modifier_values")

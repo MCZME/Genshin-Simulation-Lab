@@ -18,6 +18,7 @@ from genshin_sim.core.systems.reaction.gates import (
     ReactionDamageGateSlotKey,
     ReactionDamageGateSnapshot,
 )
+from genshin_sim.core.systems.reaction.keys import STELLAR_REACTION_KEYS
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct import (
     STELLAR_CONDUCT_CAPABILITY_KEY,
     STELLAR_CONDUCT_COUNTER_STATE_KEY,
@@ -332,6 +333,7 @@ __all__ = [
     "STELLAR_CONDUCT_HANDLER_KEY",
     "STELLAR_CONDUCT_REACTION_KEY",
     "STELLAR_CONDUCT_TEAM_SCOPE",
+    "STELLAR_REACTION_KEYS",
     "PolestarFieldState",
     "PolestarFieldStatePlanningIntent",
     "StellarConductAttachmentRecord",

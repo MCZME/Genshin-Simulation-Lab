@@ -73,12 +73,9 @@ from genshin_sim.core.systems.damage import (
 from genshin_sim.core.systems.damage.keys import FORMULA_KEY_STELLAR_REACTION
 from genshin_sim.core.systems.damage.models import DamageQuery
 from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+from genshin_sim.core.systems.reaction import STELLAR_REACTION_KEYS
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
-    STELLAR_CONDUCT_REACTION_KEY,
     STELLAR_CONDUCT_TEAM_SCOPE,
-)
-from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
-    STELLAR_SWIRL_REACTION_KEY,
 )
 
 HEART_OF_THE_FURNACE_KEY_PREFIX = "artifact.heart_of_the_furnace"
@@ -91,14 +88,6 @@ HEART_OF_THE_FURNACE_2P_AUDIT_TAG = "heart_of_the_furnace_2p"
 HEART_OF_THE_FURNACE_4P_AUDIT_TAG = "heart_of_the_furnace_4p"
 
 FRAMES_PER_SECOND = 60
-
-# 4 件套触发条件覆盖的星烁反应集合：星超导与星扩散都是「星烁反应」。
-STELLAR_REACTION_KEYS = frozenset(
-    {
-        STELLAR_CONDUCT_REACTION_KEY,
-        STELLAR_SWIRL_REACTION_KEY,
-    }
-)
 
 
 def heart_of_the_furnace_4p_atk_definition_key(slot: int) -> str:

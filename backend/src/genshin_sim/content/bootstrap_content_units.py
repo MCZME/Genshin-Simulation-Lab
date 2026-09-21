@@ -96,6 +96,12 @@ from genshin_sim.content.weapons.sword.favonius_sword import (
     create_favonius_sword_identity_unit,
     create_favonius_sword_passive_unit,
 )
+from genshin_sim.content.weapons.sword.whitelake_frostfeather import (
+    WHITELAKE_FROSTFEATHER_HANDLER_KEY,
+    WHITELAKE_FROSTFEATHER_PASSIVE_EFFECT_HANDLER_KEY,
+    create_whitelake_frostfeather_identity_unit,
+    create_whitelake_frostfeather_passive_unit,
+)
 
 BUILTIN_NOOP_CONTENT_HANDLER_KEYS = (
     "artifact.unimplemented_set_bonus",
@@ -155,6 +161,10 @@ def create_default_content_unit_registry(
         HUNTER_BOW_HANDLER_KEY,
         create_hunter_bow_content_unit,
     )
+    registry.register_weapon_factory(
+        WHITELAKE_FROSTFEATHER_HANDLER_KEY,
+        create_whitelake_frostfeather_identity_unit,
+    )
     # 西风系列五把武器各自一个内容包与一个 handler 键；判定、资产参数解读与钩子
     # 实现是共用部件（``content/generic/favonius_windfall.py``），各包只声明自己的键。
     for handler_key, factory in (
@@ -176,6 +186,10 @@ def create_default_content_unit_registry(
         (FAVONIUS_LANCE_PASSIVE_EFFECT_HANDLER_KEY, create_favonius_lance_passive_unit),
         (FAVONIUS_CODEX_PASSIVE_EFFECT_HANDLER_KEY, create_favonius_codex_passive_unit),
         (FAVONIUS_WARBOW_PASSIVE_EFFECT_HANDLER_KEY, create_favonius_warbow_passive_unit),
+        (
+            WHITELAKE_FROSTFEATHER_PASSIVE_EFFECT_HANDLER_KEY,
+            create_whitelake_frostfeather_passive_unit,
+        ),
     ):
         registry.register_effect_factory(handler_key, factory)
     for handler_key, factory in (

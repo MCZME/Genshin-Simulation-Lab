@@ -66,6 +66,12 @@ from genshin_sim.content.weapons.catalyst.favonius_codex import (
     create_favonius_codex_identity_unit,
     create_favonius_codex_passive_unit,
 )
+from genshin_sim.content.weapons.claymore.a_teaspoon_of_transcendence import (
+    A_TEASPOON_OF_TRANSCENDENCE_HANDLER_KEY,
+    A_TEASPOON_OF_TRANSCENDENCE_PASSIVE_EFFECT_HANDLER_KEY,
+    create_a_teaspoon_of_transcendence_identity_unit,
+    create_a_teaspoon_of_transcendence_passive_unit,
+)
 from genshin_sim.content.weapons.claymore.favonius_greatsword import (
     FAVONIUS_GREATSWORD_HANDLER_KEY,
     FAVONIUS_GREATSWORD_PASSIVE_EFFECT_HANDLER_KEY,
@@ -165,6 +171,10 @@ def create_default_content_unit_registry(
         WHITELAKE_FROSTFEATHER_HANDLER_KEY,
         create_whitelake_frostfeather_identity_unit,
     )
+    registry.register_weapon_factory(
+        A_TEASPOON_OF_TRANSCENDENCE_HANDLER_KEY,
+        create_a_teaspoon_of_transcendence_identity_unit,
+    )
     # 西风系列五把武器各自一个内容包与一个 handler 键；判定、资产参数解读与钩子
     # 实现是共用部件（``content/generic/favonius_windfall.py``），各包只声明自己的键。
     for handler_key, factory in (
@@ -189,6 +199,10 @@ def create_default_content_unit_registry(
         (
             WHITELAKE_FROSTFEATHER_PASSIVE_EFFECT_HANDLER_KEY,
             create_whitelake_frostfeather_passive_unit,
+        ),
+        (
+            A_TEASPOON_OF_TRANSCENDENCE_PASSIVE_EFFECT_HANDLER_KEY,
+            create_a_teaspoon_of_transcendence_passive_unit,
         ),
     ):
         registry.register_effect_factory(handler_key, factory)

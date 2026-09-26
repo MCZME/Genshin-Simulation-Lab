@@ -38,24 +38,11 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_ELEMENTAL_SKILL_STRIKE_TYPE,
     SANDRONE_NORMAL_ATTACK_ACTION_KEYS,
     SANDRONE_NORMAL_ATTACK_DAMAGE_DATA,
+    SANDRONE_PLUNGE_ATTACK_DATA,
     SANDRONE_PLUNGE_COLLISION_IMPACT_KEY,
     SANDRONE_PLUNGE_LANDING_IMPACT_KEY,
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
-from genshin_sim.content.generic.plunge import (
-    CLAYMORE_PLUNGE_COLLISION_AOE_OFFSET,
-    CLAYMORE_PLUNGE_COLLISION_AOE_RADIUS,
-    CLAYMORE_PLUNGE_COLLISION_AOE_SHAPE,
-    CLAYMORE_PLUNGE_COLLISION_ELEMENTAL_AMOUNT,
-    CLAYMORE_PLUNGE_COLLISION_STRIKE_TYPE,
-    CLAYMORE_PLUNGE_LANDING_AOE_OFFSET,
-    CLAYMORE_PLUNGE_LANDING_AOE_SHAPE,
-    CLAYMORE_PLUNGE_LANDING_ELEMENTAL_AMOUNT,
-    CLAYMORE_PLUNGE_LANDING_HIGH_AOE_RADIUS,
-    CLAYMORE_PLUNGE_LANDING_LOW_AOE_RADIUS,
-    CLAYMORE_PLUNGE_LANDING_STRIKE_TYPE,
-    CLAYMORE_PLUNGE_MAIN_ATTACK_TAG,
-)
 from genshin_sim.content.generic.talents import ScalingCompiler
 from genshin_sim.core.attributes import STAT_ATK_TOTAL
 from genshin_sim.core.elements import AuraAmount
@@ -289,9 +276,9 @@ def compile_plunge_damage_specs(
 ) -> dict[str, DamageImpactSpec]:
     """编译下落攻击碰撞与低空/高空落地冲击伤害契约。
 
-    下落攻击不在桑多涅命中判定数据表内，AOE 沿用 generic 双手剑通用数据
-    （2026-09-26 维护者提供：下坠期间切割/0 元素量，坠地钝击/1 元素量、
-    近战；低空圆柱 3.0、高空圆柱 5.0）；落地攻击按 ICD 资料为无冷却标签。
+    下落攻击不在桑多涅命中判定数据表内，AOE 沿用 generic 双手剑通用资料
+    （下坠期间切割/0 元素量，坠地钝击/1 元素量、近战；低空圆柱 3.0、高空
+    圆柱 5.0）；落地攻击按 ICD 资料为无冷却标签。
     """
 
     collision_entry = entries_by_key.get(
@@ -313,51 +300,53 @@ def compile_plunge_damage_specs(
         raise ContentUnitValidationError(
             f"桑多涅下落攻击落地倍率需要低空/高空两个分量：{_SANDRONE_PLUNGE_LANDING_DAMAGE_LABEL}"
         )
+    collision_data = SANDRONE_PLUNGE_ATTACK_DATA.collision
+    landing_data = SANDRONE_PLUNGE_ATTACK_DATA.landing
     return {
         SANDRONE_PLUNGE_COLLISION_IMPACT_KEY: _compile_damage_spec(
             SANDRONE_PLUNGE_COLLISION_IMPACT_KEY,
             talent_level,
             entry=collision_entry,
             component_index=0,
-            main_attack_tag=CLAYMORE_PLUNGE_MAIN_ATTACK_TAG,
-            strike_type=CLAYMORE_PLUNGE_COLLISION_STRIKE_TYPE,
-            range_type="近战",
-            elemental_amount=CLAYMORE_PLUNGE_COLLISION_ELEMENTAL_AMOUNT,
+            main_attack_tag=SANDRONE_PLUNGE_ATTACK_DATA.main_attack_tag,
+            strike_type=collision_data.strike_type,
+            range_type=collision_data.range_type,
+            elemental_amount=collision_data.elemental_amount,
             icd_tag_key=None,
             display_name=_SANDRONE_PLUNGE_COLLISION_DAMAGE_LABEL,
-            aoe_shape=CLAYMORE_PLUNGE_COLLISION_AOE_SHAPE,
-            aoe_radius=CLAYMORE_PLUNGE_COLLISION_AOE_RADIUS,
-            aoe_offset=CLAYMORE_PLUNGE_COLLISION_AOE_OFFSET,
+            aoe_shape=collision_data.aoe_shape,
+            aoe_radius=collision_data.aoe_radius,
+            aoe_offset=collision_data.aoe_offset,
         ),
         f"{SANDRONE_PLUNGE_LANDING_IMPACT_KEY}.low": _compile_damage_spec(
             SANDRONE_PLUNGE_LANDING_IMPACT_KEY,
             talent_level,
             entry=landing_entry,
             component_index=0,
-            main_attack_tag=CLAYMORE_PLUNGE_MAIN_ATTACK_TAG,
-            strike_type=CLAYMORE_PLUNGE_LANDING_STRIKE_TYPE,
-            range_type="近战",
-            elemental_amount=CLAYMORE_PLUNGE_LANDING_ELEMENTAL_AMOUNT,
+            main_attack_tag=SANDRONE_PLUNGE_ATTACK_DATA.main_attack_tag,
+            strike_type=landing_data.strike_type,
+            range_type=landing_data.range_type,
+            elemental_amount=landing_data.elemental_amount,
             icd_tag_key=None,
             display_name="低空坠地冲击伤害",
-            aoe_shape=CLAYMORE_PLUNGE_LANDING_AOE_SHAPE,
-            aoe_radius=CLAYMORE_PLUNGE_LANDING_LOW_AOE_RADIUS,
-            aoe_offset=CLAYMORE_PLUNGE_LANDING_AOE_OFFSET,
+            aoe_shape=landing_data.aoe_shape,
+            aoe_radius=landing_data.low_aoe_radius,
+            aoe_offset=landing_data.aoe_offset,
         ),
         f"{SANDRONE_PLUNGE_LANDING_IMPACT_KEY}.high": _compile_damage_spec(
             SANDRONE_PLUNGE_LANDING_IMPACT_KEY,
             talent_level,
             entry=landing_entry,
             component_index=1,
-            main_attack_tag=CLAYMORE_PLUNGE_MAIN_ATTACK_TAG,
-            strike_type=CLAYMORE_PLUNGE_LANDING_STRIKE_TYPE,
-            range_type="近战",
-            elemental_amount=CLAYMORE_PLUNGE_LANDING_ELEMENTAL_AMOUNT,
+            main_attack_tag=SANDRONE_PLUNGE_ATTACK_DATA.main_attack_tag,
+            strike_type=landing_data.strike_type,
+            range_type=landing_data.range_type,
+            elemental_amount=landing_data.elemental_amount,
             icd_tag_key=None,
             display_name="高空坠地冲击伤害",
-            aoe_shape=CLAYMORE_PLUNGE_LANDING_AOE_SHAPE,
-            aoe_radius=CLAYMORE_PLUNGE_LANDING_HIGH_AOE_RADIUS,
-            aoe_offset=CLAYMORE_PLUNGE_LANDING_AOE_OFFSET,
+            aoe_shape=landing_data.aoe_shape,
+            aoe_radius=landing_data.high_aoe_radius,
+            aoe_offset=landing_data.aoe_offset,
         ),
     }
 

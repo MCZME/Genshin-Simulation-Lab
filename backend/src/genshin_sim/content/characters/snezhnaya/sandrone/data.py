@@ -15,6 +15,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from genshin_sim.content.generic.plunge import PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE
 from genshin_sim.content.generic.timed_action import TimedActionSpec, TimedImpactPointSpec
 from genshin_sim.core.actions import SearchAreaSpec, TargetingSpec
 from genshin_sim.core.elements import AuraAmount, Element
@@ -25,6 +26,9 @@ from genshin_sim.core.systems.aura import AuraStrength
 SANDRONE_CHARACTER_HANDLER_KEY = "character.sandrone"
 SANDRONE_ASSET_KEY = "character:10000133"
 SANDRONE_CONTENT_VERSION = "slice-1-skeleton"
+
+# 桑多涅为双手剑：下落攻击取双手剑通用资料（content/generic/plunge.py）。
+SANDRONE_PLUNGE_ATTACK_DATA = PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE["claymore"]
 
 SANDRONE_NORMAL_ATTACK_1_ACTION_KEY = "character.sandrone.normal_attack.1"
 SANDRONE_NORMAL_ATTACK_2_ACTION_KEY = "character.sandrone.normal_attack.2"

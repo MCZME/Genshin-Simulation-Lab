@@ -33,6 +33,7 @@ class StrikeType(StrEnum):
     DEFAULT = "默认"
     BLUNT = "钝击"
     SLASH = "切割"
+    PIERCE = "穿刺"
 
 
 @dataclass(frozen=True, slots=True)

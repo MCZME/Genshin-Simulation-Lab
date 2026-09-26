@@ -79,6 +79,9 @@ def _minimal_sandrone_scaling_entries() -> tuple[TalentScalingEntry, ...]:
         ("na_1", "normal_attack", "一段伤害", ("plain_ratio",)),
         ("na_2", "normal_attack", "二段伤害", ("plain_ratio",)),
         ("na_3", "normal_attack", "三段伤害", ("plain_ratio",)),
+        ("sweep", "normal_attack", "重击扫射伤害", ("plain_ratio",)),
+        ("ray", "normal_attack", "重击冷凝射线伤害", ("plain_ratio",)),
+        ("overload", "normal_attack", "功率过载时伤害", ("plain_ratio",)),
         ("plunge_collision", "normal_attack", "下坠期间伤害", ("plain_ratio",)),
         (
             "plunge_landing",

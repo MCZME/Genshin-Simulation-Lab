@@ -10,6 +10,9 @@ from genshin_sim.content.characters.snezhnaya.sandrone.content import (
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_ACTION_TABLE,
     SANDRONE_CHARACTER_HANDLER_KEY,
+    SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY,
+    SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
+    SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY,
     SANDRONE_CONTENT_VERSION,
     SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY,
     SANDRONE_ELEMENTAL_BURST_BOMBARDMENT_1_IMPACT_KEY,
@@ -162,6 +165,62 @@ def test_plunge_damage_specs_use_claymore_generic_data():
     assert landing_high.area is not None
     assert landing_high.area.shape == "圆柱"
     assert landing_high.area.radius == 5.0
+
+
+def test_charged_attack_specs_carry_measured_tags_and_icd():
+    from genshin_sim.content.characters.snezhnaya.sandrone.impacts import (
+        compile_charged_attack_damage_specs,
+    )
+
+    character_key = sandrone_helpers.SANDRONE_CHARACTER_KEY
+    entries_by_key = index_talent_scalings(
+        character_key,
+        sandrone_helpers._minimal_sandrone_scaling_entries(),
+    )
+    specs = compile_charged_attack_damage_specs(character_key, entries_by_key, 1)
+
+    sweep = specs[SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY]
+    assert sweep.main_attack_tag == "重击"
+    assert sweep.strike_type is StrikeType.DEFAULT
+    assert sweep.range_type == "远程"
+    assert sweep.area is None
+    assert sweep.icd_tag_key == "桑多涅扫射攻击"
+    assert sweep.icd_sequence_key == "桑多涅扫射攻击"
+
+    overload = specs[SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY]
+    assert overload.icd_tag_key == "桑多涅扫射攻击"
+    assert overload.icd_sequence_key == "桑多涅扫射攻击"
+
+    ray = specs[SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY]
+    assert ray.main_attack_tag == "重击"
+    assert ray.strike_type is StrikeType.BLUNT
+    assert ray.area is None
+    assert ray.icd_tag_key == "重击射线"
+    assert ray.icd_sequence_key == "默认"
+    assert ray.additional_attack_tags == ("桑多涅重击普通激光",)
+
+
+def test_content_unit_declares_sweep_icd_and_fageou_schema():
+    unit = _build_unit()
+
+    definitions = unit.aura_icd_definitions
+    assert len(definitions) == 1
+    definition = definitions[0]
+    assert definition.sequence_key == "桑多涅扫射攻击"
+    assert definition.reset_interval_frames == 84
+    assert [float(amount.value) for amount in definition.application_sequence] == [1.0, 0.0]
+
+    schema = unit.state_schema
+    assert schema is not None
+    for name in (
+        "fageou_mode",
+        "fageou_power",
+        "fageou_solve_start_frame",
+        "fageou_next_shot_frame",
+        "fageou_next_ray_frame",
+        "fageou_drain_active",
+    ):
+        assert schema.field(name) is not None
 
 
 def test_burst_registers_three_bombardment_points():

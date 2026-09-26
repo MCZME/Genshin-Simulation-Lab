@@ -2,8 +2,10 @@
 
 桑多涅的全部已接入动作（普攻三段、元素战技、元素爆发、跳跃）统一声明在
 ``data.py`` 的 ``SANDRONE_ACTION_TABLE``，由本解释器独占消费；普攻推进与
-跨输入衔接按表内 transitions 实现。重击为按住持续动作，随法洁欧与解算
-模式切片接入；当前对重击输入确定性拒绝。
+跨输入衔接按表内 transitions 实现。重击为触发动作（规划结论 6/10）：无动作
+实例与伤害命中点，按下/松开按法洁欧状态机分派 ``state_patch``（待机切入
+解算、解算幂等吸收、过载恢复射击；松开退出解算/停火）；元素战技施放即触发
+解算功率快速排空。
 """
 
 from __future__ import annotations
@@ -16,6 +18,19 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     CHARGED_ATTACK_INPUT,
     ELEMENTAL_BURST_INPUT,
     ELEMENTAL_SKILL_INPUT,
+    FAGEOU_MODE_IDLE,
+    FAGEOU_MODE_OVERLOAD,
+    FAGEOU_MODE_SOLVE,
+    FAGEOU_OVERLOAD_EXIT_POWER,
+    FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
+    FAGEOU_PRE_SWING_FRAMES,
+    FAGEOU_RAY_FIRST_OFFSET_FRAMES,
+    FAGEOU_STATE_DRAIN_ACTIVE,
+    FAGEOU_STATE_MODE,
+    FAGEOU_STATE_NEXT_RAY_FRAME,
+    FAGEOU_STATE_NEXT_SHOT_FRAME,
+    FAGEOU_STATE_POWER,
+    FAGEOU_STATE_SOLVE_START_FRAME,
     INPUT_KIND_BY_KEY,
     JUMP_INPUT,
     NORMAL_ATTACK_INPUT,
@@ -58,6 +73,7 @@ from genshin_sim.core.actions import (
     TimedImpactAction,
 )
 from genshin_sim.core.contracts.intents import IntentEnvelope, IntentKind
+from genshin_sim.core.contracts.json import JSONValue
 from genshin_sim.core.contracts.phases import FramePhase
 from genshin_sim.core.coordination.character_ability_condition.models import (
     CharacterAbilityConditionQuery,
@@ -96,6 +112,14 @@ class SandroneActionInterpreter:
         context: ActionInterpretationContext,
         session: InputSessionView,
     ) -> ActionInterpretationResult:
+        input_kind = INPUT_KIND_BY_KEY.get(session.key)
+        if input_kind == CHARGED_ATTACK_INPUT and session.owner.slot is not None:
+            # 重击在按下/松开触发器上均需分派，先于普攻的 PRESS 等待。
+            return self._interpret_charged_attack(
+                context,
+                session,
+                session.owner.slot,
+            )
         if session.trigger is ActionInterpretationTrigger.PRESS:
             return ActionInterpretationResult.wait()
         if session.trigger is not ActionInterpretationTrigger.RELEASE:
@@ -103,11 +127,8 @@ class SandroneActionInterpreter:
         if session.release_frame is None:
             return ActionInterpretationResult.reject("缺少释放帧")
 
-        input_kind = INPUT_KIND_BY_KEY.get(session.key)
         if input_kind is None:
             return ActionInterpretationResult.reject(f"桑多涅不支持输入：{session.key}")
-        if input_kind == CHARGED_ATTACK_INPUT:
-            return ActionInterpretationResult.reject("桑多涅重击未接入（法洁欧与解算模式切片）")
         if session.owner.slot is None:
             return ActionInterpretationResult.reject("桑多涅动作需要角色归属槽位")
 
@@ -149,6 +170,13 @@ class SandroneActionInterpreter:
 
         action = self._select_action(input_kind, last_action_key, height)
         owner_ref = f"character:slot_{slot}"
+        if input_kind == ELEMENTAL_SKILL_INPUT:
+            self._queue_e_drain_patch(
+                context.simulation,
+                owner_ref=owner_ref,
+                frame=session.current_frame,
+                session_id=session.session_id,
+            )
         self._queue_state_patch(
             context.simulation,
             owner_ref=owner_ref,
@@ -305,6 +333,151 @@ class SandroneActionInterpreter:
                     },
                 ),
             )
+        )
+
+    def _read_fageou_state(
+        self,
+        context: SimulationContext,
+        slot: int,
+    ) -> tuple[str, float]:
+        """读取法洁欧模式机的当前模式与解算功率。"""
+
+        try:
+            mount = resolve_mount(
+                context,
+                slot=slot,
+                state_key=SANDRONE_CHARACTER_HANDLER_KEY,
+            )
+        except StateContainerNotFoundError as exc:
+            raise SandroneInterpreterError(f"缺少桑多涅状态挂载：{exc}") from exc
+        raw_mode = mount.values.get(FAGEOU_STATE_MODE)
+        mode = raw_mode if isinstance(raw_mode, str) else FAGEOU_MODE_IDLE
+        raw_power = mount.values.get(FAGEOU_STATE_POWER)
+        power = (
+            float(raw_power)
+            if isinstance(raw_power, int | float) and not isinstance(raw_power, bool)
+            else 0.0
+        )
+        return mode, power
+
+    def _interpret_charged_attack(
+        self,
+        context: ActionInterpretationContext,
+        session: InputSessionView,
+        slot: int,
+    ) -> ActionInterpretationResult:
+        """重击按状态分派（规划结论 10）。
+
+        待机重击 = 进入解算（前摇 36F 后开始射击与功率上升）；解算态重击
+        幂等吸收（不重置会话状态）；过载态重击恢复射击（功率 ≥50）。
+        松开退出解算；过载松开停火但模式保持。无动作实例与伤害命中点。
+        """
+
+        frame = session.current_frame
+        mode, power = self._read_fageou_state(context.simulation, slot)
+        if session.trigger is ActionInterpretationTrigger.PRESS:
+            fields = self._charged_press_fields(mode, power, frame)
+        elif session.trigger is ActionInterpretationTrigger.RELEASE:
+            fields = self._charged_release_fields(mode)
+        else:
+            fields = None
+        if fields is not None:
+            self._queue_machine_patch(
+                context.simulation,
+                owner_ref=f"character:slot_{slot}",
+                frame=frame,
+                session_id=session.session_id,
+                fields=fields,
+            )
+        return ActionInterpretationResult.wait()
+
+    def _charged_press_fields(
+        self,
+        mode: str,
+        power: float,
+        frame: int,
+    ) -> dict[str, JSONValue] | None:
+        if mode == FAGEOU_MODE_SOLVE:
+            return None
+        if mode == FAGEOU_MODE_OVERLOAD and power >= FAGEOU_OVERLOAD_EXIT_POWER:
+            # 功率 ≥50 期间重新按住：恢复过载射击节奏。
+            return {
+                FAGEOU_STATE_NEXT_SHOT_FRAME: frame + FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
+            }
+        solve_start = frame + FAGEOU_PRE_SWING_FRAMES
+        return {
+            FAGEOU_STATE_MODE: FAGEOU_MODE_SOLVE,
+            FAGEOU_STATE_SOLVE_START_FRAME: solve_start,
+            FAGEOU_STATE_NEXT_SHOT_FRAME: solve_start,
+            FAGEOU_STATE_NEXT_RAY_FRAME: solve_start + FAGEOU_RAY_FIRST_OFFSET_FRAMES,
+        }
+
+    def _charged_release_fields(self, mode: str) -> dict[str, JSONValue] | None:
+        if mode == FAGEOU_MODE_SOLVE:
+            return {
+                FAGEOU_STATE_MODE: FAGEOU_MODE_IDLE,
+                FAGEOU_STATE_SOLVE_START_FRAME: 0,
+                FAGEOU_STATE_NEXT_SHOT_FRAME: 0,
+                FAGEOU_STATE_NEXT_RAY_FRAME: 0,
+            }
+        if mode == FAGEOU_MODE_OVERLOAD:
+            return {FAGEOU_STATE_NEXT_SHOT_FRAME: 0}
+        return None
+
+    def _queue_machine_patch(
+        self,
+        context: SimulationContext,
+        *,
+        owner_ref: str,
+        frame: int,
+        session_id: int,
+        fields: dict[str, JSONValue],
+    ) -> None:
+        queue = cast(IntentQueue | None, context.get_system(IntentQueue))
+        if queue is None:
+            raise SandroneInterpreterError("缺少 IntentQueue，无法提交法洁欧状态")
+        queue.enqueue(
+            IntentEnvelope(
+                intent_id=f"sandrone_fageou:{owner_ref}:{session_id}:{frame}",
+                kind=IntentKind.STATE_PATCH,
+                frame=frame,
+                phase=FramePhase.SETTLEMENT,
+                round=context.settlement_round + 1,
+                source_ref=SANDRONE_CHARACTER_HANDLER_KEY,
+                payload=StatePatchRequest(
+                    owner_ref=owner_ref,
+                    state_key=SANDRONE_CHARACTER_HANDLER_KEY,
+                    fields=fields,
+                ),
+            )
+        )
+
+    def _queue_e_drain_patch(
+        self,
+        context: SimulationContext,
+        *,
+        owner_ref: str,
+        frame: int,
+        session_id: int,
+    ) -> None:
+        """E 排空：施放即退出解算/过载并快速排空功率（规划结论 4）。"""
+
+        slot = int(owner_ref.removeprefix("character:slot_"))
+        mode, power = self._read_fageou_state(context, slot)
+        if mode == FAGEOU_MODE_IDLE and power <= 0.0:
+            return
+        self._queue_machine_patch(
+            context,
+            owner_ref=owner_ref,
+            frame=frame,
+            session_id=session_id,
+            fields={
+                FAGEOU_STATE_MODE: FAGEOU_MODE_IDLE,
+                FAGEOU_STATE_SOLVE_START_FRAME: 0,
+                FAGEOU_STATE_NEXT_SHOT_FRAME: 0,
+                FAGEOU_STATE_NEXT_RAY_FRAME: 0,
+                FAGEOU_STATE_DRAIN_ACTIVE: True,
+            },
         )
 
     def _transition_rejection(

@@ -25,7 +25,7 @@ from genshin_sim.core.systems.aura import AuraStrength
 
 SANDRONE_CHARACTER_HANDLER_KEY = "character.sandrone"
 SANDRONE_ASSET_KEY = "character:10000133"
-SANDRONE_CONTENT_VERSION = "slice-1-skeleton"
+SANDRONE_CONTENT_VERSION = "slice-2-fageou"
 
 # 桑多涅为双手剑：下落攻击取双手剑通用资料（content/generic/plunge.py）。
 SANDRONE_PLUNGE_ATTACK_DATA = PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE["claymore"]
@@ -100,6 +100,102 @@ SANDRONE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY = "elemental_burst"
 SANDRONE_ELEMENTAL_BURST_COOLDOWN_START_FRAME = 1
 SANDRONE_ELEMENTAL_BURST_ENERGY_SPEND_FRAME = 1
 SANDRONE_ELEMENTAL_BURST_COOLDOWN_FRAMES = 900
+
+# ---------------------------------------------------------------------------
+# 法洁欧与解算模式（切片 2）。
+# 机器参数来源：米游社 @Asgater 攻略实测约值（3.6，约值即基线）+ 维护者
+# 30fps 视频帧表定稿（3.9.2，节奏以 0.35s/1.1s 为权威）。帧制为 60 帧/秒。
+# ---------------------------------------------------------------------------
+SANDRONE_CHARGED_ATTACK_ACTION_KEY = "character.sandrone.charged_attack"
+SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY = f"{SANDRONE_CHARGED_ATTACK_ACTION_KEY}.sweep"
+SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY = f"{SANDRONE_CHARGED_ATTACK_ACTION_KEY}.overload"
+SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY = f"{SANDRONE_CHARGED_ATTACK_ACTION_KEY}.ray"
+
+# 法洁欧内容状态字段（state_key = handler key，与连段状态同挂载）。
+FAGEOU_STATE_MODE = "fageou_mode"
+FAGEOU_STATE_POWER = "fageou_power"
+FAGEOU_STATE_SOLVE_START_FRAME = "fageou_solve_start_frame"
+FAGEOU_STATE_NEXT_SHOT_FRAME = "fageou_next_shot_frame"
+FAGEOU_STATE_NEXT_RAY_FRAME = "fageou_next_ray_frame"
+FAGEOU_STATE_DRAIN_ACTIVE = "fageou_drain_active"
+
+FAGEOU_MODE_IDLE = "idle"
+FAGEOU_MODE_SOLVE = "solve"
+FAGEOU_MODE_OVERLOAD = "overload"
+FAGEOU_MODES = (FAGEOU_MODE_IDLE, FAGEOU_MODE_SOLVE, FAGEOU_MODE_OVERLOAD)
+
+# 前摇 36F（按下→首颗子弹/进入解算）；功率自解算起算（solve_start）。
+FAGEOU_PRE_SWING_FRAMES = 36
+# 射击轨：解算 0.35s（21F）、过载 0.5s（30F），换节奏不重置相位
+# （进入过载后首发射击 = 过载起点 +30F）。
+FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES = 21
+FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES = 30
+# 射线轨：解算起算 +90F 首法、间隔 66F（1.1s）；次数由功率动力学涌现。
+FAGEOU_RAY_FIRST_OFFSET_FRAMES = 90
+FAGEOU_RAY_INTERVAL_FRAMES = 66
+# 功率动力学：上升 20/s、射线命中 +12、场上衰减 5.5/s、后台 ×3（文本 300%）、
+# E 排空 ≈200/s（约 0.5s 排满 100）；过载退出阈值 50；上限 100。
+FAGEOU_POWER_RISE_PER_SECOND = 20.0
+FAGEOU_RAY_HIT_POWER_GAIN = 12.0
+FAGEOU_POWER_DECAY_PER_SECOND = 5.5
+FAGEOU_BENCH_DECAY_MULTIPLIER = 3.0
+FAGEOU_DRAIN_PER_SECOND = 200.0
+FAGEOU_OVERLOAD_EXIT_POWER = 50.0
+FAGEOU_POWER_MAX = 100.0
+
+# 直线几何：瞄准方向 = 桑多涅实体 facing（静态），出发点 = 桑多涅位置
+# （偏移 0，法洁欧同位）。射线为 oriented box 穿透（即时结算）；子弹取直线
+# 首个交点（单一实例），延迟按距离折算。子弹速度 60 m/s 为无来源占位。
+FAGEOU_RAY_LENGTH = 12.0
+FAGEOU_RAY_WIDTH = 1.0
+FAGEOU_BULLET_SPEED_M_PER_S = 60.0
+
+# 命中判定数据（3.4 重击三行，单体 = 每实例无 AOE 形状，命中集合由直线
+# 几何确定）。扫射与功率过载共用自定义 ICD 组「桑多涅扫射攻击」
+# （重置 1.4s = 84F、序列 (1,0)，扫射/过载游标共享）。
+SANDRONE_SWEEP_ICD_SEQUENCE_KEY = "桑多涅扫射攻击"
+SANDRONE_SWEEP_ICD_RESET_FRAMES = 84
+SANDRONE_CHARGED_ATTACK_MAIN_TAG = "重击"
+SANDRONE_RAY_ICD_TAG_KEY = "重击射线"
+SANDRONE_RAY_ADDITIONAL_TAG = "桑多涅重击普通激光"
+
+
+@dataclass(frozen=True, slots=True)
+class SandroneChargedAttackDamageData:
+    """重击单类攻击的伤害数据（扫射/过载/射线，普通变体）。"""
+
+    impact_key: str
+    strike_type: StrikeType
+    range_type: str
+    icd_tag_key: str
+    icd_sequence_key: str
+    additional_attack_tags: tuple[str, ...] = ()
+
+
+SANDRONE_CHARGED_ATTACK_DAMAGE_DATA = {
+    SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY: SandroneChargedAttackDamageData(
+        impact_key=SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY,
+        strike_type=StrikeType.DEFAULT,
+        range_type="远程",
+        icd_tag_key=SANDRONE_SWEEP_ICD_SEQUENCE_KEY,
+        icd_sequence_key=SANDRONE_SWEEP_ICD_SEQUENCE_KEY,
+    ),
+    SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY: SandroneChargedAttackDamageData(
+        impact_key=SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY,
+        strike_type=StrikeType.DEFAULT,
+        range_type="远程",
+        icd_tag_key=SANDRONE_SWEEP_ICD_SEQUENCE_KEY,
+        icd_sequence_key=SANDRONE_SWEEP_ICD_SEQUENCE_KEY,
+    ),
+    SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY: SandroneChargedAttackDamageData(
+        impact_key=SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
+        strike_type=StrikeType.BLUNT,
+        range_type="远程",
+        icd_tag_key=SANDRONE_RAY_ICD_TAG_KEY,
+        icd_sequence_key=SANDRONE_DAMAGE_ICD_SEQUENCE_KEY,
+        additional_attack_tags=(SANDRONE_RAY_ADDITIONAL_TAG,),
+    ),
+}
 
 
 @dataclass(frozen=True, slots=True)

@@ -14,6 +14,11 @@ from dataclasses import replace
 from genshin_sim.assets.models import TalentScalingEntry
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_CHARACTER_HANDLER_KEY,
+    SANDRONE_CHARGED_ATTACK_DAMAGE_DATA,
+    SANDRONE_CHARGED_ATTACK_MAIN_TAG,
+    SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY,
+    SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
+    SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY,
     SANDRONE_DAMAGE_ELEMENT,
     SANDRONE_DAMAGE_ELEMENTAL_AMOUNT,
     SANDRONE_DAMAGE_ELEMENTAL_STRENGTH,
@@ -80,14 +85,16 @@ def _compile_damage_spec(
     range_type: str,
     elemental_amount: int,
     icd_tag_key: str | None,
+    icd_sequence_key: str | None = None,
+    additional_attack_tags: tuple[str, ...] = (),
     display_name: str,
-    aoe_shape: str,
+    aoe_shape: str | None,
     aoe_radius: float,
     aoe_offset: Vector3,
     aoe_length: float = 0.0,
     aoe_width: float = 0.0,
 ) -> DamageImpactSpec:
-    """把单个资产倍率分量编译为伤害契约。"""
+    """把单个资产倍率分量编译为伤害契约（``aoe_shape=None`` 表示单体）。"""
 
     compiled = ScalingCompiler.compile_entry(entry, talent_level)
     if len(compiled.components) <= component_index:
@@ -108,20 +115,28 @@ def _compile_damage_spec(
             ),
         ),
         can_crit=True,
-        additional_attack_tags=(),
+        additional_attack_tags=tuple(additional_attack_tags),
         strike_type=strike_type,
         range_type=range_type,
         elemental_strength=(SANDRONE_DAMAGE_ELEMENTAL_STRENGTH if has_element else None),
         elemental_amount=(SANDRONE_DAMAGE_ELEMENTAL_AMOUNT if has_element else AuraAmount.zero()),
         icd_tag_key=icd_tag_key,
-        icd_sequence_key=(SANDRONE_DAMAGE_ICD_SEQUENCE_KEY if icd_tag_key is not None else None),
+        icd_sequence_key=(
+            (icd_sequence_key or SANDRONE_DAMAGE_ICD_SEQUENCE_KEY)
+            if icd_tag_key is not None
+            else None
+        ),
         display_name=display_name,
-        area=ImpactAreaSpec(
-            shape=aoe_shape,
-            radius=aoe_radius,
-            local_offset_xz=aoe_offset,
-            length=aoe_length,
-            width=aoe_width,
+        area=(
+            ImpactAreaSpec(
+                shape=aoe_shape,
+                radius=aoe_radius,
+                local_offset_xz=aoe_offset,
+                length=aoe_length,
+                width=aoe_width,
+            )
+            if aoe_shape is not None
+            else None
         ),
     )
 
@@ -349,6 +364,50 @@ def compile_plunge_damage_specs(
             aoe_offset=landing_data.aoe_offset,
         ),
     }
+
+
+def compile_charged_attack_damage_specs(
+    character_key: str,
+    entries_by_key: dict[tuple[str, str, str], TalentScalingEntry],
+    talent_level: int,
+) -> dict[str, DamageImpactSpec]:
+    """编译重击扫射/冷凝射线/功率过载的直伤契约（普通变体）。
+
+    命中判定数据的重击三行为"单体"（每实例无 AOE 形状）：命中集合由法洁欧
+    直线几何在发射时确定（fageou.py），伤害契约不携带 AOE 规格。扫射与过载
+    共用自定义 ICD 组「桑多涅扫射攻击」（84F 窗口、序列 (1,0)，由 content
+    经 ``aura_icd_definitions`` 声明）；射线用内置默认组、标签「重击射线」。
+    """
+
+    labels = {
+        SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY: "重击扫射伤害",
+        SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY: "重击冷凝射线伤害",
+        SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY: "功率过载时伤害",
+    }
+    specs: dict[str, DamageImpactSpec] = {}
+    for impact_key, damage_data in SANDRONE_CHARGED_ATTACK_DAMAGE_DATA.items():
+        label = labels[impact_key]
+        entry = entries_by_key.get((character_key, "normal_attack", label))
+        if entry is None:
+            raise ContentUnitValidationError(f"桑多涅重击缺少资产倍率条目：{label}")
+        specs[impact_key] = _compile_damage_spec(
+            impact_key,
+            talent_level,
+            entry=entry,
+            component_index=0,
+            main_attack_tag=SANDRONE_CHARGED_ATTACK_MAIN_TAG,
+            strike_type=damage_data.strike_type,
+            range_type=damage_data.range_type,
+            elemental_amount=1,
+            icd_tag_key=damage_data.icd_tag_key,
+            icd_sequence_key=damage_data.icd_sequence_key,
+            additional_attack_tags=damage_data.additional_attack_tags,
+            display_name=label,
+            aoe_shape=None,
+            aoe_radius=0.0,
+            aoe_offset=Vector3(),
+        )
+    return specs
 
 
 class SandroneActionImpactFactory:

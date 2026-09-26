@@ -202,8 +202,8 @@ SANDRONE_CHARGED_ATTACK_DAMAGE_DATA = {
 # §8、命中判定数据 3.4 星变体行）。星变体：攻击标签 星超导冰/星扩散冰、元素量
 # 0、无衰减序列与衰减标签（不参与附着判定）；显示名取资产倍率条目同名行。
 # 星扩散变体无资产倍率条目（原始源数据 0 处提及），数值与显示名以编译参数
-# 占位、来源待补（规划讨论待定项 6）；星扩散触发前提（capability 角色）接入
-# 前该分支不会被激活。
+# 占位、来源待补（规划讨论待定项 6）；星扩散 capability 已随内容单元声明
+# （维护者 2026-09-26 确认），风命中冰即可触发星扩散并点亮该分支。
 SANDRONE_STELLAR_RAY_CONDUCT_LABEL = "重击冷凝射线星超导伤害"
 SANDRONE_STELLAR_PRISM_CONDUCT_LABEL = "棱晶弹星超导伤害"
 SANDRONE_STELLAR_BEAM_CONDUCT_LABEL = "聚能光束星超导伤害"

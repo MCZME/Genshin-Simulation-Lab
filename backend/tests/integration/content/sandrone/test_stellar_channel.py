@@ -26,11 +26,24 @@ from genshin_sim.core.attributes import (
     AttributeResolver,
     AttributeSubjectRef,
 )
+from genshin_sim.core.coordination.elemental_reaction.settlement_coordinator import (
+    ElementalSettlementCoordinator,
+)
 from genshin_sim.core.coordination.elemental_reaction.stellar_buffs import (
     plan_radiance_buff_requests,
 )
+from genshin_sim.core.coordination.elemental_reaction.stellar_swirl_buffs import (
+    STELLAR_SWIRL_RADIANCE_BUFF_DEFINITION_KEY,
+)
+from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.events import EventType
-from genshin_sim.core.impacts import ActionImpactContext
+from genshin_sim.core.impacts import (
+    ActionImpactContext,
+    ElementalApplicationSpec,
+    ImpactKind,
+    ImpactRequest,
+)
+from genshin_sim.core.systems.aura import AuraStrength
 from genshin_sim.core.systems.buff import BuffRuntime
 from genshin_sim.core.systems.reaction.states import (
     STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
@@ -38,6 +51,7 @@ from genshin_sim.core.systems.reaction.states import (
 from tests.helpers import sandrone as sandrone_helpers
 
 RAY_STELLAR_DISPLAY_NAME = "重击冷凝射线星超导伤害"
+RAY_STELLAR_SWIRL_DISPLAY_NAME = "重击冷凝射线星扩散伤害"
 SWEEP_DISPLAY_NAME = "重击扫射伤害"
 PRISM_DISPLAY_NAME = "棱晶弹伤害"
 PRISM_STELLAR_DISPLAY_NAME = "棱晶弹星超导伤害"
@@ -190,3 +204,73 @@ def test_radiance_buff_switches_beam_contract_at_factory_dispatch(sandrone_assem
     assert spec.stellar_reaction.mode == "character_direct"
     assert spec.stellar_reaction.scaling_value == pytest.approx(atk)
     assert spec.stellar_reaction.stellar_base_multiplier == pytest.approx(1.55)
+
+
+def _aura_apply_request(
+    frame: int,
+    element: Element,
+    target_ref: str,
+    request_id: str,
+) -> ImpactRequest:
+    return ImpactRequest(
+        frame=frame,
+        kind=ImpactKind.APPLY_AURA,
+        impact_key=f"test.stellar.channel.{element.value}",
+        owner_slot=1,
+        request_id=request_id,
+        target_refs=(target_ref,),
+        elemental_application_spec=ElementalApplicationSpec(
+            impact_ref=f"{request_id}:spec",
+            element=element,
+            elemental_strength=AuraStrength.WEAK,
+            elemental_amount=AuraAmount.one(),
+        ),
+    )
+
+
+def test_stellar_swirl_trigger_activates_swirl_channel(sandrone_assembled):
+    # 全链路：桑多涅声明星扩散 capability（维护者确认口径）→ 风命中冰排他
+    # 替代普通扩散触发星扩散 → 辉映·星扩散 Buff 发放给 capability 提供者
+    # （桑多涅）→ 重击射线查表切到星扩散冰通道（系数证据固定 1.0）。
+    # 冰/风附着经注册的元素结算协调器在仿真前种入；"附着触发反应"链路本身
+    # 由 core 星扩散测试覆盖，此处验证内容侧 capability 声明到直伤分派。
+    assembled = sandrone_assembled(payload=_line_target_payload(380, 2, 376))
+    damage_events = _damage_events(assembled)
+    coordinator = assembled.context.get_system(ElementalSettlementCoordinator)
+    assert isinstance(coordinator, ElementalSettlementCoordinator)
+    coordinator.settle_aura_impact(
+        assembled.context,
+        _aura_apply_request(0, Element.CRYO, "target:target_1", "test:swirl:cryo"),
+    )
+    coordinator.settle_aura_impact(
+        assembled.context,
+        _aura_apply_request(0, Element.ANEMO, "target:target_1", "test:swirl:anemo"),
+    )
+
+    buff_runtime = assembled.context.get_system(BuffRuntime)
+    assert isinstance(buff_runtime, BuffRuntime)
+    swirl_buffs = buff_runtime.reader.active(
+        0, definition_key=STELLAR_SWIRL_RADIANCE_BUFF_DEFINITION_KEY
+    )
+    assert [record.state.target_ref.entity_id for record in swirl_buffs] == ["character:slot_1"]
+
+    assembled.simulator.run()
+
+    rays = [
+        e for e in damage_events if e.payload.result.damage_name == RAY_STELLAR_SWIRL_DISPLAY_NAME
+    ]
+    assert [e.frame for e in rays] == [128, 194, 260]
+    atk = _resolved_atk(assembled)
+    for event in rays:
+        result = event.payload.result
+        assert result.main_attack_tag == "星扩散冰"
+        stellar = result.stellar_reaction_resolution
+        assert stellar is not None
+        assert stellar.input.mode == "character_direct"
+        # 星扩散系数证据固定 1.0；倍率分量以普通变体占位（合成条目 1.0）。
+        assert stellar.input.stellar_base_multiplier == pytest.approx(1.0)
+        assert stellar.input.scaling_value == pytest.approx(atk)
+    # 星超导未触发（无雷冰反应）：射线不得走星超导通道。
+    assert not [
+        e for e in damage_events if e.payload.result.damage_name == RAY_STELLAR_DISPLAY_NAME
+    ]

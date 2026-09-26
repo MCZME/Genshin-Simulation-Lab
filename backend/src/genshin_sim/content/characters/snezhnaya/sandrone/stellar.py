@@ -7,6 +7,10 @@
 词条——组装 ``StellarReactionDamageInput(mode=character_direct)`` 后随
 ``DamageImpactSpec.stellar_reaction`` 提交，经 DamageRequestHandler 的星烁
 输入通道进入独立星烁公式（星超导反应契约 §8）。
+
+辉映·星扩散 Buff 的发放目标是星扩散 capability 提供者：桑多涅随内容单元
+静态声明该 capability（维护者 2026-09-26 确认），队伍风命中冰触发星扩散后
+她持有辉映·星扩散状态，星扩散冰分支在仿真中可达。
 """
 
 from __future__ import annotations

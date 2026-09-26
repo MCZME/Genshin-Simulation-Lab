@@ -11,6 +11,12 @@ from __future__ import annotations
 
 import pytest
 
+from genshin_sim.application.assembly.reaction_capabilities import (
+    build_static_reaction_eligibility_port,
+)
+from genshin_sim.content.characters.snezhnaya.sandrone.content import (
+    create_sandrone_content_unit,
+)
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
     SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY,
@@ -22,6 +28,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.generic.talents import index_talent_scalings
+from genshin_sim.content.registries import CharacterContentUnitRequest
 from genshin_sim.core.attributes import (
     STAT_ATK_BASE,
     STAT_ATK_TOTAL,
@@ -42,7 +49,7 @@ from genshin_sim.core.coordination.elemental_reaction.stellar_swirl_buffs import
     plan_stellar_swirl_radiance_buff_requests,
     stellar_swirl_radiance_buff_definition,
 )
-from genshin_sim.core.elements import Element
+from genshin_sim.core.elements import Element, ElementalSubjectRef
 from genshin_sim.core.events import EventEngine
 from genshin_sim.core.impacts import DamageImpactSpec
 from genshin_sim.core.simulation.context import SimulationContext
@@ -54,6 +61,12 @@ from genshin_sim.core.systems.buff import (
     BuffStore,
 )
 from genshin_sim.core.systems.damage import DamageScalingTerm
+from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
+    STELLAR_CONDUCT_CAPABILITY_KEY,
+)
+from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
+    STELLAR_SWIRL_CAPABILITY_KEY,
+)
 from genshin_sim.core.systems.reaction.states import (
     STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
 )
@@ -232,3 +245,31 @@ def test_compile_rejects_missing_stellar_scaling_entry() -> None:
             {"normal_attack": 1, "elemental_skill": 1, "elemental_burst": 1},
             normal_specs=_normal_specs(),
         )
+
+
+def test_content_unit_declares_both_stellar_capabilities() -> None:
+    """桑多涅随内容单元静态声明星超导与星扩散 capability（维护者确认口径）。
+
+    星扩散 capability 使队伍风命中冰排他替代普通扩散，且辉映·星扩散 Buff
+    以 capability 提供者为发放目标——桑多涅因此持有辉映·星扩散状态。
+    """
+
+    unit = create_sandrone_content_unit(
+        CharacterContentUnitRequest(
+            handler_key=sandrone_helpers.SANDRONE_CHARACTER_HANDLER_KEY,
+            character_key=sandrone_helpers.SANDRONE_CHARACTER_KEY,
+            slot=1,
+            talent_levels={"normal_attack": 1, "elemental_skill": 1, "elemental_burst": 1},
+            talent_scalings=sandrone_helpers._minimal_sandrone_scaling_entries(),
+        )
+    )
+    assert unit.reaction_capabilities == (
+        STELLAR_CONDUCT_CAPABILITY_KEY,
+        STELLAR_SWIRL_CAPABILITY_KEY,
+    )
+    port = build_static_reaction_eligibility_port((unit,))
+    provider = ElementalSubjectRef.character("character:slot_1")
+    for capability_key in (STELLAR_CONDUCT_CAPABILITY_KEY, STELLAR_SWIRL_CAPABILITY_KEY):
+        assert port.evidence_for(frame=0, team_ref="team:assembly").providers_for(
+            capability_key
+        ) == (provider,)

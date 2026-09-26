@@ -78,6 +78,9 @@ from genshin_sim.core.systems.cooldown import (
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
     STELLAR_CONDUCT_CAPABILITY_KEY,
 )
+from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
+    STELLAR_SWIRL_CAPABILITY_KEY,
+)
 
 
 def create_sandrone_content_unit(
@@ -230,7 +233,13 @@ def create_sandrone_content_unit(
         ),
         # 星耀祝礼·唯理为光（passive:6）是固定天赋：capability 随内容单元静态
         # 声明，无解锁过滤（规划讨论待定项 4；assembly 静态端口零改动）。
-        reaction_capabilities=(STELLAR_CONDUCT_CAPABILITY_KEY,),
+        # 星扩散 capability 由维护者确认（2026-09-26）：桑多涅在队伍即可触发
+        # 星扩散反应（风命中冰排他替代普通扩散），辉映·星扩散 Buff 以其资格
+        # 证据为发放目标；命中判定数据 3.4 星扩散变体行为佐证。
+        reaction_capabilities=(
+            STELLAR_CONDUCT_CAPABILITY_KEY,
+            STELLAR_SWIRL_CAPABILITY_KEY,
+        ),
         metadata={"purpose": "sandrone_content_skeleton"},
     )
 

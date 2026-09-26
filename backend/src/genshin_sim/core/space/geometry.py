@@ -101,14 +101,18 @@ class OrientedBoxArea:
 class ImpactAreaSpec:
     """未锚定的伤害 AOE 规格。
 
-    ``shape`` 保留资料原始形状文本（如“球”“圆柱”），运行时按当前 X/Z 模型
-    投影：球与圆柱都投影为同半径 Circle（高度忽略）。``local_offset_xz`` 是
-    相对锚点的本地偏移，当前模型忽略 Y 轴分量。
+    ``shape`` 保留资料原始形状文本（如“球”“圆柱”“攻击盒”），运行时按当前
+    X/Z 模型投影：球与圆柱都投影为同半径 Circle（高度忽略）；攻击盒投影为
+    随攻击方向旋转的 OrientedBox，``length`` 是前后完整边长、``width`` 是左右
+    完整边长，资料第三分量（高度）不参与查询。``local_offset_xz`` 是相对锚点
+    的本地偏移，投影时随攻击方向旋转到世界系，Y 轴分量保留但不参与查询。
     """
 
     shape: str
     radius: float
     local_offset_xz: Vector3 = field(default_factory=Vector3)
+    length: float = 0.0
+    width: float = 0.0
 
     def __post_init__(self) -> None:
         if not isinstance(self.shape, str) or not self.shape.strip():
@@ -121,3 +125,8 @@ class ImpactAreaSpec:
             raise ValueError("ImpactAreaSpec.radius 必须为非负数")
         if not isinstance(self.local_offset_xz, Vector3):
             raise ValueError("ImpactAreaSpec.local_offset_xz 必须是 Vector3")
+        for value, name in ((self.length, "length"), (self.width, "width")):
+            if isinstance(value, bool) or not isinstance(value, int | float) or value < 0:
+                raise ValueError(f"ImpactAreaSpec.{name} 必须为非负数")
+        if self.shape == "攻击盒" and (self.length <= 0 or self.width <= 0):
+            raise ValueError("ImpactAreaSpec 形状为攻击盒时 length 与 width 必须为正数")

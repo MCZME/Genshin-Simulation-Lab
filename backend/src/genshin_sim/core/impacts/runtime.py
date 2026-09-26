@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from math import hypot
 from typing import Protocol
 
 from genshin_sim.core.actions import (
@@ -18,10 +19,12 @@ from genshin_sim.core.impacts.models import ActionImpactContext, ImpactKind, Imp
 from genshin_sim.core.movement import MovementImpactRequestHandler
 from genshin_sim.core.protocols import FrameUpdatable
 from genshin_sim.core.space import (
+    ACTIVE_CHARACTER_ENTITY_ID,
     CircleArea,
     CreatedObjectSpec,
     CreatedObjectTickSpec,
     ImpactAreaSpec,
+    OrientedBoxArea,
     SpatialEntity,
     SpatialEntityKind,
     Vector3,
@@ -715,7 +718,11 @@ class ImpactRuntime(FrameUpdatable):
                 )
             target_refs: list[str] = []
             for anchor in anchors:
-                area = _area_from_spec(spec.area, anchor)
+                area = _area_from_spec(
+                    spec.area,
+                    anchor,
+                    _attack_direction(context.space_runtime, anchor),
+                )
                 for entity in context.space_runtime.entities_in_area(
                     area,
                     kinds={
@@ -799,7 +806,11 @@ class ImpactRuntime(FrameUpdatable):
                 anchors = tuple(anchor_list)
                 fallback_refs = tuple(fallback)
             for anchor in anchors:
-                area = _area_from_spec(spec.area, anchor)
+                area = _area_from_spec(
+                    spec.area,
+                    anchor,
+                    _attack_direction(context.space_runtime, anchor),
+                )
                 entities = context.space_runtime.entities_in_area(
                     area,
                     kinds=kinds,
@@ -859,18 +870,73 @@ def _aura_entity_ref(context, entity: SpatialEntity) -> str | None:
     return target.target_id
 
 
-def _area_from_spec(spec: ImpactAreaSpec, anchor: SpatialEntity) -> CircleArea:
-    """把未锚定的 AOE 规格投影到锚点位置（球/圆 -> 同半径 Circle）。"""
+def _area_from_spec(
+    spec: ImpactAreaSpec,
+    anchor: SpatialEntity,
+    attack_direction: Vector3,
+) -> CircleArea | OrientedBoxArea:
+    """把未锚定的 AOE 规格投影到锚点位置。
 
-    offset = spec.local_offset_xz
+    本地偏移先随攻击方向旋转到世界系，再叠加到锚点位置：球与圆柱投影为同
+    半径 Circle（高度忽略），攻击盒投影为朝向攻击方向的 OrientedBox。
+    """
+
+    rotated_offset = _offset_in_attack_frame(spec.local_offset_xz, attack_direction)
     center = Vector3(
-        anchor.position.x + offset.x,
-        anchor.position.y + offset.y,
-        anchor.position.z + offset.z,
+        x=anchor.position.x + rotated_offset.x,
+        y=anchor.position.y + spec.local_offset_xz.y,
+        z=anchor.position.z + rotated_offset.z,
     )
+    if spec.shape == "攻击盒":
+        return OrientedBoxArea(
+            center=center,
+            facing=attack_direction,
+            length=spec.length,
+            width=spec.width,
+        )
     if spec.shape not in {"球", "圆", "圆柱"}:
         raise ValueError(f"未支持的伤害 AOE 形状：{spec.shape}")
     return CircleArea(center=center, radius=spec.radius)
+
+
+def _attack_direction(space_runtime, anchor: SpatialEntity) -> Vector3:
+    """索敌确定的攻击方向（X/Z 平面）。
+
+    当前空间模型只有 `player:active` 一个可控角色实体作为攻击者：优先取攻击
+    者指向锚点的方向；攻击者与锚点重合（如以攻击者为锚点的施加区域）时退化
+    为攻击者朝向；都不可用时退化为 +Z（与历史世界轴偏移行为一致）。
+    """
+
+    attacker = space_runtime.get_entity(ACTIVE_CHARACTER_ENTITY_ID)
+    if attacker is not None:
+        delta_x = anchor.position.x - attacker.position.x
+        delta_z = anchor.position.z - attacker.position.z
+        if delta_x != 0.0 or delta_z != 0.0:
+            length = hypot(delta_x, delta_z)
+            return Vector3(x=delta_x / length, y=0.0, z=delta_z / length)
+        if attacker.facing.x != 0.0 or attacker.facing.z != 0.0:
+            return attacker.facing
+    return Vector3(x=0.0, y=0.0, z=1.0)
+
+
+def _offset_in_attack_frame(offset: Vector3, attack_direction: Vector3) -> Vector3:
+    """把攻击方向本地系下的偏移旋转到世界系（Y 轴分量不参与旋转）。
+
+    本地系基向量与 ``OrientedBoxArea.contains`` 一致：forward 为攻击方向单位
+    向量，right 为其垂直基（-forward_z, forward_x），保证偏移与盒体共用同一
+    朝向框架。
+    """
+
+    length = hypot(attack_direction.x, attack_direction.z)
+    forward_x = attack_direction.x / length
+    forward_z = attack_direction.z / length
+    right_x = -forward_z
+    right_z = forward_x
+    return Vector3(
+        x=offset.x * right_x + offset.z * forward_x,
+        y=offset.y,
+        z=offset.x * right_z + offset.z * forward_z,
+    )
 
 
 def _created_object_spec_from_request(request: ImpactRequest) -> CreatedObjectSpec:

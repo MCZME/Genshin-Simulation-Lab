@@ -121,6 +121,7 @@ def sandrone_input_payload(
     input_key: str = "mouse.left",
     max_frames: int = 60,
     input_trace: list[dict[str, object]] | None = None,
+    targets: list[dict[str, object]] | None = None,
 ) -> dict[str, object]:
     """桑多涅单人集成测试配置。"""
 
@@ -128,6 +129,15 @@ def sandrone_input_payload(
         input_trace = [
             {"frame": 1, "events": [{"key": input_key, "phase": "press"}]},
             {"frame": 2, "events": [{"key": input_key, "phase": "release"}]},
+        ]
+    if targets is None:
+        targets = [
+            {
+                "id": "target_1",
+                "level": 90,
+                "position": {"x": 0, "y": 0, "z": 0},
+                "resistance": {},
+            }
         ]
     return {
         "schema_version": 2,
@@ -149,16 +159,7 @@ def sandrone_input_payload(
                 "artifacts": {"sets": [], "stats": {}},
             }
         ],
-        "scene": {
-            "targets": [
-                {
-                    "id": "target_1",
-                    "level": 90,
-                    "position": {"x": 0, "y": 0, "z": 0},
-                    "resistance": {},
-                },
-            ]
-        },
+        "scene": {"targets": targets},
         "input_trace": input_trace,
         "rules": {"active": []},
         "run_options": {"max_frames": max_frames},

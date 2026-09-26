@@ -358,9 +358,7 @@ class SandroneActionInterpreter:
 def create_sandrone_actions(
     action_table: dict[str, TimedActionSpec] | None = None,
     *,
-    cooldown_duration_terms: (
-        Mapping[str, tuple[CooldownDurationTerm, ...]] | None
-    ) = None,
+    cooldown_duration_terms: (Mapping[str, tuple[CooldownDurationTerm, ...]] | None) = None,
 ) -> tuple[Action, ...]:
     """把角色唯一动作表编译为可注册的定时动作。"""
 

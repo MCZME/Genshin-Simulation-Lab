@@ -27,6 +27,7 @@ from genshin_sim.core.impacts import (
     ActionImpactContext,
     DamageImpactSpec,
     ImpactDispatcher,
+    ImpactFactory,
     ImpactKind,
     ImpactRequest,
     ImpactRequestDispatcher,
@@ -152,6 +153,60 @@ class AnchorCylinderDamageImpactFactory:
                         shape="圆柱",
                         radius=2.0,
                         local_offset_xz=Vector3(0.0, -0.5, 0.0),
+                    ),
+                ),
+            ),
+        )
+
+
+class OrientedBoxDamageImpactFactory:
+    def create_requests(self, context: ActionImpactContext) -> tuple[ImpactRequest, ...]:
+        return (
+            ImpactRequest(
+                frame=context.frame,
+                kind=ImpactKind.DAMAGE,
+                impact_key="furina.skill.hit",
+                owner_slot=context.owner.slot,
+                action_key=context.action_key,
+                source_impact_point_id=context.impact_point_id,
+                target_refs=tuple(target.target_id for target in context.target_refs),
+                damage_spec=DamageImpactSpec(
+                    impact_ref=f"{context.impact_point_id}:damage",
+                    main_attack_tag="普通攻击1",
+                    element=Element.CRYO,
+                    area=ImpactAreaSpec(
+                        shape="攻击盒",
+                        radius=0.0,
+                        length=4.3,
+                        width=2.5,
+                        local_offset_xz=Vector3(0.0, 0.0, 0.5),
+                    ),
+                ),
+            ),
+        )
+
+
+class AnchorOrientedBoxDamageImpactFactory:
+    def create_requests(self, context: ActionImpactContext) -> tuple[ImpactRequest, ...]:
+        return (
+            ImpactRequest(
+                frame=context.frame,
+                kind=ImpactKind.DAMAGE,
+                impact_key="furina.skill.landing",
+                owner_slot=context.owner.slot,
+                action_key=context.action_key,
+                source_impact_point_id=context.impact_point_id,
+                anchor_entity_id=ACTIVE_CHARACTER_ENTITY_ID,
+                damage_spec=DamageImpactSpec(
+                    impact_ref=f"{context.impact_point_id}:damage",
+                    main_attack_tag="下落攻击",
+                    element=Element.CRYO,
+                    area=ImpactAreaSpec(
+                        shape="攻击盒",
+                        radius=0.0,
+                        length=4.3,
+                        width=2.5,
+                        local_offset_xz=Vector3(0.0, 0.0, 0.5),
                     ),
                 ),
             ),
@@ -478,4 +533,158 @@ def test_impact_runtime_cylinder_area_expands_around_anchor_entity():
 
     assert len(impact_runtime.dispatch_records) == 1
     requests = impact_runtime.dispatch_records[0].requests
+    assert requests[0].target_refs == ("target_1",)
+
+
+def _oriented_box_runtime() -> tuple[SimulationContext, ActionManager, ImpactRuntime]:
+    ctx = SimulationContext()
+    ctx.space_runtime = SpaceRuntime(
+        space=Space(
+            (
+                SpatialEntity(
+                    ACTIVE_CHARACTER_ENTITY_ID,
+                    SpatialEntityKind.ACTIVE_CHARACTER,
+                    position=Vector3(0, 0, 0),
+                    active_slot=1,
+                ),
+                SpatialEntity(
+                    "target:target_1",
+                    SpatialEntityKind.TARGET,
+                    position=Vector3(3.5, 0, 0),
+                ),
+                SpatialEntity(
+                    "target:target_2",
+                    SpatialEntityKind.TARGET,
+                    position=Vector3(4, 0, -1),
+                ),
+                SpatialEntity(
+                    "target:target_3",
+                    SpatialEntityKind.TARGET,
+                    position=Vector3(4, 0, 2),
+                ),
+            )
+        ),
+        team_state=TeamRuntimeState(
+            [CharacterRuntimeState(slot=1, character_key="character:1", level=90)]
+        ),
+        targets=TargetRuntimeCollection(
+            (
+                TargetRuntimeState(target_id="target_1"),
+                TargetRuntimeState(target_id="target_2"),
+                TargetRuntimeState(target_id="target_3"),
+            )
+        ),
+    )
+    return _box_action_runtime(ctx, OrientedBoxDamageImpactFactory())
+
+
+def _anchored_oriented_box_runtime() -> tuple[SimulationContext, ActionManager, ImpactRuntime]:
+    ctx = SimulationContext()
+    ctx.space_runtime = SpaceRuntime(
+        space=Space(
+            (
+                SpatialEntity(
+                    ACTIVE_CHARACTER_ENTITY_ID,
+                    SpatialEntityKind.ACTIVE_CHARACTER,
+                    position=Vector3(0, 0, 0),
+                    facing=Vector3(1, 0, 0),
+                    active_slot=1,
+                ),
+                SpatialEntity(
+                    "target:target_1",
+                    SpatialEntityKind.TARGET,
+                    position=Vector3(1.5, 0, 0),
+                ),
+                SpatialEntity(
+                    "target:target_2",
+                    SpatialEntityKind.TARGET,
+                    position=Vector3(0.5, 0, 2),
+                ),
+            )
+        ),
+        team_state=TeamRuntimeState(
+            [CharacterRuntimeState(slot=1, character_key="character:1", level=90)]
+        ),
+        targets=TargetRuntimeCollection(
+            (
+                TargetRuntimeState(target_id="target_1"),
+                TargetRuntimeState(target_id="target_2"),
+            )
+        ),
+    )
+    return _box_action_runtime(
+        ctx,
+        AnchorOrientedBoxDamageImpactFactory(),
+        impact_key="furina.skill.landing",
+    )
+
+
+def _box_action_runtime(
+    ctx: SimulationContext,
+    factory: ImpactFactory,
+    *,
+    impact_key: str = "furina.skill.hit",
+) -> tuple[SimulationContext, ActionManager, ImpactRuntime]:
+    interpreter = ReleaseInterpreter()
+    registry = ActionInterpreterRegistry()
+    registry.register("keyboard.e", ActiveCharacterInterpreterSelector({1: interpreter}))
+    action_manager = ActionManager(
+        input_trace=InputTraceCompiler().compile(
+            [
+                KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
+                KeyInputFrame(2, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
+            ]
+        ),
+        interpreter_registry=registry,
+        action_registry=ActionRegistry(
+            (
+                TimedImpactAction(
+                    action_key="furina.skill",
+                    duration_frames=2,
+                    impact_keys=(impact_key,),
+                    impact_frame_offsets={impact_key: 1},
+                    targeting=TargetingSpec(
+                        search_area=SearchAreaSpec(
+                            shape="圆柱",
+                            radius=15.0,
+                            height=10.0,
+                        ),
+                        selection_policy_key="分数",
+                    ),
+                ),
+            )
+        ),
+    )
+    impact_runtime = ImpactRuntime(
+        action_manager,
+        ImpactDispatcher({impact_key: factory}),
+    )
+    return ctx, action_manager, impact_runtime
+
+
+def test_impact_runtime_oriented_box_area_orients_by_attack_direction():
+    ctx, action_manager, impact_runtime = _oriented_box_runtime()
+
+    action_manager.update_frame(ctx, frame=1)
+    action_manager.update_frame(ctx, frame=2)
+    impact_runtime.update_frame(ctx, frame=3)
+
+    assert len(impact_runtime.dispatch_records) == 1
+    requests = impact_runtime.dispatch_records[0].requests
+    # 攻击方向为攻击者指向瞄准目标（+X）；本地前向偏移 0.5 随方向旋转，
+    # 盒心落在 (4, 0)：target_2 在盒内（横向 -1），target_3 超出盒宽（横向 2）。
+    assert requests[0].target_refs == ("target_1", "target_2")
+
+
+def test_impact_runtime_oriented_box_area_falls_back_to_attacker_facing():
+    ctx, action_manager, impact_runtime = _anchored_oriented_box_runtime()
+
+    action_manager.update_frame(ctx, frame=1)
+    action_manager.update_frame(ctx, frame=2)
+    impact_runtime.update_frame(ctx, frame=3)
+
+    assert len(impact_runtime.dispatch_records) == 1
+    requests = impact_runtime.dispatch_records[0].requests
+    # 锚点与攻击者重合时退化为攻击者朝向（+X）：target_1 在盒内，
+    # target_2 超出盒宽（横向 2）。
     assert requests[0].target_refs == ("target_1",)

@@ -15,10 +15,12 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_ELEMENTAL_BURST_BOMBARDMENT_1_IMPACT_KEY,
     SANDRONE_ELEMENTAL_SKILL_PRISM_1_IMPACT_KEY,
     SANDRONE_NORMAL_ATTACK_1_IMPACT_KEY,
+    SANDRONE_NORMAL_ATTACK_2_IMPACT_KEY,
 )
 from genshin_sim.content.generic.talents import index_talent_scalings
 from genshin_sim.content.registries import CharacterContentUnitRequest
 from genshin_sim.core.impacts import StrikeType
+from genshin_sim.core.space import Vector3
 from tests.helpers import sandrone as sandrone_helpers
 
 
@@ -102,6 +104,16 @@ def test_damage_specs_carry_measured_tags_and_icd():
     assert na1.icd_sequence_key == "默认"
     assert na1.strike_type == StrikeType.BLUNT
     assert na1.range_type == "近战"
+    assert na1.area is not None
+    assert na1.area.shape == "攻击盒"
+    assert na1.area.length == 4.3
+    assert na1.area.width == 2.5
+    assert na1.area.local_offset_xz == Vector3(0.0, 1.1, 0.5)
+
+    na2 = specs[SANDRONE_NORMAL_ATTACK_2_IMPACT_KEY]
+    assert na2.area is not None
+    assert na2.area.shape == "圆柱"
+    assert na2.area.radius == 2.7
 
     prism = specs[SANDRONE_ELEMENTAL_SKILL_PRISM_1_IMPACT_KEY]
     assert prism.main_attack_tag == "元素战技"

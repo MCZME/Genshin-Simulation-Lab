@@ -95,6 +95,8 @@ def _compile_damage_spec(
     aoe_shape: str,
     aoe_radius: float,
     aoe_offset: Vector3,
+    aoe_length: float = 0.0,
+    aoe_width: float = 0.0,
 ) -> DamageImpactSpec:
     """把单个资产倍率分量编译为伤害契约。"""
 
@@ -129,6 +131,8 @@ def _compile_damage_spec(
             shape=aoe_shape,
             radius=aoe_radius,
             local_offset_xz=aoe_offset,
+            length=aoe_length,
+            width=aoe_width,
         ),
     )
 
@@ -162,9 +166,11 @@ def compile_normal_attack_damage_specs(
             elemental_amount=1,
             icd_tag_key="普通攻击",
             display_name=label,
-            aoe_shape="圆柱",
+            aoe_shape=damage_data.aoe_shape,
             aoe_radius=damage_data.aoe_radius,
             aoe_offset=damage_data.aoe_offset,
+            aoe_length=damage_data.aoe_length,
+            aoe_width=damage_data.aoe_width,
         )
     return specs
 

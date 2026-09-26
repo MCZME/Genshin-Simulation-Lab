@@ -102,15 +102,20 @@ SANDRONE_ELEMENTAL_BURST_COOLDOWN_FRAMES = 900
 class SandroneNormalAttackDamageData:
     """单段普攻的伤害数据（主攻击标签、AOE 与偏移随段变化）。
 
-    一段的资料形状为攻击盒（4.3,2.5,2.5，偏移 0.0,1.1,0.5）；当前 AOE 模型
-    只支持球/圆柱的 X/Z 圆投影，按外接圆近似（半径取半对角线 ≈2.5），偏移
-    保留资料原始三元组（Y 轴分量由模型忽略）。
+    一段的资料形状为攻击盒（区域 4.3,2.5,2.5，偏移 0.0,1.1,0.5）：按前后完整
+    边长 4.3、左右完整边长 2.5 接入，资料第三分量（高度）由 X/Z 模型忽略；
+    区域三个数值的轴向解释（4.3 取前后向）待资料出处确认后复核（规划文档
+    待定项 8）。二、三段为圆柱，半径取资料区域第一分量。偏移保留资料原始
+    三元组，投影时随攻击方向旋转（Y 轴分量不参与查询）。
     """
 
     main_attack_tag: str
     strike_type: StrikeType
     range_type: str
+    aoe_shape: str
     aoe_radius: float
+    aoe_length: float
+    aoe_width: float
     aoe_offset: Vector3
 
 
@@ -119,21 +124,30 @@ SANDRONE_NORMAL_ATTACK_DAMAGE_DATA = (
         main_attack_tag="普通攻击1",
         strike_type=StrikeType.BLUNT,
         range_type="近战",
-        aoe_radius=2.5,
+        aoe_shape="攻击盒",
+        aoe_radius=0.0,
+        aoe_length=4.3,
+        aoe_width=2.5,
         aoe_offset=Vector3(0.0, 1.1, 0.5),
     ),
     SandroneNormalAttackDamageData(
         main_attack_tag="普通攻击2",
         strike_type=StrikeType.BLUNT,
         range_type="近战",
+        aoe_shape="圆柱",
         aoe_radius=2.7,
+        aoe_length=0.0,
+        aoe_width=0.0,
         aoe_offset=Vector3(0.0, 0.15, -0.3),
     ),
     SandroneNormalAttackDamageData(
         main_attack_tag="普通攻击3",
         strike_type=StrikeType.BLUNT,
         range_type="近战",
+        aoe_shape="圆柱",
         aoe_radius=2.5,
+        aoe_length=0.0,
+        aoe_width=0.0,
         aoe_offset=Vector3(0.0, -0.3, 2.0),
     ),
 )

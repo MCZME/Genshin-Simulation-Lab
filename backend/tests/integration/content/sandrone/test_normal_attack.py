@@ -62,3 +62,33 @@ def test_normal_attack_applies_cryo_to_target(sandrone_assembled):
     target_subject = ElementalSubjectRef.target("target:target_1")
     component = assembled.aura_runtime.view(target_subject).component_for(AuraKind.CRYO)
     assert component is not None
+
+
+def test_first_normal_attack_box_excludes_target_beyond_width(sandrone_assembled):
+    payload = sandrone_helpers.sandrone_input_payload(
+        max_frames=60,
+        targets=[
+            {
+                "id": "target_1",
+                "level": 90,
+                "position": {"x": 3.5, "y": 0, "z": 0},
+                "resistance": {},
+            },
+            {
+                "id": "target_2",
+                "level": 90,
+                "position": {"x": 4.0, "y": 0, "z": 2.0},
+                "resistance": {},
+            },
+        ],
+    )
+    assembled = sandrone_assembled(max_frames=60, payload=payload)
+    events = _damage_events(assembled)
+
+    assembled.simulator.run()
+
+    damage_events = [e for e in events if e.event_type is EventType.DAMAGE_RESOLVED]
+    # 一段资料形状为攻击盒（4.3 x 2.5，前向偏移 0.5）：攻击方向为攻击者指向
+    # 瞄准目标（+X），盒心前移到 (4, 0)；target_2 横向距离 2.0 超出盒宽一半
+    # （1.25），不命中——按旧的圆柱外接圆近似（r=2.5）会被误命中。
+    assert [e.payload.result.target_ref.entity_id for e in damage_events] == ["target:target_1"]

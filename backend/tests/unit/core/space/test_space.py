@@ -64,6 +64,23 @@ def test_impact_area_spec_rejects_invalid_shape_or_radius():
         ImpactAreaSpec(shape="球", radius=-1.0)
 
 
+def test_impact_area_spec_keeps_oriented_box_dimensions():
+    spec = ImpactAreaSpec(shape="攻击盒", radius=0.0, length=4.3, width=2.5)
+
+    assert spec.shape == "攻击盒"
+    assert spec.length == 4.3
+    assert spec.width == 2.5
+
+
+def test_impact_area_spec_rejects_invalid_box_dimensions():
+    with pytest.raises(ValueError, match="length 必须为非负数"):
+        ImpactAreaSpec(shape="攻击盒", radius=0.0, length=-1.0, width=2.5)
+    with pytest.raises(ValueError, match="width 必须为非负数"):
+        ImpactAreaSpec(shape="攻击盒", radius=0.0, length=4.3, width=-1.0)
+    with pytest.raises(ValueError, match="length 与 width 必须为正数"):
+        ImpactAreaSpec(shape="攻击盒", radius=0.0)
+
+
 def test_collision_box_defaults_to_cylinder_radius_half_height_one():
     box = CollisionBox()
 

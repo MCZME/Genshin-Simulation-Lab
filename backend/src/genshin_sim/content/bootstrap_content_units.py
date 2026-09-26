@@ -45,6 +45,10 @@ from genshin_sim.content.characters.mondstadt.barbara import (
     create_barbara_content_unit,
     create_barbara_encore_effect,
 )
+from genshin_sim.content.characters.snezhnaya.sandrone import (
+    SANDRONE_CHARACTER_HANDLER_KEY,
+    create_sandrone_content_unit,
+)
 from genshin_sim.content.registries import ContentUnitRegistry
 from genshin_sim.content.weapons.bow.favonius_warbow import (
     FAVONIUS_WARBOW_HANDLER_KEY,
@@ -138,6 +142,10 @@ def create_default_content_unit_registry(
     registry.register_character_factory(
         BARBARA_CHARACTER_HANDLER_KEY,
         create_barbara_content_unit,
+    )
+    registry.register_character_factory(
+        SANDRONE_CHARACTER_HANDLER_KEY,
+        create_sandrone_content_unit,
     )
     if developer_mode:
         from genshin_sim.content.test import register_test_content_units

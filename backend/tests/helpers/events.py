@@ -13,13 +13,19 @@ from genshin_sim.core.events import (
 )
 
 
-def make_event_context(frame: int, events: tuple = ()) -> SimpleNamespace:
+def make_event_context(
+    frame: int,
+    events: tuple = (),
+    *,
+    random_source: object | None = None,
+) -> SimpleNamespace:
     """构造含帧事件列表的最小运行上下文替身。"""
 
     return SimpleNamespace(
         current_frame=frame,
         settlement_round=0,
         events=SimpleNamespace(frame_events=events),
+        random_source=random_source,
     )
 
 
@@ -51,6 +57,7 @@ def make_damage_resolved_event(
     *,
     source_key: str = "character:slot_1",
     target_key: str = "target:1",
+    main_attack_tag: str | None = None,
 ) -> SimpleNamespace:
     """构造伤害结算事实替身。"""
 
@@ -62,6 +69,7 @@ def make_damage_resolved_event(
                 frame=frame,
                 source_ref=AttributeSubjectRef.character(source_key),
                 target_ref=AttributeSubjectRef.target(target_key),
+                main_attack_tag=main_attack_tag,
             )
         ),
     )

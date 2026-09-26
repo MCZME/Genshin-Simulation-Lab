@@ -25,11 +25,22 @@ from genshin_sim.core.systems.energy.policies import (
     ZeroInitialEnergyPolicy,
 )
 from genshin_sim.core.systems.energy.queue import EnergyTransitQueue
+from genshin_sim.core.systems.energy.recovery import (
+    ENERGY_RECOVERY_RESTORE_AMOUNT,
+    ENERGY_RECOVERY_RULES_BY_WEAPON_TYPE,
+    EnergyRecoveryRule,
+    EnergyRecoveryStage,
+    EnergyRecoveryStore,
+    is_energy_recovery_trigger_tag,
+    recovery_rule_for_weapon_type,
+)
 from genshin_sim.core.systems.energy.runtime import EnergyReadPort, EnergyRuntime
 from genshin_sim.core.systems.energy.snapshots import CharacterEnergySnapshot, EnergySnapshot
 from genshin_sim.core.systems.energy.store import CharacterEnergyStore
 
 __all__ = [
+    "ENERGY_RECOVERY_RESTORE_AMOUNT",
+    "ENERGY_RECOVERY_RULES_BY_WEAPON_TYPE",
     "BurstEnergyConditionResult",
     "BurstEnergyConditionStatus",
     "CharacterEnergyChangeResult",
@@ -45,6 +56,9 @@ __all__ = [
     "EnergyPickupRecord",
     "EnergyPickupSettlementResult",
     "EnergyReadPort",
+    "EnergyRecoveryRule",
+    "EnergyRecoveryStage",
+    "EnergyRecoveryStore",
     "EnergyRecipientResolution",
     "EnergyRecipientStatus",
     "EnergyRuntime",
@@ -56,4 +70,6 @@ __all__ = [
     "SpendBurstEnergyRequest",
     "SpawnEnergyPickupRequest",
     "ZeroInitialEnergyPolicy",
+    "is_energy_recovery_trigger_tag",
+    "recovery_rule_for_weapon_type",
 ]

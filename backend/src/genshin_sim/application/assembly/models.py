@@ -88,6 +88,8 @@ if TYPE_CHECKING:
     from genshin_sim.core.systems.energy import (
         CharacterEnergyStore,
         EnergyImpactRequestHandler,
+        EnergyRecoveryStage,
+        EnergyRecoveryStore,
         EnergyRuntime,
         EnergyTransitQueue,
     )
@@ -181,6 +183,8 @@ class AssembledSimulation:
     energy_transit_queue: EnergyTransitQueue
     energy_runtime: EnergyRuntime
     energy_handler: EnergyImpactRequestHandler
+    energy_recovery_store: EnergyRecoveryStore
+    energy_recovery_stage: EnergyRecoveryStage
     cooldown_runtime: CooldownRuntime
     cooldown_frame_adapter: FrameUpdatable
     movement_runtime: MovementRuntime

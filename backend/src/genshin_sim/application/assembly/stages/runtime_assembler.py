@@ -199,11 +199,14 @@ from genshin_sim.core.systems.energy import (
     CharacterEnergyProfile,
     CharacterEnergyStore,
     EnergyImpactRequestHandler,
+    EnergyRecoveryStage,
+    EnergyRecoveryStore,
     EnergyRuntime,
     EnergySystemError,
     EnergyTransitQueue,
     InitialEnergyPolicy,
     ZeroInitialEnergyPolicy,
+    recovery_rule_for_weapon_type,
 )
 from genshin_sim.core.systems.healing import (
     HealingImpactRequestHandler,
@@ -403,6 +406,7 @@ class RuntimeAssembler:
         )
         try:
             energy_entries = []
+            recovery_entries = []
             for character in team_state.characters:
                 asset_bundle = assets_by_slot[character.slot]
                 burst_energy_cost = asset_bundle.character.burst_energy_cost
@@ -413,6 +417,7 @@ class RuntimeAssembler:
                 character.energy.current_energy = initial_energy_policy.initial_energy(
                     burst_energy_cost
                 )
+                recovery_rule = recovery_rule_for_weapon_type(asset_bundle.character.weapon_type)
                 energy_entries.append(
                     (
                         CharacterEnergyProfile(
@@ -424,7 +429,11 @@ class RuntimeAssembler:
                         character.energy,
                     )
                 )
+                recovery_entries.append(
+                    (AttributeSubjectRef.character(character.combat_entity_id), recovery_rule)
+                )
             energy_store = CharacterEnergyStore(energy_entries)
+            energy_recovery_store = EnergyRecoveryStore(recovery_entries)
             energy_transit_queue = EnergyTransitQueue()
             energy_runtime = EnergyRuntime(
                 attribute_runtime.resolver,
@@ -816,6 +825,13 @@ class RuntimeAssembler:
             lunar_cage_presence_port=resonance_lunar_cage_port,
         )
         context.register_system(resonance_reaction_stage)
+        energy_recovery_stage = EnergyRecoveryStage(
+            energy_recovery_store,
+            energy_store,
+            team_state,
+            intent_queue,
+        )
+        context.register_system(energy_recovery_stage)
         snapshot_runtime = SnapshotRuntime()
         snapshot_runtime.register(
             "energy",
@@ -914,6 +930,7 @@ class RuntimeAssembler:
             "resonance_reactions",
             resonance_reaction_stage,
         )
+        runtime_world.add(FramePhase.FACT_RESPONSE, "energy_recovery", energy_recovery_stage)
         runtime_world.add(FramePhase.FACT_RESPONSE, "content_hooks", hook_dispatcher)
         runtime_world.add(
             FramePhase.SNAPSHOT,
@@ -950,6 +967,8 @@ class RuntimeAssembler:
             energy_transit_queue=energy_transit_queue,
             energy_runtime=energy_runtime,
             energy_handler=energy_handler,
+            energy_recovery_store=energy_recovery_store,
+            energy_recovery_stage=energy_recovery_stage,
             cooldown_runtime=cooldown_runtime,
             cooldown_frame_adapter=cooldown_frame_adapter,
             movement_runtime=movement_runtime,

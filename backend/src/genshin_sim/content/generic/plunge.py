@@ -1,12 +1,13 @@
-"""generic 下落攻击数据（全角色统一/法器通用）。
+"""generic 下落攻击数据（全角色统一/按武器类型通用）。
 
 低空/高空阈值是跨角色统一的临时数据，统一资料确认后替换；攻击数据（形状、
-区域、偏移、攻击标签、元素量）按武器类型通用资料表维护，当前为法器通用
-数据。垂直运动由 ``core/movement`` 统一推进。
+区域、偏移、攻击标签、元素量）按武器类型通用资料表维护，法器与双手剑数据
+已接入，其余武器类型待补。垂直运动由 ``core/movement`` 统一推进。
 """
 
 from __future__ import annotations
 
+from genshin_sim.core.impacts import StrikeType
 from genshin_sim.core.space.geometry import Vector3
 
 # 临时数据（待统一资料确认后替换）
@@ -24,3 +25,18 @@ PLUNGE_LANDING_AOE_OFFSET = Vector3(0.0, -0.5, 0.0)
 PLUNGE_LANDING_LOW_AOE_RADIUS = 3.0
 PLUNGE_LANDING_HIGH_AOE_RADIUS = 3.5
 PLUNGE_LANDING_ELEMENTAL_AMOUNT = 1
+
+# 双手剑通用下落攻击资料（2026-09-26 维护者提供，来源为通用攻击数据表；
+# 圆柱区域第二分量为高度，X/Z 模型不参与查询；偏移 Y 分量同理忽略）
+CLAYMORE_PLUNGE_MAIN_ATTACK_TAG = "下落攻击"
+CLAYMORE_PLUNGE_COLLISION_AOE_SHAPE = "球"
+CLAYMORE_PLUNGE_COLLISION_AOE_RADIUS = 1.0
+CLAYMORE_PLUNGE_COLLISION_AOE_OFFSET = Vector3(0.0, 0.0, 1.0)
+CLAYMORE_PLUNGE_COLLISION_ELEMENTAL_AMOUNT = 0
+CLAYMORE_PLUNGE_COLLISION_STRIKE_TYPE = StrikeType.SLASH
+CLAYMORE_PLUNGE_LANDING_AOE_SHAPE = "圆柱"
+CLAYMORE_PLUNGE_LANDING_AOE_OFFSET = Vector3(0.0, -0.5, 1.0)
+CLAYMORE_PLUNGE_LANDING_LOW_AOE_RADIUS = 3.0
+CLAYMORE_PLUNGE_LANDING_HIGH_AOE_RADIUS = 5.0
+CLAYMORE_PLUNGE_LANDING_ELEMENTAL_AMOUNT = 1
+CLAYMORE_PLUNGE_LANDING_STRIKE_TYPE = StrikeType.BLUNT

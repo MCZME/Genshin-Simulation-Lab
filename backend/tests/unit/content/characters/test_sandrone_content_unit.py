@@ -16,6 +16,8 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_ELEMENTAL_SKILL_PRISM_1_IMPACT_KEY,
     SANDRONE_NORMAL_ATTACK_1_IMPACT_KEY,
     SANDRONE_NORMAL_ATTACK_2_IMPACT_KEY,
+    SANDRONE_PLUNGE_COLLISION_IMPACT_KEY,
+    SANDRONE_PLUNGE_LANDING_IMPACT_KEY,
 )
 from genshin_sim.content.generic.talents import index_talent_scalings
 from genshin_sim.content.registries import CharacterContentUnitRequest
@@ -123,6 +125,43 @@ def test_damage_specs_carry_measured_tags_and_icd():
     beam = specs[SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY]
     assert beam.main_attack_tag == "元素爆发"
     assert beam.icd_tag_key == "元素爆发"
+
+
+def test_plunge_damage_specs_use_claymore_generic_data():
+    from genshin_sim.content.characters.snezhnaya.sandrone.impacts import (
+        compile_plunge_damage_specs,
+    )
+
+    character_key = sandrone_helpers.SANDRONE_CHARACTER_KEY
+    entries_by_key = index_talent_scalings(
+        character_key,
+        sandrone_helpers._minimal_sandrone_scaling_entries(),
+    )
+    specs = compile_plunge_damage_specs(character_key, entries_by_key, 1)
+
+    collision = specs[SANDRONE_PLUNGE_COLLISION_IMPACT_KEY]
+    assert collision.main_attack_tag == "下落攻击"
+    assert collision.strike_type is StrikeType.SLASH
+    assert collision.range_type == "近战"
+    assert collision.elemental_amount.is_zero
+    assert collision.area is not None
+    assert collision.area.shape == "球"
+    assert collision.area.radius == 1.0
+    assert collision.area.local_offset_xz == Vector3(0.0, 0.0, 1.0)
+
+    landing_low = specs[f"{SANDRONE_PLUNGE_LANDING_IMPACT_KEY}.low"]
+    assert landing_low.strike_type is StrikeType.BLUNT
+    assert landing_low.range_type == "近战"
+    assert landing_low.area is not None
+    assert landing_low.area.shape == "圆柱"
+    assert landing_low.area.radius == 3.0
+    assert landing_low.area.local_offset_xz == Vector3(0.0, -0.5, 1.0)
+
+    landing_high = specs[f"{SANDRONE_PLUNGE_LANDING_IMPACT_KEY}.high"]
+    assert landing_high.strike_type is StrikeType.BLUNT
+    assert landing_high.area is not None
+    assert landing_high.area.shape == "圆柱"
+    assert landing_high.area.radius == 5.0
 
 
 def test_burst_registers_three_bombardment_points():

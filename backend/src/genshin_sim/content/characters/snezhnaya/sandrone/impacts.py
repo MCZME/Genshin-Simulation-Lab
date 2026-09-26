@@ -43,16 +43,18 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.generic.plunge import (
-    PLUNGE_COLLISION_AOE_OFFSET,
-    PLUNGE_COLLISION_AOE_RADIUS,
-    PLUNGE_COLLISION_AOE_SHAPE,
-    PLUNGE_COLLISION_ELEMENTAL_AMOUNT,
-    PLUNGE_LANDING_AOE_OFFSET,
-    PLUNGE_LANDING_AOE_SHAPE,
-    PLUNGE_LANDING_ELEMENTAL_AMOUNT,
-    PLUNGE_LANDING_HIGH_AOE_RADIUS,
-    PLUNGE_LANDING_LOW_AOE_RADIUS,
-    PLUNGE_MAIN_ATTACK_TAG,
+    CLAYMORE_PLUNGE_COLLISION_AOE_OFFSET,
+    CLAYMORE_PLUNGE_COLLISION_AOE_RADIUS,
+    CLAYMORE_PLUNGE_COLLISION_AOE_SHAPE,
+    CLAYMORE_PLUNGE_COLLISION_ELEMENTAL_AMOUNT,
+    CLAYMORE_PLUNGE_COLLISION_STRIKE_TYPE,
+    CLAYMORE_PLUNGE_LANDING_AOE_OFFSET,
+    CLAYMORE_PLUNGE_LANDING_AOE_SHAPE,
+    CLAYMORE_PLUNGE_LANDING_ELEMENTAL_AMOUNT,
+    CLAYMORE_PLUNGE_LANDING_HIGH_AOE_RADIUS,
+    CLAYMORE_PLUNGE_LANDING_LOW_AOE_RADIUS,
+    CLAYMORE_PLUNGE_LANDING_STRIKE_TYPE,
+    CLAYMORE_PLUNGE_MAIN_ATTACK_TAG,
 )
 from genshin_sim.content.generic.talents import ScalingCompiler
 from genshin_sim.core.attributes import STAT_ATK_TOTAL
@@ -287,8 +289,9 @@ def compile_plunge_damage_specs(
 ) -> dict[str, DamageImpactSpec]:
     """编译下落攻击碰撞与低空/高空落地冲击伤害契约。
 
-    下落攻击不在桑多涅命中判定数据表内，AOE 沿用 generic 法器通用数据；
-    落地攻击按 ICD 资料为无冷却标签、1 元素量。
+    下落攻击不在桑多涅命中判定数据表内，AOE 沿用 generic 双手剑通用数据
+    （2026-09-26 维护者提供：下坠期间切割/0 元素量，坠地钝击/1 元素量、
+    近战；低空圆柱 3.0、高空圆柱 5.0）；落地攻击按 ICD 资料为无冷却标签。
     """
 
     collision_entry = entries_by_key.get(
@@ -316,45 +319,45 @@ def compile_plunge_damage_specs(
             talent_level,
             entry=collision_entry,
             component_index=0,
-            main_attack_tag=PLUNGE_MAIN_ATTACK_TAG,
-            strike_type=StrikeType.DEFAULT,
-            range_type="默认",
-            elemental_amount=PLUNGE_COLLISION_ELEMENTAL_AMOUNT,
+            main_attack_tag=CLAYMORE_PLUNGE_MAIN_ATTACK_TAG,
+            strike_type=CLAYMORE_PLUNGE_COLLISION_STRIKE_TYPE,
+            range_type="近战",
+            elemental_amount=CLAYMORE_PLUNGE_COLLISION_ELEMENTAL_AMOUNT,
             icd_tag_key=None,
             display_name=_SANDRONE_PLUNGE_COLLISION_DAMAGE_LABEL,
-            aoe_shape=PLUNGE_COLLISION_AOE_SHAPE,
-            aoe_radius=PLUNGE_COLLISION_AOE_RADIUS,
-            aoe_offset=PLUNGE_COLLISION_AOE_OFFSET,
+            aoe_shape=CLAYMORE_PLUNGE_COLLISION_AOE_SHAPE,
+            aoe_radius=CLAYMORE_PLUNGE_COLLISION_AOE_RADIUS,
+            aoe_offset=CLAYMORE_PLUNGE_COLLISION_AOE_OFFSET,
         ),
         f"{SANDRONE_PLUNGE_LANDING_IMPACT_KEY}.low": _compile_damage_spec(
             SANDRONE_PLUNGE_LANDING_IMPACT_KEY,
             talent_level,
             entry=landing_entry,
             component_index=0,
-            main_attack_tag=PLUNGE_MAIN_ATTACK_TAG,
-            strike_type=StrikeType.DEFAULT,
-            range_type="默认",
-            elemental_amount=PLUNGE_LANDING_ELEMENTAL_AMOUNT,
+            main_attack_tag=CLAYMORE_PLUNGE_MAIN_ATTACK_TAG,
+            strike_type=CLAYMORE_PLUNGE_LANDING_STRIKE_TYPE,
+            range_type="近战",
+            elemental_amount=CLAYMORE_PLUNGE_LANDING_ELEMENTAL_AMOUNT,
             icd_tag_key=None,
             display_name="低空坠地冲击伤害",
-            aoe_shape=PLUNGE_LANDING_AOE_SHAPE,
-            aoe_radius=PLUNGE_LANDING_LOW_AOE_RADIUS,
-            aoe_offset=PLUNGE_LANDING_AOE_OFFSET,
+            aoe_shape=CLAYMORE_PLUNGE_LANDING_AOE_SHAPE,
+            aoe_radius=CLAYMORE_PLUNGE_LANDING_LOW_AOE_RADIUS,
+            aoe_offset=CLAYMORE_PLUNGE_LANDING_AOE_OFFSET,
         ),
         f"{SANDRONE_PLUNGE_LANDING_IMPACT_KEY}.high": _compile_damage_spec(
             SANDRONE_PLUNGE_LANDING_IMPACT_KEY,
             talent_level,
             entry=landing_entry,
             component_index=1,
-            main_attack_tag=PLUNGE_MAIN_ATTACK_TAG,
-            strike_type=StrikeType.DEFAULT,
-            range_type="默认",
-            elemental_amount=PLUNGE_LANDING_ELEMENTAL_AMOUNT,
+            main_attack_tag=CLAYMORE_PLUNGE_MAIN_ATTACK_TAG,
+            strike_type=CLAYMORE_PLUNGE_LANDING_STRIKE_TYPE,
+            range_type="近战",
+            elemental_amount=CLAYMORE_PLUNGE_LANDING_ELEMENTAL_AMOUNT,
             icd_tag_key=None,
             display_name="高空坠地冲击伤害",
-            aoe_shape=PLUNGE_LANDING_AOE_SHAPE,
-            aoe_radius=PLUNGE_LANDING_HIGH_AOE_RADIUS,
-            aoe_offset=PLUNGE_LANDING_AOE_OFFSET,
+            aoe_shape=CLAYMORE_PLUNGE_LANDING_AOE_SHAPE,
+            aoe_radius=CLAYMORE_PLUNGE_LANDING_HIGH_AOE_RADIUS,
+            aoe_offset=CLAYMORE_PLUNGE_LANDING_AOE_OFFSET,
         ),
     }
 

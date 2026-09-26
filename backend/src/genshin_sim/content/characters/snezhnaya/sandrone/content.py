@@ -2,8 +2,8 @@
 
 本文件只负责内容单元编排：读取资产倍率，调用 ``impacts.py`` 的影响契约
 编译函数，构造冷却定义、自定义 ICD 与法洁欧状态机 hook，最后组装
-``ContentUnit``。普攻/战技/爆发/下落/重击伤害、冷却与解算模式为已接入
-范围；星超导直伤通道、产球、命座与被动随后续切片接入。
+``ContentUnit``。普攻/战技/爆发/下落/重击伤害、冷却、解算模式与辉映星烁
+直伤通道为已接入范围；产球、命座与被动随后续切片接入。
 """
 
 from __future__ import annotations
@@ -28,11 +28,14 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_RAY_WIDTH,
     FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
     SANDRONE_CHARACTER_HANDLER_KEY,
+    SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
     SANDRONE_CONTENT_VERSION,
+    SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY,
     SANDRONE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
     SANDRONE_ELEMENTAL_BURST_COOLDOWN_FRAMES,
     SANDRONE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
     SANDRONE_ELEMENTAL_SKILL_COOLDOWN_FRAMES,
+    SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY,
     SANDRONE_HIT_IMPACT_KEYS,
     SANDRONE_SWEEP_ICD_RESET_FRAMES,
     SANDRONE_SWEEP_ICD_SEQUENCE_KEY,
@@ -48,6 +51,9 @@ from genshin_sim.content.characters.snezhnaya.sandrone.impacts import (
     compile_elemental_skill_damage_specs,
     compile_normal_attack_damage_specs,
     compile_plunge_damage_specs,
+)
+from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
+    compile_stellar_attack_channels,
 )
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
@@ -68,6 +74,9 @@ from genshin_sim.core.systems.cooldown import (
     CooldownDurationTerm,
     CooldownKey,
     CooldownSubjectRef,
+)
+from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
+    STELLAR_CONDUCT_CAPABILITY_KEY,
 )
 
 
@@ -122,7 +131,37 @@ def create_sandrone_content_unit(
         entries_by_key,
         talent_level,
     )
-    impact_factory = SandroneActionImpactFactory(damage_specs)
+    stellar_channels = compile_stellar_attack_channels(
+        request.character_key,
+        entries_by_key,
+        {
+            "normal_attack": talent_level,
+            "elemental_skill": skill_talent_level,
+            "elemental_burst": burst_talent_level,
+        },
+        normal_specs={
+            SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY: charged_specs[
+                SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY
+            ],
+            SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY: damage_specs[
+                SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY
+            ],
+            SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY: damage_specs[
+                SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY
+            ],
+        },
+    )
+    impact_factory = SandroneActionImpactFactory(
+        damage_specs,
+        stellar_channels={
+            SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY: stellar_channels[
+                SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY
+            ],
+            SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY: stellar_channels[
+                SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY
+            ],
+        },
+    )
     owner_ref = f"character:slot_{request.slot}"
     cooldown_terms_by_ability = _cooldown_terms_for_actions(request)
     skill_cooldown_definition = CooldownDefinition(
@@ -166,6 +205,7 @@ def create_sandrone_content_unit(
                 owner_ref=owner_ref,
                 slot=request.slot,
                 damage_specs=charged_specs,
+                stellar_channel=stellar_channels[SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY],
                 pre_swing_frames=FAGEOU_PRE_SWING_FRAMES,
                 solve_shot_interval_frames=FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
                 overload_shot_interval_frames=FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
@@ -188,6 +228,9 @@ def create_sandrone_content_unit(
                 application_sequence=(AuraAmount.one(), AuraAmount.zero()),
             ),
         ),
+        # 星耀祝礼·唯理为光（passive:6）是固定天赋：capability 随内容单元静态
+        # 声明，无解锁过滤（规划讨论待定项 4；assembly 静态端口零改动）。
+        reaction_capabilities=(STELLAR_CONDUCT_CAPABILITY_KEY,),
         metadata={"purpose": "sandrone_content_skeleton"},
     )
 

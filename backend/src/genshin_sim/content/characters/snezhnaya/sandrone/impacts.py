@@ -47,6 +47,10 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_PLUNGE_COLLISION_IMPACT_KEY,
     SANDRONE_PLUNGE_LANDING_IMPACT_KEY,
 )
+from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
+    SandroneStellarAttackChannel,
+    resolve_stellar_attack_spec,
+)
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.generic.talents import ScalingCompiler
 from genshin_sim.core.attributes import STAT_ATK_TOTAL
@@ -414,14 +418,18 @@ class SandroneActionImpactFactory:
     """把桑多涅动作影响点展开为带伤害契约的 DAMAGE/ENERGY 请求。
 
     ``damage_specs`` 由内容编译期按资产倍率表生成，按 impact_key 索引；
-    未登记契约的影响点仍展开为无伤害请求（不结算）。
+    未登记契约的影响点仍展开为无伤害请求（不结算）。``stellar_channels``
+    按impact_key 携带星烁通道（第二枚棱晶弹/聚能光束）：展开时读取辉映
+    状态查表分派，命中星变体则替换伤害契约（stellar.py）。
     """
 
     def __init__(
         self,
         damage_specs: Mapping[str, DamageImpactSpec],
+        stellar_channels: Mapping[str, SandroneStellarAttackChannel] | None = None,
     ) -> None:
         self._damage_specs = dict(damage_specs)
+        self._stellar_channels = dict(stellar_channels or {})
 
     def create_requests(self, context: ActionImpactContext) -> tuple[ImpactRequest, ...]:
         params: dict[str, object] = {
@@ -453,6 +461,16 @@ class SandroneActionImpactFactory:
                 ),
             )
         damage_spec = self._damage_specs.get(context.impact_key)
+        stellar_channel = self._stellar_channels.get(context.impact_key)
+        if stellar_channel is not None:
+            stellar_spec = resolve_stellar_attack_spec(
+                stellar_channel,
+                simulation=context.simulation,
+                owner_ref=f"character:slot_{context.owner.slot}",
+                frame=context.frame,
+            )
+            if stellar_spec is not None:
+                damage_spec = stellar_spec
         if damage_spec is None and context.impact_key == SANDRONE_PLUNGE_LANDING_IMPACT_KEY:
             variant = context.params.get("plunge_variant")
             if isinstance(variant, str):

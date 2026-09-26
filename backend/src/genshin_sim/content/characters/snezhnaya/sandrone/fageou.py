@@ -53,6 +53,10 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
     SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY,
 )
+from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
+    SandroneStellarAttackChannel,
+    resolve_stellar_attack_spec,
+)
 from genshin_sim.content.generic.chain_state import chain_state_schema
 from genshin_sim.content.hooks import HookContext
 from genshin_sim.content.models import HookResult
@@ -135,6 +139,7 @@ class SandroneFageouHook:
         owner_ref: str,
         slot: int,
         damage_specs: Mapping[str, DamageImpactSpec],
+        stellar_channel: SandroneStellarAttackChannel | None = None,
         pre_swing_frames: int = FAGEOU_PRE_SWING_FRAMES,
         solve_shot_interval_frames: int = FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
         overload_shot_interval_frames: int = FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
@@ -161,6 +166,7 @@ class SandroneFageouHook:
         self._owner_ref = owner_ref
         self._slot = slot
         self._damage_specs: dict[str, DamageImpactSpec] = dict(damage_specs)
+        self._stellar_channel = stellar_channel
         self._pre_swing_frames = pre_swing_frames
         self._solve_shot_interval = solve_shot_interval_frames
         self._overload_shot_interval = overload_shot_interval_frames
@@ -424,7 +430,11 @@ class SandroneFageouHook:
         return None
 
     def _fire_ray(self, context: object, frame: int) -> tuple[ImpactRequest | None, bool]:
-        """射线即时结算：穿透多目标聚合为一条攻击根，命中返回功率增量证据。"""
+        """射线即时结算：穿透多目标聚合为一条攻击根，命中返回功率增量证据。
+
+        发射时按辉映状态查表分派：持用辉映·星超导/星扩散时射线契约切换为
+        星变体并附组装好的星烁输入（stellar.py），否则走普通射线契约。
+        """
 
         aim = self._aim(context)
         if aim is None:
@@ -437,8 +447,21 @@ class SandroneFageouHook:
             frame=frame,
             impact_key=SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
             target_refs=targets,
+            damage_spec=self._ray_damage_spec(context, frame),
         )
         return request, True
+
+    def _ray_damage_spec(self, context: object, frame: int) -> DamageImpactSpec:
+        normal_spec = self._damage_specs[SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY]
+        if self._stellar_channel is None:
+            return normal_spec
+        stellar_spec = resolve_stellar_attack_spec(
+            self._stellar_channel,
+            simulation=getattr(context, "simulation", None),
+            owner_ref=self._owner_ref,
+            frame=frame,
+        )
+        return normal_spec if stellar_spec is None else stellar_spec
 
     def _damage_request(
         self,
@@ -446,6 +469,7 @@ class SandroneFageouHook:
         frame: int,
         impact_key: str,
         target_refs: tuple[str, ...],
+        damage_spec: DamageImpactSpec | None = None,
     ) -> ImpactRequest:
         self._request_counter += 1
         return ImpactRequest(
@@ -456,7 +480,7 @@ class SandroneFageouHook:
             action_key=SANDRONE_CHARGED_ATTACK_ACTION_KEY,
             request_id=f"{self.hook_key}:{impact_key}:{frame}:{self._request_counter}",
             target_refs=target_refs,
-            damage_spec=self._damage_specs[impact_key],
+            damage_spec=damage_spec if damage_spec is not None else self._damage_specs[impact_key],
         )
 
     def _due_pending_requests(self, frame: int) -> list[ImpactRequest]:

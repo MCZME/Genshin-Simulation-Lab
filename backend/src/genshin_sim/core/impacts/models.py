@@ -3,12 +3,17 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from genshin_sim.core.actions import ActionOwnerRef, CandidateTargetRef
 from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.space.geometry import ImpactAreaSpec
 from genshin_sim.core.systems.aura import AuraStrength
 from genshin_sim.core.systems.damage import DamageScalingTerm
+from genshin_sim.core.systems.damage.stellar import StellarReactionDamageInput
+
+if TYPE_CHECKING:
+    from genshin_sim.core.simulation.context import SimulationContext
 
 
 class ImpactKind(StrEnum):
@@ -56,6 +61,9 @@ class DamageImpactSpec:
     area: ImpactAreaSpec | None = None
     # 这一次伤害的显示名称（如"重击"）；由内容定义提供，进入 DAMAGE_RESOLVED 审计。
     display_name: str | None = None
+    # 直伤星烁输入（角色能力在发射时组装）；携带时本契约必须满足星烁请求边界：
+    # 不携带普通倍率、不附着元素、无 ICD 标签。
+    stellar_reaction: StellarReactionDamageInput | None = None
 
     def __post_init__(self) -> None:
         for value, name in (
@@ -112,6 +120,22 @@ class DamageImpactSpec:
             raise ValueError("display_name 提供时必须是非空字符串")
         if self.area is not None and not isinstance(self.area, ImpactAreaSpec):
             raise ValueError("area 提供时必须是非空 ImpactAreaSpec")
+        if self.stellar_reaction is not None and not isinstance(
+            self.stellar_reaction,
+            StellarReactionDamageInput,
+        ):
+            raise ValueError("stellar_reaction 提供时必须是 StellarReactionDamageInput")
+        if self.stellar_reaction is not None:
+            # 星烁请求边界（星超导反应契约 §8）：直伤倍率经 scaling_value 承载，
+            # 普通倍率、附着与 ICD 全部不携带。
+            if self.scaling_terms:
+                raise ValueError("星烁伤害契约不能携带普通倍率 scaling_terms")
+            if self.flat_base_damage:
+                raise ValueError("星烁伤害契约不能携带 flat_base_damage")
+            if self.elemental_strength is not None or not self.elemental_amount.is_zero:
+                raise ValueError("星烁伤害契约不能附着元素")
+            if self.icd_tag_key is not None:
+                raise ValueError("星烁伤害契约不能携带 ICD 标签")
         object.__setattr__(self, "scaling_terms", terms)
         object.__setattr__(self, "additional_attack_tags", tags)
 
@@ -227,6 +251,9 @@ class ActionImpactContext:
     impact_key: str
     target_refs: tuple[CandidateTargetRef, ...] = ()
     params: Mapping[str, object] = field(default_factory=dict)
+    # 当前仿真上下文；由 ImpactRuntime 在派发时注入，供工厂读取运行时证据
+    # （如辉映 Buff 的属性投影）。直接构造上下文的旧调用方可省略。
+    simulation: SimulationContext | None = None
 
     def __post_init__(self) -> None:
         if self.frame < 0:

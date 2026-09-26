@@ -678,6 +678,7 @@ class ImpactRuntime(FrameUpdatable):
                 impact_key=impact_point.impact_key,
                 target_refs=target_refs,
                 params=impact_point.params,
+                simulation=context,
             )
             requests = self.dispatcher.dispatch(impact_context)
             requests = self._expand_damage_areas(context, impact_point, requests)

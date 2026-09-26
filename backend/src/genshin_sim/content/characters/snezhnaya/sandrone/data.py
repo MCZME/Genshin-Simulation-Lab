@@ -25,7 +25,7 @@ from genshin_sim.core.systems.aura import AuraStrength
 
 SANDRONE_CHARACTER_HANDLER_KEY = "character.sandrone"
 SANDRONE_ASSET_KEY = "character:10000133"
-SANDRONE_CONTENT_VERSION = "slice-2-fageou"
+SANDRONE_CONTENT_VERSION = "slice-3-stellar-channel"
 
 # 桑多涅为双手剑：下落攻击取双手剑通用资料（content/generic/plunge.py）。
 SANDRONE_PLUNGE_ATTACK_DATA = PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE["claymore"]
@@ -196,6 +196,22 @@ SANDRONE_CHARGED_ATTACK_DAMAGE_DATA = {
         additional_attack_tags=(SANDRONE_RAY_ADDITIONAL_TAG,),
     ),
 }
+
+# ---- 辉映·星烁直伤分支（切片 3）----
+# 冷凝射线/第二枚棱晶弹/聚能光束在辉映状态下切换到星烁通道（星超导反应契约
+# §8、命中判定数据 3.4 星变体行）。星变体：攻击标签 星超导冰/星扩散冰、元素量
+# 0、无衰减序列与衰减标签（不参与附着判定）；显示名取资产倍率条目同名行。
+# 星扩散变体无资产倍率条目（原始源数据 0 处提及），数值与显示名以编译参数
+# 占位、来源待补（规划讨论待定项 6）；星扩散触发前提（capability 角色）接入
+# 前该分支不会被激活。
+SANDRONE_STELLAR_RAY_CONDUCT_LABEL = "重击冷凝射线星超导伤害"
+SANDRONE_STELLAR_PRISM_CONDUCT_LABEL = "棱晶弹星超导伤害"
+SANDRONE_STELLAR_BEAM_CONDUCT_LABEL = "聚能光束星超导伤害"
+SANDRONE_STELLAR_RAY_SWIRL_DISPLAY_NAME = "重击冷凝射线星扩散伤害"
+SANDRONE_STELLAR_PRISM_SWIRL_DISPLAY_NAME = "棱晶弹星扩散伤害"
+SANDRONE_STELLAR_BEAM_SWIRL_DISPLAY_NAME = "聚能光束星扩散伤害"
+SANDRONE_RAY_STELLAR_ADDITIONAL_TAG = "桑多涅激光"
+SANDRONE_PRISM_STELLAR_ADDITIONAL_TAG = "桑多涅战技星烁"
 
 
 @dataclass(frozen=True, slots=True)

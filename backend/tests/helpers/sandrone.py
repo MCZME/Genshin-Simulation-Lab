@@ -81,6 +81,7 @@ def _minimal_sandrone_scaling_entries() -> tuple[TalentScalingEntry, ...]:
         ("na_3", "normal_attack", "三段伤害", ("plain_ratio",)),
         ("sweep", "normal_attack", "重击扫射伤害", ("plain_ratio",)),
         ("ray", "normal_attack", "重击冷凝射线伤害", ("plain_ratio",)),
+        ("ray_stellar", "normal_attack", "重击冷凝射线星超导伤害", ("plain_ratio",)),
         ("overload", "normal_attack", "功率过载时伤害", ("plain_ratio",)),
         ("plunge_collision", "normal_attack", "下坠期间伤害", ("plain_ratio",)),
         (
@@ -90,8 +91,10 @@ def _minimal_sandrone_scaling_entries() -> tuple[TalentScalingEntry, ...]:
             ("plain_ratio", "plain_ratio"),
         ),
         ("prism", "elemental_skill", "棱晶弹伤害", ("plain_ratio",)),
+        ("prism_stellar", "elemental_skill", "棱晶弹星超导伤害", ("plain_ratio",)),
         ("bombardment", "elemental_burst", "轰炸伤害", ("plain_ratio",)),
         ("beam", "elemental_burst", "聚能光束伤害", ("plain_ratio",)),
+        ("beam_stellar", "elemental_burst", "聚能光束星超导伤害", ("plain_ratio",)),
     )
     return tuple(
         TalentScalingEntry(

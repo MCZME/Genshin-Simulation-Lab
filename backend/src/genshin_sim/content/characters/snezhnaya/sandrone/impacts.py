@@ -532,27 +532,23 @@ class SandroneActionImpactFactory:
         damage_spec = self._damage_specs.get(context.impact_key)
         stellar_channel = self._stellar_channels.get(context.impact_key)
         if stellar_channel is not None:
+            # P4 光束加成：Q 施放时快照的 P4 提供倍率（100% + 10%/层）作用于
+            # 倍率区，与变体原本倍率一并按攻击力折进缩放值；仅在光束星变体
+            # 上消费（普通光束不消费该字段）。
+            beam_extra_multiplier = (
+                self._read_state_float(context, FAGEOU_STATE_BEAM_BONUS)
+                if context.impact_key == SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY
+                else 0.0
+            )
             stellar_spec = resolve_stellar_attack_spec(
                 stellar_channel,
                 simulation=context.simulation,
                 owner_ref=f"character:slot_{context.owner.slot}",
                 frame=context.frame,
+                extra_multiplier=beam_extra_multiplier,
             )
             if stellar_spec is not None:
                 damage_spec = stellar_spec
-                if context.impact_key == SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY:
-                    # P4 光束加成：Q 施放时快照的每层 +10% 并入星烁输入的星烁
-                    # 增伤基线（普通光束不消费该字段）。
-                    beam_bonus = self._read_state_float(context, FAGEOU_STATE_BEAM_BONUS)
-                    if beam_bonus > 0.0 and damage_spec.stellar_reaction is not None:
-                        damage_spec = replace(
-                            damage_spec,
-                            stellar_reaction=replace(
-                                damage_spec.stellar_reaction,
-                                stellar_bonus=damage_spec.stellar_reaction.stellar_bonus
-                                + beam_bonus,
-                            ),
-                        )
         if (
             context.impact_key == SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY
             and damage_spec is not None

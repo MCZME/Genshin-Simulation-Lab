@@ -303,8 +303,9 @@ def test_p4_locked_before_first_ascension(sandrone_assembled):
 
 
 def test_p4_burst_clears_tactics_and_boosts_beam(sandrone_assembled):
-    # P4 光束加成：辉映下施放爆发清空全部改进战术层数，聚能光束的星烁输入
-    # 增伤基线并入 0.1 × 层数（6 层 → +0.6）。
+    # P4 光束加成：辉映下施放爆发清空全部改进战术层数，P4 提供的倍率
+    # （100% + 10%/层，6 层 → 160%）作用于倍率区，与星变体原本倍率
+    # （助手数据 1.0）一并折进缩放值 → 攻击力 × 2.6；增伤区基线不受影响。
     payload = sandrone_helpers.sandrone_input_payload(
         max_frames=560,
         constellation=0,
@@ -338,7 +339,9 @@ def test_p4_burst_clears_tactics_and_boosts_beam(sandrone_assembled):
     assert [e.frame for e in beams] == [513]
     stellar = beams[0].payload.result.stellar_reaction_resolution
     assert stellar is not None
-    assert stellar.input.stellar_bonus == pytest.approx(0.6)
+    atk = _resolved_atk(assembled)
+    assert stellar.input.scaling_value == pytest.approx(atk * (1.0 + 1.0 + 0.6))
+    assert stellar.input.stellar_bonus == pytest.approx(0.0)
     assert _state_value(assembled, FAGEOU_STATE_TACTICS_STACKS) == 0
 
 

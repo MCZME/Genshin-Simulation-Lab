@@ -252,13 +252,16 @@ def resolve_stellar_attack_spec(
     simulation: SimulationContext | None,
     owner_ref: str,
     frame: int,
+    extra_multiplier: float = 0.0,
 ) -> DamageImpactSpec | None:
     """辉映状态查表分派：返回星变体契约（附星烁输入），无辉映时返回 None。
 
     证据为辉映 Buff 投影到 ``owner_ref`` 的直伤系数词条：值 > 0 视为持用
     对应辉映状态，星超导优先（D-069）；直伤倍率 = 攻击力 × 变体倍率分量。
-    星烁输入随组装折叠 P6 星烁基础增伤（按攻击力折算）与通道携带的 C6
-    擢升。缺少仿真上下文或属性解析器时保守回落普通通道。
+    ``extra_multiplier`` 并入变体倍率（倍率区加法，如 P4 光束加成提供的
+    倍率 100% + 10%/层），随攻击力一起折进缩放值。星烁输入随组装折叠 P6
+    星烁基础增伤（按攻击力折算）与通道携带的 C6 擢升。缺少仿真上下文或
+    属性解析器时保守回落普通通道。
     """
 
     evidence = radiance_evidence(simulation, owner_ref, frame)
@@ -273,7 +276,7 @@ def resolve_stellar_attack_spec(
         base_spec,
         stellar_reaction=StellarReactionDamageInput(
             mode="character_direct",
-            scaling_value=atk * ratio,
+            scaling_value=atk * (ratio + extra_multiplier),
             stellar_base_multiplier=evidence.direct_base_multiplier,
             stellar_base_bonus=stellar_base_bonus_for_atk(atk),
             stellar_ascension_bonus=channel.ascension_bonus,

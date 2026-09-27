@@ -52,12 +52,13 @@ SANDRONE_CONSTELLATION_C5_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[5]
 SANDRONE_CONSTELLATION_C6_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[6]
 
 # P4 悠久的演算机关（效果行 components：阈值 50、400%、至多 10 层、持续 60s、
-# 每 10 点一层、光束每层 +10%）。改进战术承载为角色内容状态（跨会话保留、
-# 按 60s 统一过期——每次获得叠层即刷新全部层数的过期帧，与通用堆叠 Buff 的
-# 刷新语义一致），清空发生在辉映下施放爆发时。
+# 每 10 点一层、光束倍率基座 100% + 每层 10%）。改进战术承载为角色内容状态
+# （跨会话保留、按 60s 统一过期——每次获得叠层即刷新全部层数的过期帧，与
+# 通用堆叠 Buff 的刷新语义一致），清空发生在辉映下施放爆发时。
 # 突破解锁门槛经维护者确认（2026-09-27）：20 级突破解锁，对应突破 1 阶；
 # 行为随角色单元编译，锁定时（ascension_phase < 1）不叠层、不强化棱晶弹、
-# 不结算光束加成。
+# 不结算光束加成。光束加成经维护者确认（2026-09-27）：作用于倍率区，
+# P4 提供的倍率 = 100% + 10%/层（一层即 110%），随原本倍率一并折进缩放值。
 SANDRONE_P4_ASCENSION_THRESHOLD = 1
 SANDRONE_P4_PRISM_BOOST_POWER_THRESHOLD = 50.0
 SANDRONE_P4_PRISM_BOOST_MULTIPLIER = 4.0
@@ -65,6 +66,7 @@ SANDRONE_P4_PRISM_BOOST_WINDOW_FRAMES = 33
 SANDRONE_P4_TACTICS_POWER_STEP = 10.0
 SANDRONE_P4_TACTICS_MAX_STACKS = 10
 SANDRONE_P4_TACTICS_DURATION_FRAMES = 3600
+SANDRONE_P4_BEAM_BONUS_BASE_MULTIPLIER = 1.0
 SANDRONE_P4_BEAM_BONUS_PER_STACK = 0.1
 
 # P5 淑女的行事准则（效果行 components：每 100 攻击 +8 精通、上限 160）。

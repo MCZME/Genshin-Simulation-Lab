@@ -201,6 +201,22 @@ def test_conduct_radiance_assembles_character_direct_stellar_input() -> None:
     assert spec.stellar_reaction.stellar_base_multiplier == pytest.approx(1.55)
 
 
+def test_extra_multiplier_joins_variant_multiplier_region() -> None:
+    context = _context_with_radiance(conduct_stacks=3)
+    spec = resolve_stellar_attack_spec(
+        _channel(),  # type: ignore[arg-type]
+        simulation=context,
+        owner_ref=OWNER_REF,
+        frame=FRAME,
+        extra_multiplier=1.6,
+    )
+    assert spec is not None
+    assert spec.stellar_reaction is not None
+    # P4 光束加成按倍率区结算：缩放值 = 攻击力 ×（变体倍率 1.0 + P4 提供倍率
+    # 100% + 6 层 × 10%）。
+    assert spec.stellar_reaction.scaling_value == pytest.approx(300.0 * 2.6)
+
+
 def test_swirl_radiance_uses_swirl_branch_with_placeholder_ratio() -> None:
     context = _context_with_radiance(swirl=True)
     spec = resolve_stellar_attack_spec(

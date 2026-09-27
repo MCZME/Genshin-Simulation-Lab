@@ -46,6 +46,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_ELEMENTAL_SKILL_ACTION_KEY,
     SANDRONE_JUMP_ACTION_KEY,
     SANDRONE_NORMAL_ATTACK_ACTION_KEYS,
+    SANDRONE_P4_BEAM_BONUS_BASE_MULTIPLIER,
     SANDRONE_P4_BEAM_BONUS_PER_STACK,
     SANDRONE_P4_PRISM_BOOST_POWER_THRESHOLD,
     SANDRONE_P4_PRISM_BOOST_WINDOW_FRAMES,
@@ -526,16 +527,17 @@ class SandroneActionInterpreter:
     ) -> None:
         """Q 施放：辉映下清空全部改进战术层数并快照光束加成（P4）。
 
-        光束加成 = 0.1 × 清空层数，写入状态字段供聚能光束影响工厂在展开帧
-        并入星烁输入的星烁增伤基线；非辉映施放不清层，光束加成写 0 覆盖
-        旧值（星烁通道只在辉映下可达，普通光束不消费该字段）。
+        P4 提供的倍率 = 100% + 0.1 × 清空层数（一层即 110%），写入状态字段
+        供聚能光束影响工厂在展开帧并入星变体倍率区（原本倍率 + P4 提供的
+        倍率）；非辉映施放不清层，字段写 0 覆盖旧值（星烁通道只在辉映下
+        可达，普通光束不消费该字段）。
         """
 
         slot = int(owner_ref.removeprefix("character:slot_"))
         stacks, _ = self._read_tactics_state(context, slot)
         fields: dict[str, JSONValue] = {FAGEOU_STATE_BEAM_BONUS: 0.0}
         if stacks > 0 and radiance_evidence(context, owner_ref, frame) is not None:
-            fields[FAGEOU_STATE_BEAM_BONUS] = min(
+            fields[FAGEOU_STATE_BEAM_BONUS] = SANDRONE_P4_BEAM_BONUS_BASE_MULTIPLIER + min(
                 SANDRONE_P4_BEAM_BONUS_PER_STACK * stacks,
                 SANDRONE_P4_BEAM_BONUS_PER_STACK * 10,
             )

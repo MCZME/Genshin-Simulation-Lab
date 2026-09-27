@@ -22,6 +22,13 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_PASSIVE_P5_HANDLER_KEY,
     SANDRONE_PASSIVE_P6_HANDLER_KEY,
 )
+from genshin_sim.core.elements import AuraAmount, Element
+from genshin_sim.core.impacts import (
+    ElementalApplicationSpec,
+    ImpactKind,
+    ImpactRequest,
+)
+from genshin_sim.core.systems.aura import AuraStrength
 from genshin_sim.infrastructure.assets_sqlite import (
     ASSET_SCHEMA_VERSION,
     SQLiteAssetDataWriter,
@@ -168,7 +175,7 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
             "constellation",
             SANDRONE_CONSTELLATION_C4_HANDLER_KEY,
             "c4",
-            (1.25, 4.0),
+            (1.25, 1.875, 4.0),
         ),
         _effect(
             "constellation:c5",
@@ -241,6 +248,32 @@ def _minimal_sandrone_scaling_entries() -> tuple[TalentScalingEntry, ...]:
             tags=(talent_key,),
         )
         for entry_key, talent_key, label, kinds in specs
+    )
+
+
+def make_aura_application_impact(
+    frame: int,
+    element: Element,
+    target_ref: str,
+    request_id: str,
+    *,
+    owner_slot: int = 1,
+) -> ImpactRequest:
+    """构造一次最小元素附着影响请求，用于在仿真前种入 Aura 以触发反应。"""
+
+    return ImpactRequest(
+        frame=frame,
+        kind=ImpactKind.APPLY_AURA,
+        impact_key=f"test.sandrone.aura_application.{element.value}",
+        owner_slot=owner_slot,
+        request_id=request_id,
+        target_refs=(target_ref,),
+        elemental_application_spec=ElementalApplicationSpec(
+            impact_ref=f"{request_id}:spec",
+            element=element,
+            elemental_strength=AuraStrength.WEAK,
+            elemental_amount=AuraAmount.one(),
+        ),
     )
 
 

@@ -21,9 +21,13 @@ from genshin_sim.core.attributes import (
     AttributeResolver,
     AttributeSubjectRef,
 )
+from genshin_sim.core.coordination.elemental_reaction.settlement_coordinator import (
+    ElementalSettlementCoordinator,
+)
 from genshin_sim.core.coordination.elemental_reaction.stellar_buffs import (
     plan_radiance_buff_requests,
 )
+from genshin_sim.core.elements import Element
 from genshin_sim.core.events import EventType
 from genshin_sim.core.systems.buff import BuffRuntime
 from genshin_sim.core.systems.reaction.states import (
@@ -166,8 +170,8 @@ def test_c2_ray_crit_damage_ladder_caps_at_three(sandrone_assembled):
 
 
 def test_c4_proces_coordinated_attack_once_within_cooldown(sandrone_assembled):
-    # C4：星超导冰伤害命中触发协同攻击（125% 攻击力、星烁直伤、基础系数取
-    # 辉映层数快照）；4s 内置冷却吸收后续射线，380 帧内恰好 1 次。
+    # C4：星超导冰伤害命中触发协同攻击（星超导档 125% 攻击力、星烁直伤、基础
+    # 系数取辉映层数快照）；4s 内置冷却吸收后续射线，380 帧内恰好 1 次。
     assembled = sandrone_assembled(payload=_line_target_payload(380, 2, 376, constellation=4))
     _apply_radiance_buff(assembled)
     events = _damage_events(assembled)
@@ -185,6 +189,40 @@ def test_c4_proces_coordinated_attack_once_within_cooldown(sandrone_assembled):
     assert stellar.input.stellar_base_multiplier == pytest.approx(1.55)
     assert stellar.input.stellar_base_bonus == pytest.approx(min(atk / 100.0 * 0.007, 0.14))
     assert stellar.input.stellar_ascension_bonus == pytest.approx(0.0)
+
+
+def test_c4_switches_variant_on_stellar_swirl_hit(sandrone_assembled):
+    # C4 口径：桑多涅自己的星扩散冰伤害同样触发；产出标签紧跟触发来源换成
+    # 星扩散冰，倍率取星扩散档（187.5%），星烁基础系数取星扩散证据。
+    assembled = sandrone_assembled(payload=_line_target_payload(380, 2, 376, constellation=4))
+    events = _damage_events(assembled)
+    coordinator = assembled.context.get_system(ElementalSettlementCoordinator)
+    assert isinstance(coordinator, ElementalSettlementCoordinator)
+    coordinator.settle_aura_impact(
+        assembled.context,
+        sandrone_helpers.make_aura_application_impact(
+            0, Element.CRYO, "target:target_1", "test:c4:swirl:cryo"
+        ),
+    )
+    coordinator.settle_aura_impact(
+        assembled.context,
+        sandrone_helpers.make_aura_application_impact(
+            0, Element.ANEMO, "target:target_1", "test:c4:swirl:anemo"
+        ),
+    )
+
+    assembled.simulator.run()
+
+    procs = [e for e in events if e.payload.result.damage_name == C4_DISPLAY_NAME]
+    # 首条星扩散冰事实（射线 128 帧）触发；4s 冷却吸收后续射线与星扩散爆炸。
+    assert [e.frame for e in procs] == [128]
+    result = procs[0].payload.result
+    assert result.main_attack_tag == "星扩散冰"
+    stellar = result.stellar_reaction_resolution
+    assert stellar is not None
+    atk = _resolved_atk(assembled)
+    assert stellar.input.scaling_value == pytest.approx(atk * 1.875)
+    assert stellar.input.stellar_base_multiplier == pytest.approx(1.0)
 
 
 def test_c6_extra_segments_ride_subsequent_rays(sandrone_assembled):

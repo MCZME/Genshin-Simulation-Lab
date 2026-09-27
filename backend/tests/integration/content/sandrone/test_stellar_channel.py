@@ -35,15 +35,11 @@ from genshin_sim.core.coordination.elemental_reaction.stellar_buffs import (
 from genshin_sim.core.coordination.elemental_reaction.stellar_swirl_buffs import (
     STELLAR_SWIRL_RADIANCE_BUFF_DEFINITION_KEY,
 )
-from genshin_sim.core.elements import AuraAmount, Element
+from genshin_sim.core.elements import Element
 from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import (
     ActionImpactContext,
-    ElementalApplicationSpec,
-    ImpactKind,
-    ImpactRequest,
 )
-from genshin_sim.core.systems.aura import AuraStrength
 from genshin_sim.core.systems.buff import BuffRuntime
 from genshin_sim.core.systems.reaction.states import (
     STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
@@ -209,28 +205,6 @@ def test_radiance_buff_switches_beam_contract_at_factory_dispatch(sandrone_assem
     assert spec.stellar_reaction.stellar_base_multiplier == pytest.approx(1.55)
 
 
-def _aura_apply_request(
-    frame: int,
-    element: Element,
-    target_ref: str,
-    request_id: str,
-) -> ImpactRequest:
-    return ImpactRequest(
-        frame=frame,
-        kind=ImpactKind.APPLY_AURA,
-        impact_key=f"test.stellar.channel.{element.value}",
-        owner_slot=1,
-        request_id=request_id,
-        target_refs=(target_ref,),
-        elemental_application_spec=ElementalApplicationSpec(
-            impact_ref=f"{request_id}:spec",
-            element=element,
-            elemental_strength=AuraStrength.WEAK,
-            elemental_amount=AuraAmount.one(),
-        ),
-    )
-
-
 def test_stellar_swirl_trigger_activates_swirl_channel(sandrone_assembled):
     # 全链路：桑多涅声明星扩散 capability → 风命中冰排他
     # 替代普通扩散触发星扩散 → 辉映·星扩散 Buff 发放给 capability 提供者
@@ -243,11 +217,15 @@ def test_stellar_swirl_trigger_activates_swirl_channel(sandrone_assembled):
     assert isinstance(coordinator, ElementalSettlementCoordinator)
     coordinator.settle_aura_impact(
         assembled.context,
-        _aura_apply_request(0, Element.CRYO, "target:target_1", "test:swirl:cryo"),
+        sandrone_helpers.make_aura_application_impact(
+            0, Element.CRYO, "target:target_1", "test:swirl:cryo"
+        ),
     )
     coordinator.settle_aura_impact(
         assembled.context,
-        _aura_apply_request(0, Element.ANEMO, "target:target_1", "test:swirl:anemo"),
+        sandrone_helpers.make_aura_application_impact(
+            0, Element.ANEMO, "target:target_1", "test:swirl:anemo"
+        ),
     )
 
     buff_runtime = assembled.context.get_system(BuffRuntime)
@@ -288,11 +266,15 @@ def test_c1_bonus_covers_stellar_swirl_damage(sandrone_assembled):
     assert isinstance(coordinator, ElementalSettlementCoordinator)
     coordinator.settle_aura_impact(
         assembled.context,
-        _aura_apply_request(0, Element.CRYO, "target:target_1", "test:swirl:cryo"),
+        sandrone_helpers.make_aura_application_impact(
+            0, Element.CRYO, "target:target_1", "test:swirl:cryo"
+        ),
     )
     coordinator.settle_aura_impact(
         assembled.context,
-        _aura_apply_request(0, Element.ANEMO, "target:target_1", "test:swirl:anemo"),
+        sandrone_helpers.make_aura_application_impact(
+            0, Element.ANEMO, "target:target_1", "test:swirl:anemo"
+        ),
     )
 
     assembled.simulator.run()

@@ -89,8 +89,9 @@ SANDRONE_C2_CRIT_DAMAGE_PER_RAY = 0.2
 SANDRONE_C2_CRIT_DAMAGE_MAX_RAYS = 3
 SANDRONE_RAY_INDEX_TAG_PREFIX = "sandrone_ray_index:"
 
-# C4 棱晶谐振炮（效果行：125% 攻击力、每 4s 至多一次）。星烁直伤请求由
-# C4 效果单元的 hook 产出；倍率分量与冷却帧数从资产行解析。
+# C4 棱晶谐振炮（效果行：星超导 125% / 星扩散 187.5% 攻击力、每 4s 至多一次）。
+# 星烁直伤请求由 C4 效果单元的 hook 产出（触发按伤害来源判定为桑多涅自身）；
+# 两个倍率分量与冷却帧数从资产行解析。
 SANDRONE_C4_ATTACK_IMPACT_KEY = "character.sandrone.constellation.c4.attack"
 
 # C6 集束型冷凝射线：第三次发射的射线转集束型（普通变体附加标签独立），

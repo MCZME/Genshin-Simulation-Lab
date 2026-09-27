@@ -1,14 +1,21 @@
 """桑多涅命座效果的事件钩子。
 
-C4 棱晶谐振炮：订阅 ``DAMAGE_RESOLVED`` 事实，星超导冰标签的伤害命中敌人时
-按内置冷却召唤协同攻击——125% 攻击力冰元素伤害、视为星超导反应伤害（星烁
-直伤请求、单体、无 AOE、无附着）。触发不区分伤害来源：任何星超导冰
-伤害命中（含桑多涅自身直伤星变体与星超导反应本体伤害）都计一次触发，内置
-冷却保证频率；星超导反应的触发行为本身不产生伤害事实、天然不触发。
-协同攻击自带的星超导冰标签同样计触发，被冷却窗口吸收。
+C4 棱晶谐振炮：订阅 ``DAMAGE_RESOLVED`` 事实，命中敌人且伤害事实的
+**来源是桑多涅自己**、攻击标签为 ``星超导冰`` 或 ``星扩散冰`` 时，按内置冷却
+召唤协同攻击——冰元素伤害、视为**对应**星烁反应伤害（星烁直伤请求、单体、
+无 AOE、无附着）。
+
+来源判定按伤害事实的 ``source_ref`` 与宿主角色引用比对（与 C2 暴伤 provider
+同口径）：只认桑多涅制造的伤害事实，队伍其他角色触发的星扩散反应本体伤害
+不计触发。标签与倍率按触发标签查表（见 ``_VARIANTS_BY_TRIGGER_TAG``）。
+协同攻击自带的标签同样计触发，被冷却窗口吸收；星超导反应的触发行为本身
+不产生伤害事实、天然不触发。
 """
 
 from __future__ import annotations
+
+from collections.abc import Mapping
+from typing import NamedTuple
 
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_C4_ATTACK_IMPACT_KEY,
@@ -21,7 +28,13 @@ from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.models import HookResult
-from genshin_sim.core.attributes import STAT_ATK_TOTAL
+from genshin_sim.core.attributes import (
+    STAT_ATK_TOTAL,
+    STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER,
+    STELLAR_SWIRL_DIRECT_BASE_MULTIPLIER,
+    AttributeKey,
+    AttributeSubjectRef,
+)
 from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import DamageImpactSpec, ImpactKind, ImpactRequest
@@ -30,9 +43,34 @@ from genshin_sim.core.systems.damage.stellar import StellarReactionDamageInput
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
     STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
 )
+from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
+    STELLAR_SWIRL_ICE_DAMAGE_TAG,
+)
 
 # 敌方目标判据按 entity_id 前缀区分（与西风系列武器钩子同口径）。
 _ENEMY_TARGET_PREFIX = "target:"
+
+
+class _CoordinatedAttackVariant(NamedTuple):
+    """一次协同攻击的产出变体：产出标签与星烁基础系数词条。"""
+
+    main_attack_tag: str
+    base_multiplier_key: AttributeKey
+
+
+# 触发标签 → 产出变体。官方文本要求协同攻击"视为**对应**星烁反应造成的伤害"，
+# 因此产出标签与星烁基础系数都随触发来源取；星超导雷／星扩散风不在触发集合内
+# （不是桑多涅制造的反应伤害）。
+_VARIANTS_BY_TRIGGER_TAG: Mapping[str, _CoordinatedAttackVariant] = {
+    STELLAR_CONDUCT_CRYO_DAMAGE_TAG: _CoordinatedAttackVariant(
+        main_attack_tag=STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
+        base_multiplier_key=STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER,
+    ),
+    STELLAR_SWIRL_ICE_DAMAGE_TAG: _CoordinatedAttackVariant(
+        main_attack_tag=STELLAR_SWIRL_ICE_DAMAGE_TAG,
+        base_multiplier_key=STELLAR_SWIRL_DIRECT_BASE_MULTIPLIER,
+    ),
+}
 
 
 class SandroneConstellationError(RuntimeError):
@@ -40,7 +78,7 @@ class SandroneConstellationError(RuntimeError):
 
 
 class SandroneC4CoordinatedAttackHook:
-    """C4 棱晶谐振炮：星超导冰伤害命中敌人时按内置冷却打出协同攻击。"""
+    """C4 棱晶谐振炮：桑多涅的星超导冰／星扩散冰伤害命中敌人时打出协同攻击。"""
 
     def __init__(
         self,
@@ -48,6 +86,7 @@ class SandroneC4CoordinatedAttackHook:
         owner_ref: str,
         slot: int,
         attack_ratio: float,
+        swirl_ratio: float,
         cooldown_frames: int,
         ascension_bonus: float = 0.0,
     ) -> None:
@@ -59,6 +98,10 @@ class SandroneC4CoordinatedAttackHook:
             raise ContentUnitValidationError("C4 协同攻击倍率必须是数字")
         if attack_ratio <= 0.0:
             raise ContentUnitValidationError("C4 协同攻击倍率必须为正数")
+        if isinstance(swirl_ratio, bool) or not isinstance(swirl_ratio, int | float):
+            raise ContentUnitValidationError("C4 协同攻击星扩散倍率必须是数字")
+        if swirl_ratio <= 0.0:
+            raise ContentUnitValidationError("C4 协同攻击星扩散倍率必须为正数")
         if (
             isinstance(cooldown_frames, bool)
             or not isinstance(cooldown_frames, int)
@@ -66,8 +109,10 @@ class SandroneC4CoordinatedAttackHook:
         ):
             raise ContentUnitValidationError("C4 协同攻击内置冷却必须为正整数帧数")
         self._owner_ref = owner_ref
+        self._owner_subject_ref = AttributeSubjectRef.character(owner_ref)
         self._slot = slot
         self._attack_ratio = float(attack_ratio)
+        self._swirl_ratio = float(swirl_ratio)
         self._cooldown_frames = cooldown_frames
         self._ascension_bonus = float(ascension_bonus)
         self._last_proc_frame: int | None = None
@@ -93,6 +138,33 @@ class SandroneC4CoordinatedAttackHook:
 
         return self._last_proc_frame
 
+    @property
+    def attack_ratio(self) -> float:
+        """星超导冰触发档的攻击力倍率；仅供测试与诊断读取。"""
+
+        return self._attack_ratio
+
+    @property
+    def swirl_ratio(self) -> float:
+        """星扩散冰触发档的攻击力倍率；仅供测试与诊断读取。"""
+
+        return self._swirl_ratio
+
+    @property
+    def cooldown_frames(self) -> int:
+        """协同攻击内置冷却帧数；仅供测试与诊断读取。"""
+
+        return self._cooldown_frames
+
+    def _attack_ratio_for(self, variant: _CoordinatedAttackVariant) -> float:
+        """按产出变体取攻击力倍率档：星超导冰取星超导档，星扩散冰取星扩散档。"""
+
+        return (
+            self._attack_ratio
+            if variant.main_attack_tag == STELLAR_CONDUCT_CRYO_DAMAGE_TAG
+            else self._swirl_ratio
+        )
+
     def handle(self, event: object, context: object) -> HookResult:
         if getattr(event, "event_type", None) is not EventType.DAMAGE_RESOLVED:
             return HookResult()
@@ -100,7 +172,14 @@ class SandroneC4CoordinatedAttackHook:
         result = getattr(getattr(event, "payload", None), "result", None)
         if result is None:
             return HookResult()
-        if getattr(result, "main_attack_tag", None) != STELLAR_CONDUCT_CRYO_DAMAGE_TAG:
+        # 先判来源：只认桑多涅自己造成的伤害事实（与 C2 暴伤 provider 同口径）。
+        if getattr(result, "source_ref", None) != self._owner_subject_ref:
+            return HookResult()
+        trigger_tag = getattr(result, "main_attack_tag", None)
+        if not isinstance(trigger_tag, str):
+            return HookResult()
+        variant = _VARIANTS_BY_TRIGGER_TAG.get(trigger_tag)
+        if variant is None:
             return HookResult()
         target_id = getattr(getattr(result, "target_ref", None), "entity_id", None)
         if not isinstance(target_id, str) or not target_id.startswith(_ENEMY_TARGET_PREFIX):
@@ -118,8 +197,19 @@ class SandroneC4CoordinatedAttackHook:
             STAT_ATK_TOTAL,
             frame,
         )
+        # 星烁基础系数取对应反应的词条（非角色当前辉映状态的证据）；无任何辉映
+        # 证据时保守回落 1.0。
         evidence = radiance_evidence(simulation, self._owner_ref, frame)
-        base_multiplier = evidence.direct_base_multiplier if evidence is not None else 1.0
+        base_multiplier = (
+            resolve_attribute_final_value(
+                simulation,
+                self._owner_ref,
+                variant.base_multiplier_key,
+                frame,
+            )
+            if evidence is not None
+            else 1.0
+        )
         self._last_proc_frame = frame
         return HookResult(
             impact_requests=(
@@ -132,7 +222,7 @@ class SandroneC4CoordinatedAttackHook:
                     target_refs=(target_id,),
                     damage_spec=DamageImpactSpec(
                         impact_ref=f"{SANDRONE_C4_ATTACK_IMPACT_KEY}:{frame}",
-                        main_attack_tag=STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
+                        main_attack_tag=variant.main_attack_tag,
                         element=Element.CRYO,
                         scaling_terms=(),
                         can_crit=True,
@@ -143,7 +233,7 @@ class SandroneC4CoordinatedAttackHook:
                         area=None,
                         stellar_reaction=StellarReactionDamageInput(
                             mode="character_direct",
-                            scaling_value=atk * self._attack_ratio,
+                            scaling_value=atk * self._attack_ratio_for(variant),
                             stellar_base_multiplier=base_multiplier,
                             stellar_base_bonus=stellar_base_bonus_for_atk(atk),
                             stellar_ascension_bonus=self._ascension_bonus,

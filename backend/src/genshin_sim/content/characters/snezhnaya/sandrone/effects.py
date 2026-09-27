@@ -4,7 +4,7 @@
 
 - P5（攻击力转精通）、C1（全队星烁增伤）、C2（射线暴伤）由本包
   ``modifiers.py`` 的 provider 承载；
-- C4（星超导伤害命中召唤协同攻击）由 ``hooks.py`` 的事件钩子承载；
+- C4（星超导/星扩散冰伤害命中召唤协同攻击）由 ``hooks.py`` 的事件钩子承载；
 - C3/C5（天赋等级提升）以 ``talent_level_boosts`` 静态切片承载，经
   content compiler 收敛进角色单元的天赋等级解析；
 - P4 与 C6 的数值行为与法洁欧状态机/影响工厂深度耦合（排空叠层、棱晶弹
@@ -280,11 +280,18 @@ def create_sandrone_constellation_c3(request: EffectContentUnitRequest) -> Conte
 
 
 def create_sandrone_constellation_c4(request: EffectContentUnitRequest) -> ContentUnit:
-    """C4 世事皆数，昼来夜往：星超导伤害命中召唤棱晶谐振炮协同攻击。"""
+    """C4 世事皆数，昼来夜往：桑多涅的星超导/星扩散冰伤害命中召唤协同攻击。
+
+    效果行分量顺序：星超导倍率 / 星扩散倍率 / 冷却秒数（官方文本的
+    125%/187.5% 依次排列，冷却秒数为末位纯数分量）。
+    """
 
     slot = _validate_owner(request, SANDRONE_CONSTELLATION_C4_HANDLER_KEY)
     attack_ratio = _component(request.params, 0, purpose="世事皆数，昼来夜往")
-    cooldown_seconds = _component(request.params, 1, purpose="世事皆数，昼来夜往")
+    swirl_ratio = _component(request.params, 1, purpose="世事皆数，昼来夜往")
+    cooldown_seconds = _component(request.params, 2, purpose="世事皆数，昼来夜往")
+    if attack_ratio <= 0.0 or swirl_ratio <= 0.0:
+        raise ContentUnitValidationError("C4 协同攻击倍率必须为正数")
     if cooldown_seconds <= 0.0:
         raise ContentUnitValidationError("C4 协同攻击内置冷却必须为正数秒")
     owner_ref = f"character:slot_{slot}"
@@ -292,6 +299,7 @@ def create_sandrone_constellation_c4(request: EffectContentUnitRequest) -> Conte
         owner_ref=owner_ref,
         slot=slot,
         attack_ratio=attack_ratio,
+        swirl_ratio=swirl_ratio,
         cooldown_frames=round(cooldown_seconds * FRAMES_PER_SECOND),
         # C6 擢升覆盖桑多涅全部星烁伤害（编译期命座经拥有者上下文传入）。
         ascension_bonus=(

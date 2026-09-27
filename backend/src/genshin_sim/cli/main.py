@@ -147,6 +147,11 @@ def _add_assets_parser(subparsers: argparse._SubParsersAction[argparse.ArgumentP
         help="抓取全部角色、武器和圣遗物套装详情，可能较慢。",
     )
     fetch_source_parser.add_argument(
+        "--refresh",
+        action="store_true",
+        help="忽略已存在的详情缓存文件，重新拉取，用于刷新过期数值。",
+    )
+    fetch_source_parser.add_argument(
         "--out",
         type=Path,
         default=DEFAULT_ASSET_SOURCE_CACHE,
@@ -446,6 +451,7 @@ def _cmd_assets_fetch_source(args: argparse.Namespace) -> int:
         weapon_ids=args.weapon_id,
         artifact_set_ids=args.artifact_set_id,
         include_all_details=bool(args.all_details),
+        refresh=bool(args.refresh),
     )
     print(f"fetched asset source cache: {summary.output_dir}")
     print(f"source_name: {summary.source_name}")

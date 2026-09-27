@@ -95,9 +95,12 @@ def _resolved_atk(assembled) -> float:
     return float(resolution.final_value)
 
 
-def _line_target_payload(max_frames: int, press: int, release: int) -> dict[str, object]:
+def _line_target_payload(
+    max_frames: int, press: int, release: int, *, constellation: int = 0
+) -> dict[str, object]:
     return sandrone_helpers.sandrone_input_payload(
         max_frames=max_frames,
+        constellation=constellation,
         input_trace=[
             {"frame": press, "events": [{"key": "mouse.right", "phase": "press"}]},
             {"frame": release, "events": [{"key": "mouse.right", "phase": "release"}]},
@@ -274,3 +277,34 @@ def test_stellar_swirl_trigger_activates_swirl_channel(sandrone_assembled):
     assert not [
         e for e in damage_events if e.payload.result.damage_name == RAY_STELLAR_DISPLAY_NAME
     ]
+
+
+def test_c1_bonus_covers_stellar_swirl_damage(sandrone_assembled):
+    # C1 增伤为星烁反应通用增伤（维护者确认 2026-09-27）：星扩散冰标签同样
+    # 命中增伤区。星扩散触发链与上一用例相同，仅 C1 生效。
+    assembled = sandrone_assembled(payload=_line_target_payload(380, 2, 376, constellation=1))
+    damage_events = _damage_events(assembled)
+    coordinator = assembled.context.get_system(ElementalSettlementCoordinator)
+    assert isinstance(coordinator, ElementalSettlementCoordinator)
+    coordinator.settle_aura_impact(
+        assembled.context,
+        _aura_apply_request(0, Element.CRYO, "target:target_1", "test:swirl:cryo"),
+    )
+    coordinator.settle_aura_impact(
+        assembled.context,
+        _aura_apply_request(0, Element.ANEMO, "target:target_1", "test:swirl:anemo"),
+    )
+
+    assembled.simulator.run()
+
+    rays = [
+        e for e in damage_events if e.payload.result.damage_name == RAY_STELLAR_SWIRL_DISPLAY_NAME
+    ]
+    # C1 功率上升减速同时生效：射线由 3 次涌现为 4 次（128/194/260/326）。
+    assert [e.frame for e in rays] == [128, 194, 260, 326]
+    for event in rays:
+        stellar = event.payload.result.stellar_reaction_resolution
+        assert stellar is not None
+        assert event.payload.result.main_attack_tag == "星扩散冰"
+        # C1 的 +30% 并入星烁输入的增伤位（星烁路径不产出槽位账单）。
+        assert stellar.input.stellar_bonus == pytest.approx(0.3)

@@ -2,7 +2,7 @@
 
 统一把资产 ``effect_payloads`` 编译为 ContentUnit。行为切片按载体拆分：
 
-- P5（攻击力转精通）、C1（全队星超导增伤）、C2（射线暴伤）由本包
+- P5（攻击力转精通）、C1（全队星烁增伤）、C2（射线暴伤）由本包
   ``modifiers.py`` 的 provider 承载；
 - C4（星超导伤害命中召唤协同攻击）由 ``hooks.py`` 的事件钩子承载；
 - C3/C5（天赋等级提升）以 ``talent_level_boosts`` 静态切片承载，经
@@ -215,7 +215,7 @@ def create_sandrone_passive_p6(request: EffectContentUnitRequest) -> ContentUnit
 
 
 def create_sandrone_constellation_c1(request: EffectContentUnitRequest) -> ContentUnit:
-    """C1 生命之数·演算倍增：功率上升 -50%（角色单元承载）+ 全队星超导增伤。"""
+    """C1 生命之数·演算倍增：功率上升 -50%（角色单元承载）+ 全队星烁增伤。"""
 
     slot = _validate_owner(request, SANDRONE_CONSTELLATION_C1_HANDLER_KEY)
     bonus_value = _component(request.params, 3, purpose="生命之数·演算倍增")

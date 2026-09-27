@@ -44,9 +44,21 @@ from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
     STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
     STELLAR_CONDUCT_ELECTRO_DAMAGE_TAG,
 )
+from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
+    STELLAR_SWIRL_ICE_DAMAGE_TAG,
+    STELLAR_SWIRL_WIND_DAMAGE_TAG,
+)
 
-_STELLAR_CONDUCT_DAMAGE_TAGS = frozenset(
-    {STELLAR_CONDUCT_CRYO_DAMAGE_TAG, STELLAR_CONDUCT_ELECTRO_DAMAGE_TAG}
+# C1 星烁反应通用增伤覆盖的星烁伤害标签（维护者确认 2026-09-27：星超导与
+# 星扩散都可以吃到）：星超导冰/雷、星扩散冰/风，含携带对应标签的星变体直伤
+# 与反应本体伤害。
+_C1_STELLAR_REACTION_DAMAGE_TAGS = frozenset(
+    {
+        STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
+        STELLAR_CONDUCT_ELECTRO_DAMAGE_TAG,
+        STELLAR_SWIRL_ICE_DAMAGE_TAG,
+        STELLAR_SWIRL_WIND_DAMAGE_TAG,
+    }
 )
 
 
@@ -118,10 +130,11 @@ class SandroneAtkToMasteryProvider:
 
 
 class SandroneC1StellarBonusProvider:
-    """C1：全队造成的星超导反应伤害 +30%（星烁公式专属增伤阶段）。
+    """C1：全队造成的星烁反应伤害 +30%（星烁公式专属增伤阶段）。
 
-    全队口径：不按来源自筛；星扩散冰标签不参与（C1 文本仅覆盖星超导反应
-    伤害）。
+    全队口径：不按来源自筛；覆盖星超导（冰/雷）与星扩散（冰/风）全部
+    星烁反应伤害——含携带对应标签的星变体直伤与反应本体伤害（维护者
+    确认 2026-09-27，C1 文本"星超导反应伤害"按星烁反应通用增伤理解）。
     """
 
     def __init__(
@@ -132,16 +145,16 @@ class SandroneC1StellarBonusProvider:
         source_key: str,
     ) -> None:
         if not isinstance(owner_ref, str) or not owner_ref.strip():
-            raise ContentUnitValidationError("C1 星超导增伤 owner_ref 必须是非空字符串")
+            raise ContentUnitValidationError("C1 星烁增伤 owner_ref 必须是非空字符串")
         self._owner_ref = AttributeSubjectRef.character(owner_ref)
-        self._bonus_value = _require_positive_number(bonus_value, "C1 星超导增伤")
+        self._bonus_value = _require_positive_number(bonus_value, "C1 星烁增伤")
         self._provider_key = f"{source_key}.stellar_bonus:{owner_ref}"
         self._source_ref = RuntimeSourceRef(RuntimeSourceKind.CONTENT, source_key)
         self.provider_spec = DamageModifierProviderSpec(
             provider_key=self._provider_key,
             writes=frozenset({DamageModifierStage.STELLAR_REACTION_BONUS_ADD}),
             owner_ref=self._owner_ref,
-            display_name="生命之数·演算倍增·星超导增伤",
+            display_name="生命之数·演算倍增·星烁增伤",
         )
 
     def contribute(
@@ -151,7 +164,7 @@ class SandroneC1StellarBonusProvider:
     ) -> tuple[DamageModifierTerm, ...]:
         del session
         request = query.request
-        if request.main_attack_tag not in _STELLAR_CONDUCT_DAMAGE_TAGS:
+        if request.main_attack_tag not in _C1_STELLAR_REACTION_DAMAGE_TAGS:
             return ()
         return (
             DamageModifierTerm(

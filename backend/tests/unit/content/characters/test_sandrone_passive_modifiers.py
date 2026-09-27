@@ -123,7 +123,7 @@ def test_p5_provider_skips_other_subjects_and_attributes():
     )
 
 
-def test_c1_provider_targets_stellar_conduct_tags_only():
+def test_c1_provider_covers_all_stellar_reaction_tags():
     provider = SandroneC1StellarBonusProvider(
         owner_ref=OWNER_REF,
         bonus_value=0.3,
@@ -133,24 +133,16 @@ def test_c1_provider_targets_stellar_conduct_tags_only():
     def _query(main_attack_tag: str):
         return SimpleNamespace(request=SimpleNamespace(main_attack_tag=main_attack_tag, tags=()))
 
-    cryo_terms = provider.contribute(
-        cast(DamageQuery, _query("星超导冰")), cast(DamageResolutionSession, None)
-    )
-    assert len(cryo_terms) == 1
-    assert cryo_terms[0].stage is DamageModifierStage.STELLAR_REACTION_BONUS_ADD
-    assert cryo_terms[0].value == pytest.approx(0.3)
-
-    electro_terms = provider.contribute(
-        cast(DamageQuery, _query("星超导雷")), cast(DamageResolutionSession, None)
-    )
-    assert len(electro_terms) == 1
-
-    assert (
-        provider.contribute(
-            cast(DamageQuery, _query("星扩散冰")), cast(DamageResolutionSession, None)
+    # 星烁反应通用增伤（维护者确认 2026-09-27）：星超导冰/雷与星扩散冰/风
+    # 全部命中。
+    for tag in ("星超导冰", "星超导雷", "星扩散冰", "星扩散风"):
+        terms = provider.contribute(
+            cast(DamageQuery, _query(tag)), cast(DamageResolutionSession, None)
         )
-        == ()
-    )
+        assert len(terms) == 1
+        assert terms[0].stage is DamageModifierStage.STELLAR_REACTION_BONUS_ADD
+        assert terms[0].value == pytest.approx(0.3)
+
     assert (
         provider.contribute(cast(DamageQuery, _query("重击")), cast(DamageResolutionSession, None))
         == ()

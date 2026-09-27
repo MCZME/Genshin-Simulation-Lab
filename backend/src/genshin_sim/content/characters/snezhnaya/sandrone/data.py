@@ -79,8 +79,9 @@ SANDRONE_P5_ASCENSION_THRESHOLD = 4
 SANDRONE_P6_BASE_BONUS_PER_100_ATK = 0.007
 SANDRONE_P6_BASE_BONUS_CAP = 0.14
 
-# C1 生命之数·演算倍增：解算功率上升速度 -50%（效果行 number_3）。星超导
-# 增伤 +30%（number_4）由 C1 效果单元的伤害修饰 provider 承载。
+# C1 生命之数·演算倍增：解算功率上升速度 -50%（效果行 number_3）。星烁
+# 增伤 +30%（number_4）由 C1 效果单元的伤害修饰 provider 承载；覆盖口径经
+# 维护者确认（2026-09-27）：星烁反应通用增伤，星超导与星扩散都可吃到。
 FAGEOU_C1_POWER_RISE_MULTIPLIER = 0.5
 
 # C2 射线暴伤（效果行：+40% 基础、逐射线 +20%、至多 3 层；仅加成射线的

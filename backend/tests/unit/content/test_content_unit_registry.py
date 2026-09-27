@@ -10,6 +10,7 @@ from genshin_sim.content.registries import (
     ContentUnitRegistry,
     ContentUnitRegistryError,
     DuplicateContentUnitFactoryError,
+    EffectOwnerContext,
     WeaponContentUnitRequest,
 )
 
@@ -125,3 +126,40 @@ def test_request_rejects_invalid_constellation_and_talent_levels():
             slot=1,
             talent_levels={"normal_attack": 0},
         )
+
+
+def test_request_normalizes_and_validates_effect_params():
+    request = CharacterContentUnitRequest(
+        handler_key="character.test",
+        character_key="character:1",
+        slot=1,
+        constellation=6,
+        effect_params={"c6": {"components": ()}},
+    )
+    assert request.effect_params == {"c6": {"components": ()}}
+
+    with pytest.raises(ContentUnitRegistryError, match="effect_params"):
+        CharacterContentUnitRequest(
+            handler_key="character.test",
+            character_key="character:1",
+            slot=1,
+            effect_params={"": {}},
+        )
+    with pytest.raises(ContentUnitRegistryError, match="effect_params"):
+        CharacterContentUnitRequest(
+            handler_key="character.test",
+            character_key="character:1",
+            slot=1,
+            effect_params={"c6": ("components",)},  # type: ignore[dict-item]
+        )
+
+
+def test_effect_owner_context_normalizes_effect_params():
+    context = EffectOwnerContext(
+        constellation=6,
+        effect_params={"c6": {"components": ()}},
+    )
+    assert context.effect_params == {"c6": {"components": ()}}
+
+    with pytest.raises(ContentUnitRegistryError, match="effect_params"):
+        EffectOwnerContext(effect_params={"c6": "not-a-mapping"})  # type: ignore[dict-item]

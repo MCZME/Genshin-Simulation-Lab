@@ -37,6 +37,25 @@ from genshin_sim.infrastructure.assets_sqlite import (
 SANDRONE_CHARACTER_KEY = SANDRONE_ASSET_KEY
 
 
+def c6_effect_params() -> dict[str, object]:
+    """合成资产「命座第 6 层」效果行的 params（与资产库写入同一份数据）。"""
+
+    for payload in _minimal_sandrone_effect_payloads():
+        if payload.unlock_key == "c6":
+            return dict(payload.params)
+    raise AssertionError("合成效果行缺少命座第 6 层")
+
+
+def character_effect_params() -> dict[str, dict[str, object]]:
+    """合成资产中桑多涅全部效果行的 params，按 unlock_key 索引。"""
+
+    return {
+        str(payload.unlock_key): dict(payload.params)
+        for payload in _minimal_sandrone_effect_payloads()
+        if payload.unlock_key is not None
+    }
+
+
 def write_sandrone_asset_database(db_path: Path) -> Path:
     """写入桑多涅单人最小合成资产库（倍率数值全部为 1.0）。"""
 
@@ -189,7 +208,9 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
             "constellation",
             SANDRONE_CONSTELLATION_C6_HANDLER_KEY,
             "c6",
-            (11330001.0, 4.0, 1.0, 4.0, 0.8, 11190007.0, 0.2),
+            # 与资产同序：链接 解算 / 段数 4 / 普通 100% / 段数 4（辉映段）
+            # / 星超导 80% / 星扩散 120% / 链接 星烁擢升 / 擢升 20%。
+            (11330001.0, 4.0, 1.0, 4.0, 0.8, 1.2, 11190007.0, 0.2),
         ),
     )
 

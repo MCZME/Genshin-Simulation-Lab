@@ -24,11 +24,8 @@ from typing import NamedTuple
 
 from genshin_sim.assets.models import TalentScalingEntry
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
-    SANDRONE_C6_ASCENSION_BONUS,
     SANDRONE_C6_EXTRA_CONDUCT_DISPLAY_NAME,
-    SANDRONE_C6_EXTRA_CONDUCT_RATIO,
     SANDRONE_C6_EXTRA_SWIRL_DISPLAY_NAME,
-    SANDRONE_C6_EXTRA_SWIRL_RATIO,
     SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
     SANDRONE_DAMAGE_ELEMENT,
     SANDRONE_ELEMENTAL_BURST_BEAM_AOE_RADIUS,
@@ -92,7 +89,8 @@ class SandroneStellarAttackChannel:
 
     星变体契约不携带普通倍率（直伤倍率经 ``scaling_value`` 由星烁输入承载）；
     ``conduct_ratio`` 与 ``swirl_ratio`` 分别取自资产倍率条目的星超导行与
-    星扩散行（官方数据直出，组装时不换算）。
+    星扩散行（官方数据直出，组装时不换算）；C6 追加段的两个倍率取自资产命座
+    第 6 层效果行。
     ``ascension_bonus`` 为 C6 擢升（覆盖星超导与星扩散，角色自身星烁伤害）。
     """
 
@@ -210,15 +208,23 @@ def compile_stellar_attack_channels(
 
 def compile_c6_extra_stellar_channel(
     talent_level: int,
+    *,
+    conduct_ratio: float,
+    swirl_ratio: float,
+    ascension_bonus: float,
 ) -> SandroneStellarAttackChannel:
-    """编译 C6 追加段的星烁通道（星超导 80% / 星扩散 120%）。
+    """编译 C6 追加段的星烁通道（倍率取资产命座第 6 层效果行）。
 
     命中判定数据与射线星变体同形（单体/钝击/远程/桑多涅激光标签、0 元素量、
     不参与附着），对应数据表「命之座第6层 集束型冷凝射线星超导 / 星扩散」两行。
-    倍率取官方命座描述值——资产命座条目无参数行、天赋参数表亦无 C6 行，
-    故 80% / 120% 直接以常量承载，不读倍率条目。
+    星超导/星扩散倍率与星烁擢升由调用方从资产效果行解析后传入（effects.py
+    ``read_c6_asset_values``）——本函数只做契约组装，不留数值常量。
     """
 
+    if conduct_ratio <= 0.0 or swirl_ratio <= 0.0:
+        raise ContentUnitValidationError("C6 追加段星烁倍率必须为正数")
+    if ascension_bonus < 0.0:
+        raise ContentUnitValidationError("C6 星烁擢升不能为负数")
     ray_plan = _STELLAR_CHANNEL_PLANS[0]
     if ray_plan.impact_key != SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY:
         raise ContentUnitValidationError("C6 追加段星烁通道缺少射线命中判定计划")
@@ -236,9 +242,9 @@ def compile_c6_extra_stellar_channel(
             main_attack_tag=STELLAR_SWIRL_ICE_DAMAGE_TAG,
             display_name=SANDRONE_C6_EXTRA_SWIRL_DISPLAY_NAME,
         ),
-        conduct_ratio=SANDRONE_C6_EXTRA_CONDUCT_RATIO,
-        swirl_ratio=SANDRONE_C6_EXTRA_SWIRL_RATIO,
-        ascension_bonus=SANDRONE_C6_ASCENSION_BONUS,
+        conduct_ratio=conduct_ratio,
+        swirl_ratio=swirl_ratio,
+        ascension_bonus=ascension_bonus,
     )
 
 

@@ -73,6 +73,50 @@ class _FakeBundle:
         self.character_level_stats = _FakeLevelStats()
 
 
+class _FakeCharacter:
+    asset_key = "character:test"
+
+
+class _FakeWeapon:
+    asset_key = "weapon:test"
+
+
+class _FakeEffectPayload:
+    def __init__(
+        self,
+        *,
+        unlock_key: object,
+        params: dict[str, object],
+        owner_key: str = "character:test",
+        owner_type: str = "character",
+    ) -> None:
+        self.unlock_key = unlock_key
+        self.params = params
+        self.owner_key = owner_key
+        self.owner_type = owner_type
+
+
+class _FakeBundleWithEffects(_FakeBundle):
+    def __init__(self) -> None:
+        super().__init__()
+        self.character = _FakeCharacter()
+        self.weapon = None
+        self.artifact_sets = ()
+        self.effect_payloads = (
+            _FakeEffectPayload(unlock_key="c6", params={"schema_version": 1, "components": ()}),
+            _FakeEffectPayload(unlock_key="c1", params={"schema_version": 1, "components": ()}),
+            # 其他拥有者的效果行不进入：C6 数值不属于武器。
+            _FakeEffectPayload(
+                unlock_key="refine:1",
+                params={"schema_version": 1},
+                owner_key="weapon:test",
+                owner_type="weapon",
+            ),
+            # 缺失 unlock_key 的效果行无法定位，跳过。
+            _FakeEffectPayload(unlock_key=None, params={"schema_version": 1}),
+        )
+
+
 class _FakeCharacterConfig:
     def __init__(self, *, constellation: int) -> None:
         self.constellation = constellation
@@ -82,6 +126,31 @@ class _FakeCharacterConfig:
 class _FakeSlotConfig:
     def __init__(self, *, constellation: int) -> None:
         self.character = _FakeCharacterConfig(constellation=constellation)
+        self.weapon = None
+        self.artifacts = _FakeArtifacts()
+
+
+class _FakeArtifacts:
+    sets = ()
+
+
+def test_character_effect_params_indexes_owner_rows_by_unlock_key():
+    params = ContentCompiler._character_effect_params(cast(Any, _FakeBundleWithEffects()))
+
+    assert sorted(params) == ["c1", "c6"]
+    assert params["c6"]["schema_version"] == 1
+
+
+def test_owner_contexts_carry_the_character_effect_rows():
+    contexts = ContentCompiler._owner_contexts(
+        cast(Any, _FakeBundleWithEffects()),
+        cast(Any, _FakeSlotConfig(constellation=6)),
+        character_effect_params={"c6": {"schema_version": 1}},
+    )
+
+    context = contexts[("character", "character:test")]
+    assert context.constellation == 6
+    assert context.effect_params == {"c6": {"schema_version": 1}}
 
 
 def test_gate_static_slices_keeps_unlocked_static_contributions():

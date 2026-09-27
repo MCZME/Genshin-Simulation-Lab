@@ -31,6 +31,21 @@ class ContentUnitFactoryNotFoundError(ContentUnitRegistryError, LookupError):
     """请求的 handler_key 未在对应内容类型中注册。"""
 
 
+def _normalize_effect_params(
+    effect_params: Mapping[str, Mapping[str, Any]],
+) -> dict[str, dict[str, Any]]:
+    """把「unlock_key -> 效果行参数」规范为两层可变字典，键必须是非空字符串。"""
+
+    normalized: dict[str, dict[str, Any]] = {}
+    for unlock_key, params in effect_params.items():
+        if not isinstance(unlock_key, str) or not unlock_key.strip():
+            raise ContentUnitRegistryError("effect_params 的键必须是非空字符串")
+        if not isinstance(params, Mapping):
+            raise ContentUnitRegistryError(f"effect_params[{unlock_key}] 必须是对象")
+        normalized[unlock_key] = dict(params)
+    return normalized
+
+
 class HandlerImplementationStatus(StrEnum):
     """handler 条目的实现状态标记。
 
@@ -60,7 +75,14 @@ class EmptyContentHandler:
 
 @dataclass(frozen=True, slots=True)
 class CharacterContentUnitRequest:
-    """角色内容单元编译请求。"""
+    """角色内容单元编译请求。
+
+    ``effect_params`` 是该角色名下全部资产效果行的参数，按 ``unlock_key``
+    （``"passive:4"``、``"c1"``…``"c6"``）索引：有些角色行为与某一条效果行的
+    数值深度耦合，无法拆到那条效果行自己的单元里（命座/被动数值直接参与动作
+    状态机或伤害契约编译），因此由组装期把效果行原样交给角色单元，避免这些
+    数值在内容代码里留下第二份常量。
+    """
 
     handler_key: str
     character_key: str
@@ -74,6 +96,7 @@ class CharacterContentUnitRequest:
         CooldownKey,
         tuple[CooldownDurationTerm, ...],
     ] = field(default_factory=dict)
+    effect_params: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
     params: Mapping[str, Any] = field(default_factory=dict)
     asset: Any | None = None
 
@@ -105,6 +128,11 @@ class CharacterContentUnitRequest:
                     "cooldown_duration_terms 成员必须是 CooldownDurationTerm"
                 )
         object.__setattr__(self, "cooldown_duration_terms", cooldown_duration_terms)
+        object.__setattr__(
+            self,
+            "effect_params",
+            _normalize_effect_params(self.effect_params),
+        )
         object.__setattr__(self, "params", dict(self.params))
 
 
@@ -157,7 +185,10 @@ class EffectOwnerContext:
 
     被拥有的单元不需要在自己的资产效果行里重复声明这些证据：拥有者的资产索引行
     与配置已经确定它们，组装期据此填充。取值与拥有者类型对应——角色给命座与天赋
-    等级，武器给精炼等级，圣遗物套装给穿戴件数。
+    等级、以及该角色**全部效果行的参数**（按 ``unlock_key`` 索引），武器给精炼
+    等级，圣遗物套装给穿戴件数。效果行参数进入上下文，是为了让跨效果行的机器
+    耦合（如某命座的数值同时作用于另一命座产出的伤害）有唯一来源；被拥有的单元
+    仍不在**自己那条**效果行里重复声明证据。
 
     归属模型见 ``docs/架构/内容系统设计.md`` 第 4.4 节。
     """
@@ -166,6 +197,7 @@ class EffectOwnerContext:
     talent_levels: Mapping[str, int] = field(default_factory=dict)
     refinement: int | None = None
     piece_count: int | None = None
+    effect_params: Mapping[str, Mapping[str, Any]] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         _require_non_negative_int(self.constellation, "constellation")
@@ -178,6 +210,11 @@ class EffectOwnerContext:
             _require_positive_int(self.refinement, "refinement")
         if self.piece_count is not None:
             _require_non_negative_int(self.piece_count, "piece_count")
+        object.__setattr__(
+            self,
+            "effect_params",
+            _normalize_effect_params(self.effect_params),
+        )
 
 
 @dataclass(frozen=True, slots=True)

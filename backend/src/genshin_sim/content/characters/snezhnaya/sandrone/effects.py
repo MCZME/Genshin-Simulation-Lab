@@ -1,4 +1,4 @@
-"""桑多涅效果 handler 工厂：被动 P4/P5/P6 与命座 C1–C6。
+"""桑多涅效果行读取与效果 handler 工厂：被动 P4/P5/P6 与命座 C1–C6。
 
 统一把资产 ``effect_payloads`` 编译为 ContentUnit。行为切片按载体拆分：
 
@@ -9,8 +9,12 @@
   content compiler 收敛进角色单元的天赋等级解析；
 - P4 与 C6 的数值行为与法洁欧状态机/影响工厂深度耦合（排空叠层、棱晶弹
   强化、集束型射线与额外段、星烁擢升），承载在角色单元内（fageou.py /
-  impacts.py / stellar.py，常量见 data.py）；本文件的效果单元保留效果
-  声明与解锁门槛，metadata 记录真实载体。
+  impacts.py / stellar.py）；本文件的效果单元保留效果声明与解锁门槛，
+  metadata 记录真实载体。
+
+C6 的机器数值（段数、三段倍率、星烁擢升）由 ``read_c6_asset_values`` 从
+**资产命座第 6 层效果行**解析；角色单元经 ``request.effect_params``、效果
+单元经 ``request.owner_context.effect_params`` 拿到同一条效果行，不另设常量。
 
 P8 生活天赋为空实现（bootstrap 注册 EMPTY handler，不建单元）。
 """
@@ -18,10 +22,11 @@ P8 生活天赋为空实现（bootstrap 注册 EMPTY handler，不建单元）�
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_ASSET_KEY,
-    SANDRONE_C6_ASCENSION_BONUS,
+    SANDRONE_C6_UNLOCK_KEY,
     SANDRONE_CONSTELLATION_C1_HANDLER_KEY,
     SANDRONE_CONSTELLATION_C2_HANDLER_KEY,
     SANDRONE_CONSTELLATION_C3_HANDLER_KEY,
@@ -55,8 +60,9 @@ from genshin_sim.content.definitions.effects import (
     UnlockSpec,
 )
 from genshin_sim.content.models import EventHook
-from genshin_sim.content.registries import EffectContentUnitRequest
+from genshin_sim.content.registries import EffectContentUnitRequest, EffectOwnerContext
 from genshin_sim.core.attributes import ModifierProvider
+from genshin_sim.core.contracts.json import JSONValue
 from genshin_sim.core.systems.damage import DamageModifierProvider
 
 FRAMES_PER_SECOND = 60
@@ -72,7 +78,7 @@ P6_CARRIER_NOTE = (
 C1_CARRIER_NOTE = "功率上升减速由角色单元按命座等级编译（fageou 构造参数）。"
 C6_CARRIER_NOTE = (
     "集束型追加段与星烁擢升由角色单元按命座等级编译（fageou/impacts/"
-    "stellar，常量见 data.py；追加段倍率取官方命座描述值）。"
+    "stellar），机器数值取自本条效果行（段数/三段倍率/擢升）。"
 )
 
 
@@ -109,6 +115,66 @@ def _component(params: Mapping[str, object], index: int, *, purpose: str) -> flo
     return values[index]
 
 
+@dataclass(frozen=True, slots=True)
+class SandroneC6AssetValues:
+    """资产命座第 6 层效果行的机器数值（唯一来源）。"""
+
+    extra_segment_count: int
+    normal_ratio: float
+    conduct_ratio: float
+    swirl_ratio: float
+    ascension_bonus: float
+
+
+def read_c6_asset_values(params: Mapping[str, object]) -> SandroneC6AssetValues:
+    """解析资产命座第 6 层效果行：追加段段数与三段倍率、星烁擢升。
+
+    分量顺序与资产一致（见 data.py ``SANDRONE_C6_UNLOCK_KEY`` 注释）：
+    ``[1]`` 段数、``[2]`` 普通倍率、``[4]`` 星超导倍率、``[5]`` 星扩散倍率、
+    ``[7]`` 星烁擢升；``[0]`` / ``[3]`` / ``[6]`` 是文本内链接编号与重复段数，
+    不参与解析（与 C1/C2/C4 的按序取分量口径一致）。
+    """
+
+    purpose = "命之座第6层 集束型冷凝射线"
+    segment_count = _component(params, 1, purpose=purpose)
+    if segment_count != int(segment_count) or segment_count <= 0:
+        raise ContentUnitValidationError(f"{purpose} 追加段数必须是正整数")
+    normal_ratio = _component(params, 2, purpose=purpose)
+    conduct_ratio = _component(params, 4, purpose=purpose)
+    swirl_ratio = _component(params, 5, purpose=purpose)
+    ascension_bonus = _component(params, 7, purpose=purpose)
+    if normal_ratio <= 0.0 or conduct_ratio <= 0.0 or swirl_ratio <= 0.0:
+        raise ContentUnitValidationError(f"{purpose} 追加段倍率必须为正数")
+    if ascension_bonus < 0.0:
+        raise ContentUnitValidationError(f"{purpose} 星烁擢升不能为负数")
+    return SandroneC6AssetValues(
+        extra_segment_count=int(segment_count),
+        normal_ratio=normal_ratio,
+        conduct_ratio=conduct_ratio,
+        swirl_ratio=swirl_ratio,
+        ascension_bonus=ascension_bonus,
+    )
+
+
+def resolve_c6_ascension_bonus(
+    owner_context: EffectOwnerContext,
+    *,
+    purpose: str,
+) -> float:
+    """从拥有者上下文读取 C6 星烁擢升；未解锁第 6 层时为 0。
+
+    跨效果行的机器耦合（C6 擢升覆盖 C4 协同攻击的星烁伤害）需要同一条效果行
+    的数值，走 ``EffectOwnerContext.effect_params`` 取序，不另设常量。
+    """
+
+    if owner_context.constellation < 6:
+        return 0.0
+    params = owner_context.effect_params.get(SANDRONE_C6_UNLOCK_KEY)
+    if params is None:
+        raise ContentUnitValidationError(f"{purpose} 已解锁第 6 层但缺少 C6 资产效果行")
+    return read_c6_asset_values(params).ascension_bonus
+
+
 def _validate_owner(request: EffectContentUnitRequest, handler_key: str) -> int:
     if request.owner_key != SANDRONE_ASSET_KEY:
         raise ContentUnitValidationError(
@@ -131,6 +197,7 @@ def _effect_unit(
     attribute_providers: tuple[ModifierProvider, ...] = (),
     damage_modifier_providers: tuple[DamageModifierProvider, ...] = (),
     talent_level_boosts: Mapping[str, int] | None = None,
+    compiled_params: Mapping[str, JSONValue] | None = None,
 ) -> ContentUnit:
     metadata: dict[str, str] = {"purpose": purpose}
     if note is not None:
@@ -153,6 +220,7 @@ def _effect_unit(
         attribute_providers=attribute_providers,
         damage_modifier_providers=damage_modifier_providers,
         talent_level_boosts=dict(talent_level_boosts or {}),
+        compiled_params=dict(compiled_params or {}),
         metadata=metadata,
     )
 
@@ -301,9 +369,11 @@ def create_sandrone_constellation_c4(request: EffectContentUnitRequest) -> Conte
         attack_ratio=attack_ratio,
         swirl_ratio=swirl_ratio,
         cooldown_frames=round(cooldown_seconds * FRAMES_PER_SECOND),
-        # C6 擢升覆盖桑多涅全部星烁伤害（编译期命座经拥有者上下文传入）。
-        ascension_bonus=(
-            SANDRONE_C6_ASCENSION_BONUS if request.owner_context.constellation >= 6 else 0.0
+        # C6 擢升覆盖桑多涅全部星烁伤害，含 C4 产出的协同攻击：数值取自资产
+        # 命座第 6 层效果行（拥有者上下文带全部效果行），未解锁第 6 层为 0。
+        ascension_bonus=resolve_c6_ascension_bonus(
+            request.owner_context,
+            purpose="世事皆数，昼来夜往",
         ),
     )
     return _effect_unit(
@@ -334,9 +404,14 @@ def create_sandrone_constellation_c5(request: EffectContentUnitRequest) -> Conte
 
 
 def create_sandrone_constellation_c6(request: EffectContentUnitRequest) -> ContentUnit:
-    """C6 水仙梦醒，且望晨光：集束型追加段与星烁擢升（角色单元承载）。"""
+    """C6 水仙梦醒，且望晨光：集束型追加段与星烁擢升（角色单元承载）。
+
+    机器数值在本条效果行里，行为在角色单元里：这里解析一遍效果行（数值不合法
+    时本条单元直接失败），并把取值写进 ``compiled_params`` 供装配/诊断核对。
+    """
 
     _validate_owner(request, SANDRONE_CONSTELLATION_C6_HANDLER_KEY)
+    values = read_c6_asset_values(request.params)
     return _effect_unit(
         request=request,
         handler_key=SANDRONE_CONSTELLATION_C6_HANDLER_KEY,
@@ -344,4 +419,11 @@ def create_sandrone_constellation_c6(request: EffectContentUnitRequest) -> Conte
         unlock=UnlockSpec(kind=UnlockKind.CONSTELLATION, threshold=6),
         purpose="sandrone_constellation_c6",
         note=C6_CARRIER_NOTE,
+        compiled_params={
+            "extra_segment_count": values.extra_segment_count,
+            "normal_ratio": values.normal_ratio,
+            "conduct_ratio": values.conduct_ratio,
+            "swirl_ratio": values.swirl_ratio,
+            "ascension_bonus": values.ascension_bonus,
+        },
     )

@@ -17,7 +17,6 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_STATE_PRISM2_BOOST_UNTIL,
     SANDRONE_C6_EXTRA_DAMAGE_DATA,
     SANDRONE_C6_EXTRA_DISPLAY_NAME,
-    SANDRONE_C6_EXTRA_NORMAL_RATIO,
     SANDRONE_CHARACTER_HANDLER_KEY,
     SANDRONE_CHARGED_ATTACK_DAMAGE_DATA,
     SANDRONE_CHARGED_ATTACK_EXTRA_IMPACT_KEY,
@@ -422,14 +421,16 @@ def compile_charged_attack_damage_specs(
     return specs
 
 
-def compile_c6_extra_normal_spec() -> DamageImpactSpec:
-    """C6 追加段普通变体：固定 100% 攻击力（C6 无资产倍率条目）。
+def compile_c6_extra_normal_spec(normal_ratio: float) -> DamageImpactSpec:
+    """C6 追加段普通变体：倍率取资产命座第 6 层效果行的普通段分量。
 
     命中判定数据取数据表「命之座第6层 集束型冷凝射线」行（单体/钝击/远程/
     默认衰减序列/重击射线衰减标签/1 元素量），附加标签为该行独立的
     桑多涅重击普通激光6命；星变体由追加段星烁通道在发射时查表分派。
     """
 
+    if normal_ratio <= 0.0:
+        raise ContentUnitValidationError("C6 追加段普通倍率必须为正数")
     damage_data = SANDRONE_C6_EXTRA_DAMAGE_DATA
     return DamageImpactSpec(
         impact_ref=f"{SANDRONE_CHARGED_ATTACK_EXTRA_IMPACT_KEY}:c6",
@@ -439,7 +440,7 @@ def compile_c6_extra_normal_spec() -> DamageImpactSpec:
             DamageScalingTerm(
                 component_key="c6_extra",
                 attribute_key=STAT_ATK_TOTAL,
-                coefficient=SANDRONE_C6_EXTRA_NORMAL_RATIO,
+                coefficient=normal_ratio,
             ),
         ),
         can_crit=True,

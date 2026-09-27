@@ -4,6 +4,11 @@
 编译函数，构造冷却定义、自定义 ICD 与法洁欧状态机 hook，最后组装
 ``ContentUnit``。普攻/战技/爆发/下落/重击伤害、冷却、解算模式与辉映星烁
 直伤通道为已接入范围；产球、命座与被动随后续切片接入。
+
+命座数值一律取自资产：天赋倍率走 ``talent_scalings``，命座/被动数值走
+``request.effect_params``（按 ``unlock_key`` 索引的效果行）。C6 的段数、
+三段倍率与星烁擢升即由此解析（``effects.read_c6_asset_values``），本文件
+只负责把取值折进机器参数与伤害契约，不留常量。
 """
 
 from __future__ import annotations
@@ -28,8 +33,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_RAY_LENGTH,
     FAGEOU_RAY_WIDTH,
     FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
-    SANDRONE_C6_ASCENSION_BONUS,
-    SANDRONE_C6_EXTRA_SEGMENT_COUNT,
+    SANDRONE_C6_UNLOCK_KEY,
     SANDRONE_CHARACTER_HANDLER_KEY,
     SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
     SANDRONE_CONTENT_VERSION,
@@ -43,6 +47,10 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_P4_ASCENSION_THRESHOLD,
     SANDRONE_SWEEP_ICD_RESET_FRAMES,
     SANDRONE_SWEEP_ICD_SEQUENCE_KEY,
+)
+from genshin_sim.content.characters.snezhnaya.sandrone.effects import (
+    SandroneC6AssetValues,
+    read_c6_asset_values,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.fageou import (
     SandroneFageouHook,
@@ -148,6 +156,15 @@ def create_sandrone_content_unit(
         talent_level,
     )
     c6_unlocked = constellation >= 6
+    # C6 集束型追加段：段数、三段倍率与星烁擢升全部取自资产命座第 6 层效果行
+    # （装配期经 request.effect_params 交给角色单元）。已解锁却没有该效果行时
+    # 直接失败，不在内容代码里留数值常量兜底。
+    c6_values: SandroneC6AssetValues | None = None
+    if c6_unlocked:
+        c6_params = request.effect_params.get(SANDRONE_C6_UNLOCK_KEY)
+        if c6_params is None:
+            raise ContentUnitValidationError(f"C6 已解锁但缺少资产效果行：{SANDRONE_C6_UNLOCK_KEY}")
+        c6_values = read_c6_asset_values(c6_params)
     # C1：解算功率提升速度 -50%。功率自然上升与射线命中增量同属「功率提升」，
     # 二者按同一系数折算（0 命 20/s 与 +12/条，1 命 10/s 与 +6/条）。
     power_rate_factor = 1.0 - FAGEOU_C1_POWER_RATE_REDUCTION if constellation >= 1 else 1.0
@@ -162,7 +179,7 @@ def create_sandrone_content_unit(
             "elemental_skill": skill_talent_level,
             "elemental_burst": burst_talent_level,
         },
-        ascension_bonus=SANDRONE_C6_ASCENSION_BONUS if c6_unlocked else 0.0,
+        ascension_bonus=c6_values.ascension_bonus if c6_values is not None else 0.0,
     )
     impact_factory = SandroneActionImpactFactory(
         damage_specs,
@@ -234,11 +251,22 @@ def create_sandrone_content_unit(
                 bullet_speed_m_per_s=FAGEOU_BULLET_SPEED_M_PER_S,
                 p4_unlocked=p4_unlocked,
                 c2_index_tag_enabled=constellation >= 2,
-                c6_extra_normal_spec=compile_c6_extra_normal_spec() if c6_unlocked else None,
-                c6_extra_stellar_channel=(
-                    compile_c6_extra_stellar_channel(talent_level) if c6_unlocked else None
+                c6_extra_normal_spec=(
+                    compile_c6_extra_normal_spec(c6_values.normal_ratio)
+                    if c6_values is not None
+                    else None
                 ),
-                c6_extra_segments=SANDRONE_C6_EXTRA_SEGMENT_COUNT if c6_unlocked else 0,
+                c6_extra_stellar_channel=(
+                    compile_c6_extra_stellar_channel(
+                        talent_level,
+                        conduct_ratio=c6_values.conduct_ratio,
+                        swirl_ratio=c6_values.swirl_ratio,
+                        ascension_bonus=c6_values.ascension_bonus,
+                    )
+                    if c6_values is not None
+                    else None
+                ),
+                c6_extra_segments=(c6_values.extra_segment_count if c6_values is not None else 0),
             ),
         ),
         cooldown_definitions=(skill_cooldown_definition, burst_cooldown_definition),

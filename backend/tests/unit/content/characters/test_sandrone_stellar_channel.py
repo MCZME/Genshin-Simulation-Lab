@@ -20,6 +20,9 @@ from genshin_sim.content.characters.snezhnaya.sandrone.content import (
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
 )
+from genshin_sim.content.characters.snezhnaya.sandrone.effects import (
+    read_c6_asset_values,
+)
 from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
     compile_c6_extra_stellar_channel,
     compile_stellar_attack_channels,
@@ -221,11 +224,16 @@ def test_conduct_radiance_takes_priority_over_swirl() -> None:
     assert spec.stellar_reaction.stellar_base_multiplier == pytest.approx(1.55)
 
 
-def test_c6_extra_channel_uses_c6_ratios_instead_of_asset_entries() -> None:
-    # C6 追加段星烁通道：倍率取官方命座描述值（星超导 80%），不读资产
-    # 星超导条目（射线通道用的是同名条目，合成值 1.0）；擢升 +20% 随通道
-    # 折进星烁输入。
-    channel = compile_c6_extra_stellar_channel(1)
+def test_c6_extra_channel_uses_ratios_from_the_constellation_row() -> None:
+    # C6 追加段星烁通道：倍率与擢升来自资产命座第 6 层效果行（星超导 80%、
+    # 擢升 20%），与射线通道读取的星超导倍率条目（合成值 1.0）是两条来源。
+    values = read_c6_asset_values(sandrone_helpers.c6_effect_params())
+    channel = compile_c6_extra_stellar_channel(
+        1,
+        conduct_ratio=values.conduct_ratio,
+        swirl_ratio=values.swirl_ratio,
+        ascension_bonus=values.ascension_bonus,
+    )
     spec = resolve_stellar_attack_spec(
         channel,
         simulation=_context_with_radiance(conduct_stacks=3),
@@ -236,13 +244,21 @@ def test_c6_extra_channel_uses_c6_ratios_instead_of_asset_entries() -> None:
     assert spec.main_attack_tag == "星超导冰"
     assert spec.additional_attack_tags == ("桑多涅激光",)
     assert spec.stellar_reaction is not None
+    assert spec.stellar_reaction.scaling_value == pytest.approx(300.0 * values.conduct_ratio)
     assert spec.stellar_reaction.scaling_value == pytest.approx(300.0 * 0.8)
+    assert spec.stellar_reaction.stellar_ascension_bonus == pytest.approx(values.ascension_bonus)
     assert spec.stellar_reaction.stellar_ascension_bonus == pytest.approx(0.2)
 
 
-def test_c6_extra_channel_swirl_ratio_is_c6_value() -> None:
-    # 辉映·星扩散下追加段为 120%（官方描述值），同样是独立于资产条目的常量。
-    channel = compile_c6_extra_stellar_channel(1)
+def test_c6_extra_channel_swirl_ratio_comes_from_the_constellation_row() -> None:
+    # 辉映·星扩散下追加段为 120%（资产命座第 6 层效果行的星扩散分量）。
+    values = read_c6_asset_values(sandrone_helpers.c6_effect_params())
+    channel = compile_c6_extra_stellar_channel(
+        1,
+        conduct_ratio=values.conduct_ratio,
+        swirl_ratio=values.swirl_ratio,
+        ascension_bonus=values.ascension_bonus,
+    )
     spec = resolve_stellar_attack_spec(
         channel,
         simulation=_context_with_radiance(swirl=True),
@@ -252,6 +268,7 @@ def test_c6_extra_channel_swirl_ratio_is_c6_value() -> None:
     assert spec is not None
     assert spec.main_attack_tag == "星扩散冰"
     assert spec.stellar_reaction is not None
+    assert spec.stellar_reaction.scaling_value == pytest.approx(300.0 * values.swirl_ratio)
     assert spec.stellar_reaction.scaling_value == pytest.approx(300.0 * 1.2)
     assert spec.stellar_reaction.stellar_base_multiplier == pytest.approx(1.0)
 

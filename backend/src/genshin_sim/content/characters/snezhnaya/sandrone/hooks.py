@@ -156,6 +156,12 @@ class SandroneC4CoordinatedAttackHook:
 
         return self._cooldown_frames
 
+    @property
+    def ascension_bonus(self) -> float:
+        """C6 星烁擢升（覆盖本协同攻击）；仅供测试与诊断读取。"""
+
+        return self._ascension_bonus
+
     def _attack_ratio_for(self, variant: _CoordinatedAttackVariant) -> float:
         """按产出变体取攻击力倍率档：星超导冰取星超导档，星扩散冰取星扩散档。"""
 

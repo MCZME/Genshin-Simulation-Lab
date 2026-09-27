@@ -99,15 +99,17 @@ SANDRONE_C4_ATTACK_IMPACT_KEY = "character.sandrone.constellation.c4.attack"
 # 集束型冷凝射线伤害，至多 4 段（覆盖第 3–6 条射线，每条至多 1 段）。射线
 # 本身不受影响——倍率仍取「重击冷凝射线伤害」条目、附加标签仍为
 # 桑多涅重击普通激光；追加段自带数据表「命之座第6层 集束型冷凝射线」行的
-# 附加标签（桑多涅重击普通激光6命）与打击/ICD 数据。追加段数值：普通
-# 100% 攻击力；辉映·星烁转为对应星烁反应伤害，星超导 80% / 星扩散 120%
-# （官方描述值，资产天赋参数表无 C6 行）。追加段与伴随射线同帧同目标集合，
-# 不提供射线命中功率增量。全部星烁反应伤害擢升 +20%（独立乘区）。
-SANDRONE_C6_EXTRA_SEGMENT_COUNT = 4
-SANDRONE_C6_EXTRA_NORMAL_RATIO = 1.0
-SANDRONE_C6_EXTRA_CONDUCT_RATIO = 0.8
-SANDRONE_C6_EXTRA_SWIRL_RATIO = 1.2
-SANDRONE_C6_ASCENSION_BONUS = 0.2
+# 附加标签（桑多涅重击普通激光6命）与打击/ICD 数据。
+#
+# 追加段的数值（段数 4、普通 100%、辉映·星超导 80%、辉映·星扩散 120%）与
+# 全星烁伤害擢升 20% 均取自**资产命座第 6 层效果行**（``unlock_key = "c6"``，
+# 由装配期交给角色单元与效果单元，见 registries.CharacterContentUnitRequest
+# ``effect_params`` 与 EffectOwnerContext ``effect_params``），本文件不再维护
+# 第二份常量。追加段与伴随射线同帧同目标集合，不提供射线命中功率增量。
+SANDRONE_C6_UNLOCK_KEY = "c6"
+# 追加段效果行分量顺序（与资产一致，空位为文本内链接编号）：
+#   [0] 链接 解算  [1] 段数 4  [2] 普通 100%  [3] 段数 4（辉映段）
+#   [4] 星超导 80%  [5] 星扩散 120%  [6] 链接 星烁擢升  [7] 擢升 20%
 SANDRONE_C6_EXTRA_ADDITIONAL_TAG = "桑多涅重击普通激光6命"
 SANDRONE_C6_EXTRA_DISPLAY_NAME = "集束型冷凝射线伤害"
 SANDRONE_C6_EXTRA_CONDUCT_DISPLAY_NAME = "集束型冷凝射线星超导伤害"

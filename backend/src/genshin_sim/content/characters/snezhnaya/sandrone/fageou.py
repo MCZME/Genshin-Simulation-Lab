@@ -334,7 +334,7 @@ class SandroneFageouHook:
             if next_ray and frame >= next_ray and power < self._power_max:
                 ray_count += 1
                 # C6：自第 3 次发射冷凝射线起开启追加段记账（每会话一次），
-                # 之后每条真正发射的射线各追加一段，至多 SANDRONE_C6_EXTRA_SEGMENT_COUNT 段。
+                # 之后每条真正发射的射线各追加一段，至多 c6_extra_segments 段。
                 if ray_count == 3 and self._c6_extra_segments > 0:
                     extra_segments_left = self._c6_extra_segments
                 request, hit, targets = self._fire_ray(
@@ -572,8 +572,9 @@ class SandroneFageouHook:
     ) -> ImpactRequest | None:
         """C6 追加段：与伴随射线同帧同命中集合，按辉映查表分派。
 
-        普通段为固定 100% 攻击力（C6 无资产倍率条目）；星变体走追加段星烁
-        通道（星超导 80% / 星扩散 120%）。追加段不提供射线命中功率增量。
+        普通段与星变体都由编译期从资产命座第 6 层效果行解析的契约承载
+        （普通 100% 攻击力；星超导 80% / 星扩散 120%）。追加段不提供射线
+        命中功率增量。
         """
 
         if self._c6_extra_normal_spec is None:

@@ -115,7 +115,11 @@ def write_sandrone_asset_database(db_path: Path) -> Path:
 
 
 def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
-    """返回被动/命座集成测试需要的合成效果行（数值为合成数据）。"""
+    """返回被动/命座集成测试需要的合成效果行（数值与名称均为合成数据）。
+
+    效果行必须带 ``name``（资产转换器对命座行同样强制该字段）：内容单元用它做
+    错误定位与审计显示名，合成的名称刻意与真实资产不同，避免测试跟着资产改名。
+    """
 
     def _effect(
         effect_key: str,
@@ -123,6 +127,8 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
         handler_key: str,
         unlock_key: str,
         values: tuple[float, ...],
+        *,
+        name: str,
     ) -> EffectPayload:
         return EffectPayload(
             effect_key=f"{SANDRONE_CHARACTER_KEY}:{effect_key}",
@@ -133,6 +139,7 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
             handler_key=handler_key,
             params={
                 "schema_version": 1,
+                "name": name,
                 "components": tuple(
                     {
                         "source_param": f"number_{index}",
@@ -153,6 +160,7 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
             SANDRONE_PASSIVE_P4_HANDLER_KEY,
             "passive:4",
             (11332.0, 11330002.0, 50.0, 4.0, 10.0, 60.0, 10.0, 11335.0, 1.0, 0.1),
+            name="合成天赋4",
         ),
         _effect(
             "passive:5",
@@ -160,6 +168,7 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
             SANDRONE_PASSIVE_P5_HANDLER_KEY,
             "passive:5",
             (100.0, 8.0, 160.0),
+            name="合成天赋5",
         ),
         _effect(
             "passive:6",
@@ -167,6 +176,7 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
             SANDRONE_PASSIVE_P6_HANDLER_KEY,
             "passive:6",
             (100.0, 0.007, 0.14, 11330003.0),
+            name="合成天赋6",
         ),
         _effect(
             "constellation:c1",
@@ -174,6 +184,7 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
             SANDRONE_CONSTELLATION_C1_HANDLER_KEY,
             "c1",
             (11330001.0, 11330002.0, 0.5, 0.3),
+            name="合成命座1",
         ),
         _effect(
             "constellation:c2",
@@ -181,6 +192,7 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
             SANDRONE_CONSTELLATION_C2_HANDLER_KEY,
             "c2",
             (0.4, 11330001.0, 0.2, 3.0),
+            name="合成命座2",
         ),
         _effect(
             "constellation:c3",
@@ -188,6 +200,7 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
             SANDRONE_CONSTELLATION_C3_HANDLER_KEY,
             "c3",
             (11331.0, 3.0, 15.0),
+            name="合成命座3",
         ),
         _effect(
             "constellation:c4",
@@ -195,6 +208,7 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
             SANDRONE_CONSTELLATION_C4_HANDLER_KEY,
             "c4",
             (1.25, 1.875, 4.0),
+            name="合成命座4",
         ),
         _effect(
             "constellation:c5",
@@ -202,6 +216,7 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
             SANDRONE_CONSTELLATION_C5_HANDLER_KEY,
             "c5",
             (11335.0, 3.0, 15.0),
+            name="合成命座5",
         ),
         _effect(
             "constellation:c6",
@@ -211,6 +226,7 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
             # 与资产同序：链接 解算 / 段数 4 / 普通 100% / 段数 4（辉映段）
             # / 星超导 80% / 星扩散 120% / 链接 星烁擢升 / 擢升 20%。
             (11330001.0, 4.0, 1.0, 4.0, 0.8, 1.2, 11190007.0, 0.2),
+            name="合成命座6",
         ),
     )
 

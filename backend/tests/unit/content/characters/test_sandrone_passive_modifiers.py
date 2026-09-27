@@ -160,6 +160,7 @@ def test_c1_provider_covers_all_stellar_reaction_tags():
         owner_ref=OWNER_REF,
         bonus_value=0.3,
         source_key="character.sandrone.constellation.c1",
+        display_name="合成命座·星烁增伤",
     )
 
     def _query(main_attack_tag: str):
@@ -187,6 +188,7 @@ def test_c2_provider_converts_ray_index_to_crit_damage():
         crit_damage_per_ray=0.2,
         max_rays=3,
         source_key="character.sandrone.constellation.c2",
+        display_name="合成命座·射线暴伤",
     )
 
     def _query(ray_index: int | None, *, tag: str = "星超导冰"):

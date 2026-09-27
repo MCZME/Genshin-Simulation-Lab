@@ -77,14 +77,15 @@ SANDRONE_P5_ASCENSION_THRESHOLD = 4
 SANDRONE_P6_BASE_BONUS_PER_100_ATK = 0.007
 SANDRONE_P6_BASE_BONUS_CAP = 0.14
 
-# C1 生命之数·演算倍增：解算功率提升速度 -50%（效果行 number_3）——功率
+# C1 鎏金未凋，夕暮已远：解算功率提升速度 -50%（效果行 number_3）——功率
 # 自然上升与「发射冷凝射线时的进一步提升」同属功率提升，二者一并折算。星烁
 # 增伤 +30%（number_4）由 C1 效果单元的伤害修饰 provider 承载；覆盖口径为
 # 星烁反应通用增伤，星超导与星扩散都可吃到。
 FAGEOU_C1_POWER_RATE_REDUCTION = 0.5
 
-# C2 射线暴伤（效果行：+40% 基础、逐射线 +20%、至多 3 层；仅加成射线的
-# 星超导冰伤）。射线会话序号由法洁欧 hook 以请求附加标签承载，provider 换算。
+# C2 回望镜中，时岁翩然：射线暴伤（效果行：+40% 基础、逐射线 +20%、至多
+# 3 层；仅加成射线的星超导冰伤）。射线会话序号由法洁欧 hook 以请求附加标签
+# 承载，provider 换算。
 SANDRONE_C2_CRIT_DAMAGE_BASE = 0.4
 SANDRONE_C2_CRIT_DAMAGE_PER_RAY = 0.2
 SANDRONE_C2_CRIT_DAMAGE_MAX_RAYS = 3

@@ -2,15 +2,18 @@
 
 - P5 淑女的行事准则：每 100 点攻击力提升 8 点元素精通、至多 160（属性
   provider，攻击力按声明依赖实时读取，攻击力面板变化即时反映到精通）。
-- C1 生命之数·演算倍增：全队星烁反应伤害 +30%（星烁公式专属阶段
+- C1 鎏金未凋，夕暮已远：全队星烁反应伤害 +30%（星烁公式专属阶段
   ``stellar_reaction_bonus_add``，全队口径不按来源自筛，覆盖星超导（冰/雷）
   与星扩散（冰/风）全部星烁反应伤害）。
-- C2 霜愈的演进法：重击冷凝射线的星超导冰伤逐射线获得暴伤提升（通用暴伤
+- C2 回望镜中，时岁翩然：重击冷凝射线的星超导冰伤逐射线获得暴伤提升（通用暴伤
   槽位 ``crit_damage_add``；会话序号由法洁欧 hook 以请求附加标签承载，
   provider 只做换算）。
 
 折算口径：P5 按攻击力线性换算后应用上限，不做取整截断。
 """
+
+# 说明：provider 的审计显示名由 C1/C2 效果单元的工厂传入（`f"{效果行名称}·…"`），
+# 效果行名称取自资产 `params.name`，本文件不硬编码命座名。
 
 from __future__ import annotations
 
@@ -143,6 +146,7 @@ class SandroneC1StellarBonusProvider:
         owner_ref: str,
         bonus_value: float,
         source_key: str,
+        display_name: str,
     ) -> None:
         if not isinstance(owner_ref, str) or not owner_ref.strip():
             raise ContentUnitValidationError("C1 星烁增伤 owner_ref 必须是非空字符串")
@@ -154,7 +158,7 @@ class SandroneC1StellarBonusProvider:
             provider_key=self._provider_key,
             writes=frozenset({DamageModifierStage.STELLAR_REACTION_BONUS_ADD}),
             owner_ref=self._owner_ref,
-            display_name="生命之数·演算倍增·星烁增伤",
+            display_name=display_name,
         )
 
     def contribute(
@@ -192,6 +196,7 @@ class SandroneC2RayCritDamageProvider:
         crit_damage_per_ray: float,
         max_rays: int,
         source_key: str,
+        display_name: str,
     ) -> None:
         if not isinstance(owner_ref, str) or not owner_ref.strip():
             raise ContentUnitValidationError("C2 射线暴伤 owner_ref 必须是非空字符串")
@@ -209,7 +214,7 @@ class SandroneC2RayCritDamageProvider:
             provider_key=self._provider_key,
             writes=frozenset({DamageModifierStage.CRIT_DAMAGE_ADD}),
             owner_ref=self._owner_ref,
-            display_name="霜愈的演进法·射线暴伤",
+            display_name=display_name,
         )
 
     def contribute(

@@ -115,6 +115,20 @@ def _component(params: Mapping[str, object], index: int, *, purpose: str) -> flo
     return values[index]
 
 
+def _effect_name(params: Mapping[str, object], *, position: str) -> str:
+    """读取资产效果行的正式名称（``params.name``）。
+
+    效果行的名称随资产更新（命座与被动名称来自官方文本），内容代码不另存一份：
+    错误定位与审计显示名统一用它，避免名称在代码里过期。``position`` 只在效果行
+    缺名称时用于报错定位。
+    """
+
+    name = params.get("name")
+    if not isinstance(name, str) or not name.strip():
+        raise ContentUnitValidationError(f"{position} 的资产效果行缺少名称")
+    return name.strip()
+
+
 @dataclass(frozen=True, slots=True)
 class SandroneC6AssetValues:
     """资产命座第 6 层效果行的机器数值（唯一来源）。"""
@@ -246,8 +260,9 @@ def create_sandrone_passive_p5(request: EffectContentUnitRequest) -> ContentUnit
     """P5 淑女的行事准则：每 100 攻击力 +8 精通，至多 160。"""
 
     slot = _validate_owner(request, SANDRONE_PASSIVE_P5_HANDLER_KEY)
-    em_per_100 = _component(request.params, 1, purpose="淑女的行事准则")
-    em_cap = _component(request.params, 2, purpose="淑女的行事准则")
+    name = _effect_name(request.params, position="天赋「淑女的行事准则」")
+    em_per_100 = _component(request.params, 1, purpose=name)
+    em_cap = _component(request.params, 2, purpose=name)
     owner_ref = f"character:slot_{slot}"
     provider = SandroneAtkToMasteryProvider(
         owner_ref=owner_ref,
@@ -283,15 +298,17 @@ def create_sandrone_passive_p6(request: EffectContentUnitRequest) -> ContentUnit
 
 
 def create_sandrone_constellation_c1(request: EffectContentUnitRequest) -> ContentUnit:
-    """C1 生命之数·演算倍增：功率上升 -50%（角色单元承载）+ 全队星烁增伤。"""
+    """C1 鎏金未凋，夕暮已远：功率上升 -50%（角色单元承载）+ 全队星烁增伤。"""
 
     slot = _validate_owner(request, SANDRONE_CONSTELLATION_C1_HANDLER_KEY)
-    bonus_value = _component(request.params, 3, purpose="生命之数·演算倍增")
+    name = _effect_name(request.params, position="命之座第 1 层")
+    bonus_value = _component(request.params, 3, purpose=name)
     owner_ref = f"character:slot_{slot}"
     provider = SandroneC1StellarBonusProvider(
         owner_ref=owner_ref,
         bonus_value=bonus_value,
         source_key=SANDRONE_CONSTELLATION_C1_HANDLER_KEY,
+        display_name=f"{name}·星烁增伤",
     )
     return _effect_unit(
         request=request,
@@ -305,12 +322,13 @@ def create_sandrone_constellation_c1(request: EffectContentUnitRequest) -> Conte
 
 
 def create_sandrone_constellation_c2(request: EffectContentUnitRequest) -> ContentUnit:
-    """C2 霜愈的演进法：射线星超导冰伤逐射线暴伤（会话序号由法洁欧承载）。"""
+    """C2 回望镜中，时岁翩然：射线星超导冰伤逐射线暴伤（会话序号由法洁欧承载）。"""
 
     slot = _validate_owner(request, SANDRONE_CONSTELLATION_C2_HANDLER_KEY)
-    crit_base = _component(request.params, 0, purpose="霜愈的演进法")
-    crit_per_ray = _component(request.params, 2, purpose="霜愈的演进法")
-    max_rays = _component(request.params, 3, purpose="霜愈的演进法")
+    name = _effect_name(request.params, position="命之座第 2 层")
+    crit_base = _component(request.params, 0, purpose=name)
+    crit_per_ray = _component(request.params, 2, purpose=name)
+    max_rays = _component(request.params, 3, purpose=name)
     owner_ref = f"character:slot_{slot}"
     provider = SandroneC2RayCritDamageProvider(
         owner_ref=owner_ref,
@@ -318,6 +336,7 @@ def create_sandrone_constellation_c2(request: EffectContentUnitRequest) -> Conte
         crit_damage_per_ray=crit_per_ray,
         max_rays=int(max_rays),
         source_key=SANDRONE_CONSTELLATION_C2_HANDLER_KEY,
+        display_name=f"{name}·射线暴伤",
     )
     return _effect_unit(
         request=request,
@@ -334,7 +353,8 @@ def create_sandrone_constellation_c3(request: EffectContentUnitRequest) -> Conte
     """C3 不叹日落，不羡月升：普通攻击天赋等级 +3。"""
 
     _validate_owner(request, SANDRONE_CONSTELLATION_C3_HANDLER_KEY)
-    boost = _component(request.params, 1, purpose="不叹日落，不羡月升")
+    name = _effect_name(request.params, position="命之座第 3 层")
+    boost = _component(request.params, 1, purpose=name)
     if boost != int(boost) or boost <= 0:
         raise ContentUnitValidationError("C3 天赋等级提升必须是正整数")
     return _effect_unit(
@@ -355,9 +375,10 @@ def create_sandrone_constellation_c4(request: EffectContentUnitRequest) -> Conte
     """
 
     slot = _validate_owner(request, SANDRONE_CONSTELLATION_C4_HANDLER_KEY)
-    attack_ratio = _component(request.params, 0, purpose="世事皆数，昼来夜往")
-    swirl_ratio = _component(request.params, 1, purpose="世事皆数，昼来夜往")
-    cooldown_seconds = _component(request.params, 2, purpose="世事皆数，昼来夜往")
+    name = _effect_name(request.params, position="命之座第 4 层")
+    attack_ratio = _component(request.params, 0, purpose=name)
+    swirl_ratio = _component(request.params, 1, purpose=name)
+    cooldown_seconds = _component(request.params, 2, purpose=name)
     if attack_ratio <= 0.0 or swirl_ratio <= 0.0:
         raise ContentUnitValidationError("C4 协同攻击倍率必须为正数")
     if cooldown_seconds <= 0.0:
@@ -373,7 +394,7 @@ def create_sandrone_constellation_c4(request: EffectContentUnitRequest) -> Conte
         # 命座第 6 层效果行（拥有者上下文带全部效果行），未解锁第 6 层为 0。
         ascension_bonus=resolve_c6_ascension_bonus(
             request.owner_context,
-            purpose="世事皆数，昼来夜往",
+            purpose=name,
         ),
     )
     return _effect_unit(
@@ -390,7 +411,8 @@ def create_sandrone_constellation_c5(request: EffectContentUnitRequest) -> Conte
     """C5 万象皆灰，唯理明畅：元素爆发天赋等级 +3。"""
 
     _validate_owner(request, SANDRONE_CONSTELLATION_C5_HANDLER_KEY)
-    boost = _component(request.params, 1, purpose="万象皆灰，唯理明畅")
+    name = _effect_name(request.params, position="命之座第 5 层")
+    boost = _component(request.params, 1, purpose=name)
     if boost != int(boost) or boost <= 0:
         raise ContentUnitValidationError("C5 天赋等级提升必须是正整数")
     return _effect_unit(
@@ -411,6 +433,7 @@ def create_sandrone_constellation_c6(request: EffectContentUnitRequest) -> Conte
     """
 
     _validate_owner(request, SANDRONE_CONSTELLATION_C6_HANDLER_KEY)
+    name = _effect_name(request.params, position="命之座第 6 层")
     values = read_c6_asset_values(request.params)
     return _effect_unit(
         request=request,
@@ -420,6 +443,7 @@ def create_sandrone_constellation_c6(request: EffectContentUnitRequest) -> Conte
         purpose="sandrone_constellation_c6",
         note=C6_CARRIER_NOTE,
         compiled_params={
+            "name": name,
             "extra_segment_count": values.extra_segment_count,
             "normal_ratio": values.normal_ratio,
             "conduct_ratio": values.conduct_ratio,

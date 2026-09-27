@@ -77,10 +77,11 @@ SANDRONE_P5_ASCENSION_THRESHOLD = 4
 SANDRONE_P6_BASE_BONUS_PER_100_ATK = 0.007
 SANDRONE_P6_BASE_BONUS_CAP = 0.14
 
-# C1 生命之数·演算倍增：解算功率上升速度 -50%（效果行 number_3）。星烁
+# C1 生命之数·演算倍增：解算功率提升速度 -50%（效果行 number_3）——功率
+# 自然上升与「发射冷凝射线时的进一步提升」同属功率提升，二者一并折算。星烁
 # 增伤 +30%（number_4）由 C1 效果单元的伤害修饰 provider 承载；覆盖口径为
 # 星烁反应通用增伤，星超导与星扩散都可吃到。
-FAGEOU_C1_POWER_RISE_MULTIPLIER = 0.5
+FAGEOU_C1_POWER_RATE_REDUCTION = 0.5
 
 # C2 射线暴伤（效果行：+40% 基础、逐射线 +20%、至多 3 层；仅加成射线的
 # 星超导冰伤）。射线会话序号由法洁欧 hook 以请求附加标签承载，provider 换算。
@@ -94,17 +95,23 @@ SANDRONE_RAY_INDEX_TAG_PREFIX = "sandrone_ray_index:"
 # 两个倍率分量与冷却帧数从资产行解析。
 SANDRONE_C4_ATTACK_IMPACT_KEY = "character.sandrone.constellation.c4.attack"
 
-# C6 集束型冷凝射线：第三次发射的射线转集束型（普通变体附加标签独立），
-# 额外至多 4 段（普通 100% / 星超导 80% / 星扩散 120%——星扩散取自官方
-# 描述值，资产源缺星扩散分支）；全部星烁反应
-# 伤害擢升 +20%（效果行 number_7）。额外段叠加在后续射线之上（每条后续射线
-# 至多携带一段），不改变射线节奏；额外段不提供射线命中功率增量。
+# C6 集束型冷凝射线：解算模式下自第 3 次发射冷凝射线起，在原本射线上追加
+# 集束型冷凝射线伤害，至多 4 段（覆盖第 3–6 条射线，每条至多 1 段）。射线
+# 本身不受影响——倍率仍取「重击冷凝射线伤害」条目、附加标签仍为
+# 桑多涅重击普通激光；追加段自带数据表「命之座第6层 集束型冷凝射线」行的
+# 附加标签（桑多涅重击普通激光6命）与打击/ICD 数据。追加段数值：普通
+# 100% 攻击力；辉映·星烁转为对应星烁反应伤害，星超导 80% / 星扩散 120%
+# （官方描述值，资产天赋参数表无 C6 行）。追加段与伴随射线同帧同目标集合，
+# 不提供射线命中功率增量。全部星烁反应伤害擢升 +20%（独立乘区）。
 SANDRONE_C6_EXTRA_SEGMENT_COUNT = 4
 SANDRONE_C6_EXTRA_NORMAL_RATIO = 1.0
 SANDRONE_C6_EXTRA_CONDUCT_RATIO = 0.8
 SANDRONE_C6_EXTRA_SWIRL_RATIO = 1.2
 SANDRONE_C6_ASCENSION_BONUS = 0.2
-SANDRONE_C6_BEAM_ADDITIONAL_TAG = "桑多涅重击普通激光6命"
+SANDRONE_C6_EXTRA_ADDITIONAL_TAG = "桑多涅重击普通激光6命"
+SANDRONE_C6_EXTRA_DISPLAY_NAME = "集束型冷凝射线伤害"
+SANDRONE_C6_EXTRA_CONDUCT_DISPLAY_NAME = "集束型冷凝射线星超导伤害"
+SANDRONE_C6_EXTRA_SWIRL_DISPLAY_NAME = "集束型冷凝射线星扩散伤害"
 
 # 桑多涅为双手剑：下落攻击取双手剑通用资料（content/generic/plunge.py）。
 SANDRONE_PLUNGE_ATTACK_DATA = PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE["claymore"]
@@ -188,9 +195,8 @@ SANDRONE_CHARGED_ATTACK_ACTION_KEY = "character.sandrone.charged_attack"
 SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY = f"{SANDRONE_CHARGED_ATTACK_ACTION_KEY}.sweep"
 SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY = f"{SANDRONE_CHARGED_ATTACK_ACTION_KEY}.overload"
 SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY = f"{SANDRONE_CHARGED_ATTACK_ACTION_KEY}.ray"
-SANDRONE_CHARGED_ATTACK_BEAM_RAY_EXTRA_IMPACT_KEY = (
-    f"{SANDRONE_CHARGED_ATTACK_ACTION_KEY}.beam_ray_extra"
-)
+# C6 集束型附加段：叠加在射线之上的独立影响点（不改射线契约）。
+SANDRONE_CHARGED_ATTACK_EXTRA_IMPACT_KEY = f"{SANDRONE_CHARGED_ATTACK_ACTION_KEY}.extra_segment"
 
 # 法洁欧内容状态字段（state_key = handler key，与连段状态同挂载）。
 FAGEOU_STATE_MODE = "fageou_mode"
@@ -202,7 +208,7 @@ FAGEOU_STATE_DRAIN_ACTIVE = "fageou_drain_active"
 # 切片 4 新增：射线会话序号与 C6 集束型额外段余量（进入解算时清零）；
 # P4 改进战术叠层与过期帧（跨会话保留）；P4 棱晶弹强化窗口与爆发光束加成。
 FAGEOU_STATE_RAY_COUNT = "fageou_ray_count"
-FAGEOU_STATE_BEAM_EXTRAS_LEFT = "fageou_beam_extras_left"
+FAGEOU_STATE_EXTRA_SEGMENTS_LEFT = "fageou_extra_segments_left"
 FAGEOU_STATE_TACTICS_STACKS = "fageou_tactics_stacks"
 FAGEOU_STATE_TACTICS_EXPIRE_FRAME = "fageou_tactics_expire_frame"
 FAGEOU_STATE_PRISM2_BOOST_UNTIL = "fageou_prism2_boost_until"
@@ -219,11 +225,18 @@ FAGEOU_PRE_SWING_FRAMES = 36
 # （进入过载后首发射击 = 过载起点 +30F）。
 FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES = 21
 FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES = 30
-# 射线轨：解算起算 +90F 首法、间隔 66F（1.1s）；次数由功率动力学涌现。
+# 射线轨：解算起算 +90F 首法（实测锚点：按下 +130 ≈ 前摇 36 + 90，即攻略
+# 「开始重击后约 1.5s」按进入解算起算，见 docs/临时 3.9.2）、间隔 60F（1.0s，
+# 攻略「射线间隔约 1s」）；次数由功率动力学涌现（0 命 3 次、1 命 6 次）。
+# 注：命中判定数据把冷凝射线的触发冷却写作 1.1s，与攻略的「约 1s」冲突；
+# 本轮以「0 命 3 次 / 1 命 6 次严格翻倍」的涌现结果为准取 1.0s（维护者确认）。
 FAGEOU_RAY_FIRST_OFFSET_FRAMES = 90
-FAGEOU_RAY_INTERVAL_FRAMES = 66
+FAGEOU_RAY_INTERVAL_FRAMES = 60
 # 功率动力学：上升 20/s、射线命中 +12、场上衰减 5.5/s、后台 ×3（文本 300%）、
 # E 排空 ≈200/s（约 0.5s 排满 100）；过载退出阈值 50；上限 100。
+# 上升与射线命中增量同属「功率提升」，C1 的 -50% 在编译期一并折算
+# （0 命 20/s 与 +12/条，1 命 10/s 与 +6/条）——据此 0 命涌现 3 次射线、
+# 1 命涌现 6 次，与攻略「0 命通常 3 次、1 命约 6 次」一致。
 FAGEOU_POWER_RISE_PER_SECOND = 20.0
 FAGEOU_RAY_HIT_POWER_GAIN = 12.0
 FAGEOU_POWER_DECAY_PER_SECOND = 5.5
@@ -286,16 +299,16 @@ SANDRONE_CHARGED_ATTACK_DAMAGE_DATA = {
     ),
 }
 
-# C6 集束型冷凝射线（第三次发射的射线转集束型）：普通变体与射线同一倍率条目，
-# 附加标签独立（命中判定数据 3.4「命之座第6层 集束型冷凝射线」行）；星变体
-# 与射线星变体同标签（桑多涅激光），复用射线星烁通道。
-SANDRONE_CHARGED_ATTACK_BEAM_RAY_DAMAGE_DATA = SandroneChargedAttackDamageData(
-    impact_key=SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
+# C6 集束型追加段（数据表「命之座第6层 集束型冷凝射线」行）：打击类型/远近
+# /ICD 与射线同形，附加标签独立；星变体行（星超导/星扩散）与射线星变体同
+# 标签（桑多涅激光），复用射线星烁通道。
+SANDRONE_C6_EXTRA_DAMAGE_DATA = SandroneChargedAttackDamageData(
+    impact_key=SANDRONE_CHARGED_ATTACK_EXTRA_IMPACT_KEY,
     strike_type=StrikeType.BLUNT,
     range_type="远程",
     icd_tag_key=SANDRONE_RAY_ICD_TAG_KEY,
     icd_sequence_key=SANDRONE_DAMAGE_ICD_SEQUENCE_KEY,
-    additional_attack_tags=(SANDRONE_C6_BEAM_ADDITIONAL_TAG,),
+    additional_attack_tags=(SANDRONE_C6_EXTRA_ADDITIONAL_TAG,),
 )
 
 # ---- 辉映·星烁直伤分支（切片 3）----

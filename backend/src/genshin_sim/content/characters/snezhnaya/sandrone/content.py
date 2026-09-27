@@ -16,7 +16,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.actions import (
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_BULLET_SPEED_M_PER_S,
-    FAGEOU_C1_POWER_RISE_MULTIPLIER,
+    FAGEOU_C1_POWER_RATE_REDUCTION,
     FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
     FAGEOU_POWER_DECAY_PER_SECOND,
     FAGEOU_POWER_MAX,
@@ -50,7 +50,6 @@ from genshin_sim.content.characters.snezhnaya.sandrone.fageou import (
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.impacts import (
     SandroneActionImpactFactory,
-    compile_c6_beam_ray_normal_spec,
     compile_c6_extra_normal_spec,
     compile_charged_attack_damage_specs,
     compile_elemental_burst_damage_specs,
@@ -95,8 +94,8 @@ def create_sandrone_content_unit(
 ) -> ContentUnit:
     """桑多涅内容单元工厂（动作状态机 + 普攻/战技/爆发/下落契约）。
 
-    命座等级在编译期已知：C1（功率上升减速）、C2（射线暴伤序号标签）、
-    C6（集束型射线、额外段与星烁擢升）按 ``request.constellation`` 直接
+    命座等级在编译期已知：C1（功率提升减速）、C2（射线暴伤序号标签）、
+    C6（集束型追加段与星烁擢升）按 ``request.constellation`` 直接
     折算进角色单元的机器参数与星烁通道；效果行单元（effects.py）只承载
     各自可独立成单元的切片。
     """
@@ -149,6 +148,9 @@ def create_sandrone_content_unit(
         talent_level,
     )
     c6_unlocked = constellation >= 6
+    # C1：解算功率提升速度 -50%。功率自然上升与射线命中增量同属「功率提升」，
+    # 二者按同一系数折算（0 命 20/s 与 +12/条，1 命 10/s 与 +6/条）。
+    power_rate_factor = 1.0 - FAGEOU_C1_POWER_RATE_REDUCTION if constellation >= 1 else 1.0
     # P4 悠久的演算机关：突破 1 阶（20 级突破）解锁；行为随角色单元编译，
     # 锁定时排空不计层、棱晶弹不强化、爆发不结算光束加成。
     p4_unlocked = request.ascension_phase >= SANDRONE_P4_ASCENSION_THRESHOLD
@@ -222,12 +224,9 @@ def create_sandrone_content_unit(
                 overload_shot_interval_frames=FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
                 ray_first_offset_frames=FAGEOU_RAY_FIRST_OFFSET_FRAMES,
                 ray_interval_frames=FAGEOU_RAY_INTERVAL_FRAMES,
-                # C1：解算功率上升速度降低 50%（效果行 number_3，编译期折算）。
-                power_rise_per_second=(
-                    FAGEOU_POWER_RISE_PER_SECOND
-                    * (1.0 - FAGEOU_C1_POWER_RISE_MULTIPLIER if constellation >= 1 else 1.0)
-                ),
-                ray_hit_power_gain=FAGEOU_RAY_HIT_POWER_GAIN,
+                # C1：解算功率提升速度降低 50%，功率上升与射线命中增量一并折算。
+                power_rise_per_second=FAGEOU_POWER_RISE_PER_SECOND * power_rate_factor,
+                ray_hit_power_gain=FAGEOU_RAY_HIT_POWER_GAIN * power_rate_factor,
                 power_decay_per_second=FAGEOU_POWER_DECAY_PER_SECOND,
                 power_max=FAGEOU_POWER_MAX,
                 ray_length=FAGEOU_RAY_LENGTH,
@@ -235,15 +234,6 @@ def create_sandrone_content_unit(
                 bullet_speed_m_per_s=FAGEOU_BULLET_SPEED_M_PER_S,
                 p4_unlocked=p4_unlocked,
                 c2_index_tag_enabled=constellation >= 2,
-                c6_beam_ray_normal_spec=(
-                    compile_c6_beam_ray_normal_spec(
-                        request.character_key,
-                        entries_by_key,
-                        talent_level,
-                    )
-                    if c6_unlocked
-                    else None
-                ),
                 c6_extra_normal_spec=compile_c6_extra_normal_spec() if c6_unlocked else None,
                 c6_extra_stellar_channel=(
                     compile_c6_extra_stellar_channel(talent_level) if c6_unlocked else None

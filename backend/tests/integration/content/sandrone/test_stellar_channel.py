@@ -123,7 +123,7 @@ def test_radiance_buff_switches_rays_to_stellar_conduct_channel(sandrone_assembl
     assembled.simulator.run()
 
     rays = [e for e in damage_events if e.payload.result.damage_name == RAY_STELLAR_DISPLAY_NAME]
-    assert [e.frame for e in rays] == [128, 194, 260]
+    assert [e.frame for e in rays] == [128, 188, 248]
     atk = _resolved_atk(assembled)
     for event in rays:
         result = event.payload.result
@@ -240,7 +240,7 @@ def test_stellar_swirl_trigger_activates_swirl_channel(sandrone_assembled):
     rays = [
         e for e in damage_events if e.payload.result.damage_name == RAY_STELLAR_SWIRL_DISPLAY_NAME
     ]
-    assert [e.frame for e in rays] == [128, 194, 260]
+    assert [e.frame for e in rays] == [128, 188, 248]
     atk = _resolved_atk(assembled)
     for event in rays:
         result = event.payload.result
@@ -282,8 +282,9 @@ def test_c1_bonus_covers_stellar_swirl_damage(sandrone_assembled):
     rays = [
         e for e in damage_events if e.payload.result.damage_name == RAY_STELLAR_SWIRL_DISPLAY_NAME
     ]
-    # C1 功率上升减速同时生效：射线由 3 次涌现为 4 次（128/194/260/326）。
-    assert [e.frame for e in rays] == [128, 194, 260, 326]
+    # C1 功率提升速度减半（上升与射线命中增量一并折算）：0 命 3 次涌现为
+    # 1 命 6 次，380 帧窗口内可见前 5 次（128/188/248/308/368）。
+    assert [e.frame for e in rays] == [128, 188, 248, 308, 368]
     for event in rays:
         stellar = event.payload.result.stellar_reaction_resolution
         assert stellar is not None

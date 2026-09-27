@@ -71,8 +71,8 @@ P6_CARRIER_NOTE = (
 )
 C1_CARRIER_NOTE = "功率上升减速由角色单元按命座等级编译（fageou 构造参数）。"
 C6_CARRIER_NOTE = (
-    "集束型射线、额外段与星烁擢升由角色单元按命座等级编译（fageou/impacts/"
-    "stellar，常量见 data.py；星扩散额外段倍率取官方描述值）。"
+    "集束型追加段与星烁擢升由角色单元按命座等级编译（fageou/impacts/"
+    "stellar，常量见 data.py；追加段倍率取官方命座描述值）。"
 )
 
 
@@ -334,7 +334,7 @@ def create_sandrone_constellation_c5(request: EffectContentUnitRequest) -> Conte
 
 
 def create_sandrone_constellation_c6(request: EffectContentUnitRequest) -> ContentUnit:
-    """C6 万象归寂，数之所至：集束型射线与星烁擢升（角色单元承载）。"""
+    """C6 水仙梦醒，且望晨光：集束型追加段与星烁擢升（角色单元承载）。"""
 
     _validate_owner(request, SANDRONE_CONSTELLATION_C6_HANDLER_KEY)
     return _effect_unit(

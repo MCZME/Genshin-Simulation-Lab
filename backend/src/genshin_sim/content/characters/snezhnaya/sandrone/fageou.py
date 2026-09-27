@@ -42,8 +42,8 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_RAY_WIDTH,
     FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
     FAGEOU_STATE_BEAM_BONUS,
-    FAGEOU_STATE_BEAM_EXTRAS_LEFT,
     FAGEOU_STATE_DRAIN_ACTIVE,
+    FAGEOU_STATE_EXTRA_SEGMENTS_LEFT,
     FAGEOU_STATE_MODE,
     FAGEOU_STATE_NEXT_RAY_FRAME,
     FAGEOU_STATE_NEXT_SHOT_FRAME,
@@ -55,7 +55,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_STATE_TACTICS_STACKS,
     SANDRONE_CHARACTER_HANDLER_KEY,
     SANDRONE_CHARGED_ATTACK_ACTION_KEY,
-    SANDRONE_CHARGED_ATTACK_BEAM_RAY_EXTRA_IMPACT_KEY,
+    SANDRONE_CHARGED_ATTACK_EXTRA_IMPACT_KEY,
     SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY,
     SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
     SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY,
@@ -144,7 +144,7 @@ def sandrone_state_schema(owner_ref: str) -> StateSchema:
             non_negative=True,
         ),
         StateField(
-            name=FAGEOU_STATE_BEAM_EXTRAS_LEFT,
+            name=FAGEOU_STATE_EXTRA_SEGMENTS_LEFT,
             field_type=StateFieldType.INT,
             default=0,
             non_negative=True,
@@ -206,7 +206,6 @@ class SandroneFageouHook:
         bullet_speed_m_per_s: float = FAGEOU_BULLET_SPEED_M_PER_S,
         p4_unlocked: bool = False,
         c2_index_tag_enabled: bool = False,
-        c6_beam_ray_normal_spec: DamageImpactSpec | None = None,
         c6_extra_normal_spec: DamageImpactSpec | None = None,
         c6_extra_stellar_channel: SandroneStellarAttackChannel | None = None,
         c6_extra_segments: int = 0,
@@ -219,7 +218,9 @@ class SandroneFageouHook:
         if missing:
             raise SandroneFageouError(f"法洁欧缺少伤害契约：{sorted(missing)}")
         if c6_extra_segments and (c6_extra_normal_spec is None):
-            raise SandroneFageouError("C6 额外段已启用但缺少普通段伤害契约")
+            raise SandroneFageouError("C6 追加段已启用但缺少普通段伤害契约")
+        if c6_extra_stellar_channel is not None and c6_extra_segments == 0:
+            raise SandroneFageouError("C6 星烁追加段通道在未启用追加段时不应存在")
         self._owner_ref = owner_ref
         self._slot = slot
         self._damage_specs: dict[str, DamageImpactSpec] = dict(damage_specs)
@@ -241,7 +242,6 @@ class SandroneFageouHook:
         self._bullet_speed_m_per_s = bullet_speed_m_per_s
         self._p4_unlocked = p4_unlocked
         self._c2_index_tag_enabled = c2_index_tag_enabled
-        self._c6_beam_ray_normal_spec = c6_beam_ray_normal_spec
         self._c6_extra_normal_spec = c6_extra_normal_spec
         self._c6_extra_stellar_channel = c6_extra_stellar_channel
         self._c6_extra_segments = c6_extra_segments
@@ -289,7 +289,7 @@ class SandroneFageouHook:
         next_ray = int(as_number(FAGEOU_STATE_NEXT_RAY_FRAME, 0))
         drain_active = bool(state.get(FAGEOU_STATE_DRAIN_ACTIVE, False))
         ray_count = int(as_number(FAGEOU_STATE_RAY_COUNT, 0))
-        beam_extras_left = int(as_number(FAGEOU_STATE_BEAM_EXTRAS_LEFT, 0))
+        extra_segments_left = int(as_number(FAGEOU_STATE_EXTRA_SEGMENTS_LEFT, 0))
         tactics_stacks = int(as_number(FAGEOU_STATE_TACTICS_STACKS, 0))
         tactics_expire = int(as_number(FAGEOU_STATE_TACTICS_EXPIRE_FRAME, 0))
 
@@ -333,24 +333,24 @@ class SandroneFageouHook:
                 next_shot += self._solve_shot_interval
             if next_ray and frame >= next_ray and power < self._power_max:
                 ray_count += 1
-                is_c6_beam_ray = self._c6_extra_segments > 0 and ray_count == 3
+                # C6：自第 3 次发射冷凝射线起开启追加段记账（每会话一次），
+                # 之后每条真正发射的射线各追加一段，至多 SANDRONE_C6_EXTRA_SEGMENT_COUNT 段。
+                if ray_count == 3 and self._c6_extra_segments > 0:
+                    extra_segments_left = self._c6_extra_segments
                 request, hit, targets = self._fire_ray(
                     context,
                     frame,
-                    is_c6_beam_ray=is_c6_beam_ray,
                     ray_count=ray_count,
                 )
                 if request is not None:
                     requests.append(request)
-                    if is_c6_beam_ray:
-                        beam_extras_left = self._c6_extra_segments
-                    elif beam_extras_left > 0:
-                        # C6 额外段叠加在后续射线之上：每条后续射线至多携带
-                        # 一段，不提供射线命中功率增量。
-                        extra = self._fire_beam_extra(context, frame, targets)
+                    if extra_segments_left > 0:
+                        # 追加段叠加在射线之上：与伴随射线同帧、同命中集合，
+                        # 不提供射线命中功率增量，也不改变射线节奏。
+                        extra = self._fire_extra_segment(context, frame, targets)
                         if extra is not None:
                             requests.append(extra)
-                        beam_extras_left -= 1
+                        extra_segments_left -= 1
                 if hit:
                     power = min(self._power_max, power + self._ray_hit_gain)
                 next_ray += self._ray_interval
@@ -391,7 +391,7 @@ class SandroneFageouHook:
         put(FAGEOU_STATE_NEXT_SHOT_FRAME, next_shot)
         put(FAGEOU_STATE_NEXT_RAY_FRAME, next_ray)
         put(FAGEOU_STATE_RAY_COUNT, ray_count)
-        put(FAGEOU_STATE_BEAM_EXTRAS_LEFT, beam_extras_left)
+        put(FAGEOU_STATE_EXTRA_SEGMENTS_LEFT, extra_segments_left)
         return self._result(fields, requests)
 
     def _result(
@@ -538,15 +538,14 @@ class SandroneFageouHook:
         context: object,
         frame: int,
         *,
-        is_c6_beam_ray: bool = False,
         ray_count: int = 0,
     ) -> tuple[ImpactRequest | None, bool, tuple[str, ...]]:
         """射线即时结算：穿透多目标聚合为一条攻击根，命中返回功率增量证据。
 
         发射时按辉映状态查表分派：持用辉映·星超导/星扩散时射线契约切换为
         星变体并附组装好的星烁输入（stellar.py），否则走普通射线契约。
-        C6 下每会话第三次发射转为集束型（普通变体附加标签独立，星变体与
-        射线相同）；C2 下请求携带射线会话序号附加标签供暴伤 provider 定向。
+        C6 追加段由调用方另记为独立影响点，不改变本契约；C2 下请求携带
+        射线会话序号附加标签供暴伤 provider 定向。
         """
 
         aim = self._aim(context)
@@ -560,21 +559,21 @@ class SandroneFageouHook:
             frame=frame,
             impact_key=SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
             target_refs=targets,
-            damage_spec=self._ray_damage_spec(context, frame, is_c6_beam_ray=is_c6_beam_ray),
+            damage_spec=self._ray_damage_spec(context, frame),
             tags=self._ray_session_tags(ray_count),
         )
         return request, True, targets
 
-    def _fire_beam_extra(
+    def _fire_extra_segment(
         self,
         context: object,
         frame: int,
         targets: tuple[str, ...],
     ) -> ImpactRequest | None:
-        """C6 集束型额外段：与伴随射线同帧同命中集合，按辉映查表分派。
+        """C6 追加段：与伴随射线同帧同命中集合，按辉映查表分派。
 
-        普通段为固定 100% 攻击力（不读倍率条目）；星变体走集束型星烁通道
-        （星超导 80% / 星扩散 120%）。额外段不提供射线命中功率增量。
+        普通段为固定 100% 攻击力（C6 无资产倍率条目）；星变体走追加段星烁
+        通道（星超导 80% / 星扩散 120%）。追加段不提供射线命中功率增量。
         """
 
         if self._c6_extra_normal_spec is None:
@@ -591,7 +590,7 @@ class SandroneFageouHook:
                 damage_spec = stellar_spec
         return self._damage_request(
             frame=frame,
-            impact_key=SANDRONE_CHARGED_ATTACK_BEAM_RAY_EXTRA_IMPACT_KEY,
+            impact_key=SANDRONE_CHARGED_ATTACK_EXTRA_IMPACT_KEY,
             target_refs=targets,
             damage_spec=damage_spec,
         )
@@ -607,12 +606,8 @@ class SandroneFageouHook:
         self,
         context: object,
         frame: int,
-        *,
-        is_c6_beam_ray: bool = False,
     ) -> DamageImpactSpec:
         normal_spec = self._damage_specs[SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY]
-        if is_c6_beam_ray and self._c6_beam_ray_normal_spec is not None:
-            normal_spec = self._c6_beam_ray_normal_spec
         if self._stellar_channel is None:
             return normal_spec
         stellar_spec = resolve_stellar_attack_spec(

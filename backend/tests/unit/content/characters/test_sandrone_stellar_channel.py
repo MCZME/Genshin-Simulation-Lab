@@ -21,6 +21,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
+    compile_c6_extra_stellar_channel,
     compile_stellar_attack_channels,
     resolve_stellar_attack_spec,
 )
@@ -218,6 +219,41 @@ def test_conduct_radiance_takes_priority_over_swirl() -> None:
     assert spec.main_attack_tag == "星超导冰"
     assert spec.stellar_reaction is not None
     assert spec.stellar_reaction.stellar_base_multiplier == pytest.approx(1.55)
+
+
+def test_c6_extra_channel_uses_c6_ratios_instead_of_asset_entries() -> None:
+    # C6 追加段星烁通道：倍率取官方命座描述值（星超导 80%），不读资产
+    # 星超导条目（射线通道用的是同名条目，合成值 1.0）；擢升 +20% 随通道
+    # 折进星烁输入。
+    channel = compile_c6_extra_stellar_channel(1)
+    spec = resolve_stellar_attack_spec(
+        channel,
+        simulation=_context_with_radiance(conduct_stacks=3),
+        owner_ref=OWNER_REF,
+        frame=FRAME,
+    )
+    assert spec is not None
+    assert spec.main_attack_tag == "星超导冰"
+    assert spec.additional_attack_tags == ("桑多涅激光",)
+    assert spec.stellar_reaction is not None
+    assert spec.stellar_reaction.scaling_value == pytest.approx(300.0 * 0.8)
+    assert spec.stellar_reaction.stellar_ascension_bonus == pytest.approx(0.2)
+
+
+def test_c6_extra_channel_swirl_ratio_is_c6_value() -> None:
+    # 辉映·星扩散下追加段为 120%（官方描述值），同样是独立于资产条目的常量。
+    channel = compile_c6_extra_stellar_channel(1)
+    spec = resolve_stellar_attack_spec(
+        channel,
+        simulation=_context_with_radiance(swirl=True),
+        owner_ref=OWNER_REF,
+        frame=FRAME,
+    )
+    assert spec is not None
+    assert spec.main_attack_tag == "星扩散冰"
+    assert spec.stellar_reaction is not None
+    assert spec.stellar_reaction.scaling_value == pytest.approx(300.0 * 1.2)
+    assert spec.stellar_reaction.stellar_base_multiplier == pytest.approx(1.0)
 
 
 def test_compile_rejects_missing_stellar_scaling_entry() -> None:

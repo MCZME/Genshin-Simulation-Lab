@@ -25,7 +25,9 @@ from typing import NamedTuple
 from genshin_sim.assets.models import TalentScalingEntry
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_C6_ASCENSION_BONUS,
+    SANDRONE_C6_EXTRA_CONDUCT_DISPLAY_NAME,
     SANDRONE_C6_EXTRA_CONDUCT_RATIO,
+    SANDRONE_C6_EXTRA_SWIRL_DISPLAY_NAME,
     SANDRONE_C6_EXTRA_SWIRL_RATIO,
     SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
     SANDRONE_DAMAGE_ELEMENT,
@@ -209,29 +211,30 @@ def compile_stellar_attack_channels(
 def compile_c6_extra_stellar_channel(
     talent_level: int,
 ) -> SandroneStellarAttackChannel:
-    """编译 C6 集束型额外段的星烁通道（星超导 80% / 星扩散 120%）。
+    """编译 C6 追加段的星烁通道（星超导 80% / 星扩散 120%）。
 
-    命中判定数据与射线星变体同标签同形状（单体/钝击/桑多涅激光）；倍率取
-    C6 官方描述值（资产效果行 number_5 = 0.8，星扩散分支资产缺失、取官方
-    描述值），不读倍率条目。
+    命中判定数据与射线星变体同形（单体/钝击/远程/桑多涅激光标签、0 元素量、
+    不参与附着），对应数据表「命之座第6层 集束型冷凝射线星超导 / 星扩散」两行。
+    倍率取官方命座描述值——资产命座条目无参数行、天赋参数表亦无 C6 行，
+    故 80% / 120% 直接以常量承载，不读倍率条目。
     """
 
     ray_plan = _STELLAR_CHANNEL_PLANS[0]
     if ray_plan.impact_key != SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY:
-        raise ContentUnitValidationError("C6 额外段星烁通道缺少射线命中判定计划")
+        raise ContentUnitValidationError("C6 追加段星烁通道缺少射线命中判定计划")
     return SandroneStellarAttackChannel(
         impact_key=SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
         conduct_spec=_compile_stellar_variant(
             ray_plan,
             talent_level,
             main_attack_tag=STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
-            display_name=ray_plan.conduct_label,
+            display_name=SANDRONE_C6_EXTRA_CONDUCT_DISPLAY_NAME,
         ),
         swirl_spec=_compile_stellar_variant(
             ray_plan,
             talent_level,
             main_attack_tag=STELLAR_SWIRL_ICE_DAMAGE_TAG,
-            display_name=ray_plan.swirl_label,
+            display_name=SANDRONE_C6_EXTRA_SWIRL_DISPLAY_NAME,
         ),
         conduct_ratio=SANDRONE_C6_EXTRA_CONDUCT_RATIO,
         swirl_ratio=SANDRONE_C6_EXTRA_SWIRL_RATIO,

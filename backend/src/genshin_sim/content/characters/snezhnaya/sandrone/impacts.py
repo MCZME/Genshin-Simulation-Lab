@@ -15,11 +15,12 @@ from genshin_sim.assets.models import TalentScalingEntry
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_STATE_BEAM_BONUS,
     FAGEOU_STATE_PRISM2_BOOST_UNTIL,
+    SANDRONE_C6_EXTRA_DAMAGE_DATA,
+    SANDRONE_C6_EXTRA_DISPLAY_NAME,
     SANDRONE_C6_EXTRA_NORMAL_RATIO,
     SANDRONE_CHARACTER_HANDLER_KEY,
-    SANDRONE_CHARGED_ATTACK_BEAM_RAY_DAMAGE_DATA,
-    SANDRONE_CHARGED_ATTACK_BEAM_RAY_EXTRA_IMPACT_KEY,
     SANDRONE_CHARGED_ATTACK_DAMAGE_DATA,
+    SANDRONE_CHARGED_ATTACK_EXTRA_IMPACT_KEY,
     SANDRONE_CHARGED_ATTACK_MAIN_TAG,
     SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY,
     SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
@@ -421,46 +422,17 @@ def compile_charged_attack_damage_specs(
     return specs
 
 
-def compile_c6_beam_ray_normal_spec(
-    character_key: str,
-    entries_by_key: dict[tuple[str, str, str], TalentScalingEntry],
-    talent_level: int,
-) -> DamageImpactSpec:
-    """C6 集束型冷凝射线普通变体：与射线同一倍率条目、附加标签独立。"""
-
-    entry = entries_by_key.get((character_key, "normal_attack", "重击冷凝射线伤害"))
-    if entry is None:
-        raise ContentUnitValidationError("桑多涅 C6 集束型缺少资产倍率条目：重击冷凝射线伤害")
-    damage_data = SANDRONE_CHARGED_ATTACK_BEAM_RAY_DAMAGE_DATA
-    return _compile_damage_spec(
-        SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
-        talent_level,
-        entry=entry,
-        component_index=0,
-        main_attack_tag=SANDRONE_CHARGED_ATTACK_MAIN_TAG,
-        strike_type=damage_data.strike_type,
-        range_type=damage_data.range_type,
-        elemental_amount=1,
-        icd_tag_key=damage_data.icd_tag_key,
-        icd_sequence_key=damage_data.icd_sequence_key,
-        additional_attack_tags=damage_data.additional_attack_tags,
-        display_name="重击冷凝射线伤害",
-        aoe_shape=None,
-        aoe_radius=0.0,
-        aoe_offset=Vector3(),
-    )
-
-
 def compile_c6_extra_normal_spec() -> DamageImpactSpec:
-    """C6 集束型额外段普通变体：固定 100% 攻击力（官方描述值，无倍率条目）。
+    """C6 追加段普通变体：固定 100% 攻击力（C6 无资产倍率条目）。
 
-    命中判定数据取集束型行（单体/钝击/重击射线 ICD/1 元素量），附加标签为
-    集束型独立标签；星变体由集束型星烁通道在发射时查表分派。
+    命中判定数据取数据表「命之座第6层 集束型冷凝射线」行（单体/钝击/远程/
+    默认衰减序列/重击射线衰减标签/1 元素量），附加标签为该行独立的
+    桑多涅重击普通激光6命；星变体由追加段星烁通道在发射时查表分派。
     """
 
-    damage_data = SANDRONE_CHARGED_ATTACK_BEAM_RAY_DAMAGE_DATA
+    damage_data = SANDRONE_C6_EXTRA_DAMAGE_DATA
     return DamageImpactSpec(
-        impact_ref=f"{SANDRONE_CHARGED_ATTACK_BEAM_RAY_EXTRA_IMPACT_KEY}:c6",
+        impact_ref=f"{SANDRONE_CHARGED_ATTACK_EXTRA_IMPACT_KEY}:c6",
         main_attack_tag=SANDRONE_CHARGED_ATTACK_MAIN_TAG,
         element=SANDRONE_DAMAGE_ELEMENT,
         scaling_terms=(
@@ -478,7 +450,7 @@ def compile_c6_extra_normal_spec() -> DamageImpactSpec:
         elemental_amount=SANDRONE_DAMAGE_ELEMENTAL_AMOUNT,
         icd_tag_key=damage_data.icd_tag_key,
         icd_sequence_key=damage_data.icd_sequence_key,
-        display_name="集束型冷凝射线伤害",
+        display_name=SANDRONE_C6_EXTRA_DISPLAY_NAME,
         area=None,
     )
 

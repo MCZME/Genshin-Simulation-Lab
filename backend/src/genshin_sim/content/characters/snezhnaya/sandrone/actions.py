@@ -26,8 +26,8 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_PRE_SWING_FRAMES,
     FAGEOU_RAY_FIRST_OFFSET_FRAMES,
     FAGEOU_STATE_BEAM_BONUS,
-    FAGEOU_STATE_BEAM_EXTRAS_LEFT,
     FAGEOU_STATE_DRAIN_ACTIVE,
+    FAGEOU_STATE_EXTRA_SEGMENTS_LEFT,
     FAGEOU_STATE_MODE,
     FAGEOU_STATE_NEXT_RAY_FRAME,
     FAGEOU_STATE_NEXT_SHOT_FRAME,
@@ -430,10 +430,10 @@ class SandroneActionInterpreter:
             FAGEOU_STATE_SOLVE_START_FRAME: solve_start,
             FAGEOU_STATE_NEXT_SHOT_FRAME: solve_start,
             FAGEOU_STATE_NEXT_RAY_FRAME: solve_start + FAGEOU_RAY_FIRST_OFFSET_FRAMES,
-            # 射线会话序号与 C6 集束型额外段按重击会话重置（C2 每轮重击重新
-            # 叠层；C6 第三次发射判定随新会话重新计数）。
+            # 射线会话序号与 C6 追加段余量按重击会话重置（C2 每轮重击重新
+            # 叠层；C6 的「第 3 次发射起」判定随新会话重新计数）。
             FAGEOU_STATE_RAY_COUNT: 0,
-            FAGEOU_STATE_BEAM_EXTRAS_LEFT: 0,
+            FAGEOU_STATE_EXTRA_SEGMENTS_LEFT: 0,
         }
 
     def _charged_release_fields(self, mode: str) -> dict[str, JSONValue] | None:

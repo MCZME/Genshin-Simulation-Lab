@@ -85,7 +85,7 @@ def test_solve_entry_fires_sweep_shots_on_rhythm(sandrone_assembled):
 
 def test_ray_track_emerges_exactly_three_rays_before_overload(sandrone_assembled):
     # 核心不变量：0 命 0→100 恰好 3 发射线，第三发命中后封顶。
-    # 射线 128/194/260（解算起算 +90、间隔 66）；功率 98 < 100 时第三发照常
+    # 射线 128/188/248（解算起算 +90、间隔 60）；功率 98 < 100 时第三发照常
     # 发射，命中后封顶转入过载 → 射线轨停止，无第四发。
     assembled = _sandrone_with_line_target(
         sandrone_assembled,
@@ -97,11 +97,11 @@ def test_ray_track_emerges_exactly_three_rays_before_overload(sandrone_assembled
     assembled.simulator.run()
 
     rays = [e for e in damage_events if e.payload.result.damage_name == RAY_DISPLAY_NAME]
-    assert [e.frame for e in rays] == [128, 194, 260]
+    assert [e.frame for e in rays] == [128, 188, 248]
     assert all(e.payload.result.main_attack_tag == "重击" for e in rays)
-    # 过载射击 30F 节奏（过载起点 260 +30 起射，延迟 4 帧）；376 松开后停火。
+    # 过载射击 30F 节奏（过载起点 252 +30 起射）；376 松开后停火。
     overloads = [e for e in damage_events if e.payload.result.damage_name == OVERLOAD_DISPLAY_NAME]
-    assert [e.frame for e in overloads] == [294, 324, 354]
+    assert [e.frame for e in overloads] == [282, 312, 342, 372]
     state = _fageou_state(assembled)
     assert state["fageou_mode"] == "overload"
     # 按住过载功率冻结；松开（376）后至仿真结束仅衰减个别帧。

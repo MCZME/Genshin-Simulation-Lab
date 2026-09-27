@@ -160,17 +160,6 @@ def create_sandrone_content_unit(
             "elemental_skill": skill_talent_level,
             "elemental_burst": burst_talent_level,
         },
-        normal_specs={
-            SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY: charged_specs[
-                SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY
-            ],
-            SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY: damage_specs[
-                SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY
-            ],
-            SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY: damage_specs[
-                SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY
-            ],
-        },
         ascension_bonus=SANDRONE_C6_ASCENSION_BONUS if c6_unlocked else 0.0,
     )
     impact_factory = SandroneActionImpactFactory(

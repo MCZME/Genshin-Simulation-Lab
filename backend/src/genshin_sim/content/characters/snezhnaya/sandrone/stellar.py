@@ -42,11 +42,11 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_PRISM_STELLAR_ADDITIONAL_TAG,
     SANDRONE_RAY_STELLAR_ADDITIONAL_TAG,
     SANDRONE_STELLAR_BEAM_CONDUCT_LABEL,
-    SANDRONE_STELLAR_BEAM_SWIRL_DISPLAY_NAME,
+    SANDRONE_STELLAR_BEAM_SWIRL_LABEL,
     SANDRONE_STELLAR_PRISM_CONDUCT_LABEL,
-    SANDRONE_STELLAR_PRISM_SWIRL_DISPLAY_NAME,
+    SANDRONE_STELLAR_PRISM_SWIRL_LABEL,
     SANDRONE_STELLAR_RAY_CONDUCT_LABEL,
-    SANDRONE_STELLAR_RAY_SWIRL_DISPLAY_NAME,
+    SANDRONE_STELLAR_RAY_SWIRL_LABEL,
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.generic.talents import ScalingCompiler
@@ -89,8 +89,8 @@ class SandroneStellarAttackChannel:
     """单类攻击的星烁通道：星超导/星扩散两个变体契约与倍率分量。
 
     星变体契约不携带普通倍率（直伤倍率经 ``scaling_value`` 由星烁输入承载）；
-    ``conduct_ratio`` 取自资产倍率条目星超导行（官方数据直出，组装时不换算），
-    ``swirl_ratio`` 以普通变体倍率占位（星扩散条目暂无，来源待补）。
+    ``conduct_ratio`` 与 ``swirl_ratio`` 分别取自资产倍率条目的星超导行与
+    星扩散行（官方数据直出，组装时不换算）。
     ``ascension_bonus`` 为 C6 擢升（覆盖星超导与星扩散，角色自身星烁伤害）。
     """
 
@@ -109,7 +109,7 @@ class _StellarChannelPlan:
     impact_key: str
     talent_key: str
     conduct_label: str
-    swirl_display_name: str
+    swirl_label: str
     strike_type: StrikeType
     range_type: str
     aoe_shape: str | None
@@ -122,7 +122,7 @@ _STELLAR_CHANNEL_PLANS = (
         impact_key=SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
         talent_key="normal_attack",
         conduct_label=SANDRONE_STELLAR_RAY_CONDUCT_LABEL,
-        swirl_display_name=SANDRONE_STELLAR_RAY_SWIRL_DISPLAY_NAME,
+        swirl_label=SANDRONE_STELLAR_RAY_SWIRL_LABEL,
         strike_type=StrikeType.BLUNT,
         range_type="远程",
         aoe_shape=None,
@@ -133,7 +133,7 @@ _STELLAR_CHANNEL_PLANS = (
         impact_key=SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY,
         talent_key="elemental_skill",
         conduct_label=SANDRONE_STELLAR_PRISM_CONDUCT_LABEL,
-        swirl_display_name=SANDRONE_STELLAR_PRISM_SWIRL_DISPLAY_NAME,
+        swirl_label=SANDRONE_STELLAR_PRISM_SWIRL_LABEL,
         strike_type=SANDRONE_ELEMENTAL_SKILL_STRIKE_TYPE,
         range_type=SANDRONE_ELEMENTAL_SKILL_RANGE_TYPE,
         aoe_shape="球",
@@ -144,7 +144,7 @@ _STELLAR_CHANNEL_PLANS = (
         impact_key=SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY,
         talent_key="elemental_burst",
         conduct_label=SANDRONE_STELLAR_BEAM_CONDUCT_LABEL,
-        swirl_display_name=SANDRONE_STELLAR_BEAM_SWIRL_DISPLAY_NAME,
+        swirl_label=SANDRONE_STELLAR_BEAM_SWIRL_LABEL,
         strike_type=SANDRONE_ELEMENTAL_BURST_STRIKE_TYPE,
         range_type=SANDRONE_ELEMENTAL_BURST_RANGE_TYPE,
         aoe_shape="圆柱",
@@ -159,33 +159,32 @@ def compile_stellar_attack_channels(
     entries_by_key: Mapping[tuple[str, str, str], TalentScalingEntry],
     talent_levels: Mapping[str, int],
     *,
-    normal_specs: Mapping[str, DamageImpactSpec],
     ascension_bonus: float = 0.0,
 ) -> dict[str, SandroneStellarAttackChannel]:
     """编译射线/第二枚棱晶弹/光束的星烁通道契约与倍率分量。
 
-    星超导倍率取资产倍率条目（按攻击对应的天赋等级取值）；星扩散无条目，
-    以普通变体倍率分量占位。星超导条目或对应普通契约缺失时在组装阶段报错，
-    不延迟到仿真运行中。``ascension_bonus`` 传入 C6 擢升，随通道进入全部
-    星烁输入。
+    星超导与星扩散倍率各自取同名资产倍率条目，按对应天赋等级取值；两者中
+    任一条目或天赋等级缺失时在组装阶段报错，不延迟到仿真运行中。
+    ``ascension_bonus`` 传入 C6 擢升，随通道进入全部星烁输入。
     """
 
     channels: dict[str, SandroneStellarAttackChannel] = {}
     for plan in _STELLAR_CHANNEL_PLANS:
-        normal_spec = normal_specs.get(plan.impact_key)
-        if normal_spec is None or not normal_spec.scaling_terms:
-            raise ContentUnitValidationError(
-                f"桑多涅星烁通道缺少普通契约倍率分量：{plan.impact_key}"
-            )
         talent_level = talent_levels.get(plan.talent_key)
         if talent_level is None:
             raise ContentUnitValidationError(f"桑多涅星烁通道缺少天赋等级：{plan.talent_key}")
-        entry = entries_by_key.get((character_key, plan.talent_key, plan.conduct_label))
-        if entry is None:
+        conduct_entry = entries_by_key.get((character_key, plan.talent_key, plan.conduct_label))
+        swirl_entry = entries_by_key.get((character_key, plan.talent_key, plan.swirl_label))
+        if conduct_entry is None:
             raise ContentUnitValidationError(f"桑多涅星超导缺少资产倍率条目：{plan.conduct_label}")
-        compiled = ScalingCompiler.compile_entry(entry, talent_level)
-        if not compiled.components:
+        if swirl_entry is None:
+            raise ContentUnitValidationError(f"桑多涅星扩散缺少资产倍率条目：{plan.swirl_label}")
+        conduct_compiled = ScalingCompiler.compile_entry(conduct_entry, talent_level)
+        swirl_compiled = ScalingCompiler.compile_entry(swirl_entry, talent_level)
+        if not conduct_compiled.components:
             raise ContentUnitValidationError(f"桑多涅星超导倍率条目缺少分量：{plan.conduct_label}")
+        if not swirl_compiled.components:
+            raise ContentUnitValidationError(f"桑多涅星扩散倍率条目缺少分量：{plan.swirl_label}")
         channels[plan.impact_key] = SandroneStellarAttackChannel(
             impact_key=plan.impact_key,
             conduct_spec=_compile_stellar_variant(
@@ -198,10 +197,10 @@ def compile_stellar_attack_channels(
                 plan,
                 talent_level,
                 main_attack_tag=STELLAR_SWIRL_ICE_DAMAGE_TAG,
-                display_name=plan.swirl_display_name,
+                display_name=plan.swirl_label,
             ),
-            conduct_ratio=compiled.components[0].value,
-            swirl_ratio=normal_spec.scaling_terms[0].coefficient,
+            conduct_ratio=conduct_compiled.components[0].value,
+            swirl_ratio=swirl_compiled.components[0].value,
             ascension_bonus=ascension_bonus,
         )
     return channels
@@ -232,7 +231,7 @@ def compile_c6_extra_stellar_channel(
             ray_plan,
             talent_level,
             main_attack_tag=STELLAR_SWIRL_ICE_DAMAGE_TAG,
-            display_name=ray_plan.swirl_display_name,
+            display_name=ray_plan.swirl_label,
         ),
         conduct_ratio=SANDRONE_C6_EXTRA_CONDUCT_RATIO,
         swirl_ratio=SANDRONE_C6_EXTRA_SWIRL_RATIO,

@@ -16,6 +16,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.actions import (
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_BULLET_SPEED_M_PER_S,
+    FAGEOU_C1_POWER_RISE_MULTIPLIER,
     FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
     FAGEOU_POWER_DECAY_PER_SECOND,
     FAGEOU_POWER_MAX,
@@ -27,6 +28,8 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_RAY_LENGTH,
     FAGEOU_RAY_WIDTH,
     FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
+    SANDRONE_C6_ASCENSION_BONUS,
+    SANDRONE_C6_EXTRA_SEGMENT_COUNT,
     SANDRONE_CHARACTER_HANDLER_KEY,
     SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
     SANDRONE_CONTENT_VERSION,
@@ -46,6 +49,8 @@ from genshin_sim.content.characters.snezhnaya.sandrone.fageou import (
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.impacts import (
     SandroneActionImpactFactory,
+    compile_c6_beam_ray_normal_spec,
+    compile_c6_extra_normal_spec,
     compile_charged_attack_damage_specs,
     compile_elemental_burst_damage_specs,
     compile_elemental_skill_damage_specs,
@@ -53,6 +58,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.impacts import (
     compile_plunge_damage_specs,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
+    compile_c6_extra_stellar_channel,
     compile_stellar_attack_channels,
 )
 from genshin_sim.content.definitions.content_unit import (
@@ -86,8 +92,15 @@ from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
 def create_sandrone_content_unit(
     request: CharacterContentUnitRequest,
 ) -> ContentUnit:
-    """桑多涅内容单元工厂（动作状态机 + 普攻/战技/爆发/下落契约）。"""
+    """桑多涅内容单元工厂（动作状态机 + 普攻/战技/爆发/下落契约）。
 
+    命座等级在编译期已知：C1（功率上升减速）、C2（射线暴伤序号标签）、
+    C6（集束型射线、额外段与星烁擢升）按 ``request.constellation`` 直接
+    折算进角色单元的机器参数与星烁通道；效果行单元（effects.py）只承载
+    各自可独立成单元的切片。
+    """
+
+    constellation = request.constellation
     talent_levels = {
         key: request.talent_levels.get(key, 1)
         for key in ("normal_attack", "elemental_skill", "elemental_burst")
@@ -134,6 +147,7 @@ def create_sandrone_content_unit(
         entries_by_key,
         talent_level,
     )
+    c6_unlocked = constellation >= 6
     stellar_channels = compile_stellar_attack_channels(
         request.character_key,
         entries_by_key,
@@ -153,6 +167,7 @@ def create_sandrone_content_unit(
                 SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY
             ],
         },
+        ascension_bonus=SANDRONE_C6_ASCENSION_BONUS if c6_unlocked else 0.0,
     )
     impact_factory = SandroneActionImpactFactory(
         damage_specs,
@@ -214,13 +229,32 @@ def create_sandrone_content_unit(
                 overload_shot_interval_frames=FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
                 ray_first_offset_frames=FAGEOU_RAY_FIRST_OFFSET_FRAMES,
                 ray_interval_frames=FAGEOU_RAY_INTERVAL_FRAMES,
-                power_rise_per_second=FAGEOU_POWER_RISE_PER_SECOND,
+                # C1：解算功率上升速度降低 50%（效果行 number_3，编译期折算）。
+                power_rise_per_second=(
+                    FAGEOU_POWER_RISE_PER_SECOND
+                    * (1.0 - FAGEOU_C1_POWER_RISE_MULTIPLIER if constellation >= 1 else 1.0)
+                ),
                 ray_hit_power_gain=FAGEOU_RAY_HIT_POWER_GAIN,
                 power_decay_per_second=FAGEOU_POWER_DECAY_PER_SECOND,
                 power_max=FAGEOU_POWER_MAX,
                 ray_length=FAGEOU_RAY_LENGTH,
                 ray_width=FAGEOU_RAY_WIDTH,
                 bullet_speed_m_per_s=FAGEOU_BULLET_SPEED_M_PER_S,
+                c2_index_tag_enabled=constellation >= 2,
+                c6_beam_ray_normal_spec=(
+                    compile_c6_beam_ray_normal_spec(
+                        request.character_key,
+                        entries_by_key,
+                        talent_level,
+                    )
+                    if c6_unlocked
+                    else None
+                ),
+                c6_extra_normal_spec=compile_c6_extra_normal_spec() if c6_unlocked else None,
+                c6_extra_stellar_channel=(
+                    compile_c6_extra_stellar_channel(talent_level) if c6_unlocked else None
+                ),
+                c6_extra_segments=SANDRONE_C6_EXTRA_SEGMENT_COUNT if c6_unlocked else 0,
             ),
         ),
         cooldown_definitions=(skill_cooldown_definition, burst_cooldown_definition),

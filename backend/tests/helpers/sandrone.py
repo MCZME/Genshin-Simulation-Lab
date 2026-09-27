@@ -8,10 +8,19 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from genshin_sim.assets.models import TalentScalingEntry
+from genshin_sim.assets.models import EffectPayload, TalentScalingEntry
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_ASSET_KEY,
     SANDRONE_CHARACTER_HANDLER_KEY,
+    SANDRONE_CONSTELLATION_C1_HANDLER_KEY,
+    SANDRONE_CONSTELLATION_C2_HANDLER_KEY,
+    SANDRONE_CONSTELLATION_C3_HANDLER_KEY,
+    SANDRONE_CONSTELLATION_C4_HANDLER_KEY,
+    SANDRONE_CONSTELLATION_C5_HANDLER_KEY,
+    SANDRONE_CONSTELLATION_C6_HANDLER_KEY,
+    SANDRONE_PASSIVE_P4_HANDLER_KEY,
+    SANDRONE_PASSIVE_P5_HANDLER_KEY,
+    SANDRONE_PASSIVE_P6_HANDLER_KEY,
 )
 from genshin_sim.infrastructure.assets_sqlite import (
     ASSET_SCHEMA_VERSION,
@@ -53,18 +62,117 @@ def write_sandrone_asset_database(db_path: Path) -> Path:
     return SQLiteAssetDataWriter(db_path).replace_all(
         meta={
             "schema_version": ASSET_SCHEMA_VERSION,
-            "data_version": "sandrone-minimal-1",
+            "data_version": "sandrone-minimal-2",
             "importer_version": "sqlite-asset-writer-1",
             "source_name": "test-sandrone-minimal",
             "source_version": "1",
-            "content_hash": "sandrone-minimal-1",
+            "content_hash": "sandrone-minimal-2",
         },
         characters=characters,
         character_level_stats=character_level_stats,
         weapons=(),
         weapon_level_stats=(),
         talent_scalings=_minimal_sandrone_scaling_entries(),
-        effect_payloads=(),
+        effect_payloads=_minimal_sandrone_effect_payloads(),
+    )
+
+
+def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
+    """返回被动/命座集成测试需要的合成效果行（数值为合成数据）。"""
+
+    def _effect(
+        effect_key: str,
+        effect_kind: str,
+        handler_key: str,
+        unlock_key: str,
+        values: tuple[float, ...],
+    ) -> EffectPayload:
+        return EffectPayload(
+            effect_key=f"{SANDRONE_CHARACTER_KEY}:{effect_key}",
+            owner_type="character",
+            owner_key=SANDRONE_CHARACTER_KEY,
+            effect_kind=effect_kind,
+            unlock_key=unlock_key,
+            handler_key=handler_key,
+            params={
+                "schema_version": 1,
+                "components": tuple(
+                    {
+                        "source_param": f"number_{index}",
+                        "kind": "numeric",
+                        "format": "number",
+                        "values": (value,),
+                    }
+                    for index, value in enumerate(values, start=1)
+                ),
+            },
+        )
+
+    return (
+        # P4/P6 的数值行为在角色单元内（合成行只驱动效果声明与门槛）。
+        _effect(
+            "passive:4",
+            "passive",
+            SANDRONE_PASSIVE_P4_HANDLER_KEY,
+            "passive:4",
+            (11332.0, 11330002.0, 50.0, 4.0, 10.0, 60.0, 10.0, 11335.0, 1.0, 0.1),
+        ),
+        _effect(
+            "passive:5",
+            "passive",
+            SANDRONE_PASSIVE_P5_HANDLER_KEY,
+            "passive:5",
+            (100.0, 8.0, 160.0),
+        ),
+        _effect(
+            "passive:6",
+            "passive",
+            SANDRONE_PASSIVE_P6_HANDLER_KEY,
+            "passive:6",
+            (100.0, 0.007, 0.14, 11330003.0),
+        ),
+        _effect(
+            "constellation:c1",
+            "constellation",
+            SANDRONE_CONSTELLATION_C1_HANDLER_KEY,
+            "c1",
+            (11330001.0, 11330002.0, 0.5, 0.3),
+        ),
+        _effect(
+            "constellation:c2",
+            "constellation",
+            SANDRONE_CONSTELLATION_C2_HANDLER_KEY,
+            "c2",
+            (0.4, 11330001.0, 0.2, 3.0),
+        ),
+        _effect(
+            "constellation:c3",
+            "constellation",
+            SANDRONE_CONSTELLATION_C3_HANDLER_KEY,
+            "c3",
+            (11331.0, 3.0, 15.0),
+        ),
+        _effect(
+            "constellation:c4",
+            "constellation",
+            SANDRONE_CONSTELLATION_C4_HANDLER_KEY,
+            "c4",
+            (1.25, 4.0),
+        ),
+        _effect(
+            "constellation:c5",
+            "constellation",
+            SANDRONE_CONSTELLATION_C5_HANDLER_KEY,
+            "c5",
+            (11335.0, 3.0, 15.0),
+        ),
+        _effect(
+            "constellation:c6",
+            "constellation",
+            SANDRONE_CONSTELLATION_C6_HANDLER_KEY,
+            "c6",
+            (11330001.0, 4.0, 1.0, 4.0, 0.8, 11190007.0, 0.2),
+        ),
     )
 
 
@@ -128,6 +236,7 @@ def sandrone_input_payload(
     max_frames: int = 60,
     input_trace: list[dict[str, object]] | None = None,
     targets: list[dict[str, object]] | None = None,
+    constellation: int = 0,
 ) -> dict[str, object]:
     """桑多涅单人集成测试配置。"""
 
@@ -155,7 +264,7 @@ def sandrone_input_payload(
                 "character": {
                     "asset_key": SANDRONE_ASSET_KEY,
                     "level": 90,
-                    "constellation": 0,
+                    "constellation": constellation,
                     "talents": {
                         "normal_attack": 1,
                         "elemental_skill": 1,

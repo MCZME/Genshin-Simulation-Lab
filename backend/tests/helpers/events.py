@@ -62,6 +62,7 @@ def make_damage_resolved_event(
     """构造伤害结算事实替身。"""
 
     return SimpleNamespace(
+        frame=frame,
         event_type=EventType.DAMAGE_RESOLVED,
         payload=SimpleNamespace(
             result=SimpleNamespace(

@@ -25,7 +25,78 @@ from genshin_sim.core.systems.aura import AuraStrength
 
 SANDRONE_CHARACTER_HANDLER_KEY = "character.sandrone"
 SANDRONE_ASSET_KEY = "character:10000133"
-SANDRONE_CONTENT_VERSION = "slice-3-stellar-channel"
+SANDRONE_CONTENT_VERSION = "slice-4-passives-constellations"
+
+# ---------------------------------------------------------------------------
+# 被动与命座（切片 4）。效果行 handler 键对齐 barbara 命名；数值来源为资产
+# 效果行 components（project_amber_yatta，2026-09-25 拉取版本）。
+# ---------------------------------------------------------------------------
+SANDRONE_PASSIVE_P4_HANDLER_KEY = "character.sandrone.passive.p4"
+SANDRONE_PASSIVE_P5_HANDLER_KEY = "character.sandrone.passive.p5"
+SANDRONE_PASSIVE_P6_HANDLER_KEY = "character.sandrone.passive.p6"
+SANDRONE_PASSIVE_P8_HANDLER_KEY = "character.sandrone.passive.p8"
+
+
+def _constellation_handler_key(index: int) -> str:
+    return f"character.sandrone.constellation.c{index}"
+
+
+SANDRONE_CONSTELLATION_HANDLER_KEYS = {
+    index: _constellation_handler_key(index) for index in range(1, 7)
+}
+SANDRONE_CONSTELLATION_C1_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[1]
+SANDRONE_CONSTELLATION_C2_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[2]
+SANDRONE_CONSTELLATION_C3_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[3]
+SANDRONE_CONSTELLATION_C4_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[4]
+SANDRONE_CONSTELLATION_C5_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[5]
+SANDRONE_CONSTELLATION_C6_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[6]
+
+# P4 悠久的演算机关（效果行 components：阈值 50、400%、至多 10 层、持续 60s、
+# 每 10 点一层、光束每层 +10%）。改进战术承载为角色内容状态（跨会话保留、
+# 按 60s 统一过期——每次获得叠层即刷新全部层数的过期帧，与通用堆叠 Buff 的
+# 刷新语义一致），清空发生在辉映下施放爆发时。
+SANDRONE_P4_PRISM_BOOST_POWER_THRESHOLD = 50.0
+SANDRONE_P4_PRISM_BOOST_MULTIPLIER = 4.0
+SANDRONE_P4_PRISM_BOOST_WINDOW_FRAMES = 33
+SANDRONE_P4_TACTICS_POWER_STEP = 10.0
+SANDRONE_P4_TACTICS_MAX_STACKS = 10
+SANDRONE_P4_TACTICS_DURATION_FRAMES = 3600
+SANDRONE_P4_BEAM_BONUS_PER_STACK = 0.1
+
+# P5 淑女的行事准则（效果行 components：每 100 攻击 +8 精通、上限 160）。
+# 数值经 P5 效果单元从资产行读取，这里只承载 provider 键词。
+
+# P6 星耀祝礼·唯理为光（效果行 components：每 100 攻击 +0.7% 星超导基础伤害、
+# 上限 14%）。固定天赋（ALWAYS），数值由星烁通道组装时按攻击力实时折算。
+SANDRONE_P6_BASE_BONUS_PER_100_ATK = 0.007
+SANDRONE_P6_BASE_BONUS_CAP = 0.14
+
+# C1 生命之数·演算倍增：解算功率上升速度 -50%（效果行 number_3）。星超导
+# 增伤 +30%（number_4）由 C1 效果单元的伤害修饰 provider 承载。
+FAGEOU_C1_POWER_RISE_MULTIPLIER = 0.5
+
+# C2 射线暴伤（效果行：+40% 基础、逐射线 +20%、至多 3 层；仅加成射线的
+# 星超导冰伤）。射线会话序号由法洁欧 hook 以请求附加标签承载，provider 换算。
+SANDRONE_C2_CRIT_DAMAGE_BASE = 0.4
+SANDRONE_C2_CRIT_DAMAGE_PER_RAY = 0.2
+SANDRONE_C2_CRIT_DAMAGE_MAX_RAYS = 3
+SANDRONE_RAY_INDEX_TAG_PREFIX = "sandrone_ray_index:"
+
+# C4 棱晶谐振炮（效果行：125% 攻击力、每 4s 至多一次）。星烁直伤请求由
+# C4 效果单元的 hook 产出；倍率分量与冷却帧数从资产行解析。
+SANDRONE_C4_ATTACK_IMPACT_KEY = "character.sandrone.constellation.c4.attack"
+
+# C6 集束型冷凝射线：第三次发射的射线转集束型（普通变体附加标签独立），
+# 额外至多 4 段（普通 100% / 星超导 80% / 星扩散 120%——星扩散值取维护者
+# 提供的官方完整描述，资产源缺星扩散分支，同待定项 6 口径）；全部星烁反应
+# 伤害擢升 +20%（效果行 number_7）。额外段叠加在后续射线之上（每条后续射线
+# 至多携带一段），不改变射线节奏；额外段不提供射线命中功率增量。
+SANDRONE_C6_EXTRA_SEGMENT_COUNT = 4
+SANDRONE_C6_EXTRA_NORMAL_RATIO = 1.0
+SANDRONE_C6_EXTRA_CONDUCT_RATIO = 0.8
+SANDRONE_C6_EXTRA_SWIRL_RATIO = 1.2
+SANDRONE_C6_ASCENSION_BONUS = 0.2
+SANDRONE_C6_BEAM_ADDITIONAL_TAG = "桑多涅重击普通激光6命"
 
 # 桑多涅为双手剑：下落攻击取双手剑通用资料（content/generic/plunge.py）。
 SANDRONE_PLUNGE_ATTACK_DATA = PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE["claymore"]
@@ -110,6 +181,9 @@ SANDRONE_CHARGED_ATTACK_ACTION_KEY = "character.sandrone.charged_attack"
 SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY = f"{SANDRONE_CHARGED_ATTACK_ACTION_KEY}.sweep"
 SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY = f"{SANDRONE_CHARGED_ATTACK_ACTION_KEY}.overload"
 SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY = f"{SANDRONE_CHARGED_ATTACK_ACTION_KEY}.ray"
+SANDRONE_CHARGED_ATTACK_BEAM_RAY_EXTRA_IMPACT_KEY = (
+    f"{SANDRONE_CHARGED_ATTACK_ACTION_KEY}.beam_ray_extra"
+)
 
 # 法洁欧内容状态字段（state_key = handler key，与连段状态同挂载）。
 FAGEOU_STATE_MODE = "fageou_mode"
@@ -118,6 +192,14 @@ FAGEOU_STATE_SOLVE_START_FRAME = "fageou_solve_start_frame"
 FAGEOU_STATE_NEXT_SHOT_FRAME = "fageou_next_shot_frame"
 FAGEOU_STATE_NEXT_RAY_FRAME = "fageou_next_ray_frame"
 FAGEOU_STATE_DRAIN_ACTIVE = "fageou_drain_active"
+# 切片 4 新增：射线会话序号与 C6 集束型额外段余量（进入解算时清零）；
+# P4 改进战术叠层与过期帧（跨会话保留）；P4 棱晶弹强化窗口与爆发光束加成。
+FAGEOU_STATE_RAY_COUNT = "fageou_ray_count"
+FAGEOU_STATE_BEAM_EXTRAS_LEFT = "fageou_beam_extras_left"
+FAGEOU_STATE_TACTICS_STACKS = "fageou_tactics_stacks"
+FAGEOU_STATE_TACTICS_EXPIRE_FRAME = "fageou_tactics_expire_frame"
+FAGEOU_STATE_PRISM2_BOOST_UNTIL = "fageou_prism2_boost_until"
+FAGEOU_STATE_BEAM_BONUS = "fageou_beam_bonus"
 
 FAGEOU_MODE_IDLE = "idle"
 FAGEOU_MODE_SOLVE = "solve"
@@ -196,6 +278,18 @@ SANDRONE_CHARGED_ATTACK_DAMAGE_DATA = {
         additional_attack_tags=(SANDRONE_RAY_ADDITIONAL_TAG,),
     ),
 }
+
+# C6 集束型冷凝射线（第三次发射的射线转集束型）：普通变体与射线同一倍率条目，
+# 附加标签独立（命中判定数据 3.4「命之座第6层 集束型冷凝射线」行）；星变体
+# 与射线星变体同标签（桑多涅激光），复用射线星烁通道。
+SANDRONE_CHARGED_ATTACK_BEAM_RAY_DAMAGE_DATA = SandroneChargedAttackDamageData(
+    impact_key=SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
+    strike_type=StrikeType.BLUNT,
+    range_type="远程",
+    icd_tag_key=SANDRONE_RAY_ICD_TAG_KEY,
+    icd_sequence_key=SANDRONE_DAMAGE_ICD_SEQUENCE_KEY,
+    additional_attack_tags=(SANDRONE_C6_BEAM_ADDITIONAL_TAG,),
+)
 
 # ---- 辉映·星烁直伤分支（切片 3）----
 # 冷凝射线/第二枚棱晶弹/聚能光束在辉映状态下切换到星烁通道（星超导反应契约

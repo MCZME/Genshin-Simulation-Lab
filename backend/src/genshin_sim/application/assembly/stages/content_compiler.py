@@ -227,8 +227,9 @@ class ContentCompiler:
         """按静态解锁条件过滤效果单元的静态贡献切片。
 
         事件 hook 保留在单元内，仍由 HookDispatcher 在第 0 帧按解锁求值；
-        ``talent_level_boosts`` / ``cooldown_duration_terms`` / 属性 provider
-        在编译期按配置命座过滤，避免锁定效果影响倍率、冷却或属性解析。
+        ``talent_level_boosts`` / ``cooldown_duration_terms`` / 属性 provider /
+        伤害修饰 provider 在编译期按配置命座过滤，避免锁定效果影响倍率、
+        冷却、属性解析或伤害结算。
         """
 
         if len(unit.effects) != 1:
@@ -242,7 +243,10 @@ class ContentCompiler:
         if unlock.evaluate(values):
             return unit
         if not (
-            unit.talent_level_boosts or unit.cooldown_duration_terms or unit.attribute_providers
+            unit.talent_level_boosts
+            or unit.cooldown_duration_terms
+            or unit.attribute_providers
+            or unit.damage_modifier_providers
         ):
             return unit
         return replace(
@@ -250,6 +254,7 @@ class ContentCompiler:
             talent_level_boosts={},
             cooldown_duration_terms={},
             attribute_providers=(),
+            damage_modifier_providers=(),
         )
 
     @staticmethod

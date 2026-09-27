@@ -25,12 +25,18 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
     FAGEOU_PRE_SWING_FRAMES,
     FAGEOU_RAY_FIRST_OFFSET_FRAMES,
+    FAGEOU_STATE_BEAM_BONUS,
+    FAGEOU_STATE_BEAM_EXTRAS_LEFT,
     FAGEOU_STATE_DRAIN_ACTIVE,
     FAGEOU_STATE_MODE,
     FAGEOU_STATE_NEXT_RAY_FRAME,
     FAGEOU_STATE_NEXT_SHOT_FRAME,
     FAGEOU_STATE_POWER,
+    FAGEOU_STATE_PRISM2_BOOST_UNTIL,
+    FAGEOU_STATE_RAY_COUNT,
     FAGEOU_STATE_SOLVE_START_FRAME,
+    FAGEOU_STATE_TACTICS_EXPIRE_FRAME,
+    FAGEOU_STATE_TACTICS_STACKS,
     INPUT_KIND_BY_KEY,
     JUMP_INPUT,
     NORMAL_ATTACK_INPUT,
@@ -40,10 +46,14 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_ELEMENTAL_SKILL_ACTION_KEY,
     SANDRONE_JUMP_ACTION_KEY,
     SANDRONE_NORMAL_ATTACK_ACTION_KEYS,
+    SANDRONE_P4_BEAM_BONUS_PER_STACK,
+    SANDRONE_P4_PRISM_BOOST_POWER_THRESHOLD,
+    SANDRONE_P4_PRISM_BOOST_WINDOW_FRAMES,
     SANDRONE_PLUNGE_ACTION_KEY,
     SANDRONE_PLUNGE_COLLISION_IMPACT_KEY,
     SANDRONE_PLUNGE_LANDING_IMPACT_KEY,
 )
+from genshin_sim.content.characters.snezhnaya.sandrone.stellar import radiance_evidence
 from genshin_sim.content.generic.chain_state import (
     CHAIN_STATE_LAST_ACTION_KEY,
     CHAIN_STATE_LAST_START_FRAME,
@@ -172,6 +182,13 @@ class SandroneActionInterpreter:
         owner_ref = f"character:slot_{slot}"
         if input_kind == ELEMENTAL_SKILL_INPUT:
             self._queue_e_drain_patch(
+                context.simulation,
+                owner_ref=owner_ref,
+                frame=session.current_frame,
+                session_id=session.session_id,
+            )
+        if input_kind == ELEMENTAL_BURST_INPUT:
+            self._queue_burst_cast_patch(
                 context.simulation,
                 owner_ref=owner_ref,
                 frame=session.current_frame,
@@ -410,6 +427,10 @@ class SandroneActionInterpreter:
             FAGEOU_STATE_SOLVE_START_FRAME: solve_start,
             FAGEOU_STATE_NEXT_SHOT_FRAME: solve_start,
             FAGEOU_STATE_NEXT_RAY_FRAME: solve_start + FAGEOU_RAY_FIRST_OFFSET_FRAMES,
+            # 射线会话序号与 C6 集束型额外段按重击会话重置（C2 每轮重击重新
+            # 叠层；C6 第三次发射判定随新会话重新计数）。
+            FAGEOU_STATE_RAY_COUNT: 0,
+            FAGEOU_STATE_BEAM_EXTRAS_LEFT: 0,
         }
 
     def _charged_release_fields(self, mode: str) -> dict[str, JSONValue] | None:
@@ -460,25 +481,94 @@ class SandroneActionInterpreter:
         frame: int,
         session_id: int,
     ) -> None:
-        """E 排空：施放即退出解算/过载并快速排空功率（规划结论 4）。"""
+        """E 排空：施放即退出解算/过载并快速排空功率（规划结论 4）。
+
+        P4 强化条件在施放帧读取（规划 3.2：400% 条件读清空前的功率值）：
+        解算功率超过 50 且施放时持有辉映状态时，写入有时间窗口的棱晶弹
+        强化标记，由影响工厂在第二枚棱晶弹展开帧消费。
+        """
 
         slot = int(owner_ref.removeprefix("character:slot_"))
         mode, power = self._read_fageou_state(context, slot)
         if mode == FAGEOU_MODE_IDLE and power <= 0.0:
             return
+        fields: dict[str, JSONValue] = {
+            FAGEOU_STATE_MODE: FAGEOU_MODE_IDLE,
+            FAGEOU_STATE_SOLVE_START_FRAME: 0,
+            FAGEOU_STATE_NEXT_SHOT_FRAME: 0,
+            FAGEOU_STATE_NEXT_RAY_FRAME: 0,
+            FAGEOU_STATE_DRAIN_ACTIVE: True,
+        }
+        if (
+            power > SANDRONE_P4_PRISM_BOOST_POWER_THRESHOLD
+            and radiance_evidence(context, owner_ref, frame) is not None
+        ):
+            fields[FAGEOU_STATE_PRISM2_BOOST_UNTIL] = frame + SANDRONE_P4_PRISM_BOOST_WINDOW_FRAMES
         self._queue_machine_patch(
             context,
             owner_ref=owner_ref,
             frame=frame,
             session_id=session_id,
-            fields={
-                FAGEOU_STATE_MODE: FAGEOU_MODE_IDLE,
-                FAGEOU_STATE_SOLVE_START_FRAME: 0,
-                FAGEOU_STATE_NEXT_SHOT_FRAME: 0,
-                FAGEOU_STATE_NEXT_RAY_FRAME: 0,
-                FAGEOU_STATE_DRAIN_ACTIVE: True,
-            },
+            fields=fields,
         )
+
+    def _queue_burst_cast_patch(
+        self,
+        context: SimulationContext,
+        *,
+        owner_ref: str,
+        frame: int,
+        session_id: int,
+    ) -> None:
+        """Q 施放：辉映下清空全部改进战术层数并快照光束加成（P4）。
+
+        光束加成 = 0.1 × 清空层数，写入状态字段供聚能光束影响工厂在展开帧
+        并入星烁输入的星烁增伤基线；非辉映施放不清层，光束加成写 0 覆盖
+        旧值（星烁通道只在辉映下可达，普通光束不消费该字段）。
+        """
+
+        slot = int(owner_ref.removeprefix("character:slot_"))
+        stacks, _ = self._read_tactics_state(context, slot)
+        fields: dict[str, JSONValue] = {FAGEOU_STATE_BEAM_BONUS: 0.0}
+        if stacks > 0 and radiance_evidence(context, owner_ref, frame) is not None:
+            fields[FAGEOU_STATE_BEAM_BONUS] = min(
+                SANDRONE_P4_BEAM_BONUS_PER_STACK * stacks,
+                SANDRONE_P4_BEAM_BONUS_PER_STACK * 10,
+            )
+            fields[FAGEOU_STATE_TACTICS_STACKS] = 0
+            fields[FAGEOU_STATE_TACTICS_EXPIRE_FRAME] = 0
+        self._queue_machine_patch(
+            context,
+            owner_ref=owner_ref,
+            frame=frame,
+            session_id=session_id,
+            fields=fields,
+        )
+
+    def _read_tactics_state(
+        self,
+        context: SimulationContext,
+        slot: int,
+    ) -> tuple[int, int]:
+        """读取 P4 改进战术层数与过期帧。"""
+
+        try:
+            mount = resolve_mount(
+                context,
+                slot=slot,
+                state_key=SANDRONE_CHARACTER_HANDLER_KEY,
+            )
+        except StateContainerNotFoundError as exc:
+            raise SandroneInterpreterError(f"缺少桑多涅状态挂载：{exc}") from exc
+        raw_stacks = mount.values.get(FAGEOU_STATE_TACTICS_STACKS)
+        stacks = (
+            raw_stacks if isinstance(raw_stacks, int) and not isinstance(raw_stacks, bool) else 0
+        )
+        raw_expire = mount.values.get(FAGEOU_STATE_TACTICS_EXPIRE_FRAME)
+        expire = (
+            raw_expire if isinstance(raw_expire, int) and not isinstance(raw_expire, bool) else 0
+        )
+        return stacks, expire
 
     def _transition_rejection(
         self,

@@ -13,7 +13,12 @@ from dataclasses import replace
 
 from genshin_sim.assets.models import TalentScalingEntry
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
+    FAGEOU_STATE_BEAM_BONUS,
+    FAGEOU_STATE_PRISM2_BOOST_UNTIL,
+    SANDRONE_C6_EXTRA_NORMAL_RATIO,
     SANDRONE_CHARACTER_HANDLER_KEY,
+    SANDRONE_CHARGED_ATTACK_BEAM_RAY_DAMAGE_DATA,
+    SANDRONE_CHARGED_ATTACK_BEAM_RAY_EXTRA_IMPACT_KEY,
     SANDRONE_CHARGED_ATTACK_DAMAGE_DATA,
     SANDRONE_CHARGED_ATTACK_MAIN_TAG,
     SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY,
@@ -43,6 +48,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_ELEMENTAL_SKILL_STRIKE_TYPE,
     SANDRONE_NORMAL_ATTACK_ACTION_KEYS,
     SANDRONE_NORMAL_ATTACK_DAMAGE_DATA,
+    SANDRONE_P4_PRISM_BOOST_MULTIPLIER,
     SANDRONE_PLUNGE_ATTACK_DATA,
     SANDRONE_PLUNGE_COLLISION_IMPACT_KEY,
     SANDRONE_PLUNGE_LANDING_IMPACT_KEY,
@@ -53,6 +59,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.generic.talents import ScalingCompiler
+from genshin_sim.content.state_container import StateContainerNotFoundError, resolve_mount
 from genshin_sim.core.attributes import STAT_ATK_TOTAL
 from genshin_sim.core.elements import AuraAmount
 from genshin_sim.core.impacts import (
@@ -414,6 +421,68 @@ def compile_charged_attack_damage_specs(
     return specs
 
 
+def compile_c6_beam_ray_normal_spec(
+    character_key: str,
+    entries_by_key: dict[tuple[str, str, str], TalentScalingEntry],
+    talent_level: int,
+) -> DamageImpactSpec:
+    """C6 集束型冷凝射线普通变体：与射线同一倍率条目、附加标签独立。"""
+
+    entry = entries_by_key.get((character_key, "normal_attack", "重击冷凝射线伤害"))
+    if entry is None:
+        raise ContentUnitValidationError("桑多涅 C6 集束型缺少资产倍率条目：重击冷凝射线伤害")
+    damage_data = SANDRONE_CHARGED_ATTACK_BEAM_RAY_DAMAGE_DATA
+    return _compile_damage_spec(
+        SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
+        talent_level,
+        entry=entry,
+        component_index=0,
+        main_attack_tag=SANDRONE_CHARGED_ATTACK_MAIN_TAG,
+        strike_type=damage_data.strike_type,
+        range_type=damage_data.range_type,
+        elemental_amount=1,
+        icd_tag_key=damage_data.icd_tag_key,
+        icd_sequence_key=damage_data.icd_sequence_key,
+        additional_attack_tags=damage_data.additional_attack_tags,
+        display_name="重击冷凝射线伤害",
+        aoe_shape=None,
+        aoe_radius=0.0,
+        aoe_offset=Vector3(),
+    )
+
+
+def compile_c6_extra_normal_spec() -> DamageImpactSpec:
+    """C6 集束型额外段普通变体：固定 100% 攻击力（官方描述值，无倍率条目）。
+
+    命中判定数据取集束型行（单体/钝击/重击射线 ICD/1 元素量），附加标签为
+    集束型独立标签；星变体由集束型星烁通道在发射时查表分派。
+    """
+
+    damage_data = SANDRONE_CHARGED_ATTACK_BEAM_RAY_DAMAGE_DATA
+    return DamageImpactSpec(
+        impact_ref=f"{SANDRONE_CHARGED_ATTACK_BEAM_RAY_EXTRA_IMPACT_KEY}:c6",
+        main_attack_tag=SANDRONE_CHARGED_ATTACK_MAIN_TAG,
+        element=SANDRONE_DAMAGE_ELEMENT,
+        scaling_terms=(
+            DamageScalingTerm(
+                component_key="c6_extra",
+                attribute_key=STAT_ATK_TOTAL,
+                coefficient=SANDRONE_C6_EXTRA_NORMAL_RATIO,
+            ),
+        ),
+        can_crit=True,
+        additional_attack_tags=damage_data.additional_attack_tags,
+        strike_type=damage_data.strike_type,
+        range_type=damage_data.range_type,
+        elemental_strength=SANDRONE_DAMAGE_ELEMENTAL_STRENGTH,
+        elemental_amount=SANDRONE_DAMAGE_ELEMENTAL_AMOUNT,
+        icd_tag_key=damage_data.icd_tag_key,
+        icd_sequence_key=damage_data.icd_sequence_key,
+        display_name="集束型冷凝射线伤害",
+        area=None,
+    )
+
+
 class SandroneActionImpactFactory:
     """把桑多涅动作影响点展开为带伤害契约的 DAMAGE/ENERGY 请求。
 
@@ -471,6 +540,28 @@ class SandroneActionImpactFactory:
             )
             if stellar_spec is not None:
                 damage_spec = stellar_spec
+                if context.impact_key == SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY:
+                    # P4 光束加成：Q 施放时快照的每层 +10% 并入星烁输入的星烁
+                    # 增伤基线（普通光束不消费该字段）。
+                    beam_bonus = self._read_state_float(context, FAGEOU_STATE_BEAM_BONUS)
+                    if beam_bonus > 0.0 and damage_spec.stellar_reaction is not None:
+                        damage_spec = replace(
+                            damage_spec,
+                            stellar_reaction=replace(
+                                damage_spec.stellar_reaction,
+                                stellar_bonus=damage_spec.stellar_reaction.stellar_bonus
+                                + beam_bonus,
+                            ),
+                        )
+        if (
+            context.impact_key == SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY
+            and damage_spec is not None
+        ):
+            # P4 第二枚棱晶弹强化：辉映下施放战技且解算功率超过 50 时造成
+            # 原本 400% 伤害（条件在施放帧读取，标记有时间窗口）。
+            boost_until = self._read_state_float(context, FAGEOU_STATE_PRISM2_BOOST_UNTIL)
+            if context.frame <= boost_until:
+                damage_spec = self._boost_prism_damage(damage_spec)
         if damage_spec is None and context.impact_key == SANDRONE_PLUNGE_LANDING_IMPACT_KEY:
             variant = context.params.get("plunge_variant")
             if isinstance(variant, str):
@@ -500,5 +591,44 @@ class SandroneActionImpactFactory:
                 ),
                 params=params,
                 damage_spec=damage_spec,
+            ),
+        )
+
+    def _read_state_float(self, context: ActionImpactContext, name: str) -> float:
+        """读取宿主状态字段的浮点值；缺挂载或缺字段时返回 0.0。"""
+
+        if context.simulation is None or context.owner.slot is None:
+            return 0.0
+        try:
+            mount = resolve_mount(
+                context.simulation,
+                slot=context.owner.slot,
+                state_key=SANDRONE_CHARACTER_HANDLER_KEY,
+            )
+        except StateContainerNotFoundError:
+            return 0.0
+        raw = mount.values.get(name)
+        if isinstance(raw, bool) or not isinstance(raw, int | float):
+            return 0.0
+        return float(raw)
+
+    @staticmethod
+    def _boost_prism_damage(spec: DamageImpactSpec) -> DamageImpactSpec:
+        """P4 第二枚棱晶弹 400%：星烁输入乘缩放值，普通契约乘倍率分量。"""
+
+        if spec.stellar_reaction is not None:
+            return replace(
+                spec,
+                stellar_reaction=replace(
+                    spec.stellar_reaction,
+                    scaling_value=spec.stellar_reaction.scaling_value
+                    * SANDRONE_P4_PRISM_BOOST_MULTIPLIER,
+                ),
+            )
+        return replace(
+            spec,
+            scaling_terms=tuple(
+                replace(term, coefficient=term.coefficient * SANDRONE_P4_PRISM_BOOST_MULTIPLIER)
+                for term in spec.scaling_terms
             ),
         )

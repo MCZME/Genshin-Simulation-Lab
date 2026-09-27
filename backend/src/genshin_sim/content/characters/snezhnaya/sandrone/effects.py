@@ -12,7 +12,7 @@
   impacts.py / stellar.py，常量见 data.py）；本文件的效果单元保留效果
   声明与解锁门槛，metadata 记录真实载体。
 
-P8 生活天赋按规划为空实现（bootstrap 注册 EMPTY handler，不建单元）。
+P8 生活天赋为空实现（bootstrap 注册 EMPTY handler，不建单元）。
 """
 
 from __future__ import annotations
@@ -72,7 +72,7 @@ P6_CARRIER_NOTE = (
 C1_CARRIER_NOTE = "功率上升减速由角色单元按命座等级编译（fageou 构造参数）。"
 C6_CARRIER_NOTE = (
     "集束型射线、额外段与星烁擢升由角色单元按命座等级编译（fageou/impacts/"
-    "stellar，常量见 data.py；星扩散额外段倍率取维护者提供的官方完整描述）。"
+    "stellar，常量见 data.py；星扩散额外段倍率取官方描述值）。"
 )
 
 

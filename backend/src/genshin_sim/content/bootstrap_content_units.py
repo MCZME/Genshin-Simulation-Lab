@@ -292,7 +292,7 @@ def create_default_content_unit_registry(
         (SANDRONE_CONSTELLATION_C6_HANDLER_KEY, create_sandrone_constellation_c6),
     ):
         registry.register_effect_factory(handler_key, factory)
-    # P8 生活天赋：不参与仿真（规划 3.2，空实现）。
+    # P8 生活天赋：不参与仿真，注册空实现。
     registry.register_empty_effect_handler(SANDRONE_PASSIVE_P8_HANDLER_KEY)
     for handler_key in BUILTIN_NOOP_CONTENT_HANDLER_KEYS:
         registry.register_noop_handler(handler_key)

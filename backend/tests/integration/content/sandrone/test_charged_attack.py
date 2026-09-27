@@ -84,7 +84,7 @@ def test_solve_entry_fires_sweep_shots_on_rhythm(sandrone_assembled):
 
 
 def test_ray_track_emerges_exactly_three_rays_before_overload(sandrone_assembled):
-    # 核心不变量（规划 3.9.2）：0 命 0→100 恰好 3 发射线，第三发命中后封顶。
+    # 核心不变量：0 命 0→100 恰好 3 发射线，第三发命中后封顶。
     # 射线 128/194/260（解算起算 +90、间隔 66）；功率 98 < 100 时第三发照常
     # 发射，命中后封顶转入过载 → 射线轨停止，无第四发。
     assembled = _sandrone_with_line_target(

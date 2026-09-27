@@ -232,7 +232,7 @@ def _aura_apply_request(
 
 
 def test_stellar_swirl_trigger_activates_swirl_channel(sandrone_assembled):
-    # 全链路：桑多涅声明星扩散 capability（维护者确认口径）→ 风命中冰排他
+    # 全链路：桑多涅声明星扩散 capability → 风命中冰排他
     # 替代普通扩散触发星扩散 → 辉映·星扩散 Buff 发放给 capability 提供者
     # （桑多涅）→ 重击射线查表切到星扩散冰通道（系数证据固定 1.0）。
     # 冰/风附着经注册的元素结算协调器在仿真前种入；"附着触发反应"链路本身
@@ -280,7 +280,7 @@ def test_stellar_swirl_trigger_activates_swirl_channel(sandrone_assembled):
 
 
 def test_c1_bonus_covers_stellar_swirl_damage(sandrone_assembled):
-    # C1 增伤为星烁反应通用增伤（维护者确认 2026-09-27）：星扩散冰标签同样
+    # C1 增伤为星烁反应通用增伤：星扩散冰标签同样
     # 命中增伤区。星扩散触发链与上一用例相同，仅 C1 生效。
     assembled = sandrone_assembled(payload=_line_target_payload(380, 2, 376, constellation=1))
     damage_events = _damage_events(assembled)

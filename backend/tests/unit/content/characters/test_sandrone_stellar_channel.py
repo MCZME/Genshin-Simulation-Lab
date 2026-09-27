@@ -264,7 +264,7 @@ def test_compile_rejects_missing_stellar_scaling_entry() -> None:
 
 
 def test_content_unit_declares_both_stellar_capabilities() -> None:
-    """桑多涅随内容单元静态声明星超导与星扩散 capability（维护者确认口径）。
+    """桑多涅随内容单元静态声明星超导与星扩散 capability。
 
     星扩散 capability 使队伍风命中冰排他替代普通扩散，且辉映·星扩散 Buff
     以 capability 提供者为发放目标——桑多涅因此持有辉映·星扩散状态。

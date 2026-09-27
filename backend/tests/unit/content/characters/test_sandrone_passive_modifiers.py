@@ -133,8 +133,7 @@ def test_c1_provider_covers_all_stellar_reaction_tags():
     def _query(main_attack_tag: str):
         return SimpleNamespace(request=SimpleNamespace(main_attack_tag=main_attack_tag, tags=()))
 
-    # 星烁反应通用增伤（维护者确认 2026-09-27）：星超导冰/雷与星扩散冰/风
-    # 全部命中。
+    # 星烁反应通用增伤：星超导冰/雷与星扩散冰/风全部命中。
     for tag in ("星超导冰", "星超导雷", "星扩散冰", "星扩散风"):
         terms = provider.contribute(
             cast(DamageQuery, _query(tag)), cast(DamageResolutionSession, None)

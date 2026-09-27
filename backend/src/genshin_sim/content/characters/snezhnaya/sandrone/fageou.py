@@ -1,6 +1,6 @@
 """法洁欧与解算模式：内容专属状态机的 FRAME_STARTED 周期 hook。
 
-法洁欧不做空间创建物（规划结论 6）：模式机（待机/解算/过载）与解算功率
+法洁欧不做空间创建物：模式机（待机/解算/过载）与解算功率
 （0–100）承载在角色内容状态挂载（state_key = handler key，与连段状态同
 段），本 hook 每帧读取字段、推进功率动力学与双轨射击节奏，演化结果经
 ``state_patch`` 意图写回，射击/射线以影响请求产出、由同帧下一轮结算消费。
@@ -9,11 +9,11 @@
 解释器在按下/松开帧经 ``state_patch`` 提交转移（round 0 结算，先于本帧
 hook 运行），hook 是状态字段与当前帧的纯函数——转移与节奏均无漂移。
 
-直线几何（规划结论 6）：瞄准方向取桑多涅实体 facing，出发点取其位置；
+直线几何：瞄准方向取桑多涅实体 facing，出发点取其位置；
 射线为长条 oriented box 一次穿透全部命中（即时结算、一条攻击根、多目标
 聚合），子弹沿直线取首个交点（单一实例），飞行延迟在发射时按距离一次性
 折算、经 hook 内 pending 队列在未来帧兑现（统一意图队列不支持未来帧到期，
-采用规划认可的内容 pending 退路）。
+采用内容 pending 退路）。
 """
 
 from __future__ import annotations
@@ -301,7 +301,7 @@ class SandroneFageouHook:
             put(FAGEOU_STATE_TACTICS_EXPIRE_FRAME, tactics_expire)
 
         if drain_active:
-            # E 排空：约 0.5s 排满功率，排空期间停火（规划结论 4）。功率每
+            # E 排空：约 0.5s 排满功率，排空期间停火。功率每
             # 跨越一个 10 点阈值获得一层改进战术（P4，突破 1 阶解锁；未解锁
             # 时排空只清功率不计层），满功率排空拿满 10 层。
             power_before = power
@@ -355,7 +355,7 @@ class SandroneFageouHook:
                     power = min(self._power_max, power + self._ray_hit_gain)
                 next_ray += self._ray_interval
             if power >= self._power_max:
-                # 满功率进入过载：射击轨换节奏不重置相位（规划结论 7）。
+                # 满功率进入过载：射击轨换节奏不重置相位。
                 mode = FAGEOU_MODE_OVERLOAD
                 next_shot = frame + self._overload_shot_interval
                 next_ray = 0

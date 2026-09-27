@@ -5,10 +5,9 @@
 输入映射、帧表与动作表、伤害标签与 AOE 数据；普攻倍率仍来自资产库倍率表，
 不在本文件维护。
 
-帧表来源：维护者 30fps 视频实测换算（60 帧制，见临时规划文档 3.9.2）——
-普攻一段完整 130F/衔接切入 59F/命中均值 +44F，二段 59F/+24F，三段 159F/+50F；
-元素战技棱晶弹 +16F/+32F；元素爆发轰炸 +182/+198/+214（16F 等间隔）、
-光束 +252F、结束 +306F。重击（按住持续）与法洁欧在后续切片接入。
+帧表为 60 帧制——普攻一段完整 130F/衔接切入 59F/命中均值 +44F，二段 59F/+24F，
+三段 159F/+50F；元素战技棱晶弹 +16F/+32F；元素爆发轰炸 +182/+198/+214
+（16F 等间隔）、光束 +252F、结束 +306F。
 """
 
 from __future__ import annotations
@@ -28,8 +27,7 @@ SANDRONE_ASSET_KEY = "character:10000133"
 SANDRONE_CONTENT_VERSION = "slice-4-passives-constellations"
 
 # ---------------------------------------------------------------------------
-# 被动与命座（切片 4）。效果行 handler 键对齐 barbara 命名；数值来源为资产
-# 效果行 components（project_amber_yatta，2026-09-25 拉取版本）。
+# 被动与命座（切片 4）。效果行 handler 键对齐 barbara 命名；数值来源为资产效果行 components。
 # ---------------------------------------------------------------------------
 SANDRONE_PASSIVE_P4_HANDLER_KEY = "character.sandrone.passive.p4"
 SANDRONE_PASSIVE_P5_HANDLER_KEY = "character.sandrone.passive.p5"
@@ -55,10 +53,10 @@ SANDRONE_CONSTELLATION_C6_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[6]
 # 每 10 点一层、光束倍率基座 100% + 每层 10%）。改进战术承载为角色内容状态
 # （跨会话保留、按 60s 统一过期——每次获得叠层即刷新全部层数的过期帧，与
 # 通用堆叠 Buff 的刷新语义一致），清空发生在辉映下施放爆发时。
-# 突破解锁门槛经维护者确认（2026-09-27）：20 级突破解锁，对应突破 1 阶；
-# 行为随角色单元编译，锁定时（ascension_phase < 1）不叠层、不强化棱晶弹、
-# 不结算光束加成。光束加成经维护者确认（2026-09-27）：作用于倍率区，
-# P4 提供的倍率 = 100% + 10%/层（一层即 110%），随原本倍率一并折进缩放值。
+# 突破解锁门槛为 20 级突破解锁，对应突破 1 阶；行为随角色单元编译，
+# 锁定时（ascension_phase < 1）不叠层、不强化棱晶弹、不结算光束加成。
+# 光束加成作用于倍率区，P4 提供的倍率 = 100% + 10%/层（一层即 110%），
+# 随原本倍率一并折进缩放值。
 SANDRONE_P4_ASCENSION_THRESHOLD = 1
 SANDRONE_P4_PRISM_BOOST_POWER_THRESHOLD = 50.0
 SANDRONE_P4_PRISM_BOOST_MULTIPLIER = 4.0
@@ -71,7 +69,7 @@ SANDRONE_P4_BEAM_BONUS_PER_STACK = 0.1
 
 # P5 淑女的行事准则（效果行 components：每 100 攻击 +8 精通、上限 160）。
 # 数值经 P5 效果单元从资产行读取，这里只承载 provider 键词。
-# 突破解锁门槛经维护者确认（2026-09-27）：60 级突破解锁，对应突破 4 阶。
+# 突破解锁门槛为 60 级突破解锁，对应突破 4 阶。
 SANDRONE_P5_ASCENSION_THRESHOLD = 4
 
 # P6 星耀祝礼·唯理为光（效果行 components：每 100 攻击 +0.7% 星超导基础伤害、
@@ -80,8 +78,8 @@ SANDRONE_P6_BASE_BONUS_PER_100_ATK = 0.007
 SANDRONE_P6_BASE_BONUS_CAP = 0.14
 
 # C1 生命之数·演算倍增：解算功率上升速度 -50%（效果行 number_3）。星烁
-# 增伤 +30%（number_4）由 C1 效果单元的伤害修饰 provider 承载；覆盖口径经
-# 维护者确认（2026-09-27）：星烁反应通用增伤，星超导与星扩散都可吃到。
+# 增伤 +30%（number_4）由 C1 效果单元的伤害修饰 provider 承载；覆盖口径为
+# 星烁反应通用增伤，星超导与星扩散都可吃到。
 FAGEOU_C1_POWER_RISE_MULTIPLIER = 0.5
 
 # C2 射线暴伤（效果行：+40% 基础、逐射线 +20%、至多 3 层；仅加成射线的
@@ -96,8 +94,8 @@ SANDRONE_RAY_INDEX_TAG_PREFIX = "sandrone_ray_index:"
 SANDRONE_C4_ATTACK_IMPACT_KEY = "character.sandrone.constellation.c4.attack"
 
 # C6 集束型冷凝射线：第三次发射的射线转集束型（普通变体附加标签独立），
-# 额外至多 4 段（普通 100% / 星超导 80% / 星扩散 120%——星扩散值取维护者
-# 提供的官方完整描述，资产源缺星扩散分支，同待定项 6 口径）；全部星烁反应
+# 额外至多 4 段（普通 100% / 星超导 80% / 星扩散 120%——星扩散取自官方
+# 描述值，资产源缺星扩散分支）；全部星烁反应
 # 伤害擢升 +20%（效果行 number_7）。额外段叠加在后续射线之上（每条后续射线
 # 至多携带一段），不改变射线节奏；额外段不提供射线命中功率增量。
 SANDRONE_C6_EXTRA_SEGMENT_COUNT = 4
@@ -183,8 +181,7 @@ SANDRONE_ELEMENTAL_BURST_COOLDOWN_FRAMES = 900
 
 # ---------------------------------------------------------------------------
 # 法洁欧与解算模式（切片 2）。
-# 机器参数来源：米游社 @Asgater 攻略实测约值（3.6，约值即基线）+ 维护者
-# 30fps 视频帧表定稿（3.9.2，节奏以 0.35s/1.1s 为权威）。帧制为 60 帧/秒。
+# 机器参数为实测约值，射击节奏以 0.35s/1.1s 为准；帧制为 60 帧/秒。
 # ---------------------------------------------------------------------------
 SANDRONE_CHARGED_ATTACK_ACTION_KEY = "character.sandrone.charged_attack"
 SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY = f"{SANDRONE_CHARGED_ATTACK_ACTION_KEY}.sweep"
@@ -236,12 +233,12 @@ FAGEOU_POWER_MAX = 100.0
 
 # 直线几何：瞄准方向 = 桑多涅实体 facing（静态），出发点 = 桑多涅位置
 # （偏移 0，法洁欧同位）。射线为 oriented box 穿透（即时结算）；子弹取直线
-# 首个交点（单一实例），延迟按距离折算。子弹速度 60 m/s 为无来源占位。
+# 首个交点（单一实例），延迟按距离折算。子弹速度 60 m/s 为占位值。
 FAGEOU_RAY_LENGTH = 12.0
 FAGEOU_RAY_WIDTH = 1.0
 FAGEOU_BULLET_SPEED_M_PER_S = 60.0
 
-# 命中判定数据（3.4 重击三行，单体 = 每实例无 AOE 形状，命中集合由直线
+# 命中判定数据（重击三行，单体 = 每实例无 AOE 形状，命中集合由直线
 # 几何确定）。扫射与功率过载共用自定义 ICD 组「桑多涅扫射攻击」
 # （重置 1.4s = 84F、序列 (1,0)，扫射/过载游标共享）。
 SANDRONE_SWEEP_ICD_SEQUENCE_KEY = "桑多涅扫射攻击"
@@ -302,11 +299,11 @@ SANDRONE_CHARGED_ATTACK_BEAM_RAY_DAMAGE_DATA = SandroneChargedAttackDamageData(
 
 # ---- 辉映·星烁直伤分支（切片 3）----
 # 冷凝射线/第二枚棱晶弹/聚能光束在辉映状态下切换到星烁通道（星超导反应契约
-# §8、命中判定数据 3.4 星变体行）。星变体：攻击标签 星超导冰/星扩散冰、元素量
+# §8、命中判定数据星变体行）。星变体：攻击标签 星超导冰/星扩散冰、元素量
 # 0、无衰减序列与衰减标签（不参与附着判定）；显示名取资产倍率条目同名行。
 # 星扩散变体无资产倍率条目（原始源数据 0 处提及），数值与显示名以编译参数
-# 占位、来源待补（规划讨论待定项 6）；星扩散 capability 已随内容单元声明
-# （维护者 2026-09-26 确认），风命中冰即可触发星扩散并点亮该分支。
+# 占位、来源待补；星扩散 capability 已随内容单元声明，风命中冰即可触发
+# 星扩散并点亮该分支。
 SANDRONE_STELLAR_RAY_CONDUCT_LABEL = "重击冷凝射线星超导伤害"
 SANDRONE_STELLAR_PRISM_CONDUCT_LABEL = "棱晶弹星超导伤害"
 SANDRONE_STELLAR_BEAM_CONDUCT_LABEL = "聚能光束星超导伤害"
@@ -323,9 +320,9 @@ class SandroneNormalAttackDamageData:
 
     一段的资料形状为攻击盒（区域 4.3,2.5,2.5，偏移 0.0,1.1,0.5）：按前后完整
     边长 4.3、左右完整边长 2.5 接入，资料第三分量（高度）由 X/Z 模型忽略；
-    区域三个数值的轴向解释（4.3 取前后向）待资料出处确认后复核（规划文档
-    待定项 8）。二、三段为圆柱，半径取资料区域第一分量。偏移保留资料原始
-    三元组，投影时随攻击方向旋转（Y 轴分量不参与查询）。
+    区域三个数值的轴向解释（4.3 取前后向）待资料出处确认后复核。二、三段
+    为圆柱，半径取资料区域第一分量。偏移保留资料原始三元组，投影时随攻击
+    方向旋转（Y 轴分量不参与查询）。
     """
 
     main_attack_tag: str

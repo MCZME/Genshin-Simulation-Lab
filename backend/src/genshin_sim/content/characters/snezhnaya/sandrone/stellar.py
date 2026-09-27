@@ -1,6 +1,6 @@
 """桑多涅直伤星烁通道：辉映查表分派与 ``StellarReactionDamageInput`` 组装。
 
-本模块是角色直伤星超导的私有实现（规划讨论待定项 5：集中放置、不散落），
+本模块是角色直伤星超导的私有实现（集中放置、不散落），
 覆盖冷凝射线/第二枚棱晶弹/聚能光束的 ``星超导冰``/``星扩散冰`` 双分支。
 发射或展开时读取辉映状态的属性证据——辉映 Buff 投影到角色属性的
 ``stellar.conduct.direct_base_multiplier`` / ``stellar.swirl.direct_base_multiplier``
@@ -11,8 +11,8 @@
 （+20%，覆盖星超导与星扩散）。
 
 辉映·星扩散 Buff 的发放目标是星扩散 capability 提供者：桑多涅随内容单元
-静态声明该 capability（维护者 2026-09-26 确认），队伍风命中冰触发星扩散后
-她持有辉映·星扩散状态，星扩散冰分支在仿真中可达。
+静态声明该 capability，队伍风命中冰触发星扩散后她持有辉映·星扩散状态，
+星扩散冰分支在仿真中可达。
 """
 
 from __future__ import annotations
@@ -90,7 +90,7 @@ class SandroneStellarAttackChannel:
 
     星变体契约不携带普通倍率（直伤倍率经 ``scaling_value`` 由星烁输入承载）；
     ``conduct_ratio`` 取自资产倍率条目星超导行（官方数据直出，组装时不换算），
-    ``swirl_ratio`` 以普通变体倍率占位（星扩散条目不存在，来源待补）。
+    ``swirl_ratio`` 以普通变体倍率占位（星扩散条目暂无，来源待补）。
     ``ascension_bonus`` 为 C6 擢升（覆盖星超导与星扩散，角色自身星烁伤害）。
     """
 
@@ -213,8 +213,8 @@ def compile_c6_extra_stellar_channel(
     """编译 C6 集束型额外段的星烁通道（星超导 80% / 星扩散 120%）。
 
     命中判定数据与射线星变体同标签同形状（单体/钝击/桑多涅激光）；倍率取
-    C6 官方描述值（资产效果行 number_5 = 0.8，星扩散分支资产缺失、取维护者
-    提供的官方完整描述，同待定项 6 口径），不读倍率条目。
+    C6 官方描述值（资产效果行 number_5 = 0.8，星扩散分支资产缺失、取官方
+    描述值），不读倍率条目。
     """
 
     ray_plan = _STELLAR_CHANNEL_PLANS[0]

@@ -55,6 +55,10 @@ SANDRONE_CONSTELLATION_C6_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[6]
 # 每 10 点一层、光束每层 +10%）。改进战术承载为角色内容状态（跨会话保留、
 # 按 60s 统一过期——每次获得叠层即刷新全部层数的过期帧，与通用堆叠 Buff 的
 # 刷新语义一致），清空发生在辉映下施放爆发时。
+# 突破解锁门槛经维护者确认（2026-09-27）：20 级突破解锁，对应突破 1 阶；
+# 行为随角色单元编译，锁定时（ascension_phase < 1）不叠层、不强化棱晶弹、
+# 不结算光束加成。
+SANDRONE_P4_ASCENSION_THRESHOLD = 1
 SANDRONE_P4_PRISM_BOOST_POWER_THRESHOLD = 50.0
 SANDRONE_P4_PRISM_BOOST_MULTIPLIER = 4.0
 SANDRONE_P4_PRISM_BOOST_WINDOW_FRAMES = 33
@@ -65,6 +69,8 @@ SANDRONE_P4_BEAM_BONUS_PER_STACK = 0.1
 
 # P5 淑女的行事准则（效果行 components：每 100 攻击 +8 精通、上限 160）。
 # 数值经 P5 效果单元从资产行读取，这里只承载 provider 键词。
+# 突破解锁门槛经维护者确认（2026-09-27）：60 级突破解锁，对应突破 4 阶。
+SANDRONE_P5_ASCENSION_THRESHOLD = 4
 
 # P6 星耀祝礼·唯理为光（效果行 components：每 100 攻击 +0.7% 星超导基础伤害、
 # 上限 14%）。固定天赋（ALWAYS），数值由星烁通道组装时按攻击力实时折算。

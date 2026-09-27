@@ -110,8 +110,10 @@ class SandroneActionInterpreter:
         self,
         *,
         action_table: dict[str, TimedActionSpec] | None = None,
+        p4_unlocked: bool = False,
     ) -> None:
         self._action_table = dict(action_table or SANDRONE_ACTION_TABLE)
+        self._p4_unlocked = p4_unlocked
 
     @property
     def supported_action_keys(self) -> tuple[str, ...]:
@@ -187,7 +189,7 @@ class SandroneActionInterpreter:
                 frame=session.current_frame,
                 session_id=session.session_id,
             )
-        if input_kind == ELEMENTAL_BURST_INPUT:
+        if input_kind == ELEMENTAL_BURST_INPUT and self._p4_unlocked:
             self._queue_burst_cast_patch(
                 context.simulation,
                 owner_ref=owner_ref,
@@ -485,7 +487,8 @@ class SandroneActionInterpreter:
 
         P4 强化条件在施放帧读取（规划 3.2：400% 条件读清空前的功率值）：
         解算功率超过 50 且施放时持有辉映状态时，写入有时间窗口的棱晶弹
-        强化标记，由影响工厂在第二枚棱晶弹展开帧消费。
+        强化标记，由影响工厂在第二枚棱晶弹展开帧消费。P4 未解锁（突破
+        1 阶前）不写强化标记。
         """
 
         slot = int(owner_ref.removeprefix("character:slot_"))
@@ -500,7 +503,8 @@ class SandroneActionInterpreter:
             FAGEOU_STATE_DRAIN_ACTIVE: True,
         }
         if (
-            power > SANDRONE_P4_PRISM_BOOST_POWER_THRESHOLD
+            self._p4_unlocked
+            and power > SANDRONE_P4_PRISM_BOOST_POWER_THRESHOLD
             and radiance_evidence(context, owner_ref, frame) is not None
         ):
             fields[FAGEOU_STATE_PRISM2_BOOST_UNTIL] = frame + SANDRONE_P4_PRISM_BOOST_WINDOW_FRAMES

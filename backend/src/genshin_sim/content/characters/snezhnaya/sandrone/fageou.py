@@ -204,6 +204,7 @@ class SandroneFageouHook:
         ray_length: float = FAGEOU_RAY_LENGTH,
         ray_width: float = FAGEOU_RAY_WIDTH,
         bullet_speed_m_per_s: float = FAGEOU_BULLET_SPEED_M_PER_S,
+        p4_unlocked: bool = False,
         c2_index_tag_enabled: bool = False,
         c6_beam_ray_normal_spec: DamageImpactSpec | None = None,
         c6_extra_normal_spec: DamageImpactSpec | None = None,
@@ -238,6 +239,7 @@ class SandroneFageouHook:
         self._ray_length = ray_length
         self._ray_width = ray_width
         self._bullet_speed_m_per_s = bullet_speed_m_per_s
+        self._p4_unlocked = p4_unlocked
         self._c2_index_tag_enabled = c2_index_tag_enabled
         self._c6_beam_ray_normal_spec = c6_beam_ray_normal_spec
         self._c6_extra_normal_spec = c6_extra_normal_spec
@@ -300,19 +302,21 @@ class SandroneFageouHook:
 
         if drain_active:
             # E 排空：约 0.5s 排满功率，排空期间停火（规划结论 4）。功率每
-            # 跨越一个 10 点阈值获得一层改进战术（P4），满功率排空拿满 10 层。
+            # 跨越一个 10 点阈值获得一层改进战术（P4，突破 1 阶解锁；未解锁
+            # 时排空只清功率不计层），满功率排空拿满 10 层。
             power_before = power
             power = max(0.0, power - self._drain_per_frame)
             if power <= 0.0:
                 drain_active = False
-            crossings = int(power_before // SANDRONE_P4_TACTICS_POWER_STEP) - int(
-                power // SANDRONE_P4_TACTICS_POWER_STEP
-            )
-            if crossings > 0:
-                tactics_stacks = min(SANDRONE_P4_TACTICS_MAX_STACKS, tactics_stacks + crossings)
-                tactics_expire = frame + SANDRONE_P4_TACTICS_DURATION_FRAMES
-                put(FAGEOU_STATE_TACTICS_STACKS, tactics_stacks)
-                put(FAGEOU_STATE_TACTICS_EXPIRE_FRAME, tactics_expire)
+            if self._p4_unlocked:
+                crossings = int(power_before // SANDRONE_P4_TACTICS_POWER_STEP) - int(
+                    power // SANDRONE_P4_TACTICS_POWER_STEP
+                )
+                if crossings > 0:
+                    tactics_stacks = min(SANDRONE_P4_TACTICS_MAX_STACKS, tactics_stacks + crossings)
+                    tactics_expire = frame + SANDRONE_P4_TACTICS_DURATION_FRAMES
+                    put(FAGEOU_STATE_TACTICS_STACKS, tactics_stacks)
+                    put(FAGEOU_STATE_TACTICS_EXPIRE_FRAME, tactics_expire)
             put(FAGEOU_STATE_POWER, power)
             put(FAGEOU_STATE_DRAIN_ACTIVE, drain_active)
             return self._result(fields, requests)

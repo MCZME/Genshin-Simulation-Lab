@@ -29,6 +29,8 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_CONSTELLATION_C5_HANDLER_KEY,
     SANDRONE_CONSTELLATION_C6_HANDLER_KEY,
     SANDRONE_CONTENT_VERSION,
+    SANDRONE_P4_ASCENSION_THRESHOLD,
+    SANDRONE_P5_ASCENSION_THRESHOLD,
     SANDRONE_PASSIVE_P4_HANDLER_KEY,
     SANDRONE_PASSIVE_P5_HANDLER_KEY,
     SANDRONE_PASSIVE_P6_HANDLER_KEY,
@@ -58,12 +60,6 @@ from genshin_sim.core.attributes import ModifierProvider
 from genshin_sim.core.systems.damage import DamageModifierProvider
 
 FRAMES_PER_SECOND = 60
-
-# P4/P5 的突破解锁等级未见于当前资料（源数据与资产效果行均不携带），按通用
-# 惯例假设第一战斗被动为突破 2、第二战斗被动为突破 4，待资料版本标注时复核
-# （缺来源的门槛显式标记，不静默取真值）。
-SANDRONE_P4_ASSUMED_ASCENSION_THRESHOLD = 2
-SANDRONE_P5_ASSUMED_ASCENSION_THRESHOLD = 4
 
 P4_CARRIER_NOTE = (
     "数值行为承载于角色单元：排空叠层与过期（fageou.py）、棱晶弹 400% 与"
@@ -171,7 +167,7 @@ def create_sandrone_passive_p4(request: EffectContentUnitRequest) -> ContentUnit
         kind=EffectKind.PASSIVE,
         unlock=UnlockSpec(
             kind=UnlockKind.ASCENSION,
-            threshold=SANDRONE_P4_ASSUMED_ASCENSION_THRESHOLD,
+            threshold=SANDRONE_P4_ASCENSION_THRESHOLD,
         ),
         purpose="sandrone_passive_p4",
         note=P4_CARRIER_NOTE,
@@ -197,7 +193,7 @@ def create_sandrone_passive_p5(request: EffectContentUnitRequest) -> ContentUnit
         kind=EffectKind.PASSIVE,
         unlock=UnlockSpec(
             kind=UnlockKind.ASCENSION,
-            threshold=SANDRONE_P5_ASSUMED_ASCENSION_THRESHOLD,
+            threshold=SANDRONE_P5_ASCENSION_THRESHOLD,
         ),
         purpose="sandrone_passive_p5",
         attribute_providers=(provider,),

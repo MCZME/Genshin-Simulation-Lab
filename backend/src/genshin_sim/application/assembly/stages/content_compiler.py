@@ -205,6 +205,7 @@ class ContentCompiler:
             character_key=bundle.character.asset_key,
             slot=bundle.slot,
             constellation=slot_config.character.constellation,
+            ascension_phase=bundle.character_level_stats.ascension_phase,
             talent_levels=slot_config.character.talents,
             talent_boosts=dict(talent_boosts),
             cooldown_duration_terms=cooldown_duration_terms,

@@ -40,6 +40,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_ELEMENTAL_SKILL_COOLDOWN_FRAMES,
     SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY,
     SANDRONE_HIT_IMPACT_KEYS,
+    SANDRONE_P4_ASCENSION_THRESHOLD,
     SANDRONE_SWEEP_ICD_RESET_FRAMES,
     SANDRONE_SWEEP_ICD_SEQUENCE_KEY,
 )
@@ -148,6 +149,9 @@ def create_sandrone_content_unit(
         talent_level,
     )
     c6_unlocked = constellation >= 6
+    # P4 悠久的演算机关：突破 1 阶（20 级突破）解锁；行为随角色单元编译，
+    # 锁定时排空不计层、棱晶弹不强化、爆发不结算光束加成。
+    p4_unlocked = request.ascension_phase >= SANDRONE_P4_ASCENSION_THRESHOLD
     stellar_channels = compile_stellar_attack_channels(
         request.character_key,
         entries_by_key,
@@ -212,7 +216,7 @@ def create_sandrone_content_unit(
         handler_key=request.handler_key,
         version=SANDRONE_CONTENT_VERSION,
         slot=request.slot,
-        action_interpreter=SandroneActionInterpreter(),
+        action_interpreter=SandroneActionInterpreter(p4_unlocked=p4_unlocked),
         actions=create_sandrone_actions(
             cooldown_duration_terms=cooldown_terms_by_ability,
         ),
@@ -240,6 +244,7 @@ def create_sandrone_content_unit(
                 ray_length=FAGEOU_RAY_LENGTH,
                 ray_width=FAGEOU_RAY_WIDTH,
                 bullet_speed_m_per_s=FAGEOU_BULLET_SPEED_M_PER_S,
+                p4_unlocked=p4_unlocked,
                 c2_index_tag_enabled=constellation >= 2,
                 c6_beam_ray_normal_spec=(
                     compile_c6_beam_ray_normal_spec(

@@ -58,6 +58,17 @@ def write_sandrone_asset_database(db_path: Path) -> Path:
             ascension_stat="crit_rate",
             ascension_value=0.0,
         ),
+        # 20 级突破前的行：供突破门槛（P4=1、P5=4）锁定路径的测试使用。
+        CharacterLevelStats(
+            character_key=SANDRONE_CHARACTER_KEY,
+            level=19,
+            ascension_phase=0,
+            base_hp=10_000.0,
+            base_atk=200.0,
+            base_def=600.0,
+            ascension_stat="crit_rate",
+            ascension_value=0.0,
+        ),
     )
     return SQLiteAssetDataWriter(db_path).replace_all(
         meta={
@@ -237,6 +248,7 @@ def sandrone_input_payload(
     input_trace: list[dict[str, object]] | None = None,
     targets: list[dict[str, object]] | None = None,
     constellation: int = 0,
+    level: int = 90,
 ) -> dict[str, object]:
     """桑多涅单人集成测试配置。"""
 
@@ -263,7 +275,7 @@ def sandrone_input_payload(
                 "slot": 1,
                 "character": {
                     "asset_key": SANDRONE_ASSET_KEY,
-                    "level": 90,
+                    "level": level,
                     "constellation": constellation,
                     "talents": {
                         "normal_attack": 1,

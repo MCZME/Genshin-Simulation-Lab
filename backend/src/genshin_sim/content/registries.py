@@ -66,6 +66,7 @@ class CharacterContentUnitRequest:
     character_key: str
     slot: int
     constellation: int = 0
+    ascension_phase: int = 0
     talent_levels: Mapping[str, int] = field(default_factory=dict)
     talent_scalings: tuple[TalentScalingEntry, ...] = ()
     talent_boosts: Mapping[str, int] = field(default_factory=dict)
@@ -81,6 +82,7 @@ class CharacterContentUnitRequest:
         _require_non_empty(self.character_key, "character_key")
         _require_positive_int(self.slot, "slot")
         _require_bounded_int(self.constellation, 0, 6, "constellation")
+        _require_non_negative_int(self.ascension_phase, "ascension_phase")
         talent_levels = dict(self.talent_levels)
         for talent_key, level in talent_levels.items():
             _require_non_empty(talent_key, "talent_levels key")

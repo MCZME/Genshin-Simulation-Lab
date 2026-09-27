@@ -261,6 +261,47 @@ def test_p4_prism_boost_and_drain_stacks(sandrone_assembled):
     assert _state_value(assembled, FAGEOU_STATE_TACTICS_STACKS) == 6
 
 
+def test_p4_locked_before_first_ascension(sandrone_assembled):
+    # P4 悠久的演算机关在 20 级突破（突破 1 阶）解锁：19 级（突破 0 阶）
+    # 角色单元的排空/棱晶/爆发行为不带 P4——排空照常清功率但不计层，
+    # 第二枚棱晶弹不享受 400% 强化。
+    payload = sandrone_helpers.sandrone_input_payload(
+        max_frames=300,
+        constellation=0,
+        level=19,
+        input_trace=[
+            {"frame": 2, "events": [{"key": "mouse.right", "phase": "press"}]},
+            {"frame": 190, "events": [{"key": "mouse.right", "phase": "release"}]},
+            {"frame": 210, "events": [{"key": "keyboard.e", "phase": "press"}]},
+            {"frame": 211, "events": [{"key": "keyboard.e", "phase": "release"}]},
+        ],
+        targets=[
+            {
+                "id": "target_1",
+                "level": 90,
+                "position": {"x": 0, "y": 0, "z": 4},
+                "resistance": {},
+            }
+        ],
+    )
+    payload["rules"] = {"active": ["start_with_full_energy"]}
+    assembled = sandrone_assembled(payload=payload)
+    _apply_radiance_buff(assembled)
+    events = _damage_events(assembled)
+
+    assembled.simulator.run()
+
+    prisms = [(e.frame, e.payload.result.damage_name) for e in events]
+    assert (227, PRISM_DISPLAY_NAME) in prisms
+    assert (243, PRISM_STELLAR_DISPLAY_NAME) in prisms
+    prism2 = next(e for e in events if e.payload.result.damage_name == PRISM_STELLAR_DISPLAY_NAME)
+    stellar = prism2.payload.result.stellar_reaction_resolution
+    assert stellar is not None
+    atk = _resolved_atk(assembled)
+    assert stellar.input.scaling_value == pytest.approx(atk * 1.0)
+    assert _state_value(assembled, FAGEOU_STATE_TACTICS_STACKS) == 0
+
+
 def test_p4_burst_clears_tactics_and_boosts_beam(sandrone_assembled):
     # P4 光束加成：辉映下施放爆发清空全部改进战术层数，聚能光束的星烁输入
     # 增伤基线并入 0.1 × 层数（6 层 → +0.6）。

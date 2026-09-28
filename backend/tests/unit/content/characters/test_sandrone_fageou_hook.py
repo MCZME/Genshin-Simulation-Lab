@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from types import SimpleNamespace
 from typing import cast
 
 import pytest
@@ -32,10 +33,18 @@ OWNER_REF = "character:slot_1"
 
 
 class _FakeContext:
-    """只提供 hook.state(owner_ref) 读路径的最小上下文。"""
+    """只提供 hook.state(owner_ref) 读路径的最小上下文。
 
-    def __init__(self, values: dict[str, object]) -> None:
+    ``active_slot`` 非空时提供队伍在场状态供后台判定读取。
+    """
+
+    def __init__(self, values: dict[str, object], *, active_slot: int | None = None) -> None:
         self._values = values
+        self.simulation = None
+        if active_slot is not None:
+            self.simulation = SimpleNamespace(
+                space_runtime=SimpleNamespace(team_state=SimpleNamespace(active_slot=active_slot))
+            )
 
     def state(self, owner_ref: str) -> dict[str, object]:
         assert owner_ref == OWNER_REF
@@ -99,10 +108,11 @@ def _run_frames(
     frames: int,
     *,
     start: int = 10_000,
+    active_slot: int | None = None,
 ) -> list[dict[str, object]]:
     """逐帧驱动 hook（按真实管线语义应用 state_patch），返回状态快照。"""
 
-    context = _FakeContext(state)
+    context = _FakeContext(state, active_slot=active_slot)
     snapshots = []
     for offset in range(frames):
         result = hook.handle(_event(start + offset), context)
@@ -168,3 +178,37 @@ def test_non_frame_started_events_are_ignored():
     assert result.impact_requests == ()
     assert result.state_patches == ()
     assert state[FAGEOU_STATE_POWER] == 10.0
+
+
+def test_solve_mode_exits_to_idle_and_stops_firing_when_benched():
+    hook = _hook()
+    state = _state(
+        mode=FAGEOU_MODE_SOLVE,
+        power=50.0,
+        solve_start=10_000,
+        next_shot=10_001,
+        next_ray=10_002,
+    )
+    snapshots = _run_frames(hook, state, frames=5, active_slot=2)
+
+    # 切人视为松开：解算退出、节奏字段清零，不再上升与开火，功率按后台
+    # 3 倍衰减（5.5 × 3 / 60 = 0.275/帧）。
+    first = snapshots[0]
+    assert first[FAGEOU_STATE_MODE] == FAGEOU_MODE_IDLE
+    assert first[FAGEOU_STATE_SOLVE_START_FRAME] == 0
+    assert first[FAGEOU_STATE_NEXT_SHOT_FRAME] == 0
+    assert first[FAGEOU_STATE_NEXT_RAY_FRAME] == 0
+    assert cast(float, snapshots[-1][FAGEOU_STATE_POWER]) == pytest.approx(50.0 - 0.275 * 5)
+
+
+def test_overload_holding_stops_firing_when_benched():
+    hook = _hook()
+    state = _state(mode=FAGEOU_MODE_OVERLOAD, power=80.0, next_shot=10_050)
+    snapshots = _run_frames(hook, state, frames=130, active_slot=2)
+
+    # 按住过载时切人：射击轨清零停火、模式保持过载并按后台衰减，跨越
+    # 50 退出门后回待机。
+    assert snapshots[0][FAGEOU_STATE_NEXT_SHOT_FRAME] == 0
+    assert all(s[FAGEOU_STATE_MODE] == FAGEOU_MODE_OVERLOAD for s in snapshots[:100])
+    assert snapshots[-1][FAGEOU_STATE_MODE] == FAGEOU_MODE_IDLE
+    assert cast(float, snapshots[-1][FAGEOU_STATE_POWER]) < 50.0

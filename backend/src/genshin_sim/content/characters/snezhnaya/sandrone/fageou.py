@@ -14,6 +14,10 @@ hook 运行），hook 是状态字段与当前帧的纯函数——转移与节�
 聚合），子弹沿直线取首个交点（单一实例），飞行延迟在发射时按距离一次性
 折算、经 hook 内 pending 队列在未来帧兑现（统一意图队列不支持未来帧到期，
 采用内容 pending 退路）。
+
+切人（宿主不在场）视为松开：解算退出并清节奏字段、过载按住停火保持模式，
+两种情况都不再产出射击/射线，功率按后台倍率衰减；已在途的子弹请求按
+原定结算帧兑现。
 """
 
 from __future__ import annotations
@@ -321,15 +325,30 @@ class SandroneFageouHook:
             put(FAGEOU_STATE_DRAIN_ACTIVE, drain_active)
             return self._result(fields, requests)
 
+        off_field = self._is_off_field(hook_context)
+        if off_field and mode == FAGEOU_MODE_SOLVE:
+            # 切人视为松开：法洁欧不在场开火，解算退出并清节奏字段，功率
+            # 转入后台衰减；回到场上后需重新按住重击进入解算。
+            mode = FAGEOU_MODE_IDLE
+            solve_start = 0
+            next_shot = 0
+            next_ray = 0
+            put(FAGEOU_STATE_MODE, mode)
+            put(FAGEOU_STATE_SOLVE_START_FRAME, solve_start)
+            put(FAGEOU_STATE_NEXT_SHOT_FRAME, next_shot)
+            put(FAGEOU_STATE_NEXT_RAY_FRAME, next_ray)
+        elif off_field and mode == FAGEOU_MODE_OVERLOAD and next_shot:
+            # 过载按住中切人：停火（清射击轨）并保持过载模式，功率按后台
+            # 衰减直到跨越退出门回待机。
+            next_shot = 0
+            put(FAGEOU_STATE_NEXT_SHOT_FRAME, next_shot)
+
         if mode == FAGEOU_MODE_SOLVE:
             if frame >= solve_start:
                 power = min(self._power_max, power + self._rise_per_frame)
             if next_shot and frame >= next_shot:
-                request = self._fire_bullet(
-                    context, frame, SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY
-                )
-                if request is not None:
-                    requests.append(request)
+                # 子弹请求由 pending 队列在命中帧兑现，不在本轮直接产出。
+                self._fire_bullet(hook_context, frame, SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY)
                 next_shot += self._solve_shot_interval
             if next_ray and frame >= next_ray and power < self._power_max:
                 ray_count += 1
@@ -338,7 +357,7 @@ class SandroneFageouHook:
                 if ray_count == 3 and self._c6_extra_segments > 0:
                     extra_segments_left = self._c6_extra_segments
                 request, hit, targets = self._fire_ray(
-                    context,
+                    hook_context,
                     frame,
                     ray_count=ray_count,
                 )
@@ -347,7 +366,7 @@ class SandroneFageouHook:
                     if extra_segments_left > 0:
                         # 追加段叠加在射线之上：与伴随射线同帧、同命中集合，
                         # 不提供射线命中功率增量，也不改变射线节奏。
-                        extra = self._fire_extra_segment(context, frame, targets)
+                        extra = self._fire_extra_segment(hook_context, frame, targets)
                         if extra is not None:
                             requests.append(extra)
                         extra_segments_left -= 1
@@ -363,26 +382,24 @@ class SandroneFageouHook:
             if next_shot:
                 # 按住过载：功率冻结，30F 间隔过载射击无限持续。
                 if frame >= next_shot:
-                    request = self._fire_bullet(
-                        context,
+                    self._fire_bullet(
+                        hook_context,
                         frame,
                         SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY,
                     )
-                    if request is not None:
-                        requests.append(request)
                     next_shot += self._overload_shot_interval
             else:
                 # 松开停火但模式保持过载，衰减跨越阈值后回待机。
                 power = max(
                     0.0,
-                    power - self._decay_per_frame * self._decay_multiplier(context),
+                    power - self._decay_per_frame * self._decay_multiplier(hook_context),
                 )
                 if power < self._overload_exit_power:
                     mode = FAGEOU_MODE_IDLE
         else:
             power = max(
                 0.0,
-                power - self._decay_per_frame * self._decay_multiplier(context),
+                power - self._decay_per_frame * self._decay_multiplier(hook_context),
             )
 
         put(FAGEOU_STATE_MODE, mode)
@@ -410,22 +427,32 @@ class SandroneFageouHook:
             )
         return HookResult(impact_requests=tuple(requests), state_patches=patches)
 
-    def _decay_multiplier(self, context: object) -> float:
+    def _is_off_field(self, context: HookContext) -> bool:
+        """宿主是否不在场：当前场上槽位存在且与宿主槽位不同。"""
+
+        simulation = context.simulation
+        if simulation is None:
+            return False
+        space_runtime = simulation.space_runtime
+        if space_runtime is None:
+            return False
+        active_slot = space_runtime.team_state.active_slot
+        return active_slot is not None and active_slot != self._slot
+
+    def _decay_multiplier(self, context: HookContext) -> float:
         """后台衰减倍率：当前场角色为 1.0，宿主下场时 ×3（文本 300%）。"""
 
-        simulation = getattr(context, "simulation", None)
-        space_runtime = getattr(simulation, "space_runtime", None)
-        team_state = getattr(space_runtime, "team_state", None)
-        active_slot = getattr(team_state, "active_slot", None)
-        if active_slot is not None and active_slot != self._slot:
+        if self._is_off_field(context):
             return self._bench_decay_multiplier
         return 1.0
 
-    def _aim(self, context: object) -> tuple[Vector3, Vector3] | None:
+    def _aim(self, context: HookContext) -> tuple[Vector3, Vector3] | None:
         """瞄准方向与出发点：桑多涅实体位置与 facing（X/Z 归一）。"""
 
-        simulation = getattr(context, "simulation", None)
-        space_runtime = getattr(simulation, "space_runtime", None)
+        simulation = context.simulation
+        if simulation is None:
+            return None
+        space_runtime = simulation.space_runtime
         if space_runtime is None:
             return None
         entity = space_runtime.get_entity(ACTIVE_CHARACTER_ENTITY_ID)
@@ -439,14 +466,16 @@ class SandroneFageouHook:
 
     def _resolve_ray_targets(
         self,
-        context: object,
+        context: HookContext,
         origin: Vector3,
         direction: Vector3,
     ) -> tuple[str, ...]:
         """射线穿透：以 facing 定向的长条 oriented box 一次求交全部命中。"""
 
-        simulation = getattr(context, "simulation", None)
-        space_runtime = getattr(simulation, "space_runtime", None)
+        simulation = context.simulation
+        if simulation is None:
+            return ()
+        space_runtime = simulation.space_runtime
         if space_runtime is None:
             return ()
         half = self._ray_length / 2
@@ -468,7 +497,7 @@ class SandroneFageouHook:
 
     def _resolve_bullet(
         self,
-        context: object,
+        context: HookContext,
         origin: Vector3,
         direction: Vector3,
         frame: int,
@@ -476,11 +505,16 @@ class SandroneFageouHook:
         """子弹直线求交：沿 facing 直线的首个交点（单一实例）。
 
         命中判定用敌人碰撞圆柱半径（|横向偏移| ≤ 半径、前向 > 0），延迟
-        距离取起点到目标位置的 X/Z 距离。
+        距离取起点到目标位置的 X/Z 距离。该规则按各实体自身的碰撞半径绕线
+        判定，``entities_in_area`` 的区域命中只做实体中心点 contain，无法
+        表达，因此按空间实体枚举自建求交；类型与生命周期过滤口径与区域
+        查询一致。
         """
 
-        simulation = getattr(context, "simulation", None)
-        space_runtime = getattr(simulation, "space_runtime", None)
+        simulation = context.simulation
+        if simulation is None:
+            return None
+        space_runtime = simulation.space_runtime
         if space_runtime is None:
             return None
         right_x = -direction.z
@@ -509,19 +543,23 @@ class SandroneFageouHook:
 
     def _fire_bullet(
         self,
-        context: object,
+        context: HookContext,
         frame: int,
         impact_key: str,
-    ) -> ImpactRequest | None:
-        """子弹出膛：发射时解析直线几何并折算延迟帧，命中结算排未来帧。"""
+    ) -> bool:
+        """子弹出膛：发射时解析直线几何并折算延迟帧，命中结算排未来帧。
+
+        返回是否把子弹请求排入 pending 队列；请求由到期帧经 ``HookResult``
+        兑现，不在本轮直接产出。
+        """
 
         aim = self._aim(context)
         if aim is None:
-            return None
+            return False
         origin, direction = aim
         hit = self._resolve_bullet(context, origin, direction, frame)
         if hit is None:
-            return None
+            return False
         target_id, distance = hit
         delay_frames = int(round(distance / self._bullet_speed_m_per_s * FRAMES_PER_SECOND))
         resolve_frame = frame + delay_frames
@@ -531,11 +569,11 @@ class SandroneFageouHook:
             target_refs=(target_id,),
         )
         self._pending.append((resolve_frame, request, self._request_counter))
-        return None
+        return True
 
     def _fire_ray(
         self,
-        context: object,
+        context: HookContext,
         frame: int,
         *,
         ray_count: int = 0,
@@ -566,7 +604,7 @@ class SandroneFageouHook:
 
     def _fire_extra_segment(
         self,
-        context: object,
+        context: HookContext,
         frame: int,
         targets: tuple[str, ...],
     ) -> ImpactRequest | None:
@@ -605,7 +643,7 @@ class SandroneFageouHook:
 
     def _ray_damage_spec(
         self,
-        context: object,
+        context: HookContext,
         frame: int,
     ) -> DamageImpactSpec:
         normal_spec = self._damage_specs[SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY]
@@ -613,7 +651,7 @@ class SandroneFageouHook:
             return normal_spec
         stellar_spec = resolve_stellar_attack_spec(
             self._stellar_channel,
-            simulation=getattr(context, "simulation", None),
+            simulation=context.simulation,
             owner_ref=self._owner_ref,
             frame=frame,
         )

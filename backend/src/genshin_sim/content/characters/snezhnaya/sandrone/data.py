@@ -24,10 +24,10 @@ from genshin_sim.core.systems.aura import AuraStrength
 
 SANDRONE_CHARACTER_HANDLER_KEY = "character.sandrone"
 SANDRONE_ASSET_KEY = "character:10000133"
-SANDRONE_CONTENT_VERSION = "slice-4-passives-constellations"
+SANDRONE_CONTENT_VERSION = "dev-passives-constellations"
 
 # ---------------------------------------------------------------------------
-# 被动与命座（切片 4）。效果行 handler 键对齐 barbara 命名；数值来源为资产效果行 components。
+# 被动与命座。效果行 handler 键对齐 barbara 命名；数值来源为资产效果行 components。
 # ---------------------------------------------------------------------------
 SANDRONE_PASSIVE_P4_HANDLER_KEY = "character.sandrone.passive.p4"
 SANDRONE_PASSIVE_P5_HANDLER_KEY = "character.sandrone.passive.p5"
@@ -191,8 +191,8 @@ SANDRONE_ELEMENTAL_BURST_ENERGY_SPEND_FRAME = 1
 SANDRONE_ELEMENTAL_BURST_COOLDOWN_FRAMES = 900
 
 # ---------------------------------------------------------------------------
-# 法洁欧与解算模式（切片 2）。
-# 机器参数为实测约值，射击节奏以 0.35s/1.1s 为准；帧制为 60 帧/秒。
+# 法洁欧与解算模式。
+# 帧制为 60 帧/秒。
 # ---------------------------------------------------------------------------
 SANDRONE_CHARGED_ATTACK_ACTION_KEY = "character.sandrone.charged_attack"
 SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY = f"{SANDRONE_CHARGED_ATTACK_ACTION_KEY}.sweep"
@@ -208,7 +208,7 @@ FAGEOU_STATE_SOLVE_START_FRAME = "fageou_solve_start_frame"
 FAGEOU_STATE_NEXT_SHOT_FRAME = "fageou_next_shot_frame"
 FAGEOU_STATE_NEXT_RAY_FRAME = "fageou_next_ray_frame"
 FAGEOU_STATE_DRAIN_ACTIVE = "fageou_drain_active"
-# 切片 4 新增：射线会话序号与 C6 集束型额外段余量（进入解算时清零）；
+# 射线会话序号与 C6 集束型额外段余量（进入解算时清零）；
 # P4 改进战术叠层与过期帧（跨会话保留）；P4 棱晶弹强化窗口与爆发光束加成。
 FAGEOU_STATE_RAY_COUNT = "fageou_ray_count"
 FAGEOU_STATE_EXTRA_SEGMENTS_LEFT = "fageou_extra_segments_left"
@@ -228,18 +228,16 @@ FAGEOU_PRE_SWING_FRAMES = 36
 # （进入过载后首发射击 = 过载起点 +30F）。
 FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES = 21
 FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES = 30
-# 射线轨：解算起算 +90F 首法（实测锚点：按下 +130 ≈ 前摇 36 + 90，即攻略
-# 「开始重击后约 1.5s」按进入解算起算，见 docs/临时 3.9.2）、间隔 60F（1.0s，
-# 攻略「射线间隔约 1s」）；次数由功率动力学涌现（0 命 3 次、1 命 6 次）。
-# 注：命中判定数据把冷凝射线的触发冷却写作 1.1s，与攻略的「约 1s」冲突；
-# 本轮以「0 命 3 次 / 1 命 6 次严格翻倍」的涌现结果为准取 1.0s（维护者确认）。
+# 射线轨：解算起算 +90F 首发（按下 +130 ≈ 前摇 36 + 90）、间隔 60F（1.0s）；
+# 发射次数由功率动力学涌现（0 命 3 次、1 命 6 次）。命中判定数据该行的
+# 触发冷却为 1.1s，发射节奏按 1.0s 间隔实现。
 FAGEOU_RAY_FIRST_OFFSET_FRAMES = 90
 FAGEOU_RAY_INTERVAL_FRAMES = 60
 # 功率动力学：上升 20/s、射线命中 +12、场上衰减 5.5/s、后台 ×3（文本 300%）、
 # E 排空 ≈200/s（约 0.5s 排满 100）；过载退出阈值 50；上限 100。
 # 上升与射线命中增量同属「功率提升」，C1 的 -50% 在编译期一并折算
-# （0 命 20/s 与 +12/条，1 命 10/s 与 +6/条）——据此 0 命涌现 3 次射线、
-# 1 命涌现 6 次，与攻略「0 命通常 3 次、1 命约 6 次」一致。
+# （0 命 20/s 与 +12/条，1 命 10/s 与 +6/条），据此 0 命涌现 3 次射线、
+# 1 命涌现 6 次。
 FAGEOU_POWER_RISE_PER_SECOND = 20.0
 FAGEOU_RAY_HIT_POWER_GAIN = 12.0
 FAGEOU_POWER_DECAY_PER_SECOND = 5.5
@@ -250,7 +248,8 @@ FAGEOU_POWER_MAX = 100.0
 
 # 直线几何：瞄准方向 = 桑多涅实体 facing（静态），出发点 = 桑多涅位置
 # （偏移 0，法洁欧同位）。射线为 oriented box 穿透（即时结算）；子弹取直线
-# 首个交点（单一实例），延迟按距离折算。子弹速度 60 m/s 为占位值。
+# 首个交点（单一实例），延迟按距离折算。
+# 待确认：子弹速度 60 m/s 为占位值。
 FAGEOU_RAY_LENGTH = 12.0
 FAGEOU_RAY_WIDTH = 1.0
 FAGEOU_BULLET_SPEED_M_PER_S = 60.0
@@ -314,7 +313,7 @@ SANDRONE_C6_EXTRA_DAMAGE_DATA = SandroneChargedAttackDamageData(
     additional_attack_tags=(SANDRONE_C6_EXTRA_ADDITIONAL_TAG,),
 )
 
-# ---- 辉映·星烁直伤分支（切片 3）----
+# ---- 辉映·星烁直伤分支 ----
 # 冷凝射线/第二枚棱晶弹/聚能光束在辉映状态下切换到星烁通道（星超导反应契约
 # §8、命中判定数据星变体行）。星变体：攻击标签 星超导冰/星扩散冰、元素量
 # 0、无衰减序列与衰减标签（不参与附着判定）；显示名取资产倍率条目同名行。
@@ -336,7 +335,7 @@ class SandroneNormalAttackDamageData:
 
     一段的资料形状为攻击盒（区域 4.3,2.5,2.5，偏移 0.0,1.1,0.5）：按前后完整
     边长 4.3、左右完整边长 2.5 接入，资料第三分量（高度）由 X/Z 模型忽略；
-    区域三个数值的轴向解释（4.3 取前后向）待资料出处确认后复核。二、三段
+    待确认：4.3 取前后向的轴向解释待资料复核。二、三段
     为圆柱，半径取资料区域第一分量。偏移保留资料原始三元组，投影时随攻击
     方向旋转（Y 轴分量不参与查询）。
     """

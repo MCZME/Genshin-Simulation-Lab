@@ -186,6 +186,13 @@ SANDRONE_DAMAGE_ELEMENTAL_STRENGTH = AuraStrength.WEAK
 SANDRONE_DAMAGE_ELEMENTAL_AMOUNT = AuraAmount.one()
 SANDRONE_DAMAGE_ICD_SEQUENCE_KEY = "默认"
 
+# 双手剑近战（普攻三段、下落攻击）未获元素转化时为物理伤害：物理是伤害侧
+# 合法元素，但不参与元素交互、不形成附着（aura_kind_for_element 返回
+# None），规格因此不携带附着证据（elemental_strength=None、元素量 0）；
+# 命中判定数据表普攻行的「元素量 1」仅在该攻击具元素时生效，未来接入
+# 附魔/转化时由 infusion 适配器按 weapon_gauge 在结算帧补全。
+SANDRONE_MELEE_ELEMENT = Element.PHYSICAL
+
 SANDRONE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY = "elemental_skill"
 SANDRONE_ELEMENTAL_SKILL_COOLDOWN_START_FRAME = 1
 SANDRONE_ELEMENTAL_SKILL_COOLDOWN_FRAMES = 240

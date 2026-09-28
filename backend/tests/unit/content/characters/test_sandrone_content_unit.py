@@ -25,6 +25,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
 )
 from genshin_sim.content.generic.talents import index_talent_scalings
 from genshin_sim.content.registries import CharacterContentUnitRequest
+from genshin_sim.core.elements import Element
 from genshin_sim.core.impacts import StrikeType
 from tests.helpers import sandrone as sandrone_helpers
 
@@ -81,18 +82,27 @@ def test_damage_specs_carry_hit_data_tags_and_icd():
     assert na1.strike_type == StrikeType.BLUNT
     assert na1.range_type == "近战"
     assert na1.area is not None and na1.area.shape == "攻击盒"
+    # 双手剑普攻未获转化时为物理，不携带附着证据。
+    assert na1.element is Element.PHYSICAL
+    assert na1.elemental_strength is None
+    assert na1.elemental_amount.is_zero
 
     na2 = specs[SANDRONE_NORMAL_ATTACK_2_IMPACT_KEY]
     assert na2.area is not None and na2.area.shape == "圆柱"
+    assert na2.element is Element.PHYSICAL
 
     prism = specs[SANDRONE_ELEMENTAL_SKILL_PRISM_1_IMPACT_KEY]
     assert prism.main_attack_tag == "元素战技"
     assert prism.icd_tag_key == "元素战技"
     assert prism.range_type == "远程"
+    # 法洁欧系攻击按定案为冰元素（与物理近战对照）。
+    assert prism.element is Element.CRYO
+    assert prism.elemental_strength is not None
 
     beam = specs[SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY]
     assert beam.main_attack_tag == "元素爆发"
     assert beam.icd_tag_key == "元素爆发"
+    assert beam.element is Element.CRYO
 
 
 def test_plunge_damage_specs_use_claymore_generic_data():
@@ -104,15 +114,22 @@ def test_plunge_damage_specs_use_claymore_generic_data():
     assert collision.range_type == "近战"
     assert collision.elemental_amount.is_zero
     assert collision.area is not None and collision.area.shape == "球"
+    # 双手剑下落未获转化时为物理，不携带附着证据（通用资料的元素量仅在
+    # 攻击具元素时生效）。
+    assert collision.element is Element.PHYSICAL
+    assert collision.elemental_strength is None
 
     landing_low = specs[f"{SANDRONE_PLUNGE_LANDING_IMPACT_KEY}.low"]
     assert landing_low.strike_type is StrikeType.BLUNT
     assert landing_low.range_type == "近战"
     assert landing_low.area is not None and landing_low.area.shape == "圆柱"
+    assert landing_low.element is Element.PHYSICAL
+    assert landing_low.elemental_amount.is_zero
 
     landing_high = specs[f"{SANDRONE_PLUNGE_LANDING_IMPACT_KEY}.high"]
     assert landing_high.strike_type is StrikeType.BLUNT
     assert landing_high.area is not None and landing_high.area.shape == "圆柱"
+    assert landing_high.element is Element.PHYSICAL
 
 
 def test_charged_attack_specs_carry_hit_data_tags_and_icd():

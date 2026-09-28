@@ -36,7 +36,8 @@ def test_first_normal_attack_hits_per_frame_table(sandrone_assembled):
     assert damage.frame == NA1_HIT_FRAME
     result = damage.payload.result
     assert result.main_attack_tag == "普通攻击1"
-    assert result.element is Element.CRYO
+    # 双手剑普攻未获元素转化时为物理伤害。
+    assert result.element is Element.PHYSICAL
     assert result.final_damage > 0
 
 
@@ -67,14 +68,16 @@ def test_normal_attack_chain_progresses_through_combo(sandrone_assembled):
     assert [e.frame for e in damage_events] == [NA1_HIT_FRAME, na2_hit]
 
 
-def test_normal_attack_applies_cryo_to_target(sandrone_assembled):
+def test_normal_attack_applies_no_aura_to_target(sandrone_assembled):
+    # 物理普攻不参与元素交互：目标不形成任何附着（此前普攻误接为冰附着）。
     assembled = sandrone_assembled(max_frames=60)
 
     assembled.simulator.run()
 
     target_subject = ElementalSubjectRef.target("target:target_1")
-    component = assembled.aura_runtime.view(target_subject).component_for(AuraKind.CRYO)
-    assert component is not None
+    view = assembled.aura_runtime.view(target_subject)
+    for aura_kind in AuraKind:
+        assert view.component_for(aura_kind) is None
 
 
 def test_first_normal_attack_box_excludes_target_beyond_width(sandrone_assembled):

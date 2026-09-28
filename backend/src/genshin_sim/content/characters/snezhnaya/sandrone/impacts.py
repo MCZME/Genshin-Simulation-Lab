@@ -46,6 +46,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY,
     SANDRONE_ELEMENTAL_SKILL_RANGE_TYPE,
     SANDRONE_ELEMENTAL_SKILL_STRIKE_TYPE,
+    SANDRONE_MELEE_ELEMENT,
     SANDRONE_NORMAL_ATTACK_ACTION_KEYS,
     SANDRONE_NORMAL_ATTACK_DAMAGE_DATA,
     SANDRONE_P4_PRISM_BOOST_MULTIPLIER,
@@ -61,7 +62,7 @@ from genshin_sim.content.definitions.content_unit import ContentUnitValidationEr
 from genshin_sim.content.generic.talents import ScalingCompiler
 from genshin_sim.content.state_container import StateContainerNotFoundError, resolve_mount
 from genshin_sim.core.attributes import STAT_ATK_TOTAL
-from genshin_sim.core.elements import AuraAmount
+from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.impacts import (
     ActionImpactContext,
     DamageImpactSpec,
@@ -94,6 +95,7 @@ def _compile_damage_spec(
     main_attack_tag: str,
     strike_type: StrikeType,
     range_type: str,
+    element: Element,
     elemental_amount: int,
     icd_tag_key: str | None,
     icd_sequence_key: str | None = None,
@@ -117,7 +119,7 @@ def _compile_damage_spec(
     return DamageImpactSpec(
         impact_ref=f"{impact_key}:{talent_level}",
         main_attack_tag=main_attack_tag,
-        element=SANDRONE_DAMAGE_ELEMENT,
+        element=element,
         scaling_terms=(
             DamageScalingTerm(
                 component_key=component.component_key,
@@ -178,7 +180,10 @@ def compile_normal_attack_damage_specs(
             main_attack_tag=damage_data.main_attack_tag,
             strike_type=damage_data.strike_type,
             range_type=damage_data.range_type,
-            elemental_amount=1,
+            # 双手剑普攻未获转化时为物理：不携带附着证据（资产行「元素量 1」
+            # 仅在攻击具元素时生效），ICD 数据保留但无附着可施加。
+            element=SANDRONE_MELEE_ELEMENT,
+            elemental_amount=0,
             icd_tag_key="普通攻击",
             display_name=label,
             aoe_shape=damage_data.aoe_shape,
@@ -217,6 +222,7 @@ def compile_elemental_skill_damage_specs(
             main_attack_tag=SANDRONE_ELEMENTAL_SKILL_MAIN_ATTACK_TAG,
             strike_type=SANDRONE_ELEMENTAL_SKILL_STRIKE_TYPE,
             range_type=SANDRONE_ELEMENTAL_SKILL_RANGE_TYPE,
+            element=SANDRONE_DAMAGE_ELEMENT,
             elemental_amount=1,
             icd_tag_key=SANDRONE_ELEMENTAL_SKILL_ICD_TAG_KEY,
             display_name=_SANDRONE_ELEMENTAL_SKILL_DAMAGE_LABEL,
@@ -270,6 +276,7 @@ def compile_elemental_burst_damage_specs(
             main_attack_tag=SANDRONE_ELEMENTAL_BURST_MAIN_ATTACK_TAG,
             strike_type=SANDRONE_ELEMENTAL_BURST_STRIKE_TYPE,
             range_type=SANDRONE_ELEMENTAL_BURST_RANGE_TYPE,
+            element=SANDRONE_DAMAGE_ELEMENT,
             elemental_amount=1,
             icd_tag_key=SANDRONE_ELEMENTAL_BURST_ICD_TAG_KEY,
             display_name=_SANDRONE_ELEMENTAL_BURST_BOMBARDMENT_DAMAGE_LABEL,
@@ -285,6 +292,7 @@ def compile_elemental_burst_damage_specs(
         main_attack_tag=SANDRONE_ELEMENTAL_BURST_MAIN_ATTACK_TAG,
         strike_type=SANDRONE_ELEMENTAL_BURST_STRIKE_TYPE,
         range_type=SANDRONE_ELEMENTAL_BURST_RANGE_TYPE,
+        element=SANDRONE_DAMAGE_ELEMENT,
         elemental_amount=1,
         icd_tag_key=SANDRONE_ELEMENTAL_BURST_ICD_TAG_KEY,
         display_name=_SANDRONE_ELEMENTAL_BURST_BEAM_DAMAGE_LABEL,
@@ -303,8 +311,10 @@ def compile_plunge_damage_specs(
     """编译下落攻击碰撞与低空/高空落地冲击伤害契约。
 
     下落攻击不在桑多涅命中判定数据表内，AOE 沿用 generic 双手剑通用资料
-    （下坠期间切割/0 元素量，坠地钝击/1 元素量、近战；低空圆柱 3.0、高空
-    圆柱 5.0）；落地攻击按 ICD 资料为无冷却标签。
+    （下坠期间切割，坠地钝击、近战；低空圆柱 3.0、高空圆柱 5.0）；落地攻击
+    按 ICD 资料为无冷却标签。双手剑下落未获转化时为物理：通用资料的
+    「元素量」（下坠 0、坠地 1）仅在该攻击具元素时生效，规格不携带附着
+    证据，未来接入附魔/转化时由 infusion 适配器按 weapon_gauge 补全。
     """
 
     collision_entry = entries_by_key.get(
@@ -337,7 +347,8 @@ def compile_plunge_damage_specs(
             main_attack_tag=SANDRONE_PLUNGE_ATTACK_DATA.main_attack_tag,
             strike_type=collision_data.strike_type,
             range_type=collision_data.range_type,
-            elemental_amount=collision_data.elemental_amount,
+            element=SANDRONE_MELEE_ELEMENT,
+            elemental_amount=0,
             icd_tag_key=None,
             display_name=_SANDRONE_PLUNGE_COLLISION_DAMAGE_LABEL,
             aoe_shape=collision_data.aoe_shape,
@@ -352,7 +363,8 @@ def compile_plunge_damage_specs(
             main_attack_tag=SANDRONE_PLUNGE_ATTACK_DATA.main_attack_tag,
             strike_type=landing_data.strike_type,
             range_type=landing_data.range_type,
-            elemental_amount=landing_data.elemental_amount,
+            element=SANDRONE_MELEE_ELEMENT,
+            elemental_amount=0,
             icd_tag_key=None,
             display_name="低空坠地冲击伤害",
             aoe_shape=landing_data.aoe_shape,
@@ -367,7 +379,8 @@ def compile_plunge_damage_specs(
             main_attack_tag=SANDRONE_PLUNGE_ATTACK_DATA.main_attack_tag,
             strike_type=landing_data.strike_type,
             range_type=landing_data.range_type,
-            elemental_amount=landing_data.elemental_amount,
+            element=SANDRONE_MELEE_ELEMENT,
+            elemental_amount=0,
             icd_tag_key=None,
             display_name="高空坠地冲击伤害",
             aoe_shape=landing_data.aoe_shape,
@@ -409,6 +422,7 @@ def compile_charged_attack_damage_specs(
             main_attack_tag=SANDRONE_CHARGED_ATTACK_MAIN_TAG,
             strike_type=damage_data.strike_type,
             range_type=damage_data.range_type,
+            element=SANDRONE_DAMAGE_ELEMENT,
             elemental_amount=1,
             icd_tag_key=damage_data.icd_tag_key,
             icd_sequence_key=damage_data.icd_sequence_key,

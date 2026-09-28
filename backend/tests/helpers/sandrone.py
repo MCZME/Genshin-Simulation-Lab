@@ -10,7 +10,6 @@ from pathlib import Path
 
 from genshin_sim.assets.models import EffectPayload, TalentScalingEntry
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
-    FAGEOU_PRE_SWING_FRAMES,
     FAGEOU_RAY_FIRST_OFFSET_FRAMES,
     FAGEOU_RAY_INTERVAL_FRAMES,
     SANDRONE_ASSET_KEY,
@@ -424,11 +423,10 @@ def charged_line_payload(
 
 
 def charged_ray_frames(press: int, count: int) -> list[int]:
-    """按法洁欧节奏常量推导射线命中帧（解算起点 = 按下 + 前摇）。"""
+    """按法洁欧节奏常量推导射线命中帧（首法 = 按下 + 90F，即时命中）。"""
 
-    solve_start = press + FAGEOU_PRE_SWING_FRAMES
     return [
-        solve_start + FAGEOU_RAY_FIRST_OFFSET_FRAMES + index * FAGEOU_RAY_INTERVAL_FRAMES
+        press + FAGEOU_RAY_FIRST_OFFSET_FRAMES + index * FAGEOU_RAY_INTERVAL_FRAMES
         for index in range(count)
     ]
 

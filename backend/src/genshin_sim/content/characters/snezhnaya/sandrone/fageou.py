@@ -39,7 +39,6 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_POWER_MAX,
     FAGEOU_POWER_RISE_PER_SECOND,
     FAGEOU_PRE_SWING_FRAMES,
-    FAGEOU_RAY_FIRST_OFFSET_FRAMES,
     FAGEOU_RAY_HIT_POWER_GAIN,
     FAGEOU_RAY_INTERVAL_FRAMES,
     FAGEOU_RAY_LENGTH,
@@ -203,7 +202,6 @@ class SandroneFageouHook:
         pre_swing_frames: int = FAGEOU_PRE_SWING_FRAMES,
         solve_shot_interval_frames: int = FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
         overload_shot_interval_frames: int = FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
-        ray_first_offset_frames: int = FAGEOU_RAY_FIRST_OFFSET_FRAMES,
         ray_interval_frames: int = FAGEOU_RAY_INTERVAL_FRAMES,
         power_rise_per_second: float = FAGEOU_POWER_RISE_PER_SECOND,
         ray_hit_power_gain: float = FAGEOU_RAY_HIT_POWER_GAIN,
@@ -239,7 +237,6 @@ class SandroneFageouHook:
         self._pre_swing_frames = pre_swing_frames
         self._solve_shot_interval = solve_shot_interval_frames
         self._overload_shot_interval = overload_shot_interval_frames
-        self._ray_first_offset = ray_first_offset_frames
         self._ray_interval = ray_interval_frames
         self._rise_per_frame = power_rise_per_second / FRAMES_PER_SECOND
         self._ray_hit_gain = ray_hit_power_gain

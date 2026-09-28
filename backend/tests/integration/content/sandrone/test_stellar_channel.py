@@ -15,6 +15,9 @@ from genshin_sim.content.characters.snezhnaya.sandrone.content import (
     create_sandrone_content_unit,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
+    FAGEOU_BULLET_SPEED_M_PER_S,
+    FAGEOU_PRE_SWING_FRAMES,
+    FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
     SANDRONE_ELEMENTAL_BURST_ACTION_KEY,
     SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY,
 )
@@ -112,18 +115,39 @@ def _line_target_payload(
     )
 
 
+# 射线轨窗口：首法 = 按下 + 90F。松开帧取在第三条射线（按下+212）之后、
+# 功率补满翻转之前，窗口内恰好三条射线、无过载段。
+_HOLD_PRESS_FRAME = 2
+_HOLD_RELEASE_FRAME = 226
+_HOLD_MAX_FRAMES = 240
+# 目标距离 4m：子弹飞行帧 = round(4 / 占位弹速 × 60)。
+_FLIGHT_FRAMES = round(4 / FAGEOU_BULLET_SPEED_M_PER_S * 60)
+
+
+def _hold_window_sweep_hits() -> list[int]:
+    """解算窗口内的扫射命中帧：解算起点起 21F 节奏 + 子弹飞行帧。"""
+
+    solve_start = _HOLD_PRESS_FRAME + FAGEOU_PRE_SWING_FRAMES
+    count = (_HOLD_RELEASE_FRAME - solve_start) // FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES + 1
+    return [
+        solve_start + k * FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES + _FLIGHT_FRAMES for k in range(count)
+    ]
+
+
 def test_radiance_buff_switches_rays_to_stellar_conduct_channel(sandrone_assembled):
     # 射线在发射时查表分派：持辉映·星烁（3 层快照 → 系数 1.55）后走星超导冰
     # 通道，专用倍率条目组装 scaling_value = ATK × 星超导倍率；功率动力学与
     # 帧表不受变体影响（射线命中仍 +12 功率）。
-    assembled = sandrone_assembled(payload=_line_target_payload(380, 2, 376))
+    assembled = sandrone_assembled(
+        payload=_line_target_payload(_HOLD_MAX_FRAMES, _HOLD_PRESS_FRAME, _HOLD_RELEASE_FRAME)
+    )
     _apply_radiance_buff(assembled)
     damage_events = _damage_events(assembled)
 
     assembled.simulator.run()
 
     rays = [e for e in damage_events if e.payload.result.damage_name == RAY_STELLAR_DISPLAY_NAME]
-    assert [e.frame for e in rays] == [128, 188, 248]
+    assert [e.frame for e in rays] == sandrone_helpers.charged_ray_frames(_HOLD_PRESS_FRAME, 3)
     atk = _resolved_atk(assembled)
     for event in rays:
         result = event.payload.result
@@ -133,10 +157,10 @@ def test_radiance_buff_switches_rays_to_stellar_conduct_channel(sandrone_assembl
         assert stellar.input.mode == "character_direct"
         assert stellar.input.scaling_value == pytest.approx(atk)
         assert stellar.input.stellar_base_multiplier == pytest.approx(1.55)
-    # 扫射不携带星变体：辉映下仍走普通重击通道，解算期间按 21F 节奏持续到
-    # 过载翻转（射击轨换 30F 节奏，294 起为过载伤害）。
+    # 扫射不携带星变体：辉映下仍走普通重击通道，按解算节奏命中（松开帧在
+    # 过载翻转之前，窗口内无过载段）。
     sweeps = [e for e in damage_events if e.payload.result.damage_name == SWEEP_DISPLAY_NAME]
-    assert [e.frame for e in sweeps] == [42, 63, 84, 105, 126, 147, 168, 189, 210, 231, 252]
+    assert [e.frame for e in sweeps] == _hold_window_sweep_hits()
     assert all(e.payload.result.main_attack_tag == "重击" for e in sweeps)
 
 
@@ -211,7 +235,9 @@ def test_stellar_swirl_trigger_activates_swirl_channel(sandrone_assembled):
     # （桑多涅）→ 重击射线查表切到星扩散冰通道（系数证据固定 1.0）。
     # 冰/风附着经注册的元素结算协调器在仿真前种入；"附着触发反应"链路本身
     # 由 core 星扩散测试覆盖，此处验证内容侧 capability 声明到直伤分派。
-    assembled = sandrone_assembled(payload=_line_target_payload(380, 2, 376))
+    assembled = sandrone_assembled(
+        payload=_line_target_payload(_HOLD_MAX_FRAMES, _HOLD_PRESS_FRAME, _HOLD_RELEASE_FRAME)
+    )
     damage_events = _damage_events(assembled)
     coordinator = assembled.context.get_system(ElementalSettlementCoordinator)
     assert isinstance(coordinator, ElementalSettlementCoordinator)
@@ -240,7 +266,7 @@ def test_stellar_swirl_trigger_activates_swirl_channel(sandrone_assembled):
     rays = [
         e for e in damage_events if e.payload.result.damage_name == RAY_STELLAR_SWIRL_DISPLAY_NAME
     ]
-    assert [e.frame for e in rays] == [128, 188, 248]
+    assert [e.frame for e in rays] == sandrone_helpers.charged_ray_frames(_HOLD_PRESS_FRAME, 3)
     atk = _resolved_atk(assembled)
     for event in rays:
         result = event.payload.result
@@ -283,8 +309,8 @@ def test_c1_bonus_covers_stellar_swirl_damage(sandrone_assembled):
         e for e in damage_events if e.payload.result.damage_name == RAY_STELLAR_SWIRL_DISPLAY_NAME
     ]
     # C1 功率提升速度减半（上升与射线命中增量一并折算）：0 命 3 次涌现为
-    # 1 命 6 次，380 帧窗口内可见前 5 次（128/188/248/308/368）。
-    assert [e.frame for e in rays] == [128, 188, 248, 308, 368]
+    # 1 命 6 次，380 帧窗口内可见前 5 次。
+    assert [e.frame for e in rays] == sandrone_helpers.charged_ray_frames(2, 5)
     for event in rays:
         stellar = event.payload.result.stellar_reaction_resolution
         assert stellar is not None

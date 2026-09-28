@@ -11,7 +11,10 @@ from __future__ import annotations
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_BULLET_SPEED_M_PER_S,
     FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
+    FAGEOU_POWER_MAX,
+    FAGEOU_POWER_RISE_PER_SECOND,
     FAGEOU_PRE_SWING_FRAMES,
+    FAGEOU_RAY_HIT_POWER_GAIN,
     FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
     SANDRONE_ACTION_TABLE,
     SANDRONE_ELEMENTAL_SKILL_ACTION_KEY,
@@ -42,8 +45,12 @@ def _ray_frames(ray_count: int) -> list[int]:
 
 
 def _overload_hits(shot_count: int) -> list[int]:
-    # 满功率转过载：射击轨自最后一条射线帧起按过载间隔换节奏，命中含飞行帧。
-    first = _ray_frames(3)[-1] + FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES + _FLIGHT_FRAMES
+    # 满功率转过载：翻转帧由功率动力学涌现——自然上升与三次射线命中增量
+    # 恰好补满功率上限；射击轨自翻转帧 +30 起按过载间隔换节奏，命中含飞行帧。
+    flip = _SOLVE_START + round(
+        (FAGEOU_POWER_MAX - 3 * FAGEOU_RAY_HIT_POWER_GAIN) * 60 / FAGEOU_POWER_RISE_PER_SECOND
+    )
+    first = flip + FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES + _FLIGHT_FRAMES
     return [first + k * FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES for k in range(shot_count)]
 
 
@@ -137,10 +144,12 @@ def test_ray_track_emerges_exactly_three_rays_before_overload(sandrone_assembled
 
 
 def test_release_exits_solve_and_stops_tracks(sandrone_assembled):
-    # 松开即退出解算：射线不再发射，扫射在松开帧后停止。
+    # 松开即退出解算：首条射线（92）后再无射线（第二条在 152），扫射在松开
+    # 帧后停止。松开帧（118）取在第五颗子弹出膛（120）之前，所有命中先于
+    # 松开帧结算完毕。
     assembled = _sandrone_with_line_target(
         sandrone_assembled,
-        input_trace=_hold_trace(2, 100),
+        input_trace=_hold_trace(2, 118),
         max_frames=180,
     )
     damage_events = sandrone_helpers.sandrone_damage_events(assembled)
@@ -148,13 +157,15 @@ def test_release_exits_solve_and_stops_tracks(sandrone_assembled):
     assembled.simulator.run()
 
     sweeps = [e for e in damage_events if e.payload.result.damage_name == SWEEP_DISPLAY_NAME]
-    assert [e.frame for e in sweeps] == _sweep_hits(3)
-    assert not [e for e in damage_events if e.payload.result.damage_name == RAY_DISPLAY_NAME]
+    assert [e.frame for e in sweeps] == _sweep_hits(4)
+    assert [e.frame for e in damage_events if e.payload.result.damage_name == RAY_DISPLAY_NAME] == (
+        _ray_frames(1)
+    )
     state = _fageou_state(assembled)
     assert state["fageou_mode"] == "idle"
-    # 场上衰减 5.5/s：松开时功率约 20.7，仿真在输入耗尽后提前结束，
-    # 只衰减了个别帧。
-    assert 10.0 < state["fageou_power"] < 21.0
+    # 场上衰减 5.5/s：松开时功率 = 80F 自然上升 + 一次射线命中（约 38.7），
+    # 仿真在输入耗尽后提前结束，只衰减了个别帧。
+    assert 30.0 < state["fageou_power"] < 40.0
 
 
 def test_overload_release_stops_overload_shots(sandrone_assembled):

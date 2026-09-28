@@ -176,7 +176,7 @@ def test_c6_extra_segments_turn_stellar_conduct_under_radiance(sandrone_assemble
     # 辉映·星烁：追加段转为视为对应星烁反应伤害，星超导档 80% 攻击力；
     # C6 擢升 +20% 同时作用于追加段的星烁输入。
     assembled = sandrone_assembled(
-        payload=sandrone_helpers.charged_line_payload(300, 2, 296, constellation=6)
+        payload=sandrone_helpers.charged_line_payload(300, 2, 240, constellation=6)
     )
     sandrone_helpers.apply_radiance_buff(assembled)
     events = sandrone_helpers.sandrone_damage_events(assembled)
@@ -186,7 +186,7 @@ def test_c6_extra_segments_turn_stellar_conduct_under_radiance(sandrone_assemble
     extras = [
         e for e in events if e.payload.result.damage_name == EXTRA_STELLAR_CONDUCT_DISPLAY_NAME
     ]
-    # 松开（296）后射线轨停止：窗口内只有第 3 条射线（248）携带追加段。
+    # 松开（240）在第四条射线（272）之前：窗口内只有第 3 条射线携带追加段。
     assert [e.frame for e in extras] == [sandrone_helpers.charged_ray_frames(2, 6)[2]]
     stellar = extras[0].payload.result.stellar_reaction_resolution
     assert stellar is not None
@@ -199,7 +199,7 @@ def test_c6_extra_segments_turn_stellar_swirl_under_radiance(sandrone_assembled)
     # 星扩散档 120%：队伍风命中冰点亮辉映·星扩散后，追加段转为星扩散冰伤害，
     # 星烁基础系数取星扩散证据。
     assembled = sandrone_assembled(
-        payload=sandrone_helpers.charged_line_payload(300, 2, 296, constellation=6)
+        payload=sandrone_helpers.charged_line_payload(300, 2, 240, constellation=6)
     )
     events = sandrone_helpers.sandrone_damage_events(assembled)
     coordinator = assembled.context.get_system(ElementalSettlementCoordinator)

@@ -29,7 +29,6 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_POWER_MAX,
     FAGEOU_POWER_RISE_PER_SECOND,
     FAGEOU_PRE_SWING_FRAMES,
-    FAGEOU_RAY_FIRST_OFFSET_FRAMES,
     FAGEOU_RAY_HIT_POWER_GAIN,
     FAGEOU_RAY_INTERVAL_FRAMES,
     FAGEOU_RAY_LENGTH,
@@ -244,7 +243,6 @@ def create_sandrone_content_unit(
                 pre_swing_frames=FAGEOU_PRE_SWING_FRAMES,
                 solve_shot_interval_frames=FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
                 overload_shot_interval_frames=FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
-                ray_first_offset_frames=FAGEOU_RAY_FIRST_OFFSET_FRAMES,
                 ray_interval_frames=FAGEOU_RAY_INTERVAL_FRAMES,
                 # C1：解算功率提升速度降低 50%，功率上升与射线命中增量一并折算。
                 power_rise_per_second=FAGEOU_POWER_RISE_PER_SECOND * power_rate_factor,

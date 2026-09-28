@@ -21,6 +21,7 @@ from genshin_sim.content.definitions.effects import (
     UnlockKind,
     UnlockSpec,
 )
+from genshin_sim.content.registries import CharacterContentUnitRequest
 from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.systems.cooldown import (
     CooldownDurationOperation,
@@ -491,3 +492,38 @@ def test_assembler_damage_binding_reports_provider_failure():
             cast(Any, _FakeContentBundle((unit,))),
             buff_reader=cast(Any, _FakeBuffReader()),
         )
+
+
+def test_static_capability_port_exposes_sandrone_stellar_providers():
+    """桑多涅随内容单元声明的星超导/星扩散 capability 经静态端口暴露。"""
+
+    from genshin_sim.application.assembly.reaction_capabilities import (
+        build_static_reaction_eligibility_port,
+    )
+    from genshin_sim.content.characters.snezhnaya.sandrone.content import (
+        create_sandrone_content_unit,
+    )
+    from genshin_sim.core.elements import ElementalSubjectRef
+    from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
+        STELLAR_CONDUCT_CAPABILITY_KEY,
+    )
+    from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
+        STELLAR_SWIRL_CAPABILITY_KEY,
+    )
+    from tests.helpers import sandrone as sandrone_helpers
+
+    unit = create_sandrone_content_unit(
+        CharacterContentUnitRequest(
+            handler_key=sandrone_helpers.SANDRONE_CHARACTER_HANDLER_KEY,
+            character_key=sandrone_helpers.SANDRONE_CHARACTER_KEY,
+            slot=1,
+            talent_levels={"normal_attack": 1, "elemental_skill": 1, "elemental_burst": 1},
+            talent_scalings=sandrone_helpers.minimal_sandrone_scaling_entries(),
+        )
+    )
+    port = build_static_reaction_eligibility_port((unit,))
+    provider = ElementalSubjectRef.character("character:slot_1")
+    for capability_key in (STELLAR_CONDUCT_CAPABILITY_KEY, STELLAR_SWIRL_CAPABILITY_KEY):
+        assert port.evidence_for(frame=0, team_ref="team:assembly").providers_for(
+            capability_key
+        ) == (provider,)

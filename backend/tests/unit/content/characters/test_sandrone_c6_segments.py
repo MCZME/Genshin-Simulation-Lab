@@ -58,7 +58,7 @@ def _c6_values():
 def _run_spec():
     entries = index_talent_scalings(
         sandrone_helpers.SANDRONE_CHARACTER_KEY,
-        sandrone_helpers._minimal_sandrone_scaling_entries(),
+        sandrone_helpers.minimal_sandrone_scaling_entries(),
     )
     specs = compile_charged_attack_damage_specs(
         sandrone_helpers.SANDRONE_CHARACTER_KEY,

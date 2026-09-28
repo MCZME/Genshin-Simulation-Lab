@@ -10,6 +10,9 @@ from pathlib import Path
 
 from genshin_sim.assets.models import EffectPayload, TalentScalingEntry
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
+    FAGEOU_PRE_SWING_FRAMES,
+    FAGEOU_RAY_FIRST_OFFSET_FRAMES,
+    FAGEOU_RAY_INTERVAL_FRAMES,
     SANDRONE_ASSET_KEY,
     SANDRONE_CHARACTER_HANDLER_KEY,
     SANDRONE_CONSTELLATION_C1_HANDLER_KEY,
@@ -22,19 +25,35 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_PASSIVE_P5_HANDLER_KEY,
     SANDRONE_PASSIVE_P6_HANDLER_KEY,
 )
+from genshin_sim.content.state_container import resolve_mount
+from genshin_sim.core.attributes import (
+    STAT_ATK_TOTAL,
+    AttributeQuery,
+    AttributeResolver,
+    AttributeSubjectRef,
+)
+from genshin_sim.core.coordination.elemental_reaction.stellar_buffs import (
+    plan_radiance_buff_requests,
+)
 from genshin_sim.core.elements import AuraAmount, Element
+from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import (
     ElementalApplicationSpec,
     ImpactKind,
     ImpactRequest,
 )
 from genshin_sim.core.systems.aura import AuraStrength
+from genshin_sim.core.systems.buff import BuffRuntime
+from genshin_sim.core.systems.reaction.states import (
+    STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
+)
 from genshin_sim.infrastructure.assets_sqlite import (
     ASSET_SCHEMA_VERSION,
     SQLiteAssetDataWriter,
 )
 
 SANDRONE_CHARACTER_KEY = SANDRONE_ASSET_KEY
+SANDRONE_REF = AttributeSubjectRef.character("character:slot_1")
 
 
 def c6_effect_params() -> dict[str, object]:
@@ -109,7 +128,7 @@ def write_sandrone_asset_database(db_path: Path) -> Path:
         character_level_stats=character_level_stats,
         weapons=(),
         weapon_level_stats=(),
-        talent_scalings=_minimal_sandrone_scaling_entries(),
+        talent_scalings=minimal_sandrone_scaling_entries(),
         effect_payloads=_minimal_sandrone_effect_payloads(),
     )
 
@@ -231,7 +250,7 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
     )
 
 
-def _minimal_sandrone_scaling_entries() -> tuple[TalentScalingEntry, ...]:
+def minimal_sandrone_scaling_entries() -> tuple[TalentScalingEntry, ...]:
     """返回桑多涅 content 工厂接线所需的最小倍率行。
 
     所有数值取 1.0，只保证倍率条目结构（label、分量数与等级区间）满足
@@ -364,3 +383,88 @@ def sandrone_input_payload(
         "rules": {"active": []},
         "run_options": {"max_frames": max_frames},
     }
+
+
+def sandrone_damage_events(assembled) -> list:
+    """订阅 DAMAGE_RESOLVED 并返回活列表（运行期间持续填充）。"""
+
+    events: list = []
+    assembled.context.events.subscribe(EventType.DAMAGE_RESOLVED, events.append)
+    return events
+
+
+def charged_line_payload(
+    max_frames: int,
+    press: int,
+    release: int,
+    *,
+    constellation: int = 0,
+) -> dict[str, object]:
+    """重击直线场景：玩家原点朝 +Z，目标摆在 (0, 0, 4) 的射击直线上。"""
+
+    return sandrone_input_payload(
+        max_frames=max_frames,
+        constellation=constellation,
+        input_trace=[
+            {"frame": press, "events": [{"key": "mouse.right", "phase": "press"}]},
+            {"frame": release, "events": [{"key": "mouse.right", "phase": "release"}]},
+        ],
+        targets=[
+            {
+                "id": "target_1",
+                "level": 90,
+                "position": {"x": 0, "y": 0, "z": 4},
+                "resistance": {},
+            }
+        ],
+    )
+
+
+def charged_ray_frames(press: int, count: int) -> list[int]:
+    """按法洁欧节奏常量推导射线命中帧（解算起点 = 按下 + 前摇）。"""
+
+    solve_start = press + FAGEOU_PRE_SWING_FRAMES
+    return [
+        solve_start + FAGEOU_RAY_FIRST_OFFSET_FRAMES + index * FAGEOU_RAY_INTERVAL_FRAMES
+        for index in range(count)
+    ]
+
+
+def apply_radiance_buff(assembled, *, settled_stacks: int = 3, frame: int = 0) -> None:
+    """按星超导协调的申请计划注入辉映·星烁 Buff（属性证据侧入口）。"""
+
+    runtime = assembled.context.get_system(BuffRuntime)
+    assert isinstance(runtime, BuffRuntime)
+    runtime.commit_prevalidated(
+        runtime.prepare_apply(
+            plan_radiance_buff_requests(
+                frame=frame,
+                occurrence_ref=f"integration:radiance:{frame}",
+                character_refs=(SANDRONE_REF,),
+                settled_stacks=settled_stacks,
+                field_expires_at_frame=frame + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
+            )
+        )
+    )
+
+
+def resolved_atk(assembled) -> float:
+    """解析桑多涅当前面板攻击力（供相对断言折算）。"""
+
+    resolver = assembled.context.get_system(AttributeResolver)
+    assert isinstance(resolver, AttributeResolver)
+    resolution = resolver.resolve(
+        AttributeQuery(subject_ref=SANDRONE_REF, attribute_key=STAT_ATK_TOTAL, frame=1)
+    )
+    return float(resolution.final_value)
+
+
+def fageou_state_value(assembled, name: str):
+    """读取桑多涅内容状态挂载中的单个字段。"""
+
+    mount = resolve_mount(
+        assembled.context,
+        slot=1,
+        state_key=SANDRONE_CHARACTER_HANDLER_KEY,
+    )
+    return mount.values.get(name)

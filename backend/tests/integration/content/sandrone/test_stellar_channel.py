@@ -1,10 +1,10 @@
-"""桑多涅辉映星烁直伤通道的纵向集成（切片 3 临时测试）。
+"""桑多涅辉映星烁直伤通道的纵向集成。
 
 链路对齐星超导反应契约 §8："辉映 Buff 属性证据 -> ``StellarReactionDamageInput``
 组装 -> 伤害请求"：辉映·星烁 Buff 由真实 BuffRuntime 按星超导协调的申请
 计划直接注入（反应触发链路已由 core 测试覆盖），随后验证射线/第二枚棱晶
-弹的发射时查表分派与星烁公式结算；聚能光束经内容工厂展开验证（爆发能量
-来源接入前无法经完整 Q 施放链路出伤，见切片 1 边界记录）。
+弹的发射时查表分派与星烁公式结算；聚能光束在本文件经内容工厂展开验证
+（聚焦展开分派），完整 Q 施放链路见 test_elemental_burst。
 """
 
 from __future__ import annotations
@@ -174,7 +174,7 @@ def test_radiance_buff_switches_beam_contract_at_factory_dispatch(sandrone_assem
             character_key=sandrone_helpers.SANDRONE_CHARACTER_KEY,
             slot=1,
             talent_levels={"normal_attack": 1, "elemental_skill": 1, "elemental_burst": 1},
-            talent_scalings=sandrone_helpers._minimal_sandrone_scaling_entries(),
+            talent_scalings=sandrone_helpers.minimal_sandrone_scaling_entries(),
         )
     )
     factory = unit.impact_factories[SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY]

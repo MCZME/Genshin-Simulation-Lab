@@ -11,9 +11,6 @@ from __future__ import annotations
 
 import pytest
 
-from genshin_sim.application.assembly.reaction_capabilities import (
-    build_static_reaction_eligibility_port,
-)
 from genshin_sim.content.characters.snezhnaya.sandrone.content import (
     create_sandrone_content_unit,
 )
@@ -50,7 +47,6 @@ from genshin_sim.core.coordination.elemental_reaction.stellar_swirl_buffs import
     plan_stellar_swirl_radiance_buff_requests,
     stellar_swirl_radiance_buff_definition,
 )
-from genshin_sim.core.elements import ElementalSubjectRef
 from genshin_sim.core.events import EventEngine
 from genshin_sim.core.simulation.context import SimulationContext
 from genshin_sim.core.systems.buff import (
@@ -80,7 +76,7 @@ FRAME = 120
 def _channel() -> object:
     entries = index_talent_scalings(
         sandrone_helpers.SANDRONE_CHARACTER_KEY,
-        sandrone_helpers._minimal_sandrone_scaling_entries(),
+        sandrone_helpers.minimal_sandrone_scaling_entries(),
     )
     channels = compile_stellar_attack_channels(
         sandrone_helpers.SANDRONE_CHARACTER_KEY,
@@ -276,7 +272,7 @@ def test_c6_extra_channel_swirl_ratio_comes_from_the_constellation_row() -> None
 def test_compile_rejects_missing_stellar_scaling_entry() -> None:
     entries = index_talent_scalings(
         sandrone_helpers.SANDRONE_CHARACTER_KEY,
-        sandrone_helpers._minimal_sandrone_scaling_entries(),
+        sandrone_helpers.minimal_sandrone_scaling_entries(),
     )
     entries.pop(("character:10000133", "normal_attack", "重击冷凝射线星超导伤害"))
     with pytest.raises(ContentUnitValidationError, match="重击冷凝射线星超导伤害"):
@@ -290,7 +286,7 @@ def test_compile_rejects_missing_stellar_scaling_entry() -> None:
 def test_compile_rejects_missing_swirl_scaling_entry() -> None:
     entries = index_talent_scalings(
         sandrone_helpers.SANDRONE_CHARACTER_KEY,
-        sandrone_helpers._minimal_sandrone_scaling_entries(),
+        sandrone_helpers.minimal_sandrone_scaling_entries(),
     )
     entries.pop(("character:10000133", "normal_attack", "重击冷凝射线星扩散伤害"))
     with pytest.raises(ContentUnitValidationError, match="重击冷凝射线星扩散伤害"):
@@ -305,7 +301,8 @@ def test_content_unit_declares_both_stellar_capabilities() -> None:
     """桑多涅随内容单元静态声明星超导与星扩散 capability。
 
     星扩散 capability 使队伍风命中冰排他替代普通扩散，且辉映·星扩散 Buff
-    以 capability 提供者为发放目标——桑多涅因此持有辉映·星扩散状态。
+    以 capability 提供者为发放目标——桑多涅因此持有辉映·星扩散状态。静态
+    端口到 capability 提供者的映射归装配层测试（test_static_contributions）。
     """
 
     unit = create_sandrone_content_unit(
@@ -314,16 +311,10 @@ def test_content_unit_declares_both_stellar_capabilities() -> None:
             character_key=sandrone_helpers.SANDRONE_CHARACTER_KEY,
             slot=1,
             talent_levels={"normal_attack": 1, "elemental_skill": 1, "elemental_burst": 1},
-            talent_scalings=sandrone_helpers._minimal_sandrone_scaling_entries(),
+            talent_scalings=sandrone_helpers.minimal_sandrone_scaling_entries(),
         )
     )
     assert unit.reaction_capabilities == (
         STELLAR_CONDUCT_CAPABILITY_KEY,
         STELLAR_SWIRL_CAPABILITY_KEY,
     )
-    port = build_static_reaction_eligibility_port((unit,))
-    provider = ElementalSubjectRef.character("character:slot_1")
-    for capability_key in (STELLAR_CONDUCT_CAPABILITY_KEY, STELLAR_SWIRL_CAPABILITY_KEY):
-        assert port.evidence_for(frame=0, team_ref="team:assembly").providers_for(
-            capability_key
-        ) == (provider,)

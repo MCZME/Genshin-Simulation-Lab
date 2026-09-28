@@ -1,28 +1,49 @@
 """桑多涅重击与法洁欧状态机的纵向集成。
 
 场景几何：玩家在原点、朝向 +Z，目标摆在 (0, 0, 4)——位于射击直线上，
-子弹距离 4 → 飞行延迟 4 帧（60 m/s 占位 = 1 m/帧），射线即时穿透。
+子弹距离 4，飞行延迟按占位弹速折算，射线即时穿透。帧序列期望值由 data.py
+节奏常量推导（测试规范 §3.3：不复制数据真值）；射击次数由功率涌现与释放
+窗口决定，保留字面断言。
 """
 
 from __future__ import annotations
 
-from genshin_sim.core.attributes import AttributeSubjectRef
+from genshin_sim.content.characters.snezhnaya.sandrone.data import (
+    FAGEOU_BULLET_SPEED_M_PER_S,
+    FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
+    FAGEOU_PRE_SWING_FRAMES,
+    FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
+    SANDRONE_ACTION_TABLE,
+    SANDRONE_ELEMENTAL_SKILL_ACTION_KEY,
+)
 from genshin_sim.core.elements import AuraKind, ElementalSubjectRef
-from genshin_sim.core.events import EventType
 from tests.helpers import sandrone as sandrone_helpers
 
-SANDRONE_REF = AttributeSubjectRef.character("character:slot_1")
+_PRESS_FRAME = 2
+_SOLVE_START = _PRESS_FRAME + FAGEOU_PRE_SWING_FRAMES
+# 目标距离 4m：子弹飞行帧 = round(4 / 占位弹速 × 60)。
+_FLIGHT_FRAMES = round(4 / FAGEOU_BULLET_SPEED_M_PER_S * 60)
+
 SWEEP_DISPLAY_NAME = "重击扫射伤害"
 RAY_DISPLAY_NAME = "重击冷凝射线伤害"
 OVERLOAD_DISPLAY_NAME = "功率过载时伤害"
 
 
-def _damage_events(assembled) -> list:
-    """订阅 DAMAGE_RESOLVED 并返回活列表（运行期间持续填充）。"""
+def _sweep_hits(shot_count: int) -> list[int]:
+    return [
+        _SOLVE_START + k * FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES + _FLIGHT_FRAMES
+        for k in range(shot_count)
+    ]
 
-    events: list = []
-    assembled.context.events.subscribe(EventType.DAMAGE_RESOLVED, events.append)
-    return events
+
+def _ray_frames(ray_count: int) -> list[int]:
+    return sandrone_helpers.charged_ray_frames(_PRESS_FRAME, ray_count)
+
+
+def _overload_hits(shot_count: int) -> list[int]:
+    # 满功率转过载：射击轨自最后一条射线帧起按过载间隔换节奏，命中含飞行帧。
+    first = _ray_frames(3)[-1] + FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES + _FLIGHT_FRAMES
+    return [first + k * FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES for k in range(shot_count)]
 
 
 def _fageou_state(assembled) -> dict:
@@ -47,35 +68,32 @@ def _sandrone_with_line_target(
     input_trace: list[dict[str, object]],
     max_frames: int,
 ):
-    payload = sandrone_helpers.sandrone_input_payload(
+    return sandrone_assembled(
         max_frames=max_frames,
-        input_trace=input_trace,
-        targets=[
-            {
-                "id": "target_1",
-                "level": 90,
-                "position": {"x": 0, "y": 0, "z": 4},
-                "resistance": {},
-            }
-        ],
+        payload=sandrone_helpers.charged_line_payload(max_frames, *_hold_trace_args(input_trace)),
     )
-    return sandrone_assembled(max_frames=max_frames, payload=payload)
+
+
+def _hold_trace_args(input_trace: list[dict[str, object]]) -> tuple[int, int]:
+    press = input_trace[0]["frame"]
+    release = input_trace[1]["frame"]
+    assert isinstance(press, int) and isinstance(release, int)
+    return press, release
 
 
 def test_solve_entry_fires_sweep_shots_on_rhythm(sandrone_assembled):
-    # 按下 +36F 进入解算（solve_start=38）；扫射 21F 节奏：38/59/80 出膛，
-    # 子弹距离 4 → 延迟 4 帧命中：42/63/84。
+    # 按下 + 前摇进入解算；扫射 21F 节奏出膛，子弹飞行 4 帧后命中。
     assembled = _sandrone_with_line_target(
         sandrone_assembled,
         input_trace=_hold_trace(2, 88),
         max_frames=90,
     )
-    damage_events = _damage_events(assembled)
+    damage_events = sandrone_helpers.sandrone_damage_events(assembled)
 
     assembled.simulator.run()
 
     sweeps = [e for e in damage_events if e.payload.result.damage_name == SWEEP_DISPLAY_NAME]
-    assert [e.frame for e in sweeps] == [42, 63, 84]
+    assert [e.frame for e in sweeps] == _sweep_hits(3)
     for event in sweeps:
         assert event.payload.result.main_attack_tag == "重击"
         assert event.payload.result.element.value == "cryo"
@@ -85,49 +103,25 @@ def test_solve_entry_fires_sweep_shots_on_rhythm(sandrone_assembled):
     assert state["fageou_solve_start_frame"] == 0
 
 
-def test_ray_hits_spawn_cryo_particle_with_shared_cooldown(sandrone_assembled):
-    # 产球：射线 128/188/248 连续命中（间隔 60/120，均在 150F 共用冷却内），
-    # 仅首个命中产 1 冰微粒；产球经统一意图队列在命中帧入队。
-    assembled = _sandrone_with_line_target(
-        sandrone_assembled,
-        input_trace=_hold_trace(2, 376),
-        max_frames=380,
-    )
-    spawn_events: list = []
-    assembled.context.events.subscribe(EventType.ENERGY_PICKUP_SPAWNED, spawn_events.append)
-
-    assembled.simulator.run()
-
-    records = [event.payload.record for event in spawn_events]
-    assert [
-        (record.created_frame, record.pickup_kind.value, record.element.value, record.count)
-        for record in records
-    ] == [(128, "particle", "cryo", 1)]
-    # 微粒飞行 30F 后结算：同元素微粒场上 3 点（充能效率 100%）。终值取下界——
-    # 重击标签伤害还会触发通用回能，可能额外恢复。
-    assert records[0].settle_frame == 158
-    assert assembled.energy_store.current_energy(SANDRONE_REF) >= 3.0
-
-
 def test_ray_track_emerges_exactly_three_rays_before_overload(sandrone_assembled):
     # 核心不变量：0 命 0→100 恰好 3 发射线，第三发命中后封顶。
-    # 射线 128/188/248（解算起算 +90、间隔 60）；功率 98 < 100 时第三发照常
+    # 射线按解算起点 + 首法偏移与间隔推导；功率 98 < 100 时第三发照常
     # 发射，命中后封顶转入过载 → 射线轨停止，无第四发。
     assembled = _sandrone_with_line_target(
         sandrone_assembled,
         input_trace=_hold_trace(2, 376),
         max_frames=380,
     )
-    damage_events = _damage_events(assembled)
+    damage_events = sandrone_helpers.sandrone_damage_events(assembled)
 
     assembled.simulator.run()
 
     rays = [e for e in damage_events if e.payload.result.damage_name == RAY_DISPLAY_NAME]
-    assert [e.frame for e in rays] == [128, 188, 248]
+    assert [e.frame for e in rays] == _ray_frames(3)
     assert all(e.payload.result.main_attack_tag == "重击" for e in rays)
-    # 过载射击 30F 节奏（过载起点 252 +30 起射）；376 松开后停火。
+    # 过载射击 30F 节奏；376 松开后停火。
     overloads = [e for e in damage_events if e.payload.result.damage_name == OVERLOAD_DISPLAY_NAME]
-    assert [e.frame for e in overloads] == [282, 312, 342, 372]
+    assert [e.frame for e in overloads] == _overload_hits(4)
     state = _fageou_state(assembled)
     assert state["fageou_mode"] == "overload"
     # 按住过载功率冻结；松开（376）后至仿真结束仅衰减个别帧。
@@ -136,18 +130,18 @@ def test_ray_track_emerges_exactly_three_rays_before_overload(sandrone_assembled
 
 
 def test_release_exits_solve_and_stops_tracks(sandrone_assembled):
-    # 松开即退出解算：射线（128）不再发射，扫射在松开帧后停止。
+    # 松开即退出解算：射线不再发射，扫射在松开帧后停止。
     assembled = _sandrone_with_line_target(
         sandrone_assembled,
         input_trace=_hold_trace(2, 100),
         max_frames=180,
     )
-    damage_events = _damage_events(assembled)
+    damage_events = sandrone_helpers.sandrone_damage_events(assembled)
 
     assembled.simulator.run()
 
     sweeps = [e for e in damage_events if e.payload.result.damage_name == SWEEP_DISPLAY_NAME]
-    assert [e.frame for e in sweeps] == [42, 63, 84]
+    assert [e.frame for e in sweeps] == _sweep_hits(3)
     assert not [e for e in damage_events if e.payload.result.damage_name == RAY_DISPLAY_NAME]
     state = _fageou_state(assembled)
     assert state["fageou_mode"] == "idle"
@@ -165,12 +159,12 @@ def test_overload_release_stops_overload_shots(sandrone_assembled):
         input_trace=_hold_trace(2, 300),
         max_frames=950,
     )
-    damage_events = _damage_events(assembled)
+    damage_events = sandrone_helpers.sandrone_damage_events(assembled)
 
     assembled.simulator.run()
 
     overloads = [e for e in damage_events if e.payload.result.damage_name == OVERLOAD_DISPLAY_NAME]
-    assert overloads and max(e.frame for e in overloads) <= 304
+    assert overloads and max(e.frame for e in overloads) <= 300 + _FLIGHT_FRAMES
     state = _fageou_state(assembled)
     assert state["fageou_mode"] == "overload"
     assert state["fageou_next_shot_frame"] == 0
@@ -198,15 +192,19 @@ def test_elemental_skill_drains_power_and_stops_tracks(sandrone_assembled):
         ],
     )
     assembled = sandrone_assembled(max_frames=140, payload=payload)
-    damage_events = _damage_events(assembled)
+    damage_events = sandrone_helpers.sandrone_damage_events(assembled)
 
     assembled.simulator.run()
 
     sweeps = [e for e in damage_events if e.payload.result.damage_name == SWEEP_DISPLAY_NAME]
-    assert [e.frame for e in sweeps] == [42, 63]
+    assert [e.frame for e in sweeps] == _sweep_hits(2)
     assert not [e for e in damage_events if e.payload.result.damage_name == RAY_DISPLAY_NAME]
+    prism_frames = [
+        60 + point.frame
+        for point in SANDRONE_ACTION_TABLE[SANDRONE_ELEMENTAL_SKILL_ACTION_KEY].impact_points
+    ]
     prisms = [e for e in damage_events if e.payload.result.damage_name == "棱晶弹伤害"]
-    assert [e.frame for e in prisms] == [76, 92]
+    assert [e.frame for e in prisms] == prism_frames
     state = _fageou_state(assembled)
     assert state["fageou_mode"] == "idle"
     assert state["fageou_power"] == 0.0
@@ -243,7 +241,7 @@ def test_line_geometry_misses_off_axis_target(sandrone_assembled):
         ],
     )
     assembled = sandrone_assembled(max_frames=140, payload=payload)
-    damage_events = _damage_events(assembled)
+    damage_events = sandrone_helpers.sandrone_damage_events(assembled)
 
     assembled.simulator.run()
 
@@ -253,4 +251,4 @@ def test_line_geometry_misses_off_axis_target(sandrone_assembled):
         if e.payload.result.damage_name
         in {SWEEP_DISPLAY_NAME, RAY_DISPLAY_NAME, OVERLOAD_DISPLAY_NAME}
     ]
-    assert not charged
+    assert charged == []

@@ -2,46 +2,58 @@
 
 from __future__ import annotations
 
+from genshin_sim.content.characters.snezhnaya.sandrone.data import (
+    SANDRONE_ACTION_TABLE,
+    SANDRONE_NORMAL_ATTACK_1_ACTION_KEY,
+    SANDRONE_NORMAL_ATTACK_2_ACTION_KEY,
+)
 from genshin_sim.core.elements import AuraKind, Element, ElementalSubjectRef
 from genshin_sim.core.events import EventType
 from tests.helpers import sandrone as sandrone_helpers
 
-
-def _damage_events(assembled) -> list:
-    events: list = []
-    assembled.context.events.subscribe(EventType.DAMAGE_RESOLVED, events.append)
-    return events
+RELEASE_FRAME = 2
 
 
-def test_first_normal_attack_hits_at_measured_frame(sandrone_assembled):
+def _hit_frame(action_key: str) -> int:
+    hit = SANDRONE_ACTION_TABLE[action_key].hit_frame
+    assert hit is not None
+    return hit
+
+
+NA1_HIT_FRAME = RELEASE_FRAME + _hit_frame(SANDRONE_NORMAL_ATTACK_1_ACTION_KEY)
+
+
+def test_first_normal_attack_hits_per_frame_table(sandrone_assembled):
     assembled = sandrone_assembled(max_frames=60)
-    events = _damage_events(assembled)
+    events = sandrone_helpers.sandrone_damage_events(assembled)
 
     assembled.simulator.run()
 
     damage_events = [e for e in events if e.event_type is EventType.DAMAGE_RESOLVED]
     assert len(damage_events) == 1
     damage = damage_events[0]
-    # 帧表：动作自释放帧（2）起算，一段命中 +44。
-    assert damage.frame == 46
+    # 命中帧 = 释放帧 + 动作表一段 hit_frame（动作自释放帧起算）。
+    assert damage.frame == NA1_HIT_FRAME
     result = damage.payload.result
     assert result.main_attack_tag == "普通攻击1"
     assert result.element is Element.CRYO
     assert result.final_damage > 0
 
 
-def test_normal_attack_chain_starts_at_measured_window(sandrone_assembled):
+def test_normal_attack_chain_progresses_through_combo(sandrone_assembled):
+    second_release = 61
+    na2_hit = second_release + _hit_frame(SANDRONE_NORMAL_ATTACK_2_ACTION_KEY)
     payload = sandrone_helpers.sandrone_input_payload(
         max_frames=120,
         input_trace=[
             {"frame": 1, "events": [{"key": "mouse.left", "phase": "press"}]},
-            {"frame": 2, "events": [{"key": "mouse.left", "phase": "release"}]},
+            {"frame": RELEASE_FRAME, "events": [{"key": "mouse.left", "phase": "release"}]},
             {"frame": 60, "events": [{"key": "mouse.left", "phase": "press"}]},
-            {"frame": 61, "events": [{"key": "mouse.left", "phase": "release"}]},
+            {"frame": second_release, "events": [{"key": "mouse.left", "phase": "release"}]},
         ],
     )
     assembled = sandrone_assembled(max_frames=120, payload=payload)
-    events = _damage_events(assembled)
+    events = sandrone_helpers.sandrone_damage_events(assembled)
 
     assembled.simulator.run()
 
@@ -50,8 +62,9 @@ def test_normal_attack_chain_starts_at_measured_window(sandrone_assembled):
         "普通攻击1",
         "普通攻击2",
     ]
-    # 一段命中 2+44=46；二段自衔接窗口（2+59=61）起的释放帧 61 起算，命中 61+24=85。
-    assert [e.frame for e in damage_events] == [46, 85]
+    # 一段按一段 hit_frame 命中；二段自衔接窗口起的释放帧起算、按二段
+    # hit_frame 命中。
+    assert [e.frame for e in damage_events] == [NA1_HIT_FRAME, na2_hit]
 
 
 def test_normal_attack_applies_cryo_to_target(sandrone_assembled):
@@ -83,7 +96,7 @@ def test_first_normal_attack_box_excludes_target_beyond_width(sandrone_assembled
         ],
     )
     assembled = sandrone_assembled(max_frames=60, payload=payload)
-    events = _damage_events(assembled)
+    events = sandrone_helpers.sandrone_damage_events(assembled)
 
     assembled.simulator.run()
 

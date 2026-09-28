@@ -1,4 +1,4 @@
-"""桑多涅重击与法洁欧状态机的纵向集成（切片 2 临时测试）。
+"""桑多涅重击与法洁欧状态机的纵向集成。
 
 场景几何：玩家在原点、朝向 +Z，目标摆在 (0, 0, 4)——位于射击直线上，
 子弹距离 4 → 飞行延迟 4 帧（60 m/s 占位 = 1 m/帧），射线即时穿透。
@@ -6,10 +6,12 @@
 
 from __future__ import annotations
 
+from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.elements import AuraKind, ElementalSubjectRef
 from genshin_sim.core.events import EventType
 from tests.helpers import sandrone as sandrone_helpers
 
+SANDRONE_REF = AttributeSubjectRef.character("character:slot_1")
 SWEEP_DISPLAY_NAME = "重击扫射伤害"
 RAY_DISPLAY_NAME = "重击冷凝射线伤害"
 OVERLOAD_DISPLAY_NAME = "功率过载时伤害"
@@ -81,6 +83,30 @@ def test_solve_entry_fires_sweep_shots_on_rhythm(sandrone_assembled):
     # 输入契约要求松开（88 帧），松开即退出解算：终态待机、锚点清零。
     assert state["fageou_mode"] == "idle"
     assert state["fageou_solve_start_frame"] == 0
+
+
+def test_ray_hits_spawn_cryo_particle_with_shared_cooldown(sandrone_assembled):
+    # 产球：射线 128/188/248 连续命中（间隔 60/120，均在 150F 共用冷却内），
+    # 仅首个命中产 1 冰微粒；产球经统一意图队列在命中帧入队。
+    assembled = _sandrone_with_line_target(
+        sandrone_assembled,
+        input_trace=_hold_trace(2, 376),
+        max_frames=380,
+    )
+    spawn_events: list = []
+    assembled.context.events.subscribe(EventType.ENERGY_PICKUP_SPAWNED, spawn_events.append)
+
+    assembled.simulator.run()
+
+    records = [event.payload.record for event in spawn_events]
+    assert [
+        (record.created_frame, record.pickup_kind.value, record.element.value, record.count)
+        for record in records
+    ] == [(128, "particle", "cryo", 1)]
+    # 微粒飞行 30F 后结算：同元素微粒场上 3 点（充能效率 100%）。终值取下界——
+    # 重击标签伤害还会触发通用回能，可能额外恢复。
+    assert records[0].settle_frame == 158
+    assert assembled.energy_store.current_energy(SANDRONE_REF) >= 3.0
 
 
 def test_ray_track_emerges_exactly_three_rays_before_overload(sandrone_assembled):

@@ -48,6 +48,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_STATE_BEAM_BONUS,
     FAGEOU_STATE_DRAIN_ACTIVE,
     FAGEOU_STATE_EXTRA_SEGMENTS_LEFT,
+    FAGEOU_STATE_LAST_PARTICLE_FRAME,
     FAGEOU_STATE_MODE,
     FAGEOU_STATE_NEXT_RAY_FRAME,
     FAGEOU_STATE_NEXT_SHOT_FRAME,
@@ -177,6 +178,12 @@ def sandrone_state_schema(owner_ref: str) -> StateSchema:
             name=FAGEOU_STATE_BEAM_BONUS,
             field_type=StateFieldType.FLOAT,
             default=0.0,
+            non_negative=True,
+        ),
+        StateField(
+            name=FAGEOU_STATE_LAST_PARTICLE_FRAME,
+            field_type=StateFieldType.INT,
+            default=0,
             non_negative=True,
         ),
     )

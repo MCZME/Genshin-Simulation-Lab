@@ -58,6 +58,9 @@ from genshin_sim.content.characters.snezhnaya.sandrone.fageou import (
     SandroneFageouHook,
     sandrone_state_schema,
 )
+from genshin_sim.content.characters.snezhnaya.sandrone.hooks import (
+    SandroneParticleHook,
+)
 from genshin_sim.content.characters.snezhnaya.sandrone.impacts import (
     SandroneActionImpactFactory,
     compile_c6_extra_normal_spec,
@@ -270,6 +273,7 @@ def create_sandrone_content_unit(
                 ),
                 c6_extra_segments=(c6_values.extra_segment_count if c6_values is not None else 0),
             ),
+            SandroneParticleHook(owner_ref=owner_ref, slot=request.slot),
         ),
         cooldown_definitions=(skill_cooldown_definition, burst_cooldown_definition),
         aura_icd_definitions=(

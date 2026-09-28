@@ -216,6 +216,9 @@ FAGEOU_STATE_TACTICS_STACKS = "fageou_tactics_stacks"
 FAGEOU_STATE_TACTICS_EXPIRE_FRAME = "fageou_tactics_expire_frame"
 FAGEOU_STATE_PRISM2_BOOST_UNTIL = "fageou_prism2_boost_until"
 FAGEOU_STATE_BEAM_BONUS = "fageou_beam_bonus"
+# 产球审计字段：最近一次产球的命中结算帧（0 = 尚未产球）；冷却判定游标
+# 在产球 hook 实例内。
+FAGEOU_STATE_LAST_PARTICLE_FRAME = "fageou_last_particle_frame"
 
 FAGEOU_MODE_IDLE = "idle"
 FAGEOU_MODE_SOLVE = "solve"
@@ -327,6 +330,27 @@ SANDRONE_STELLAR_PRISM_SWIRL_LABEL = "棱晶弹星扩散伤害"
 SANDRONE_STELLAR_BEAM_SWIRL_LABEL = "聚能光束星扩散伤害"
 SANDRONE_RAY_STELLAR_ADDITIONAL_TAG = "桑多涅激光"
 SANDRONE_PRISM_STELLAR_ADDITIONAL_TAG = "桑多涅战技星烁"
+
+# ---- 产球 ----
+# 冷凝射线命中与战技棱晶弹命中（任意变体，集束型追加段仍属冷凝射线）各产
+# 1 冰微粒，100% 概率，两者共用 2.5s 判定冷却；冷却按伤害实际结算帧判定，
+# 游标在产球 hook 实例（射线与 C6 追加段同帧命中即时去重），最近产球帧
+# 同步写入内容状态 ``fageou_last_particle_frame`` 供审计。扫射/功率过载/
+# 普攻/下落/爆发均不产球，产球归属桑多涅（冰属性微粒）。
+# 触发匹配按伤害结果 request_id 内嵌的 impact_key 识别：动作影响点 id 形如
+# ``action:{instance_id}:{impact_key}``，法洁欧产出的请求 id 内嵌影响键。
+SANDRONE_PARTICLE_TRIGGER_IMPACT_KEYS = (
+    SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
+    SANDRONE_CHARGED_ATTACK_EXTRA_IMPACT_KEY,
+    SANDRONE_ELEMENTAL_SKILL_PRISM_1_IMPACT_KEY,
+    SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY,
+)
+SANDRONE_PARTICLE_SPAWN_IMPACT_KEY = "character.sandrone.particle.spawn"
+SANDRONE_PARTICLE_ELEMENT = Element.CRYO
+SANDRONE_PARTICLE_COUNT = 1
+SANDRONE_PARTICLE_COOLDOWN_FRAMES = 150
+# 待确认：产球载体飞行延迟为占位值。
+SANDRONE_PARTICLE_TRAVEL_FRAMES = 30
 
 
 @dataclass(frozen=True, slots=True)

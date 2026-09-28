@@ -1,4 +1,4 @@
-"""桑多涅命座效果的事件钩子。
+"""桑多涅内容事件钩子。
 
 C4 棱晶谐振炮：订阅 ``DAMAGE_RESOLVED`` 事实，命中敌人且伤害事实的
 **来源是桑多涅自己**、攻击标签为 ``星超导冰`` 或 ``星扩散冰`` 时，按内置冷却
@@ -10,6 +10,9 @@ C4 棱晶谐振炮：订阅 ``DAMAGE_RESOLVED`` 事实，命中敌人且伤害�
 不计触发。标签与倍率按触发标签查表（见 ``_VARIANTS_BY_TRIGGER_TAG``）。
 协同攻击自带的标签同样计触发，被冷却窗口吸收；星超导反应的触发行为本身
 不产生伤害事实、天然不触发。
+
+产球：冷凝射线与战技棱晶弹命中产 1 冰微粒（任意变体、共用 2.5s 判定
+冷却），见 ``SandroneParticleHook``。
 """
 
 from __future__ import annotations
@@ -18,8 +21,15 @@ from collections.abc import Mapping
 from typing import NamedTuple
 
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
+    FAGEOU_STATE_LAST_PARTICLE_FRAME,
     SANDRONE_C4_ATTACK_IMPACT_KEY,
     SANDRONE_CHARACTER_HANDLER_KEY,
+    SANDRONE_PARTICLE_COOLDOWN_FRAMES,
+    SANDRONE_PARTICLE_COUNT,
+    SANDRONE_PARTICLE_ELEMENT,
+    SANDRONE_PARTICLE_SPAWN_IMPACT_KEY,
+    SANDRONE_PARTICLE_TRAVEL_FRAMES,
+    SANDRONE_PARTICLE_TRIGGER_IMPACT_KEYS,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
     radiance_evidence,
@@ -28,6 +38,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.models import HookResult
+from genshin_sim.content.state_container import StatePatchRequest
 from genshin_sim.core.attributes import (
     STAT_ATK_TOTAL,
     STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER,
@@ -245,6 +256,97 @@ class SandroneC4CoordinatedAttackHook:
                             stellar_ascension_bonus=self._ascension_bonus,
                         ),
                     ),
+                ),
+            ),
+        )
+
+
+class SandroneParticleHook:
+    """产球：冷凝射线与战技棱晶弹命中产 1 冰微粒，共用 2.5s 判定冷却。
+
+    订阅 ``DAMAGE_RESOLVED``，命中按伤害实际结算帧判定（棱晶弹影响点在
+    动作展开帧结算、射线即时）。触发影响点按伤害结果 ``request_id`` 内嵌的
+    impact_key 匹配：动作影响点 id 形如 ``action:{instance_id}:{impact_key}``，
+    法洁欧产出的请求 id 内嵌影响键，多目标伤害在此基础上追加
+    ``:target:{id}:{index}`` 后缀，均保持影响键可识别。冷却游标在 hook
+    实例（与 C4 同口径）：同帧多条命中事实（射线与 C6 追加段同帧）即时
+    去重，最近产球帧同时写入内容状态 ``fageou_last_particle_frame`` 供
+    审计（0 表示尚未产球）。产球经 ``ImpactKind.ENERGY`` 的
+    ``spawn_pickup`` 出口，归属宿主桑多涅（冰属性微粒）。星超导/星扩散
+    变体同样产球——产球与变体无关。
+    """
+
+    def __init__(self, *, owner_ref: str, slot: int) -> None:
+        if not isinstance(owner_ref, str) or not owner_ref.strip():
+            raise ContentUnitValidationError("产球 hook owner_ref 必须是非空字符串")
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot <= 0:
+            raise ContentUnitValidationError("产球 hook 必须绑定正整数队伍槽位")
+        self._owner_ref = owner_ref
+        self._owner_subject_ref = AttributeSubjectRef.character(owner_ref)
+        self._slot = slot
+        self._last_proc_frame: int | None = None
+        self.hook_key = f"sandrone.particle:{owner_ref}"
+        self.state_key = SANDRONE_CHARACTER_HANDLER_KEY
+        self.subscriptions = ("DAMAGE_RESOLVED",)
+        self.priority = 0
+
+    @property
+    def owner_ref(self) -> str:
+        """宿主角色引用：状态段归属校验按此匹配。"""
+
+        return self._owner_ref
+
+    def handle(self, event: object, context: object) -> HookResult:
+        del context  # 冷却游标在 hook 实例；内容状态字段随产出同步写入。
+        if getattr(event, "event_type", None) is not EventType.DAMAGE_RESOLVED:
+            return HookResult()
+        result = getattr(getattr(event, "payload", None), "result", None)
+        if result is None:
+            return HookResult()
+        if getattr(result, "source_ref", None) != self._owner_subject_ref:
+            return HookResult()
+        target_id = getattr(getattr(result, "target_ref", None), "entity_id", None)
+        if not isinstance(target_id, str) or not target_id.startswith(_ENEMY_TARGET_PREFIX):
+            return HookResult()
+        request_id = getattr(result, "request_id", None)
+        if not isinstance(request_id, str) or not any(
+            key in request_id for key in SANDRONE_PARTICLE_TRIGGER_IMPACT_KEYS
+        ):
+            return HookResult()
+
+        frame = getattr(event, "frame", 0)
+        if (
+            self._last_proc_frame is not None
+            and frame - self._last_proc_frame < SANDRONE_PARTICLE_COOLDOWN_FRAMES
+        ):
+            return HookResult()
+        self._last_proc_frame = frame
+        return HookResult(
+            impact_requests=(
+                ImpactRequest(
+                    frame=frame,
+                    kind=ImpactKind.ENERGY,
+                    impact_key=SANDRONE_PARTICLE_SPAWN_IMPACT_KEY,
+                    owner_slot=self._slot,
+                    request_id=f"hook:{self.hook_key}:{frame}",
+                    params={
+                        "energy": {
+                            "schema_version": 1,
+                            "operation": "spawn_pickup",
+                            "pickup_kind": "particle",
+                            "element": SANDRONE_PARTICLE_ELEMENT.value,
+                            "count": SANDRONE_PARTICLE_COUNT,
+                            "travel_frames": SANDRONE_PARTICLE_TRAVEL_FRAMES,
+                            "tags": (),
+                        }
+                    },
+                ),
+            ),
+            state_patches=(
+                StatePatchRequest(
+                    owner_ref=self._owner_ref,
+                    state_key=self.state_key,
+                    fields={FAGEOU_STATE_LAST_PARTICLE_FRAME: frame},
                 ),
             ),
         )

@@ -400,14 +400,17 @@ def charged_line_payload(
     *,
     constellation: int = 0,
 ) -> dict[str, object]:
-    """重击直线场景：玩家原点朝 +Z，目标摆在 (0, 0, 4) 的射击直线上。"""
+    """重击直线场景：玩家原点朝 +Z，目标摆在 (0, 0, 4) 的射击直线上。
+
+    重击 = 长按左键（按下即蓄力，按住时长需跨过前摇 36F）。
+    """
 
     return sandrone_input_payload(
         max_frames=max_frames,
         constellation=constellation,
         input_trace=[
-            {"frame": press, "events": [{"key": "mouse.right", "phase": "press"}]},
-            {"frame": release, "events": [{"key": "mouse.right", "phase": "release"}]},
+            {"frame": press, "events": [{"key": "mouse.left", "phase": "press"}]},
+            {"frame": release, "events": [{"key": "mouse.left", "phase": "release"}]},
         ],
         targets=[
             {

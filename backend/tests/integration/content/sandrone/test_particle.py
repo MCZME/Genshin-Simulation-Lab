@@ -14,8 +14,8 @@ SANDRONE_REF = AttributeSubjectRef.character("character:slot_1")
 
 def _hold_trace(press_frame: int, release_frame: int) -> list[dict[str, object]]:
     return [
-        {"frame": press_frame, "events": [{"key": "mouse.right", "phase": "press"}]},
-        {"frame": release_frame, "events": [{"key": "mouse.right", "phase": "release"}]},
+        {"frame": press_frame, "events": [{"key": "mouse.left", "phase": "press"}]},
+        {"frame": release_frame, "events": [{"key": "mouse.left", "phase": "release"}]},
     ]
 
 

@@ -98,8 +98,8 @@ def _line_target_payload(
         max_frames=max_frames,
         constellation=constellation,
         input_trace=[
-            {"frame": press, "events": [{"key": "mouse.right", "phase": "press"}]},
-            {"frame": release, "events": [{"key": "mouse.right", "phase": "release"}]},
+            {"frame": press, "events": [{"key": "mouse.left", "phase": "press"}]},
+            {"frame": release, "events": [{"key": "mouse.left", "phase": "release"}]},
         ],
         targets=[
             {

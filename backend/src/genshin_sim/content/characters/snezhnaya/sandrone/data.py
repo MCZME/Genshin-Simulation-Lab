@@ -164,14 +164,18 @@ SANDRONE_HIT_IMPACT_KEYS = (
 )
 
 NORMAL_ATTACK_INPUT = "normal_attack"
-CHARGED_ATTACK_INPUT = "charged_attack"
 ELEMENTAL_SKILL_INPUT = "elemental_skill"
 ELEMENTAL_BURST_INPUT = "elemental_burst"
 JUMP_INPUT = "jump"
 
+# 左键为点按/长按双语义输入：normal_attack 输入种类承载动作衔接表，重击蓄力
+# 语义由解释器叠加——按下即按重击处理（法洁欧前摇切入解算），前摇 36F 内松开
+# 改判点按普攻，前摇完成后松开按重击松开处理（见 actions.py）。右键为冲刺位，
+# 冲刺未接入，桑多涅不支持该输入。
+SANDRONE_ATTACK_INPUT_KEY = "mouse.left"
+
 INPUT_KIND_BY_KEY = {
-    "mouse.left": NORMAL_ATTACK_INPUT,
-    "mouse.right": CHARGED_ATTACK_INPUT,
+    SANDRONE_ATTACK_INPUT_KEY: NORMAL_ATTACK_INPUT,
     "keyboard.e": ELEMENTAL_SKILL_INPUT,
     "keyboard.q": ELEMENTAL_BURST_INPUT,
     "keyboard.space": JUMP_INPUT,

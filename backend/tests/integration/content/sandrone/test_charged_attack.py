@@ -15,6 +15,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
     SANDRONE_ACTION_TABLE,
     SANDRONE_ELEMENTAL_SKILL_ACTION_KEY,
+    SANDRONE_NORMAL_ATTACK_1_ACTION_KEY,
 )
 from genshin_sim.core.elements import AuraKind, ElementalSubjectRef
 from tests.helpers import sandrone as sandrone_helpers
@@ -46,6 +47,12 @@ def _overload_hits(shot_count: int) -> list[int]:
     return [first + k * FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES for k in range(shot_count)]
 
 
+def _na1_hit_frame(release_frame: int) -> int:
+    hit = SANDRONE_ACTION_TABLE[SANDRONE_NORMAL_ATTACK_1_ACTION_KEY].hit_frame
+    assert hit is not None
+    return release_frame + hit
+
+
 def _fageou_state(assembled) -> dict:
     character = assembled.context.space_runtime.team_state.get_character(1)
     mount = character.content_states.get("character.sandrone")
@@ -54,11 +61,11 @@ def _fageou_state(assembled) -> dict:
 
 
 def _hold_trace(press_frame: int, release_frame: int) -> list[dict[str, object]]:
-    """按住轨迹：输入契约要求按键在轨迹结束前释放，release 放在断言窗口之后。"""
+    """长按轨迹：重击 = 长按左键（按下即蓄力），release 放在断言窗口之后。"""
 
     return [
-        {"frame": press_frame, "events": [{"key": "mouse.right", "phase": "press"}]},
-        {"frame": release_frame, "events": [{"key": "mouse.right", "phase": "release"}]},
+        {"frame": press_frame, "events": [{"key": "mouse.left", "phase": "press"}]},
+        {"frame": release_frame, "events": [{"key": "mouse.left", "phase": "release"}]},
     ]
 
 
@@ -177,10 +184,10 @@ def test_elemental_skill_drains_power_and_stops_tracks(sandrone_assembled):
     payload = sandrone_helpers.sandrone_input_payload(
         max_frames=140,
         input_trace=[
-            {"frame": 2, "events": [{"key": "mouse.right", "phase": "press"}]},
+            {"frame": 2, "events": [{"key": "mouse.left", "phase": "press"}]},
             {"frame": 59, "events": [{"key": "keyboard.e", "phase": "press"}]},
             {"frame": 60, "events": [{"key": "keyboard.e", "phase": "release"}]},
-            {"frame": 70, "events": [{"key": "mouse.right", "phase": "release"}]},
+            {"frame": 70, "events": [{"key": "mouse.left", "phase": "release"}]},
         ],
         targets=[
             {
@@ -209,6 +216,54 @@ def test_elemental_skill_drains_power_and_stops_tracks(sandrone_assembled):
     assert state["fageou_mode"] == "idle"
     assert state["fageou_power"] == 0.0
     assert state["fageou_drain_active"] is False
+
+
+def test_tap_below_pre_swing_becomes_normal_attack(sandrone_assembled):
+    # 点按改判：按住不足前摇 36F（28F）松开 = 点按普攻——清除本次按下写入
+    # 的蓄力状态，普攻 1 从松开帧起手，此后无任何扫射/射线。
+    press_frame = 2
+    release_frame = 30
+    assembled = sandrone_assembled(
+        max_frames=120,
+        payload=sandrone_helpers.sandrone_input_payload(
+            max_frames=120,
+            input_trace=_hold_trace(press_frame, release_frame),
+        ),
+    )
+    damage_events = sandrone_helpers.sandrone_damage_events(assembled)
+
+    assembled.simulator.run()
+
+    na1_hit = _na1_hit_frame(release_frame)
+    assert [e.payload.result.main_attack_tag for e in damage_events] == ["普通攻击1"]
+    assert damage_events[0].frame == na1_hit
+    state = _fageou_state(assembled)
+    assert state["fageou_mode"] == "idle"
+    assert state["fageou_solve_start_frame"] == 0
+    assert state["fageou_next_shot_frame"] == 0
+    assert state["fageou_next_ray_frame"] == 0
+
+
+def test_hold_at_pre_swing_boundary_is_charged_not_normal_attack(sandrone_assembled):
+    # 前摇边界：按住跨过前摇 36F（41F）后松开按重击处理——解算内首颗扫射
+    # 在 solve_start 出膛并命中，无普攻；松开即退出解算（锚点清零）。松开帧
+    # 选在首颗扫射命中（solve_start + 4F 飞行）之后：在途子弹不在 world 空闲
+    # 判定内，更早松开会让仿真在输入耗尽后提前结束、丢掉该次命中结算。
+    assembled = _sandrone_with_line_target(
+        sandrone_assembled,
+        input_trace=_hold_trace(2, 43),
+        max_frames=60,
+    )
+    damage_events = sandrone_helpers.sandrone_damage_events(assembled)
+
+    assembled.simulator.run()
+
+    assert not [e for e in damage_events if e.payload.result.main_attack_tag == "普通攻击1"]
+    sweeps = [e for e in damage_events if e.payload.result.damage_name == SWEEP_DISPLAY_NAME]
+    assert [e.frame for e in sweeps] == _sweep_hits(1)
+    state = _fageou_state(assembled)
+    assert state["fageou_mode"] == "idle"
+    assert state["fageou_solve_start_frame"] == 0
 
 
 def test_sweep_shot_applies_cryo_via_custom_icd_sequence(sandrone_assembled):

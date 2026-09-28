@@ -2,10 +2,11 @@
 
 桑多涅的全部已接入动作（普攻三段、元素战技、元素爆发、跳跃）统一声明在
 ``data.py`` 的 ``SANDRONE_ACTION_TABLE``，由本解释器独占消费；普攻推进与
-跨输入衔接按表内 transitions 实现。重击为触发动作：无动作
-实例与伤害命中点，按下/松开按法洁欧状态机分派 ``state_patch``（待机切入
-解算、解算幂等吸收、过载恢复射击；松开退出解算/停火）；元素战技施放即触发
-解算功率快速排空。
+跨输入衔接按表内 transitions 实现。左键为点按/长按双语义输入：按下即按
+重击蓄力处理——无动作实例与伤害命中点，按下/松开按法洁欧状态机分派
+``state_patch``（待机切入解算、解算幂等吸收、过载恢复射击）；前摇 36F 内
+松开改判点按普攻（清蓄力状态，普攻从松开帧起手），前摇完成后松开退出
+解算/停火；右键（冲刺）未接入。元素战技施放即触发解算功率快速排空。
 """
 
 from __future__ import annotations
@@ -15,7 +16,6 @@ from dataclasses import replace
 from typing import cast
 
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
-    CHARGED_ATTACK_INPUT,
     ELEMENTAL_BURST_INPUT,
     ELEMENTAL_SKILL_INPUT,
     FAGEOU_MODE_IDLE,
@@ -126,13 +126,16 @@ class SandroneActionInterpreter:
         session: InputSessionView,
     ) -> ActionInterpretationResult:
         input_kind = INPUT_KIND_BY_KEY.get(session.key)
-        if input_kind == CHARGED_ATTACK_INPUT and session.owner.slot is not None:
-            # 重击在按下/松开触发器上均需分派，先于普攻的 PRESS 等待。
-            return self._interpret_charged_attack(
+        if input_kind == NORMAL_ATTACK_INPUT and session.owner.slot is not None:
+            # 左键点按/长按双语义在按下/松开触发器上均需分派，先于其他输入
+            # 的 PRESS 等待；返回 None 表示点按改判，落入下方普攻松开路径。
+            attack_result = self._interpret_attack_input(
                 context,
                 session,
                 session.owner.slot,
             )
+            if attack_result is not None:
+                return attack_result
         if session.trigger is ActionInterpretationTrigger.PRESS:
             return ActionInterpretationResult.wait()
         if session.trigger is not ActionInterpretationTrigger.RELEASE:
@@ -380,25 +383,42 @@ class SandroneActionInterpreter:
         )
         return mode, power
 
-    def _interpret_charged_attack(
+    def _interpret_attack_input(
         self,
         context: ActionInterpretationContext,
         session: InputSessionView,
         slot: int,
-    ) -> ActionInterpretationResult:
-        """重击按状态分派。
+    ) -> ActionInterpretationResult | None:
+        """左键点按/长按双语义。
 
-        待机重击 = 进入解算（前摇 36F 后开始射击与功率上升）；解算态重击
-        幂等吸收（不重置会话状态）；过载态重击恢复射击（功率 ≥50）。
-        松开退出解算；过载松开停火但模式保持。无动作实例与伤害命中点。
+        按下即按重击蓄力处理：待机切入解算（前摇 36F 后开始射击与功率
+        上升）；解算态按下幂等吸收（不重置会话状态）；过载态功率 ≥50
+        按下恢复射击。长按（HOLD）等待。松开按前摇边界改判：按住不足
+        前摇 36F 视为点按——清除本次按下写入的蓄力状态并返回 None，由
+        普攻松开路径从松开帧起手；按住达到前摇按重击松开处理（退出
+        解算；过载停火但模式保持）。重击本身无动作实例与伤害命中点。
         """
 
         frame = session.current_frame
-        mode, power = self._read_fageou_state(context.simulation, slot)
+        fields: dict[str, JSONValue] | None
         if session.trigger is ActionInterpretationTrigger.PRESS:
+            mode, power = self._read_fageou_state(context.simulation, slot)
             fields = self._charged_press_fields(mode, power, frame)
         elif session.trigger is ActionInterpretationTrigger.RELEASE:
+            if session.release_frame is None:
+                return ActionInterpretationResult.reject("缺少释放帧")
+            mode, _power = self._read_fageou_state(context.simulation, slot)
             fields = self._charged_release_fields(mode)
+            if session.held_frames < FAGEOU_PRE_SWING_FRAMES:
+                if fields is not None:
+                    self._queue_machine_patch(
+                        context.simulation,
+                        owner_ref=f"character:slot_{slot}",
+                        frame=frame,
+                        session_id=session.session_id,
+                        fields=fields,
+                    )
+                return None
         else:
             fields = None
         if fields is not None:

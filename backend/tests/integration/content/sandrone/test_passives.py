@@ -38,8 +38,8 @@ def test_p4_prism_boost_and_drain_stacks(sandrone_assembled):
         max_frames=300,
         constellation=0,
         input_trace=[
-            {"frame": 2, "events": [{"key": "mouse.right", "phase": "press"}]},
-            {"frame": 190, "events": [{"key": "mouse.right", "phase": "release"}]},
+            {"frame": 2, "events": [{"key": "mouse.left", "phase": "press"}]},
+            {"frame": 190, "events": [{"key": "mouse.left", "phase": "release"}]},
             {"frame": 210, "events": [{"key": "keyboard.e", "phase": "press"}]},
             {"frame": E_RELEASE_FRAME, "events": [{"key": "keyboard.e", "phase": "release"}]},
         ],
@@ -84,8 +84,8 @@ def test_p4_locked_before_first_ascension(sandrone_assembled):
         constellation=0,
         level=19,
         input_trace=[
-            {"frame": 2, "events": [{"key": "mouse.right", "phase": "press"}]},
-            {"frame": 190, "events": [{"key": "mouse.right", "phase": "release"}]},
+            {"frame": 2, "events": [{"key": "mouse.left", "phase": "press"}]},
+            {"frame": 190, "events": [{"key": "mouse.left", "phase": "release"}]},
             {"frame": 210, "events": [{"key": "keyboard.e", "phase": "press"}]},
             {"frame": E_RELEASE_FRAME, "events": [{"key": "keyboard.e", "phase": "release"}]},
         ],
@@ -128,8 +128,8 @@ def test_p4_burst_clears_tactics_and_boosts_beam(sandrone_assembled):
         max_frames=560,
         constellation=0,
         input_trace=[
-            {"frame": 2, "events": [{"key": "mouse.right", "phase": "press"}]},
-            {"frame": 190, "events": [{"key": "mouse.right", "phase": "release"}]},
+            {"frame": 2, "events": [{"key": "mouse.left", "phase": "press"}]},
+            {"frame": 190, "events": [{"key": "mouse.left", "phase": "release"}]},
             {"frame": 210, "events": [{"key": "keyboard.e", "phase": "press"}]},
             {"frame": 211, "events": [{"key": "keyboard.e", "phase": "release"}]},
             {"frame": 260, "events": [{"key": "keyboard.q", "phase": "press"}]},

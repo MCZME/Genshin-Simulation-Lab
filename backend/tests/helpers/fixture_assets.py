@@ -42,6 +42,7 @@ def write_fixture_asset_database(
     *,
     elemental_mastery: float | None = None,
     character_handler_key: str = FIXTURE_CHARACTER_HANDLER_KEY,
+    character_weapon_type: str = "sword",
 ) -> Path:
     """写入包含零行为夹具角色的临时 SQLite 资产库。
 
@@ -66,7 +67,7 @@ def write_fixture_asset_database(
                 source_id=FIXTURE_CHARACTER_ASSET_KEY.removeprefix("character:"),
                 name="Fixture Noop",
                 element="hydro",
-                weapon_type="sword",
+                weapon_type=character_weapon_type,
                 rarity=5,
                 burst_energy_cost=60.0,
                 handler_key=character_handler_key,

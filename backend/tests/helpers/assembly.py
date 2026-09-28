@@ -244,17 +244,24 @@ def static_asset_input_payload(
     }
 
 
-def build_reaction_assembled(
+def build_fixture_assembled(
     tmp_path: Path,
     *,
-    meta_name: str = "reaction golden",
+    meta_name: str = "fixture integration",
     max_frames: int = 240,
     target_positions: tuple[float, ...] = (0.0,),
     target_resistances: Mapping[str, float] | None = None,
     elemental_mastery: float | None = None,
+    character_weapon_type: str = "sword",
 ):
+    """零行为夹具角色的单角色装配仿真（领域集成测试共享入口）。"""
+
     asset_db = tmp_path / "assets.db"
-    write_fixture_asset_database(asset_db, elemental_mastery=elemental_mastery)
+    write_fixture_asset_database(
+        asset_db,
+        elemental_mastery=elemental_mastery,
+        character_weapon_type=character_weapon_type,
+    )
     return SimulationAssembler(
         SQLiteAssetRepository(asset_db),
         content_unit_registry=create_default_content_unit_registry(),
@@ -268,4 +275,23 @@ def build_reaction_assembled(
                 target_resistances=target_resistances,
             )
         )
+    )
+
+
+def build_reaction_assembled(
+    tmp_path: Path,
+    *,
+    meta_name: str = "reaction golden",
+    max_frames: int = 240,
+    target_positions: tuple[float, ...] = (0.0,),
+    target_resistances: Mapping[str, float] | None = None,
+    elemental_mastery: float | None = None,
+):
+    return build_fixture_assembled(
+        tmp_path,
+        meta_name=meta_name,
+        max_frames=max_frames,
+        target_positions=target_positions,
+        target_resistances=target_resistances,
+        elemental_mastery=elemental_mastery,
     )

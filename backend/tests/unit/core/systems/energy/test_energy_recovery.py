@@ -1,13 +1,14 @@
 """通用能量回能判定组件单元测试。
 
-对齐通用回能机制规则：触发标签词表、按武器类型的
+对齐通用回能机制规则：按武器类型的
 初始概率与失败递增、概率封顶、成功恢复 1 点并重置、切人不重置、后台不判定、
-每角色独立。数值与概率阶梯全部为规则表直出（见测试规范 §3.2，合成驱动）；
-需要随机结果的分支用种子搜索选取确定的首取样序列。
+每角色独立、帧游标按序消费。数值与概率阶梯全部为规则表直出（见测试规范 §3.2，
+合成驱动）；需要随机结果的分支用种子搜索选取确定的首取样序列。
 """
 
 from __future__ import annotations
 
+from collections.abc import Callable
 from types import SimpleNamespace
 from typing import TYPE_CHECKING, cast
 
@@ -16,24 +17,28 @@ import pytest
 from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.contracts.intents import IntentKind
 from genshin_sim.core.entity_states.energy import EnergyState
+from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import ImpactKind, ImpactRequest
 from genshin_sim.core.simulation.random_source import RandomSource
 from genshin_sim.core.systems.energy import (
-    ENERGY_RECOVERY_RULES_BY_WEAPON_TYPE,
     CharacterEnergyProfile,
     CharacterEnergyStore,
     EnergyElement,
     EnergyRecoveryRule,
     EnergyRecoveryStage,
     EnergyRecoveryStore,
-    is_energy_recovery_trigger_tag,
     recovery_rule_for_weapon_type,
 )
 from genshin_sim.core.systems.energy.errors import (
+    CharacterEnergyNotFoundError,
     EnergyRecoveryError,
     EnergyValidationError,
 )
-from tests.helpers.events import make_damage_resolved_event, make_event_context
+from tests.helpers.events import (
+    make_damage_resolved_event,
+    make_event_context,
+    make_reaction_occurrence_event,
+)
 
 if TYPE_CHECKING:
     from genshin_sim.core.simulation.intent_queue import IntentQueue
@@ -127,57 +132,28 @@ def _judgment(
     stage.update_frame(context, frame)
 
 
-def _seed_whose_first_draws_fail(*thresholds: float) -> int:
-    """选取前 N 次取样全部不低于阈值的种子，让概率阶梯判定全部失败。"""
+def _seed_whose_draws_match(*matches: Callable[[float], bool]) -> int:
+    """选取前 N 次取样依次满足条件的随机种子。"""
 
     for seed in range(100_000):
         source = RandomSource(seed)
-        if all(source.next() >= threshold for threshold in thresholds):
+        if all(match(source.next()) for match in matches):
             return seed
-    raise AssertionError("未找到满足阈值序列的随机种子")
+    raise AssertionError("未找到满足取样序列的随机种子")
+
+
+def _seed_whose_first_draws_fail(*thresholds: float) -> int:
+    """选取前 N 次取样全部不低于阈值的种子，让概率阶梯判定全部失败。"""
+
+    return _seed_whose_draws_match(
+        *(lambda value, bound=threshold: value >= bound for threshold in thresholds)
+    )
 
 
 def _seed_whose_first_draw_succeeds(threshold: float) -> int:
     """选取首取样低于阈值的种子，让首次判定成功。"""
 
-    for seed in range(100_000):
-        if RandomSource(seed).next() < threshold:
-            return seed
-    raise AssertionError("未找到成功判定的随机种子")
-
-
-def test_rules_table_matches_weapon_type_baseline():
-    assert {
-        "sword": EnergyRecoveryRule(0.10, 0.05),
-        "claymore": EnergyRecoveryRule(0.00, 0.10),
-        "polearm": EnergyRecoveryRule(0.00, 0.04),
-        "catalyst": EnergyRecoveryRule(0.00, 0.10),
-        "bow": EnergyRecoveryRule(0.00, 0.05),
-    } == ENERGY_RECOVERY_RULES_BY_WEAPON_TYPE
-
-
-def test_unknown_weapon_type_fails_at_lookup():
-    with pytest.raises(EnergyValidationError):
-        recovery_rule_for_weapon_type("magic")
-
-
-@pytest.mark.parametrize(
-    ("tag", "expected"),
-    [
-        ("普通攻击1", True),
-        ("普通攻击4", True),
-        ("重击", True),
-        ("元素战技", False),
-        ("元素爆发", False),
-        ("下落攻击", False),
-        ("星超导冰", False),
-        ("星扩散冰", False),
-        ("", False),
-        (None, False),
-    ],
-)
-def test_trigger_tag_vocabulary(tag, expected):
-    assert is_energy_recovery_trigger_tag(tag) is expected
+    return _seed_whose_draws_match(lambda value: value < threshold)
 
 
 def test_store_failure_ladder_accumulates_caps_and_success_resets():
@@ -266,7 +242,7 @@ def test_missing_random_source_fails_judgment():
     queue = _IntentQueueStub()
     stage, recovery_store = _stage(queue)
 
-    with pytest.raises(EnergyRecoveryError):
+    with pytest.raises(EnergyRecoveryError, match="缺少装配期注入的仿真随机源"):
         _judgment(stage, "damage:1")
 
     assert queue.enqueued == []
@@ -346,6 +322,119 @@ def test_non_trigger_tags_do_not_consume_random_source():
     assert random_source.draw_count == 0
 
 
+def test_same_frame_events_are_judged_in_event_order():
+    # 同帧两条伤害事实按事件顺序各判定一次：第一条失败累积到 0.15，第二条
+    # 成功重置回 0.10；成功请求携带第二条事实的 request_id 与事件序号。
+    queue = _IntentQueueStub()
+    stage, recovery_store = _stage(
+        queue,
+        rules={REF_1: recovery_rule_for_weapon_type("sword")},
+    )
+    random_source = RandomSource(
+        _seed_whose_draws_match(
+            lambda value: value >= 0.10,
+            lambda value: value < 0.15,
+        )
+    )
+    context = make_event_context(
+        10,
+        (
+            make_damage_resolved_event(10, "damage:a", main_attack_tag="重击"),
+            make_damage_resolved_event(10, "damage:b", main_attack_tag="重击"),
+        ),
+        random_source=random_source,
+    )
+
+    stage.update_frame(context, 10)
+
+    assert random_source.draw_count == 2
+    assert len(queue.enqueued) == 1
+    payload = cast(ImpactRequest, queue.enqueued[0].payload)
+    assert payload.request_id == "energy.recovery:damage:b:10:1"
+    assert recovery_store.next_probability(REF_1) == pytest.approx(0.10)
+
+
+def test_repeated_update_frame_in_same_frame_does_not_reconsume():
+    # 帧游标推进后，同一帧重复调用 update_frame 不重复消费事实。
+    queue = _IntentQueueStub()
+    stage, recovery_store = _stage(
+        queue,
+        rules={REF_1: recovery_rule_for_weapon_type("sword")},
+    )
+    random_source = RandomSource(_seed_whose_first_draws_fail(0.10))
+    context = make_event_context(
+        10,
+        (make_damage_resolved_event(10, "damage:a", main_attack_tag="重击"),),
+        random_source=random_source,
+    )
+
+    stage.update_frame(context, 10)
+    stage.update_frame(context, 10)
+
+    assert random_source.draw_count == 1
+    assert recovery_store.next_probability(REF_1) == pytest.approx(0.15)
+    assert queue.enqueued == []
+
+
+def test_only_damage_resolved_events_with_results_are_judged():
+    # 非 DAMAGE_RESOLVED 事件与无结算结果的事实直接跳过，不消耗随机序列；
+    # 同帧的合法伤害事实仍被正常判定。
+    queue = _IntentQueueStub()
+    stage, recovery_store = _stage(
+        queue,
+        rules={REF_1: recovery_rule_for_weapon_type("sword")},
+    )
+    random_source = RandomSource(_seed_whose_first_draw_succeeds(0.10))
+    context = make_event_context(
+        10,
+        (
+            make_reaction_occurrence_event(10, "reaction:electro_charged", "occurrence:1"),
+            SimpleNamespace(
+                event_type=EventType.DAMAGE_RESOLVED,
+                payload=SimpleNamespace(result=None),
+            ),
+            make_damage_resolved_event(10, "damage:a", main_attack_tag="重击"),
+        ),
+        random_source=random_source,
+    )
+
+    stage.update_frame(context, 10)
+
+    assert random_source.draw_count == 1
+    assert len(queue.enqueued) == 1
+    assert recovery_store.next_probability(REF_1) == pytest.approx(0.10)
+
+
+def test_capped_probability_succeeds_without_consuming_random_source():
+    # 概率封顶 100%：roll(1) 确定成功且不消耗随机序列，恢复后概率重置。
+    # 浮点累积下 10 次 +0.1 只到 0.9999999999999999，第 11 次失败才被钳到精确 1.0。
+    queue = _IntentQueueStub()
+    stage, recovery_store = _stage(queue)
+    random_source = RandomSource(7)
+
+    for _ in range(11):
+        recovery_store.record_failure(REF_1)
+    assert recovery_store.next_probability(REF_1) == 1.0
+
+    _judgment(stage, "damage:1", random_source=random_source)
+
+    assert random_source.draw_count == 0
+    assert len(queue.enqueued) == 1
+    assert recovery_store.next_probability(REF_1) == pytest.approx(0.0)
+
+
+def test_stage_is_idle_regardless_of_judgment_activity():
+    # 回能判定不延长仿真：阶段在任何状态下都报告空闲。
+    queue = _IntentQueueStub()
+    stage, _ = _stage(queue)
+
+    assert stage.is_idle() is True
+
+    _judgment(stage, "damage:1", random_source=RandomSource(_seed_whose_first_draws_fail(0.10)))
+
+    assert stage.is_idle() is True
+
+
 def test_capacity_zero_character_is_not_judged():
     queue = _IntentQueueStub()
     stage, recovery_store = _stage(
@@ -362,8 +451,8 @@ def test_capacity_zero_character_is_not_judged():
     assert random_source.draw_count == 0
 
 
-def test_recovery_store_rejects_duplicate_and_foreign_refs():
-    with pytest.raises(EnergyValidationError):
+def test_recovery_store_rejects_duplicate_character_refs():
+    with pytest.raises(EnergyValidationError, match="角色通用回能主体重复"):
         EnergyRecoveryStore(
             (
                 (REF_1, recovery_rule_for_weapon_type("sword")),
@@ -374,6 +463,9 @@ def test_recovery_store_rejects_duplicate_and_foreign_refs():
             )
         )
 
+
+def test_recovery_store_unknown_character_lookup_fails():
     store = _recovery_store()
-    with pytest.raises(LookupError):
+
+    with pytest.raises(CharacterEnergyNotFoundError, match="角色通用回能判定状态不存在"):
         store.next_probability(AttributeSubjectRef.character("character:slot_3"))

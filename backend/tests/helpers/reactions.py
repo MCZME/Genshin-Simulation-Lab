@@ -156,6 +156,7 @@ def reaction_damage_request(
     *,
     main_attack_tag: str,
     frame: int = 0,
+    scaling_value: float = 1.0,
 ) -> ImpactRequest:
     return ImpactRequest(
         frame=frame,
@@ -168,7 +169,7 @@ def reaction_damage_request(
             impact_ref=request_id,
             main_attack_tag=main_attack_tag,
             element=Element(element.value),
-            scaling_terms=(DamageScalingTerm("atk", STAT_ATK_TOTAL, 1.0),),
+            scaling_terms=(DamageScalingTerm("atk", STAT_ATK_TOTAL, scaling_value),),
             can_crit=False,
             elemental_strength=AuraStrength.WEAK,
             elemental_amount=AuraAmount.one(),

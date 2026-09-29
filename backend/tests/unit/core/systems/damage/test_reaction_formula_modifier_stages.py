@@ -1,12 +1,12 @@
 """反应公式专属修饰项阶段的行为测试。
 
-剧变与星烁公式各自拥有专属 ``DamageModifierStage``，用于承载内容侧（圣遗物、
-天赋等）对反应伤害各乘区的贡献：剧变一个落在反应加成位，星烁两个分别落在
-增伤位与大权区乘数；星烁另与通用公式共享 ``crit_damage_add``。
+剧变与星烁公式各自拥有专属 ``DamageModifierStage``：剧变一个落在反应加成位；
+星烁按位置切分，六个专属阶段分别覆盖基础系数、基础增伤、增伤位、大权区、
+羽毛区与擢升，另外复用通用公式的倍率位、暴击位（暴击率 + 暴击伤害）与抗性位。
 本模块覆盖四条边界：
 
-1. 两公式的 ``allowed_modifier_stages`` 只含本公式专属阶段，且互不重叠；星烁额外共享通用暴伤槽位；
-2. 携带普通阶段的 term 会被公式阶段校验拒绝；
+1. 两公式的 ``allowed_modifier_stages`` 只含本公式的阶段，且互不重叠；
+2. 越界的 term 会被公式阶段校验拒绝；
 3. 专属阶段的 term 会并入公式的对应乘区，叠加在冻结基线上而非替换基线值；
 4. 通用、月曜与激化路径不受该改动影响。
 """
@@ -21,6 +21,8 @@ import pytest
 from genshin_sim.core.attributes import (
     RESISTANCE_ELECTRO,
     STAT_ELEMENTAL_MASTERY,
+    STAT_HP_BASE,
+    STAT_HP_MAX,
     AttributeQueryContext,
     AttributeResolver,
     AttributeSubjectRef,
@@ -54,7 +56,11 @@ from genshin_sim.core.systems.damage.formulas import (
     validate_formula_modifier_stages,
 )
 from genshin_sim.core.systems.damage.keys import FORMULA_KEY_GENERAL
-from genshin_sim.core.systems.damage.models import DamageModifierTerm, DamageRequest
+from genshin_sim.core.systems.damage.models import (
+    DamageModifierTerm,
+    DamageRequest,
+    DamageScalingTerm,
+)
 from genshin_sim.core.systems.damage.modifiers import (
     DamageModifierCollection,
     DamageModifierIndex,
@@ -71,7 +77,41 @@ SOURCE_CONTEXT = RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.reaction_stage
 TRANSFORMATIVE_STAGE = DamageModifierStage.TRANSFORMATIVE_REACTION_BONUS_ADD
 STELLAR_STAGE = DamageModifierStage.STELLAR_REACTION_BONUS_ADD
 AUTHORITY_STAGE = DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD
+STELLAR_BASE_MULTIPLIER_STAGE = DamageModifierStage.STELLAR_BASE_MULTIPLIER_ADD
+STELLAR_BASE_BONUS_STAGE = DamageModifierStage.STELLAR_BASE_BONUS_ADD
+STELLAR_FEATHER_STAGE = DamageModifierStage.STELLAR_FEATHER_ADDITION_ADD
+STELLAR_ASCENSION_STAGE = DamageModifierStage.STELLAR_ASCENSION_BONUS_ADD
+SHARED_COEFFICIENT_PERCENT_STAGE = DamageModifierStage.COMPONENT_COEFFICIENT_PERCENT_ADD
+SHARED_COEFFICIENT_FLAT_STAGE = DamageModifierStage.COMPONENT_COEFFICIENT_FLAT_ADD
+SHARED_CRIT_RATE_STAGE = DamageModifierStage.CRIT_RATE_ADD
 SHARED_CRIT_DAMAGE_STAGE = DamageModifierStage.CRIT_DAMAGE_ADD
+SHARED_RESISTANCE_STAGE = DamageModifierStage.RESISTANCE_ADD
+
+# 星烁自己的位置：只有星烁公式放行。
+STELLAR_ONLY_STAGES = frozenset(
+    {
+        STELLAR_BASE_MULTIPLIER_STAGE,
+        STELLAR_BASE_BONUS_STAGE,
+        STELLAR_STAGE,
+        AUTHORITY_STAGE,
+        STELLAR_FEATHER_STAGE,
+        STELLAR_ASCENSION_STAGE,
+    }
+)
+# 与通用公式共享的位置：星烁复用通用阶段，不另设同名阶段。
+STELLAR_SHARED_STAGES = frozenset(
+    {
+        SHARED_COEFFICIENT_PERCENT_STAGE,
+        SHARED_COEFFICIENT_FLAT_STAGE,
+        SHARED_CRIT_RATE_STAGE,
+        SHARED_CRIT_DAMAGE_STAGE,
+        SHARED_RESISTANCE_STAGE,
+    }
+)
+
+DIRECT_COMPONENT_KEY = "stellar.direct"
+DIRECT_SCALING_TERMS = (DamageScalingTerm(DIRECT_COMPONENT_KEY, STAT_HP_MAX, 1.0),)
+BASE_HP = 1000.0
 
 
 def _attribute_resolver() -> AttributeResolver:
@@ -81,6 +121,7 @@ def _attribute_resolver() -> AttributeResolver:
         base_attributes=BaseAttributeSet(
             (
                 (SOURCE, BaseAttributeContribution(STAT_ELEMENTAL_MASTERY, 0.0, SOURCE_CONTEXT)),
+                (SOURCE, BaseAttributeContribution(STAT_HP_BASE, BASE_HP, SOURCE_CONTEXT)),
                 (TARGET, BaseAttributeContribution(RESISTANCE_ELECTRO, 0.0, SOURCE_CONTEXT)),
             )
         ),
@@ -133,6 +174,7 @@ def _query(
     reaction_value: Any,
     *,
     can_crit: bool = True,
+    scaling_terms: tuple[DamageScalingTerm, ...] = (),
 ) -> DamageQuery:
     request = DamageRequest(
         **cast(
@@ -150,6 +192,7 @@ def _query(
                 "element": Element.ELECTRO,
                 "source_context": SOURCE_CONTEXT,
                 "can_crit": can_crit,
+                "scaling_terms": scaling_terms,
                 reaction_field: reaction_value,
             },
         )
@@ -182,11 +225,11 @@ def _stellar_query(
         "stellar_reaction",
         StellarReactionDamageInput(
             mode="character_direct",
-            scaling_value=1000.0,
             stellar_base_multiplier=1.6,
             stellar_bonus=stellar_bonus,
             stellar_authority_multiplier=stellar_authority_multiplier,
         ),
+        scaling_terms=DIRECT_SCALING_TERMS,
     )
 
 
@@ -197,9 +240,7 @@ def _collect(query: DamageQuery, *terms: DamageModifierTerm) -> DamageModifierCo
     if terms:
         providers: tuple[StaticDamageModifierProvider, ...] = (_provider(*terms),)
     else:
-        providers = (
-            _provider(writes=frozenset({STELLAR_STAGE, AUTHORITY_STAGE, TRANSFORMATIVE_STAGE})),
-        )
+        providers = (_provider(writes=frozenset({*STELLAR_ONLY_STAGES, TRANSFORMATIVE_STAGE})),)
     return DamageModifierIndex(providers).collect(query, session)
 
 
@@ -214,13 +255,10 @@ def _context(query: DamageQuery, modifiers: Any) -> DamageFormulaContext:
 
 
 def test_reaction_stage_allowlists_are_formula_specific_and_disjoint() -> None:
-    """白名单各自含本公式专属阶段；星烁额外共享通用暴伤槽位，两者互不重叠。"""
+    """白名单按位置切分：星烁放行自己的六个阶段与五个共享阶段，两者互不重叠。"""
 
     assert frozenset({TRANSFORMATIVE_STAGE}) == TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES
-    assert (
-        frozenset({STELLAR_STAGE, AUTHORITY_STAGE, SHARED_CRIT_DAMAGE_STAGE})
-        == STELLAR_ALLOWED_MODIFIER_STAGES
-    )
+    assert STELLAR_ONLY_STAGES | STELLAR_SHARED_STAGES == STELLAR_ALLOWED_MODIFIER_STAGES
     assert not TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES & STELLAR_ALLOWED_MODIFIER_STAGES
 
 
@@ -230,6 +268,10 @@ def test_reaction_stage_values_follow_existing_naming_style() -> None:
     assert TRANSFORMATIVE_STAGE.value == "transformative_reaction_bonus_add"
     assert STELLAR_STAGE.value == "stellar_reaction_bonus_add"
     assert AUTHORITY_STAGE.value == "stellar_authority_multiplier_add"
+    assert STELLAR_BASE_MULTIPLIER_STAGE.value == "stellar_base_multiplier_add"
+    assert STELLAR_BASE_BONUS_STAGE.value == "stellar_base_bonus_add"
+    assert STELLAR_FEATHER_STAGE.value == "stellar_feather_addition_add"
+    assert STELLAR_ASCENSION_STAGE.value == "stellar_ascension_bonus_add"
 
 
 def test_formula_specs_expose_the_new_stages() -> None:
@@ -238,8 +280,9 @@ def test_formula_specs_expose_the_new_stages() -> None:
     assert TransformativeReactionDamageFormula().formula_spec.allowed_modifier_stages == (
         frozenset({TRANSFORMATIVE_STAGE})
     )
-    assert StellarReactionDamageFormula().formula_spec.allowed_modifier_stages == (
-        frozenset({STELLAR_STAGE, AUTHORITY_STAGE, SHARED_CRIT_DAMAGE_STAGE})
+    assert (
+        StellarReactionDamageFormula().formula_spec.allowed_modifier_stages
+        == STELLAR_ONLY_STAGES | STELLAR_SHARED_STAGES
     )
 
 
@@ -350,14 +393,13 @@ def test_frozen_authority_baseline_passes_through_without_terms() -> None:
     "stage",
     (
         DamageModifierStage.DAMAGE_BONUS_ADD,
-        DamageModifierStage.CRIT_RATE_ADD,
         DamageModifierStage.DEFENSE_REDUCTION,
-        DamageModifierStage.RESISTANCE_ADD,
+        DamageModifierStage.DEFENSE_IGNORE,
         DamageModifierStage.BASE_DAMAGE_FLAT_ADD,
     ),
 )
 def test_reaction_formulas_reject_ordinary_stages(stage: DamageModifierStage) -> None:
-    """普通阶段在两个反应公式处都被阶段校验拒绝。"""
+    """星烁公式里没有对应位置的普通阶段在两个反应公式处都被拒绝。"""
 
     for formula_spec, query in (
         (TransformativeReactionDamageFormula().formula_spec, _transformative_query()),
@@ -366,6 +408,45 @@ def test_reaction_formulas_reject_ordinary_stages(stage: DamageModifierStage) ->
         modifiers = _collect(query, _term(stage, 0.1))
         with pytest.raises(DamageProviderViolationError):
             validate_formula_modifier_stages(formula_spec, modifiers)
+
+
+@pytest.mark.parametrize(
+    "stage",
+    (
+        SHARED_COEFFICIENT_PERCENT_STAGE,
+        SHARED_COEFFICIENT_FLAT_STAGE,
+        SHARED_CRIT_RATE_STAGE,
+        SHARED_CRIT_DAMAGE_STAGE,
+        SHARED_RESISTANCE_STAGE,
+    ),
+)
+def test_stellar_formula_shares_common_stages_the_transformative_formula_rejects(
+    stage: DamageModifierStage,
+) -> None:
+    """星烁与通用公式共享倍率/暴击/抗性位置：星烁放行，剧变仍拒绝。"""
+
+    component_key = (
+        DIRECT_COMPONENT_KEY
+        if stage in {SHARED_COEFFICIENT_PERCENT_STAGE, SHARED_COEFFICIENT_FLAT_STAGE}
+        else None
+    )
+    term = DamageModifierTerm(
+        stage=stage,
+        value=0.5,
+        provider_key="test.reaction_stage",
+        source_ref=SOURCE_CONTEXT,
+        component_key=component_key,
+    )
+    validate_formula_modifier_stages(
+        StellarReactionDamageFormula().formula_spec,
+        _collect(_stellar_query(), term),
+    )
+
+    with pytest.raises(DamageProviderViolationError):
+        validate_formula_modifier_stages(
+            TransformativeReactionDamageFormula().formula_spec,
+            _collect(_transformative_query(), term),
+        )
 
 
 def test_stellar_formula_shares_common_crit_damage_stage() -> None:

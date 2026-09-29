@@ -555,8 +555,11 @@ class DamageRequest:
                 raise DamageValidationError("非剧变伤害不能提供二次增幅反应输入")
             if self.amplifying_reaction is not None and self.catalyze_reaction is not None:
                 raise DamageValidationError("通用公式不能同时携带增幅与激化输入")
-        if self.formula_key is FORMULA_KEY_STELLAR_REACTION and (terms or flat_base_damage != 0):
-            raise DamageValidationError("星烁伤害不能携带普通倍率或 flat base")
+        # 星烁公式的倍率与属性分别由 scaling_terms 的 coefficient 与 attribute_key
+        # 承载，因此普通倍率必须允许；固定基础伤害在星烁公式中没有对应位置，
+        # 仍由请求边界拒绝，避免加值落进错误的乘区。
+        if self.formula_key is FORMULA_KEY_STELLAR_REACTION and flat_base_damage != 0:
+            raise DamageValidationError("星烁伤害不能携带 flat base")
         if self.catalyze_reaction is not None:
             if not isinstance(self.catalyze_reaction, CatalyzeReactionInput):
                 raise DamageValidationError("catalyze_reaction 不受支持")

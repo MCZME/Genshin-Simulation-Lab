@@ -100,7 +100,7 @@ from genshin_sim.core.systems.damage.resolver import DamageResolutionSession, Da
 from genshin_sim.core.systems.damage.stellar import (
     StellarReactionDamageInput,
     StellarReactionDamageResolution,
-    resolve_stellar_reaction_damage,
+    StellarZoneSlotAudit,
 )
 
 __all__ = [
@@ -171,7 +171,7 @@ __all__ = [
     "LunarReactionParticipantInput",
     "StellarReactionDamageInput",
     "StellarReactionDamageResolution",
-    "resolve_stellar_reaction_damage",
+    "StellarZoneSlotAudit",
     "IdentityGeneralReactionZonePolicy",
     "InvalidDamageScalingError",
     "ResistanceResolution",

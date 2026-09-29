@@ -3315,7 +3315,6 @@ def _stellar_input(
 
     return StellarReactionDamageInput(
         mode="reaction_composite",
-        scaling_value=0.0,
         stellar_base_multiplier=effect.stellar_base_multiplier,
         participants=_stellar_participant_inputs(context, effect),
     )

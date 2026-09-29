@@ -25,6 +25,7 @@ from genshin_sim.core.systems.damage.formulas import (
     validate_formula_modifier_stages,
 )
 from genshin_sim.core.systems.damage.models import (
+    DamageModifierTerm,
     DamageQuery,
     DamageResult,
     DefenseResolution,
@@ -40,6 +41,7 @@ from genshin_sim.core.systems.damage.modifiers import (
     DamageModifierIndex,
     DamageModifierProviderSpec,
 )
+from genshin_sim.core.systems.damage.stellar import STELLAR_SLOT_BASE_MULTIPLIER
 
 
 @dataclass(slots=True)
@@ -184,6 +186,17 @@ def _build_damage_result(
     """把公式专属 resolution 映射回第一轮兼容的扁平结果模型。"""
 
     if isinstance(resolution, StellarReactionDamageResolution):
+        # 星烁的括号值（倍率区 × 基础系数 × 基础增伤 × 精通增伤区 × 大权区 + 羽毛区）
+        # 落在 base_damage，与月曜同构；暴击、抗性、擢升留在各自乘区字段，
+        # 因此扁平模型不再出现"没有字段承载的乘区"。
+        scaling = resolution.scaling
+        # 复合模式的逐参与者账本在 components[].modifier_terms，顶层不重复列入。
+        if trace_level is TraceLevel.NONE or resolution.components:
+            applied_terms: tuple[DamageModifierTerm, ...] = ()
+            rejected_terms: tuple[DamageModifierTerm, ...] = ()
+        else:
+            applied_terms = (*modifiers.applied_terms, *resolution.panel_terms)
+            rejected_terms = modifiers.rejected_terms if trace_level is TraceLevel.FULL else ()
         return DamageResult(
             request_id=query.request.request_id,
             frame=query.request.frame,
@@ -192,7 +205,7 @@ def _build_damage_result(
             source_ref=query.request.source_ref,
             target_ref=query.request.target_ref,
             element=query.request.element,
-            base_damage=resolution.input.scaling_value,
+            base_damage=resolution.base_damage,
             base_damage_additions=(),
             damage_bonus_multiplier=1.0,
             crit_outcome=(
@@ -203,9 +216,7 @@ def _build_damage_result(
             crit_rate=0.0 if resolution.critical is None else resolution.critical.crit_rate,
             crit_damage=(0.0 if resolution.critical is None else resolution.critical.crit_damage),
             crit_multiplier=(
-                resolution.input.critical_multiplier
-                if resolution.critical is None
-                else resolution.critical.multiplier
+                1.0 if resolution.critical is None else resolution.critical.multiplier
             ),
             reaction_multiplier=1.0,
             defense=DefenseResolution(
@@ -216,10 +227,7 @@ def _build_damage_result(
                 multiplier=1.0,
             ),
             resistance=(
-                ResistanceResolution(
-                    resistance=resolution.input.resistance_multiplier,
-                    multiplier=resolution.input.resistance_multiplier,
-                )
+                ResistanceResolution(resistance=0.0, multiplier=1.0)
                 if resolution.resistance is None
                 else resolution.resistance
             ),
@@ -229,18 +237,21 @@ def _build_damage_result(
             damage_name=query.request.damage_name,
             stellar_reaction_resolution=resolution,
             critical_zone=resolution.critical,
+            component_results=(() if scaling is None else tuple(scaling.component_results)),
             source_attribute_trace=(
                 () if trace_level is TraceLevel.NONE else resolution.source_attribute_trace
             ),
             target_attribute_trace=(
                 () if trace_level is TraceLevel.NONE else resolution.target_attribute_trace
             ),
-            applied_terms=(),
-            rejected_terms=(),
+            applied_terms=applied_terms,
+            rejected_terms=rejected_terms,
             trace_level=trace_level,
             trace_metadata={
                 "stellar_mode": resolution.input.mode,
-                "stellar_base_multiplier": resolution.input.stellar_base_multiplier,
+                "stellar_base_multiplier": resolution.merged_slot(
+                    STELLAR_SLOT_BASE_MULTIPLIER, resolution.input.stellar_base_multiplier
+                ),
                 "stellar_mastery_bonus": resolution.mastery_bonus,
             },
         )

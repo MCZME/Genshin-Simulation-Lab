@@ -74,3 +74,21 @@ def test_composite_team_wide_bonus_still_applies_to_every_participant() -> None:
 
     for ref in (stellar.SOURCE, stellar.OTHER):
         assert boosted[ref] > baseline[ref]
+
+
+def test_composite_collects_authority_zone_modifier_per_participant() -> None:
+    """大权区阶段在复合路径同样逐参与者收集，只抬高它自己那份组分。
+
+    另一组分不受影响，且抬升倍数恰好等于「加算到大权区乘数」：
+    基线 1.0 + 0.5 → 1.5 倍（不是乘进增伤位括号）。
+    """
+
+    baseline = _component_damage(_resolve())
+    boosted = _component_damage(
+        _resolve(
+            stellar.OwnerScopedProvider(stellar.SOURCE, stellar.STELLAR_AUTHORITY_STAGE, BONUS)
+        )
+    )
+
+    assert boosted[stellar.SOURCE] == pytest.approx(baseline[stellar.SOURCE] * (1.0 + BONUS))
+    assert boosted[stellar.OTHER] == pytest.approx(baseline[stellar.OTHER])

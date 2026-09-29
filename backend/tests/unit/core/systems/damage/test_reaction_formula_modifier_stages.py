@@ -1,12 +1,13 @@
 """反应公式专属修饰项阶段的行为测试。
 
-剧变与星烁公式各自拥有一个专属 ``DamageModifierStage``，用于承载内容侧
-（圣遗物等）对反应伤害加成位的贡献；星烁另与通用公式共享 ``crit_damage_add``。
+剧变与星烁公式各自拥有专属 ``DamageModifierStage``，用于承载内容侧（圣遗物、
+天赋等）对反应伤害各乘区的贡献：剧变一个落在反应加成位，星烁两个分别落在
+增伤位与大权区乘数；星烁另与通用公式共享 ``crit_damage_add``。
 本模块覆盖四条边界：
 
 1. 两公式的 ``allowed_modifier_stages`` 只含本公式专属阶段，且互不重叠；星烁额外共享通用暴伤槽位；
 2. 携带普通阶段的 term 会被公式阶段校验拒绝；
-3. 专属阶段的 term 会并入公式的反应加成位（精通区加算），不替换冻结基线值；
+3. 专属阶段的 term 会并入公式的对应乘区，叠加在冻结基线上而非替换基线值；
 4. 通用、月曜与激化路径不受该改动影响。
 """
 
@@ -69,6 +70,7 @@ SOURCE_CONTEXT = RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.reaction_stage
 
 TRANSFORMATIVE_STAGE = DamageModifierStage.TRANSFORMATIVE_REACTION_BONUS_ADD
 STELLAR_STAGE = DamageModifierStage.STELLAR_REACTION_BONUS_ADD
+AUTHORITY_STAGE = DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD
 SHARED_CRIT_DAMAGE_STAGE = DamageModifierStage.CRIT_DAMAGE_ADD
 
 
@@ -170,7 +172,11 @@ def _transformative_query(*, reaction_bonus: float = 0.0) -> DamageQuery:
     )
 
 
-def _stellar_query(*, stellar_bonus: float = 0.0) -> DamageQuery:
+def _stellar_query(
+    *,
+    stellar_bonus: float = 0.0,
+    stellar_authority_multiplier: float = 1.0,
+) -> DamageQuery:
     return _query(
         FORMULA_KEY_STELLAR_REACTION,
         "stellar_reaction",
@@ -179,6 +185,7 @@ def _stellar_query(*, stellar_bonus: float = 0.0) -> DamageQuery:
             scaling_value=1000.0,
             stellar_base_multiplier=1.6,
             stellar_bonus=stellar_bonus,
+            stellar_authority_multiplier=stellar_authority_multiplier,
         ),
     )
 
@@ -190,7 +197,9 @@ def _collect(query: DamageQuery, *terms: DamageModifierTerm) -> DamageModifierCo
     if terms:
         providers: tuple[StaticDamageModifierProvider, ...] = (_provider(*terms),)
     else:
-        providers = (_provider(writes=frozenset({STELLAR_STAGE, TRANSFORMATIVE_STAGE})),)
+        providers = (
+            _provider(writes=frozenset({STELLAR_STAGE, AUTHORITY_STAGE, TRANSFORMATIVE_STAGE})),
+        )
     return DamageModifierIndex(providers).collect(query, session)
 
 
@@ -208,7 +217,10 @@ def test_reaction_stage_allowlists_are_formula_specific_and_disjoint() -> None:
     """白名单各自含本公式专属阶段；星烁额外共享通用暴伤槽位，两者互不重叠。"""
 
     assert frozenset({TRANSFORMATIVE_STAGE}) == TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES
-    assert frozenset({STELLAR_STAGE, SHARED_CRIT_DAMAGE_STAGE}) == STELLAR_ALLOWED_MODIFIER_STAGES
+    assert (
+        frozenset({STELLAR_STAGE, AUTHORITY_STAGE, SHARED_CRIT_DAMAGE_STAGE})
+        == STELLAR_ALLOWED_MODIFIER_STAGES
+    )
     assert not TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES & STELLAR_ALLOWED_MODIFIER_STAGES
 
 
@@ -217,6 +229,7 @@ def test_reaction_stage_values_follow_existing_naming_style() -> None:
 
     assert TRANSFORMATIVE_STAGE.value == "transformative_reaction_bonus_add"
     assert STELLAR_STAGE.value == "stellar_reaction_bonus_add"
+    assert AUTHORITY_STAGE.value == "stellar_authority_multiplier_add"
 
 
 def test_formula_specs_expose_the_new_stages() -> None:
@@ -226,7 +239,7 @@ def test_formula_specs_expose_the_new_stages() -> None:
         frozenset({TRANSFORMATIVE_STAGE})
     )
     assert StellarReactionDamageFormula().formula_spec.allowed_modifier_stages == (
-        frozenset({STELLAR_STAGE, SHARED_CRIT_DAMAGE_STAGE})
+        frozenset({STELLAR_STAGE, AUTHORITY_STAGE, SHARED_CRIT_DAMAGE_STAGE})
     )
 
 
@@ -274,6 +287,63 @@ def test_multiple_terms_on_same_stage_are_summed() -> None:
         )
     )
     assert math.isclose(resolution.official_damage, 1600.0 * 1.4, abs_tol=1e-9)
+
+
+def test_authority_stage_adds_to_the_authority_multiplier_not_the_bonus_bracket() -> None:
+    """大权区阶段加算到大权区乘数，与增伤位是两个乘区。
+
+    基线 1000 * 1.6 * (1 + 0 精通 + 1.0 增伤) = 3200；大权区 +0.5 后乘 1.5 得 4800。
+    若误并入增伤位括号会得到 1600 * 2.5 = 4000，本断言正是用来分开这两个乘区。
+    """
+
+    query = _stellar_query(stellar_bonus=1.0)
+    resolution = StellarReactionDamageFormula().resolve(
+        _context(query, _collect(query, _term(AUTHORITY_STAGE, 0.5)))
+    )
+    assert math.isclose(resolution.official_damage, 4800.0, abs_tol=1e-9)
+
+
+def test_authority_stage_adds_on_top_of_the_frozen_authority_baseline() -> None:
+    """大权区阶段叠加在调用方冻结的大权区乘数上，不替换基线。"""
+
+    query = _stellar_query(stellar_authority_multiplier=1.3)
+    resolution = StellarReactionDamageFormula().resolve(
+        _context(query, _collect(query, _term(AUTHORITY_STAGE, 0.2)))
+    )
+    # 基线 1600 * 1.3，叠加 +0.2 后乘 1.5。
+    assert math.isclose(resolution.official_damage, 2400.0, abs_tol=1e-9)
+
+
+def test_multiple_authority_terms_are_summed() -> None:
+    """同一大权区阶段的多个 term 按 fsum 汇总。"""
+
+    query = _stellar_query()
+    resolution = StellarReactionDamageFormula().resolve(
+        _context(
+            query,
+            _collect(query, _term(AUTHORITY_STAGE, 0.25), _term(AUTHORITY_STAGE, 0.25)),
+        )
+    )
+    assert math.isclose(resolution.official_damage, 1600.0 * 1.5, abs_tol=1e-9)
+
+
+def test_merged_authority_multiplier_is_written_into_the_zone_audit() -> None:
+    """合并后的大权区乘数写进审计，与实算一致。"""
+
+    query = _stellar_query()
+    resolution = StellarReactionDamageFormula().resolve(
+        _context(query, _collect(query, _term(AUTHORITY_STAGE, 0.4)))
+    )
+    assert resolution.to_dict()["stellar_authority_multiplier"] == pytest.approx(1.4)
+
+
+def test_frozen_authority_baseline_passes_through_without_terms() -> None:
+    """无大权区词条时，冻结的大权区乘数原样进入公式与审计。"""
+
+    query = _stellar_query(stellar_authority_multiplier=1.7)
+    resolution = StellarReactionDamageFormula().resolve(_context(query, _collect(query)))
+    assert math.isclose(resolution.official_damage, 1600.0 * 1.7, abs_tol=1e-9)
+    assert resolution.to_dict()["stellar_authority_multiplier"] == pytest.approx(1.7)
 
 
 @pytest.mark.parametrize(
@@ -331,11 +401,23 @@ def test_reaction_formulas_reject_each_others_stage() -> None:
         )
 
 
+def test_authority_stage_is_rejected_by_non_stellar_formulas() -> None:
+    """大权区阶段是星烁公式专属：剧变公式拒绝它。"""
+
+    transformative_query = _transformative_query()
+    with pytest.raises(DamageProviderViolationError):
+        validate_formula_modifier_stages(
+            TransformativeReactionDamageFormula().formula_spec,
+            _collect(transformative_query, _term(AUTHORITY_STAGE, 0.5)),
+        )
+
+
 def test_other_formulas_do_not_allow_reaction_stages() -> None:
     """通用、月曜与激化路径的白名单不含反应专属阶段。"""
 
     assert TRANSFORMATIVE_STAGE not in GENERAL_ALLOWED_MODIFIER_STAGES
     assert STELLAR_STAGE not in GENERAL_ALLOWED_MODIFIER_STAGES
+    assert AUTHORITY_STAGE not in GENERAL_ALLOWED_MODIFIER_STAGES
     assert (
         TRANSFORMATIVE_STAGE
         not in LunarReactionDamageFormula(

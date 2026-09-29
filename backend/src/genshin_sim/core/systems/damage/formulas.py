@@ -112,6 +112,9 @@ TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES = frozenset(
 STELLAR_ALLOWED_MODIFIER_STAGES = frozenset(
     {
         DamageModifierStage.STELLAR_REACTION_BONUS_ADD,
+        # 大权区乘数没有面板来源：内容效果是它唯一的贡献入口，因此另设专属阶段，
+        # 与增伤位阶段分处不同乘区（见 D-075 变更记录）。
+        DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD,
         # 暴击伤害与通用公式共用同一槽位：星烁伤害的暴击区本来就读取面板暴伤，
         # 因此不另设专属阶段，作用范围由 provider 自筛 formula_key 决定，
         # 与 crit_rate_add 的处理方式一致。
@@ -715,6 +718,10 @@ class StellarReactionDamageFormula:
             modifier_terms,
             DamageModifierStage.STELLAR_REACTION_BONUS_ADD,
         )
+        stellar_authority_add = _sum_terms(
+            modifier_terms,
+            DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD,
+        )
         if stellar.mode == "reaction_composite":
             if not stellar.participants:
                 raise DamageFormulaInputError("反应星烁复合伤害必须提供参与者列表")
@@ -741,11 +748,16 @@ class StellarReactionDamageFormula:
         resistance = self.resistance_policy.resolve(resistance_attribute.final_value)
 
         # 输入中的精通/暴击/抗性是调用方预冻结快照；结算分支始终以实时读取覆盖。
-        # 专属修饰项并入 stellar_bonus（精通区加算位），不替换调用方冻结的基线值。
+        # 专属修饰项分别并入 stellar_bonus（增伤位加算括号）与大权区乘数（加算），
+        # 均叠加在调用方冻结的基线之上，不替换基线值。合并结果写进 resolved_input，
+        # 使 to_dict() 的区间审计与实算一致。
         resolved_input = replace(
             stellar,
             elemental_mastery=elemental_mastery,
             stellar_bonus=stellar.stellar_bonus + stellar_bonus_add,
+            stellar_authority_multiplier=(
+                stellar.stellar_authority_multiplier + stellar_authority_add
+            ),
             critical_multiplier=critical.multiplier,
             resistance_multiplier=resistance.multiplier,
         )
@@ -862,6 +874,10 @@ class StellarReactionDamageFormula:
             component_terms,
             DamageModifierStage.STELLAR_REACTION_BONUS_ADD,
         )
+        stellar_authority_add = _sum_terms(
+            component_terms,
+            DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD,
+        )
         mastery_trace = component_session.resolve_source(STAT_ELEMENTAL_MASTERY)
         elemental_mastery = validate_damage_float(
             mastery_trace.final_value,
@@ -885,7 +901,9 @@ class StellarReactionDamageFormula:
             elemental_mastery=elemental_mastery,
             stellar_base_bonus=participant.stellar_base_bonus,
             stellar_bonus=participant.stellar_bonus + stellar_bonus_add,
-            stellar_authority_multiplier=participant.stellar_authority_multiplier,
+            stellar_authority_multiplier=(
+                participant.stellar_authority_multiplier + stellar_authority_add
+            ),
             feather_addition=participant.stellar_feather_addition,
             critical_multiplier=critical.multiplier,
             resistance_multiplier=resistance.multiplier,

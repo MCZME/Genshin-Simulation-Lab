@@ -40,6 +40,7 @@ SOURCE_CONTEXT = RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.stellar")
 
 CRIT_DAMAGE_STAGE = DamageModifierStage.CRIT_DAMAGE_ADD
 STELLAR_BONUS_STAGE = DamageModifierStage.STELLAR_REACTION_BONUS_ADD
+STELLAR_AUTHORITY_STAGE = DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD
 
 
 def make_attribute_resolver() -> AttributeResolver:

@@ -44,6 +44,11 @@ from genshin_sim.core.systems.damage.keys import (
     FORMULA_KEY_TRANSFORMATIVE_REACTION,
     KNOWN_FORMULA_KEYS,
 )
+from genshin_sim.core.systems.damage.lunar import (
+    LunarZoneDamage,
+    LunarZoneSlotAudit,
+    resolve_lunar_zone_damage,
+)
 from genshin_sim.core.systems.damage.models import (
     AmplifyingReactionInput,
     BaseDamageAddition,
@@ -168,6 +173,9 @@ __all__ = [
     "LunarReactionDamageInput",
     "LunarReactionDamageMode",
     "LunarReactionDamageResolution",
+    "LunarZoneDamage",
+    "LunarZoneSlotAudit",
+    "resolve_lunar_zone_damage",
     "LunarReactionParticipantInput",
     "StellarReactionDamageInput",
     "StellarReactionDamageResolution",

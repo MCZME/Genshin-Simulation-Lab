@@ -16,7 +16,7 @@ from genshin_sim.core.attributes import (
     ProviderAttributeSubjectScope,
     TraceLevel,
 )
-from genshin_sim.core.systems.damage.enums import CritOutcome
+from genshin_sim.core.systems.damage.enums import CritOutcome, LunarReactionDamageMode
 from genshin_sim.core.systems.damage.errors import DamageProviderViolationError
 from genshin_sim.core.systems.damage.formulas import (
     DamageFormulaContext,
@@ -257,6 +257,15 @@ def _build_damage_result(
         )
 
     if isinstance(resolution, LunarReactionDamageResolution):
+        # 月曜的扁平结果取排名第一组分的实时读取投影；槽位账单在直伤模式下提到
+        # 顶层，复合模式的账本在 components[].modifier_terms 内各自保留。
+        top = resolution.components[0]
+        lunar_direct = resolution.reaction.mode is LunarReactionDamageMode.CHARACTER_DIRECT
+        lunar_applied_terms: tuple[DamageModifierTerm, ...] = (
+            ()
+            if trace_level is TraceLevel.NONE or not lunar_direct
+            else (*modifiers.applied_terms, *resolution.panel_terms)
+        )
         return DamageResult(
             request_id=query.request.request_id,
             frame=query.request.frame,
@@ -268,10 +277,10 @@ def _build_damage_result(
             base_damage=resolution.weighted_base_damage,
             base_damage_additions=(),
             damage_bonus_multiplier=1.0,
-            crit_outcome=CritOutcome.NOT_APPLICABLE,
-            crit_rate=0.0,
-            crit_damage=0.0,
-            crit_multiplier=1.0,
+            crit_outcome=top.critical.outcome,
+            crit_rate=top.critical.crit_rate,
+            crit_damage=top.critical.crit_damage,
+            crit_multiplier=top.critical.multiplier,
             reaction_multiplier=1.0,
             defense=DefenseResolution(
                 source_level=query.request.source_level,
@@ -286,18 +295,22 @@ def _build_damage_result(
             final_damage=resolution.final_damage,
             damage_name=query.request.damage_name,
             lunar_reaction_resolution=resolution,
+            critical_zone=top.critical,
             source_attribute_trace=(
                 () if trace_level is TraceLevel.NONE else resolution.source_attribute_trace
             ),
             target_attribute_trace=(
                 () if trace_level is TraceLevel.NONE else resolution.target_attribute_trace
             ),
-            applied_terms=(),
-            rejected_terms=(),
+            applied_terms=lunar_applied_terms,
+            rejected_terms=(
+                modifiers.rejected_terms if trace_level is TraceLevel.FULL and lunar_direct else ()
+            ),
             trace_level=trace_level,
             trace_metadata={
                 "lunar_mode": resolution.reaction.mode.value,
                 "lunar_participant_count": len(resolution.components),
+                "lunar_slots": {slot.slot_key: slot.merged for slot in resolution.slots},
             },
         )
 
@@ -332,13 +345,19 @@ def _build_damage_result(
             target_attribute_trace=(
                 () if trace_level is TraceLevel.NONE else resolution.target_attribute_trace
             ),
-            applied_terms=(),
-            rejected_terms=(),
+            # 槽位账单 = 本次伤害效果词条 + 面板属性读取词条。剧变已开放抗性位，
+            # 目标面板抗性读取因此进入账单；未开放的位置不产生面板词条。
+            applied_terms=(
+                ()
+                if trace_level is TraceLevel.NONE
+                else (*modifiers.applied_terms, *resolution.panel_terms)
+            ),
+            rejected_terms=modifiers.rejected_terms if trace_level is TraceLevel.FULL else (),
             trace_level=trace_level,
             trace_metadata={"defense_policy": resolution.reaction.defense_policy},
         )
 
-    # 槽位账单 = 本次伤害效果词条 + 面板属性读取词条；剧变/月曜路径保持无账单。
+    # 通用公式的槽位账单 = 本次伤害效果词条 + 面板属性读取词条。
     applied_terms = (
         ()
         if trace_level is TraceLevel.NONE

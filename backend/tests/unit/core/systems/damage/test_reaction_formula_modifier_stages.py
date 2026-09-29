@@ -1,14 +1,20 @@
 """反应公式专属修饰项阶段的行为测试。
 
-剧变与星烁公式各自拥有专属 ``DamageModifierStage``：剧变一个落在反应加成位；
-星烁按位置切分，六个专属阶段分别覆盖基础系数、基础增伤、增伤位、大权区、
-羽毛区与擢升，另外复用通用公式的倍率位、暴击位（暴击率 + 暴击伤害）与抗性位。
+三个反应公式各自拥有专属 ``DamageModifierStage``：
+
+- 剧变一个落在反应加成位，并与通用公式共享抗性位；
+- 星烁按位置切分，六个专属阶段分别覆盖基础系数、基础增伤、增伤位、大权区、
+  羽毛区与擢升，另外复用通用公式的倍率位、暴击位（暴击率 + 暴击伤害）与抗性位；
+- 月曜按位置切分，四个专属阶段分别覆盖基础伤害提升、反应加成、附加伤害与擢升，
+  另外复用通用公式的暴击位与抗性位；倍率位与反应系数位不开放（详见 formulas.py）。
+
 本模块覆盖四条边界：
 
-1. 两公式的 ``allowed_modifier_stages`` 只含本公式的阶段，且互不重叠；
+1. 三个公式的 ``allowed_modifier_stages`` 只含本公式的专属阶段与共享的通用阶段，
+   且各公式的专属阶段互不重叠；
 2. 越界的 term 会被公式阶段校验拒绝；
 3. 专属阶段的 term 会并入公式的对应乘区，叠加在冻结基线上而非替换基线值；
-4. 通用、月曜与激化路径不受该改动影响。
+4. 通用与激化路径不受该改动影响。
 """
 
 from __future__ import annotations
@@ -48,6 +54,7 @@ from genshin_sim.core.systems.damage.enums import DamageModifierStage
 from genshin_sim.core.systems.damage.errors import DamageProviderViolationError
 from genshin_sim.core.systems.damage.formulas import (
     GENERAL_ALLOWED_MODIFIER_STAGES,
+    LUNAR_ALLOWED_MODIFIER_STAGES,
     STELLAR_ALLOWED_MODIFIER_STAGES,
     TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES,
     LunarReactionDamageFormula,
@@ -60,6 +67,9 @@ from genshin_sim.core.systems.damage.models import (
     DamageModifierTerm,
     DamageRequest,
     DamageScalingTerm,
+    LunarReactionDamageInput,
+    LunarReactionDamageMode,
+    LunarReactionParticipantInput,
 )
 from genshin_sim.core.systems.damage.modifiers import (
     DamageModifierCollection,
@@ -81,6 +91,10 @@ STELLAR_BASE_MULTIPLIER_STAGE = DamageModifierStage.STELLAR_BASE_MULTIPLIER_ADD
 STELLAR_BASE_BONUS_STAGE = DamageModifierStage.STELLAR_BASE_BONUS_ADD
 STELLAR_FEATHER_STAGE = DamageModifierStage.STELLAR_FEATHER_ADDITION_ADD
 STELLAR_ASCENSION_STAGE = DamageModifierStage.STELLAR_ASCENSION_BONUS_ADD
+LUNAR_BASE_DAMAGE_BONUS_STAGE = DamageModifierStage.LUNAR_BASE_DAMAGE_BONUS_ADD
+LUNAR_REACTION_BONUS_STAGE = DamageModifierStage.LUNAR_REACTION_BONUS_ADD
+LUNAR_ADDITIONAL_BASE_DAMAGE_STAGE = DamageModifierStage.LUNAR_ADDITIONAL_BASE_DAMAGE_ADD
+LUNAR_ASCENSION_STAGE = DamageModifierStage.LUNAR_ASCENSION_BONUS_ADD
 SHARED_COEFFICIENT_PERCENT_STAGE = DamageModifierStage.COMPONENT_COEFFICIENT_PERCENT_ADD
 SHARED_COEFFICIENT_FLAT_STAGE = DamageModifierStage.COMPONENT_COEFFICIENT_FLAT_ADD
 SHARED_CRIT_RATE_STAGE = DamageModifierStage.CRIT_RATE_ADD
@@ -98,11 +112,29 @@ STELLAR_ONLY_STAGES = frozenset(
         STELLAR_ASCENSION_STAGE,
     }
 )
+# 月曜自己的位置：只有月曜公式放行。
+LUNAR_ONLY_STAGES = frozenset(
+    {
+        LUNAR_BASE_DAMAGE_BONUS_STAGE,
+        LUNAR_REACTION_BONUS_STAGE,
+        LUNAR_ADDITIONAL_BASE_DAMAGE_STAGE,
+        LUNAR_ASCENSION_STAGE,
+    }
+)
 # 与通用公式共享的位置：星烁复用通用阶段，不另设同名阶段。
 STELLAR_SHARED_STAGES = frozenset(
     {
         SHARED_COEFFICIENT_PERCENT_STAGE,
         SHARED_COEFFICIENT_FLAT_STAGE,
+        SHARED_CRIT_RATE_STAGE,
+        SHARED_CRIT_DAMAGE_STAGE,
+        SHARED_RESISTANCE_STAGE,
+    }
+)
+# 月曜与星烁共用的通用阶段（暴击/抗性位置相同）。月曜不开放倍率位：
+# 直伤倍率绑定在参与者上，component_key 无法在请求级收集里被寻址。
+LUNAR_SHARED_STAGES = frozenset(
+    {
         SHARED_CRIT_RATE_STAGE,
         SHARED_CRIT_DAMAGE_STAGE,
         SHARED_RESISTANCE_STAGE,
@@ -233,6 +265,37 @@ def _stellar_query(
     )
 
 
+def _lunar_formula() -> LunarReactionDamageFormula:
+    """最小月曜公式：等级基数 100、精通系数 0，便于按位置核对合并值。"""
+
+    return LunarReactionDamageFormula(
+        level_base_damage={90: 100.0},
+        mastery_numerator=0.0,
+        mastery_denominator=1.0,
+    )
+
+
+def _lunar_query() -> DamageQuery:
+    """直伤月曜查询：请求级不携带倍率，倍率由参与者承载。"""
+
+    return _query(
+        FORMULA_KEY_LUNAR_REACTION,
+        "lunar_reaction",
+        LunarReactionDamageInput(
+            reaction_profile_key="reaction_profile.lunar.direct",
+            mode=LunarReactionDamageMode.CHARACTER_DIRECT,
+            participants=(
+                LunarReactionParticipantInput(
+                    participant_ref=SOURCE,
+                    source_level=90,
+                    scaling_terms=DIRECT_SCALING_TERMS,
+                ),
+            ),
+            reaction_multiplier=1.0,
+        ),
+    )
+
+
 def _collect(query: DamageQuery, *terms: DamageModifierTerm) -> DamageModifierCollection:
     """收集修饰项；无 term 时注册一个声明了专属阶段但不贡献的空 provider。"""
 
@@ -240,7 +303,11 @@ def _collect(query: DamageQuery, *terms: DamageModifierTerm) -> DamageModifierCo
     if terms:
         providers: tuple[StaticDamageModifierProvider, ...] = (_provider(*terms),)
     else:
-        providers = (_provider(writes=frozenset({*STELLAR_ONLY_STAGES, TRANSFORMATIVE_STAGE})),)
+        providers = (
+            _provider(
+                writes=frozenset({*STELLAR_ONLY_STAGES, *LUNAR_ONLY_STAGES, TRANSFORMATIVE_STAGE})
+            ),
+        )
     return DamageModifierIndex(providers).collect(query, session)
 
 
@@ -255,11 +322,22 @@ def _context(query: DamageQuery, modifiers: Any) -> DamageFormulaContext:
 
 
 def test_reaction_stage_allowlists_are_formula_specific_and_disjoint() -> None:
-    """白名单按位置切分：星烁放行自己的六个阶段与五个共享阶段，两者互不重叠。"""
+    """白名单按位置切分：每个公式只放行自己的专属阶段与共享的通用阶段。
 
-    assert frozenset({TRANSFORMATIVE_STAGE}) == TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES
-    assert STELLAR_ONLY_STAGES | STELLAR_SHARED_STAGES == STELLAR_ALLOWED_MODIFIER_STAGES
-    assert not TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES & STELLAR_ALLOWED_MODIFIER_STAGES
+    剧变只多做了一件共享的事——抗性位与通用公式同位置，因此复用 ``resistance_add``；
+    星烁与月曜则各自按位置切分专属阶段，同时共享倍率/暴击/抗性位置。
+    """
+
+    assert (
+        frozenset({TRANSFORMATIVE_STAGE, SHARED_RESISTANCE_STAGE})
+        == TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES
+    )
+    assert STELLAR_ALLOWED_MODIFIER_STAGES == STELLAR_ONLY_STAGES | STELLAR_SHARED_STAGES
+    assert LUNAR_ALLOWED_MODIFIER_STAGES == LUNAR_ONLY_STAGES | LUNAR_SHARED_STAGES
+    # 专属阶段互不重叠：一个公式的私有位置不会被另一个公式放行。
+    assert not STELLAR_ONLY_STAGES & LUNAR_ONLY_STAGES
+    assert not STELLAR_ONLY_STAGES & {TRANSFORMATIVE_STAGE}
+    assert not LUNAR_ONLY_STAGES & {TRANSFORMATIVE_STAGE}
 
 
 def test_reaction_stage_values_follow_existing_naming_style() -> None:
@@ -272,17 +350,29 @@ def test_reaction_stage_values_follow_existing_naming_style() -> None:
     assert STELLAR_BASE_BONUS_STAGE.value == "stellar_base_bonus_add"
     assert STELLAR_FEATHER_STAGE.value == "stellar_feather_addition_add"
     assert STELLAR_ASCENSION_STAGE.value == "stellar_ascension_bonus_add"
+    assert LUNAR_BASE_DAMAGE_BONUS_STAGE.value == "lunar_base_damage_bonus_add"
+    assert LUNAR_REACTION_BONUS_STAGE.value == "lunar_reaction_bonus_add"
+    assert LUNAR_ADDITIONAL_BASE_DAMAGE_STAGE.value == "lunar_additional_base_damage_add"
+    assert LUNAR_ASCENSION_STAGE.value == "lunar_ascension_bonus_add"
 
 
 def test_formula_specs_expose_the_new_stages() -> None:
-    """两个反应公式的 spec 通过实例属性暴露新阶段。"""
+    """三个反应公式的 spec 通过实例属性暴露各自的阶段。"""
 
-    assert TransformativeReactionDamageFormula().formula_spec.allowed_modifier_stages == (
-        frozenset({TRANSFORMATIVE_STAGE})
+    assert TransformativeReactionDamageFormula().formula_spec.allowed_modifier_stages == frozenset(
+        {TRANSFORMATIVE_STAGE, SHARED_RESISTANCE_STAGE}
     )
     assert (
         StellarReactionDamageFormula().formula_spec.allowed_modifier_stages
         == STELLAR_ONLY_STAGES | STELLAR_SHARED_STAGES
+    )
+    assert (
+        LunarReactionDamageFormula(
+            level_base_damage={90: 1.0},
+            mastery_numerator=1.0,
+            mastery_denominator=1.0,
+        ).formula_spec.allowed_modifier_stages
+        == LUNAR_ONLY_STAGES | LUNAR_SHARED_STAGES
     )
 
 
@@ -399,11 +489,12 @@ def test_frozen_authority_baseline_passes_through_without_terms() -> None:
     ),
 )
 def test_reaction_formulas_reject_ordinary_stages(stage: DamageModifierStage) -> None:
-    """星烁公式里没有对应位置的普通阶段在两个反应公式处都被拒绝。"""
+    """三个反应公式都没有对应位置的普通阶段，越界 term 一律被拒绝。"""
 
     for formula_spec, query in (
         (TransformativeReactionDamageFormula().formula_spec, _transformative_query()),
         (StellarReactionDamageFormula().formula_spec, _stellar_query()),
+        (_lunar_formula().formula_spec, _lunar_query()),
     ):
         modifiers = _collect(query, _term(stage, 0.1))
         with pytest.raises(DamageProviderViolationError):
@@ -417,13 +508,12 @@ def test_reaction_formulas_reject_ordinary_stages(stage: DamageModifierStage) ->
         SHARED_COEFFICIENT_FLAT_STAGE,
         SHARED_CRIT_RATE_STAGE,
         SHARED_CRIT_DAMAGE_STAGE,
-        SHARED_RESISTANCE_STAGE,
     ),
 )
 def test_stellar_formula_shares_common_stages_the_transformative_formula_rejects(
     stage: DamageModifierStage,
 ) -> None:
-    """星烁与通用公式共享倍率/暴击/抗性位置：星烁放行，剧变仍拒绝。"""
+    """星烁与通用公式共享倍率/暴击位置：星烁放行，剧变仍拒绝。"""
 
     component_key = (
         DIRECT_COMPONENT_KEY
@@ -449,6 +539,20 @@ def test_stellar_formula_shares_common_stages_the_transformative_formula_rejects
         )
 
 
+def test_transformative_formula_now_shares_the_resistance_stage() -> None:
+    """抗性位是剧变与通用公式共享的位置：剧变已放行并消费 ``resistance_add``。"""
+
+    term = _term(SHARED_RESISTANCE_STAGE, -0.2)
+    validate_formula_modifier_stages(
+        TransformativeReactionDamageFormula().formula_spec,
+        _collect(_transformative_query(), term),
+    )
+    validate_formula_modifier_stages(
+        StellarReactionDamageFormula().formula_spec,
+        _collect(_stellar_query(), term),
+    )
+
+
 def test_stellar_formula_shares_common_crit_damage_stage() -> None:
     """暴伤是星烁与通用公式共享的槽位：星烁接受，剧变仍拒绝。"""
 
@@ -465,7 +569,7 @@ def test_stellar_formula_shares_common_crit_damage_stage() -> None:
 
 
 def test_reaction_formulas_reject_each_others_stage() -> None:
-    """白名单互不牵连：剧变阶段进不了星烁公式，反之亦然。"""
+    """白名单互不牵连：一个公式的专属阶段进不了另一个公式。"""
 
     stellar_query = _stellar_query()
     with pytest.raises(DamageProviderViolationError):
@@ -481,32 +585,41 @@ def test_reaction_formulas_reject_each_others_stage() -> None:
             _collect(transformative_query, _term(STELLAR_STAGE, 0.4)),
         )
 
+    lunar_query = _lunar_query()
+    for foreign_stage in (TRANSFORMATIVE_STAGE, STELLAR_STAGE, STELLAR_FEATHER_STAGE):
+        with pytest.raises(DamageProviderViolationError):
+            validate_formula_modifier_stages(
+                _lunar_formula().formula_spec,
+                _collect(lunar_query, _term(foreign_stage, 0.4)),
+            )
+
 
 def test_authority_stage_is_rejected_by_non_stellar_formulas() -> None:
-    """大权区阶段是星烁公式专属：剧变公式拒绝它。"""
+    """大权区阶段是星烁公式专属：剧变与月曜公式拒绝它。"""
 
-    transformative_query = _transformative_query()
-    with pytest.raises(DamageProviderViolationError):
-        validate_formula_modifier_stages(
-            TransformativeReactionDamageFormula().formula_spec,
-            _collect(transformative_query, _term(AUTHORITY_STAGE, 0.5)),
-        )
+    for formula_spec, query in (
+        (TransformativeReactionDamageFormula().formula_spec, _transformative_query()),
+        (_lunar_formula().formula_spec, _lunar_query()),
+    ):
+        with pytest.raises(DamageProviderViolationError):
+            validate_formula_modifier_stages(
+                formula_spec,
+                _collect(query, _term(AUTHORITY_STAGE, 0.5)),
+            )
 
 
 def test_other_formulas_do_not_allow_reaction_stages() -> None:
-    """通用、月曜与激化路径的白名单不含反应专属阶段。"""
+    """通用与激化路径不含反应专属阶段；月曜不开放倍率位、也不含星烁专属阶段。"""
 
     assert TRANSFORMATIVE_STAGE not in GENERAL_ALLOWED_MODIFIER_STAGES
     assert STELLAR_STAGE not in GENERAL_ALLOWED_MODIFIER_STAGES
     assert AUTHORITY_STAGE not in GENERAL_ALLOWED_MODIFIER_STAGES
-    assert (
-        TRANSFORMATIVE_STAGE
-        not in LunarReactionDamageFormula(
-            level_base_damage={90: 1.0},
-            mastery_numerator=1.0,
-            mastery_denominator=1.0,
-        ).formula_spec.allowed_modifier_stages
-    )
+    assert TRANSFORMATIVE_STAGE not in LUNAR_ALLOWED_MODIFIER_STAGES
+    assert STELLAR_ONLY_STAGES.isdisjoint(LUNAR_ALLOWED_MODIFIER_STAGES)
+    assert LUNAR_ONLY_STAGES.isdisjoint(STELLAR_ALLOWED_MODIFIER_STAGES)
+    # 月曜不开放倍率位：直伤倍率由参与者承载，component_key 在请求级无法寻址。
+    assert SHARED_COEFFICIENT_PERCENT_STAGE not in LUNAR_ALLOWED_MODIFIER_STAGES
+    assert SHARED_COEFFICIENT_FLAT_STAGE not in LUNAR_ALLOWED_MODIFIER_STAGES
     assert FORMULA_KEY_GENERAL != FORMULA_KEY_LUNAR_REACTION
 
 

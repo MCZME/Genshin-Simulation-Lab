@@ -682,7 +682,9 @@ def test_resistance_add_stage_feeds_resistance_zone(
     assert result.final_damage == pytest.approx(1000 * expected_multiplier)
 
 
-def test_transformative_formula_rejects_resistance_add_stage():
+def test_transformative_formula_consumes_resistance_add_stage():
+    """剧变已开放抗性位：减抗词条并入有效抗性并乘进伤害，不再是零效果阶段。"""
+
     term = _term(DamageModifierStage.RESISTANCE_ADD, -0.2)
     resolver = DamageResolver(
         _attribute_resolver(hydro_resistance=0.1),
@@ -708,8 +710,18 @@ def test_transformative_formula_rejects_resistance_add_stage():
         target_attribute_context=AttributeQueryContext(target_ref=SOURCE),
     )
 
-    with pytest.raises(DamageProviderViolationError, match="不允许阶段"):
-        resolver.resolve(query)
+    result = resolver.resolve(query)
+
+    # 基础 100 × 0.6 × (1 + 0 精通 + 0) = 60；有效抗性 0.1 - 0.2 = -0.1 → 乘数 1.05。
+    assert result.resistance.base_resistance == pytest.approx(0.1)
+    assert result.resistance.resistance_add == pytest.approx(-0.2)
+    assert result.resistance.resistance == pytest.approx(-0.1)
+    assert result.resistance.multiplier == pytest.approx(1.05)
+    assert result.final_damage == pytest.approx(60.0 * 1.05)
+    # 目标面板抗性读取与减抗词条都进入账单。
+    stages = {term.stage for term in result.applied_terms}
+    assert DamageModifierStage.PANEL_RESISTANCE in stages
+    assert DamageModifierStage.RESISTANCE_ADD in stages
 
 
 def test_defense_policy_uses_separate_reduction_and_ignore_factors():
@@ -1113,7 +1125,21 @@ def test_lunar_result_audit_reaction_uses_lunar_resolution():
         "modifier_bonus": 0.0,
         "multiplier": 1.0,
     }
-    assert audit["critical"]["can_crit"] is False
+    # 直伤月曜参与暴击：参与者 can_crit=True，审计如实反映该组分的暴击区。
+    assert audit["critical"]["can_crit"] is True
+    # 直伤模式的槽位账本提到顶层，擢升基线 1.1 原样进入审计。
+    slot_merged = {item["slot_key"]: item["merged"] for item in audit["reaction"]["slots"]}
+    assert slot_merged["lunar_ascension_multiplier"] == pytest.approx(1.1)
+    assert slot_merged["lunar_base_damage_bonus"] == pytest.approx(0.0)
+    assert audit["trace_metadata"]["lunar_slots"]["lunar_ascension_multiplier"] == pytest.approx(
+        1.1
+    )
+    # 面板读取词条进入账单：精通、暴击、抗性都是月曜公式实际读取的位置。
+    panel_stages = {
+        term.stage for term in result.applied_terms if term.stage.value.startswith("panel_")
+    }
+    assert DamageModifierStage.PANEL_ELEMENTAL_MASTERY in panel_stages
+    assert DamageModifierStage.PANEL_RESISTANCE in panel_stages
     assert audit["source_attribute_trace"] == tuple(
         item.to_dict() for item in result.source_attribute_trace
     )

@@ -39,6 +39,7 @@ from genshin_sim.core.systems.damage.keys import (
 )
 from genshin_sim.core.systems.damage.level_multipliers import transformative_level_multiplier
 from genshin_sim.core.systems.damage.lunar import (
+    LUNAR_COMPOSITE_WEIGHTS,
     LUNAR_SLOT_ADDITIONAL_BASE_DAMAGE,
     LUNAR_SLOT_ASCENSION_MULTIPLIER,
     LUNAR_SLOT_BASE_DAMAGE_BONUS,
@@ -1360,15 +1361,18 @@ def _merge_lunar_slot(
 
 
 def _lunar_component_weight(mode: LunarReactionDamageMode, index: int) -> float:
-    """返回月曜复合伤害按完整组分排序后的固定权重。"""
+    """返回月曜复合伤害按完整组分排序后的固定权重。
+
+    权重取自 ``LUNAR_COMPOSITE_WEIGHTS``（与机制侧反应系数配成一对口径）；超出表长
+    的组分沿用最后一项，即资料口径里的「其余组分各 0.05」。直伤模式只有单一组分，
+    不参与加权。
+    """
 
     if mode is LunarReactionDamageMode.CHARACTER_DIRECT:
         return 1.0
-    if index == 0:
-        return 0.60
-    if index == 1:
-        return 0.30
-    return 0.05
+    if index < len(LUNAR_COMPOSITE_WEIGHTS):
+        return LUNAR_COMPOSITE_WEIGHTS[index]
+    return LUNAR_COMPOSITE_WEIGHTS[-1]
 
 
 PRODUCTION_LUNAR_REACTION_LEVEL_BASE_DAMAGE: Mapping[int, float] = {

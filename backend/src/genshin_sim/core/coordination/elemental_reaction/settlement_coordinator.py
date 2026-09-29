@@ -124,7 +124,6 @@ from genshin_sim.core.systems.damage.stellar import (
     StellarReactionDamageInput,
     StellarReactionParticipantInput,
 )
-from genshin_sim.core.systems.moonsign import LunarDamageBonusPort
 from genshin_sim.core.systems.reaction import (
     AreaAroundPositionSelection,
     AreaAroundSubjectSelection,
@@ -234,7 +233,6 @@ class ElementalSettlementCoordinator:
         dynamic_transformative_source_observer: CharacterTransformativeSourceObserver | None = None,
         bloom_core_trigger_coordinator: BloomCoreTriggerCoordinator | None = None,
         character_damage_taken_coordinator: CharacterDamageTakenCoordinator | None = None,
-        lunar_damage_bonus_port: LunarDamageBonusPort | None = None,
     ) -> None:
         self.interaction_coordinator = interaction_coordinator
         self.reaction_runtime = reaction_runtime
@@ -266,7 +264,6 @@ class ElementalSettlementCoordinator:
         self.dynamic_transformative_source_observer = dynamic_transformative_source_observer
         self.bloom_core_trigger_coordinator = bloom_core_trigger_coordinator
         self.character_damage_taken_coordinator = character_damage_taken_coordinator
-        self.lunar_damage_bonus_port = lunar_damage_bonus_port
         self.target_eligibility_port = (
             target_eligibility_port or DefaultReactionTargetEligibilityPort()
         )
@@ -285,14 +282,6 @@ class ElementalSettlementCoordinator:
     @property
     def is_publishing_facts(self) -> bool:
         return self._publishing_facts
-
-    def _lunar_damage_bonus(self, frame: int) -> float:
-        if self.lunar_damage_bonus_port is None:
-            return 0.0
-        value = self.lunar_damage_bonus_port.lunar_reaction_bonus(frame)
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            raise ElementalInteractionError("月曜增伤端口返回了非数字")
-        return float(value)
 
     def end_reaction_subject_lifecycle(
         self,
@@ -1767,9 +1756,9 @@ class ElementalSettlementCoordinator:
                         participants=_lunar_participant_inputs(context, effect),
                         reaction_multiplier=effect.reaction_multiplier,
                         base_damage_bonus=effect.base_damage_bonus,
-                        reaction_bonus=(
-                            effect.reaction_bonus + self._lunar_damage_bonus(root_record.frame)
-                        ),
+                        # 月曜反应加成只走 effect 声明的基线；队伍级增伤（月兆等）
+                        # 由 DamageModifierProvider 以槽位词条进入公式（D-082）。
+                        reaction_bonus=effect.reaction_bonus,
                         occurrence_ref=effect.parent_occurrence_ref,
                     )
                     outcomes[target_order] = _with_damage_outcome(
@@ -2588,9 +2577,8 @@ class ElementalSettlementCoordinator:
                 ),
                 reaction_multiplier=effect.reaction_multiplier,
                 base_damage_bonus=effect.base_damage_bonus,
-                reaction_bonus=(
-                    effect.reaction_bonus + self._lunar_damage_bonus(root_record.frame)
-                ),
+                # 雷暴云攻击与月结晶谐奏同理：队伍级月曜增伤由 provider 词条承载（D-082）。
+                reaction_bonus=effect.reaction_bonus,
                 occurrence_ref=None,
             )
             outcomes[target_order] = _with_damage_outcome(

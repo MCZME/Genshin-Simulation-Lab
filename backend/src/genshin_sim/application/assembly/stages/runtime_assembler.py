@@ -540,7 +540,11 @@ class RuntimeAssembler:
         impact_dispatcher = ImpactDispatcher(content_bundle.impact_factories)
         try:
             damage_modifier_index = DamageModifierIndex(
-                (*content_bundle.damage_modifier_providers, *resonance_bundle.damage_providers),
+                (
+                    *content_bundle.damage_modifier_providers,
+                    *resonance_bundle.damage_providers,
+                    *moonsign_bundle.damage_providers,
+                ),
                 content_bundle.damage_modifier_stacking_groups,
             )
             damage_handler = DamageRequestHandler(
@@ -733,7 +737,6 @@ class RuntimeAssembler:
             ),
             bloom_core_trigger_coordinator=bloom_core_trigger_coordinator,
             character_damage_taken_coordinator=character_damage_taken_coordinator,
-            lunar_damage_bonus_port=moonsign_bundle.runtime,
             aura_application_profile_registry=AuraApplicationProfileRegistry(
                 (
                     swirl_aura_application_profile(),

@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
+from typing import cast
+
+import pytest
 
 from genshin_sim.application.assembly.attributes import build_attribute_runtime
 from genshin_sim.application.assembly.moonsign import build_moonsign_bundle
@@ -17,7 +20,13 @@ from genshin_sim.core.events import (
     EventType,
     GameEvent,
 )
-from genshin_sim.core.systems.moonsign import MoonsignLevel
+from genshin_sim.core.systems.damage import DamageQuery
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_LUNAR_REACTION
+from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+from genshin_sim.core.systems.moonsign import (
+    MOONSIGN_LUNAR_BONUS_PROVIDER_KEY,
+    MoonsignLevel,
+)
 from tests.helpers.assembly import minimal_input
 from tests.helpers.team_assets import (
     TeamAssetBundle,
@@ -93,6 +102,56 @@ def test_moonsign_bundle_applies_bonus_through_real_attribute_resolution():
     assert bundle.runtime.lunar_reaction_bonus(10) == 0.09
     assert bundle.store.bonus is not None
     assert bundle.store.bonus.source_ref == AttributeSubjectRef.character("character:slot_3")
+
+
+def _lunar_bonus_terms(provider, frame: int):
+    """在月曜公式查询上收集 provider 词条（会话对 provider 无副作用）。"""
+
+    query = cast(
+        "DamageQuery",
+        SimpleNamespace(
+            request=SimpleNamespace(frame=frame, formula_key=FORMULA_KEY_LUNAR_REACTION)
+        ),
+    )
+    return tuple(provider.contribute(query, cast("DamageResolutionSession", None)))
+
+
+def test_moonsign_bundle_registers_a_bound_lunar_bonus_provider():
+    """装配产物必须带出已绑定端口的月曜增伤 provider，供伤害索引收集。"""
+
+    assets = make_team_asset_bundles(("pyro", "pyro", "pyro", "pyro"))
+    bundle = build_moonsign_bundle(
+        content_units=(_moonsign_unit(1), _moonsign_unit(2)),
+        assets=assets,
+        attribute_resolver=_attribute_resolver(assets),
+        event_engine=EventEngine(),
+    )
+    (provider,) = bundle.damage_providers
+    assert provider.provider_spec.provider_key == MOONSIGN_LUNAR_BONUS_PROVIDER_KEY
+    assert _lunar_bonus_terms(provider, 10) == ()
+
+    event = GameEvent(
+        EventType.ACTION_STARTED,
+        10,
+        ActionStartedPayload(
+            instance_id=1,
+            frame=10,
+            action_key="character.test.skill",
+            owner_slot=3,
+            ability_key="elemental_skill",
+        ),
+    )
+    bundle.runtime.update_frame(
+        SimpleNamespace(current_frame=10, events=SimpleNamespace(frame_events=(event,))),
+        10,
+    )
+
+    terms = _lunar_bonus_terms(provider, 10)
+    assert len(terms) == 1
+    assert terms[0].value == pytest.approx(bundle.runtime.lunar_reaction_bonus(10))
+    # 增伤时长 1200 帧，到期后端口与 provider 同时回到 0。
+    assert _lunar_bonus_terms(provider, 1209)
+    assert _lunar_bonus_terms(provider, 1210) == ()
 
 
 def test_moonsign_bundle_without_markers_stays_none():

@@ -32,7 +32,6 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_STATE_NEXT_RAY_FRAME,
     FAGEOU_STATE_NEXT_SHOT_FRAME,
     FAGEOU_STATE_POWER,
-    FAGEOU_STATE_PRISM2_BOOST_UNTIL,
     FAGEOU_STATE_RAY_COUNT,
     FAGEOU_STATE_SOLVE_START_FRAME,
     FAGEOU_STATE_TACTICS_EXPIRE_FRAME,
@@ -46,13 +45,11 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_ELEMENTAL_SKILL_ACTION_KEY,
     SANDRONE_JUMP_ACTION_KEY,
     SANDRONE_NORMAL_ATTACK_ACTION_KEYS,
-    SANDRONE_P4_BEAM_BONUS_BASE_MULTIPLIER,
-    SANDRONE_P4_BEAM_BONUS_PER_STACK,
-    SANDRONE_P4_PRISM_BOOST_POWER_THRESHOLD,
-    SANDRONE_P4_PRISM_BOOST_WINDOW_FRAMES,
+    SANDRONE_P4_PRISM2_BOOST_PARAM,
     SANDRONE_PLUNGE_ACTION_KEY,
     SANDRONE_PLUNGE_COLLISION_IMPACT_KEY,
     SANDRONE_PLUNGE_LANDING_IMPACT_KEY,
+    SandroneP4AssetValues,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.stellar import radiance_evidence
 from genshin_sim.content.generic.chain_state import (
@@ -111,10 +108,12 @@ class SandroneActionInterpreter:
         self,
         *,
         action_table: dict[str, TimedActionSpec] | None = None,
-        p4_unlocked: bool = False,
+        p4: SandroneP4AssetValues | None = None,
     ) -> None:
         self._action_table = dict(action_table or SANDRONE_ACTION_TABLE)
-        self._p4_unlocked = p4_unlocked
+        # P4 数值取自资产效果行（content.py 装配期传入）；突破 1 阶前为 None，
+        # 相关行为（棱晶弹强化、爆发清层与光束加成）不触发。
+        self._p4 = p4
 
     @property
     def supported_action_keys(self) -> tuple[str, ...]:
@@ -186,14 +185,17 @@ class SandroneActionInterpreter:
 
         action = self._select_action(input_kind, last_action_key, height)
         owner_ref = f"character:slot_{slot}"
+        prism2_boost = False
         if input_kind == ELEMENTAL_SKILL_INPUT:
-            self._queue_e_drain_patch(
+            # 判定在施放帧完成一次，结果随 E 动作参数透传给第二枚棱晶弹的
+            # 影响点（不再写跨帧状态字段、也不需要时间窗口）。
+            prism2_boost = self._queue_e_drain_patch(
                 context.simulation,
                 owner_ref=owner_ref,
                 frame=session.current_frame,
                 session_id=session.session_id,
             )
-        if input_kind == ELEMENTAL_BURST_INPUT and self._p4_unlocked:
+        if input_kind == ELEMENTAL_BURST_INPUT and self._p4 is not None:
             self._queue_burst_cast_patch(
                 context.simulation,
                 owner_ref=owner_ref,
@@ -213,9 +215,12 @@ class SandroneActionInterpreter:
                 action_key=action.action_key,
                 owner=ActionOwnerRef.character(slot),
                 requested_start_frame=session.current_frame,
-                params={
-                    **self._action_params(action, input_kind, height),
-                },
+                params=self._action_params(
+                    action,
+                    input_kind,
+                    height,
+                    prism2_boost=prism2_boost,
+                ),
                 source_session_id=session.session_id,
             )
         )
@@ -303,12 +308,18 @@ class SandroneActionInterpreter:
         action: TimedActionSpec,
         input_kind: str,
         height: float,
+        *,
+        prism2_boost: bool = False,
     ) -> dict[str, object]:
         params: dict[str, object] = {
             "content_handler_key": SANDRONE_CHARACTER_HANDLER_KEY,
             "sandrone_action_kind": input_kind,
             "sandrone_hit_frame": action.hit_frame,
         }
+        if action.action_key == SANDRONE_ELEMENTAL_SKILL_ACTION_KEY:
+            # P4 棱晶弹强化标记：E 动作的两个影响点都携带，影响工厂只对
+            # 第二枚棱晶弹消费（键值常量见 data.py）。
+            params[SANDRONE_P4_PRISM2_BOOST_PARAM] = prism2_boost
         if action.action_key != SANDRONE_PLUNGE_ACTION_KEY:
             return params
         params.update(
@@ -504,19 +515,25 @@ class SandroneActionInterpreter:
         owner_ref: str,
         frame: int,
         session_id: int,
-    ) -> None:
+    ) -> bool:
         """E 排空：施放即退出解算/过载并快速排空功率。
 
-        P4 强化条件在施放帧判定，读取的是功率清空前的取值：
-        解算功率超过 50 且施放时持有辉映状态时，写入有时间窗口的棱晶弹
-        强化标记，由影响工厂在第二枚棱晶弹展开帧消费。P4 未解锁（突破
-        1 阶前）不写强化标记。
+        P4 强化条件在施放帧判定一次，读取的是功率清空前的取值（排空是跨帧
+        推进的）：解算功率超过阈值且施放时持有辉映状态时，返回 ``True``，
+        由调用方写入 E 动作参数交给第二枚棱晶弹影响点消费；P4 未解锁
+        （突破 1 阶前）或条件不命中时返回 ``False``。本方法不再写状态字段。
         """
 
         slot = int(owner_ref.removeprefix("character:slot_"))
         mode, power = self._read_fageou_state(context, slot)
+        p4 = self._p4
+        prism2_boost = (
+            p4 is not None
+            and power > p4.power_threshold
+            and radiance_evidence(context, owner_ref, frame) is not None
+        )
         if mode == FAGEOU_MODE_IDLE and power <= 0.0:
-            return
+            return prism2_boost
         fields: dict[str, JSONValue] = {
             FAGEOU_STATE_MODE: FAGEOU_MODE_IDLE,
             FAGEOU_STATE_SOLVE_START_FRAME: 0,
@@ -524,12 +541,6 @@ class SandroneActionInterpreter:
             FAGEOU_STATE_NEXT_RAY_FRAME: 0,
             FAGEOU_STATE_DRAIN_ACTIVE: True,
         }
-        if (
-            self._p4_unlocked
-            and power > SANDRONE_P4_PRISM_BOOST_POWER_THRESHOLD
-            and radiance_evidence(context, owner_ref, frame) is not None
-        ):
-            fields[FAGEOU_STATE_PRISM2_BOOST_UNTIL] = frame + SANDRONE_P4_PRISM_BOOST_WINDOW_FRAMES
         self._queue_machine_patch(
             context,
             owner_ref=owner_ref,
@@ -537,6 +548,7 @@ class SandroneActionInterpreter:
             session_id=session_id,
             fields=fields,
         )
+        return prism2_boost
 
     def _queue_burst_cast_patch(
         self,
@@ -558,9 +570,13 @@ class SandroneActionInterpreter:
         stacks, _ = self._read_tactics_state(context, slot)
         fields: dict[str, JSONValue] = {FAGEOU_STATE_BEAM_BONUS: 0.0}
         if stacks > 0 and radiance_evidence(context, owner_ref, frame) is not None:
-            fields[FAGEOU_STATE_BEAM_BONUS] = SANDRONE_P4_BEAM_BONUS_BASE_MULTIPLIER + min(
-                SANDRONE_P4_BEAM_BONUS_PER_STACK * stacks,
-                SANDRONE_P4_BEAM_BONUS_PER_STACK * 10,
+            p4 = self._p4
+            if p4 is None:
+                raise SandroneInterpreterError("P4 数值缺失，无法结算光束加成")
+            # 层数已由状态 schema 的 max_value 与 hook 的 min 双重限制在资产
+            # 上限内，此处无需再截断。
+            fields[FAGEOU_STATE_BEAM_BONUS] = (
+                p4.beam_bonus_base_multiplier + p4.beam_bonus_per_stack * stacks
             )
             fields[FAGEOU_STATE_TACTICS_STACKS] = 0
             fields[FAGEOU_STATE_TACTICS_EXPIRE_FRAME] = 0

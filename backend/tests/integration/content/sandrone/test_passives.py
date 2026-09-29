@@ -75,6 +75,40 @@ def test_p4_prism_boost_and_drain_stacks(sandrone_assembled):
     assert sandrone_helpers.fageou_state_value(assembled, FAGEOU_STATE_TACTICS_STACKS) == 7
 
 
+def test_p4_prism_boost_requires_power_over_threshold(sandrone_assembled):
+    # P4 已解锁且施放时持辉映，但未蓄能（解算功率 0，未超过阈值 50）：
+    # 第二枚棱晶弹切星变体照常发生，但强化标记不置位，缩放值保持原本倍率
+    # （助手数据 1.0），排空也不产生改进战术层数。
+    payload = sandrone_helpers.sandrone_input_payload(
+        max_frames=300,
+        constellation=0,
+        input_trace=[
+            {"frame": 210, "events": [{"key": "keyboard.e", "phase": "press"}]},
+            {"frame": E_RELEASE_FRAME, "events": [{"key": "keyboard.e", "phase": "release"}]},
+        ],
+        targets=[
+            {
+                "id": "target_1",
+                "level": 90,
+                "position": {"x": 0, "y": 0, "z": 4},
+                "resistance": {},
+            }
+        ],
+    )
+    assembled = sandrone_assembled(payload=payload)
+    sandrone_helpers.apply_radiance_buff(assembled)
+    events = sandrone_helpers.sandrone_damage_events(assembled)
+
+    assembled.simulator.run()
+
+    prism2 = next(e for e in events if e.payload.result.damage_name == PRISM_STELLAR_DISPLAY_NAME)
+    stellar = prism2.payload.result.stellar_reaction_resolution
+    assert stellar is not None
+    atk = sandrone_helpers.resolved_atk(assembled)
+    assert stellar.input.scaling_value == pytest.approx(atk * 1.0)
+    assert sandrone_helpers.fageou_state_value(assembled, FAGEOU_STATE_TACTICS_STACKS) == 0
+
+
 def test_p4_locked_before_first_ascension(sandrone_assembled):
     # P4 悠久的演算机关在 20 级突破（突破 1 阶）解锁：19 级（突破 0 阶）
     # 角色单元的排空/棱晶/爆发行为不带 P4——排空照常清功率但不计层，

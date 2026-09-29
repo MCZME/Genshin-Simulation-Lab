@@ -46,12 +46,15 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY,
     SANDRONE_HIT_IMPACT_KEYS,
     SANDRONE_P4_ASCENSION_THRESHOLD,
+    SANDRONE_P4_UNLOCK_KEY,
     SANDRONE_SWEEP_ICD_RESET_FRAMES,
     SANDRONE_SWEEP_ICD_SEQUENCE_KEY,
+    SandroneP4AssetValues,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.effects import (
     SandroneC6AssetValues,
     read_c6_asset_values,
+    read_p4_asset_values,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.fageou import (
     SandroneFageouHook,
@@ -173,8 +176,16 @@ def create_sandrone_content_unit(
     # 二者按同一系数折算（0 命 20/s 与 +12/条，1 命 10/s 与 +6/条）。
     power_rate_factor = 1.0 - FAGEOU_C1_POWER_RATE_REDUCTION if constellation >= 1 else 1.0
     # P4 悠久的演算机关：突破 1 阶（20 级突破）解锁；行为随角色单元编译，
-    # 锁定时排空不计层、棱晶弹不强化、爆发不结算光束加成。
+    # 锁定时排空不计层、棱晶弹不强化、爆发不结算光束加成。机器数值一律取自
+    # 资产效果行（装配期经 request.effect_params 交给角色单元），内容代码不留
+    # 第二份常量；已解锁却缺少该效果行时直接失败，不静默回落。
     p4_unlocked = request.ascension_phase >= SANDRONE_P4_ASCENSION_THRESHOLD
+    p4_values: SandroneP4AssetValues | None = None
+    if p4_unlocked:
+        p4_params = request.effect_params.get(SANDRONE_P4_UNLOCK_KEY)
+        if p4_params is None:
+            raise ContentUnitValidationError(f"P4 已解锁但缺少资产效果行：{SANDRONE_P4_UNLOCK_KEY}")
+        p4_values = read_p4_asset_values(p4_params)
     stellar_channels = compile_stellar_attack_channels(
         request.character_key,
         entries_by_key,
@@ -195,6 +206,7 @@ def create_sandrone_content_unit(
                 SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY
             ],
         },
+        p4=p4_values,
     )
     owner_ref = f"character:slot_{request.slot}"
     cooldown_terms_by_ability = _cooldown_terms_for_actions(request)
@@ -228,11 +240,14 @@ def create_sandrone_content_unit(
         handler_key=request.handler_key,
         version=SANDRONE_CONTENT_VERSION,
         slot=request.slot,
-        action_interpreter=SandroneActionInterpreter(p4_unlocked=p4_unlocked),
+        action_interpreter=SandroneActionInterpreter(p4=p4_values),
         actions=create_sandrone_actions(
             cooldown_duration_terms=cooldown_terms_by_ability,
         ),
-        state_schema=sandrone_state_schema(owner_ref),
+        state_schema=sandrone_state_schema(
+            owner_ref,
+            tactics_max_stacks=(p4_values.tactics_max_stacks if p4_values is not None else None),
+        ),
         impact_factories={impact_key: impact_factory for impact_key in SANDRONE_HIT_IMPACT_KEYS},
         event_hooks=(
             SandroneFageouHook(
@@ -252,7 +267,7 @@ def create_sandrone_content_unit(
                 ray_length=FAGEOU_RAY_LENGTH,
                 ray_width=FAGEOU_RAY_WIDTH,
                 bullet_speed_m_per_s=FAGEOU_BULLET_SPEED_M_PER_S,
-                p4_unlocked=p4_unlocked,
+                p4=p4_values,
                 c2_index_tag_enabled=constellation >= 2,
                 c6_extra_normal_spec=(
                     compile_c6_extra_normal_spec(c6_values.normal_ratio)

@@ -36,12 +36,16 @@ def _build_unit():
             handler_key=SANDRONE_CHARACTER_HANDLER_KEY,
             character_key=sandrone_helpers.SANDRONE_CHARACTER_KEY,
             slot=1,
+            # 突破 1 阶（P4 解锁）与角色全部效果行：P4 数值由效果行提供，
+            # 编译期缺行会直接失败。
+            ascension_phase=1,
             talent_levels={
                 "normal_attack": 1,
                 "elemental_skill": 1,
                 "elemental_burst": 1,
             },
             talent_scalings=sandrone_helpers.minimal_sandrone_scaling_entries(),
+            effect_params=sandrone_helpers.character_effect_params(),
         )
     )
 

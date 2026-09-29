@@ -39,6 +39,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_PASSIVE_P4_HANDLER_KEY,
     SANDRONE_PASSIVE_P5_HANDLER_KEY,
     SANDRONE_PASSIVE_P6_HANDLER_KEY,
+    SandroneP4AssetValues,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.hooks import (
     SandroneC4CoordinatedAttackHook,
@@ -68,8 +69,9 @@ from genshin_sim.core.systems.damage import DamageModifierProvider
 FRAMES_PER_SECOND = 60
 
 P4_CARRIER_NOTE = (
-    "数值行为承载于角色单元：排空叠层与过期（fageou.py）、棱晶弹 400% 与"
-    "光束加成（actions.py/impacts.py），常量见 data.py。"
+    "数值行为承载于角色单元：排空叠层与过期（fageou.py）、棱晶弹强化与光束"
+    "加成（actions.py/impacts.py）；机器数值取自本条效果行（"
+    "read_p4_asset_values），帧表派生的强化窗口常量见 data.py。"
 )
 P6_CARRIER_NOTE = (
     "固定天赋：capability 随角色单元静态声明，基础增伤在星烁输入组装时按"
@@ -189,6 +191,48 @@ def resolve_c6_ascension_bonus(
     return read_c6_asset_values(params).ascension_bonus
 
 
+def read_p4_asset_values(params: Mapping[str, object]) -> SandroneP4AssetValues:
+    """解析资产被动「悠久的演算机关」效果行：阈值、强化倍率与光束加成。
+
+    分量顺序与资产一致（文本内链接编号与纯数分量交错）：
+    ``[3]`` 解算功率阈值、``[4]`` 第二枚棱晶弹强化倍率、``[5]`` 改进战术层数
+    上限、``[6]`` 改进战术持续秒数、``[7]`` 每层功率步长、``[9]`` 光束倍率
+    基座、``[10]`` 光束每层倍率；``[0]``/``[1]``/``[2]``/``[8]`` 是文本内
+    链接编号，不参与解析（与 C1/C2/C4/C6 的按位置取分量口径一致）。
+    持续秒数在此折算为帧（``FRAMES_PER_SECOND``）。
+    """
+
+    purpose = "天赋「悠久的演算机关」"
+    power_threshold = _component(params, 3, purpose=purpose)
+    prism_boost_multiplier = _component(params, 4, purpose=purpose)
+    max_stacks = _component(params, 5, purpose=purpose)
+    duration_seconds = _component(params, 6, purpose=purpose)
+    power_step = _component(params, 7, purpose=purpose)
+    beam_base = _component(params, 9, purpose=purpose)
+    beam_per_stack = _component(params, 10, purpose=purpose)
+    if power_threshold <= 0.0:
+        raise ContentUnitValidationError(f"{purpose} 解算功率阈值必须为正数")
+    if prism_boost_multiplier <= 0.0:
+        raise ContentUnitValidationError(f"{purpose} 棱晶弹强化倍率必须为正数")
+    if max_stacks != int(max_stacks) or max_stacks <= 0:
+        raise ContentUnitValidationError(f"{purpose} 改进战术层数上限必须是正整数")
+    if duration_seconds <= 0.0:
+        raise ContentUnitValidationError(f"{purpose} 改进战术持续秒数必须为正数")
+    if power_step <= 0.0:
+        raise ContentUnitValidationError(f"{purpose} 改进战术功率步长必须为正数")
+    if beam_base < 0.0 or beam_per_stack < 0.0:
+        raise ContentUnitValidationError(f"{purpose} 光束倍率不能为负数")
+    return SandroneP4AssetValues(
+        power_threshold=power_threshold,
+        prism_boost_multiplier=prism_boost_multiplier,
+        tactics_power_step=power_step,
+        tactics_max_stacks=int(max_stacks),
+        tactics_duration_frames=round(duration_seconds * FRAMES_PER_SECOND),
+        beam_bonus_base_multiplier=beam_base,
+        beam_bonus_per_stack=beam_per_stack,
+    )
+
+
 def _validate_owner(request: EffectContentUnitRequest, handler_key: str) -> int:
     if request.owner_key != SANDRONE_ASSET_KEY:
         raise ContentUnitValidationError(
@@ -240,9 +284,15 @@ def _effect_unit(
 
 
 def create_sandrone_passive_p4(request: EffectContentUnitRequest) -> ContentUnit:
-    """P4 悠久的演算机关：战技排空叠层与爆发光束加成（角色单元承载）。"""
+    """P4 悠久的演算机关：战技排空叠层与爆发光束加成（角色单元承载）。
+
+    数值在本条效果行里，行为在角色单元里：这里解析一遍（数值不合法时本条单元
+    直接失败），并把取值写进 ``compiled_params`` 供装配/诊断核对。
+    """
 
     _validate_owner(request, SANDRONE_PASSIVE_P4_HANDLER_KEY)
+    name = _effect_name(request.params, position="天赋「悠久的演算机关」")
+    values = read_p4_asset_values(request.params)
     return _effect_unit(
         request=request,
         handler_key=SANDRONE_PASSIVE_P4_HANDLER_KEY,
@@ -253,6 +303,16 @@ def create_sandrone_passive_p4(request: EffectContentUnitRequest) -> ContentUnit
         ),
         purpose="sandrone_passive_p4",
         note=P4_CARRIER_NOTE,
+        compiled_params={
+            "name": name,
+            "power_threshold": values.power_threshold,
+            "prism_boost_multiplier": values.prism_boost_multiplier,
+            "tactics_power_step": values.tactics_power_step,
+            "tactics_max_stacks": values.tactics_max_stacks,
+            "tactics_duration_frames": values.tactics_duration_frames,
+            "beam_bonus_base_multiplier": values.beam_bonus_base_multiplier,
+            "beam_bonus_per_stack": values.beam_bonus_per_stack,
+        },
     )
 
 

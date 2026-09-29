@@ -74,6 +74,15 @@ def character_effect_params() -> dict[str, dict[str, object]]:
     }
 
 
+def p4_effect_params() -> dict[str, object]:
+    """合成资产「被动第 4 层」效果行的 params（与资产库写入同一份数据）。"""
+
+    for payload in _minimal_sandrone_effect_payloads():
+        if payload.unlock_key == "passive:4":
+            return dict(payload.params)
+    raise AssertionError("合成效果行缺少被动第 4 层")
+
+
 def write_sandrone_asset_database(db_path: Path) -> Path:
     """写入桑多涅单人最小合成资产库（倍率数值全部为 1.0）。"""
 
@@ -171,13 +180,14 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
         )
 
     return (
-        # P4/P6 的数值行为在角色单元内（合成行只驱动效果声明与门槛）。
+        # P4/P6 的数值行为在角色单元内：P4 行按位置读取数值，分量形状须与
+        # 真实资产一致（含前导链接分量），否则解析错位。
         _effect(
             "passive:4",
             "passive",
             SANDRONE_PASSIVE_P4_HANDLER_KEY,
             "passive:4",
-            (11332.0, 11330002.0, 50.0, 4.0, 10.0, 60.0, 10.0, 11335.0, 1.0, 0.1),
+            (11500004.0, 11332.0, 11330002.0, 50.0, 4.0, 10.0, 60.0, 10.0, 11335.0, 1.0, 0.1),
             name="合成天赋4",
         ),
         _effect(

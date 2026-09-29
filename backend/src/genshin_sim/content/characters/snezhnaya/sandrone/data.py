@@ -49,23 +49,40 @@ SANDRONE_CONSTELLATION_C4_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[4]
 SANDRONE_CONSTELLATION_C5_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[5]
 SANDRONE_CONSTELLATION_C6_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[6]
 
-# P4 悠久的演算机关（效果行 components：阈值 50、400%、至多 10 层、持续 60s、
-# 每 10 点一层、光束倍率基座 100% + 每层 10%）。改进战术承载为角色内容状态
-# （跨会话保留、按 60s 统一过期——每次获得叠层即刷新全部层数的过期帧，与
-# 通用堆叠 Buff 的刷新语义一致），清空发生在辉映下施放爆发时。
+# P4 悠久的演算机关：机器数值（功率阈值、棱晶弹强化倍率、改进战术层数上限与
+# 持续秒数、功率步长、光束倍率基座与每层倍率）一律从资产效果行 components
+# 解析（``effects.read_p4_asset_values``，与 P5/C1/C2/C4/C6 同口径），本文件
+# 不维护第二份数值常量。改进战术承载为角色内容状态（跨会话保留、按持续秒数
+# 统一过期——每次获得叠层即刷新全部层数的过期帧，与通用堆叠 Buff 的刷新语义
+# 一致），清空发生在辉映下施放爆发时。
 # 突破解锁门槛为 20 级突破解锁，对应突破 1 阶；行为随角色单元编译，
 # 锁定时（ascension_phase < 1）不叠层、不强化棱晶弹、不结算光束加成。
-# 光束加成作用于倍率区，P4 提供的倍率 = 100% + 10%/层（一层即 110%），
-# 随原本倍率一并折进缩放值。
+# 光束加成作用于倍率区（原本倍率 + 基座 + 每层倍率 × 层数），随原本倍率
+# 一并折进缩放值。
+SANDRONE_P4_UNLOCK_KEY = "passive:4"
 SANDRONE_P4_ASCENSION_THRESHOLD = 1
-SANDRONE_P4_PRISM_BOOST_POWER_THRESHOLD = 50.0
-SANDRONE_P4_PRISM_BOOST_MULTIPLIER = 4.0
-SANDRONE_P4_PRISM_BOOST_WINDOW_FRAMES = 33
-SANDRONE_P4_TACTICS_POWER_STEP = 10.0
-SANDRONE_P4_TACTICS_MAX_STACKS = 10
-SANDRONE_P4_TACTICS_DURATION_FRAMES = 3600
-SANDRONE_P4_BEAM_BONUS_BASE_MULTIPLIER = 1.0
-SANDRONE_P4_BEAM_BONUS_PER_STACK = 0.1
+# 棱晶弹强化以 E 动作参数透传：施放帧判定一次（P4 已解锁 ∧ 解算功率 > 阈值
+# ∧ 施放时持辉映），判定结果随影响点带到第二枚棱晶弹展开帧由影响工厂消费。
+# 不在角色状态里留跨帧标志，也不需要时间窗口常量（见 actions.py / impacts.py）。
+SANDRONE_P4_PRISM2_BOOST_PARAM = "sandrone_prism2_boost"
+
+
+@dataclass(frozen=True, slots=True)
+class SandroneP4AssetValues:
+    """P4 悠久的演算机关效果行的机器数值（唯一来源为资产效果行）。
+
+    由 ``effects.read_p4_asset_values`` 解析；角色单元三处（动作解释器、法洁欧
+    hook、影响工厂）都消费同一份取值对象，未解锁时为 ``None``。
+    """
+
+    power_threshold: float
+    prism_boost_multiplier: float
+    tactics_power_step: float
+    tactics_max_stacks: int
+    tactics_duration_frames: int
+    beam_bonus_base_multiplier: float
+    beam_bonus_per_stack: float
+
 
 # P5 淑女的行事准则（效果行 components：每 100 攻击 +8 精通、上限 160）。
 # 数值经 P5 效果单元从资产行读取，这里只承载 provider 键词。
@@ -220,12 +237,12 @@ FAGEOU_STATE_NEXT_SHOT_FRAME = "fageou_next_shot_frame"
 FAGEOU_STATE_NEXT_RAY_FRAME = "fageou_next_ray_frame"
 FAGEOU_STATE_DRAIN_ACTIVE = "fageou_drain_active"
 # 射线会话序号与 C6 集束型额外段余量（进入解算时清零）；
-# P4 改进战术叠层与过期帧（跨会话保留）；P4 棱晶弹强化窗口与爆发光束加成。
+# P4 改进战术叠层与过期帧（跨会话保留）、爆发光束加成快照。
+# P4 棱晶弹强化不在状态里留字段：施放帧判定结果以 E 动作参数透传到影响点。
 FAGEOU_STATE_RAY_COUNT = "fageou_ray_count"
 FAGEOU_STATE_EXTRA_SEGMENTS_LEFT = "fageou_extra_segments_left"
 FAGEOU_STATE_TACTICS_STACKS = "fageou_tactics_stacks"
 FAGEOU_STATE_TACTICS_EXPIRE_FRAME = "fageou_tactics_expire_frame"
-FAGEOU_STATE_PRISM2_BOOST_UNTIL = "fageou_prism2_boost_until"
 FAGEOU_STATE_BEAM_BONUS = "fageou_beam_bonus"
 # 产球审计字段：最近一次产球的命中结算帧（0 = 尚未产球）；冷却判定游标
 # 在产球 hook 实例内。

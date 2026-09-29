@@ -52,7 +52,6 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_STATE_NEXT_RAY_FRAME,
     FAGEOU_STATE_NEXT_SHOT_FRAME,
     FAGEOU_STATE_POWER,
-    FAGEOU_STATE_PRISM2_BOOST_UNTIL,
     FAGEOU_STATE_RAY_COUNT,
     FAGEOU_STATE_SOLVE_START_FRAME,
     FAGEOU_STATE_TACTICS_EXPIRE_FRAME,
@@ -63,10 +62,8 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY,
     SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
     SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY,
-    SANDRONE_P4_TACTICS_DURATION_FRAMES,
-    SANDRONE_P4_TACTICS_MAX_STACKS,
-    SANDRONE_P4_TACTICS_POWER_STEP,
     SANDRONE_RAY_INDEX_TAG_PREFIX,
+    SandroneP4AssetValues,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
     SandroneStellarAttackChannel,
@@ -99,8 +96,13 @@ class SandroneFageouError(RuntimeError):
     """法洁欧状态机运行期错误（接线缺失或契约不完整）。"""
 
 
-def sandrone_state_schema(owner_ref: str) -> StateSchema:
-    """连段状态 + 法洁欧模式机 + 被动/命座字段的合并状态 schema。"""
+def sandrone_state_schema(owner_ref: str, *, tactics_max_stacks: int | None = None) -> StateSchema:
+    """连段状态 + 法洁欧模式机 + 被动/命座字段的合并状态 schema。
+
+    ``tactics_max_stacks`` 是 P4 改进战术的层数上限，取自资产效果行；字段
+    上限与 hook 自身的截断同源，不在内容代码另留一份常量。P4 未解锁时为
+    ``None``（该字段此时恒为 0，不设上限）。
+    """
 
     chain = chain_state_schema(owner_ref)
     machine = (
@@ -158,17 +160,11 @@ def sandrone_state_schema(owner_ref: str) -> StateSchema:
             field_type=StateFieldType.INT,
             default=0,
             non_negative=True,
-            max_value=SANDRONE_P4_TACTICS_MAX_STACKS,
+            max_value=tactics_max_stacks,
             clamp=True,
         ),
         StateField(
             name=FAGEOU_STATE_TACTICS_EXPIRE_FRAME,
-            field_type=StateFieldType.INT,
-            default=0,
-            non_negative=True,
-        ),
-        StateField(
-            name=FAGEOU_STATE_PRISM2_BOOST_UNTIL,
             field_type=StateFieldType.INT,
             default=0,
             non_negative=True,
@@ -213,7 +209,7 @@ class SandroneFageouHook:
         ray_length: float = FAGEOU_RAY_LENGTH,
         ray_width: float = FAGEOU_RAY_WIDTH,
         bullet_speed_m_per_s: float = FAGEOU_BULLET_SPEED_M_PER_S,
-        p4_unlocked: bool = False,
+        p4: SandroneP4AssetValues | None = None,
         c2_index_tag_enabled: bool = False,
         c6_extra_normal_spec: DamageImpactSpec | None = None,
         c6_extra_stellar_channel: SandroneStellarAttackChannel | None = None,
@@ -248,7 +244,9 @@ class SandroneFageouHook:
         self._ray_length = ray_length
         self._ray_width = ray_width
         self._bullet_speed_m_per_s = bullet_speed_m_per_s
-        self._p4_unlocked = p4_unlocked
+        # P4 数值取自资产效果行（content.py 装配期传入）；突破 1 阶前为 None，
+        # 排空只清功率、不计改进战术层数。
+        self._p4 = p4
         self._c2_index_tag_enabled = c2_index_tag_enabled
         self._c6_extra_normal_spec = c6_extra_normal_spec
         self._c6_extra_stellar_channel = c6_extra_stellar_channel
@@ -316,13 +314,15 @@ class SandroneFageouHook:
             power = max(0.0, power - self._drain_per_frame)
             if power <= 0.0:
                 drain_active = False
-            if self._p4_unlocked:
-                crossings = int(power_before // SANDRONE_P4_TACTICS_POWER_STEP) - int(
-                    power // SANDRONE_P4_TACTICS_POWER_STEP
-                )
+            if self._p4 is not None:
+                power_step = self._p4.tactics_power_step
+                crossings = int(power_before // power_step) - int(power // power_step)
                 if crossings > 0:
-                    tactics_stacks = min(SANDRONE_P4_TACTICS_MAX_STACKS, tactics_stacks + crossings)
-                    tactics_expire = frame + SANDRONE_P4_TACTICS_DURATION_FRAMES
+                    tactics_stacks = min(
+                        self._p4.tactics_max_stacks,
+                        tactics_stacks + crossings,
+                    )
+                    tactics_expire = frame + self._p4.tactics_duration_frames
                     put(FAGEOU_STATE_TACTICS_STACKS, tactics_stacks)
                     put(FAGEOU_STATE_TACTICS_EXPIRE_FRAME, tactics_expire)
             put(FAGEOU_STATE_POWER, power)

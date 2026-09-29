@@ -261,10 +261,12 @@ def _build_damage_result(
         # 顶层，复合模式的账本在 components[].modifier_terms 内各自保留。
         top = resolution.components[0]
         lunar_direct = resolution.reaction.mode is LunarReactionDamageMode.CHARACTER_DIRECT
+        # 直伤模式只有单一组分，账本直接取该组分的收集结果——与实算用的是同一份
+        # 词条，避免顶层收集与组分收集因查询差异（来源、标签）而署名不一致。
         lunar_applied_terms: tuple[DamageModifierTerm, ...] = (
             ()
             if trace_level is TraceLevel.NONE or not lunar_direct
-            else (*modifiers.applied_terms, *resolution.panel_terms)
+            else (*top.modifier_terms, *resolution.panel_terms)
         )
         return DamageResult(
             request_id=query.request.request_id,

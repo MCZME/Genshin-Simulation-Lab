@@ -456,3 +456,39 @@ def test_composite_mode_keeps_slots_per_component() -> None:
         assert slots["lunar_ascension_multiplier"] == pytest.approx(1.0)
     # 两名等值参与者（等级基数 100）按固定权重 0.6 / 0.3 聚合。
     assert _damage(result) == pytest.approx(100.0 * 0.6 + 100.0 * 0.3)
+
+
+def test_composite_component_audit_serializes_terms() -> None:
+    """复合组分的修饰词条与面板词条都进入序列化审计，provider 署名可回源。"""
+
+    result = _resolve(
+        _provider("test.base_bonus", DamageModifierStage.LUNAR_BASE_DAMAGE_BONUS_ADD, 0.25),
+        lunar_input=_composite_input(),
+        formula=_formula(),
+    )
+
+    component_payload = result.to_audit_dict()["reaction"]["components"][0]
+    assert any(
+        term["provider_key"] == "test.base_bonus" for term in component_payload["modifier_terms"]
+    )
+    panel_stages = {term["stage"] for term in component_payload["panel_terms"]}
+    assert "panel_elemental_mastery" in panel_stages
+    assert "panel_resistance" in panel_stages
+
+
+def test_direct_audit_matches_the_single_component_collection() -> None:
+    """直伤账本直接取单一组分的收集结果，署名与实算同源。"""
+
+    result = _resolve(
+        _provider("test.base_bonus", DamageModifierStage.LUNAR_BASE_DAMAGE_BONUS_ADD, 0.25)
+    )
+
+    component = result.lunar_reaction_resolution.components[0]
+    component_providers = {term.provider_key for term in component.modifier_terms}
+    applied_providers = {
+        term.provider_key
+        for term in result.applied_terms
+        if not term.provider_key.startswith("panel.")
+    }
+    assert component_providers == {"test.base_bonus"}
+    assert applied_providers == component_providers

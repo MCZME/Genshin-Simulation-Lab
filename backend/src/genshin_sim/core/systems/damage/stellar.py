@@ -231,6 +231,9 @@ class StellarReactionComponentResolution:
     # 该组分独立收集到的伤害修饰项。复合路径的修饰不进入顶层 applied_terms，
     # 因此在此单独保留，使数值与审计重新对齐。
     modifier_terms: tuple[Any, ...] = ()
+    # 该组分从属性系统读取到的面板值物化成的词条（精通、暴击、抗性），
+    # 与 modifier_terms 合成该组分的槽位账单。
+    panel_terms: tuple[Any, ...] = ()
     # 该组分各可修饰位置的三段审计；倍率区基线是该参与者的反应基础值。
     slots: tuple[StellarZoneSlotAudit, ...] = ()
     source_attribute_trace: tuple[Any, ...] = ()
@@ -250,6 +253,8 @@ class StellarReactionComponentResolution:
             if not math.isfinite(value) or value < 0:
                 raise ValueError(f"{name} 必须是有限非负数")
             object.__setattr__(self, name, value)
+        object.__setattr__(self, "modifier_terms", tuple(self.modifier_terms))
+        object.__setattr__(self, "panel_terms", tuple(self.panel_terms))
         slots = tuple(self.slots)
         if any(not isinstance(item, StellarZoneSlotAudit) for item in slots):
             raise ValueError("slots 必须是 StellarZoneSlotAudit 序列")
@@ -275,6 +280,8 @@ class StellarReactionComponentResolution:
             "weight": self.weight,
             "weighted_damage": self.weighted_damage,
             "slots": [item.to_dict() for item in self.slots],
+            "modifier_terms": [item.to_dict() for item in self.modifier_terms],
+            "panel_terms": [item.to_dict() for item in self.panel_terms],
         }
 
 

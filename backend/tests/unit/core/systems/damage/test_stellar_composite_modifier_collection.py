@@ -5,7 +5,7 @@ from typing import Any
 
 import pytest
 
-from genshin_sim.core.systems.damage import DamageResolver
+from genshin_sim.core.systems.damage import DamageModifierStage, DamageResolver
 from genshin_sim.core.systems.damage.modifiers import DamageModifierIndex
 from tests.helpers import stellar_damage as stellar
 
@@ -92,3 +92,18 @@ def test_composite_collects_authority_zone_modifier_per_participant() -> None:
 
     assert boosted[stellar.SOURCE] == pytest.approx(baseline[stellar.SOURCE] * (1.0 + BONUS))
     assert boosted[stellar.OTHER] == pytest.approx(baseline[stellar.OTHER])
+
+
+def test_composite_components_carry_panel_billing_and_serialize_it() -> None:
+    """复合组分与直伤同构地落面板账单，并从序列化审计可读到词条。"""
+
+    result = _resolve()
+
+    for component in stellar.components_of(result):
+        stages = {term.stage for term in component.panel_terms}
+        assert DamageModifierStage.PANEL_ELEMENTAL_MASTERY in stages
+        assert DamageModifierStage.PANEL_RESISTANCE in stages
+
+    component_payload = result.to_audit_dict()["reaction"]["components"][0]
+    assert component_payload["panel_terms"]
+    assert component_payload["modifier_terms"] == []

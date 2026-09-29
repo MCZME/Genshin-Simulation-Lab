@@ -1101,13 +1101,28 @@ class StellarReactionDamageFormula:
         if elemental_mastery < 0:
             raise DamageResolutionError("星烁元素精通不能为负数")
         mastery_bonus = 6.0 * elemental_mastery / (elemental_mastery + 2000.0)
-        critical, critical_trace, _ = self.critical_policy.resolve(
+        # 面板账单项与直伤路径同构：精通、暴击、抗性都在读取点物化，作为该组分
+        # 槽位账单的基础贡献（顶层不重复列入，账本落在组分内）。
+        panel_terms: list[DamageModifierTerm] = [
+            DamageModifierTerm.panel_read(
+                stage=DamageModifierStage.PANEL_ELEMENTAL_MASTERY,
+                attribute=mastery_trace,
+            )
+        ]
+        critical, critical_trace, critical_panel_terms = self.critical_policy.resolve(
             component_query,
             component_session,
             component_terms,
         )
+        panel_terms.extend(critical_panel_terms)
         resistance_attribute = component_session.resolve_target(
             ELEMENT_TO_RESISTANCE_KEY[query.request.element.value]
+        )
+        panel_terms.append(
+            DamageModifierTerm.panel_read(
+                stage=DamageModifierStage.PANEL_RESISTANCE,
+                attribute=resistance_attribute,
+            )
         )
         resistance_add = _sum_terms(component_terms, DamageModifierStage.RESISTANCE_ADD)
         resistance = self.resistance_policy.resolve(
@@ -1182,6 +1197,7 @@ class StellarReactionDamageFormula:
             weight=0.0,
             weighted_damage=0.0,
             modifier_terms=component_terms,
+            panel_terms=tuple(panel_terms),
             slots=slots,
             source_attribute_trace=source_attribute_trace,
             target_attribute_trace=target_attribute_trace,
@@ -1303,13 +1319,15 @@ def _stellar_component_query(
 
 
 def _stellar_component_weight(index: int) -> float:
-    """返回星烁复合伤害按完整单人伤害排序后的固定权重。"""
+    """返回星烁复合伤害按完整单人伤害排序后的固定权重。
 
-    if index == 0:
-        return 0.60
-    if index == 1:
-        return 0.30
-    return 0.05
+    星烁与月曜复合共用同一分配表 ``LUNAR_COMPOSITE_WEIGHTS``（``0.60 : 0.30 : 0.05``，
+    超出表长沿用最后一项）：权重单点定义、不在公式体里重复硬写，口径见 D-083。
+    """
+
+    if index < len(LUNAR_COMPOSITE_WEIGHTS):
+        return LUNAR_COMPOSITE_WEIGHTS[index]
+    return LUNAR_COMPOSITE_WEIGHTS[-1]
 
 
 def _merge_stellar_slot(

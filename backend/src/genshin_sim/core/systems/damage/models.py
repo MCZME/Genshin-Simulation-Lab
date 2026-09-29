@@ -1062,6 +1062,8 @@ class LunarReactionComponentResolution:
             "weight": self.weight,
             "weighted_damage": self.weighted_damage,
             "slots": [item.to_dict() for item in self.slots],
+            "modifier_terms": [item.to_dict() for item in self.modifier_terms],
+            "panel_terms": [item.to_dict() for item in self.panel_terms],
         }
 
 

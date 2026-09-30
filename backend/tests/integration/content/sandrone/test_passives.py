@@ -22,6 +22,7 @@ from genshin_sim.core.attributes import (
     AttributeQuery,
     AttributeResolver,
 )
+from genshin_sim.core.systems.damage.stellar import STELLAR_SLOT_REACTION_BONUS
 from tests.helpers import sandrone as sandrone_helpers
 
 PRISM_DISPLAY_NAME = "棱晶弹伤害"
@@ -70,7 +71,7 @@ def test_p4_prism_boost_and_drain_stacks(sandrone_assembled):
     stellar = prism2.payload.result.stellar_reaction_resolution
     assert stellar is not None
     atk = sandrone_helpers.resolved_atk(assembled)
-    assert stellar.input.scaling_value == pytest.approx(atk * 1.0 * 4.0)
+    assert stellar.scaling.value == pytest.approx(atk * 1.0 * 4.0)
     # 功率约 75 排空：跨越 70/60/50/40/30/20/10 七个阈值。
     assert sandrone_helpers.fageou_state_value(assembled, FAGEOU_STATE_TACTICS_STACKS) == 7
 
@@ -105,7 +106,7 @@ def test_p4_prism_boost_requires_power_over_threshold(sandrone_assembled):
     stellar = prism2.payload.result.stellar_reaction_resolution
     assert stellar is not None
     atk = sandrone_helpers.resolved_atk(assembled)
-    assert stellar.input.scaling_value == pytest.approx(atk * 1.0)
+    assert stellar.scaling.value == pytest.approx(atk * 1.0)
     assert sandrone_helpers.fageou_state_value(assembled, FAGEOU_STATE_TACTICS_STACKS) == 0
 
 
@@ -150,7 +151,7 @@ def test_p4_locked_before_first_ascension(sandrone_assembled):
     stellar = prism2.payload.result.stellar_reaction_resolution
     assert stellar is not None
     atk = sandrone_helpers.resolved_atk(assembled)
-    assert stellar.input.scaling_value == pytest.approx(atk * 1.0)
+    assert stellar.scaling.value == pytest.approx(atk * 1.0)
     assert sandrone_helpers.fageou_state_value(assembled, FAGEOU_STATE_TACTICS_STACKS) == 0
 
 
@@ -197,8 +198,8 @@ def test_p4_burst_clears_tactics_and_boosts_beam(sandrone_assembled):
     stellar = beams[0].payload.result.stellar_reaction_resolution
     assert stellar is not None
     atk = sandrone_helpers.resolved_atk(assembled)
-    assert stellar.input.scaling_value == pytest.approx(atk * (1.0 + 1.0 + 0.7))
-    assert stellar.input.stellar_bonus == pytest.approx(0.0)
+    assert stellar.scaling.value == pytest.approx(atk * (1.0 + 1.0 + 0.7))
+    assert stellar.merged_slot(STELLAR_SLOT_REACTION_BONUS, 0.0) == pytest.approx(0.0)
     assert sandrone_helpers.fageou_state_value(assembled, FAGEOU_STATE_TACTICS_STACKS) == 0
 
 

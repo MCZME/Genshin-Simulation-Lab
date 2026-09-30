@@ -13,6 +13,7 @@ from genshin_sim.core.coordination.elemental_reaction.settlement_coordinator imp
     ElementalSettlementCoordinator,
 )
 from genshin_sim.core.elements import Element
+from genshin_sim.core.systems.damage.stellar import STELLAR_SLOT_REACTION_BONUS
 from tests.helpers import sandrone as sandrone_helpers
 
 RAY_DISPLAY_NAME = "重击冷凝射线伤害"
@@ -59,10 +60,11 @@ def test_c1_adds_team_stellar_conduct_bonus_term(sandrone_assembled):
 
     rays = [e for e in events if e.payload.result.damage_name == RAY_STELLAR_DISPLAY_NAME]
     assert rays, "辉映下射线应走星超导冰通道"
-    # 星烁公式的专属增伤并入星烁输入的增伤位（星烁路径不产出槽位账单）。
+    # C1 的 +30% 经槽位账单写入星烁增伤位（D-082）：输入基线保持 0，
+    # 合并值为 0.0 + 0.3。
     stellar = rays[0].payload.result.stellar_reaction_resolution
     assert stellar is not None
-    assert stellar.input.stellar_bonus == pytest.approx(0.3)
+    assert stellar.merged_slot(STELLAR_SLOT_REACTION_BONUS, 0.0) == pytest.approx(0.3)
 
 
 def test_c2_ray_crit_damage_ladder_caps_at_three(sandrone_assembled):
@@ -105,7 +107,7 @@ def test_c4_cooldown_absorbs_rays_up_to_the_boundary(sandrone_assembled):
     stellar = result.stellar_reaction_resolution
     assert stellar is not None
     atk = sandrone_helpers.resolved_atk(assembled)
-    assert stellar.input.scaling_value == pytest.approx(atk * 1.25)
+    assert stellar.scaling.value == pytest.approx(atk * 1.25)
     assert stellar.input.stellar_base_multiplier == pytest.approx(1.55)
     assert stellar.input.stellar_base_bonus == pytest.approx(min(atk / 100.0 * 0.007, 0.14))
     assert stellar.input.stellar_ascension_bonus == pytest.approx(0.0)
@@ -144,7 +146,7 @@ def test_c4_switches_variant_on_stellar_swirl_hit(sandrone_assembled):
     stellar = result.stellar_reaction_resolution
     assert stellar is not None
     atk = sandrone_helpers.resolved_atk(assembled)
-    assert stellar.input.scaling_value == pytest.approx(atk * 1.875)
+    assert stellar.scaling.value == pytest.approx(atk * 1.875)
     assert stellar.input.stellar_base_multiplier == pytest.approx(1.0)
 
 
@@ -191,7 +193,7 @@ def test_c6_extra_segments_turn_stellar_conduct_under_radiance(sandrone_assemble
     stellar = extras[0].payload.result.stellar_reaction_resolution
     assert stellar is not None
     atk = sandrone_helpers.resolved_atk(assembled)
-    assert stellar.input.scaling_value == pytest.approx(atk * 0.8)
+    assert stellar.scaling.value == pytest.approx(atk * 0.8)
     assert stellar.input.stellar_ascension_bonus == pytest.approx(0.2)
 
 
@@ -224,7 +226,7 @@ def test_c6_extra_segments_turn_stellar_swirl_under_radiance(sandrone_assembled)
     stellar = extras[0].payload.result.stellar_reaction_resolution
     assert stellar is not None
     atk = sandrone_helpers.resolved_atk(assembled)
-    assert stellar.input.scaling_value == pytest.approx(atk * 1.2)
+    assert stellar.scaling.value == pytest.approx(atk * 1.2)
     assert stellar.input.stellar_base_multiplier == pytest.approx(1.0)
 
 

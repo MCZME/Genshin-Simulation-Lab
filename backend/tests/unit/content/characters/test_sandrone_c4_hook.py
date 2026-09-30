@@ -18,6 +18,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
 )
 from genshin_sim.core.attributes import (
     STAT_ATK_BASE,
+    STAT_ATK_TOTAL,
     STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER,
     STELLAR_SWIRL_DIRECT_BASE_MULTIPLIER,
     AttributeResolver,
@@ -124,7 +125,9 @@ def test_c4_hook_procs_on_stellar_conduct_hit_with_cooldown():
     assert spec is not None and spec.main_attack_tag == "星超导冰"
     stellar = spec.stellar_reaction
     assert stellar is not None
-    assert stellar.scaling_value == pytest.approx(300.0 * 1.25)
+    # 倍率与属性分开承载（D-082）：系数 = 星超导档位倍率，属性 = 攻击力。
+    assert spec.scaling_terms[0].coefficient == pytest.approx(1.25)
+    assert spec.scaling_terms[0].attribute_key == STAT_ATK_TOTAL
     assert stellar.stellar_base_multiplier == pytest.approx(1.0)
     assert stellar.stellar_base_bonus == pytest.approx(stellar_base_bonus_for_atk(300.0))
 
@@ -149,7 +152,7 @@ def test_c4_hook_switches_variant_on_stellar_swirl_hit():
     assert spec is not None and spec.main_attack_tag == "星扩散冰"
     stellar = spec.stellar_reaction
     assert stellar is not None
-    assert stellar.scaling_value == pytest.approx(300.0 * 1.875)
+    assert spec.scaling_terms[0].coefficient == pytest.approx(1.875)
     assert stellar.stellar_base_multiplier == pytest.approx(1.0)
 
     # 星超导冰与星扩散冰共用同一条内置冷却。

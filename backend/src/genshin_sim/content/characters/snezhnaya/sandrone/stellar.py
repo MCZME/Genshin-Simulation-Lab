@@ -62,6 +62,7 @@ from genshin_sim.core.elements import AuraAmount
 from genshin_sim.core.impacts import DamageImpactSpec, StrikeType
 from genshin_sim.core.simulation.context import SimulationContext
 from genshin_sim.core.space import ImpactAreaSpec, Vector3
+from genshin_sim.core.systems.damage import DamageScalingTerm
 from genshin_sim.core.systems.damage.stellar import StellarReactionDamageInput
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
     STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
@@ -87,7 +88,8 @@ class RadianceEvidence(NamedTuple):
 class SandroneStellarAttackChannel:
     """单类攻击的星烁通道：星超导/星扩散两个变体契约与倍率分量。
 
-    星变体契约不携带普通倍率（直伤倍率经 ``scaling_value`` 由星烁输入承载）；
+    星变体契约不携带普通倍率（直伤倍率由 ``resolve_stellar_attack_spec``
+    写入 ``scaling_terms`` 的系数）；
     ``conduct_ratio`` 与 ``swirl_ratio`` 分别取自资产倍率条目的星超导行与
     星扩散行（官方数据直出，组装时不换算）；C6 追加段的两个倍率取自资产命座
     第 6 层效果行。
@@ -265,11 +267,11 @@ def resolve_stellar_attack_spec(
     """辉映状态查表分派：返回星变体契约（附星烁输入），无辉映时返回 None。
 
     证据为辉映 Buff 投影到 ``owner_ref`` 的直伤系数词条：值 > 0 视为持用
-    对应辉映状态，星超导优先（D-069）；直伤倍率 = 攻击力 × 变体倍率分量。
-    ``extra_multiplier`` 并入变体倍率（倍率区加法，如 P4 光束加成提供的
-    倍率 100% + 10%/层），随攻击力一起折进缩放值。星烁输入随组装折叠 P6
-    星烁基础增伤（按攻击力折算）与通道携带的 C6 擢升。缺少仿真上下文或
-    属性解析器时保守回落普通通道。
+    对应辉映状态，星超导优先（D-069）。倍率与属性分开承载（D-082）：变体
+    倍率分量（与 ``extra_multiplier`` 按倍率区相加）写进 ``scaling_terms``
+    的系数，属性固定为攻击力、由公式侧从面板读取，不再预乘成缩放值。星烁
+    输入随组装折叠 P6 星烁基础增伤（按攻击力折算）与通道携带的 C6 擢升。
+    缺少仿真上下文或属性解析器时保守回落普通通道。
     """
 
     evidence = radiance_evidence(simulation, owner_ref, frame)
@@ -282,9 +284,15 @@ def resolve_stellar_attack_spec(
     atk = resolve_attribute_final_value(simulation, owner_ref, STAT_ATK_TOTAL, frame)
     return replace(
         base_spec,
+        scaling_terms=(
+            DamageScalingTerm(
+                component_key=channel.impact_key,
+                attribute_key=STAT_ATK_TOTAL,
+                coefficient=ratio + extra_multiplier,
+            ),
+        ),
         stellar_reaction=StellarReactionDamageInput(
             mode="character_direct",
-            scaling_value=atk * (ratio + extra_multiplier),
             stellar_base_multiplier=evidence.direct_base_multiplier,
             stellar_base_bonus=stellar_base_bonus_for_atk(atk),
             stellar_ascension_bonus=channel.ascension_bonus,

@@ -50,6 +50,7 @@ from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import DamageImpactSpec, ImpactKind, ImpactRequest
 from genshin_sim.core.simulation.context import SimulationContext
+from genshin_sim.core.systems.damage import DamageScalingTerm
 from genshin_sim.core.systems.damage.stellar import StellarReactionDamageInput
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
     STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
@@ -241,7 +242,15 @@ class SandroneC4CoordinatedAttackHook:
                         impact_ref=f"{SANDRONE_C4_ATTACK_IMPACT_KEY}:{frame}",
                         main_attack_tag=variant.main_attack_tag,
                         element=Element.CRYO,
-                        scaling_terms=(),
+                        # 倍率与属性分开承载（D-082）：协同攻击档位系数进
+                        # scaling_terms，属性由公式侧从攻击力面板读取。
+                        scaling_terms=(
+                            DamageScalingTerm(
+                                component_key=SANDRONE_C4_ATTACK_IMPACT_KEY,
+                                attribute_key=STAT_ATK_TOTAL,
+                                coefficient=self._attack_ratio_for(variant),
+                            ),
+                        ),
                         can_crit=True,
                         strike_type=None,
                         range_type="远程",
@@ -250,7 +259,6 @@ class SandroneC4CoordinatedAttackHook:
                         area=None,
                         stellar_reaction=StellarReactionDamageInput(
                             mode="character_direct",
-                            scaling_value=atk * self._attack_ratio_for(variant),
                             stellar_base_multiplier=base_multiplier,
                             stellar_base_bonus=stellar_base_bonus_for_atk(atk),
                             stellar_ascension_bonus=self._ascension_bonus,

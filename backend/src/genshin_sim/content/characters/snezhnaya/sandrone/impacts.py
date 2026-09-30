@@ -524,8 +524,8 @@ class SandroneActionImpactFactory:
         stellar_channel = self._stellar_channels.get(context.impact_key)
         if stellar_channel is not None:
             # P4 光束加成：Q 施放时快照的 P4 提供倍率（100% + 10%/层）作用于
-            # 倍率区，与变体原本倍率一并按攻击力折进缩放值；仅在光束星变体
-            # 上消费（普通光束不消费该字段）。
+            # 倍率区，随变体原本倍率一并并入缩放系数；仅在光束星变体上消费
+            # （普通光束不消费该字段）。
             beam_extra_multiplier = (
                 self._read_state_float(context, FAGEOU_STATE_BEAM_BONUS)
                 if context.impact_key == SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY
@@ -599,23 +599,16 @@ class SandroneActionImpactFactory:
         return float(raw)
 
     def _boost_prism_damage(self, spec: DamageImpactSpec) -> DamageImpactSpec:
-        """P4 第二枚棱晶弹强化：星烁输入乘缩放值，普通契约乘倍率分量。
+        """P4 第二枚棱晶弹强化：把资产效果行的强化倍率并入倍率区系数。
 
-        倍率取自资产效果行；缺值时说明装配接线有误，直接失败。
+        倍率取自资产效果行；星烁与普通契约都经 ``scaling_terms`` 承载倍率
+        （D-082），因此统一按系数放大。缺值时说明装配接线有误，直接失败。
         """
 
         p4 = self._p4
         if p4 is None:
             raise ContentUnitValidationError("P4 数值缺失，无法结算棱晶弹强化")
         multiplier = p4.prism_boost_multiplier
-        if spec.stellar_reaction is not None:
-            return replace(
-                spec,
-                stellar_reaction=replace(
-                    spec.stellar_reaction,
-                    scaling_value=spec.stellar_reaction.scaling_value * multiplier,
-                ),
-            )
         return replace(
             spec,
             scaling_terms=tuple(

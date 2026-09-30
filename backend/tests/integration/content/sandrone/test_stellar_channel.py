@@ -44,6 +44,7 @@ from genshin_sim.core.impacts import (
     ActionImpactContext,
 )
 from genshin_sim.core.systems.buff import BuffRuntime
+from genshin_sim.core.systems.damage.stellar import STELLAR_SLOT_REACTION_BONUS
 from genshin_sim.core.systems.reaction.states import (
     STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
 )
@@ -136,7 +137,7 @@ def _hold_window_sweep_hits() -> list[int]:
 
 def test_radiance_buff_switches_rays_to_stellar_conduct_channel(sandrone_assembled):
     # 射线在发射时查表分派：持辉映·星烁（3 层快照 → 系数 1.55）后走星超导冰
-    # 通道，专用倍率条目组装 scaling_value = ATK × 星超导倍率；功率动力学与
+    # 通道，专用倍率条目组装倍率区系数（属性取攻击力）；功率动力学与
     # 帧表不受变体影响（射线命中仍 +12 功率）。
     assembled = sandrone_assembled(
         payload=_line_target_payload(_HOLD_MAX_FRAMES, _HOLD_PRESS_FRAME, _HOLD_RELEASE_FRAME)
@@ -155,7 +156,7 @@ def test_radiance_buff_switches_rays_to_stellar_conduct_channel(sandrone_assembl
         stellar = result.stellar_reaction_resolution
         assert stellar is not None
         assert stellar.input.mode == "character_direct"
-        assert stellar.input.scaling_value == pytest.approx(atk)
+        assert stellar.scaling.value == pytest.approx(atk)
         assert stellar.input.stellar_base_multiplier == pytest.approx(1.55)
     # 扫射不携带星变体：辉映下仍走普通重击通道，按解算节奏命中（松开帧在
     # 过载翻转之前，窗口内无过载段）。
@@ -183,7 +184,7 @@ def test_radiance_buff_switches_second_prism_only(sandrone_assembled):
     assert second.payload.result.main_attack_tag == "星超导冰"
     stellar = second.payload.result.stellar_reaction_resolution
     assert stellar is not None
-    assert stellar.input.scaling_value == pytest.approx(atk)
+    assert stellar.scaling.value == pytest.approx(atk)
     assert stellar.input.stellar_base_multiplier == pytest.approx(1.55)
 
 
@@ -223,9 +224,11 @@ def test_radiance_buff_switches_beam_contract_at_factory_dispatch(sandrone_assem
     assert spec.main_attack_tag == "星超导冰"
     assert spec.display_name == BEAM_STELLAR_DISPLAY_NAME
     assert spec.stellar_reaction is not None
-    atk = _resolved_atk(assembled)
     assert spec.stellar_reaction.mode == "character_direct"
-    assert spec.stellar_reaction.scaling_value == pytest.approx(atk)
+    # 倍率与属性分开承载（D-082）：系数 = 星超导倍率分量（合成条目值 1.0），
+    # 属性 = 攻击力。
+    assert spec.scaling_terms[0].coefficient == pytest.approx(1.0)
+    assert spec.scaling_terms[0].attribute_key == STAT_ATK_TOTAL
     assert spec.stellar_reaction.stellar_base_multiplier == pytest.approx(1.55)
 
 
@@ -276,7 +279,7 @@ def test_stellar_swirl_trigger_activates_swirl_channel(sandrone_assembled):
         assert stellar.input.mode == "character_direct"
         # 星扩散系数证据固定 1.0；倍率分量以普通变体占位（合成条目 1.0）。
         assert stellar.input.stellar_base_multiplier == pytest.approx(1.0)
-        assert stellar.input.scaling_value == pytest.approx(atk)
+        assert stellar.scaling.value == pytest.approx(atk)
     # 星超导未触发（无雷冰反应）：射线不得走星超导通道。
     assert not [
         e for e in damage_events if e.payload.result.damage_name == RAY_STELLAR_DISPLAY_NAME
@@ -315,5 +318,5 @@ def test_c1_bonus_covers_stellar_swirl_damage(sandrone_assembled):
         stellar = event.payload.result.stellar_reaction_resolution
         assert stellar is not None
         assert event.payload.result.main_attack_tag == "星扩散冰"
-        # C1 的 +30% 并入星烁输入的增伤位（星烁路径不产出槽位账单）。
-        assert stellar.input.stellar_bonus == pytest.approx(0.3)
+        # C1 的 +30% 经槽位账单写入星烁增伤位（D-082）。
+        assert stellar.merged_slot(STELLAR_SLOT_REACTION_BONUS, 0.0) == pytest.approx(0.3)

@@ -126,10 +126,12 @@ class DamageImpactSpec:
         ):
             raise ValueError("stellar_reaction 提供时必须是 StellarReactionDamageInput")
         if self.stellar_reaction is not None:
-            # 星烁请求边界（星超导反应契约 §8）：直伤倍率经 scaling_value 承载，
-            # 普通倍率、附着与 ICD 全部不携带。
-            if self.scaling_terms:
-                raise ValueError("星烁伤害契约不能携带普通倍率 scaling_terms")
+            # 星烁请求边界（星超导反应契约 §8）：直伤模式的倍率与属性由
+            # scaling_terms 的 coefficient 与 attribute_key 分别承载；复合模式的
+            # 倍率区基线来自参与者反应基础值，请求级倍率没有承载对象，显式拒绝。
+            # 两种模式都不携带固定基础伤害与附着、ICD。
+            if self.stellar_reaction.mode == "reaction_composite" and self.scaling_terms:
+                raise ValueError("星烁复合伤害不能携带请求级倍率 scaling_terms")
             if self.flat_base_damage:
                 raise ValueError("星烁伤害契约不能携带 flat_base_damage")
             if self.elemental_strength is not None or not self.elemental_amount.is_zero:

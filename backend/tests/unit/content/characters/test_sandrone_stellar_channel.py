@@ -30,6 +30,7 @@ from genshin_sim.content.generic.talents import index_talent_scalings
 from genshin_sim.content.registries import CharacterContentUnitRequest
 from genshin_sim.core.attributes import (
     STAT_ATK_BASE,
+    STAT_ATK_TOTAL,
     AttributeResolver,
     AttributeSubjectRef,
     BaseAttributeContribution,
@@ -56,6 +57,7 @@ from genshin_sim.core.systems.buff import (
     BuffRuntime,
     BuffStore,
 )
+from genshin_sim.core.systems.damage import DamageScalingTerm
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
     STELLAR_CONDUCT_CAPABILITY_KEY,
 )
@@ -164,12 +166,18 @@ def test_conduct_radiance_assembles_character_direct_stellar_input() -> None:
     )
     assert spec is not None
     assert spec.main_attack_tag == "星超导冰"
-    assert spec.scaling_terms == ()
     assert spec.stellar_reaction is not None
     assert spec.stellar_reaction.mode == "character_direct"
-    # 直伤倍率 = 攻击力 × 星超导倍率分量（合成星超导条目值 1.0），星烁基础
-    # 系数取辉映 Buff 投影的层数快照（3 层 → 1.4 + 0.05×3）。
-    assert spec.stellar_reaction.scaling_value == pytest.approx(300.0)
+    # 倍率与属性分开承载（D-082）：系数 = 星超导倍率分量（合成条目值 1.0），
+    # 属性 = 攻击力，由公式侧从面板读取。
+    assert spec.scaling_terms == (
+        DamageScalingTerm(
+            component_key=SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
+            attribute_key=STAT_ATK_TOTAL,
+            coefficient=1.0,
+        ),
+    )
+    # 星烁基础系数取辉映 Buff 投影的层数快照（3 层 → 1.4 + 0.05×3）。
     assert spec.stellar_reaction.stellar_base_multiplier == pytest.approx(1.55)
 
 
@@ -184,9 +192,9 @@ def test_extra_multiplier_joins_variant_multiplier_region() -> None:
     )
     assert spec is not None
     assert spec.stellar_reaction is not None
-    # P4 光束加成按倍率区结算：缩放值 = 攻击力 ×（变体倍率 1.0 + P4 提供倍率
-    # 100% + 6 层 × 10%）。
-    assert spec.stellar_reaction.scaling_value == pytest.approx(300.0 * 2.6)
+    # P4 光束加成按倍率区结算：系数 = 变体倍率 1.0 + P4 提供倍率 100% +
+    # 6 层 × 10%。
+    assert spec.scaling_terms[0].coefficient == pytest.approx(2.6)
 
 
 def test_swirl_radiance_uses_swirl_branch_with_swirl_ratio() -> None:
@@ -201,9 +209,9 @@ def test_swirl_radiance_uses_swirl_branch_with_swirl_ratio() -> None:
     assert spec.main_attack_tag == "星扩散冰"
     assert spec.stellar_reaction is not None
     assert spec.stellar_reaction.mode == "character_direct"
-    # 星扩散系数证据固定 1.0；倍率取自资产星扩散条目（合成值 1.0）。
+    # 星扩散系数证据固定 1.0；倍率系数取自资产星扩散条目（合成值 1.0）。
     assert spec.stellar_reaction.stellar_base_multiplier == pytest.approx(1.0)
-    assert spec.stellar_reaction.scaling_value == pytest.approx(300.0 * 1.0)
+    assert spec.scaling_terms[0].coefficient == pytest.approx(1.0)
 
 
 def test_conduct_radiance_takes_priority_over_swirl() -> None:
@@ -240,8 +248,8 @@ def test_c6_extra_channel_uses_ratios_from_the_constellation_row() -> None:
     assert spec.main_attack_tag == "星超导冰"
     assert spec.additional_attack_tags == ("桑多涅激光",)
     assert spec.stellar_reaction is not None
-    assert spec.stellar_reaction.scaling_value == pytest.approx(300.0 * values.conduct_ratio)
-    assert spec.stellar_reaction.scaling_value == pytest.approx(300.0 * 0.8)
+    assert spec.scaling_terms[0].coefficient == pytest.approx(values.conduct_ratio)
+    assert spec.scaling_terms[0].coefficient == pytest.approx(0.8)
     assert spec.stellar_reaction.stellar_ascension_bonus == pytest.approx(values.ascension_bonus)
     assert spec.stellar_reaction.stellar_ascension_bonus == pytest.approx(0.2)
 
@@ -264,8 +272,8 @@ def test_c6_extra_channel_swirl_ratio_comes_from_the_constellation_row() -> None
     assert spec is not None
     assert spec.main_attack_tag == "星扩散冰"
     assert spec.stellar_reaction is not None
-    assert spec.stellar_reaction.scaling_value == pytest.approx(300.0 * values.swirl_ratio)
-    assert spec.stellar_reaction.scaling_value == pytest.approx(300.0 * 1.2)
+    assert spec.scaling_terms[0].coefficient == pytest.approx(values.swirl_ratio)
+    assert spec.scaling_terms[0].coefficient == pytest.approx(1.2)
     assert spec.stellar_reaction.stellar_base_multiplier == pytest.approx(1.0)
 
 

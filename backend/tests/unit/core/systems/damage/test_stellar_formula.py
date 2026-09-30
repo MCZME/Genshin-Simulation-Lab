@@ -1,48 +1,26 @@
-"""星烁完整公式的边界、结构与结算行为。"""
+"""星烁公式自身的输入校验与直伤/复合结算行为。"""
 
 from typing import Any, cast
 
 import pytest
 
 from genshin_sim.core.attributes import (
-    RESISTANCE_ELECTRO,
-    STAT_ELEMENTAL_MASTERY,
-    STAT_HP_BASE,
     STAT_HP_MAX,
     AttributeQueryContext,
     AttributeResolver,
     AttributeSubjectRef,
-    BaseAttributeContribution,
-    BaseAttributeSet,
-    ModifierProviderIndex,
     RuntimeSourceKind,
     RuntimeSourceRef,
     TraceLevel,
-    create_public_attribute_registry,
 )
 from genshin_sim.core.elements import Element
-from genshin_sim.core.entity_states import (
-    CharacterRuntimeState,
-    TargetRuntimeCollection,
-    TargetRuntimeState,
-)
-from genshin_sim.core.impacts import DamageImpactSpec, ImpactKind, ImpactRequest
-from genshin_sim.core.simulation import SimulationContext, TeamRuntimeState
-from genshin_sim.core.space import Space, SpatialEntity, SpatialEntityKind, Vector3
-from genshin_sim.core.space.runtime import SpaceRuntime
 from genshin_sim.core.systems.damage import (
     FORMULA_KEY_STELLAR_REACTION,
     DamageFormulaContext,
     DamageModifierIndex,
-    DamageProfile,
-    DamageProfileRegistry,
     DamageQuery,
-    DamageRequestHandler,
-    DamageResolver,
-    FixedCriticalDecisionProvider,
     StandardResistancePolicy,
     StellarReactionDamageInput,
-    create_default_damage_formula_registry,
 )
 from genshin_sim.core.systems.damage.errors import (
     DamageFormulaInputError,
@@ -58,11 +36,11 @@ from genshin_sim.core.systems.damage.models import (
 )
 from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
 from genshin_sim.core.systems.damage.stellar import StellarReactionParticipantInput
-from tests.helpers import stellar_damage as stellar
+from tests.helpers import damage
 
-SOURCE = stellar.SOURCE
-TARGET = stellar.TARGET
-DIRECT_SCALING_TERMS = stellar.SCALING_TERMS
+SOURCE = damage.SOURCE
+TARGET = damage.TARGET
+DIRECT_SCALING_TERMS = damage.SCALING_TERMS
 
 
 def _make_damage_request(**overrides: Any) -> DamageRequest:
@@ -130,13 +108,8 @@ def test_damage_request_stellar_input_kind_is_enforced() -> None:
         _make_damage_request(stellar_reaction=object())  # type: ignore[arg-type]
 
 
-def test_stellar_request_accepts_scaling_terms_but_rejects_flat_base() -> None:
-    """倍率区必须走 scaling_terms；固定基础伤害在星烁公式里没有位置，仍被拒绝。"""
-
-    request = _make_damage_request(
-        scaling_terms=(DamageScalingTerm("atk", STAT_HP_MAX, 2.0),),
-    )
-    assert request.scaling_terms == (DamageScalingTerm("atk", STAT_HP_MAX, 2.0),)
+def test_stellar_request_rejects_flat_base() -> None:
+    """倍率区必须走 scaling_terms；固定基础伤害在星烁公式里没有对应槽位，仍被拒绝。"""
 
     with pytest.raises(DamageValidationError, match="星烁伤害不能携带 flat base"):
         _make_damage_request(flat_base_damage=10.0)
@@ -148,28 +121,15 @@ def _attribute_resolver(
     electro_resistance: float = 0.1,
     base_hp: float = 1000.0,
 ) -> AttributeResolver:
-    registry = create_public_attribute_registry()
-    source_context = RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.stellar")
-    return AttributeResolver(
-        definitions=registry,
-        base_attributes=BaseAttributeSet(
-            (
-                (
-                    SOURCE,
-                    BaseAttributeContribution(
-                        STAT_ELEMENTAL_MASTERY, elemental_mastery, source_context
-                    ),
-                ),
-                (SOURCE, BaseAttributeContribution(STAT_HP_BASE, base_hp, source_context)),
-                (
-                    TARGET,
-                    BaseAttributeContribution(
-                        RESISTANCE_ELECTRO, electro_resistance, source_context
-                    ),
-                ),
-            )
-        ),
-        modifier_index=ModifierProviderIndex((), registry=registry),
+    """以 ``SOURCE`` 为施术者、满足给定精通/生命/电抗的合成属性环境。"""
+
+    return damage.make_attribute_resolver(
+        (SOURCE,),
+        target=TARGET,
+        source_context=RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.stellar"),
+        elemental_mastery=elemental_mastery,
+        base_hp=base_hp,
+        electro_resistance=electro_resistance,
     )
 
 
@@ -217,8 +177,8 @@ def _direct_resolution(
     )
 
 
-def test_stellar_direct_formula_uses_specialized_zones() -> None:
-    """十位置公式：倍率区来自面板属性 × 系数，其余位置来自冻结基线。"""
+def test_stellar_direct_formula_composes_specialized_zones_from_live_panels() -> None:
+    """直伤星烁结算：倍率区来自面板属性 × 系数，其余专属槽位来自冻结基线。"""
 
     resolution = _direct_resolution(
         stellar_reaction=StellarReactionDamageInput(
@@ -230,44 +190,23 @@ def test_stellar_direct_formula_uses_specialized_zones() -> None:
             direct_stellar_feather_addition=10,
             stellar_ascension_bonus=0.1,
         ),
-        electro_resistance=0.5,
     )
 
-    scaling_zone = 1000 * 1.0
     mastery_bonus = 6 * 200 / 2200
+    scaling_zone = 1000 * 1.0
     expected_base = scaling_zone * 1.45 * 1.1 * (1 + mastery_bonus + 0.2) * 1.5 + 10
-    resistance_multiplier = StandardResistancePolicy().resolve(0.5).multiplier
+    resistance_multiplier = StandardResistancePolicy().resolve(0.1).multiplier
     expected = expected_base * 1.0 * resistance_multiplier * 1.1
 
     assert resolution.base_damage == pytest.approx(expected_base)
     assert resolution.official_damage == pytest.approx(expected)
+    assert resolution.final_damage == pytest.approx(expected)
+    # 倍率区不再与属性混为一个标量：组件的属性值与系数分别保留。
     assert resolution.scaling is not None
     assert resolution.scaling.value == pytest.approx(scaling_zone)
-    # 倍率区不再与属性混为一个标量：组件的属性值与系数分别保留。
     component = resolution.scaling.component_results[0]
     assert component.attribute_value == pytest.approx(1000.0)
     assert component.original_coefficient == pytest.approx(1.0)
-
-
-def test_stellar_formula_resolves_with_live_mastery_crit_and_resistance() -> None:
-    resolution = _direct_resolution(
-        stellar_reaction=StellarReactionDamageInput(
-            mode="character_direct",
-            stellar_base_multiplier=1.45,
-            stellar_base_bonus=0.1,
-            stellar_bonus=0.2,
-            stellar_authority_multiplier=1.5,
-            direct_stellar_feather_addition=10,
-            stellar_ascension_bonus=0.1,
-        ),
-    )
-
-    mastery_bonus = 6 * 200 / 2200
-    expected_core = 1000 * 1.45 * 1.1 * (1 + mastery_bonus + 0.2) * 1.5 + 10
-    resistance_multiplier = StandardResistancePolicy().resolve(0.1).multiplier
-    expected_official = expected_core * 1.0 * resistance_multiplier * 1.1
-    assert resolution.official_damage == pytest.approx(expected_official)
-    assert resolution.final_damage == pytest.approx(expected_official)
     assert resolution.elemental_mastery == pytest.approx(200.0)
     assert resolution.mastery_bonus == pytest.approx(mastery_bonus)
     assert resolution.critical is not None
@@ -330,7 +269,7 @@ def test_stellar_composite_rejects_request_level_scaling() -> None:
     query = _stellar_query(
         attribute_resolver,
         scaling_terms=DIRECT_SCALING_TERMS,
-        stellar_reaction=stellar.make_composite_input(),
+        stellar_reaction=damage.make_composite_input(),
     )
     formula = StellarReactionDamageFormula()
     session = DamageResolutionSession(attribute_resolver, query)
@@ -382,7 +321,7 @@ def test_stellar_input_rejects_participant_shape_violations() -> None:
 def test_stellar_formula_composite_settles_per_participant_with_weights() -> None:
     participants = (
         _participant(SOURCE, 100.0),
-        _participant(stellar.OTHER, 50.0),
+        _participant(damage.OTHER, 50.0),
     )
     resolution = _resolve_composite(
         StellarReactionDamageInput(
@@ -401,7 +340,7 @@ def test_stellar_formula_composite_settles_per_participant_with_weights() -> Non
     assert resolution.components[0].participant_ref.entity_id == SOURCE.entity_id
     assert resolution.components[0].weight == pytest.approx(0.60)
     assert resolution.components[0].component_damage == pytest.approx(damage_source)
-    assert resolution.components[1].participant_ref.entity_id == stellar.OTHER.entity_id
+    assert resolution.components[1].participant_ref.entity_id == damage.OTHER.entity_id
     assert resolution.components[1].weight == pytest.approx(0.30)
     assert resolution.components[1].component_damage == pytest.approx(damage_other)
     expected_official = 0.60 * damage_source + 0.30 * damage_other
@@ -456,8 +395,8 @@ def _resolve_composite(
     *,
     trace_level: TraceLevel = TraceLevel.NONE,
 ) -> Any:
-    attribute_resolver = stellar.make_attribute_resolver()
-    query = stellar.make_query(stellar_reaction)
+    attribute_resolver = damage.make_stellar_attribute_resolver()
+    query = damage.make_query(stellar_reaction)
     formula = StellarReactionDamageFormula()
     session = DamageResolutionSession(attribute_resolver, query)
     modifiers = DamageModifierIndex(()).collect(query, session)
@@ -470,155 +409,3 @@ def _resolve_composite(
             modifier_collector=DamageModifierIndex(()).collect,
         )
     )
-
-
-def test_default_formula_registry_contains_stellar_formula() -> None:
-    registry = create_default_damage_formula_registry()
-    assert isinstance(registry.require(FORMULA_KEY_STELLAR_REACTION), StellarReactionDamageFormula)
-
-
-def test_stellar_profile_maps_main_attack_tag_to_stellar_formula() -> None:
-    registry = DamageProfileRegistry(
-        (DamageProfile(FORMULA_KEY_STELLAR_REACTION, frozenset({"星超导雷"})),)
-    )
-    profile = registry.resolve_for_main_attack_tag("星超导雷")
-    assert profile.formula_key == FORMULA_KEY_STELLAR_REACTION
-
-
-def test_damage_handler_resolves_stellar_reactions_mapping() -> None:
-    """Impact 侧声明倍率后，星烁直伤可以完整走到扁平结果与审计载荷。"""
-
-    registry = create_public_attribute_registry()
-    source_context = RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.stellar")
-    attribute_resolver = AttributeResolver(
-        definitions=registry,
-        base_attributes=BaseAttributeSet(
-            (
-                (SOURCE, BaseAttributeContribution(STAT_ELEMENTAL_MASTERY, 200.0, source_context)),
-                (SOURCE, BaseAttributeContribution(STAT_HP_BASE, 1000.0, source_context)),
-                (TARGET, BaseAttributeContribution(RESISTANCE_ELECTRO, 0.0, source_context)),
-            )
-        ),
-        modifier_index=ModifierProviderIndex((), registry=registry),
-    )
-    profile_registry = DamageProfileRegistry(
-        (DamageProfile(FORMULA_KEY_STELLAR_REACTION, frozenset({"星超导雷"})),)
-    )
-    handler = DamageRequestHandler(
-        DamageResolver(
-            attribute_resolver=attribute_resolver,
-            formula_registry=create_default_damage_formula_registry(
-                critical_decision_provider=FixedCriticalDecisionProvider()
-            ),
-        ),
-        profile_registry=profile_registry,
-    )
-    target = TargetRuntimeState("star", level=90, spatial_entity_id="target:star")
-    context = SimulationContext(
-        space_runtime=SpaceRuntime(
-            space=Space(
-                (
-                    SpatialEntity(
-                        "target:star",
-                        SpatialEntityKind.TARGET,
-                        Vector3(0.0, 0.0, 0.0),
-                    ),
-                )
-            ),
-            team_state=TeamRuntimeState(
-                (
-                    CharacterRuntimeState(
-                        1, "character:test", 90, combat_entity_id="character:slot_1"
-                    ),
-                )
-            ),
-            targets=TargetRuntimeCollection((target,)),
-        )
-    )
-    request = ImpactRequest(
-        frame=10,
-        kind=ImpactKind.DAMAGE,
-        impact_key="action.stellar_direct",
-        owner_slot=1,
-        request_id="root:stellar-direct:1",
-        target_refs=("star",),
-        damage_spec=DamageImpactSpec(
-            impact_ref="impact:stellar-direct:1",
-            main_attack_tag="星超导雷",
-            element=Element.ELECTRO,
-            scaling_terms=(DamageScalingTerm(stellar.DIRECT_COMPONENT_KEY, STAT_HP_MAX, 1.0),),
-        ),
-    )
-
-    results = handler.handle_impact_request(
-        context,
-        request,
-        stellar_reactions={
-            "star": StellarReactionDamageInput(
-                mode="character_direct",
-                stellar_base_multiplier=1.45,
-            )
-        },
-    )
-
-    assert len(results) == 1
-    result = results[0]
-    assert result.formula_key == FORMULA_KEY_STELLAR_REACTION
-    assert result.stellar_reaction_resolution is not None
-    mastery_bonus = 6 * 200 / 2200
-    expected = 1000 * 1.0 * 1.45 * (1 + mastery_bonus)
-    assert result.stellar_reaction_resolution.official_damage == pytest.approx(expected)
-    assert result.final_damage == pytest.approx(expected)
-    payload = result.to_dict()
-    stellar_payload = cast(dict[str, object], payload["stellar_reaction"])
-    assert stellar_payload is not None
-    assert stellar_payload["mode"] == "character_direct"
-
-    audit = result.to_audit_dict()
-    reaction_audit = cast(dict[str, object], audit["reaction"])
-    assert reaction_audit["kind"] == "stellar"
-    assert reaction_audit["elemental_mastery"] == pytest.approx(200.0)
-    assert reaction_audit["mastery_bonus"] == pytest.approx(mastery_bonus)
-    assert reaction_audit["stellar_base_multiplier"] == pytest.approx(1.45)
-    assert reaction_audit["crit_outcome"] == "non_critical"
-    assert reaction_audit["crit_multiplier"] == pytest.approx(1.0)
-    assert reaction_audit["resistance_multiplier"] is not None
-    assert reaction_audit["official_damage"] == pytest.approx(expected)
-    assert reaction_audit["final_damage"] == pytest.approx(expected)
-    assert isinstance(audit["critical"], dict)
-    assert isinstance(audit["resistance"], dict)
-
-
-def test_stellar_flat_result_carries_slot_audit_and_panel_ledger() -> None:
-    """扁平结果把括号值写进 base_damage，且结算账单含效果词条与面板读取词条。"""
-
-    resolver = DamageResolver(attribute_resolver=stellar.make_attribute_resolver())
-    result = resolver.resolve(stellar.make_query(stellar.make_character_direct_input()))
-
-    stellar_resolution = result.stellar_reaction_resolution
-    assert stellar_resolution is not None
-    mastery_bonus = 6 * 200 / 2200
-    expected_base = 1000 * 1.0 * (1 + mastery_bonus)
-    assert result.base_damage == pytest.approx(expected_base)
-    assert result.official_damage == pytest.approx(expected_base)
-    assert result.base_damage_additions == ()
-    # 槽位三段审计进入 reaction 载荷，可直接回答"这个值是谁给的"。
-    audit = result.to_audit_dict()
-    reaction = cast(dict[str, object], audit["reaction"])
-    assert reaction["kind"] == "stellar"
-    slots = cast(list[dict[str, object]], reaction["slots"])
-    assert {slot["slot_key"] for slot in slots} == {
-        "stellar_base_multiplier",
-        "stellar_base_bonus",
-        "stellar_reaction_bonus",
-        "stellar_authority_multiplier",
-        "stellar_feather_addition",
-        "stellar_ascension_bonus",
-    }
-    for slot in slots:
-        assert slot["baseline"] == pytest.approx(cast(float, slot["merged"]))
-        assert slot["modifier_sum"] == pytest.approx(0.0)
-    assert reaction["base_damage"] == pytest.approx(expected_base)
-    # 面板读取词条与效果词条合成同一本账。
-    panel_keys = {term.provider_key for term in result.applied_terms}
-    assert any(key.startswith("panel.") for key in panel_keys)

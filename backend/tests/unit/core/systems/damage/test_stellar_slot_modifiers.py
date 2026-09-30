@@ -1,4 +1,4 @@
-# 单一关注点：星烁十个位置各自可被槽位账单修饰，且合并口径唯一。
+# 单一关注点：星烁专属槽位各自可被槽位账单修饰，且合并口径唯一。
 from __future__ import annotations
 
 from typing import Any
@@ -14,17 +14,39 @@ from genshin_sim.core.systems.damage import (
     create_default_damage_formula_registry,
 )
 from genshin_sim.core.systems.damage.errors import DamageProviderViolationError
-from genshin_sim.core.systems.damage.models import DamageModifierTerm
 from genshin_sim.core.systems.damage.modifiers import (
     DamageModifierIndex,
-    DamageModifierProviderSpec,
     StaticDamageModifierProvider,
 )
-from tests.helpers import stellar_damage as stellar
+from tests.helpers import damage
 
-BASE_HP = stellar.BASE_HP
 MASTERY_BONUS = 6 * 200 / 2200
-BASELINE_BASE_DAMAGE = BASE_HP * (1 + MASTERY_BONUS)
+BASELINE_BASE_DAMAGE = damage.BASE_HP * (1 + MASTERY_BONUS)
+
+# 六个星烁专属槽位：key、专属阶段、词条值、合并后的期望值。
+SLOT_CASES = (
+    (
+        "stellar_base_multiplier",
+        DamageModifierStage.STELLAR_BASE_MULTIPLIER_ADD,
+        0.5,
+        1.5,
+    ),
+    ("stellar_base_bonus", DamageModifierStage.STELLAR_BASE_BONUS_ADD, 0.5, 0.5),
+    ("stellar_reaction_bonus", DamageModifierStage.STELLAR_REACTION_BONUS_ADD, 0.5, 0.5),
+    (
+        "stellar_authority_multiplier",
+        DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD,
+        0.5,
+        1.5,
+    ),
+    (
+        "stellar_feather_addition",
+        DamageModifierStage.STELLAR_FEATHER_ADDITION_ADD,
+        100.0,
+        100.0,
+    ),
+    ("stellar_ascension_bonus", DamageModifierStage.STELLAR_ASCENSION_BONUS_ADD, 0.5, 0.5),
+)
 
 
 def _provider(
@@ -34,19 +56,14 @@ def _provider(
     *,
     component_key: str | None = None,
 ) -> StaticDamageModifierProvider:
-    """构造一个只写单一阶段的合成 provider。"""
+    """把共享脚手架绑到星烁用例的固定来源上下文上。"""
 
-    return StaticDamageModifierProvider(
-        DamageModifierProviderSpec(provider_key=provider_key, writes=frozenset({stage})),
-        (
-            DamageModifierTerm(
-                stage=stage,
-                value=value,
-                provider_key=provider_key,
-                source_ref=stellar.SOURCE_CONTEXT,
-                component_key=component_key,
-            ),
-        ),
+    return damage.single_stage_provider(
+        provider_key,
+        stage,
+        value,
+        source_context=damage.SOURCE_CONTEXT,
+        component_key=component_key,
     )
 
 
@@ -56,12 +73,12 @@ def _resolve(
     formula_registry: Any = None,
 ) -> Any:
     resolver = DamageResolver(
-        attribute_resolver=stellar.make_attribute_resolver(),
+        attribute_resolver=damage.make_stellar_attribute_resolver(),
         modifier_index=DamageModifierIndex(providers),
         **({} if formula_registry is None else {"formula_registry": formula_registry}),
     )
     return resolver.resolve(
-        stellar.make_query(
+        damage.make_query(
             StellarReactionDamageInput(
                 mode="character_direct",
                 stellar_base_multiplier=base_multiplier,
@@ -74,14 +91,16 @@ def _damage(result: Any) -> float:
     return float(result.official_damage)
 
 
-def test_baseline_direct_damage_matches_the_ten_slot_formula() -> None:
-    """无词条时十个位置取冻结基线，倍率区来自面板属性。"""
+def test_baseline_direct_damage_matches_the_slot_formula() -> None:
+    """无词条时六个专属槽位取冻结基线，倍率区来自面板属性。"""
 
     result = _resolve()
 
     assert _damage(result) == pytest.approx(BASELINE_BASE_DAMAGE)
     assert result.base_damage == pytest.approx(BASELINE_BASE_DAMAGE)
-    assert stellar.merged_slots(result) == {
+    # 星烁直伤没有固定基础伤害加值来源，加值区为空。
+    assert result.base_damage_additions == ()
+    assert damage.merged_slots(result) == {
         "stellar_base_multiplier": pytest.approx(1.0),
         "stellar_base_bonus": pytest.approx(0.0),
         "stellar_reaction_bonus": pytest.approx(0.0),
@@ -89,46 +108,46 @@ def test_baseline_direct_damage_matches_the_ten_slot_formula() -> None:
         "stellar_feather_addition": pytest.approx(0.0),
         "stellar_ascension_bonus": pytest.approx(0.0),
     }
+    # 槽位三段审计随 reaction 载荷序列化：无词条时基线即合并值。
+    payload = result.to_audit_dict()["reaction"]
+    assert payload["kind"] == "stellar"
+    slots = payload["slots"]
+    assert {slot["slot_key"] for slot in slots} == set(damage.merged_slots(result))
+    for slot in slots:
+        assert slot["baseline"] == pytest.approx(slot["merged"])
+        assert slot["modifier_sum"] == pytest.approx(0.0)
+    assert payload["base_damage"] == pytest.approx(BASELINE_BASE_DAMAGE)
 
 
-def test_each_stellar_slot_stage_moves_only_its_own_slot() -> None:
-    """六个星烁专属位置各自独立：加某个位置不改变其余五个的合并值。"""
+@pytest.mark.parametrize(
+    ("slot_key", "stage", "value", "expected"),
+    SLOT_CASES,
+    ids=(case[0] for case in SLOT_CASES),
+)
+def test_each_stellar_slot_stage_moves_only_its_own_slot(
+    slot_key: str,
+    stage: DamageModifierStage,
+    value: float,
+    expected: float,
+) -> None:
+    """六个星烁专属槽位各自独立：加某个槽位不改变其余五个的合并值。"""
 
-    baseline = stellar.merged_slots(_resolve())
-    cases = (
-        ("stellar_base_multiplier", DamageModifierStage.STELLAR_BASE_MULTIPLIER_ADD, 0.5, 1.5),
-        ("stellar_base_bonus", DamageModifierStage.STELLAR_BASE_BONUS_ADD, 0.5, 0.5),
-        ("stellar_reaction_bonus", DamageModifierStage.STELLAR_REACTION_BONUS_ADD, 0.5, 0.5),
-        (
-            "stellar_authority_multiplier",
-            DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD,
-            0.5,
-            1.5,
-        ),
-        (
-            "stellar_feather_addition",
-            DamageModifierStage.STELLAR_FEATHER_ADDITION_ADD,
-            100.0,
-            100.0,
-        ),
-        ("stellar_ascension_bonus", DamageModifierStage.STELLAR_ASCENSION_BONUS_ADD, 0.5, 0.5),
-    )
+    baseline = damage.merged_slots(_resolve())
+    result = _resolve(_provider(f"test.{slot_key}", stage, value))
+    merged = damage.merged_slots(result)
 
-    for slot_key, stage, value, expected in cases:
-        result = _resolve(_provider(f"test.{slot_key}", stage, value))
-        merged = stellar.merged_slots(result)
-        assert merged[slot_key] == pytest.approx(expected), slot_key
-        for other_key, baseline_value in baseline.items():
-            if other_key == slot_key:
-                continue
-            assert merged[other_key] == pytest.approx(baseline_value), (slot_key, other_key)
-        assert _damage(result) > _damage(_resolve()), slot_key
+    assert merged[slot_key] == pytest.approx(expected)
+    for other_key, baseline_value in baseline.items():
+        if other_key == slot_key:
+            continue
+        assert merged[other_key] == pytest.approx(baseline_value)
+    assert _damage(result) > _damage(_resolve())
 
 
-def test_coefficient_stages_leave_every_stellar_slot_at_baseline() -> None:
-    """倍率位的修饰只作用于 scaling_terms，不触碰星烁专属位置。"""
+def test_coefficient_stages_scale_the_coefficient_not_the_slots() -> None:
+    """倍率槽位的修饰只作用于系数与 scaling_terms，不触碰星烁专属槽位。"""
 
-    baseline_slots = stellar.merged_slots(_resolve())
+    baseline_slots = damage.merged_slots(_resolve())
     baseline_damage = _damage(_resolve())
 
     percent = _resolve(
@@ -136,7 +155,7 @@ def test_coefficient_stages_leave_every_stellar_slot_at_baseline() -> None:
             "test.coefficient.percent",
             DamageModifierStage.COMPONENT_COEFFICIENT_PERCENT_ADD,
             0.5,
-            component_key=stellar.DIRECT_COMPONENT_KEY,
+            component_key=damage.DIRECT_COMPONENT_KEY,
         )
     )
     flat = _resolve(
@@ -144,34 +163,20 @@ def test_coefficient_stages_leave_every_stellar_slot_at_baseline() -> None:
             "test.coefficient.flat",
             DamageModifierStage.COMPONENT_COEFFICIENT_FLAT_ADD,
             100.0,
-            component_key=stellar.DIRECT_COMPONENT_KEY,
+            component_key=damage.DIRECT_COMPONENT_KEY,
         )
     )
 
-    assert stellar.merged_slots(percent) == baseline_slots
-    assert stellar.merged_slots(flat) == baseline_slots
+    assert damage.merged_slots(percent) == baseline_slots
+    assert damage.merged_slots(flat) == baseline_slots
+    # 百分比只放大系数，属性面板值保持原样。
+    component = percent.stellar_reaction_resolution.scaling.component_results[0]
+    assert component.attribute_value == pytest.approx(damage.BASE_HP)
+    assert component.original_coefficient == pytest.approx(damage.DIRECT_COEFFICIENT)
+    assert component.final_coefficient == pytest.approx(damage.DIRECT_COEFFICIENT * 1.5)
     assert _damage(percent) == pytest.approx(baseline_damage * 1.5)
     # 固定加值加在系数上：系数 1.0 + 100 → 101，因此是 101 倍而不是加 100 点伤害。
     assert _damage(flat) == pytest.approx(baseline_damage * 101.0)
-
-
-def test_coefficient_percent_stage_scales_the_multiplier_not_the_attribute() -> None:
-    """倍率位修饰只放大系数，属性面板值保持原样。"""
-
-    result = _resolve(
-        _provider(
-            "test.coefficient.percent",
-            DamageModifierStage.COMPONENT_COEFFICIENT_PERCENT_ADD,
-            0.5,
-            component_key=stellar.DIRECT_COMPONENT_KEY,
-        )
-    )
-
-    component = result.stellar_reaction_resolution.scaling.component_results[0]
-    assert component.attribute_value == pytest.approx(BASE_HP)
-    assert component.original_coefficient == pytest.approx(stellar.DIRECT_COEFFICIENT)
-    assert component.final_coefficient == pytest.approx(stellar.DIRECT_COEFFICIENT * 1.5)
-    assert _damage(result) == pytest.approx(BASELINE_BASE_DAMAGE * 1.5)
 
 
 def test_reaction_bonus_stage_enters_the_mastery_bracket() -> None:
@@ -181,9 +186,9 @@ def test_reaction_bonus_stage_enters_the_mastery_bracket() -> None:
         _provider("test.reaction_bonus", DamageModifierStage.STELLAR_REACTION_BONUS_ADD, 0.5)
     )
 
-    expected = BASE_HP * (1 + MASTERY_BONUS + 0.5)
+    expected = damage.BASE_HP * (1 + MASTERY_BONUS + 0.5)
     assert _damage(result) == pytest.approx(expected)
-    assert stellar.merged_slots(result)["stellar_reaction_bonus"] == pytest.approx(0.5)
+    assert damage.merged_slots(result)["stellar_reaction_bonus"] == pytest.approx(0.5)
 
 
 def test_feather_stage_adds_inside_the_bracket_after_every_multiplier() -> None:
@@ -204,15 +209,15 @@ def test_base_multiplier_stage_is_additive_on_a_non_unit_baseline() -> None:
         base_multiplier=2.0,
     )
 
-    assert stellar.merged_slots(result)["stellar_base_multiplier"] == pytest.approx(2.5)
-    assert _damage(result) == pytest.approx(BASE_HP * 2.5 * (1 + MASTERY_BONUS))
+    assert damage.merged_slots(result)["stellar_base_multiplier"] == pytest.approx(2.5)
+    assert _damage(result) == pytest.approx(damage.BASE_HP * 2.5 * (1 + MASTERY_BONUS))
 
 
 def test_authority_stage_is_additive_on_a_non_unit_baseline() -> None:
     """大权区乘数同样是「基线 + Σ」，与增伤位括号分处不同乘区。"""
 
     resolver = DamageResolver(
-        attribute_resolver=stellar.make_attribute_resolver(),
+        attribute_resolver=damage.make_stellar_attribute_resolver(),
         modifier_index=DamageModifierIndex(
             (
                 _provider(
@@ -224,7 +229,7 @@ def test_authority_stage_is_additive_on_a_non_unit_baseline() -> None:
         ),
     )
     result = resolver.resolve(
-        stellar.make_query(
+        damage.make_query(
             StellarReactionDamageInput(
                 mode="character_direct",
                 stellar_base_multiplier=1.0,
@@ -233,7 +238,7 @@ def test_authority_stage_is_additive_on_a_non_unit_baseline() -> None:
         )
     )
 
-    assert stellar.merged_slots(result)["stellar_authority_multiplier"] == pytest.approx(2.0)
+    assert damage.merged_slots(result)["stellar_authority_multiplier"] == pytest.approx(2.0)
     assert _damage(result) == pytest.approx(BASELINE_BASE_DAMAGE * 2.0)
 
 
@@ -245,7 +250,7 @@ def test_multiple_terms_in_one_slot_are_summed() -> None:
         _provider("test.multiplier.b", DamageModifierStage.STELLAR_BASE_MULTIPLIER_ADD, 0.2),
     )
 
-    assert stellar.merged_slots(result)["stellar_base_multiplier"] == pytest.approx(1.3)
+    assert damage.merged_slots(result)["stellar_base_multiplier"] == pytest.approx(1.3)
     assert _damage(result) == pytest.approx(BASELINE_BASE_DAMAGE * 1.3)
     slot = next(
         item
@@ -263,8 +268,8 @@ def test_multiple_terms_in_one_slot_are_summed() -> None:
     assert providers == {"test.multiplier.a", "test.multiplier.b"}
 
 
-def test_crit_rate_stage_is_no_longer_rejected() -> None:
-    """暴击率与暴击伤害共用通用阶段，两者共同决定暴击乘数。"""
+def test_shared_crit_stages_keep_the_bonus_path_intact() -> None:
+    """暴击率与暴击伤害是共享槽位：两者共同决定暴击乘数，不再被拒绝。"""
 
     result = _resolve(
         _provider("test.crit_rate", DamageModifierStage.CRIT_RATE_ADD, 1.0),
@@ -322,4 +327,4 @@ def test_merged_value_is_the_one_actually_used() -> None:
     assert slot.merged == pytest.approx(0.25)
     payload = result.to_audit_dict()["reaction"]
     assert payload["stellar_base_bonus"] == pytest.approx(0.25)
-    assert _damage(result) == pytest.approx(BASE_HP * 1.25 * (1 + MASTERY_BONUS))
+    assert _damage(result) == pytest.approx(damage.BASE_HP * 1.25 * (1 + MASTERY_BONUS))

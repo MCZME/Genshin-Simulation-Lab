@@ -25,17 +25,11 @@ from __future__ import annotations
 import pytest
 
 from genshin_sim.core.attributes import (
-    RESISTANCE_ELECTRO,
-    STAT_ELEMENTAL_MASTERY,
     AttributeQueryContext,
     AttributeResolver,
     AttributeSubjectRef,
-    BaseAttributeContribution,
-    BaseAttributeSet,
-    ModifierProviderIndex,
     RuntimeSourceKind,
     RuntimeSourceRef,
-    create_public_attribute_registry,
 )
 from genshin_sim.core.elements import Element
 from genshin_sim.core.systems.damage import (
@@ -60,6 +54,7 @@ from genshin_sim.core.systems.reaction.mechanics.lunar_crystallize.keys import (
 from genshin_sim.core.systems.reaction.mechanics.lunar_electro_charged.keys import (
     LUNAR_ELECTRO_CHARGED_REACTION_MULTIPLIER,
 )
+from tests.helpers import damage
 
 TARGET = AttributeSubjectRef.target("target:lunar_golden")
 SOURCE_CONTEXT = RuntimeSourceRef(RuntimeSourceKind.CONFIG, "golden.lunar_coefficient")
@@ -72,18 +67,10 @@ LEVEL_BASE_90 = PRODUCTION_LUNAR_REACTION_LEVEL_BASE_DAMAGE[90]
 def _attribute_resolver() -> AttributeResolver:
     """0 元素精通参与者与 0 雷抗目标的最小属性环境。"""
 
-    registry = create_public_attribute_registry()
-    contributions = tuple(
-        (
-            ref,
-            BaseAttributeContribution(STAT_ELEMENTAL_MASTERY, 0.0, SOURCE_CONTEXT),
-        )
-        for ref in PARTICIPANTS
-    ) + ((TARGET, BaseAttributeContribution(RESISTANCE_ELECTRO, 0.0, SOURCE_CONTEXT)),)
-    return AttributeResolver(
-        definitions=registry,
-        base_attributes=BaseAttributeSet(contributions),
-        modifier_index=ModifierProviderIndex((), registry=registry),
+    return damage.make_attribute_resolver(
+        PARTICIPANTS,
+        target=TARGET,
+        source_context=SOURCE_CONTEXT,
     )
 
 
@@ -163,28 +150,28 @@ def test_composite_weights_match_the_reference_distribution() -> None:
     )
 
 
-def test_lunar_electro_charged_single_participant_equals_level_base_times_1_8() -> None:
-    """单参与者反应月感电：等级基数 × 3.0 × 0.60 == 等级基数 × 1.8。"""
+@pytest.mark.parametrize(
+    ("reaction_multiplier", "unfolded_coefficient", "folded_multiplier"),
+    [
+        (LUNAR_ELECTRO_CHARGED_REACTION_MULTIPLIER, 3.0, 1.8),
+        (LUNAR_CRYSTALLIZE_REACTION_MULTIPLIER, 1.6, 0.96),
+    ],
+    ids=("electro_charged", "crystallize"),
+)
+def test_single_participant_equals_level_base_times_folded_multiplier(
+    reaction_multiplier: float,
+    unfolded_coefficient: float,
+    folded_multiplier: float,
+) -> None:
+    """单参与者反应月曜：等级基数 × 未折入系数 × 0.60 == 等级基数 × 资料折入倍率。"""
 
-    damage = _composite_damage(
-        reaction_multiplier=LUNAR_ELECTRO_CHARGED_REACTION_MULTIPLIER,
+    official_damage = _composite_damage(
+        reaction_multiplier=reaction_multiplier,
         participant_count=1,
     )
 
-    assert damage == pytest.approx(LEVEL_BASE_90 * 3.0 * 0.60, rel=1e-12)
-    assert damage == pytest.approx(LEVEL_BASE_90 * 1.8, rel=1e-12)
-
-
-def test_lunar_crystallize_single_participant_equals_level_base_times_0_96() -> None:
-    """单参与者反应月结晶：等级基数 × 1.6 × 0.60 == 等级基数 × 0.96。"""
-
-    damage = _composite_damage(
-        reaction_multiplier=LUNAR_CRYSTALLIZE_REACTION_MULTIPLIER,
-        participant_count=1,
-    )
-
-    assert damage == pytest.approx(LEVEL_BASE_90 * 1.6 * 0.60, rel=1e-12)
-    assert damage == pytest.approx(LEVEL_BASE_90 * 0.96, rel=1e-12)
+    assert official_damage == pytest.approx(LEVEL_BASE_90 * unfolded_coefficient * 0.60, rel=1e-12)
+    assert official_damage == pytest.approx(LEVEL_BASE_90 * folded_multiplier, rel=1e-12)
 
 
 def test_lunar_electro_charged_four_participants_total_weight_is_one() -> None:

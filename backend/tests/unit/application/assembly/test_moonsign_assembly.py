@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from typing import cast
 
 import pytest
 
@@ -20,13 +19,12 @@ from genshin_sim.core.events import (
     EventType,
     GameEvent,
 )
-from genshin_sim.core.systems.damage import DamageQuery
 from genshin_sim.core.systems.damage.keys import FORMULA_KEY_LUNAR_REACTION
-from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
 from genshin_sim.core.systems.moonsign import (
     MOONSIGN_LUNAR_BONUS_PROVIDER_KEY,
     MoonsignLevel,
 )
+from tests.helpers import damage
 from tests.helpers.assembly import minimal_input
 from tests.helpers.team_assets import (
     TeamAssetBundle,
@@ -73,51 +71,31 @@ def test_moonsign_bundle_detects_metadata_and_sets_ascendant_level():
     assert bundle.runtime.has_ascendant
 
 
-def test_moonsign_bundle_applies_bonus_through_real_attribute_resolution():
-    assets = make_team_asset_bundles(("pyro", "pyro", "pyro", "pyro"))
-    bundle = build_moonsign_bundle(
-        content_units=(_moonsign_unit(1), _moonsign_unit(2)),
-        assets=assets,
-        attribute_resolver=_attribute_resolver(assets),
-        event_engine=EventEngine(),
-    )
-    event = GameEvent(
+def _action_started_event(owner_slot: int) -> GameEvent:
+    """在给定帧触发一次指定角色的动作开始事件。"""
+
+    return GameEvent(
         EventType.ACTION_STARTED,
         10,
         ActionStartedPayload(
             instance_id=1,
             frame=10,
             action_key="character.test.skill",
-            owner_slot=3,
+            owner_slot=owner_slot,
             ability_key="elemental_skill",
         ),
     )
-    context = SimpleNamespace(
-        current_frame=10,
-        events=SimpleNamespace(frame_events=(event,)),
-    )
-
-    bundle.runtime.update_frame(context, 10)
-
-    assert bundle.runtime.lunar_reaction_bonus(10) == 0.09
-    assert bundle.store.bonus is not None
-    assert bundle.store.bonus.source_ref == AttributeSubjectRef.character("character:slot_3")
 
 
 def _lunar_bonus_terms(provider, frame: int):
     """在月曜公式查询上收集 provider 词条（会话对 provider 无副作用）。"""
 
-    query = cast(
-        "DamageQuery",
-        SimpleNamespace(
-            request=SimpleNamespace(frame=frame, formula_key=FORMULA_KEY_LUNAR_REACTION)
-        ),
-    )
-    return tuple(provider.contribute(query, cast("DamageResolutionSession", None)))
+    query = damage.provider_query_stub(frame=frame, formula_key=FORMULA_KEY_LUNAR_REACTION)
+    return tuple(provider.contribute(query, damage.NullResolutionSession()))
 
 
 def test_moonsign_bundle_registers_a_bound_lunar_bonus_provider():
-    """装配产物必须带出已绑定端口的月曜增伤 provider，供伤害索引收集。"""
+    """装配产物带出已绑定端口的月曜增伤 provider，随动作生效、到期后一并归零。"""
 
     assets = make_team_asset_bundles(("pyro", "pyro", "pyro", "pyro"))
     bundle = build_moonsign_bundle(
@@ -128,24 +106,19 @@ def test_moonsign_bundle_registers_a_bound_lunar_bonus_provider():
     )
     (provider,) = bundle.damage_providers
     assert provider.provider_spec.provider_key == MOONSIGN_LUNAR_BONUS_PROVIDER_KEY
+    # 装配期早于动作，端口尚未写入，provider 不贡献词条。
     assert _lunar_bonus_terms(provider, 10) == ()
 
-    event = GameEvent(
-        EventType.ACTION_STARTED,
-        10,
-        ActionStartedPayload(
-            instance_id=1,
-            frame=10,
-            action_key="character.test.skill",
-            owner_slot=3,
-            ability_key="elemental_skill",
-        ),
+    context = SimpleNamespace(
+        current_frame=10,
+        events=SimpleNamespace(frame_events=(_action_started_event(3),)),
     )
-    bundle.runtime.update_frame(
-        SimpleNamespace(current_frame=10, events=SimpleNamespace(frame_events=(event,))),
-        10,
-    )
+    bundle.runtime.update_frame(context, 10)
 
+    # 动作开始后增伤经真实属性解析落到端口，provider 与端口给出同一个值。
+    assert bundle.runtime.lunar_reaction_bonus(10) == 0.09
+    assert bundle.store.bonus is not None
+    assert bundle.store.bonus.source_ref == AttributeSubjectRef.character("character:slot_3")
     terms = _lunar_bonus_terms(provider, 10)
     assert len(terms) == 1
     assert terms[0].value == pytest.approx(bundle.runtime.lunar_reaction_bonus(10))

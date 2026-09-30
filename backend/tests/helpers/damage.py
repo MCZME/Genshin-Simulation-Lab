@@ -1,12 +1,14 @@
-"""星烁伤害测试共享的合成构造器与修饰 provider 替身。
+"""伤害公式测试共享的合成脚手架与 provider 替身。
 
-只实现接线所需的最小行为，不携带真实资产数值（见测试规范 §3.2）。星烁的几个
-关注点（直伤十位置槽位化、共享暴击槽位、复合伤害的逐参与者修饰收集）共用本模块，
-避免脚手架复制。
+只实现接线所需的最小行为，不携带真实资产数值（见测试规范 §3.2）。星烁、月曜与
+反应专属阶段三组关注点共用本模块的属性环境工厂、词条/provider 工厂与查询替身，
+避免脚手架在各文件复制；星烁复合伤害的来源自筛 provider 也放在这里。
 """
 
 from __future__ import annotations
 
+from collections.abc import Iterable
+from types import SimpleNamespace
 from typing import Any, cast
 
 from genshin_sim.core.attributes import (
@@ -34,7 +36,10 @@ from genshin_sim.core.systems.damage import (
     StellarReactionDamageInput,
 )
 from genshin_sim.core.systems.damage.models import DamageModifierTerm
-from genshin_sim.core.systems.damage.modifiers import DamageModifierProviderSpec
+from genshin_sim.core.systems.damage.modifiers import (
+    DamageModifierProviderSpec,
+    StaticDamageModifierProvider,
+)
 from genshin_sim.core.systems.damage.stellar import StellarReactionParticipantInput
 
 SOURCE = AttributeSubjectRef.character("character:slot_1")
@@ -48,38 +53,130 @@ DIRECT_COEFFICIENT = 1.0
 BASE_HP = 1000.0
 SCALING_TERMS = (DamageScalingTerm(DIRECT_COMPONENT_KEY, STAT_HP_MAX, DIRECT_COEFFICIENT),)
 
-CRIT_RATE_STAGE = DamageModifierStage.CRIT_RATE_ADD
 CRIT_DAMAGE_STAGE = DamageModifierStage.CRIT_DAMAGE_ADD
-RESISTANCE_STAGE = DamageModifierStage.RESISTANCE_ADD
-COEFFICIENT_PERCENT_STAGE = DamageModifierStage.COMPONENT_COEFFICIENT_PERCENT_ADD
-COEFFICIENT_FLAT_STAGE = DamageModifierStage.COMPONENT_COEFFICIENT_FLAT_ADD
-STELLAR_BASE_MULTIPLIER_STAGE = DamageModifierStage.STELLAR_BASE_MULTIPLIER_ADD
-STELLAR_BASE_BONUS_STAGE = DamageModifierStage.STELLAR_BASE_BONUS_ADD
 STELLAR_BONUS_STAGE = DamageModifierStage.STELLAR_REACTION_BONUS_ADD
 STELLAR_AUTHORITY_STAGE = DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD
-STELLAR_FEATHER_STAGE = DamageModifierStage.STELLAR_FEATHER_ADDITION_ADD
-STELLAR_ASCENSION_STAGE = DamageModifierStage.STELLAR_ASCENSION_BONUS_ADD
 
 
-def make_attribute_resolver() -> AttributeResolver:
-    """两名角色各 1000 生命、200 精通，目标 0 电抗的最小属性环境。"""
+def make_attribute_resolver(
+    subjects: Iterable[AttributeSubjectRef],
+    *,
+    target: AttributeSubjectRef,
+    source_context: RuntimeSourceRef,
+    elemental_mastery: float = 0.0,
+    base_hp: float | None = None,
+    electro_resistance: float = 0.0,
+) -> AttributeResolver:
+    """构造最小的合成属性环境：给定角色各带固定精通（可选生命），目标带电抗。"""
 
     registry = create_public_attribute_registry()
     contributions: list[tuple[AttributeSubjectRef, BaseAttributeContribution]] = []
-    for subject in (SOURCE, OTHER):
+    for subject in subjects:
         contributions.append(
-            (subject, BaseAttributeContribution(STAT_ELEMENTAL_MASTERY, 200.0, SOURCE_CONTEXT))
+            (
+                subject,
+                BaseAttributeContribution(
+                    STAT_ELEMENTAL_MASTERY, elemental_mastery, source_context
+                ),
+            )
         )
-        contributions.append(
-            (subject, BaseAttributeContribution(STAT_HP_BASE, BASE_HP, SOURCE_CONTEXT))
-        )
+        if base_hp is not None:
+            contributions.append(
+                (subject, BaseAttributeContribution(STAT_HP_BASE, base_hp, source_context))
+            )
     contributions.append(
-        (TARGET, BaseAttributeContribution(RESISTANCE_ELECTRO, 0.0, SOURCE_CONTEXT))
+        (target, BaseAttributeContribution(RESISTANCE_ELECTRO, electro_resistance, source_context))
     )
     return AttributeResolver(
         definitions=registry,
         base_attributes=BaseAttributeSet(tuple(contributions)),
         modifier_index=ModifierProviderIndex((), registry=registry),
+    )
+
+
+def make_stellar_attribute_resolver() -> AttributeResolver:
+    """星烁用例的默认属性环境：``SOURCE``/``OTHER`` 各 1000 生命、200 精通，目标 0 电抗。"""
+
+    return make_attribute_resolver(
+        (SOURCE, OTHER),
+        target=TARGET,
+        source_context=SOURCE_CONTEXT,
+        elemental_mastery=200.0,
+        base_hp=BASE_HP,
+    )
+
+
+def modifier_term(
+    stage: DamageModifierStage,
+    value: float,
+    *,
+    provider_key: str,
+    source_context: RuntimeSourceRef,
+    component_key: str | None = None,
+) -> DamageModifierTerm:
+    """构造一个署名到给定 provider 的槽位修饰词条。"""
+
+    return DamageModifierTerm(
+        stage=stage,
+        value=value,
+        provider_key=provider_key,
+        source_ref=source_context,
+        component_key=component_key,
+    )
+
+
+def static_provider(
+    *terms: DamageModifierTerm,
+    provider_key: str,
+    writes: frozenset[DamageModifierStage] | None = None,
+) -> StaticDamageModifierProvider:
+    """把若干词条打包成一个静态 provider；未显式声明时按词条阶段推导写入集合。"""
+
+    declared = writes if writes is not None else frozenset(term.stage for term in terms)
+    return StaticDamageModifierProvider(
+        DamageModifierProviderSpec(provider_key=provider_key, reads=(), writes=declared),
+        terms,
+    )
+
+
+def single_stage_provider(
+    provider_key: str,
+    stage: DamageModifierStage,
+    value: float,
+    *,
+    source_context: RuntimeSourceRef,
+    component_key: str | None = None,
+) -> StaticDamageModifierProvider:
+    """构造只写单一阶段的 provider，是各公式槽位用例的主力脚手架。"""
+
+    return static_provider(
+        modifier_term(
+            stage,
+            value,
+            provider_key=provider_key,
+            source_context=source_context,
+            component_key=component_key,
+        ),
+        provider_key=provider_key,
+    )
+
+
+class NullResolutionSession:
+    """满足 provider 收集协议的最简会话替身。"""
+
+    def begin_provider(self, spec: Any) -> None:
+        del spec
+
+    def end_provider(self, spec: Any) -> None:
+        del spec
+
+
+def provider_query_stub(*, frame: int, formula_key: str) -> DamageQuery:
+    """只带帧与公式键的查询替身：provider 收集只读取这两个字段。"""
+
+    return cast(
+        "DamageQuery",
+        SimpleNamespace(request=SimpleNamespace(frame=frame, formula_key=formula_key)),
     )
 
 
@@ -117,7 +214,7 @@ def make_query(stellar_reaction: StellarReactionDamageInput) -> DamageQuery:
 
 
 def make_character_direct_input() -> StellarReactionDamageInput:
-    """基线直伤星烁：基础系数 1.0，其余位置取默认冻结基线。"""
+    """基线直伤星烁：基础系数 1.0，其余槽位取默认冻结基线。"""
 
     return StellarReactionDamageInput(
         mode="character_direct",
@@ -228,14 +325,16 @@ class TeamWideProvider:
 def merged_slots(result: Any) -> dict[str, float]:
     """取出伤害结果的槽位合并值，按槽位键索引。"""
 
-    stellar = result.stellar_reaction_resolution
-    assert stellar is not None
-    return {slot.slot_key: slot.merged for slot in cast(Any, stellar).slots}
+    resolution = result.stellar_reaction_resolution
+    if resolution is None:
+        raise ValueError("伤害结果不含星烁解析")
+    return {slot.slot_key: slot.merged for slot in cast(Any, resolution).slots}
 
 
 def components_of(result: Any) -> tuple[Any, ...]:
     """取出伤害结果的复合组分审计。"""
 
-    stellar = result.stellar_reaction_resolution
-    assert stellar is not None
-    return tuple(cast(Any, stellar).components)
+    resolution = result.stellar_reaction_resolution
+    if resolution is None:
+        raise ValueError("伤害结果不含星烁解析")
+    return tuple(cast(Any, resolution).components)

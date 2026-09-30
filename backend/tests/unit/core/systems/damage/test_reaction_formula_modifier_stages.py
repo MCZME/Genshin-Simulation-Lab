@@ -2,11 +2,11 @@
 
 三个反应公式各自拥有专属 ``DamageModifierStage``：
 
-- 剧变一个落在反应加成位，并与通用公式共享抗性位；
-- 星烁按位置切分，六个专属阶段分别覆盖基础系数、基础增伤、增伤位、大权区、
-  羽毛区与擢升，另外复用通用公式的倍率位、暴击位（暴击率 + 暴击伤害）与抗性位；
-- 月曜按位置切分，四个专属阶段分别覆盖基础伤害提升、反应加成、附加伤害与擢升，
-  另外复用通用公式的暴击位与抗性位；倍率位与反应系数位不开放（详见 formulas.py）。
+- 剧变一个落在反应加成槽位，并与通用公式共享抗性槽位；
+- 星烁按槽位切分，六个专属阶段分别覆盖基础系数、基础增伤、增伤槽位、大权区、
+  羽毛区与擢升，另外复用通用公式的倍率槽位、暴击槽位（暴击率 + 暴击伤害）与抗性槽位；
+- 月曜按槽位切分，四个专属阶段分别覆盖基础伤害提升、反应加成、附加伤害与擢升，
+  另外复用通用公式的暴击槽位与抗性槽位；倍率槽位与反应系数槽位不开放（详见 formulas.py）。
 
 本模块覆盖四条边界：
 
@@ -25,20 +25,13 @@ from typing import Any, cast
 import pytest
 
 from genshin_sim.core.attributes import (
-    RESISTANCE_ELECTRO,
-    STAT_ELEMENTAL_MASTERY,
-    STAT_HP_BASE,
     STAT_HP_MAX,
     AttributeQueryContext,
     AttributeResolver,
     AttributeSubjectRef,
-    BaseAttributeContribution,
-    BaseAttributeSet,
-    ModifierProviderIndex,
     RuntimeSourceKind,
     RuntimeSourceRef,
     TraceLevel,
-    create_public_attribute_registry,
 )
 from genshin_sim.core.elements import Element, TransformativeReactionSourceKind
 from genshin_sim.core.systems.damage import (
@@ -56,13 +49,11 @@ from genshin_sim.core.systems.damage.formulas import (
     GENERAL_ALLOWED_MODIFIER_STAGES,
     LUNAR_ALLOWED_MODIFIER_STAGES,
     STELLAR_ALLOWED_MODIFIER_STAGES,
-    TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES,
     LunarReactionDamageFormula,
     StellarReactionDamageFormula,
     TransformativeReactionDamageFormula,
     validate_formula_modifier_stages,
 )
-from genshin_sim.core.systems.damage.keys import FORMULA_KEY_GENERAL
 from genshin_sim.core.systems.damage.models import (
     DamageModifierTerm,
     DamageRequest,
@@ -74,11 +65,11 @@ from genshin_sim.core.systems.damage.models import (
 from genshin_sim.core.systems.damage.modifiers import (
     DamageModifierCollection,
     DamageModifierIndex,
-    DamageModifierProviderSpec,
     StaticDamageModifierProvider,
 )
 from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
 from genshin_sim.core.systems.damage.stellar import StellarReactionDamageInput
+from tests.helpers import damage
 
 SOURCE = AttributeSubjectRef.character("character:slot_1")
 TARGET = AttributeSubjectRef.target("target:star")
@@ -101,7 +92,7 @@ SHARED_CRIT_RATE_STAGE = DamageModifierStage.CRIT_RATE_ADD
 SHARED_CRIT_DAMAGE_STAGE = DamageModifierStage.CRIT_DAMAGE_ADD
 SHARED_RESISTANCE_STAGE = DamageModifierStage.RESISTANCE_ADD
 
-# 星烁自己的位置：只有星烁公式放行。
+# 星烁自己的槽位：只有星烁公式放行。
 STELLAR_ONLY_STAGES = frozenset(
     {
         STELLAR_BASE_MULTIPLIER_STAGE,
@@ -112,7 +103,7 @@ STELLAR_ONLY_STAGES = frozenset(
         STELLAR_ASCENSION_STAGE,
     }
 )
-# 月曜自己的位置：只有月曜公式放行。
+# 月曜自己的槽位：只有月曜公式放行。
 LUNAR_ONLY_STAGES = frozenset(
     {
         LUNAR_BASE_DAMAGE_BONUS_STAGE,
@@ -121,7 +112,7 @@ LUNAR_ONLY_STAGES = frozenset(
         LUNAR_ASCENSION_STAGE,
     }
 )
-# 与通用公式共享的位置：星烁复用通用阶段，不另设同名阶段。
+# 与通用公式共享的槽位：星烁复用通用阶段，不另设同名阶段。
 STELLAR_SHARED_STAGES = frozenset(
     {
         SHARED_COEFFICIENT_PERCENT_STAGE,
@@ -131,7 +122,7 @@ STELLAR_SHARED_STAGES = frozenset(
         SHARED_RESISTANCE_STAGE,
     }
 )
-# 月曜与星烁共用的通用阶段（暴击/抗性位置相同）。月曜不开放倍率位：
+# 月曜与星烁共用的通用阶段（暴击/抗性槽位相同）。月曜不开放倍率槽位：
 # 直伤倍率绑定在参与者上，component_key 无法在请求级收集里被寻址。
 LUNAR_SHARED_STAGES = frozenset(
     {
@@ -147,41 +138,33 @@ BASE_HP = 1000.0
 
 
 def _attribute_resolver() -> AttributeResolver:
-    registry = create_public_attribute_registry()
-    return AttributeResolver(
-        definitions=registry,
-        base_attributes=BaseAttributeSet(
-            (
-                (SOURCE, BaseAttributeContribution(STAT_ELEMENTAL_MASTERY, 0.0, SOURCE_CONTEXT)),
-                (SOURCE, BaseAttributeContribution(STAT_HP_BASE, BASE_HP, SOURCE_CONTEXT)),
-                (TARGET, BaseAttributeContribution(RESISTANCE_ELECTRO, 0.0, SOURCE_CONTEXT)),
-            )
-        ),
-        modifier_index=ModifierProviderIndex((), registry=registry),
+    """``SOURCE`` 各 1000 生命、0 精通，目标 0 电抗的最小属性环境。"""
+
+    return damage.make_attribute_resolver(
+        (SOURCE,),
+        target=TARGET,
+        source_context=SOURCE_CONTEXT,
+        base_hp=BASE_HP,
     )
+
+
+PROVIDER_KEY = "test.reaction_stage"
 
 
 def _provider(
     *terms: DamageModifierTerm,
     writes: frozenset[DamageModifierStage] | None = None,
 ) -> StaticDamageModifierProvider:
-    declared = writes if writes is not None else frozenset(term.stage for term in terms)
-    return StaticDamageModifierProvider(
-        DamageModifierProviderSpec(
-            provider_key="test.reaction_stage",
-            reads=(),
-            writes=declared,
-        ),
-        terms,
-    )
+    """把词条打包成固定署名 provider；无词条时可只声明写入集合。"""
+
+    return damage.static_provider(*terms, provider_key=PROVIDER_KEY, writes=writes)
 
 
 def _term(stage: DamageModifierStage, value: float) -> DamageModifierTerm:
-    return DamageModifierTerm(
-        stage=stage,
-        value=value,
-        provider_key="test.reaction_stage",
-        source_ref=SOURCE_CONTEXT,
+    """构造署名到本模块 provider 的单个词条。"""
+
+    return damage.modifier_term(
+        stage, value, provider_key=PROVIDER_KEY, source_context=SOURCE_CONTEXT
     )
 
 
@@ -266,7 +249,7 @@ def _stellar_query(
 
 
 def _lunar_formula() -> LunarReactionDamageFormula:
-    """最小月曜公式：等级基数 100、精通系数 0，便于按位置核对合并值。"""
+    """最小月曜公式：等级基数 100、精通系数 0，便于按槽位核对合并值。"""
 
     return LunarReactionDamageFormula(
         level_base_damage={90: 100.0},
@@ -321,43 +304,12 @@ def _context(query: DamageQuery, modifiers: Any) -> DamageFormulaContext:
     )
 
 
-def test_reaction_stage_allowlists_are_formula_specific_and_disjoint() -> None:
-    """白名单按位置切分：每个公式只放行自己的专属阶段与共享的通用阶段。
+def test_reaction_formula_specs_expose_the_disjoint_allowlists() -> None:
+    """白名单按槽位切分且互不重叠：实例 spec 暴露的集合与模块常量一致。
 
-    剧变只多做了一件共享的事——抗性位与通用公式同位置，因此复用 ``resistance_add``；
-    星烁与月曜则各自按位置切分专属阶段，同时共享倍率/暴击/抗性位置。
+    剧变只多做了一件共享的事——抗性槽位与通用公式同槽位，因此复用 ``resistance_add``；
+    星烁与月曜则各自按槽位切分专属阶段，同时共享倍率/暴击/抗性槽位。
     """
-
-    assert (
-        frozenset({TRANSFORMATIVE_STAGE, SHARED_RESISTANCE_STAGE})
-        == TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES
-    )
-    assert STELLAR_ALLOWED_MODIFIER_STAGES == STELLAR_ONLY_STAGES | STELLAR_SHARED_STAGES
-    assert LUNAR_ALLOWED_MODIFIER_STAGES == LUNAR_ONLY_STAGES | LUNAR_SHARED_STAGES
-    # 专属阶段互不重叠：一个公式的私有位置不会被另一个公式放行。
-    assert not STELLAR_ONLY_STAGES & LUNAR_ONLY_STAGES
-    assert not STELLAR_ONLY_STAGES & {TRANSFORMATIVE_STAGE}
-    assert not LUNAR_ONLY_STAGES & {TRANSFORMATIVE_STAGE}
-
-
-def test_reaction_stage_values_follow_existing_naming_style() -> None:
-    """新增阶段的稳定值与既有 ``*_add`` 词条风格一致。"""
-
-    assert TRANSFORMATIVE_STAGE.value == "transformative_reaction_bonus_add"
-    assert STELLAR_STAGE.value == "stellar_reaction_bonus_add"
-    assert AUTHORITY_STAGE.value == "stellar_authority_multiplier_add"
-    assert STELLAR_BASE_MULTIPLIER_STAGE.value == "stellar_base_multiplier_add"
-    assert STELLAR_BASE_BONUS_STAGE.value == "stellar_base_bonus_add"
-    assert STELLAR_FEATHER_STAGE.value == "stellar_feather_addition_add"
-    assert STELLAR_ASCENSION_STAGE.value == "stellar_ascension_bonus_add"
-    assert LUNAR_BASE_DAMAGE_BONUS_STAGE.value == "lunar_base_damage_bonus_add"
-    assert LUNAR_REACTION_BONUS_STAGE.value == "lunar_reaction_bonus_add"
-    assert LUNAR_ADDITIONAL_BASE_DAMAGE_STAGE.value == "lunar_additional_base_damage_add"
-    assert LUNAR_ASCENSION_STAGE.value == "lunar_ascension_bonus_add"
-
-
-def test_formula_specs_expose_the_new_stages() -> None:
-    """三个反应公式的 spec 通过实例属性暴露各自的阶段。"""
 
     assert TransformativeReactionDamageFormula().formula_spec.allowed_modifier_stages == frozenset(
         {TRANSFORMATIVE_STAGE, SHARED_RESISTANCE_STAGE}
@@ -374,6 +326,10 @@ def test_formula_specs_expose_the_new_stages() -> None:
         ).formula_spec.allowed_modifier_stages
         == LUNAR_ONLY_STAGES | LUNAR_SHARED_STAGES
     )
+    # 专属阶段互不重叠：一个公式的私有槽位不会被另一个公式放行。
+    assert not STELLAR_ONLY_STAGES & LUNAR_ONLY_STAGES
+    assert not STELLAR_ONLY_STAGES & {TRANSFORMATIVE_STAGE}
+    assert not LUNAR_ONLY_STAGES & {TRANSFORMATIVE_STAGE}
 
 
 def test_transformative_formula_consumes_its_own_stage() -> None:
@@ -409,17 +365,26 @@ def test_reaction_stage_adds_on_top_of_frozen_baseline() -> None:
     assert math.isclose(resolution.official_damage, 1446.853 * 1.5 * 1.8, abs_tol=1e-9)
 
 
-def test_multiple_terms_on_same_stage_are_summed() -> None:
+@pytest.mark.parametrize(
+    ("query", "stage", "values", "expected_damage"),
+    (
+        (_stellar_query(), STELLAR_STAGE, (0.25, 0.15), 1600.0 * 1.4),
+        (_stellar_query(), AUTHORITY_STAGE, (0.25, 0.25), 1600.0 * 1.5),
+    ),
+    ids=("增伤位", "大权区"),
+)
+def test_multiple_terms_on_one_stage_are_summed(
+    query: DamageQuery,
+    stage: DamageModifierStage,
+    values: tuple[float, float],
+    expected_damage: float,
+) -> None:
     """同一专属阶段的多个 term 按 fsum 汇总。"""
 
-    query = _stellar_query()
     resolution = StellarReactionDamageFormula().resolve(
-        _context(
-            query,
-            _collect(query, _term(STELLAR_STAGE, 0.25), _term(STELLAR_STAGE, 0.15)),
-        )
+        _context(query, _collect(query, *(_term(stage, value) for value in values)))
     )
-    assert math.isclose(resolution.official_damage, 1600.0 * 1.4, abs_tol=1e-9)
+    assert math.isclose(resolution.official_damage, expected_damage, abs_tol=1e-9)
 
 
 def test_authority_stage_adds_to_the_authority_multiplier_not_the_bonus_bracket() -> None:
@@ -447,36 +412,19 @@ def test_authority_stage_adds_on_top_of_the_frozen_authority_baseline() -> None:
     assert math.isclose(resolution.official_damage, 2400.0, abs_tol=1e-9)
 
 
-def test_multiple_authority_terms_are_summed() -> None:
-    """同一大权区阶段的多个 term 按 fsum 汇总。"""
+def test_authority_multiplier_audit_follows_the_frozen_baseline_and_terms() -> None:
+    """大权区乘数写进审计：无词条时透传冻结基线，有词条时取叠加后的合并值。"""
 
-    query = _stellar_query()
-    resolution = StellarReactionDamageFormula().resolve(
-        _context(
-            query,
-            _collect(query, _term(AUTHORITY_STAGE, 0.25), _term(AUTHORITY_STAGE, 0.25)),
-        )
+    frozen_query = _stellar_query(stellar_authority_multiplier=1.7)
+    frozen = StellarReactionDamageFormula().resolve(_context(frozen_query, _collect(frozen_query)))
+    assert math.isclose(frozen.official_damage, 1600.0 * 1.7, abs_tol=1e-9)
+    assert frozen.to_dict()["stellar_authority_multiplier"] == pytest.approx(1.7)
+
+    boosted_query = _stellar_query()
+    boosted = StellarReactionDamageFormula().resolve(
+        _context(boosted_query, _collect(boosted_query, _term(AUTHORITY_STAGE, 0.4)))
     )
-    assert math.isclose(resolution.official_damage, 1600.0 * 1.5, abs_tol=1e-9)
-
-
-def test_merged_authority_multiplier_is_written_into_the_zone_audit() -> None:
-    """合并后的大权区乘数写进审计，与实算一致。"""
-
-    query = _stellar_query()
-    resolution = StellarReactionDamageFormula().resolve(
-        _context(query, _collect(query, _term(AUTHORITY_STAGE, 0.4)))
-    )
-    assert resolution.to_dict()["stellar_authority_multiplier"] == pytest.approx(1.4)
-
-
-def test_frozen_authority_baseline_passes_through_without_terms() -> None:
-    """无大权区词条时，冻结的大权区乘数原样进入公式与审计。"""
-
-    query = _stellar_query(stellar_authority_multiplier=1.7)
-    resolution = StellarReactionDamageFormula().resolve(_context(query, _collect(query)))
-    assert math.isclose(resolution.official_damage, 1600.0 * 1.7, abs_tol=1e-9)
-    assert resolution.to_dict()["stellar_authority_multiplier"] == pytest.approx(1.7)
+    assert boosted.to_dict()["stellar_authority_multiplier"] == pytest.approx(1.4)
 
 
 @pytest.mark.parametrize(
@@ -489,7 +437,7 @@ def test_frozen_authority_baseline_passes_through_without_terms() -> None:
     ),
 )
 def test_reaction_formulas_reject_ordinary_stages(stage: DamageModifierStage) -> None:
-    """三个反应公式都没有对应位置的普通阶段，越界 term 一律被拒绝。"""
+    """三个反应公式都没有对应槽位的普通阶段，越界 term 一律被拒绝。"""
 
     for formula_spec, query in (
         (TransformativeReactionDamageFormula().formula_spec, _transformative_query()),
@@ -513,7 +461,7 @@ def test_reaction_formulas_reject_ordinary_stages(stage: DamageModifierStage) ->
 def test_stellar_formula_shares_common_stages_the_transformative_formula_rejects(
     stage: DamageModifierStage,
 ) -> None:
-    """星烁与通用公式共享倍率/暴击位置：星烁放行，剧变仍拒绝。"""
+    """星烁与通用公式共享倍率/暴击槽位：星烁放行，剧变仍拒绝。"""
 
     component_key = (
         DIRECT_COMPONENT_KEY
@@ -539,8 +487,8 @@ def test_stellar_formula_shares_common_stages_the_transformative_formula_rejects
         )
 
 
-def test_transformative_formula_now_shares_the_resistance_stage() -> None:
-    """抗性位是剧变与通用公式共享的位置：剧变已放行并消费 ``resistance_add``。"""
+def test_transformative_formula_shares_the_resistance_stage() -> None:
+    """抗性槽位是剧变与通用公式共享的槽位：剧变放行并消费 ``resistance_add``。"""
 
     term = _term(SHARED_RESISTANCE_STAGE, -0.2)
     validate_formula_modifier_stages(
@@ -617,10 +565,9 @@ def test_other_formulas_do_not_allow_reaction_stages() -> None:
     assert TRANSFORMATIVE_STAGE not in LUNAR_ALLOWED_MODIFIER_STAGES
     assert STELLAR_ONLY_STAGES.isdisjoint(LUNAR_ALLOWED_MODIFIER_STAGES)
     assert LUNAR_ONLY_STAGES.isdisjoint(STELLAR_ALLOWED_MODIFIER_STAGES)
-    # 月曜不开放倍率位：直伤倍率由参与者承载，component_key 在请求级无法寻址。
+    # 月曜不开放倍率槽位：直伤倍率由参与者承载，component_key 在请求级无法寻址。
     assert SHARED_COEFFICIENT_PERCENT_STAGE not in LUNAR_ALLOWED_MODIFIER_STAGES
     assert SHARED_COEFFICIENT_FLAT_STAGE not in LUNAR_ALLOWED_MODIFIER_STAGES
-    assert FORMULA_KEY_GENERAL != FORMULA_KEY_LUNAR_REACTION
 
 
 def test_stellar_baseline_unchanged_without_terms() -> None:

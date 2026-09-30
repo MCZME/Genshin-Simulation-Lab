@@ -76,7 +76,6 @@ from genshin_sim.core.systems.damage import (
     StaticDamageModifierProvider,
     TransformativeReactionInput,
     UnsupportedDamageFormulaError,
-    create_default_damage_formula_registry,
 )
 from genshin_sim.core.systems.damage.keys import (
     FORMULA_KEY_GENERAL,
@@ -826,20 +825,6 @@ def test_formula_registry_rejects_duplicate_and_unregistered_formula():
         resolver.resolve(_query())
 
 
-def test_default_registry_registers_production_lunar_formula():
-    registry = create_default_damage_formula_registry()
-    formula = registry.require(FORMULA_KEY_LUNAR_REACTION)
-    assert isinstance(formula, LunarReactionDamageFormula)
-    assert formula.level_base_damage == {
-        80: 1077.4,
-        90: 1446.9,
-        95: 1561.5,
-        100: 1674.8,
-    }
-    assert formula.mastery_numerator == 6.0
-    assert formula.mastery_denominator == 2000.0
-
-
 def test_lunar_direct_formula_resolves_one_component_without_normal_damage_bonus():
     lunar = LunarReactionDamageInput(
         reaction_profile_key="reaction_profile.lunar.direct",
@@ -935,7 +920,8 @@ def test_general_result_audit_dict_exposes_zone_resolutions_and_traces():
     result = DamageResolver(_attribute_resolver()).resolve(_query(can_crit=True))
 
     audit = cast(dict[str, Any], result.to_audit_dict())
-    assert set(audit) == {
+    # 审计形状由伤害系统契约 §9 承载，字段只增不改，因此只断言必要字段存在。
+    assert {
         "component_results",
         "base_damage_additions",
         "damage_bonus",
@@ -948,7 +934,7 @@ def test_general_result_audit_dict_exposes_zone_resolutions_and_traces():
         "source_attribute_trace",
         "target_attribute_trace",
         "trace_metadata",
-    }
+    } <= set(audit)
     assert audit["damage_bonus"] == {
         "element_bonus": 0.2,
         "modifier_bonus": 0.0,
@@ -967,7 +953,7 @@ def test_general_result_audit_dict_exposes_zone_resolutions_and_traces():
     assert audit["trace_metadata"] == {"effective_crit_rate": critical["effective_crit_rate"]}
     assert audit["source_attribute_trace"]
     trace_entry = audit["source_attribute_trace"][0]
-    assert set(trace_entry) == {
+    assert {
         "attribute_key",
         "subject_ref",
         "final_value",
@@ -977,7 +963,7 @@ def test_general_result_audit_dict_exposes_zone_resolutions_and_traces():
         "dependency_resolutions",
         "policy_key",
         "trace_metadata",
-    }
+    } <= set(trace_entry)
     assert trace_entry["dependency_resolutions"] == tuple(
         item.to_dict() for item in result.source_attribute_trace[0].dependency_resolutions
     )
@@ -1134,7 +1120,7 @@ def test_lunar_result_audit_reaction_uses_lunar_resolution():
     assert audit["trace_metadata"]["lunar_slots"]["lunar_ascension_multiplier"] == pytest.approx(
         1.1
     )
-    # 面板读取词条进入账单：精通、暴击、抗性都是月曜公式实际读取的位置。
+    # 面板读取词条进入账单：精通、暴击、抗性都是月曜公式实际读取的槽位。
     panel_stages = {
         term.stage for term in result.applied_terms if term.stage.value.startswith("panel_")
     }

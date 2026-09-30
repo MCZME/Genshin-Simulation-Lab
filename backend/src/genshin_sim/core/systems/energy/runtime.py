@@ -254,7 +254,7 @@ class EnergyRuntime:
                         kind_multiplier=0.0,
                         element_multiplier=0.0,
                         field_multiplier=0.0,
-                        recharge_bonus=None,
+                        energy_recharge=None,
                         recharge_multiplier=None,
                         base_amount=0.0,
                         requested_amount=0.0,
@@ -266,8 +266,8 @@ class EnergyRuntime:
             element = element_multiplier(record.element, profile.element)
             field = field_multiplier(is_active=is_active, team_size=team_size)
             base = _finite_non_negative(record.count * kind * element * field, "base_amount")
-            bonus = self._resolve_recharge_bonus(ref, settled_frame)
-            recharge = recharge_multiplier(bonus)
+            energy_recharge = self._resolve_energy_recharge(ref, settled_frame)
+            recharge = recharge_multiplier(energy_recharge)
             requested = _finite_non_negative(base * recharge, "requested_amount")
             effective = min(requested, profile.capacity - before)
             after = _normalize_zero(before + effective)
@@ -304,7 +304,7 @@ class EnergyRuntime:
                     kind_multiplier=kind,
                     element_multiplier=element,
                     field_multiplier=field,
-                    recharge_bonus=bonus,
+                    energy_recharge=energy_recharge,
                     recharge_multiplier=recharge,
                     base_amount=base,
                     requested_amount=requested,
@@ -425,24 +425,24 @@ class EnergyRuntime:
                 )
             )
 
-    def _resolve_recharge_bonus(self, ref: AttributeSubjectRef, frame: int) -> float:
+    def _resolve_energy_recharge(self, ref: AttributeSubjectRef, frame: int) -> float:
         try:
             resolution = self.attribute_resolver.resolve(
                 AttributeQuery(ref, STAT_ENERGY_RECHARGE, frame),
                 options=AttributeResolveOptions(trace_level=TraceLevel.NONE),
             )
-            bonus = resolution.final_value
+            energy_recharge = resolution.final_value
         except Exception as exc:
             raise InvalidEnergyAttributeError(
                 f"无法解析 {ref.entity_id} 的 stat.energy_recharge：{exc}"
             ) from exc
         if (
-            isinstance(bonus, bool)
-            or not isinstance(bonus, int | float)
-            or not math.isfinite(bonus)
+            isinstance(energy_recharge, bool)
+            or not isinstance(energy_recharge, int | float)
+            or not math.isfinite(energy_recharge)
         ):
             raise InvalidEnergyAttributeError(f"{ref.entity_id} 的 stat.energy_recharge 非法")
-        return float(bonus)
+        return float(energy_recharge)
 
     def _publish_pickup_settlement(self, result: EnergyPickupSettlementResult) -> None:
         from genshin_sim.core.events.payloads import (

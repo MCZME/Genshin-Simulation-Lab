@@ -1,5 +1,12 @@
 """属性查询、解析、审计和快照模型。"""
 
+from genshin_sim.core.attributes.base_stats import (
+    GAME_BASE_CHARACTER_PANEL,
+    GAME_BASE_CRIT_DAMAGE,
+    GAME_BASE_CRIT_RATE,
+    GAME_BASE_ENERGY_RECHARGE,
+    game_base_panel_source_ref,
+)
 from genshin_sim.core.attributes.definitions import (
     PUBLIC_ADDITIVE_KEYS,
     AttributeDefinition,
@@ -147,6 +154,10 @@ __all__ = [
     "ConflictingOverrideError",
     "ELEMENT_TO_DAMAGE_BONUS_KEY",
     "ELEMENT_TO_RESISTANCE_KEY",
+    "GAME_BASE_CHARACTER_PANEL",
+    "GAME_BASE_CRIT_DAMAGE",
+    "GAME_BASE_CRIT_RATE",
+    "GAME_BASE_ENERGY_RECHARGE",
     "InvalidModifierStageError",
     "MissingAttributeValueError",
     "MissingQueryTargetError",
@@ -196,6 +207,7 @@ __all__ = [
     "attribute_key",
     "attributes_provider_dict",
     "create_public_attribute_registry",
+    "game_base_panel_source_ref",
     "is_public_attribute_key",
     "normalize_zero",
     "panel_entries_to_dict",

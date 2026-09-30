@@ -358,7 +358,7 @@ class EnergyRecipientResolution:
     kind_multiplier: float
     element_multiplier: float
     field_multiplier: float
-    recharge_bonus: float | None
+    energy_recharge: float | None
     recharge_multiplier: float | None
     base_amount: float
     requested_amount: float
@@ -377,7 +377,7 @@ class EnergyRecipientResolution:
             "kind_multiplier": self.kind_multiplier,
             "element_multiplier": self.element_multiplier,
             "field_multiplier": self.field_multiplier,
-            "recharge_bonus": self.recharge_bonus,
+            "energy_recharge": self.energy_recharge,
             "recharge_multiplier": self.recharge_multiplier,
             "base_amount": self.base_amount,
             "requested_amount": self.requested_amount,

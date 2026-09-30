@@ -120,5 +120,6 @@ def test_attribute_runtime_applies_config_artifact_stats_by_slot():
 
     assert hp.final_value == 1500.0
     assert atk.final_value == 150.0
-    assert crit.final_value == 0.311
+    # 公开属性存储绝对值：基础面板暴击率 5% + 圣遗物 31.1%。
+    assert crit.final_value == 0.361
     assert {term.provider_display_name for term in hp.applied_terms} == {"圣遗物词条"}

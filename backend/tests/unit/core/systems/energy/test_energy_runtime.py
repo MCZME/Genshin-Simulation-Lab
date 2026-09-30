@@ -69,7 +69,8 @@ def _rig(
                 character.energy,
             )
         )
-        values[character.combat_entity_id] = recharge[character.slot - 1] if recharge else 0.0
+        # stat.energy_recharge 存储绝对值（1.0 = 100%），未指定时用基础面板值。
+        values[character.combat_entity_id] = recharge[character.slot - 1] if recharge else 1.0
     events = EventEngine()
     runtime = EnergyRuntime(
         _Resolver(values), team, CharacterEnergyStore(entries), EnergyTransitQueue(), events
@@ -85,7 +86,8 @@ def test_four_person_pyro_particle_matches_golden_case_a():
     runtime, _team, events = _rig(
         (EnergyElement.PYRO, EnergyElement.PYRO, EnergyElement.HYDRO, EnergyElement.CRYO),
         (80, 80, 80, 0),
-        (0, 0, 0.5, 0),
+        # 元素充能效率绝对值：第三名 1.5 = 150%。
+        (1.0, 1.0, 1.5, 1.0),
     )
 
     runtime.spawn_pickup(

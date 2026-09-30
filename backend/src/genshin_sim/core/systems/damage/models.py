@@ -35,6 +35,7 @@ from genshin_sim.core.systems.damage.keys import (
     FORMULA_KEY_TRANSFORMATIVE_REACTION,
     KNOWN_FORMULA_KEYS,
 )
+from genshin_sim.core.systems.damage.lunar import LunarZoneSlotAudit
 from genshin_sim.core.systems.damage.stellar import (
     StellarReactionDamageInput,
     StellarReactionDamageResolution,
@@ -530,8 +531,11 @@ class DamageRequest:
                 raise DamageValidationError("月曜伤害不能同时提供增幅反应输入")
             if self.catalyze_reaction is not None:
                 raise DamageValidationError("月曜伤害不能同时提供激化输入")
-            if terms or flat_base_damage != 0:
-                raise DamageValidationError("月曜伤害不能携带普通倍率或 flat base")
+            # 月曜的倍率由参与者的 scaling_terms / flat_base_damage 承载，而组分属性
+            # 查询必须继承月曜公式键，否则按公式键自筛的月曜 provider 会在组分收集里
+            # 静默返回空。因此模型不再按公式键一刀切拒绝普通倍率；真正的边界由
+            # LunarReactionDamageFormula 判定——请求级倍率与固定基础伤害一律拒绝，
+            # 必须落在参与者上。
         elif self.formula_key is FORMULA_KEY_TRANSFORMATIVE_REACTION:
             if self.transformative_reaction is None:
                 raise DamageValidationError("剧变伤害必须提供 TransformativeReactionInput")
@@ -555,8 +559,11 @@ class DamageRequest:
                 raise DamageValidationError("非剧变伤害不能提供二次增幅反应输入")
             if self.amplifying_reaction is not None and self.catalyze_reaction is not None:
                 raise DamageValidationError("通用公式不能同时携带增幅与激化输入")
-        if self.formula_key is FORMULA_KEY_STELLAR_REACTION and (terms or flat_base_damage != 0):
-            raise DamageValidationError("星烁伤害不能携带普通倍率或 flat base")
+        # 星烁公式的倍率与属性分别由 scaling_terms 的 coefficient 与 attribute_key
+        # 承载，因此普通倍率必须允许；固定基础伤害在星烁公式中没有对应位置，
+        # 仍由请求边界拒绝，避免加值落进错误的乘区。
+        if self.formula_key is FORMULA_KEY_STELLAR_REACTION and flat_base_damage != 0:
+            raise DamageValidationError("星烁伤害不能携带 flat base")
         if self.catalyze_reaction is not None:
             if not isinstance(self.catalyze_reaction, CatalyzeReactionInput):
                 raise DamageValidationError("catalyze_reaction 不受支持")
@@ -958,6 +965,13 @@ class LunarReactionComponentResolution:
     target_attribute_trace: tuple[AttributeResolution, ...] = ()
     applied_terms: tuple[DamageModifierTerm, ...] = ()
     rejected_terms: tuple[DamageModifierTerm, ...] = ()
+    # 该组分独立收集到的伤害修饰项。复合路径的修饰不进入顶层 applied_terms，
+    # 因此在此单独保留，使数值与审计重新对齐。
+    modifier_terms: tuple[DamageModifierTerm, ...] = ()
+    # 该组分各可修饰位置的槽位三段审计；倍率区由 scaling 承载。
+    slots: tuple[LunarZoneSlotAudit, ...] = ()
+    # 该组分从属性系统读取到的面板值物化成的词条。
+    panel_terms: tuple[DamageModifierTerm, ...] = ()
 
     def __post_init__(self) -> None:
         if self.participant_ref.kind is not AttributeSubjectKind.CHARACTER:
@@ -1015,6 +1029,12 @@ class LunarReactionComponentResolution:
         object.__setattr__(self, "target_attribute_trace", tuple(self.target_attribute_trace))
         object.__setattr__(self, "applied_terms", tuple(self.applied_terms))
         object.__setattr__(self, "rejected_terms", tuple(self.rejected_terms))
+        object.__setattr__(self, "modifier_terms", tuple(self.modifier_terms))
+        object.__setattr__(self, "panel_terms", tuple(self.panel_terms))
+        slots = tuple(self.slots)
+        if any(not isinstance(item, LunarZoneSlotAudit) for item in slots):
+            raise DamageValidationError("月曜伤害组分 slots 不受支持")
+        object.__setattr__(self, "slots", slots)
 
     def to_dict(self) -> dict[str, object]:
         """返回组分的完整数值审计摘要。"""
@@ -1041,6 +1061,9 @@ class LunarReactionComponentResolution:
             "component_damage": self.component_damage,
             "weight": self.weight,
             "weighted_damage": self.weighted_damage,
+            "slots": [item.to_dict() for item in self.slots],
+            "modifier_terms": [item.to_dict() for item in self.modifier_terms],
+            "panel_terms": [item.to_dict() for item in self.panel_terms],
         }
 
 
@@ -1057,6 +1080,9 @@ class LunarReactionDamageResolution:
     final_damage: float
     source_attribute_trace: tuple[AttributeResolution, ...] = ()
     target_attribute_trace: tuple[AttributeResolution, ...] = ()
+    # 直伤模式的槽位三段审计与面板词条；复合模式的账本在组分内各自保留。
+    slots: tuple[LunarZoneSlotAudit, ...] = ()
+    panel_terms: tuple[DamageModifierTerm, ...] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.reaction, LunarReactionDamageInput):
@@ -1116,11 +1142,24 @@ class LunarReactionDamageResolution:
         object.__setattr__(self, "components", components)
         object.__setattr__(self, "source_attribute_trace", tuple(self.source_attribute_trace))
         object.__setattr__(self, "target_attribute_trace", tuple(self.target_attribute_trace))
+        object.__setattr__(self, "panel_terms", tuple(self.panel_terms))
+        slots = tuple(self.slots)
+        if any(not isinstance(item, LunarZoneSlotAudit) for item in slots):
+            raise DamageValidationError("月曜伤害 slots 不受支持")
+        object.__setattr__(self, "slots", slots)
+
+    def merged_slot(self, slot_key: str, fallback: float) -> float:
+        """返回指定槽位的合并值；没有该槽位审计时回退到冻结基线。"""
+
+        for item in self.slots:
+            if item.slot_key == slot_key:
+                return item.merged
+        return fallback
 
     def to_dict(self) -> dict[str, object]:
         """返回月曜伤害的完整聚合审计摘要。"""
 
-        return {
+        payload: dict[str, object] = {
             "reaction": self.reaction.to_dict(),
             "participant_refs": tuple(
                 item.participant_ref.entity_id for item in self.reaction.participants
@@ -1132,6 +1171,9 @@ class LunarReactionDamageResolution:
             "debug_multiplier": self.debug_multiplier,
             "final_damage": self.final_damage,
         }
+        if self.slots:
+            payload["slots"] = [item.to_dict() for item in self.slots]
+        return payload
 
 
 @dataclass(frozen=True, slots=True)
@@ -1198,6 +1240,8 @@ class TransformativeReactionResolution:
     debug_multiplier: float
     final_damage: float
     target_attribute_trace: tuple[AttributeResolution, ...] = ()
+    # 公式从属性系统读取到的面板值物化成的词条，与 applied_terms 合成槽位账单。
+    panel_terms: tuple[DamageModifierTerm, ...] = ()
     secondary_amplifying_resolution: SecondaryAmplifyingReactionResolution | None = None
 
     def __post_init__(self) -> None:
@@ -1212,6 +1256,7 @@ class TransformativeReactionResolution:
         ):
             raise DamageValidationError("secondary_amplifying_resolution 不受支持")
         object.__setattr__(self, "target_attribute_trace", tuple(self.target_attribute_trace))
+        object.__setattr__(self, "panel_terms", tuple(self.panel_terms))
 
 
 @dataclass(frozen=True, slots=True)

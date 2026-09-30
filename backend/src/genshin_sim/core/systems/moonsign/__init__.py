@@ -16,6 +16,10 @@ from genshin_sim.core.systems.moonsign.ports import (
     LunarDamageBonusPort,
     MoonsignLevelReadPort,
 )
+from genshin_sim.core.systems.moonsign.providers import (
+    MOONSIGN_LUNAR_BONUS_PROVIDER_KEY,
+    MoonsignLunarBonusProvider,
+)
 from genshin_sim.core.systems.moonsign.resolver import (
     resolve_moonsign_level,
     resolve_non_moonsign_bonus,
@@ -27,10 +31,12 @@ from genshin_sim.core.systems.moonsign.store import MoonsignStore
 __all__ = [
     "LunarDamageBonusPort",
     "MOONSIGN_ELEMENT_STAT_KEY",
+    "MOONSIGN_LUNAR_BONUS_PROVIDER_KEY",
     "MoonsignBonusRecord",
     "MoonsignError",
     "MoonsignLevel",
     "MoonsignLevelReadPort",
+    "MoonsignLunarBonusProvider",
     "MoonsignRuntime",
     "MoonsignScaling",
     "MoonsignSnapshot",

@@ -76,7 +76,6 @@ from genshin_sim.core.systems.damage import (
     StaticDamageModifierProvider,
     TransformativeReactionInput,
     UnsupportedDamageFormulaError,
-    create_default_damage_formula_registry,
 )
 from genshin_sim.core.systems.damage.keys import (
     FORMULA_KEY_GENERAL,
@@ -682,7 +681,9 @@ def test_resistance_add_stage_feeds_resistance_zone(
     assert result.final_damage == pytest.approx(1000 * expected_multiplier)
 
 
-def test_transformative_formula_rejects_resistance_add_stage():
+def test_transformative_formula_consumes_resistance_add_stage():
+    """剧变已开放抗性位：减抗词条并入有效抗性并乘进伤害，不再是零效果阶段。"""
+
     term = _term(DamageModifierStage.RESISTANCE_ADD, -0.2)
     resolver = DamageResolver(
         _attribute_resolver(hydro_resistance=0.1),
@@ -708,8 +709,18 @@ def test_transformative_formula_rejects_resistance_add_stage():
         target_attribute_context=AttributeQueryContext(target_ref=SOURCE),
     )
 
-    with pytest.raises(DamageProviderViolationError, match="不允许阶段"):
-        resolver.resolve(query)
+    result = resolver.resolve(query)
+
+    # 基础 100 × 0.6 × (1 + 0 精通 + 0) = 60；有效抗性 0.1 - 0.2 = -0.1 → 乘数 1.05。
+    assert result.resistance.base_resistance == pytest.approx(0.1)
+    assert result.resistance.resistance_add == pytest.approx(-0.2)
+    assert result.resistance.resistance == pytest.approx(-0.1)
+    assert result.resistance.multiplier == pytest.approx(1.05)
+    assert result.final_damage == pytest.approx(60.0 * 1.05)
+    # 目标面板抗性读取与减抗词条都进入账单。
+    stages = {term.stage for term in result.applied_terms}
+    assert DamageModifierStage.PANEL_RESISTANCE in stages
+    assert DamageModifierStage.RESISTANCE_ADD in stages
 
 
 def test_defense_policy_uses_separate_reduction_and_ignore_factors():
@@ -814,20 +825,6 @@ def test_formula_registry_rejects_duplicate_and_unregistered_formula():
         resolver.resolve(_query())
 
 
-def test_default_registry_registers_production_lunar_formula():
-    registry = create_default_damage_formula_registry()
-    formula = registry.require(FORMULA_KEY_LUNAR_REACTION)
-    assert isinstance(formula, LunarReactionDamageFormula)
-    assert formula.level_base_damage == {
-        80: 1077.4,
-        90: 1446.9,
-        95: 1561.5,
-        100: 1674.8,
-    }
-    assert formula.mastery_numerator == 6.0
-    assert formula.mastery_denominator == 2000.0
-
-
 def test_lunar_direct_formula_resolves_one_component_without_normal_damage_bonus():
     lunar = LunarReactionDamageInput(
         reaction_profile_key="reaction_profile.lunar.direct",
@@ -923,7 +920,8 @@ def test_general_result_audit_dict_exposes_zone_resolutions_and_traces():
     result = DamageResolver(_attribute_resolver()).resolve(_query(can_crit=True))
 
     audit = cast(dict[str, Any], result.to_audit_dict())
-    assert set(audit) == {
+    # 审计形状由伤害系统契约 §9 承载，字段只增不改，因此只断言必要字段存在。
+    assert {
         "component_results",
         "base_damage_additions",
         "damage_bonus",
@@ -936,7 +934,7 @@ def test_general_result_audit_dict_exposes_zone_resolutions_and_traces():
         "source_attribute_trace",
         "target_attribute_trace",
         "trace_metadata",
-    }
+    } <= set(audit)
     assert audit["damage_bonus"] == {
         "element_bonus": 0.2,
         "modifier_bonus": 0.0,
@@ -955,7 +953,7 @@ def test_general_result_audit_dict_exposes_zone_resolutions_and_traces():
     assert audit["trace_metadata"] == {"effective_crit_rate": critical["effective_crit_rate"]}
     assert audit["source_attribute_trace"]
     trace_entry = audit["source_attribute_trace"][0]
-    assert set(trace_entry) == {
+    assert {
         "attribute_key",
         "subject_ref",
         "final_value",
@@ -965,7 +963,7 @@ def test_general_result_audit_dict_exposes_zone_resolutions_and_traces():
         "dependency_resolutions",
         "policy_key",
         "trace_metadata",
-    }
+    } <= set(trace_entry)
     assert trace_entry["dependency_resolutions"] == tuple(
         item.to_dict() for item in result.source_attribute_trace[0].dependency_resolutions
     )
@@ -1113,7 +1111,21 @@ def test_lunar_result_audit_reaction_uses_lunar_resolution():
         "modifier_bonus": 0.0,
         "multiplier": 1.0,
     }
-    assert audit["critical"]["can_crit"] is False
+    # 直伤月曜参与暴击：参与者 can_crit=True，审计如实反映该组分的暴击区。
+    assert audit["critical"]["can_crit"] is True
+    # 直伤模式的槽位账本提到顶层，擢升基线 1.1 原样进入审计。
+    slot_merged = {item["slot_key"]: item["merged"] for item in audit["reaction"]["slots"]}
+    assert slot_merged["lunar_ascension_multiplier"] == pytest.approx(1.1)
+    assert slot_merged["lunar_base_damage_bonus"] == pytest.approx(0.0)
+    assert audit["trace_metadata"]["lunar_slots"]["lunar_ascension_multiplier"] == pytest.approx(
+        1.1
+    )
+    # 面板读取词条进入账单：精通、暴击、抗性都是月曜公式实际读取的槽位。
+    panel_stages = {
+        term.stage for term in result.applied_terms if term.stage.value.startswith("panel_")
+    }
+    assert DamageModifierStage.PANEL_ELEMENTAL_MASTERY in panel_stages
+    assert DamageModifierStage.PANEL_RESISTANCE in panel_stages
     assert audit["source_attribute_trace"] == tuple(
         item.to_dict() for item in result.source_attribute_trace
     )

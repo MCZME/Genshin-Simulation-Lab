@@ -38,6 +38,15 @@ from genshin_sim.core.systems.damage.keys import (
     KNOWN_FORMULA_KEYS,
 )
 from genshin_sim.core.systems.damage.level_multipliers import transformative_level_multiplier
+from genshin_sim.core.systems.damage.lunar import (
+    LUNAR_COMPOSITE_WEIGHTS,
+    LUNAR_SLOT_ADDITIONAL_BASE_DAMAGE,
+    LUNAR_SLOT_ASCENSION_MULTIPLIER,
+    LUNAR_SLOT_BASE_DAMAGE_BONUS,
+    LUNAR_SLOT_REACTION_BONUS,
+    LunarZoneSlotAudit,
+    resolve_lunar_zone_damage,
+)
 from genshin_sim.core.systems.damage.models import (
     BaseDamageAddition,
     CatalyzeReactionResolution,
@@ -52,7 +61,6 @@ from genshin_sim.core.systems.damage.models import (
     LunarReactionDamageInput,
     LunarReactionDamageResolution,
     LunarReactionParticipantInput,
-    ResistanceResolution,
     ScalingZoneResolution,
     SecondaryAmplifyingReactionResolution,
     TransformativeReactionResolution,
@@ -74,11 +82,17 @@ from genshin_sim.core.systems.damage.policies import (
 )
 from genshin_sim.core.systems.damage.stellar import (
     STELLAR_COMPOSITE_PARTICIPANT_LIMIT,
+    STELLAR_SLOT_ASCENSION_BONUS,
+    STELLAR_SLOT_AUTHORITY_MULTIPLIER,
+    STELLAR_SLOT_BASE_BONUS,
+    STELLAR_SLOT_BASE_MULTIPLIER,
+    STELLAR_SLOT_FEATHER_ADDITION,
+    STELLAR_SLOT_REACTION_BONUS,
     StellarReactionComponentResolution,
     StellarReactionDamageInput,
     StellarReactionDamageResolution,
     StellarReactionParticipantInput,
-    resolve_stellar_reaction_damage,
+    StellarZoneSlotAudit,
     resolve_stellar_zone_damage,
 )
 
@@ -107,15 +121,63 @@ GENERAL_ALLOWED_MODIFIER_STAGES = frozenset(
 TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES = frozenset(
     {
         DamageModifierStage.TRANSFORMATIVE_REACTION_BONUS_ADD,
+        # 抗性位与通用公式的位置相同，复用通用阶段。公式体必须先把
+        # 「目标面板抗性 + Σ」合并成有效抗性再传策略，否则是零效果阶段。
+        DamageModifierStage.RESISTANCE_ADD,
     }
 )
 STELLAR_ALLOWED_MODIFIER_STAGES = frozenset(
     {
+        # 倍率：与通用公式的位置相同，复用通用阶段，需绑定 component_key。
+        DamageModifierStage.COMPONENT_COEFFICIENT_PERCENT_ADD,
+        DamageModifierStage.COMPONENT_COEFFICIENT_FLAT_ADD,
+        # 基础系数：基线是机制按层数/反应类型冻结的乘数，没有面板来源。
+        DamageModifierStage.STELLAR_BASE_MULTIPLIER_ADD,
+        # 基础增伤：乘性括号 (1 + Σ)，与月曜的基础伤害提升同形。
+        DamageModifierStage.STELLAR_BASE_BONUS_ADD,
+        # 精通和增伤区：精通由面板读取，本阶段只贡献反应增伤部分。
         DamageModifierStage.STELLAR_REACTION_BONUS_ADD,
-        # 暴击伤害与通用公式共用同一槽位：星烁伤害的暴击区本来就读取面板暴伤，
-        # 因此不另设专属阶段，作用范围由 provider 自筛 formula_key 决定，
-        # 与 crit_rate_add 的处理方式一致。
+        # 大权区乘数：没有面板来源，内容效果是它唯一的贡献入口，
+        # 与增伤位阶段分处不同乘区。
+        DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD,
+        # 羽毛区：形状与通用 base_damage_flat_add 相似但宿主乘区不同
+        # （星烁羽毛不被基础系数/基础增伤/精通增伤区/大权区乘算），因此另设专属阶段。
+        DamageModifierStage.STELLAR_FEATHER_ADDITION_ADD,
+        # 暴击区：暴击率与暴击伤害都读取面板，复用通用阶段，
+        # 作用范围由 provider 自筛 formula_key 决定。
+        DamageModifierStage.CRIT_RATE_ADD,
         DamageModifierStage.CRIT_DAMAGE_ADD,
+        # 抗性区：与通用公式的位置相同，复用通用阶段。
+        DamageModifierStage.RESISTANCE_ADD,
+        # 擢升：乘性括号 (1 + Σ)，多个擢升来源互相加算。
+        DamageModifierStage.STELLAR_ASCENSION_BONUS_ADD,
+    }
+)
+# 月曜的倍率位与反应系数位刻意不放行：
+# - 反应系数的系数是机制侧冻结的反应口径，没有内容侧来源；
+# - 倍率位在复合模式下是机制冻结的等级基础伤害；直伤模式下倍率由**参与者**
+#   的 scaling_terms 承载，而 ``DamageModifierIndex`` 校验 component_key 绑定时
+#   以 ``query.request.scaling_terms`` 为已知 component 集合，请求级为空时顶层
+#   收集会在进入公式前就拒绝绑定到参与者组件的 term。要开放它需把直伤倍率挪到
+#   请求级，属契约变更，另行评估。白名单只列「可被内容真实产出并消费」的位置。
+LUNAR_ALLOWED_MODIFIER_STAGES = frozenset(
+    {
+        # 基础伤害提升：乘性括号 (1 + Σ)，与星烁基础增伤同形；
+        # 来源为各月兆角色的月兆祝赐（按攻击/精通/防御/生命缩放）。
+        DamageModifierStage.LUNAR_BASE_DAMAGE_BONUS_ADD,
+        # 反应加成：并入精通区的加算括号，与剧变、星烁的增伤位同形。
+        DamageModifierStage.LUNAR_REACTION_BONUS_ADD,
+        # 附加伤害：基础区括号内末项，不被反应倍率、基础伤害提升与
+        # 精通提升乘算，只被暴击、擢升与抗性乘算；形状与星烁羽毛区同构。
+        DamageModifierStage.LUNAR_ADDITIONAL_BASE_DAMAGE_ADD,
+        # 擢升乘数：乘性括号 (1 + Σ)，多个擢升来源互相加算。
+        DamageModifierStage.LUNAR_ASCENSION_BONUS_ADD,
+        # 暴击区：暴击率与暴击伤害都读取面板，复用通用阶段，
+        # 作用范围由 provider 自筛 formula_key 决定。
+        DamageModifierStage.CRIT_RATE_ADD,
+        DamageModifierStage.CRIT_DAMAGE_ADD,
+        # 抗性区：与通用公式的位置相同，复用通用阶段。
+        DamageModifierStage.RESISTANCE_ADD,
     }
 )
 
@@ -414,7 +476,18 @@ class TransformativeReactionDamageFormula:
         resistance_attribute = context.session.resolve_target(
             ELEMENT_TO_RESISTANCE_KEY[request.element.value]
         )
-        resistance = self.resistance_policy.resolve(resistance_attribute.final_value)
+        # 抗性位复用通用阶段：先把「目标面板抗性 + Σ」合并成有效抗性再传策略，
+        # 否则阶段只进白名单而不被消费，会是零效果阶段。
+        resistance_panel_term = DamageModifierTerm.panel_read(
+            stage=DamageModifierStage.PANEL_RESISTANCE,
+            attribute=resistance_attribute,
+        )
+        resistance_add = _sum_terms(modifier_terms, DamageModifierStage.RESISTANCE_ADD)
+        resistance = self.resistance_policy.resolve(
+            resistance_panel_term.value + resistance_add,
+            base_resistance=resistance_panel_term.value,
+            resistance_add=resistance_add,
+        )
         secondary_resolution = None
         secondary_multiplier = 1.0
         secondary_reaction = request.secondary_amplifying_reaction
@@ -453,14 +526,13 @@ class TransformativeReactionDamageFormula:
                 defense_ignore=0.0,
                 multiplier=1.0,
             ),
-            resistance=ResistanceResolution(
-                resistance=resistance.resistance,
-                multiplier=resistance.multiplier,
-            ),
+            # 直接传策略结果，保留 base_resistance / resistance_add 审计。
+            resistance=resistance,
             official_damage=damage,
             debug_multiplier=self.debug_adjustment.multiplier,
             final_damage=final_damage,
             target_attribute_trace=(resistance_attribute,),
+            panel_terms=(resistance_panel_term,),
             secondary_amplifying_resolution=secondary_resolution,
         )
 
@@ -469,13 +541,15 @@ class TransformativeReactionDamageFormula:
 class LunarReactionDamageFormula:
     """月曜单来源与多来源组分的完整伤害公式。
 
-    该公式只负责已经冻结的参与者和显式公式参数。等级基数与精通系数默认
-    使用已确认资料中的生产数值，也可以通过构造参数覆盖。
+    月曜与通用公式共用同一套槽位账单：精通由面板读取，暴击与抗性复用通用阶段，
+    基础伤害提升、反应加成、附加伤害与擢升使用月曜专属阶段。等级基数与精通系数
+    默认为已确认资料中的生产数值，也可以通过构造参数覆盖。
     """
 
     level_base_damage: Mapping[int, float]
     mastery_numerator: float
     mastery_denominator: float
+    scaling_policy: ScalingZonePolicy = field(default_factory=StandardScalingZonePolicy)
     critical_policy: CriticalZonePolicy = field(default_factory=StandardCriticalZonePolicy)
     resistance_policy: StandardResistancePolicy = field(default_factory=StandardResistancePolicy)
     debug_adjustment: DebugDamageAdjustment = field(default_factory=DebugDamageAdjustment)
@@ -505,11 +579,11 @@ class LunarReactionDamageFormula:
 
     @property
     def formula_spec(self) -> DamageFormulaSpec:
-        """月曜公式暂不接受普通 Damage modifier stage。"""
+        """月曜公式按位置放行月曜专属阶段与对应的通用直伤阶段。"""
 
         return DamageFormulaSpec(
             formula_key=FORMULA_KEY_LUNAR_REACTION,
-            allowed_modifier_stages=frozenset(),
+            allowed_modifier_stages=LUNAR_ALLOWED_MODIFIER_STAGES,
         )
 
     def resolve(self, context: DamageFormulaContext) -> LunarReactionDamageResolution:
@@ -522,6 +596,10 @@ class LunarReactionDamageFormula:
         reaction = request.lunar_reaction
         if reaction is None:
             raise DamageFormulaInputError("月曜伤害缺少 LunarReactionDamageInput")
+        # 请求级倍率与固定基础伤害在月曜公式中没有位置：倍率由参与者的
+        # scaling_terms 承载，因此只能出现在参与者的组分查询上。
+        if request.scaling_terms or request.flat_base_damage != 0:
+            raise DamageFormulaInputError("月曜伤害的倍率必须由参与者承载，请求级不得携带")
         validate_formula_modifier_stages(self.formula_spec, context.modifiers)
         if reaction.mode is LunarReactionDamageMode.CHARACTER_DIRECT:
             participant = reaction.participants[0]
@@ -563,14 +641,20 @@ class LunarReactionDamageFormula:
         target_trace = [
             trace for component in weighted_components for trace in component.target_attribute_trace
         ]
+        # 直伤模式只有一个参与者，槽位账本因此可以提到顶层；复合模式的账本在
+        # 组分内各自保留，顶层不重复列入，避免同一词条被署名两次。
+        top = weighted_components[0]
+        direct = reaction.mode is LunarReactionDamageMode.CHARACTER_DIRECT
         return LunarReactionDamageResolution(
             reaction=reaction,
             components=weighted_components,
             weighted_base_damage=weighted_base_damage,
-            resistance=weighted_components[0].resistance,
+            resistance=top.resistance,
             official_damage=official_damage,
             debug_multiplier=debug_multiplier,
             final_damage=final_damage,
+            slots=top.slots if direct else (),
+            panel_terms=top.panel_terms if direct else (),
             source_attribute_trace=tuple(_unique_resolutions(source_trace)),
             target_attribute_trace=tuple(_unique_resolutions(target_trace)),
         )
@@ -582,18 +666,32 @@ class LunarReactionDamageFormula:
         reaction: LunarReactionDamageInput,
         participant: LunarReactionParticipantInput,
     ) -> LunarReactionComponentResolution:
+        """按月曜位置组装一个组分，并把槽位合并值与账本一起写进审计。"""
+
         component_query = _lunar_component_query(query, reaction, participant)
         component_session = _new_damage_session(context, component_query)
+        # 逐参与者重新收集：组分查询的来源主体是该参与者，因此按 source_ref
+        # 自筛的 provider 只对它自己这份生效；不按来源过滤的 provider 则
+        # 对每个参与者各贡献一次（队伍级效果的既有语义）。
+        component_modifiers = context.modifier_collector(component_query, component_session)
+        validate_formula_modifier_stages(self.formula_spec, component_modifiers)
+        component_terms = component_modifiers.applied_terms
         source_trace: list[AttributeResolution] = []
+        panel_terms: list[DamageModifierTerm] = []
+
+        # 倍率：直伤模式的系数与属性分别由参与者 scaling_terms 的
+        # coefficient 与 attribute_key 承载，因此可以被各自独立地修饰；反应复合
+        # 模式没有 scaling_terms，基线是机制侧冻结的等级基础伤害，无内容侧来源。
         scaling = None
         if participant.scaling_terms or participant.flat_base_damage != 0:
-            scaling, scaling_trace, _ = StandardScalingZonePolicy().resolve(
+            scaling, scaling_trace, scaling_panel_terms = self.scaling_policy.resolve(
                 component_query,
                 component_session,
-                (),
+                component_terms,
             )
             core_base_damage = scaling.value
             source_trace.extend(scaling_trace)
+            panel_terms.extend(scaling_panel_terms)
             base_damage_source = "participant_scaling"
         else:
             try:
@@ -604,6 +702,7 @@ class LunarReactionDamageFormula:
                 ) from exc
             base_damage_source = f"level_base:{participant.source_level}"
 
+        # 精通：面板读取物化为账本词条，精通加成由它派生。
         mastery_trace = component_session.resolve_source(STAT_ELEMENTAL_MASTERY)
         elemental_mastery = validate_damage_float(
             mastery_trace.final_value,
@@ -611,43 +710,85 @@ class LunarReactionDamageFormula:
         )
         if elemental_mastery < 0:
             raise DamageResolutionError("月曜元素精通不能为负数")
+        panel_terms.append(
+            DamageModifierTerm.panel_read(
+                stage=DamageModifierStage.PANEL_ELEMENTAL_MASTERY,
+                attribute=mastery_trace,
+            )
+        )
+        source_trace.append(mastery_trace)
         mastery_bonus = (
             self.mastery_numerator
             * elemental_mastery
             / (elemental_mastery + self.mastery_denominator)
         )
-        reaction_uplift_multiplier = 1 + mastery_bonus + reaction.reaction_bonus
-        if reaction_uplift_multiplier <= 0:
-            raise DamageResolutionError("月曜反应提升乘数必须为正数")
-        base_damage_after_reaction = (
-            core_base_damage
-            * reaction.reaction_multiplier
-            * (1 + reaction.base_damage_bonus)
-            * reaction_uplift_multiplier
-            + participant.additional_base_damage
-        )
-        if base_damage_after_reaction < 0:
-            raise DamageResolutionError("月曜基础伤害区不能为负数")
 
-        critical, critical_trace, _ = self.critical_policy.resolve(
+        # 暴击区：暴击率与暴击伤害都从面板读取，复用通用阶段。
+        critical, critical_trace, critical_panel_terms = self.critical_policy.resolve(
             component_query,
             component_session,
-            (),
+            component_terms,
         )
-        source_trace.append(mastery_trace)
         source_trace.extend(critical_trace)
+        panel_terms.extend(critical_panel_terms)
+
+        # 抗性区：有效抗性由面板值加修饰项合计得到。
         resistance_attribute = component_session.resolve_target(
             ELEMENT_TO_RESISTANCE_KEY[component_query.request.element.value]
         )
-        resistance = self.resistance_policy.resolve(resistance_attribute.final_value)
-        component_damage = (
-            base_damage_after_reaction
-            * critical.multiplier
-            * participant.ascension_multiplier
-            * resistance.multiplier
+        resistance_panel_term = DamageModifierTerm.panel_read(
+            stage=DamageModifierStage.PANEL_RESISTANCE,
+            attribute=resistance_attribute,
         )
-        if not math.isfinite(component_damage) or component_damage < 0:
-            raise DamageResolutionError("月曜组分伤害必须是有限非负数")
+        panel_terms.append(resistance_panel_term)
+        resistance_add = _sum_terms(component_terms, DamageModifierStage.RESISTANCE_ADD)
+        resistance = self.resistance_policy.resolve(
+            resistance_panel_term.value + resistance_add,
+            base_resistance=resistance_panel_term.value,
+            resistance_add=resistance_add,
+        )
+
+        # 基础伤害提升、反应加成、附加伤害与擢升：机制侧冻结基线 + 槽位账单修饰项
+        # 合计。擢升取加算口径——多个擢升来源互相加算，基线为无擢升时的乘数 1。
+        slots = (
+            _merge_lunar_slot(
+                LUNAR_SLOT_BASE_DAMAGE_BONUS,
+                reaction.base_damage_bonus,
+                _sum_terms(component_terms, DamageModifierStage.LUNAR_BASE_DAMAGE_BONUS_ADD),
+            ),
+            _merge_lunar_slot(
+                LUNAR_SLOT_REACTION_BONUS,
+                reaction.reaction_bonus,
+                _sum_terms(component_terms, DamageModifierStage.LUNAR_REACTION_BONUS_ADD),
+            ),
+            _merge_lunar_slot(
+                LUNAR_SLOT_ADDITIONAL_BASE_DAMAGE,
+                participant.additional_base_damage,
+                _sum_terms(
+                    component_terms,
+                    DamageModifierStage.LUNAR_ADDITIONAL_BASE_DAMAGE_ADD,
+                ),
+            ),
+            _merge_lunar_slot(
+                LUNAR_SLOT_ASCENSION_MULTIPLIER,
+                participant.ascension_multiplier,
+                _sum_terms(component_terms, DamageModifierStage.LUNAR_ASCENSION_BONUS_ADD),
+            ),
+        )
+        merged = {slot.slot_key: slot.merged for slot in slots}
+        zone = resolve_lunar_zone_damage(
+            core_base_damage=core_base_damage,
+            reaction_multiplier=reaction.reaction_multiplier,
+            elemental_mastery=elemental_mastery,
+            mastery_numerator=self.mastery_numerator,
+            mastery_denominator=self.mastery_denominator,
+            base_damage_bonus=merged[LUNAR_SLOT_BASE_DAMAGE_BONUS],
+            reaction_bonus=merged[LUNAR_SLOT_REACTION_BONUS],
+            additional_base_damage=merged[LUNAR_SLOT_ADDITIONAL_BASE_DAMAGE],
+            critical_multiplier=critical.multiplier,
+            ascension_multiplier=merged[LUNAR_SLOT_ASCENSION_MULTIPLIER],
+            resistance_multiplier=resistance.multiplier,
+        )
         if context.trace_level is TraceLevel.NONE:
             source_attribute_trace = ()
             target_attribute_trace = ()
@@ -661,19 +802,22 @@ class LunarReactionDamageFormula:
             scaling=scaling,
             core_base_damage=core_base_damage,
             reaction_multiplier=reaction.reaction_multiplier,
-            base_damage_bonus=reaction.base_damage_bonus,
+            base_damage_bonus=merged[LUNAR_SLOT_BASE_DAMAGE_BONUS],
             elemental_mastery=elemental_mastery,
             mastery_bonus=mastery_bonus,
-            reaction_bonus=reaction.reaction_bonus,
-            reaction_uplift_multiplier=reaction_uplift_multiplier,
-            base_damage_after_reaction=base_damage_after_reaction,
-            additional_base_damage=participant.additional_base_damage,
+            reaction_bonus=merged[LUNAR_SLOT_REACTION_BONUS],
+            reaction_uplift_multiplier=zone.reaction_uplift_multiplier,
+            base_damage_after_reaction=zone.base_damage_after_reaction,
+            additional_base_damage=merged[LUNAR_SLOT_ADDITIONAL_BASE_DAMAGE],
             critical=critical,
-            ascension_multiplier=participant.ascension_multiplier,
+            ascension_multiplier=merged[LUNAR_SLOT_ASCENSION_MULTIPLIER],
             resistance=resistance,
-            component_damage=component_damage,
+            component_damage=zone.damage,
             weight=0.0,
             weighted_damage=0.0,
+            modifier_terms=component_terms,
+            slots=slots,
+            panel_terms=tuple(panel_terms),
             source_attribute_trace=source_attribute_trace,
             target_attribute_trace=target_attribute_trace,
         )
@@ -683,18 +827,20 @@ class LunarReactionDamageFormula:
 class StellarReactionDamageFormula:
     """星烁独立完整公式的结算分支。
 
-    星烁专属区间来自强类型 ``StellarReactionDamageInput``；元素精通、暴击
-    与目标抗性由本公式在当前帧实时读取并生成独立审计。公式不接受普通
-    ``DamageModifierTerm``；``reaction_composite`` 模式留待星扩散阶段启用。
+    星烁的全部乘区与通用公式共用同一套槽位账单：倍率区、精通和增伤区、暴击区
+    与抗性区复用通用阶段，基础系数、基础增伤、大权区、羽毛区与擢升使用星烁
+    专属阶段。公式不再接收预乘好的区间值——所有效果都在本分支收集、署名、
+    合并后才进入纯计算。
     """
 
+    scaling_policy: ScalingZonePolicy = field(default_factory=StandardScalingZonePolicy)
     critical_policy: CriticalZonePolicy = field(default_factory=StandardCriticalZonePolicy)
     resistance_policy: StandardResistancePolicy = field(default_factory=StandardResistancePolicy)
     debug_adjustment: DebugDamageAdjustment = field(default_factory=DebugDamageAdjustment)
 
     @property
     def formula_spec(self) -> DamageFormulaSpec:
-        """星烁公式只接受星烁专属修饰项阶段。"""
+        """星烁公式按位置放行星烁专属阶段与对应的通用直伤阶段。"""
 
         return DamageFormulaSpec(
             formula_key=FORMULA_KEY_STELLAR_REACTION,
@@ -710,17 +856,38 @@ class StellarReactionDamageFormula:
         if stellar is None:
             raise DamageFormulaInputError("星烁伤害缺少 StellarReactionDamageInput")
         validate_formula_modifier_stages(self.formula_spec, context.modifiers)
-        modifier_terms = context.modifiers.applied_terms
-        stellar_bonus_add = _sum_terms(
-            modifier_terms,
-            DamageModifierStage.STELLAR_REACTION_BONUS_ADD,
-        )
         if stellar.mode == "reaction_composite":
             if not stellar.participants:
                 raise DamageFormulaInputError("反应星烁复合伤害必须提供参与者列表")
+            if request.scaling_terms:
+                raise DamageFormulaInputError("反应星烁复合伤害不能携带请求级倍率")
             return self._resolve_reaction_composite(context, query, stellar)
         if stellar.mode != "character_direct":
             raise DamageFormulaInputError("星烁伤害 mode 不受支持")
+        if not request.scaling_terms:
+            raise DamageFormulaInputError("角色直伤星烁必须提供属性倍率")
+        return self._resolve_character_direct(context, query, stellar)
+
+    def _resolve_character_direct(
+        self,
+        context: DamageFormulaContext,
+        query: DamageQuery,
+        stellar: StellarReactionDamageInput,
+    ) -> StellarReactionDamageResolution:
+        """按乘区组装直伤星烁，并把槽位合并值与账本一起写进审计。"""
+
+        terms = context.modifiers.applied_terms
+        panel_terms: list[DamageModifierTerm] = []
+
+        # 倍率与属性分别由 scaling_terms 的 coefficient 与 attribute_key
+        # 承载，两者因此可以被各自独立地修饰。
+        scaling, scaling_trace, scaling_panel_terms = self.scaling_policy.resolve(
+            query,
+            context.session,
+            terms,
+        )
+        source_trace: list[AttributeResolution] = list(scaling_trace)
+        panel_terms.extend(scaling_panel_terms)
 
         mastery_trace = context.session.resolve_source(STAT_ELEMENTAL_MASTERY)
         elemental_mastery = validate_damage_float(
@@ -730,47 +897,111 @@ class StellarReactionDamageFormula:
         if elemental_mastery < 0:
             raise DamageResolutionError("星烁元素精通不能为负数")
         mastery_bonus = 6.0 * elemental_mastery / (elemental_mastery + 2000.0)
-        critical, critical_trace, _ = self.critical_policy.resolve(
+        panel_terms.append(
+            DamageModifierTerm.panel_read(
+                stage=DamageModifierStage.PANEL_ELEMENTAL_MASTERY,
+                attribute=mastery_trace,
+            )
+        )
+        source_trace.append(mastery_trace)
+
+        # 暴击区与通用公式共用阶段，暴击率与暴击伤害都从面板读取。
+        critical, critical_trace, critical_panel_terms = self.critical_policy.resolve(
             query,
             context.session,
-            modifier_terms,
+            terms,
         )
-        resistance_attribute = context.session.resolve_target(
-            ELEMENT_TO_RESISTANCE_KEY[request.element.value]
-        )
-        resistance = self.resistance_policy.resolve(resistance_attribute.final_value)
+        source_trace.extend(critical_trace)
+        panel_terms.extend(critical_panel_terms)
 
-        # 输入中的精通/暴击/抗性是调用方预冻结快照；结算分支始终以实时读取覆盖。
-        # 专属修饰项并入 stellar_bonus（精通区加算位），不替换调用方冻结的基线值。
-        resolved_input = replace(
-            stellar,
+        # 抗性区与通用公式共用阶段，有效抗性由面板值加修饰项合计得到。
+        resistance_attribute = context.session.resolve_target(
+            ELEMENT_TO_RESISTANCE_KEY[query.request.element.value]
+        )
+        resistance_panel_term = DamageModifierTerm.panel_read(
+            stage=DamageModifierStage.PANEL_RESISTANCE,
+            attribute=resistance_attribute,
+        )
+        panel_terms.append(resistance_panel_term)
+        resistance_add = _sum_terms(terms, DamageModifierStage.RESISTANCE_ADD)
+        resistance = self.resistance_policy.resolve(
+            resistance_panel_term.value + resistance_add,
+            base_resistance=resistance_panel_term.value,
+            resistance_add=resistance_add,
+        )
+
+        # 基础系数、基础增伤、增伤位、大权区、羽毛区与擢升：机制侧冻结基线 +
+        # 槽位账单修饰项合计。
+        slots = (
+            _merge_stellar_slot(
+                STELLAR_SLOT_BASE_MULTIPLIER,
+                stellar.stellar_base_multiplier,
+                _sum_terms(terms, DamageModifierStage.STELLAR_BASE_MULTIPLIER_ADD),
+            ),
+            _merge_stellar_slot(
+                STELLAR_SLOT_BASE_BONUS,
+                stellar.stellar_base_bonus,
+                _sum_terms(terms, DamageModifierStage.STELLAR_BASE_BONUS_ADD),
+            ),
+            _merge_stellar_slot(
+                STELLAR_SLOT_REACTION_BONUS,
+                stellar.stellar_bonus,
+                _sum_terms(terms, DamageModifierStage.STELLAR_REACTION_BONUS_ADD),
+            ),
+            _merge_stellar_slot(
+                STELLAR_SLOT_AUTHORITY_MULTIPLIER,
+                stellar.stellar_authority_multiplier,
+                _sum_terms(terms, DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD),
+            ),
+            _merge_stellar_slot(
+                STELLAR_SLOT_FEATHER_ADDITION,
+                stellar.direct_stellar_feather_addition,
+                _sum_terms(terms, DamageModifierStage.STELLAR_FEATHER_ADDITION_ADD),
+            ),
+            _merge_stellar_slot(
+                STELLAR_SLOT_ASCENSION_BONUS,
+                stellar.stellar_ascension_bonus,
+                _sum_terms(terms, DamageModifierStage.STELLAR_ASCENSION_BONUS_ADD),
+            ),
+        )
+        merged = {slot.slot_key: slot.merged for slot in slots}
+
+        zone = resolve_stellar_zone_damage(
+            scaling_zone_damage=scaling.value,
+            stellar_base_multiplier=merged[STELLAR_SLOT_BASE_MULTIPLIER],
             elemental_mastery=elemental_mastery,
-            stellar_bonus=stellar.stellar_bonus + stellar_bonus_add,
+            stellar_base_bonus=merged[STELLAR_SLOT_BASE_BONUS],
+            stellar_bonus=merged[STELLAR_SLOT_REACTION_BONUS],
+            stellar_authority_multiplier=merged[STELLAR_SLOT_AUTHORITY_MULTIPLIER],
+            feather_addition=merged[STELLAR_SLOT_FEATHER_ADDITION],
             critical_multiplier=critical.multiplier,
             resistance_multiplier=resistance.multiplier,
+            stellar_ascension_bonus=merged[STELLAR_SLOT_ASCENSION_BONUS],
         )
-        pure = resolve_stellar_reaction_damage(resolved_input)
         debug_multiplier = self.debug_adjustment.multiplier
-        final_damage = pure.damage * debug_multiplier
+        final_damage = zone.damage * debug_multiplier
         if not math.isfinite(final_damage) or final_damage < 0:
             raise DamageResolutionError("星烁最终伤害必须是有限非负数")
-        source_trace = [mastery_trace, *critical_trace]
         if context.trace_level is TraceLevel.NONE:
-            source_attribute_trace = ()
-            target_attribute_trace = ()
+            source_attribute_trace: tuple[AttributeResolution, ...] = ()
+            target_attribute_trace: tuple[AttributeResolution, ...] = ()
         else:
             source_attribute_trace = tuple(_unique_resolutions(source_trace))
             target_attribute_trace = (resistance_attribute,)
         return StellarReactionDamageResolution(
-            resolved_input,
-            pure.damage,
+            stellar,
+            zone.damage,
+            base_damage=zone.base_damage,
             elemental_mastery=elemental_mastery,
             mastery_bonus=mastery_bonus,
             critical=critical,
             resistance=resistance,
-            official_damage=pure.damage,
+            official_damage=zone.damage,
             debug_multiplier=debug_multiplier,
             final_damage=final_damage,
+            slots=slots,
+            panel_terms=tuple(panel_terms),
+            scaling=scaling,
             source_attribute_trace=source_attribute_trace,
             target_attribute_trace=target_attribute_trace,
         )
@@ -811,6 +1042,9 @@ class StellarReactionDamageFormula:
             for index, component in enumerate(ordered_components)
         )
         official_damage = math.fsum(component.weighted_damage for component in weighted_components)
+        weighted_base_damage = math.fsum(
+            component.base_damage * component.weight for component in weighted_components
+        )
         debug_multiplier = self.debug_adjustment.multiplier
         final_damage = official_damage * debug_multiplier
         if not math.isfinite(final_damage) or final_damage < 0:
@@ -829,8 +1063,9 @@ class StellarReactionDamageFormula:
             source_attribute_trace = tuple(_unique_resolutions(source_trace))
             target_attribute_trace = tuple(_unique_resolutions(target_trace))
         return StellarReactionDamageResolution(
-            replace(stellar, elemental_mastery=top.elemental_mastery),
+            stellar,
             official_damage,
+            base_damage=weighted_base_damage,
             elemental_mastery=top.elemental_mastery,
             mastery_bonus=top.mastery_bonus,
             critical=top.critical,
@@ -858,10 +1093,6 @@ class StellarReactionDamageFormula:
         component_modifiers = context.modifier_collector(component_query, component_session)
         validate_formula_modifier_stages(self.formula_spec, component_modifiers)
         component_terms = component_modifiers.applied_terms
-        stellar_bonus_add = _sum_terms(
-            component_terms,
-            DamageModifierStage.STELLAR_REACTION_BONUS_ADD,
-        )
         mastery_trace = component_session.resolve_source(STAT_ELEMENTAL_MASTERY)
         elemental_mastery = validate_damage_float(
             mastery_trace.final_value,
@@ -870,26 +1101,82 @@ class StellarReactionDamageFormula:
         if elemental_mastery < 0:
             raise DamageResolutionError("星烁元素精通不能为负数")
         mastery_bonus = 6.0 * elemental_mastery / (elemental_mastery + 2000.0)
-        critical, critical_trace, _ = self.critical_policy.resolve(
+        # 面板账单项与直伤路径同构：精通、暴击、抗性都在读取点物化，作为该组分
+        # 槽位账单的基础贡献（顶层不重复列入，账本落在组分内）。
+        panel_terms: list[DamageModifierTerm] = [
+            DamageModifierTerm.panel_read(
+                stage=DamageModifierStage.PANEL_ELEMENTAL_MASTERY,
+                attribute=mastery_trace,
+            )
+        ]
+        critical, critical_trace, critical_panel_terms = self.critical_policy.resolve(
             component_query,
             component_session,
             component_terms,
         )
+        panel_terms.extend(critical_panel_terms)
         resistance_attribute = component_session.resolve_target(
             ELEMENT_TO_RESISTANCE_KEY[query.request.element.value]
         )
-        resistance = self.resistance_policy.resolve(resistance_attribute.final_value)
-        component_damage = resolve_stellar_zone_damage(
-            scaling_value=participant.reaction_base_value,
-            stellar_base_multiplier=stellar.stellar_base_multiplier,
+        panel_terms.append(
+            DamageModifierTerm.panel_read(
+                stage=DamageModifierStage.PANEL_RESISTANCE,
+                attribute=resistance_attribute,
+            )
+        )
+        resistance_add = _sum_terms(component_terms, DamageModifierStage.RESISTANCE_ADD)
+        resistance = self.resistance_policy.resolve(
+            resistance_attribute.final_value + resistance_add,
+            base_resistance=resistance_attribute.final_value,
+            resistance_add=resistance_add,
+        )
+
+        # 复合模式的倍率区基线是该参与者的反应基础值（等级系数），其余位置与
+        # 直伤共用同一套槽位与合并口径。
+        slots = (
+            _merge_stellar_slot(
+                STELLAR_SLOT_BASE_MULTIPLIER,
+                stellar.stellar_base_multiplier,
+                _sum_terms(component_terms, DamageModifierStage.STELLAR_BASE_MULTIPLIER_ADD),
+            ),
+            _merge_stellar_slot(
+                STELLAR_SLOT_BASE_BONUS,
+                participant.stellar_base_bonus,
+                _sum_terms(component_terms, DamageModifierStage.STELLAR_BASE_BONUS_ADD),
+            ),
+            _merge_stellar_slot(
+                STELLAR_SLOT_REACTION_BONUS,
+                participant.stellar_bonus,
+                _sum_terms(component_terms, DamageModifierStage.STELLAR_REACTION_BONUS_ADD),
+            ),
+            _merge_stellar_slot(
+                STELLAR_SLOT_AUTHORITY_MULTIPLIER,
+                participant.stellar_authority_multiplier,
+                _sum_terms(component_terms, DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD),
+            ),
+            _merge_stellar_slot(
+                STELLAR_SLOT_FEATHER_ADDITION,
+                participant.stellar_feather_addition,
+                _sum_terms(component_terms, DamageModifierStage.STELLAR_FEATHER_ADDITION_ADD),
+            ),
+            _merge_stellar_slot(
+                STELLAR_SLOT_ASCENSION_BONUS,
+                participant.stellar_ascension_bonus,
+                _sum_terms(component_terms, DamageModifierStage.STELLAR_ASCENSION_BONUS_ADD),
+            ),
+        )
+        merged = {slot.slot_key: slot.merged for slot in slots}
+        zone = resolve_stellar_zone_damage(
+            scaling_zone_damage=participant.reaction_base_value,
+            stellar_base_multiplier=merged[STELLAR_SLOT_BASE_MULTIPLIER],
             elemental_mastery=elemental_mastery,
-            stellar_base_bonus=participant.stellar_base_bonus,
-            stellar_bonus=participant.stellar_bonus + stellar_bonus_add,
-            stellar_authority_multiplier=participant.stellar_authority_multiplier,
-            feather_addition=participant.stellar_feather_addition,
+            stellar_base_bonus=merged[STELLAR_SLOT_BASE_BONUS],
+            stellar_bonus=merged[STELLAR_SLOT_REACTION_BONUS],
+            stellar_authority_multiplier=merged[STELLAR_SLOT_AUTHORITY_MULTIPLIER],
+            feather_addition=merged[STELLAR_SLOT_FEATHER_ADDITION],
             critical_multiplier=critical.multiplier,
             resistance_multiplier=resistance.multiplier,
-            stellar_ascension_bonus=participant.stellar_ascension_bonus,
+            stellar_ascension_bonus=merged[STELLAR_SLOT_ASCENSION_BONUS],
         )
         if context.trace_level is TraceLevel.NONE:
             source_attribute_trace = ()
@@ -905,10 +1192,13 @@ class StellarReactionDamageFormula:
             mastery_bonus=mastery_bonus,
             critical=critical,
             resistance=resistance,
-            component_damage=component_damage,
+            component_damage=zone.damage,
+            base_damage=zone.base_damage,
             weight=0.0,
             weighted_damage=0.0,
             modifier_terms=component_terms,
+            panel_terms=tuple(panel_terms),
+            slots=slots,
             source_attribute_trace=source_attribute_trace,
             target_attribute_trace=target_attribute_trace,
         )
@@ -919,13 +1209,18 @@ def _lunar_component_query(
     reaction: LunarReactionDamageInput,
     participant: LunarReactionParticipantInput,
 ) -> DamageQuery:
-    """为一个月曜角色组分创建独立的属性查询。"""
+    """为一个月曜角色组分创建独立的属性查询。
+
+    组分查询**继承月曜公式键**：按 ``formula_key`` 自筛的月曜 provider 必须能在
+    组分收集里被识别，否则会在复合路径静默返回空。倍率由参与者携带，因此
+    ``scaling_terms`` / ``flat_base_damage`` 取自参与者而不是请求。
+    """
 
     request = query.request
     component_request = DamageRequest(
         request_id=f"{request.request_id}:participant:{participant.participant_ref.entity_id}",
         frame=request.frame,
-        formula_key=FORMULA_KEY_GENERAL,
+        formula_key=FORMULA_KEY_LUNAR_REACTION,
         main_attack_tag=request.main_attack_tag,
         impact_key=request.impact_key,
         source_ref=participant.participant_ref,
@@ -936,6 +1231,7 @@ def _lunar_component_query(
         source_context=request.source_context,
         scaling_terms=participant.scaling_terms,
         flat_base_damage=participant.flat_base_damage,
+        lunar_reaction=reaction,
         tags=frozenset((*request.tags, reaction.reaction_profile_key)),
         can_crit=participant.can_crit,
     )
@@ -1023,25 +1319,78 @@ def _stellar_component_query(
 
 
 def _stellar_component_weight(index: int) -> float:
-    """返回星烁复合伤害按完整单人伤害排序后的固定权重。"""
+    """返回星烁复合伤害按完整单人伤害排序后的固定权重。
 
-    if index == 0:
-        return 0.60
-    if index == 1:
-        return 0.30
-    return 0.05
+    星烁与月曜复合共用同一分配表 ``LUNAR_COMPOSITE_WEIGHTS``（``0.60 : 0.30 : 0.05``，
+    超出表长沿用最后一项）：权重单点定义、不在公式体里重复硬写，口径见 D-083。
+    """
+
+    if index < len(LUNAR_COMPOSITE_WEIGHTS):
+        return LUNAR_COMPOSITE_WEIGHTS[index]
+    return LUNAR_COMPOSITE_WEIGHTS[-1]
+
+
+def _merge_stellar_slot(
+    slot_key: str,
+    baseline: float,
+    modifier_sum: float,
+) -> StellarZoneSlotAudit:
+    """按「冻结基线 + Σ修饰项」合并一个星烁槽位，并返回三段审计。
+
+    合并值同时用于实算与审计，因此偏离基线时可以直接从 ``slots`` 读出是谁
+    贡献了多少；provider 署名沿用 ``applied_terms`` 的既有机制。
+    """
+
+    merged = float(baseline) + float(modifier_sum)
+    if not math.isfinite(merged):
+        raise DamageResolutionError(f"星烁槽位 {slot_key} 合并值必须是有限数字")
+    if merged < 0:
+        raise DamageResolutionError(f"星烁槽位 {slot_key} 合并值不能为负数")
+    return StellarZoneSlotAudit(
+        slot_key=slot_key,
+        baseline=baseline,
+        modifier_sum=modifier_sum,
+        merged=merged,
+    )
+
+
+def _merge_lunar_slot(
+    slot_key: str,
+    baseline: float,
+    modifier_sum: float,
+) -> LunarZoneSlotAudit:
+    """按「冻结基线 + Σ修饰项」合并一个月曜槽位，并返回三段审计。
+
+    合并值同时用于实算与审计，因此偏离基线时可以直接从 ``slots`` 读出是谁
+    贡献了多少；provider 署名沿用 ``applied_terms`` 的既有机制。
+    """
+
+    merged = float(baseline) + float(modifier_sum)
+    if not math.isfinite(merged):
+        raise DamageResolutionError(f"月曜槽位 {slot_key} 合并值必须是有限数字")
+    if merged < 0:
+        raise DamageResolutionError(f"月曜槽位 {slot_key} 合并值不能为负数")
+    return LunarZoneSlotAudit(
+        slot_key=slot_key,
+        baseline=baseline,
+        modifier_sum=modifier_sum,
+        merged=merged,
+    )
 
 
 def _lunar_component_weight(mode: LunarReactionDamageMode, index: int) -> float:
-    """返回月曜复合伤害按完整组分排序后的固定权重。"""
+    """返回月曜复合伤害按完整组分排序后的固定权重。
+
+    权重取自 ``LUNAR_COMPOSITE_WEIGHTS``（与机制侧反应系数配成一对口径）；超出表长
+    的组分沿用最后一项，即资料口径里的「其余组分各 0.05」。直伤模式只有单一组分，
+    不参与加权。
+    """
 
     if mode is LunarReactionDamageMode.CHARACTER_DIRECT:
         return 1.0
-    if index == 0:
-        return 0.60
-    if index == 1:
-        return 0.30
-    return 0.05
+    if index < len(LUNAR_COMPOSITE_WEIGHTS):
+        return LUNAR_COMPOSITE_WEIGHTS[index]
+    return LUNAR_COMPOSITE_WEIGHTS[-1]
 
 
 PRODUCTION_LUNAR_REACTION_LEVEL_BASE_DAMAGE: Mapping[int, float] = {

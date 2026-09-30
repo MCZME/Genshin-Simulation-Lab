@@ -18,6 +18,7 @@ from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.elements import Element
 from genshin_sim.core.events import EventEngine
 from genshin_sim.core.systems.moonsign import (
+    MoonsignLunarBonusProvider,
     MoonsignRuntime,
     MoonsignStore,
     resolve_moonsign_level,
@@ -34,10 +35,11 @@ class MoonsignAssetBundle(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class MoonsignRuntimeBundle:
-    """月兆装配产物：Store 与 Runtime。"""
+    """月兆装配产物：Store、Runtime 与伤害修饰 provider。"""
 
     store: MoonsignStore
     runtime: MoonsignRuntime
+    damage_providers: tuple[MoonsignLunarBonusProvider, ...]
 
 
 def build_moonsign_bundle(
@@ -81,4 +83,12 @@ def build_moonsign_bundle(
         duration_frames=MOONSIGN_BONUS_DURATION_FRAMES,
         element_by_slot=element_by_slot,
     )
-    return MoonsignRuntimeBundle(store=store, runtime=runtime)
+    # 月曜增伤以词条进入月曜公式槽位账单；端口在本函数内即可绑定，
+    # 因为 Runtime 与 provider 同一处创建。
+    lunar_bonus_provider = MoonsignLunarBonusProvider()
+    lunar_bonus_provider.bind_runtime_ports(bonus_port=runtime)
+    return MoonsignRuntimeBundle(
+        store=store,
+        runtime=runtime,
+        damage_providers=(lunar_bonus_provider,),
+    )

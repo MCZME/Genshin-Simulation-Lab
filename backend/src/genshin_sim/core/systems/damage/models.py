@@ -968,7 +968,7 @@ class LunarReactionComponentResolution:
     # 该组分独立收集到的伤害修饰项。复合路径的修饰不进入顶层 applied_terms，
     # 因此在此单独保留，使数值与审计重新对齐。
     modifier_terms: tuple[DamageModifierTerm, ...] = ()
-    # 该组分各可修饰位置的三段审计；位置 1 的倍率区由 scaling 承载。
+    # 该组分各可修饰位置的槽位三段审计；倍率区由 scaling 承载。
     slots: tuple[LunarZoneSlotAudit, ...] = ()
     # 该组分从属性系统读取到的面板值物化成的词条。
     panel_terms: tuple[DamageModifierTerm, ...] = ()

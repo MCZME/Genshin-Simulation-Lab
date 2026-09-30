@@ -11,7 +11,7 @@
   承载；
 - 反应复合模式的基础值是机制侧冻结的等级基础伤害，没有内容侧来源。
 
-两个模式的位置 1 都不在这套槽位白名单里：复合模式没有内容侧来源，直伤模式的
+两个模式的倍率区都不在这套槽位白名单里：复合模式没有内容侧来源，直伤模式的
 倍率虽然可以被修饰，但绑定在**参与者**上，而 component_key 的合法集合由
 ``DamageModifierIndex`` 从请求级 ``scaling_terms`` 读取，参与者组件在顶层收集里
 无法寻址（详见 ``formulas.py`` 的 ``LUNAR_ALLOWED_MODIFIER_STAGES`` 说明）。
@@ -32,8 +32,8 @@ from dataclasses import dataclass
 LUNAR_COMPOSITE_WEIGHTS: tuple[float, ...] = (0.60, 0.30, 0.05)
 
 # 月曜公式的槽位键：与 allowed_modifier_stages 白名单按位置一一对应，
-# 供槽位三段审计（冻结基线 / Σ修饰项 / 合并值）稳定命名。位置 1 的倍率区由
-# scaling 策略给出、位置 4/7/9 由面板与策略给出，因此不在此重复命名。
+# 供槽位三段审计（冻结基线 / Σ修饰项 / 合并值）稳定命名。倍率区由
+# scaling 策略给出、精通、暴击与抗性由面板与策略给出，因此不在此重复命名。
 LUNAR_SLOT_BASE_DAMAGE_BONUS = "lunar_base_damage_bonus"
 LUNAR_SLOT_REACTION_BONUS = "lunar_reaction_bonus"
 LUNAR_SLOT_ADDITIONAL_BASE_DAMAGE = "lunar_additional_base_damage"

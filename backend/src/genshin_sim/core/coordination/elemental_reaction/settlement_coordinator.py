@@ -1757,7 +1757,7 @@ class ElementalSettlementCoordinator:
                         reaction_multiplier=effect.reaction_multiplier,
                         base_damage_bonus=effect.base_damage_bonus,
                         # 月曜反应加成只走 effect 声明的基线；队伍级增伤（月兆等）
-                        # 由 DamageModifierProvider 以槽位词条进入公式（D-082）。
+                        # 由 DamageModifierProvider 以槽位词条进入公式。
                         reaction_bonus=effect.reaction_bonus,
                         occurrence_ref=effect.parent_occurrence_ref,
                     )
@@ -2577,7 +2577,7 @@ class ElementalSettlementCoordinator:
                 ),
                 reaction_multiplier=effect.reaction_multiplier,
                 base_damage_bonus=effect.base_damage_bonus,
-                # 雷暴云攻击与月结晶谐奏同理：队伍级月曜增伤由 provider 词条承载（D-082）。
+                # 雷暴云攻击与月结晶谐奏同理：队伍级月曜增伤由 provider 词条承载。
                 reaction_bonus=effect.reaction_bonus,
                 occurrence_ref=None,
             )

@@ -128,55 +128,55 @@ TRANSFORMATIVE_ALLOWED_MODIFIER_STAGES = frozenset(
 )
 STELLAR_ALLOWED_MODIFIER_STAGES = frozenset(
     {
-        # 位置 1 倍率：与通用公式的位置相同，复用通用阶段，需绑定 component_key。
+        # 倍率：与通用公式的位置相同，复用通用阶段，需绑定 component_key。
         DamageModifierStage.COMPONENT_COEFFICIENT_PERCENT_ADD,
         DamageModifierStage.COMPONENT_COEFFICIENT_FLAT_ADD,
-        # 位置 3 基础系数：基线是机制按层数/反应类型冻结的乘数，没有面板来源。
+        # 基础系数：基线是机制按层数/反应类型冻结的乘数，没有面板来源。
         DamageModifierStage.STELLAR_BASE_MULTIPLIER_ADD,
-        # 位置 4 基础增伤：乘性括号 (1 + Σ)，与月曜的基础伤害提升同形。
+        # 基础增伤：乘性括号 (1 + Σ)，与月曜的基础伤害提升同形。
         DamageModifierStage.STELLAR_BASE_BONUS_ADD,
-        # 位置 5 精通和增伤区：精通由面板读取，本阶段只贡献反应增伤部分。
+        # 精通和增伤区：精通由面板读取，本阶段只贡献反应增伤部分。
         DamageModifierStage.STELLAR_REACTION_BONUS_ADD,
-        # 位置 6 大权区乘数：没有面板来源，内容效果是它唯一的贡献入口，
-        # 与增伤位阶段分处不同乘区（见 D-075 变更记录）。
+        # 大权区乘数：没有面板来源，内容效果是它唯一的贡献入口，
+        # 与增伤位阶段分处不同乘区。
         DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD,
-        # 位置 7 羽毛区：形状与通用 base_damage_flat_add 相似但宿主乘区不同
+        # 羽毛区：形状与通用 base_damage_flat_add 相似但宿主乘区不同
         # （星烁羽毛不被基础系数/基础增伤/精通增伤区/大权区乘算），因此另设专属阶段。
         DamageModifierStage.STELLAR_FEATHER_ADDITION_ADD,
-        # 位置 8 暴击区：暴击率与暴击伤害都读取面板，复用通用阶段，
+        # 暴击区：暴击率与暴击伤害都读取面板，复用通用阶段，
         # 作用范围由 provider 自筛 formula_key 决定。
         DamageModifierStage.CRIT_RATE_ADD,
         DamageModifierStage.CRIT_DAMAGE_ADD,
-        # 位置 9 抗性区：与通用公式的位置相同，复用通用阶段。
+        # 抗性区：与通用公式的位置相同，复用通用阶段。
         DamageModifierStage.RESISTANCE_ADD,
-        # 位置 10 擢升：乘性括号 (1 + Σ)，多个擢升来源互相加算。
+        # 擢升：乘性括号 (1 + Σ)，多个擢升来源互相加算。
         DamageModifierStage.STELLAR_ASCENSION_BONUS_ADD,
     }
 )
-# 月曜位置 1（倍率）与位置 2（反应系数）刻意不放行：
-# - 位置 2 的系数是机制侧冻结的反应口径，没有内容侧来源；
-# - 位置 1 在复合模式下是机制冻结的等级基础伤害；直伤模式下倍率由**参与者**
+# 月曜的倍率位与反应系数位刻意不放行：
+# - 反应系数的系数是机制侧冻结的反应口径，没有内容侧来源；
+# - 倍率位在复合模式下是机制冻结的等级基础伤害；直伤模式下倍率由**参与者**
 #   的 scaling_terms 承载，而 ``DamageModifierIndex`` 校验 component_key 绑定时
 #   以 ``query.request.scaling_terms`` 为已知 component 集合，请求级为空时顶层
 #   收集会在进入公式前就拒绝绑定到参与者组件的 term。要开放它需把直伤倍率挪到
 #   请求级，属契约变更，另行评估。白名单只列「可被内容真实产出并消费」的位置。
 LUNAR_ALLOWED_MODIFIER_STAGES = frozenset(
     {
-        # 位置 3 基础伤害提升：乘性括号 (1 + Σ)，与星烁基础增伤同形；
+        # 基础伤害提升：乘性括号 (1 + Σ)，与星烁基础增伤同形；
         # 来源为各月兆角色的月兆祝赐（按攻击/精通/防御/生命缩放）。
         DamageModifierStage.LUNAR_BASE_DAMAGE_BONUS_ADD,
-        # 位置 5 反应加成：并入精通区的加算括号，与剧变、星烁的增伤位同形。
+        # 反应加成：并入精通区的加算括号，与剧变、星烁的增伤位同形。
         DamageModifierStage.LUNAR_REACTION_BONUS_ADD,
-        # 位置 6 附加伤害：基础区括号内末项，不被反应倍率、基础伤害提升与
+        # 附加伤害：基础区括号内末项，不被反应倍率、基础伤害提升与
         # 精通提升乘算，只被暴击、擢升与抗性乘算；形状与星烁羽毛区同构。
         DamageModifierStage.LUNAR_ADDITIONAL_BASE_DAMAGE_ADD,
-        # 位置 8 擢升乘数：乘性括号 (1 + Σ)，多个擢升来源互相加算。
+        # 擢升乘数：乘性括号 (1 + Σ)，多个擢升来源互相加算。
         DamageModifierStage.LUNAR_ASCENSION_BONUS_ADD,
-        # 位置 7 暴击区：暴击率与暴击伤害都读取面板，复用通用阶段，
+        # 暴击区：暴击率与暴击伤害都读取面板，复用通用阶段，
         # 作用范围由 provider 自筛 formula_key 决定。
         DamageModifierStage.CRIT_RATE_ADD,
         DamageModifierStage.CRIT_DAMAGE_ADD,
-        # 位置 9 抗性区：与通用公式的位置相同，复用通用阶段。
+        # 抗性区：与通用公式的位置相同，复用通用阶段。
         DamageModifierStage.RESISTANCE_ADD,
     }
 )
@@ -541,10 +541,9 @@ class TransformativeReactionDamageFormula:
 class LunarReactionDamageFormula:
     """月曜单来源与多来源组分的完整伤害公式。
 
-    月曜的位置与通用公式共用同一套槽位账单：位置 4 精通由面板读取，位置 7 暴击与
-    位置 9 抗性复用通用阶段，位置 3 基础伤害提升、位置 5 反应加成、位置 6 附加伤害
-    与位置 8 擢升使用月曜专属阶段。等级基数与精通系数默认为已确认资料中的生产
-    数值，也可以通过构造参数覆盖。
+    月曜与通用公式共用同一套槽位账单：精通由面板读取，暴击与抗性复用通用阶段，
+    基础伤害提升、反应加成、附加伤害与擢升使用月曜专属阶段。等级基数与精通系数
+    默认为已确认资料中的生产数值，也可以通过构造参数覆盖。
     """
 
     level_base_damage: Mapping[int, float]
@@ -680,7 +679,7 @@ class LunarReactionDamageFormula:
         source_trace: list[AttributeResolution] = []
         panel_terms: list[DamageModifierTerm] = []
 
-        # 位置 1 倍率：直伤模式的系数与属性分别由参与者 scaling_terms 的
+        # 倍率：直伤模式的系数与属性分别由参与者 scaling_terms 的
         # coefficient 与 attribute_key 承载，因此可以被各自独立地修饰；反应复合
         # 模式没有 scaling_terms，基线是机制侧冻结的等级基础伤害，无内容侧来源。
         scaling = None
@@ -703,7 +702,7 @@ class LunarReactionDamageFormula:
                 ) from exc
             base_damage_source = f"level_base:{participant.source_level}"
 
-        # 位置 4 精通：面板读取物化为账本词条，精通加成由它派生。
+        # 精通：面板读取物化为账本词条，精通加成由它派生。
         mastery_trace = component_session.resolve_source(STAT_ELEMENTAL_MASTERY)
         elemental_mastery = validate_damage_float(
             mastery_trace.final_value,
@@ -724,7 +723,7 @@ class LunarReactionDamageFormula:
             / (elemental_mastery + self.mastery_denominator)
         )
 
-        # 位置 7 暴击区：暴击率与暴击伤害都从面板读取，复用通用阶段。
+        # 暴击区：暴击率与暴击伤害都从面板读取，复用通用阶段。
         critical, critical_trace, critical_panel_terms = self.critical_policy.resolve(
             component_query,
             component_session,
@@ -733,7 +732,7 @@ class LunarReactionDamageFormula:
         source_trace.extend(critical_trace)
         panel_terms.extend(critical_panel_terms)
 
-        # 位置 9 抗性区：有效抗性由面板值加修饰项合计得到。
+        # 抗性区：有效抗性由面板值加修饰项合计得到。
         resistance_attribute = component_session.resolve_target(
             ELEMENT_TO_RESISTANCE_KEY[component_query.request.element.value]
         )
@@ -749,8 +748,8 @@ class LunarReactionDamageFormula:
             resistance_add=resistance_add,
         )
 
-        # 位置 3、5、6、8：机制侧冻结基线 + 槽位账单修饰项合计。位置 8 取加算
-        # 口径——多个擢升来源互相加算，基线为无擢升时的乘数 1。
+        # 基础伤害提升、反应加成、附加伤害与擢升：机制侧冻结基线 + 槽位账单修饰项
+        # 合计。擢升取加算口径——多个擢升来源互相加算，基线为无擢升时的乘数 1。
         slots = (
             _merge_lunar_slot(
                 LUNAR_SLOT_BASE_DAMAGE_BONUS,
@@ -828,7 +827,7 @@ class LunarReactionDamageFormula:
 class StellarReactionDamageFormula:
     """星烁独立完整公式的结算分支。
 
-    星烁的十个位置与通用公式共用同一套槽位账单：倍率区、精通和增伤区、暴击区
+    星烁的全部乘区与通用公式共用同一套槽位账单：倍率区、精通和增伤区、暴击区
     与抗性区复用通用阶段，基础系数、基础增伤、大权区、羽毛区与擢升使用星烁
     专属阶段。公式不再接收预乘好的区间值——所有效果都在本分支收集、署名、
     合并后才进入纯计算。
@@ -875,12 +874,12 @@ class StellarReactionDamageFormula:
         query: DamageQuery,
         stellar: StellarReactionDamageInput,
     ) -> StellarReactionDamageResolution:
-        """按十个位置组装直伤星烁，并把槽位合并值与账本一起写进审计。"""
+        """按乘区组装直伤星烁，并把槽位合并值与账本一起写进审计。"""
 
         terms = context.modifiers.applied_terms
         panel_terms: list[DamageModifierTerm] = []
 
-        # 位置 1、2：倍率与属性分别由 scaling_terms 的 coefficient 与 attribute_key
+        # 倍率与属性分别由 scaling_terms 的 coefficient 与 attribute_key
         # 承载，两者因此可以被各自独立地修饰。
         scaling, scaling_trace, scaling_panel_terms = self.scaling_policy.resolve(
             query,
@@ -906,7 +905,7 @@ class StellarReactionDamageFormula:
         )
         source_trace.append(mastery_trace)
 
-        # 位置 8：暴击区与通用公式共用阶段，暴击率与暴击伤害都从面板读取。
+        # 暴击区与通用公式共用阶段，暴击率与暴击伤害都从面板读取。
         critical, critical_trace, critical_panel_terms = self.critical_policy.resolve(
             query,
             context.session,
@@ -915,7 +914,7 @@ class StellarReactionDamageFormula:
         source_trace.extend(critical_trace)
         panel_terms.extend(critical_panel_terms)
 
-        # 位置 9：抗性区与通用公式共用阶段，有效抗性由面板值加修饰项合计得到。
+        # 抗性区与通用公式共用阶段，有效抗性由面板值加修饰项合计得到。
         resistance_attribute = context.session.resolve_target(
             ELEMENT_TO_RESISTANCE_KEY[query.request.element.value]
         )
@@ -931,7 +930,8 @@ class StellarReactionDamageFormula:
             resistance_add=resistance_add,
         )
 
-        # 位置 3、4、5、6、7、10：机制侧冻结基线 + 槽位账单修饰项合计。
+        # 基础系数、基础增伤、增伤位、大权区、羽毛区与擢升：机制侧冻结基线 +
+        # 槽位账单修饰项合计。
         slots = (
             _merge_stellar_slot(
                 STELLAR_SLOT_BASE_MULTIPLIER,

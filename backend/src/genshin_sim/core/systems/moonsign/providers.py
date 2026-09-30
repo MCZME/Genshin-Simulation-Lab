@@ -1,10 +1,7 @@
 """月兆领域的伤害修饰 provider。
 
-非月兆角色的月曜增伤按决策记录 D-082「槽位账单是伤害公式的唯一修饰通道」的要求，
-以 ``lunar_reaction_bonus_add`` 词条进入月曜公式位置 5（反应加成）的槽位账单，
-不再由 ``ElementalSettlementCoordinator`` 算好后写进 ``LunarReactionDamageInput`` 的
-强类型字段。词条值等于该帧的生效增伤（小数倍率），因此迁移前后数值落在同一个
-``反应加成基线 + Σ 词条`` 括号内，逐组分等价。
+把非月兆角色的月曜增伤以 ``lunar_reaction_bonus_add`` 词条交给月曜公式，
+不再由协调器算好后写进强类型字段。词条值等于该帧的生效增伤（小数倍率）。
 """
 
 from __future__ import annotations
@@ -29,7 +26,7 @@ MOONSIGN_LUNAR_BONUS_AUDIT_TAG = "moonsign.lunar_bonus"
 class MoonsignLunarBonusProvider:
     """把当前生效的非月兆月曜增伤写成月曜公式的反应加成词条。
 
-    ``lunar_reaction_bonus_add`` 只属于月曜公式的位置 5；若不加公式过滤，provider 会在
+    ``lunar_reaction_bonus_add`` 只属于月曜公式；若不加公式过滤，provider 会在
     通用直伤、剧变与星烁查询上成交，被 ``validate_formula_modifier_stages`` 硬拒绝并让
     整次结算失败。因此按 ``FORMULA_KEY_LUNAR_REACTION`` 自筛（与元素共鸣的条件
     provider 同一处理方式）。
@@ -56,7 +53,7 @@ class MoonsignLunarBonusProvider:
         query: DamageQuery,
         session: DamageResolutionSession,
     ) -> tuple[DamageModifierTerm, ...]:
-        """按查询帧读取当前增伤，产出位置 5 的单个修饰项。"""
+        """按查询帧读取当前增伤，产出反应加成位的单个修饰项。"""
 
         del session
         if self._bonus_port is None:

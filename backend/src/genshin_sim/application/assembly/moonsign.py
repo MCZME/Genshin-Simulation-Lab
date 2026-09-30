@@ -83,7 +83,7 @@ def build_moonsign_bundle(
         duration_frames=MOONSIGN_BONUS_DURATION_FRAMES,
         element_by_slot=element_by_slot,
     )
-    # 月曜增伤按 D-082 以词条进入月曜公式槽位账单；端口在本函数内即可绑定，
+    # 月曜增伤以词条进入月曜公式槽位账单；端口在本函数内即可绑定，
     # 因为 Runtime 与 provider 同一处创建。
     lunar_bonus_provider = MoonsignLunarBonusProvider()
     lunar_bonus_provider.bind_runtime_ports(bonus_port=runtime)

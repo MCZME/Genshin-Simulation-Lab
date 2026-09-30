@@ -56,7 +56,7 @@ class DamageModifierStage(StrEnum):
 
     # 月曜公式专属阶段：同样按可修饰位置逐个切分。月曜的暴击位与抗性位复用通用
     # 阶段（暴击复用 crit_*、抗性复用 resistance_add），因此这里只补月曜独有位置。
-    # 位置 1（倍率）与位置 2（反应系数）不开放，原因见 LUNAR_ALLOWED_MODIFIER_STAGES
+    # 倍率位与反应系数位不开放，原因见 LUNAR_ALLOWED_MODIFIER_STAGES
     # 的注释。月曜两个模式（直伤与反应复合）共用同一套阶段，差异只在基础值来源与
     # 反应系数。
     LUNAR_BASE_DAMAGE_BONUS_ADD = "lunar_base_damage_bonus_add"

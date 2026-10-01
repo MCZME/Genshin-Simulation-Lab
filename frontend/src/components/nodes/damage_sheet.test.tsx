@@ -118,14 +118,6 @@ const CRIT_GENERAL_EVENT = {
           provider_key: "buff.superseded",
         },
       ],
-      source_attribute_trace: [
-        {
-          attribute_key: "stat.atk.total",
-          final_value: 2136.0,
-          base_value: 1800.0,
-        },
-      ],
-      target_attribute_trace: [],
       trace_metadata: {},
     },
   },
@@ -752,9 +744,26 @@ describe("DamageSheet", () => {
     expect(screen.queryByText(/基础倍率/)).toBeNull();
   });
 
-  it("属性解析审计不在伤害详情展示", () => {
-    // 后端 audit 载荷仍携带 source/target_attribute_trace，伤害详情只呈现伤害审计。
-    render(<DamageSheet event={CRIT_GENERAL_EVENT} />);
+  it("旧格式属性解析审计不在伤害详情展示", () => {
+    // 旧版本 audit 载荷携带 source_attribute_trace / target_attribute_trace，
+    // 伤害详情只呈现伤害审计，未知字段既不显示也不报错。
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        audit: {
+          ...base.damage.audit,
+          source_attribute_trace: [
+            { attribute_key: "stat.atk.total", final_value: 2136.0, base_value: 1800.0 },
+          ],
+          target_attribute_trace: [],
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
     expect(screen.queryByText("属性追踪")).toBeNull();
     expect(screen.queryByText(/攻方 #1/)).toBeNull();
     expect(screen.queryByText(/守方 #/)).toBeNull();

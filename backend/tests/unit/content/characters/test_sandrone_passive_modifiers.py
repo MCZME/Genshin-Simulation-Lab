@@ -40,7 +40,7 @@ from genshin_sim.core.attributes import (
 )
 from genshin_sim.core.systems.damage import DamageModifierStage
 from genshin_sim.core.systems.damage.models import DamageQuery
-from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 
 OWNER_REF = "character:slot_1"
 OWNER_SUBJECT = AttributeSubjectRef.character(OWNER_REF)
@@ -115,14 +115,14 @@ def test_c1_provider_covers_all_stellar_reaction_tags():
     # 星烁反应通用增伤：星超导冰/雷与星扩散冰/风全部命中。
     for tag in ("星超导冰", "星超导雷", "星扩散冰", "星扩散风"):
         terms = provider.contribute(
-            cast(DamageQuery, _query(tag)), cast(DamageResolutionSession, None)
+            cast(DamageQuery, _query(tag)), cast(DamageResolutionScope, None)
         )
         assert len(terms) == 1
         assert terms[0].stage is DamageModifierStage.STELLAR_REACTION_BONUS_ADD
         assert terms[0].value == pytest.approx(0.3)
 
     assert (
-        provider.contribute(cast(DamageQuery, _query("重击")), cast(DamageResolutionSession, None))
+        provider.contribute(cast(DamageQuery, _query("重击")), cast(DamageResolutionScope, None))
         == ()
     )
 
@@ -152,7 +152,7 @@ def test_c2_provider_converts_ray_index_to_crit_damage():
     def _c2(ray_index: int | None, tag: str = "星超导冰"):
         return provider.contribute(
             cast(DamageQuery, _query(ray_index, tag=tag)),
-            cast(DamageResolutionSession, None),
+            cast(DamageResolutionScope, None),
         )
 
     assert _c2(1)[0].value == pytest.approx(0.6)
@@ -170,5 +170,5 @@ def test_c2_provider_converts_ray_index_to_crit_damage():
         )
     )
     assert (
-        provider.contribute(cast(DamageQuery, foreign), cast(DamageResolutionSession, None)) == ()
+        provider.contribute(cast(DamageQuery, foreign), cast(DamageResolutionScope, None)) == ()
     )

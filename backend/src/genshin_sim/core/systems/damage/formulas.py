@@ -12,7 +12,6 @@ from genshin_sim.core.attributes import (
     ELEMENT_TO_RESISTANCE_KEY,
     STAT_ELEMENTAL_MASTERY,
     AttributeQueryContext,
-    AttributeResolution,
     RuntimeSourceKind,
     RuntimeSourceRef,
     TraceLevel,
@@ -97,11 +96,11 @@ from genshin_sim.core.systems.damage.stellar import (
 )
 
 if TYPE_CHECKING:
-    from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+    from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 
     # 组分查询的修饰收集入口签名：由 resolver 注入 ``index.collect``。
     DamageModifierCollector = Callable[
-        [DamageQuery, DamageResolutionSession], DamageModifierCollection
+        [DamageQuery, DamageResolutionScope], DamageModifierCollection
     ]
 
 
@@ -206,7 +205,7 @@ class DamageFormulaContext:
     """resolver 传给完整公式的受限结算上下文。"""
 
     query: DamageQuery
-    session: DamageResolutionSession
+    scope: DamageResolutionScope
     modifiers: DamageModifierCollection
     trace_level: TraceLevel
     # 组分查询的修饰收集入口：由 resolver 注入 index.collect，供逐参与者结算
@@ -288,15 +287,13 @@ class GeneralDamageFormula:
         if not query.request.scaling_terms and query.request.flat_base_damage == 0:
             raise InvalidDamageScalingError("普通直伤必须包含 scaling term 或固定基础伤害")
         terms = context.modifiers.applied_terms
-        source_trace: list[AttributeResolution] = []
         panel_terms: list[DamageModifierTerm] = []
 
-        scaling, scaling_trace, scaling_panel_terms = self.scaling_policy.resolve(
+        scaling, scaling_panel_terms = self.scaling_policy.resolve(
             query,
-            context.session,
+            context.scope,
             terms,
         )
-        source_trace.extend(scaling_trace)
         panel_terms.extend(scaling_panel_terms)
 
         catalyze_resolution = None
@@ -310,7 +307,7 @@ class GeneralDamageFormula:
                 TransformativeReactionSourceKind.CHARACTER,
                 query.request.source_level,
             )
-            mastery_trace = context.session.resolve_source(STAT_ELEMENTAL_MASTERY)
+            mastery_trace = context.scope.resolve_source(STAT_ELEMENTAL_MASTERY)
             mastery = validate_damage_float(mastery_trace.final_value, "elemental_mastery")
             if mastery < 0:
                 raise DamageResolutionError("元素精通不能为负数")
@@ -351,9 +348,7 @@ class GeneralDamageFormula:
                 reaction_multiplier=catalyze_input.reaction_multiplier,
                 reaction_bonus=catalyze_input.reaction_bonus,
                 base_damage_addition=addition,
-                elemental_mastery_trace=mastery_trace,
             )
-            source_trace.append(mastery_trace)
             additions = (*scaling.additions, addition)
             scaling = ScalingZoneResolution(
                 component_results=scaling.component_results,
@@ -366,25 +361,21 @@ class GeneralDamageFormula:
                 ),
             )
 
-        damage_bonus, damage_bonus_trace, bonus_panel_term = self.damage_bonus_policy.resolve(
+        damage_bonus, bonus_panel_term = self.damage_bonus_policy.resolve(
             query,
-            context.session,
+            context.scope,
             terms,
         )
-        source_trace.append(damage_bonus_trace)
         panel_terms.append(bonus_panel_term)
 
-        critical, critical_trace, critical_panel_terms = self.critical_policy.resolve(
+        critical, critical_panel_terms = self.critical_policy.resolve(
             query,
-            context.session,
+            context.scope,
             terms,
         )
-        source_trace.extend(critical_trace)
         panel_terms.extend(critical_panel_terms)
 
-        reaction, reaction_panel_term = self.reaction_policy.resolve(query, context.session)
-        if reaction.elemental_mastery_trace is not None:
-            source_trace.append(reaction.elemental_mastery_trace)
+        reaction, reaction_panel_term = self.reaction_policy.resolve(query, context.scope)
         if reaction_panel_term is not None:
             panel_terms.append(reaction_panel_term)
         defense = self.defense_policy.resolve(
@@ -394,7 +385,7 @@ class GeneralDamageFormula:
             _sum_terms(terms, DamageModifierStage.DEFENSE_IGNORE),
         )
 
-        resistance_resolution = context.session.resolve_target(
+        resistance_resolution = context.scope.resolve_target(
             ELEMENT_TO_RESISTANCE_KEY[query.request.element.value]
         )
         resistance_panel_term = DamageModifierTerm.panel_read(
@@ -433,8 +424,6 @@ class GeneralDamageFormula:
             official_damage=official_damage,
             debug_multiplier=debug_multiplier,
             final_damage=final_damage,
-            source_attribute_trace=tuple(_unique_resolutions(source_trace)),
-            target_attribute_trace=(resistance_resolution,),
             catalyze=catalyze_resolution,
             panel_terms=tuple(panel_terms),
         )
@@ -473,7 +462,7 @@ class TransformativeReactionDamageFormula:
             DamageModifierStage.TRANSFORMATIVE_REACTION_BONUS_ADD,
         )
 
-        resistance_attribute = context.session.resolve_target(
+        resistance_attribute = context.scope.resolve_target(
             ELEMENT_TO_RESISTANCE_KEY[request.element.value]
         )
         # 抗性位复用通用阶段：先把「目标面板抗性 + Σ」合并成有效抗性再传策略，
@@ -531,7 +520,6 @@ class TransformativeReactionDamageFormula:
             official_damage=damage,
             debug_multiplier=self.debug_adjustment.multiplier,
             final_damage=final_damage,
-            target_attribute_trace=(resistance_attribute,),
             panel_terms=(resistance_panel_term,),
             secondary_amplifying_resolution=secondary_resolution,
         )
@@ -635,12 +623,6 @@ class LunarReactionDamageFormula:
         if not math.isfinite(final_damage) or final_damage < 0:
             raise DamageResolutionError("月曜最终伤害必须是有限非负数")
 
-        source_trace = [
-            trace for component in weighted_components for trace in component.source_attribute_trace
-        ]
-        target_trace = [
-            trace for component in weighted_components for trace in component.target_attribute_trace
-        ]
         # 直伤模式只有一个参与者，槽位账本因此可以提到顶层；复合模式的账本在
         # 组分内各自保留，顶层不重复列入，避免同一词条被署名两次。
         top = weighted_components[0]
@@ -655,8 +637,6 @@ class LunarReactionDamageFormula:
             final_damage=final_damage,
             slots=top.slots if direct else (),
             panel_terms=top.panel_terms if direct else (),
-            source_attribute_trace=tuple(_unique_resolutions(source_trace)),
-            target_attribute_trace=tuple(_unique_resolutions(target_trace)),
         )
 
     def _resolve_component(
@@ -676,7 +656,6 @@ class LunarReactionDamageFormula:
         component_modifiers = context.modifier_collector(component_query, component_session)
         validate_formula_modifier_stages(self.formula_spec, component_modifiers)
         component_terms = component_modifiers.applied_terms
-        source_trace: list[AttributeResolution] = []
         panel_terms: list[DamageModifierTerm] = []
 
         # 倍率：直伤模式的系数与属性分别由参与者 scaling_terms 的
@@ -684,13 +663,12 @@ class LunarReactionDamageFormula:
         # 模式没有 scaling_terms，基线是机制侧冻结的等级基础伤害，无内容侧来源。
         scaling = None
         if participant.scaling_terms or participant.flat_base_damage != 0:
-            scaling, scaling_trace, scaling_panel_terms = self.scaling_policy.resolve(
+            scaling, scaling_panel_terms = self.scaling_policy.resolve(
                 component_query,
                 component_session,
                 component_terms,
             )
             core_base_damage = scaling.value
-            source_trace.extend(scaling_trace)
             panel_terms.extend(scaling_panel_terms)
             base_damage_source = "participant_scaling"
         else:
@@ -716,7 +694,6 @@ class LunarReactionDamageFormula:
                 attribute=mastery_trace,
             )
         )
-        source_trace.append(mastery_trace)
         mastery_bonus = (
             self.mastery_numerator
             * elemental_mastery
@@ -724,12 +701,11 @@ class LunarReactionDamageFormula:
         )
 
         # 暴击区：暴击率与暴击伤害都从面板读取，复用通用阶段。
-        critical, critical_trace, critical_panel_terms = self.critical_policy.resolve(
+        critical, critical_panel_terms = self.critical_policy.resolve(
             component_query,
             component_session,
             component_terms,
         )
-        source_trace.extend(critical_trace)
         panel_terms.extend(critical_panel_terms)
 
         # 抗性区：有效抗性由面板值加修饰项合计得到。
@@ -789,12 +765,6 @@ class LunarReactionDamageFormula:
             ascension_multiplier=merged[LUNAR_SLOT_ASCENSION_MULTIPLIER],
             resistance_multiplier=resistance.multiplier,
         )
-        if context.trace_level is TraceLevel.NONE:
-            source_attribute_trace = ()
-            target_attribute_trace = ()
-        else:
-            source_attribute_trace = tuple(_unique_resolutions(source_trace))
-            target_attribute_trace = (resistance_attribute,)
         return LunarReactionComponentResolution(
             participant_ref=participant.participant_ref,
             source_level=participant.source_level,
@@ -818,8 +788,6 @@ class LunarReactionDamageFormula:
             modifier_terms=component_terms,
             slots=slots,
             panel_terms=tuple(panel_terms),
-            source_attribute_trace=source_attribute_trace,
-            target_attribute_trace=target_attribute_trace,
         )
 
 
@@ -881,15 +849,14 @@ class StellarReactionDamageFormula:
 
         # 倍率与属性分别由 scaling_terms 的 coefficient 与 attribute_key
         # 承载，两者因此可以被各自独立地修饰。
-        scaling, scaling_trace, scaling_panel_terms = self.scaling_policy.resolve(
+        scaling, scaling_panel_terms = self.scaling_policy.resolve(
             query,
-            context.session,
+            context.scope,
             terms,
         )
-        source_trace: list[AttributeResolution] = list(scaling_trace)
         panel_terms.extend(scaling_panel_terms)
 
-        mastery_trace = context.session.resolve_source(STAT_ELEMENTAL_MASTERY)
+        mastery_trace = context.scope.resolve_source(STAT_ELEMENTAL_MASTERY)
         elemental_mastery = validate_damage_float(
             mastery_trace.final_value,
             "stellar elemental_mastery",
@@ -903,19 +870,17 @@ class StellarReactionDamageFormula:
                 attribute=mastery_trace,
             )
         )
-        source_trace.append(mastery_trace)
 
         # 暴击区与通用公式共用阶段，暴击率与暴击伤害都从面板读取。
-        critical, critical_trace, critical_panel_terms = self.critical_policy.resolve(
+        critical, critical_panel_terms = self.critical_policy.resolve(
             query,
-            context.session,
+            context.scope,
             terms,
         )
-        source_trace.extend(critical_trace)
         panel_terms.extend(critical_panel_terms)
 
         # 抗性区与通用公式共用阶段，有效抗性由面板值加修饰项合计得到。
-        resistance_attribute = context.session.resolve_target(
+        resistance_attribute = context.scope.resolve_target(
             ELEMENT_TO_RESISTANCE_KEY[query.request.element.value]
         )
         resistance_panel_term = DamageModifierTerm.panel_read(
@@ -982,12 +947,6 @@ class StellarReactionDamageFormula:
         final_damage = zone.damage * debug_multiplier
         if not math.isfinite(final_damage) or final_damage < 0:
             raise DamageResolutionError("星烁最终伤害必须是有限非负数")
-        if context.trace_level is TraceLevel.NONE:
-            source_attribute_trace: tuple[AttributeResolution, ...] = ()
-            target_attribute_trace: tuple[AttributeResolution, ...] = ()
-        else:
-            source_attribute_trace = tuple(_unique_resolutions(source_trace))
-            target_attribute_trace = (resistance_attribute,)
         return StellarReactionDamageResolution(
             stellar,
             zone.damage,
@@ -1002,8 +961,6 @@ class StellarReactionDamageFormula:
             slots=slots,
             panel_terms=tuple(panel_terms),
             scaling=scaling,
-            source_attribute_trace=source_attribute_trace,
-            target_attribute_trace=target_attribute_trace,
         )
 
     def _resolve_reaction_composite(
@@ -1050,18 +1007,6 @@ class StellarReactionDamageFormula:
         if not math.isfinite(final_damage) or final_damage < 0:
             raise DamageResolutionError("星烁最终伤害必须是有限非负数")
         top = weighted_components[0]
-        source_trace = [
-            trace for component in weighted_components for trace in component.source_attribute_trace
-        ]
-        target_trace = [
-            trace for component in weighted_components for trace in component.target_attribute_trace
-        ]
-        if context.trace_level is TraceLevel.NONE:
-            source_attribute_trace = ()
-            target_attribute_trace = ()
-        else:
-            source_attribute_trace = tuple(_unique_resolutions(source_trace))
-            target_attribute_trace = tuple(_unique_resolutions(target_trace))
         return StellarReactionDamageResolution(
             stellar,
             official_damage,
@@ -1074,8 +1019,6 @@ class StellarReactionDamageFormula:
             debug_multiplier=debug_multiplier,
             final_damage=final_damage,
             components=weighted_components,
-            source_attribute_trace=source_attribute_trace,
-            target_attribute_trace=target_attribute_trace,
         )
 
     def _resolve_stellar_component(
@@ -1109,7 +1052,7 @@ class StellarReactionDamageFormula:
                 attribute=mastery_trace,
             )
         ]
-        critical, critical_trace, critical_panel_terms = self.critical_policy.resolve(
+        critical, critical_panel_terms = self.critical_policy.resolve(
             component_query,
             component_session,
             component_terms,
@@ -1178,12 +1121,6 @@ class StellarReactionDamageFormula:
             resistance_multiplier=resistance.multiplier,
             stellar_ascension_bonus=merged[STELLAR_SLOT_ASCENSION_BONUS],
         )
-        if context.trace_level is TraceLevel.NONE:
-            source_attribute_trace = ()
-            target_attribute_trace = ()
-        else:
-            source_attribute_trace = tuple(_unique_resolutions([mastery_trace, *critical_trace]))
-            target_attribute_trace = (resistance_attribute,)
         return StellarReactionComponentResolution(
             participant_ref=participant.participant_ref,
             source_level=participant.source_level,
@@ -1199,8 +1136,6 @@ class StellarReactionDamageFormula:
             modifier_terms=component_terms,
             panel_terms=tuple(panel_terms),
             slots=slots,
-            source_attribute_trace=source_attribute_trace,
-            target_attribute_trace=target_attribute_trace,
         )
 
 
@@ -1257,10 +1192,10 @@ def _new_damage_session(
 ):
     """创建不共享来源主体的组分属性 session。"""
 
-    from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+    from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 
-    return DamageResolutionSession(
-        context.session.attribute_resolver,
+    return DamageResolutionScope(
+        context.scope.attribute_resolver,
         query,
         context.trace_level,
     )
@@ -1444,19 +1379,3 @@ def _sum_terms(
     """使用 ``math.fsum`` 汇总指定阶段的修饰项数值。"""
 
     return math.fsum(term.value for term in terms if term.stage is stage)
-
-
-def _unique_resolutions(
-    resolutions: list[AttributeResolution],
-) -> tuple[AttributeResolution, ...]:
-    """保留首次出现的属性解析结果，避免 trace 重复记录。"""
-
-    result: list[AttributeResolution] = []
-    identities: set[tuple[object, ...]] = set()
-    for resolution in resolutions:
-        identity = (resolution.subject_ref, resolution.attribute_key)
-        if identity in identities:
-            continue
-        identities.add(identity)
-        result.append(resolution)
-    return tuple(result)

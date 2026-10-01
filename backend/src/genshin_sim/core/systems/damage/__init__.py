@@ -101,7 +101,7 @@ from genshin_sim.core.systems.damage.policies import (
     StandardScalingZonePolicy,
 )
 from genshin_sim.core.systems.damage.profiles import DamageProfileRegistry
-from genshin_sim.core.systems.damage.resolver import DamageResolutionSession, DamageResolver
+from genshin_sim.core.systems.damage.resolver import DamageResolutionScope, DamageResolver
 from genshin_sim.core.systems.damage.stellar import (
     StellarReactionDamageInput,
     StellarReactionDamageResolution,
@@ -144,7 +144,7 @@ __all__ = [
     "DamageQuery",
     "DamageRequest",
     "DamageResolutionError",
-    "DamageResolutionSession",
+    "DamageResolutionScope",
     "DamageResolutionRecord",
     "DamageResolver",
     "DamageResult",

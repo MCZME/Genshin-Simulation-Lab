@@ -26,7 +26,7 @@ from genshin_sim.core.systems.damage.keys import (
 from genshin_sim.core.systems.damage.modifiers import (
     DamageModifierCollection,
 )
-from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 from genshin_sim.core.systems.moonsign import (
     MOONSIGN_LUNAR_BONUS_PROVIDER_KEY,
     MoonsignLunarBonusProvider,
@@ -65,10 +65,10 @@ def _query(
     return damage.provider_query_stub(frame=frame, formula_key=formula_key)
 
 
-def _session() -> DamageResolutionSession:
+def _session() -> DamageResolutionScope:
     """返回满足收集协议的最简会话替身。"""
 
-    return cast("DamageResolutionSession", damage.NullResolutionSession())
+    return cast("DamageResolutionScope", damage.NullResolutionSession())
 
 
 def _provider(port: _FakeBonusPort | None = None) -> MoonsignLunarBonusProvider:

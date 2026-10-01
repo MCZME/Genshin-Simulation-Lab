@@ -11,7 +11,6 @@ from genshin_sim.core.attributes import (
     STAT_CRIT_DAMAGE,
     STAT_CRIT_RATE,
     STAT_ELEMENTAL_MASTERY,
-    AttributeResolution,
 )
 from genshin_sim.core.systems.damage.enums import CritOutcome, DamageModifierStage
 from genshin_sim.core.systems.damage.errors import CriticalDecisionError, DamageResolutionError
@@ -31,7 +30,7 @@ from genshin_sim.core.systems.damage.models import (
 
 if TYPE_CHECKING:
     from genshin_sim.core.simulation.random_source import RandomSource
-    from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+    from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 
 
 @runtime_checkable
@@ -93,14 +92,13 @@ class ScalingZonePolicy(Protocol):
     def resolve(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        session: DamageResolutionScope,
         terms: tuple[DamageModifierTerm, ...],
     ) -> tuple[
         ScalingZoneResolution,
-        tuple[AttributeResolution, ...],
         tuple[DamageModifierTerm, ...],
     ]:
-        """返回倍率区结果、来源属性 trace 和面板读取词条。"""
+        """返回倍率区结果和面板读取词条。"""
 
         ...
 
@@ -111,21 +109,18 @@ class StandardScalingZonePolicy:
     def resolve(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        session: DamageResolutionScope,
         terms: tuple[DamageModifierTerm, ...],
     ) -> tuple[
         ScalingZoneResolution,
-        tuple[AttributeResolution, ...],
         tuple[DamageModifierTerm, ...],
     ]:
         """按槽位账单返回倍率区组件、加值和合计基础伤害。"""
 
-        source_trace: list[AttributeResolution] = []
         panel_terms: list[DamageModifierTerm] = []
         component_results: list[DamageComponentResult] = []
         for scaling in query.request.scaling_terms:
             attribute = session.resolve_source(scaling.attribute_key)
-            source_trace.append(attribute)
             panel_term = DamageModifierTerm.panel_read(
                 stage=DamageModifierStage.PANEL_ATTRIBUTE_VALUE,
                 attribute=attribute,
@@ -174,7 +169,6 @@ class StandardScalingZonePolicy:
                 additions=additions,
                 value=value,
             ),
-            tuple(source_trace),
             tuple(panel_terms),
         )
 
@@ -185,10 +179,10 @@ class DamageBonusZonePolicy(Protocol):
     def resolve(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        session: DamageResolutionScope,
         terms: tuple[DamageModifierTerm, ...],
-    ) -> tuple[DamageBonusZoneResolution, AttributeResolution, DamageModifierTerm]:
-        """返回增伤区结果、元素增伤属性 trace 和面板读取词条。"""
+    ) -> tuple[DamageBonusZoneResolution, DamageModifierTerm]:
+        """返回增伤区结果和面板读取词条。"""
 
         ...
 
@@ -199,9 +193,9 @@ class StandardDamageBonusZonePolicy:
     def resolve(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        session: DamageResolutionScope,
         terms: tuple[DamageModifierTerm, ...],
-    ) -> tuple[DamageBonusZoneResolution, AttributeResolution, DamageModifierTerm]:
+    ) -> tuple[DamageBonusZoneResolution, DamageModifierTerm]:
         """按槽位账单返回第一轮通用公式增伤区结果。"""
 
         bonus_resolution = session.resolve_source(
@@ -221,7 +215,6 @@ class StandardDamageBonusZonePolicy:
                 modifier_bonus=modifier_bonus,
                 multiplier=multiplier,
             ),
-            bonus_resolution,
             panel_term,
         )
 
@@ -232,14 +225,13 @@ class CriticalZonePolicy(Protocol):
     def resolve(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        session: DamageResolutionScope,
         terms: tuple[DamageModifierTerm, ...],
     ) -> tuple[
         CriticalZoneResolution,
-        tuple[AttributeResolution, ...],
         tuple[DamageModifierTerm, ...],
     ]:
-        """返回暴击区结果、来源属性 trace 和面板读取词条。"""
+        """返回暴击区结果和面板读取词条。"""
 
         ...
 
@@ -253,11 +245,10 @@ class StandardCriticalZonePolicy:
     def resolve(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        session: DamageResolutionScope,
         terms: tuple[DamageModifierTerm, ...],
     ) -> tuple[
         CriticalZoneResolution,
-        tuple[AttributeResolution, ...],
         tuple[DamageModifierTerm, ...],
     ]:
         """按槽位账单返回暴击率、暴击伤害、决策结果和乘数。"""
@@ -285,14 +276,12 @@ class StandardCriticalZonePolicy:
             outcome = self.decision_provider.decide(query, effective_crit_rate)
             if outcome is CritOutcome.NOT_APPLICABLE:
                 raise CriticalDecisionError("可暴击伤害不能返回 not_applicable")
-            source_trace = (crit_rate_resolution, crit_damage_resolution)
             panel_terms = (rate_panel, damage_panel)
         else:
             crit_rate = 0.0
             crit_damage = 0.0
             effective_crit_rate = 0.0
             outcome = CritOutcome.NOT_APPLICABLE
-            source_trace = ()
             panel_terms = ()
         multiplier = 1 + crit_damage if outcome is CritOutcome.CRITICAL else 1.0
         if multiplier < 0:
@@ -306,7 +295,6 @@ class StandardCriticalZonePolicy:
                 outcome=outcome,
                 multiplier=multiplier,
             ),
-            source_trace,
             panel_terms,
         )
 
@@ -317,7 +305,7 @@ class GeneralReactionZonePolicy(Protocol):
     def resolve(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        session: DamageResolutionScope,
     ) -> tuple[GeneralReactionZoneResolution, DamageModifierTerm | None]:
         """返回通用公式反应区乘数和元素精通面板读取词条（无读取时为 None）。"""
 
@@ -330,7 +318,7 @@ class IdentityGeneralReactionZonePolicy:
     def resolve(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        session: DamageResolutionScope,
     ) -> tuple[GeneralReactionZoneResolution, DamageModifierTerm | None]:
         """忽略查询，返回单位乘数。"""
 
@@ -344,7 +332,7 @@ class StandardGeneralReactionZonePolicy:
     def resolve(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        session: DamageResolutionScope,
     ) -> tuple[GeneralReactionZoneResolution, DamageModifierTerm | None]:
         reaction = query.request.amplifying_reaction
         if reaction is None:
@@ -370,7 +358,6 @@ class StandardGeneralReactionZonePolicy:
                 elemental_mastery=mastery,
                 mastery_bonus=mastery_bonus,
                 reaction_bonus=reaction.reaction_bonus,
-                elemental_mastery_trace=mastery_trace,
             ),
             panel_term,
         )

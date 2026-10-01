@@ -43,7 +43,7 @@ from genshin_sim.core.systems.damage import (
     DamageModifierTerm,
 )
 from genshin_sim.core.systems.damage.models import DamageQuery
-from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
     STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
     STELLAR_CONDUCT_ELECTRO_DAMAGE_TAG,
@@ -164,7 +164,7 @@ class SandroneC1StellarBonusProvider:
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        session: DamageResolutionScope,
     ) -> tuple[DamageModifierTerm, ...]:
         del session
         request = query.request
@@ -220,7 +220,7 @@ class SandroneC2RayCritDamageProvider:
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        session: DamageResolutionScope,
     ) -> tuple[DamageModifierTerm, ...]:
         del session
         request = query.request

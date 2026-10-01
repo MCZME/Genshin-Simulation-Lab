@@ -23,7 +23,7 @@ from genshin_sim.core.systems.damage.errors import (
 from genshin_sim.core.systems.damage.models import DamageModifierTerm, DamageQuery
 
 if TYPE_CHECKING:
-    from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+    from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 
 
 @dataclass(frozen=True, slots=True)
@@ -82,7 +82,7 @@ class DamageModifierProvider(Protocol):
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        session: DamageResolutionScope,
     ) -> Sequence[DamageModifierTerm]:
         """根据当前伤害查询返回候选修饰项。"""
 
@@ -111,7 +111,7 @@ class StaticDamageModifierProvider:
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        session: DamageResolutionScope,
     ) -> tuple[DamageModifierTerm, ...]:
         """忽略查询上下文，返回构造时提供的固定修饰项。"""
 
@@ -177,7 +177,7 @@ class DamageModifierIndex:
     def collect(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        session: DamageResolutionScope,
     ) -> DamageModifierCollection:
         """调用所有 provider，校验返回值并产出生效/拒绝集合。"""
 

@@ -14,7 +14,7 @@ from genshin_sim.core.systems.damage import (
     DamageQuery,
 )
 from genshin_sim.core.systems.damage.keys import FORMULA_KEY_LUNAR_REACTION
-from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 from genshin_sim.core.systems.moonsign.errors import MoonsignValidationError
 from genshin_sim.core.systems.moonsign.ports import LunarDamageBonusPort
 
@@ -51,7 +51,7 @@ class MoonsignLunarBonusProvider:
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        session: DamageResolutionScope,
     ) -> tuple[DamageModifierTerm, ...]:
         """按查询帧读取当前增伤，产出反应加成位的单个修饰项。"""
 

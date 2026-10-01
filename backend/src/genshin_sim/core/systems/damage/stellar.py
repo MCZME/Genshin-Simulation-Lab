@@ -236,8 +236,6 @@ class StellarReactionComponentResolution:
     panel_terms: tuple[Any, ...] = ()
     # 该组分各可修饰位置的三段审计；倍率区基线是该参与者的反应基础值。
     slots: tuple[StellarZoneSlotAudit, ...] = ()
-    source_attribute_trace: tuple[Any, ...] = ()
-    target_attribute_trace: tuple[Any, ...] = ()
 
     def __post_init__(self) -> None:
         for name in (
@@ -313,8 +311,6 @@ class StellarReactionDamageResolution:
     panel_terms: tuple[Any, ...] = field(default=())
     # 直伤模式的倍率区结果（组件贡献、固定加值与区合计）。
     scaling: Any | None = None
-    source_attribute_trace: tuple[Any, ...] = field(default=())
-    target_attribute_trace: tuple[Any, ...] = field(default=())
 
     def __post_init__(self) -> None:
         for name in (

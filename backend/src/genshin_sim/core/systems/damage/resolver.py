@@ -45,7 +45,7 @@ from genshin_sim.core.systems.damage.stellar import STELLAR_SLOT_BASE_MULTIPLIER
 
 
 @dataclass(slots=True)
-class DamageResolutionSession:
+class DamageResolutionScope:
     """一次伤害结算期间共享的属性解析会话和 provider 访问边界。"""
 
     attribute_resolver: AttributeResolver
@@ -157,13 +157,13 @@ class DamageResolver:
         """选择完整公式，执行结算，并返回可审计结果。"""
 
         formula = self.formula_registry.require(query.request.formula_key)
-        session = DamageResolutionSession(self.attribute_resolver, query, trace_level)
-        modifiers = self.modifier_index.collect(query, session)
+        scope = DamageResolutionScope(self.attribute_resolver, query, trace_level)
+        modifiers = self.modifier_index.collect(query, scope)
         validate_formula_modifier_stages(formula.formula_spec, modifiers)
         resolution = formula.resolve(
             DamageFormulaContext(
                 query=query,
-                session=session,
+                scope=scope,
                 modifiers=modifiers,
                 trace_level=trace_level,
                 modifier_collector=self.modifier_index.collect,
@@ -238,12 +238,6 @@ def _build_damage_result(
             stellar_reaction_resolution=resolution,
             critical_zone=resolution.critical,
             component_results=(() if scaling is None else tuple(scaling.component_results)),
-            source_attribute_trace=(
-                () if trace_level is TraceLevel.NONE else resolution.source_attribute_trace
-            ),
-            target_attribute_trace=(
-                () if trace_level is TraceLevel.NONE else resolution.target_attribute_trace
-            ),
             applied_terms=applied_terms,
             rejected_terms=rejected_terms,
             trace_level=trace_level,
@@ -298,12 +292,6 @@ def _build_damage_result(
             damage_name=query.request.damage_name,
             lunar_reaction_resolution=resolution,
             critical_zone=top.critical,
-            source_attribute_trace=(
-                () if trace_level is TraceLevel.NONE else resolution.source_attribute_trace
-            ),
-            target_attribute_trace=(
-                () if trace_level is TraceLevel.NONE else resolution.target_attribute_trace
-            ),
             applied_terms=lunar_applied_terms,
             rejected_terms=(
                 modifiers.rejected_terms if trace_level is TraceLevel.FULL and lunar_direct else ()
@@ -343,10 +331,6 @@ def _build_damage_result(
             damage_name=query.request.damage_name,
             reaction_details=resolution.reaction,
             secondary_amplifying_resolution=resolution.secondary_amplifying_resolution,
-            source_attribute_trace=(),
-            target_attribute_trace=(
-                () if trace_level is TraceLevel.NONE else resolution.target_attribute_trace
-            ),
             # 槽位账单 = 本次伤害效果词条 + 面板属性读取词条。剧变已开放抗性位，
             # 目标面板抗性读取因此进入账单；未开放的位置不产生面板词条。
             applied_terms=(
@@ -366,8 +350,6 @@ def _build_damage_result(
         else (*modifiers.applied_terms, *resolution.panel_terms)
     )
     rejected_terms = modifiers.rejected_terms if trace_level is TraceLevel.FULL else ()
-    source_trace = () if trace_level is TraceLevel.NONE else resolution.source_attribute_trace
-    target_trace = () if trace_level is TraceLevel.NONE else resolution.target_attribute_trace
     return DamageResult(
         request_id=query.request.request_id,
         frame=query.request.frame,
@@ -393,8 +375,6 @@ def _build_damage_result(
         reaction_details=resolution.reaction,
         catalyze_reaction_resolution=resolution.catalyze,
         component_results=resolution.scaling.component_results,
-        source_attribute_trace=source_trace,
-        target_attribute_trace=target_trace,
         applied_terms=applied_terms,
         rejected_terms=rejected_terms,
         trace_level=trace_level,

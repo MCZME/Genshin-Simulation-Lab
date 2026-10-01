@@ -15,12 +15,14 @@ import pytest
 
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_RAY_INDEX_FACT_KEY,
+    SANDRONE_P4_PRISM_BOOST_FACT_KEY,
     SANDRONE_RAY_STELLAR_ADDITIONAL_TAG,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.modifiers import (
     SandroneAtkToMasteryProvider,
     SandroneC1StellarBonusProvider,
     SandroneC2RayCritDamageProvider,
+    SandroneP4PrismBoostProvider,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
     stellar_base_bonus_for_atk,
@@ -234,3 +236,39 @@ def test_c2_provider_reads_ray_index_from_request_facts_through_real_scope():
     assert len(terms) == 1
     assert terms[0].stage is DamageModifierStage.CRIT_DAMAGE_ADD
     assert terms[0].value == pytest.approx(0.8)
+
+
+def test_p4_prism_boost_provider_emits_coefficient_percent_terms():
+    provider = SandroneP4PrismBoostProvider(
+        owner_ref=OWNER_REF,
+        boost_multiplier=4.0,
+        source_key="character.sandrone.passive.p4",
+        display_name="合成天赋·棱晶弹强化",
+    )
+    assert provider.provider_spec.reads_facts == frozenset({SANDRONE_P4_PRISM_BOOST_FACT_KEY})
+
+    def _p4(fact: object, owner: str = OWNER_REF):
+        query = SimpleNamespace(
+            request=SimpleNamespace(
+                source_ref=AttributeSubjectRef.character(owner),
+                scaling_terms=(
+                    SimpleNamespace(component_key="prism_normal"),
+                    SimpleNamespace(component_key="prism_stellar"),
+                ),
+            )
+        )
+        return provider.contribute(
+            cast(DamageQuery, query), cast(DamageResolutionScope, _FactScope(fact))
+        )
+
+    # 判定置位时按效果行倍率产出系数百分比词条（×4 = percent_add 3.0），
+    # 逐组件展开；未判定、判定未通过与外来来源都不产出。
+    terms = _p4(True)
+    assert [term.component_key for term in terms] == ["prism_normal", "prism_stellar"]
+    assert all(
+        term.stage is DamageModifierStage.COMPONENT_COEFFICIENT_PERCENT_ADD for term in terms
+    )
+    assert all(term.value == pytest.approx(3.0) for term in terms)
+    assert _p4(None) == ()
+    assert _p4(False) == ()
+    assert _p4(True, owner="character:slot_2") == ()

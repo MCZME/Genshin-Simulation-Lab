@@ -47,6 +47,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY,
     SANDRONE_HIT_IMPACT_KEYS,
     SANDRONE_P4_ASCENSION_THRESHOLD,
+    SANDRONE_P4_PRISM_BOOST_FACT_KEY,
     SANDRONE_P4_UNLOCK_KEY,
     SANDRONE_SWEEP_ICD_RESET_FRAMES,
     SANDRONE_SWEEP_ICD_SEQUENCE_KEY,
@@ -207,7 +208,6 @@ def create_sandrone_content_unit(
                 SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY
             ],
         },
-        p4=p4_values,
     )
     owner_ref = f"character:slot_{request.slot}"
     cooldown_terms_by_ability = _cooldown_terms_for_actions(request)
@@ -289,7 +289,10 @@ def create_sandrone_content_unit(
             fageou_hook,
             SandroneParticleHook(owner_ref=owner_ref, slot=request.slot),
         ),
-        damage_request_fact_keys=(FAGEOU_RAY_INDEX_FACT_KEY,),
+        damage_request_fact_keys=(
+            FAGEOU_RAY_INDEX_FACT_KEY,
+            SANDRONE_P4_PRISM_BOOST_FACT_KEY,
+        ),
         cooldown_definitions=(skill_cooldown_definition, burst_cooldown_definition),
         aura_icd_definitions=(
             IcdDefinition(

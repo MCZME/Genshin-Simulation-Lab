@@ -49,10 +49,10 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_NORMAL_ATTACK_ACTION_KEYS,
     SANDRONE_NORMAL_ATTACK_DAMAGE_DATA,
     SANDRONE_P4_PRISM2_BOOST_PARAM,
+    SANDRONE_P4_PRISM_BOOST_FACT_KEY,
     SANDRONE_PLUNGE_ATTACK_DATA,
     SANDRONE_PLUNGE_COLLISION_IMPACT_KEY,
     SANDRONE_PLUNGE_LANDING_IMPACT_KEY,
-    SandroneP4AssetValues,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
     SandroneStellarAttackChannel,
@@ -72,7 +72,7 @@ from genshin_sim.core.impacts import (
 )
 from genshin_sim.core.space import ImpactAreaSpec, Vector3
 from genshin_sim.core.space.space import ACTIVE_CHARACTER_ENTITY_ID
-from genshin_sim.core.systems.damage import DamageScalingTerm
+from genshin_sim.core.systems.damage import DamageFactValue, DamageScalingTerm
 
 _SANDRONE_NORMAL_ATTACK_DAMAGE_LABELS = (
     "一段伤害",
@@ -483,13 +483,9 @@ class SandroneActionImpactFactory:
         self,
         damage_specs: Mapping[str, DamageImpactSpec],
         stellar_channels: Mapping[str, SandroneStellarAttackChannel] | None = None,
-        p4: SandroneP4AssetValues | None = None,
     ) -> None:
         self._damage_specs = dict(damage_specs)
         self._stellar_channels = dict(stellar_channels or {})
-        # P4 数值取自资产效果行（content.py 装配期传入）；未解锁时强化标记不会
-        # 写入，本值不参与结算。
-        self._p4 = p4
 
     def create_requests(self, context: ActionImpactContext) -> tuple[ImpactRequest, ...]:
         params: dict[str, object] = {
@@ -540,14 +536,16 @@ class SandroneActionImpactFactory:
             )
             if stellar_spec is not None:
                 damage_spec = stellar_spec
+        request_facts: dict[str, DamageFactValue] = {}
         if (
             context.impact_key == SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY
             and damage_spec is not None
             and context.params.get(SANDRONE_P4_PRISM2_BOOST_PARAM) is True
         ):
             # P4 第二枚棱晶弹强化：施放帧判定通过时，E 动作参数携带强化标记，
-            # 标记随影响点透传到这里（不进角色状态、也没有时间窗口）。
-            damage_spec = self._boost_prism_damage(damage_spec)
+            # 标记随影响点透传到这里（不进角色状态、也没有时间窗口）。判定结果
+            # 以请求级事实绑定，倍率强化由 P4 provider 在结算期展开。
+            request_facts[SANDRONE_P4_PRISM_BOOST_FACT_KEY] = True
         if damage_spec is None and context.impact_key == SANDRONE_PLUNGE_LANDING_IMPACT_KEY:
             variant = context.params.get("plunge_variant")
             if isinstance(variant, str):
@@ -576,6 +574,7 @@ class SandroneActionImpactFactory:
                     else None
                 ),
                 params=params,
+                request_facts=request_facts,
                 damage_spec=damage_spec,
             ),
         )
@@ -597,22 +596,3 @@ class SandroneActionImpactFactory:
         if isinstance(raw, bool) or not isinstance(raw, int | float):
             return 0.0
         return float(raw)
-
-    def _boost_prism_damage(self, spec: DamageImpactSpec) -> DamageImpactSpec:
-        """P4 第二枚棱晶弹强化：把资产效果行的强化倍率并入倍率区系数。
-
-        倍率取自资产效果行；星烁与普通契约都经 ``scaling_terms`` 承载倍率
-        （D-082），因此统一按系数放大。缺值时说明装配接线有误，直接失败。
-        """
-
-        p4 = self._p4
-        if p4 is None:
-            raise ContentUnitValidationError("P4 数值缺失，无法结算棱晶弹强化")
-        multiplier = p4.prism_boost_multiplier
-        return replace(
-            spec,
-            scaling_terms=tuple(
-                replace(term, coefficient=term.coefficient * multiplier)
-                for term in spec.scaling_terms
-            ),
-        )

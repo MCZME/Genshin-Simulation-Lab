@@ -48,6 +48,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.modifiers import (
     SandroneAtkToMasteryProvider,
     SandroneC1StellarBonusProvider,
     SandroneC2RayCritDamageProvider,
+    SandroneP4PrismBoostProvider,
 )
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
@@ -69,9 +70,10 @@ from genshin_sim.core.systems.damage import DamageModifierProvider
 FRAMES_PER_SECOND = 60
 
 P4_CARRIER_NOTE = (
-    "数值行为承载于角色单元：排空叠层与过期（fageou.py）、棱晶弹强化与光束"
-    "加成（actions.py/impacts.py）；机器数值取自本条效果行（"
-    "read_p4_asset_values），帧表派生的强化窗口常量见 data.py。"
+    "数值行为承载于角色单元与效果单元：排空叠层与过期（fageou.py）、棱晶弹"
+    "强化判定（actions.py 施放帧判定，impacts.py 绑请求级事实）与光束加成；"
+    "强化的倍率展开在本条效果单元的 provider（modifiers.py）；机器数值取自"
+    "本条效果行（read_p4_asset_values），帧表派生的强化窗口常量见 data.py。"
 )
 P6_CARRIER_NOTE = (
     "固定天赋：capability 随角色单元静态声明，基础增伤在星烁输入组装时按"
@@ -290,9 +292,16 @@ def create_sandrone_passive_p4(request: EffectContentUnitRequest) -> ContentUnit
     直接失败），并把取值写进 ``compiled_params`` 供装配/诊断核对。
     """
 
-    _validate_owner(request, SANDRONE_PASSIVE_P4_HANDLER_KEY)
+    slot = _validate_owner(request, SANDRONE_PASSIVE_P4_HANDLER_KEY)
     name = _effect_name(request.params, position="天赋「悠久的演算机关」")
     values = read_p4_asset_values(request.params)
+    owner_ref = f"character:slot_{slot}"
+    provider = SandroneP4PrismBoostProvider(
+        owner_ref=owner_ref,
+        boost_multiplier=values.prism_boost_multiplier,
+        source_key=SANDRONE_PASSIVE_P4_HANDLER_KEY,
+        display_name=f"{name}·棱晶弹强化",
+    )
     return _effect_unit(
         request=request,
         handler_key=SANDRONE_PASSIVE_P4_HANDLER_KEY,
@@ -303,6 +312,7 @@ def create_sandrone_passive_p4(request: EffectContentUnitRequest) -> ContentUnit
         ),
         purpose="sandrone_passive_p4",
         note=P4_CARRIER_NOTE,
+        damage_modifier_providers=(provider,),
         compiled_params={
             "name": name,
             "power_threshold": values.power_threshold,
@@ -382,7 +392,7 @@ def create_sandrone_constellation_c1(request: EffectContentUnitRequest) -> Conte
 
 
 def create_sandrone_constellation_c2(request: EffectContentUnitRequest) -> ContentUnit:
-    """C2 回望镜中，时岁翩然：射线星超导冰伤逐射线暴伤（会话序号由法洁欧承载）。"""
+    """C2 回望镜中，时岁翩然：射线星超导冰伤逐射线暴伤（序号由法洁欧以请求级事实承载）。"""
 
     slot = _validate_owner(request, SANDRONE_CONSTELLATION_C2_HANDLER_KEY)
     name = _effect_name(request.params, position="命之座第 2 层")

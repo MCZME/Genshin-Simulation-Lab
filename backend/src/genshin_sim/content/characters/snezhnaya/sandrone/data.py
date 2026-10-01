@@ -113,6 +113,10 @@ SANDRONE_C2_CRIT_DAMAGE_MAX_RAYS = 3
 FAGEOU_FACT_PROVIDER_KEY = "sandrone.fageou"
 FAGEOU_RAY_INDEX_FACT_KEY = f"{FAGEOU_FACT_PROVIDER_KEY}.ray_index"
 
+# P4 棱晶弹强化的请求级事实 key：施放帧判定结果由 E 动作参数带到影响工厂，
+# 工厂在展开第二枚棱晶弹请求时绑定；倍率强化由 P4 provider 在结算期展开。
+SANDRONE_P4_PRISM_BOOST_FACT_KEY = "sandrone.passive.p4.prism_boost"
+
 # C4 棱晶谐振炮（效果行：星超导 125% / 星扩散 187.5% 攻击力、每 4s 至多一次）。
 # 星烁直伤请求由 C4 效果单元的 hook 产出（触发按伤害来源判定为桑多涅自身）；
 # 两个倍率分量与冷却帧数从资产行解析。
@@ -243,7 +247,8 @@ FAGEOU_STATE_NEXT_RAY_FRAME = "fageou_next_ray_frame"
 FAGEOU_STATE_DRAIN_ACTIVE = "fageou_drain_active"
 # 射线会话序号与 C6 集束型额外段余量（进入解算时清零）；
 # P4 改进战术叠层与过期帧（跨会话保留）、爆发光束加成快照。
-# P4 棱晶弹强化不在状态里留字段：施放帧判定结果以 E 动作参数透传到影响点。
+# P4 棱晶弹强化不在状态里留字段：施放帧判定结果以 E 动作参数透传到影响点，
+# 再由影响工厂绑定为请求级事实（SANDRONE_P4_PRISM_BOOST_FACT_KEY）。
 FAGEOU_STATE_RAY_COUNT = "fageou_ray_count"
 FAGEOU_STATE_EXTRA_SEGMENTS_LEFT = "fageou_extra_segments_left"
 FAGEOU_STATE_TACTICS_STACKS = "fageou_tactics_stacks"

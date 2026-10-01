@@ -19,6 +19,7 @@ from __future__ import annotations
 
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_RAY_INDEX_FACT_KEY,
+    SANDRONE_P4_PRISM_BOOST_FACT_KEY,
     SANDRONE_RAY_STELLAR_ADDITIONAL_TAG,
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
@@ -249,3 +250,56 @@ def _ray_index_of(value: DamageFactValue | None) -> int | None:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         return None
     return value
+
+
+class SandroneP4PrismBoostProvider:
+    """P4 悠久的演算机关：第二枚棱晶弹伤害按资产效果行倍率强化。
+
+    施放帧判定（P4 已解锁 ∧ 解算功率 > 阈值 ∧ 施放时持辉映）由 E 动作完成，
+    判定结果经影响工厂以请求级事实绑定在第二枚棱晶弹请求上（发射时刻冻结，
+    与子弹落点时刻的功率无关）。本 provider 读到该事实后，对请求的每个倍率
+    组件产出系数百分比词条：``coefficient × multiplier`` 等价于
+    ``percent_add = multiplier - 1``，普通与星烁契约共用同一倍率区阶段
+    （D-082），因此一个 provider 同时覆盖两种契约。
+    """
+
+    def __init__(
+        self,
+        *,
+        owner_ref: str,
+        boost_multiplier: float,
+        source_key: str,
+        display_name: str,
+    ) -> None:
+        self._owner_ref = AttributeSubjectRef.character(owner_ref)
+        self._boost_multiplier = _require_positive_number(boost_multiplier, "P4 棱晶弹强化倍率")
+        self._provider_key = f"{source_key}.prism_boost:{owner_ref}"
+        self._source_ref = RuntimeSourceRef(RuntimeSourceKind.CONTENT, source_key)
+        self.provider_spec = DamageModifierProviderSpec(
+            provider_key=self._provider_key,
+            writes=frozenset({DamageModifierStage.COMPONENT_COEFFICIENT_PERCENT_ADD}),
+            owner_ref=self._owner_ref,
+            reads_facts=frozenset({SANDRONE_P4_PRISM_BOOST_FACT_KEY}),
+            display_name=display_name,
+        )
+
+    def contribute(
+        self,
+        query: DamageQuery,
+        scope: DamageResolutionScope,
+    ) -> tuple[DamageModifierTerm, ...]:
+        request = query.request
+        if request.source_ref != self._owner_ref:
+            return ()
+        if scope.read_fact(SANDRONE_P4_PRISM_BOOST_FACT_KEY) is not True:
+            return ()
+        return tuple(
+            DamageModifierTerm(
+                stage=DamageModifierStage.COMPONENT_COEFFICIENT_PERCENT_ADD,
+                value=self._boost_multiplier - 1.0,
+                component_key=term.component_key,
+                provider_key=self._provider_key,
+                source_ref=self._source_ref,
+            )
+            for term in request.scaling_terms
+        )

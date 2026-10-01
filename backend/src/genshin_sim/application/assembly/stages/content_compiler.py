@@ -45,6 +45,7 @@ from genshin_sim.core.systems.cooldown import (
     CooldownKey,
 )
 from genshin_sim.core.systems.damage import (
+    DamageFactProvider,
     DamageModifierProvider,
     DamageModifierStackingGroupDefinition,
 )
@@ -481,6 +482,8 @@ class ContentCompiler:
         modifiers: list[Modifier] = []
         damage_modifier_providers: list[DamageModifierProvider] = []
         damage_modifier_stacking_groups: list[DamageModifierStackingGroupDefinition] = []
+        damage_fact_providers: list[DamageFactProvider] = []
+        damage_request_fact_keys: list[str] = []
         attribute_stacking_groups: list[ModifierStackingGroupDefinition] = []
         buff_definitions: list[BuffDefinition] = []
         infusion_definitions: list[InfusionDefinition] = []
@@ -505,6 +508,8 @@ class ContentCompiler:
             cooldown_definitions.extend(unit.cooldown_definitions)
             damage_modifier_providers.extend(unit.damage_modifier_providers)
             damage_modifier_stacking_groups.extend(unit.damage_modifier_stacking_groups)
+            damage_fact_providers.extend(unit.damage_fact_providers)
+            damage_request_fact_keys.extend(unit.damage_request_fact_keys)
 
         return RuntimeContentBundle(
             content_units=units,
@@ -522,6 +527,8 @@ class ContentCompiler:
             cooldown_definitions=tuple(cooldown_definitions),
             damage_modifier_providers=tuple(damage_modifier_providers),
             damage_modifier_stacking_groups=tuple(damage_modifier_stacking_groups),
+            damage_fact_providers=tuple(damage_fact_providers),
+            damage_request_fact_keys=tuple(sorted(set(damage_request_fact_keys))),
         )
 
     def _register_state_schema(

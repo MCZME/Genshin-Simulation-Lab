@@ -10,6 +10,8 @@ from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.space.geometry import ImpactAreaSpec
 from genshin_sim.core.systems.aura import AuraStrength
 from genshin_sim.core.systems.damage import DamageScalingTerm
+from genshin_sim.core.systems.damage.errors import DamageValidationError
+from genshin_sim.core.systems.damage.facts import DamageFactValue, validate_damage_fact_value
 from genshin_sim.core.systems.damage.stellar import StellarReactionDamageInput
 
 if TYPE_CHECKING:
@@ -195,6 +197,9 @@ class ImpactRequest:
     element: str | None = None
     tags: tuple[str, ...] = ()
     params: Mapping[str, object] = field(default_factory=dict)
+    # 请求级事实：发射方绑定的身份与快照值（如弹序、施放帧功率），随请求
+    # 走到伤害结算；取值语义固定为"发射时刻"，与会话级事实（读当下）分工。
+    request_facts: Mapping[str, DamageFactValue] = field(default_factory=dict)
     damage_spec: DamageImpactSpec | None = None
     elemental_application_spec: ElementalApplicationSpec | None = None
 
@@ -212,6 +217,16 @@ class ImpactRequest:
         object.__setattr__(self, "target_refs", tuple(self.target_refs))
         object.__setattr__(self, "tags", tuple(self.tags))
         object.__setattr__(self, "params", dict(self.params))
+        request_facts = dict(self.request_facts)
+        for key, value in request_facts.items():
+            if not isinstance(key, str) or not key.strip():
+                msg = "request_facts key 必须是非空字符串"
+                raise ValueError(msg)
+            try:
+                validate_damage_fact_value(value, key)
+            except DamageValidationError as error:
+                raise ValueError(str(error)) from error
+        object.__setattr__(self, "request_facts", request_facts)
         if self.damage_spec is not None and self.kind is not ImpactKind.DAMAGE:
             raise ValueError("只有 DAMAGE ImpactRequest 可以携带 damage_spec")
         if self.elemental_application_spec is not None and self.kind is not ImpactKind.APPLY_AURA:

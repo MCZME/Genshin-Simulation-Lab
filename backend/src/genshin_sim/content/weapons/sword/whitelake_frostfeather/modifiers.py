@@ -70,9 +70,9 @@ class WhitelakeFrostfeatherStellarCritDamageProvider:
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionScope,
+        scope: DamageResolutionScope,
     ) -> tuple[DamageModifierTerm, ...]:
-        del session
+        del scope
         request = query.request
         if request.formula_key != FORMULA_KEY_STELLAR_REACTION:
             return ()

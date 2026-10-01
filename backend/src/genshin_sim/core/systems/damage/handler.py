@@ -155,7 +155,6 @@ class DamageRequestHandler:
         damage_name = damage_spec.display_name
         tags = frozenset(
             (
-                *request.tags,
                 main_attack_tag,
                 *damage_spec.additional_attack_tags,
             )
@@ -271,6 +270,7 @@ class DamageRequestHandler:
                 scaling_terms=scaling_terms,
                 flat_base_damage=flat_base_damage,
                 tags=tags,
+                request_facts=request.request_facts,
                 can_crit=can_crit,
                 source_context=source_context,
                 damage_name=damage_name,

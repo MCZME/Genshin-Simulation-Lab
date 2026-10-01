@@ -17,10 +17,8 @@
 
 from __future__ import annotations
 
-from collections.abc import Iterable
-
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
-    SANDRONE_RAY_INDEX_TAG_PREFIX,
+    FAGEOU_RAY_INDEX_FACT_KEY,
     SANDRONE_RAY_STELLAR_ADDITIONAL_TAG,
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
@@ -38,6 +36,7 @@ from genshin_sim.core.attributes import (
 )
 from genshin_sim.core.attributes.session import AttributeResolutionSession
 from genshin_sim.core.systems.damage import (
+    DamageFactValue,
     DamageModifierProviderSpec,
     DamageModifierStage,
     DamageModifierTerm,
@@ -164,9 +163,9 @@ class SandroneC1StellarBonusProvider:
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionScope,
+        scope: DamageResolutionScope,
     ) -> tuple[DamageModifierTerm, ...]:
-        del session
+        del scope
         request = query.request
         if request.main_attack_tag not in _C1_STELLAR_REACTION_DAMAGE_TAGS:
             return ()
@@ -183,9 +182,9 @@ class SandroneC1StellarBonusProvider:
 class SandroneC2RayCritDamageProvider:
     """C2：重击冷凝射线的星超导冰伤按会话序号获得暴伤提升。
 
-    法洁欧 hook 在每条射线请求上携带 ``sandrone_ray_index:{n}`` 附加标签
-    （n 为本会话第几条射线）；provider 换算为暴伤加成项（+40% 基础 +
-    20%/射线，至多计入 3 条），非射线或普通射线不命中标签。
+    射线会话序号由法洁欧 hook 发射时以请求级事实绑定
+    （``sandrone.fageou.ray_index``），provider 声明读取后换算为暴伤加成项
+    （+40% 基础 + 20%/射线，至多计入 3 条），非射线或普通射线不命中附加标签。
     """
 
     def __init__(
@@ -214,15 +213,15 @@ class SandroneC2RayCritDamageProvider:
             provider_key=self._provider_key,
             writes=frozenset({DamageModifierStage.CRIT_DAMAGE_ADD}),
             owner_ref=self._owner_ref,
+            reads_facts=frozenset({FAGEOU_RAY_INDEX_FACT_KEY}),
             display_name=display_name,
         )
 
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionScope,
+        scope: DamageResolutionScope,
     ) -> tuple[DamageModifierTerm, ...]:
-        del session
         request = query.request
         if request.source_ref != self._owner_ref:
             return ()
@@ -230,8 +229,8 @@ class SandroneC2RayCritDamageProvider:
             return ()
         if SANDRONE_RAY_STELLAR_ADDITIONAL_TAG not in request.tags:
             return ()
-        ray_index = _parse_ray_index(request.tags)
-        if ray_index is None or ray_index <= 0:
+        ray_index = _ray_index_of(scope.read_fact(FAGEOU_RAY_INDEX_FACT_KEY))
+        if ray_index is None:
             return ()
         counted = min(ray_index, self._max_rays)
         return (
@@ -244,11 +243,9 @@ class SandroneC2RayCritDamageProvider:
         )
 
 
-def _parse_ray_index(tags: Iterable[str] | None) -> int | None:
-    prefix = SANDRONE_RAY_INDEX_TAG_PREFIX
-    for tag in tags or ():
-        if not isinstance(tag, str) or not tag.startswith(prefix):
-            continue
-        raw = tag.removeprefix(prefix)
-        return int(raw) if raw.isdigit() else None
-    return None
+def _ray_index_of(value: DamageFactValue | None) -> int | None:
+    """把事实值收敛为正整数射线序号；非正整数或类型不符时返回 ``None``。"""
+
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value

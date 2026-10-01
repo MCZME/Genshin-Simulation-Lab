@@ -268,8 +268,8 @@ class OwnerScopedProvider:
             owner_ref=owner_ref,
         )
 
-    def contribute(self, query: DamageQuery, session: Any) -> tuple[DamageModifierTerm, ...]:
-        del session
+    def contribute(self, query: DamageQuery, scope: Any) -> tuple[DamageModifierTerm, ...]:
+        del scope
         if query.request.formula_key != FORMULA_KEY_STELLAR_REACTION:
             return ()
         if query.request.source_ref != self._owner_ref:
@@ -307,8 +307,8 @@ class TeamWideProvider:
             writes=frozenset({stage}),
         )
 
-    def contribute(self, query: DamageQuery, session: Any) -> tuple[DamageModifierTerm, ...]:
-        del session
+    def contribute(self, query: DamageQuery, scope: Any) -> tuple[DamageModifierTerm, ...]:
+        del scope
         if query.request.formula_key != FORMULA_KEY_STELLAR_REACTION:
             return ()
         return (

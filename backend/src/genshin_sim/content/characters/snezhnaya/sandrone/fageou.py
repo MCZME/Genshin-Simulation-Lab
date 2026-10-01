@@ -40,6 +40,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_POWER_RISE_PER_SECOND,
     FAGEOU_PRE_SWING_FRAMES,
     FAGEOU_RAY_HIT_POWER_GAIN,
+    FAGEOU_RAY_INDEX_FACT_KEY,
     FAGEOU_RAY_INTERVAL_FRAMES,
     FAGEOU_RAY_LENGTH,
     FAGEOU_RAY_WIDTH,
@@ -62,7 +63,6 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY,
     SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
     SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY,
-    SANDRONE_RAY_INDEX_TAG_PREFIX,
     SandroneP4AssetValues,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
@@ -88,6 +88,7 @@ from genshin_sim.core.space import (
     Vector3,
 )
 from genshin_sim.core.space.space import ACTIVE_CHARACTER_ENTITY_ID
+from genshin_sim.core.systems.damage import DamageFactValue
 
 FRAMES_PER_SECOND = 60.0
 
@@ -210,7 +211,6 @@ class SandroneFageouHook:
         ray_width: float = FAGEOU_RAY_WIDTH,
         bullet_speed_m_per_s: float = FAGEOU_BULLET_SPEED_M_PER_S,
         p4: SandroneP4AssetValues | None = None,
-        c2_index_tag_enabled: bool = False,
         c6_extra_normal_spec: DamageImpactSpec | None = None,
         c6_extra_stellar_channel: SandroneStellarAttackChannel | None = None,
         c6_extra_segments: int = 0,
@@ -247,7 +247,6 @@ class SandroneFageouHook:
         # P4 数值取自资产效果行（content.py 装配期传入）；突破 1 阶前为 None，
         # 排空只清功率、不计改进战术层数。
         self._p4 = p4
-        self._c2_index_tag_enabled = c2_index_tag_enabled
         self._c6_extra_normal_spec = c6_extra_normal_spec
         self._c6_extra_stellar_channel = c6_extra_stellar_channel
         self._c6_extra_segments = c6_extra_segments
@@ -363,7 +362,7 @@ class SandroneFageouHook:
                 request, hit, targets = self._fire_ray(
                     hook_context,
                     frame,
-                    ray_count=ray_count,
+                    ray_index=ray_count,
                 )
                 if request is not None:
                     requests.append(request)
@@ -580,14 +579,14 @@ class SandroneFageouHook:
         context: HookContext,
         frame: int,
         *,
-        ray_count: int = 0,
+        ray_index: int,
     ) -> tuple[ImpactRequest | None, bool, tuple[str, ...]]:
         """射线即时结算：穿透多目标聚合为一条攻击根，命中返回功率增量证据。
 
         发射时按辉映状态查表分派：持用辉映·星超导/星扩散时射线契约切换为
         星变体并附组装好的星烁输入（stellar.py），否则走普通射线契约。
-        C6 追加段由调用方另记为独立影响点，不改变本契约；C2 下请求携带
-        射线会话序号附加标签供暴伤 provider 定向。
+        C6 追加段由调用方另记为独立影响点，不改变本契约；C2 的射线会话
+        序号是发射时刻就确定的身份值，以请求级事实随本请求走结算。
         """
 
         aim = self._aim(context)
@@ -602,7 +601,7 @@ class SandroneFageouHook:
             impact_key=SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
             target_refs=targets,
             damage_spec=self._ray_damage_spec(context, frame),
-            tags=self._ray_session_tags(ray_count),
+            request_facts={FAGEOU_RAY_INDEX_FACT_KEY: ray_index},
         )
         return request, True, targets
 
@@ -638,13 +637,6 @@ class SandroneFageouHook:
             damage_spec=damage_spec,
         )
 
-    def _ray_session_tags(self, ray_count: int) -> tuple[str, ...]:
-        """C2 射线会话序号标签：由 provider 换算为逐射线暴伤（仅星超导冰）。"""
-
-        if not self._c2_index_tag_enabled:
-            return ()
-        return (f"{SANDRONE_RAY_INDEX_TAG_PREFIX}{ray_count}",)
-
     def _ray_damage_spec(
         self,
         context: HookContext,
@@ -668,7 +660,7 @@ class SandroneFageouHook:
         impact_key: str,
         target_refs: tuple[str, ...],
         damage_spec: DamageImpactSpec | None = None,
-        tags: tuple[str, ...] = (),
+        request_facts: Mapping[str, DamageFactValue] | None = None,
     ) -> ImpactRequest:
         self._request_counter += 1
         return ImpactRequest(
@@ -679,7 +671,7 @@ class SandroneFageouHook:
             action_key=SANDRONE_CHARGED_ATTACK_ACTION_KEY,
             request_id=f"{self.hook_key}:{impact_key}:{frame}:{self._request_counter}",
             target_refs=target_refs,
-            tags=tags,
+            request_facts=request_facts or {},
             damage_spec=damage_spec if damage_spec is not None else self._damage_specs[impact_key],
         )
 

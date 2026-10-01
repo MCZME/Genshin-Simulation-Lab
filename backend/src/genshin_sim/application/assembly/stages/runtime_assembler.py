@@ -187,6 +187,7 @@ from genshin_sim.core.systems.cooldown import (
 )
 from genshin_sim.core.systems.damage import (
     CriticalDecisionProvider,
+    DamageFactIndex,
     DamageFormulaRegistry,
     DamageModifierIndex,
     DamageProfileRegistry,
@@ -556,10 +557,13 @@ class RuntimeAssembler:
                 ),
                 content_bundle.damage_modifier_stacking_groups,
             )
+            damage_fact_index = DamageFactIndex(content_bundle.damage_fact_providers)
             damage_handler = DamageRequestHandler(
                 DamageResolver(
                     attribute_resolver=attribute_runtime.resolver,
                     modifier_index=damage_modifier_index,
+                    fact_index=damage_fact_index,
+                    request_fact_keys=frozenset(content_bundle.damage_request_fact_keys),
                     formula_registry=(
                         self.damage_formula_registry
                         if self.damage_formula_registry is not None

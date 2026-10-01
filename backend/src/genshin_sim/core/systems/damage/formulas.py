@@ -1168,6 +1168,7 @@ def _lunar_component_query(
         flat_base_damage=participant.flat_base_damage,
         lunar_reaction=reaction,
         tags=frozenset((*request.tags, reaction.reaction_profile_key)),
+        request_facts=request.request_facts,
         can_crit=participant.can_crit,
     )
     tags = component_request.tags
@@ -1190,7 +1191,12 @@ def _new_damage_session(
     context: DamageFormulaContext,
     query: DamageQuery,
 ):
-    """创建不共享来源主体的组分属性 session。"""
+    """创建不共享来源主体的组分属性 session。
+
+    组分 session 与父结算共享同一事实索引：会话级事实是整次仿真的状态投影，
+    不随参与者切换；请求级事实则经 ``DamageRequest.request_facts`` 由组分
+    查询自行继承。
+    """
 
     from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 
@@ -1198,6 +1204,7 @@ def _new_damage_session(
         context.scope.attribute_resolver,
         query,
         context.trace_level,
+        fact_index=context.scope.fact_index,
     )
 
 

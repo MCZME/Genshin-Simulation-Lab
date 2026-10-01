@@ -101,12 +101,17 @@ SANDRONE_P6_BASE_BONUS_CAP = 0.14
 FAGEOU_C1_POWER_RATE_REDUCTION = 0.5
 
 # C2 回望镜中，时岁翩然：射线暴伤（效果行：+40% 基础、逐射线 +20%、至多
-# 3 层；仅加成射线的星超导冰伤）。射线会话序号由法洁欧 hook 以请求附加标签
-# 承载，provider 换算。
+# 3 层；仅加成射线的星超导冰伤）。射线会话序号是发射时刻就确定的身份值：
+# 法洁欧 hook 发射射线时以请求级事实绑定（FAGEOU_RAY_INDEX_FACT_KEY），随
+# 请求走结算，C2 provider 声明读取后换算。
 SANDRONE_C2_CRIT_DAMAGE_BASE = 0.4
 SANDRONE_C2_CRIT_DAMAGE_PER_RAY = 0.2
 SANDRONE_C2_CRIT_DAMAGE_MAX_RAYS = 3
-SANDRONE_RAY_INDEX_TAG_PREFIX = "sandrone_ray_index:"
+
+# 法洁欧请求级事实的命名空间与 key。key 归 `sandrone.fageou` 域，写入只发生
+# 在发射时刻（hook 自身），伤害系统只读。
+FAGEOU_FACT_PROVIDER_KEY = "sandrone.fageou"
+FAGEOU_RAY_INDEX_FACT_KEY = f"{FAGEOU_FACT_PROVIDER_KEY}.ray_index"
 
 # C4 棱晶谐振炮（效果行：星超导 125% / 星扩散 187.5% 攻击力、每 4s 至多一次）。
 # 星烁直伤请求由 C4 效果单元的 hook 产出（触发按伤害来源判定为桑多涅自身）；

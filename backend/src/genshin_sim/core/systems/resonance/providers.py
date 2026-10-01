@@ -109,8 +109,8 @@ class ResonanceCryoCritDamageProvider:
     ) -> None:
         self._aura_frozen_port = aura_frozen_port
 
-    def contribute(self, query, session):
-        del session
+    def contribute(self, query, scope):
+        del scope
         if not self._active or self._aura_frozen_port is None:
             return ()
         if query.request.formula_key is not FORMULA_KEY_GENERAL:
@@ -163,8 +163,8 @@ class ResonanceGeoDamageProvider:
         self._shield_port = shield_port
         self._lunar_cage_port = lunar_cage_port
 
-    def contribute(self, query, session):
-        del session
+    def contribute(self, query, scope):
+        del scope
         if not self._active or self._shield_port is None or self._lunar_cage_port is None:
             return ()
         if query.request.formula_key is not FORMULA_KEY_GENERAL:

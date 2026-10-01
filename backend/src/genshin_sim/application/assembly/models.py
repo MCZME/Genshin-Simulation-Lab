@@ -81,6 +81,7 @@ if TYPE_CHECKING:
         CooldownRuntime,
     )
     from genshin_sim.core.systems.damage import (
+        DamageFactProvider,
         DamageModifierProvider,
         DamageModifierStackingGroupDefinition,
         DamageRequestHandler,
@@ -154,6 +155,8 @@ class RuntimeContentBundle:
     cooldown_definitions: tuple[CooldownDefinition, ...]
     damage_modifier_providers: tuple[DamageModifierProvider, ...]
     damage_modifier_stacking_groups: tuple[DamageModifierStackingGroupDefinition, ...]
+    damage_fact_providers: tuple[DamageFactProvider, ...]
+    damage_request_fact_keys: tuple[str, ...]
 
 
 @dataclass(slots=True)

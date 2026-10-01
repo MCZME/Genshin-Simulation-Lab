@@ -273,9 +273,9 @@ class DisenchantmentInDeepShadowReactionBonusProvider:
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionScope,
+        scope: DamageResolutionScope,
     ) -> tuple[DamageModifierTerm, ...]:
-        del session
+        del scope
         request = query.request
         if request.source_ref != self._owner_ref:
             return ()
@@ -330,9 +330,9 @@ class DisenchantmentInDeepShadowCritRateProvider:
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionScope,
+        scope: DamageResolutionScope,
     ) -> tuple[DamageModifierTerm, ...]:
-        del session
+        del scope
         request = query.request
         if request.source_ref != self._owner_ref:
             return ()

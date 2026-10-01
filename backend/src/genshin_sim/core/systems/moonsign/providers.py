@@ -51,11 +51,11 @@ class MoonsignLunarBonusProvider:
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionScope,
+        scope: DamageResolutionScope,
     ) -> tuple[DamageModifierTerm, ...]:
         """按查询帧读取当前增伤，产出反应加成位的单个修饰项。"""
 
-        del session
+        del scope
         if self._bonus_port is None:
             return ()
         request = query.request

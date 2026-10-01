@@ -30,6 +30,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_POWER_RISE_PER_SECOND,
     FAGEOU_PRE_SWING_FRAMES,
     FAGEOU_RAY_HIT_POWER_GAIN,
+    FAGEOU_RAY_INDEX_FACT_KEY,
     FAGEOU_RAY_INTERVAL_FRAMES,
     FAGEOU_RAY_LENGTH,
     FAGEOU_RAY_WIDTH,
@@ -234,6 +235,41 @@ def create_sandrone_content_unit(
         source_ref=SANDRONE_CHARACTER_HANDLER_KEY,
         tags=("elemental_burst",),
     )
+    # 法洁欧 hook 发射射线时把会话序号绑定为请求级事实（key 见 data.py），
+    # 随射线请求走结算，供 C2 伤害修饰读取。
+    fageou_hook = SandroneFageouHook(
+        owner_ref=owner_ref,
+        slot=request.slot,
+        damage_specs=charged_specs,
+        stellar_channel=stellar_channels[SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY],
+        pre_swing_frames=FAGEOU_PRE_SWING_FRAMES,
+        solve_shot_interval_frames=FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
+        overload_shot_interval_frames=FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
+        ray_interval_frames=FAGEOU_RAY_INTERVAL_FRAMES,
+        # C1：解算功率提升速度降低 50%，功率上升与射线命中增量一并折算。
+        power_rise_per_second=FAGEOU_POWER_RISE_PER_SECOND * power_rate_factor,
+        ray_hit_power_gain=FAGEOU_RAY_HIT_POWER_GAIN * power_rate_factor,
+        power_decay_per_second=FAGEOU_POWER_DECAY_PER_SECOND,
+        power_max=FAGEOU_POWER_MAX,
+        ray_length=FAGEOU_RAY_LENGTH,
+        ray_width=FAGEOU_RAY_WIDTH,
+        bullet_speed_m_per_s=FAGEOU_BULLET_SPEED_M_PER_S,
+        p4=p4_values,
+        c6_extra_normal_spec=(
+            compile_c6_extra_normal_spec(c6_values.normal_ratio) if c6_values is not None else None
+        ),
+        c6_extra_stellar_channel=(
+            compile_c6_extra_stellar_channel(
+                talent_level,
+                conduct_ratio=c6_values.conduct_ratio,
+                swirl_ratio=c6_values.swirl_ratio,
+                ascension_bonus=c6_values.ascension_bonus,
+            )
+            if c6_values is not None
+            else None
+        ),
+        c6_extra_segments=(c6_values.extra_segment_count if c6_values is not None else 0),
+    )
     return ContentUnit(
         owner_type=ContentUnitOwnerType.CHARACTER,
         owner_key=request.character_key,
@@ -250,44 +286,10 @@ def create_sandrone_content_unit(
         ),
         impact_factories={impact_key: impact_factory for impact_key in SANDRONE_HIT_IMPACT_KEYS},
         event_hooks=(
-            SandroneFageouHook(
-                owner_ref=owner_ref,
-                slot=request.slot,
-                damage_specs=charged_specs,
-                stellar_channel=stellar_channels[SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY],
-                pre_swing_frames=FAGEOU_PRE_SWING_FRAMES,
-                solve_shot_interval_frames=FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
-                overload_shot_interval_frames=FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
-                ray_interval_frames=FAGEOU_RAY_INTERVAL_FRAMES,
-                # C1：解算功率提升速度降低 50%，功率上升与射线命中增量一并折算。
-                power_rise_per_second=FAGEOU_POWER_RISE_PER_SECOND * power_rate_factor,
-                ray_hit_power_gain=FAGEOU_RAY_HIT_POWER_GAIN * power_rate_factor,
-                power_decay_per_second=FAGEOU_POWER_DECAY_PER_SECOND,
-                power_max=FAGEOU_POWER_MAX,
-                ray_length=FAGEOU_RAY_LENGTH,
-                ray_width=FAGEOU_RAY_WIDTH,
-                bullet_speed_m_per_s=FAGEOU_BULLET_SPEED_M_PER_S,
-                p4=p4_values,
-                c2_index_tag_enabled=constellation >= 2,
-                c6_extra_normal_spec=(
-                    compile_c6_extra_normal_spec(c6_values.normal_ratio)
-                    if c6_values is not None
-                    else None
-                ),
-                c6_extra_stellar_channel=(
-                    compile_c6_extra_stellar_channel(
-                        talent_level,
-                        conduct_ratio=c6_values.conduct_ratio,
-                        swirl_ratio=c6_values.swirl_ratio,
-                        ascension_bonus=c6_values.ascension_bonus,
-                    )
-                    if c6_values is not None
-                    else None
-                ),
-                c6_extra_segments=(c6_values.extra_segment_count if c6_values is not None else 0),
-            ),
+            fageou_hook,
             SandroneParticleHook(owner_ref=owner_ref, slot=request.slot),
         ),
+        damage_request_fact_keys=(FAGEOU_RAY_INDEX_FACT_KEY,),
         cooldown_definitions=(skill_cooldown_definition, burst_cooldown_definition),
         aura_icd_definitions=(
             IcdDefinition(

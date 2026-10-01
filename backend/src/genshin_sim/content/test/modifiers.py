@@ -44,7 +44,7 @@ class OwnerScopedStaticDamageModifierProvider(StaticDamageModifierProvider):
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionScope,
+        scope: DamageResolutionScope,
     ) -> tuple[DamageModifierTerm, ...]:
         if query.request.source_ref != self._owner_ref:
             return ()

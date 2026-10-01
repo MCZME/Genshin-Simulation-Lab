@@ -28,6 +28,10 @@ from genshin_sim.core.systems.damage.errors import (
     DamageValidationError,
     InvalidDamageScalingError,
 )
+from genshin_sim.core.systems.damage.facts import (
+    DamageFactValue,
+    validate_damage_fact_value,
+)
 from genshin_sim.core.systems.damage.keys import (
     FORMULA_KEY_GENERAL,
     FORMULA_KEY_LUNAR_REACTION,
@@ -432,6 +436,9 @@ class DamageRequest:
     scaling_terms: tuple[DamageScalingTerm, ...] = ()
     flat_base_damage: float = 0.0
     tags: frozenset[str] = frozenset()
+    # 请求级事实：发射方构造请求时绑定、随请求走到结算的身份与快照值；
+    # 对本次请求的全部目标结算一致。会话级事实走 DamageFactIndex，不在此处。
+    request_facts: Mapping[str, DamageFactValue] = field(default_factory=dict)
     can_crit: bool = True
     # 这一次伤害的显示名称，来自 DamageImpactSpec.display_name；缺失时审计回退 action_key。
     damage_name: str | None = None
@@ -500,6 +507,11 @@ class DamageRequest:
         tags = frozenset(self.tags)
         for tag in tags:
             _validate_non_empty_text(tag, "damage tag")
+        request_facts = dict(self.request_facts)
+        for key, value in request_facts.items():
+            _validate_non_empty_text(key, "damage request fact key")
+            validate_damage_fact_value(value, key)
+        object.__setattr__(self, "request_facts", MappingProxyType(request_facts))
         if not isinstance(self.can_crit, bool):
             raise DamageValidationError("can_crit 必须是布尔值")
         if (
@@ -1355,6 +1367,8 @@ class DamageResult:
     rejected_terms: tuple[DamageModifierTerm, ...] = ()
     trace_level: TraceLevel = TraceLevel.FULL
     trace_metadata: Mapping[str, object] = field(default_factory=dict)
+    # 本次结算读取的请求级事实快照（原样透传自 DamageRequest），供审计复现。
+    request_facts: Mapping[str, DamageFactValue] = field(default_factory=dict)
     damage_bonus_zone: DamageBonusZoneResolution | None = None
     critical_zone: CriticalZoneResolution | None = None
 
@@ -1436,6 +1450,7 @@ class DamageResult:
         object.__setattr__(self, "applied_terms", tuple(self.applied_terms))
         object.__setattr__(self, "rejected_terms", tuple(self.rejected_terms))
         object.__setattr__(self, "trace_metadata", MappingProxyType(dict(self.trace_metadata)))
+        object.__setattr__(self, "request_facts", MappingProxyType(dict(self.request_facts)))
 
     @property
     def final_multiplier(self) -> float:
@@ -1478,8 +1493,7 @@ class DamageResult:
         }
 
     def to_audit_dict(self) -> dict[str, object]:
-        """返回完整伤害公式审计，供 DAMAGE_RESOLVED 的 audit 载荷使用。
-        """
+        """返回完整伤害公式审计，供 DAMAGE_RESOLVED 的 audit 载荷使用。"""
 
         return {
             "component_results": tuple(item.to_dict() for item in self.component_results),
@@ -1491,6 +1505,7 @@ class DamageResult:
             "reaction": _audit_reaction_to_dict(self),
             "applied_terms": tuple(item.to_dict() for item in self.applied_terms),
             "rejected_terms": tuple(item.to_dict() for item in self.rejected_terms),
+            "request_facts": dict(self.request_facts),
             "trace_metadata": dict(self.trace_metadata),
         }
 

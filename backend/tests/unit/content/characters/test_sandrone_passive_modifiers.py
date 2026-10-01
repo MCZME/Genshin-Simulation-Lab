@@ -14,7 +14,7 @@ from typing import cast
 import pytest
 
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
-    SANDRONE_RAY_INDEX_TAG_PREFIX,
+    FAGEOU_RAY_INDEX_FACT_KEY,
     SANDRONE_RAY_STELLAR_ADDITIONAL_TAG,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.modifiers import (
@@ -29,6 +29,7 @@ from genshin_sim.core.attributes import (
     STAT_ATK_BASE,
     STAT_ELEMENTAL_MASTERY,
     AttributeQuery,
+    AttributeQueryContext,
     AttributeResolver,
     AttributeSubjectRef,
     BaseAttributeContribution,
@@ -38,14 +39,28 @@ from genshin_sim.core.attributes import (
     RuntimeSourceRef,
     create_public_attribute_registry,
 )
-from genshin_sim.core.systems.damage import DamageModifierStage
-from genshin_sim.core.systems.damage.models import DamageQuery
+from genshin_sim.core.elements import Element
+from genshin_sim.core.systems.damage import DamageModifierStage, DamageScalingTerm
+from genshin_sim.core.systems.damage.keys import FORMULA_KEY_GENERAL
+from genshin_sim.core.systems.damage.models import DamageQuery, DamageRequest
 from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 
 OWNER_REF = "character:slot_1"
 OWNER_SUBJECT = AttributeSubjectRef.character(OWNER_REF)
 SOURCE_CONTEXT = RuntimeSourceRef(RuntimeSourceKind.CONFIG, "test.sandrone.modifiers")
 P5_SOURCE_KEY = "character.sandrone.passive.p5"
+TARGET_SUBJECT = AttributeSubjectRef.target("target:target_1")
+
+
+def _attribute_resolver() -> AttributeResolver:
+    registry = create_public_attribute_registry()
+    return AttributeResolver(
+        definitions=registry,
+        base_attributes=BaseAttributeSet(
+            ((OWNER_SUBJECT, BaseAttributeContribution(STAT_ATK_BASE, 300.0, SOURCE_CONTEXT)),)
+        ),
+        modifier_index=ModifierProviderIndex((), registry=registry),
+    )
 
 
 def test_stellar_base_bonus_for_atk_follows_p6_rule():
@@ -127,48 +142,95 @@ def test_c1_provider_covers_all_stellar_reaction_tags():
     )
 
 
-def test_c2_provider_converts_ray_index_to_crit_damage():
-    provider = SandroneC2RayCritDamageProvider(
+class _FactScope:
+    """只回答射线序号一项请求级事实的测试作用域替身。"""
+
+    def __init__(self, ray_index: object) -> None:
+        self._ray_index = ray_index
+
+    def read_fact(self, key: str) -> object:
+        del key
+        return self._ray_index
+
+
+C2_SOURCE_KEY = "character.sandrone.constellation.c2"
+
+
+def _c2_provider() -> SandroneC2RayCritDamageProvider:
+    return SandroneC2RayCritDamageProvider(
         owner_ref=OWNER_REF,
         crit_damage_base=0.4,
         crit_damage_per_ray=0.2,
         max_rays=3,
-        source_key="character.sandrone.constellation.c2",
+        source_key=C2_SOURCE_KEY,
         display_name="合成命座·射线暴伤",
     )
 
-    def _query(ray_index: int | None, *, tag: str = "星超导冰"):
-        tags = [SANDRONE_RAY_STELLAR_ADDITIONAL_TAG]
-        if ray_index is not None:
-            tags.append(f"{SANDRONE_RAY_INDEX_TAG_PREFIX}{ray_index}")
+
+def test_c2_provider_converts_ray_index_fact_to_crit_damage():
+    provider = _c2_provider()
+    assert provider.provider_spec.reads_facts == frozenset({FAGEOU_RAY_INDEX_FACT_KEY})
+
+    def _query(tag: str = "星超导冰", owner: str = OWNER_REF):
         return SimpleNamespace(
             request=SimpleNamespace(
                 main_attack_tag=tag,
-                source_ref=OWNER_SUBJECT,
-                tags=tuple(tags),
+                source_ref=AttributeSubjectRef.character(owner),
+                tags=(SANDRONE_RAY_STELLAR_ADDITIONAL_TAG,),
             )
         )
 
-    def _c2(ray_index: int | None, tag: str = "星超导冰"):
+    def _c2(ray_index: object, tag: str = "星超导冰", owner: str = OWNER_REF):
         return provider.contribute(
-            cast(DamageQuery, _query(ray_index, tag=tag)),
-            cast(DamageResolutionScope, None),
+            cast(DamageQuery, _query(tag, owner)),
+            cast(DamageResolutionScope, _FactScope(ray_index)),
         )
 
     assert _c2(1)[0].value == pytest.approx(0.6)
     assert _c2(2)[0].value == pytest.approx(0.8)
     assert _c2(3)[0].value == pytest.approx(1.0)
     assert _c2(7)[0].value == pytest.approx(1.0)
-    # 非星超导冰标签、缺失序号标签与外来来源都不命中。
+    # 非星超导冰标签、请求未绑定序号、非正整数取值与外来来源都不命中。
     assert _c2(1, tag="星扩散冰") == ()
     assert _c2(None) == ()
-    foreign = SimpleNamespace(
-        request=SimpleNamespace(
-            main_attack_tag="星超导冰",
-            source_ref=AttributeSubjectRef.character("character:slot_2"),
-            tags=(SANDRONE_RAY_STELLAR_ADDITIONAL_TAG, f"{SANDRONE_RAY_INDEX_TAG_PREFIX}1"),
-        )
+    assert _c2(0) == ()
+    assert _c2("1") == ()
+    assert _c2(2.0) == ()
+    assert _c2(True) == ()
+    assert _c2(1, owner="character:slot_2") == ()
+
+
+def test_c2_provider_reads_ray_index_from_request_facts_through_real_scope():
+    """走真实结算叠加路径：序号绑定在请求级事实上的射线命中 C2 加成。"""
+
+    provider = _c2_provider()
+    request = DamageRequest(
+        request_id="damage:sandrone:c2:1",
+        frame=120,
+        formula_key=FORMULA_KEY_GENERAL,
+        main_attack_tag="星超导冰",
+        impact_key="character.sandrone.charged.ray",
+        source_ref=OWNER_SUBJECT,
+        target_ref=TARGET_SUBJECT,
+        source_level=90,
+        target_level=90,
+        element=Element.CRYO,
+        scaling_terms=(DamageScalingTerm("atk", STAT_ATK_BASE, 1.0),),
+        tags=frozenset({SANDRONE_RAY_STELLAR_ADDITIONAL_TAG}),
+        request_facts={FAGEOU_RAY_INDEX_FACT_KEY: 2},
+        can_crit=True,
+        source_context=RuntimeSourceRef(RuntimeSourceKind.CONTENT, "test.sandrone.fageou"),
     )
-    assert (
-        provider.contribute(cast(DamageQuery, foreign), cast(DamageResolutionScope, None)) == ()
+    query = DamageQuery(
+        request=request,
+        source_attribute_context=AttributeQueryContext(target_ref=TARGET_SUBJECT),
+        target_attribute_context=AttributeQueryContext(target_ref=OWNER_SUBJECT),
     )
+    scope = DamageResolutionScope(_attribute_resolver(), query)
+    scope.begin_provider(provider.provider_spec)
+
+    terms = provider.contribute(query, scope)
+
+    assert len(terms) == 1
+    assert terms[0].stage is DamageModifierStage.CRIT_DAMAGE_ADD
+    assert terms[0].value == pytest.approx(0.8)

@@ -17,7 +17,14 @@ from genshin_sim.core.attributes import (
     TraceLevel,
 )
 from genshin_sim.core.systems.damage.enums import CritOutcome, LunarReactionDamageMode
-from genshin_sim.core.systems.damage.errors import DamageProviderViolationError
+from genshin_sim.core.systems.damage.errors import (
+    DamageProviderViolationError,
+    DamageValidationError,
+)
+from genshin_sim.core.systems.damage.facts import (
+    DamageFactIndex,
+    DamageFactValue,
+)
 from genshin_sim.core.systems.damage.formulas import (
     DamageFormulaContext,
     DamageFormulaRegistry,
@@ -46,16 +53,24 @@ from genshin_sim.core.systems.damage.stellar import STELLAR_SLOT_BASE_MULTIPLIER
 
 @dataclass(slots=True)
 class DamageResolutionScope:
-    """一次伤害结算期间共享的属性解析会话和 provider 访问边界。"""
+    """一次伤害结算的作用域与 provider 能力边界。
+
+    它只活在一次 ``DamageResolver.resolve`` 调用内，不跨伤害、不跨帧。职责
+    有三：持有本次结算的 query 与 trace level；为属性读取和伤害事实读取提供
+    一个共享入口；借 ``active_provider_spec`` 在 provider 执行区间上做越权
+    校验。命名取"作用域"而非"会话"，正是为了表达它既划定生命周期、也划定
+    权限边界这两层含义。
+    """
 
     attribute_resolver: AttributeResolver
     query: DamageQuery
     trace_level: TraceLevel = TraceLevel.FULL
+    fact_index: DamageFactIndex = field(default_factory=DamageFactIndex)
     attribute_session: AttributeResolutionSession = field(init=False)
     active_provider_spec: DamageModifierProviderSpec | None = None
 
     def __post_init__(self) -> None:
-        """创建与本次伤害结算绑定的属性解析 session。"""
+        """创建与本次伤害结算绑定的属性解析会话。"""
 
         self.attribute_session = self.attribute_resolver.new_session()
 
@@ -72,6 +87,27 @@ class DamageResolutionScope:
         if self.active_provider_spec != spec:
             raise DamageProviderViolationError("damage provider session 状态不一致")
         self.active_provider_spec = None
+
+    def read_fact(self, key: str) -> DamageFactValue | None:
+        """按 provider 声明的事实读取权限读取模拟事实。
+
+        只允许活动 provider 读取自己声明过的 key。取值按作用域叠加：先查
+        请求级事实（发射时绑定、随请求携带，对本次请求的全部目标结算一致），
+        未命中再回落会话级事实索引；两处都没有时返回 ``None``，表示条件不
+        成立，而不是错误。
+        """
+
+        spec = self.active_provider_spec
+        if spec is None:
+            raise DamageProviderViolationError("只有活动 damage provider 可以读取伤害事实")
+        if key not in spec.reads_facts:
+            raise DamageProviderViolationError(
+                f"provider {spec.provider_key} 未声明读取伤害事实 {key}"
+            )
+        request_facts = self.query.request.request_facts
+        if key in request_facts:
+            return request_facts[key]
+        return self.fact_index.read(key)
 
     def resolve_for_provider(
         self,
@@ -147,6 +183,35 @@ class DamageResolver:
     formula_registry: DamageFormulaRegistry = field(
         default_factory=create_default_damage_formula_registry
     )
+    fact_index: DamageFactIndex = field(default_factory=DamageFactIndex)
+    # 装配期声明为请求级事实的全部 key（内容单元发射方可能写入的集合）。
+    request_fact_keys: frozenset[str] = field(default_factory=frozenset)
+
+    def __post_init__(self) -> None:
+        """交叉校验 provider 声明的事实读取都有来源，避免静默失效。
+
+        事实读取的缺失语义是"条件不成立"，因此一个拼错或没被声明的 key 会
+        让 provider 永远读到空值而不报错。这里在组装期一次性检出：声明读取
+        的 key 必须由会话容器提供，或被某内容单元声明为请求级事实。请求级
+        key 同时不得与会话容器 key 撞名——撞名意味着同一 key 承载两种作用域
+        语义，叠加顺序会静默改变取值来源。
+        """
+
+        request_keys = frozenset(self.request_fact_keys)
+        object.__setattr__(self, "request_fact_keys", request_keys)
+        collisions = request_keys.intersection(self.fact_index.fact_keys)
+        if collisions:
+            raise DamageValidationError(
+                f"请求级事实 key 与会话容器 key 冲突，同一 key 不能承载两种作用域语义："
+                f"{sorted(collisions)}"
+            )
+        for provider_key, fact_key in self.modifier_index.declared_fact_reads:
+            if self.fact_index.provides(fact_key) or fact_key in request_keys:
+                continue
+            raise DamageValidationError(
+                f"provider {provider_key} 声明读取的伤害事实 {fact_key} "
+                "没有容器提供，也没有内容单元声明为请求级事实"
+            )
 
     def resolve(
         self,
@@ -157,7 +222,12 @@ class DamageResolver:
         """选择完整公式，执行结算，并返回可审计结果。"""
 
         formula = self.formula_registry.require(query.request.formula_key)
-        scope = DamageResolutionScope(self.attribute_resolver, query, trace_level)
+        scope = DamageResolutionScope(
+            attribute_resolver=self.attribute_resolver,
+            query=query,
+            trace_level=trace_level,
+            fact_index=self.fact_index,
+        )
         modifiers = self.modifier_index.collect(query, scope)
         validate_formula_modifier_stages(formula.formula_spec, modifiers)
         resolution = formula.resolve(
@@ -240,6 +310,7 @@ def _build_damage_result(
             component_results=(() if scaling is None else tuple(scaling.component_results)),
             applied_terms=applied_terms,
             rejected_terms=rejected_terms,
+            request_facts=query.request.request_facts,
             trace_level=trace_level,
             trace_metadata={
                 "stellar_mode": resolution.input.mode,
@@ -296,6 +367,7 @@ def _build_damage_result(
             rejected_terms=(
                 modifiers.rejected_terms if trace_level is TraceLevel.FULL and lunar_direct else ()
             ),
+            request_facts=query.request.request_facts,
             trace_level=trace_level,
             trace_metadata={
                 "lunar_mode": resolution.reaction.mode.value,
@@ -339,6 +411,7 @@ def _build_damage_result(
                 else (*modifiers.applied_terms, *resolution.panel_terms)
             ),
             rejected_terms=modifiers.rejected_terms if trace_level is TraceLevel.FULL else (),
+            request_facts=query.request.request_facts,
             trace_level=trace_level,
             trace_metadata={"defense_policy": resolution.reaction.defense_policy},
         )
@@ -377,6 +450,7 @@ def _build_damage_result(
         component_results=resolution.scaling.component_results,
         applied_terms=applied_terms,
         rejected_terms=rejected_terms,
+        request_facts=query.request.request_facts,
         trace_level=trace_level,
         trace_metadata={"effective_crit_rate": resolution.critical.effective_crit_rate},
         damage_bonus_zone=resolution.damage_bonus,

@@ -521,8 +521,17 @@ function slotRowFromTerm(term: Record<string, unknown>): SlotRow {
             ? formatNumber(value)
             : formatSignedPercent(value),
     base: panel || undefined,
-    title: providerKey ?? undefined,
+    title: termTitle(term, providerKey),
   };
+}
+
+/** 词条 hover 标题：provider 原键 + 叠加组（未生效词条据此定位被哪个叠加组淘汰）。 */
+function termTitle(term: Record<string, unknown>, providerKey: string | null): string | undefined {
+  const stacking = readString(term, "stacking_group");
+  const parts = [providerKey, stacking === null ? null : `叠加组 ${stacking}`].filter(
+    (part): part is string => part !== null,
+  );
+  return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
 /** 复合模式（月曜/星烁）单个参与者组分的账本抽屉。 */
@@ -821,7 +830,9 @@ function buildBaseZone(
   }
 
   // 合计行只在多组件求和或还有加值要加时有信息量；单组件且无加值时组件行结果就是基础伤害。
-  if (components.length > 1 || additionRows.length > 0) {
+  // 月曜的倍率区组件是反应前数值，与 base_damage（反应后加权值）不同量纲，因此不追加合计。
+  const isLunarReaction = readString(summary, "formula_key") === "damage_formula.lunar_reaction";
+  if (!isLunarReaction && (components.length > 1 || additionRows.length > 0)) {
     const base = readNumber(summary, "base_damage");
     if (base !== null && lines.length > 0) {
       lines.push([{ kind: "text", text: "=" }, { kind: "result", text: ` ${formatDamage(base)}` }]);
@@ -840,6 +851,10 @@ function buildBaseZone(
         },
         { kind: "result", text: ` = ${formatDamage(base)}` },
       ]);
+      const provenance = transformativeProvenance(reaction);
+      if (provenance !== null) {
+        lines.push([{ kind: "muted", text: provenance }]);
+      }
     } else if (base !== null) {
       lines.push([
         { kind: "text", text: "基础伤害" },
@@ -852,8 +867,35 @@ function buildBaseZone(
     title: "基础区",
     lines,
     drawers,
-    note: null,
+    note:
+      isLunarReaction && components.length > 0
+        ? "倍率区为反应前数值；反应倍率、基础伤害提升、精通与反应加成、附加伤害见下方抽屉"
+        : null,
   };
+}
+
+/** 剧变反应的等级系数溯源：来源分类、来源等级与等级系数表键。 */
+function transformativeProvenance(reaction: Record<string, unknown>): string | null {
+  const sourceKind = readString(reaction, "source_kind");
+  const sourceLevel = readNumber(reaction, "source_level");
+  const tableKey = readString(reaction, "level_multiplier_table_key");
+  const parts: string[] = [];
+  if (sourceKind !== null) {
+    const label =
+      sourceKind === "character"
+        ? "角色"
+        : sourceKind === "enemy_environment"
+          ? "敌人/环境"
+          : sourceKind;
+    parts.push(`来源 ${label}`);
+  }
+  if (sourceLevel !== null) {
+    parts.push(`等级 ${sourceLevel}`);
+  }
+  if (tableKey !== null) {
+    parts.push(`系数表 ${tableKey}`);
+  }
+  return parts.length > 0 ? `（${parts.join(" · ")}）` : null;
 }
 
 function additionLabel(key: string): string {

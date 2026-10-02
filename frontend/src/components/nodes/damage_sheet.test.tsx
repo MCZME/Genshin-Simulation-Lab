@@ -740,6 +740,10 @@ describe("DamageSheet", () => {
       screen.getByText("868 × 1", { selector: ".damage-sheet-formula-text" }),
     ).toBeDefined();
     expect(screen.getByText(/868/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
+    // 剧变等级系数一并溯源来源、等级与等级表口径。
+    expect(
+      screen.getByText("（来源 角色 · 等级 90 · 系数表 level_multiplier.character）"),
+    ).toBeDefined();
     expect(screen.queryByText(/等级系数/)).toBeNull();
     expect(screen.queryByText(/基础倍率/)).toBeNull();
   });
@@ -1328,6 +1332,66 @@ describe("DamageSheet", () => {
     expect(screen.getByText("1.5", { selector: ".damage-sheet-formula-text" })).toBeDefined();
     expect(screen.getByText(/1\.500/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
   });
+
+  it("未生效词条的 hover 标题带叠加组，便于定位被谁淘汰", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        audit: {
+          ...base.damage.audit,
+          rejected_terms: [
+            ...(base.damage.audit.rejected_terms as Record<string, unknown>[]),
+            {
+              stage: "component_coefficient_percent_add",
+              value: 0.3,
+              provider_key: "buff.superseded",
+              stacking_group: "buff.atk_bonus",
+              component_key: "attack.main",
+            },
+          ],
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    expect(screen.getByTitle("buff.superseded · 叠加组 buff.atk_bonus")).toBeDefined();
+    expect(document.querySelector(".damage-sheet-row--rejected")).not.toBeNull();
+  });
+
+  it("月曜直伤展示倍率区分解，并提示倍率区是反应前口径", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const component = (key: string, coefficient: number, damage: number) => ({
+      component_key: key,
+      attribute_key: "stat.atk.total",
+      attribute_value: 2136,
+      original_coefficient: coefficient,
+      final_coefficient: coefficient,
+      damage,
+    });
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: { ...base.damage.summary, formula_key: "damage_formula.lunar_reaction" },
+        audit: {
+          ...base.damage.audit,
+          component_results: [component("attack.main", 1.0, 2136), component("skill", 0.5, 1068)],
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    expect(screen.getByText(/2,136/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
+    expect(screen.getByText(/1,068/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
+    expect(screen.getByText(/倍率区为反应前数值/)).toBeDefined();
+    // 反应前倍率区不与反应后的 base_damage 追加合计：基础伤害只应出现在乘法链上。
+    expect(screen.getAllByText(/12,514/)).toHaveLength(1);
+  });
 });
+
 
 

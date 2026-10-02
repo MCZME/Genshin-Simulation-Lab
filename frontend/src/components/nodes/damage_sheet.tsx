@@ -498,6 +498,131 @@ interface CollectedTerms {
   sum: number;
 }
 
+/** 单条伤害修饰词条 → 抽屉行；面板读取词条渲染为基础值行。 */
+function slotRowFromTerm(term: Record<string, unknown>): SlotRow {
+  const stage = readString(term, "stage") ?? "";
+  const providerKey = readString(term, "provider_key");
+  const provider = readString(term, "provider_display_name") ?? providerKey ?? "未知来源";
+  const comp = readString(term, "component_key");
+  const value = readNumber(term, "value");
+  const panel = isPanelStage(stage);
+  return {
+    label: panel
+      ? panelStageLabel(stage, providerKey, comp)
+      : comp !== null
+        ? `${provider}（${comp}）`
+        : provider,
+    value:
+      value === null
+        ? "—"
+        : panel
+          ? panelValueText(stage, value)
+          : isFlatStage(stage)
+            ? formatNumber(value)
+            : formatSignedPercent(value),
+    base: panel || undefined,
+    title: providerKey ?? undefined,
+  };
+}
+
+/** 复合模式（月曜/星烁）单个参与者组分的账本抽屉。 */
+interface CompositeComponentLedger {
+  id: string;
+  title: string;
+  total: string;
+  rows: SlotRow[];
+}
+
+/** 从槽位三段审计里取合并值；没有该槽位返回 null。 */
+function slotMergedValue(slots: Record<string, unknown>[], slotKey: string): number | null {
+  for (const slot of slots) {
+    if (readString(slot, "slot_key") === slotKey) {
+      return readNumber(slot, "merged");
+    }
+  }
+  return null;
+}
+
+/**
+ * 复合模式的逐参与者组分账本：顶层 `applied_terms` 为空，
+ * 账单落在各组分审计内（决策 D-047）。每个组分列出基础区、乘区、
+ * 组分伤害、权重与该组分自己的词条，使组分内的乘法链可以逐项对账；
+ * 顶层扁平字段只取排名第一的组分，无法代表全部参与者。
+ */
+function compositeComponentLedgers(
+  summary: Record<string, unknown>,
+  resolveRef: (ref: string) => string,
+): CompositeComponentLedger[] {
+  const stellar = readRecord(summary, "stellar_reaction");
+  const lunar = readRecord(summary, "lunar_reaction");
+  const isStellarComposite =
+    stellar !== null && readString(stellar, "mode") === "reaction_composite";
+  const isLunarComposite =
+    lunar !== null &&
+    readString(readRecord(lunar, "reaction") ?? {}, "mode") === "reaction_composite";
+  const components = isStellarComposite
+    ? readRecordList(stellar ?? {}, "components")
+    : isLunarComposite
+      ? readRecordList(lunar ?? {}, "components")
+      : [];
+  if (components.length === 0) {
+    return [];
+  }
+  return components.map((component, index) => {
+    const rawRef = component.participant_ref;
+    const ref =
+      typeof rawRef === "string"
+        ? rawRef
+        : readString(isRecord(rawRef) ? rawRef : {}, "entity_id");
+    const slots = readRecordList(component, "slots");
+    // 星烁组分的擢升只有槽位三段审计，月曜组分直接带乘数。
+    const ascension = isLunarComposite
+      ? readNumber(component, "ascension_multiplier")
+      : (() => {
+          const bonus = slotMergedValue(slots, "stellar_ascension_bonus");
+          return bonus === null ? null : 1 + bonus;
+        })();
+    const rows: SlotRow[] = [];
+    const baseDamage = readNumber(
+      component,
+      isLunarComposite ? "base_damage_after_reaction" : "base_damage",
+    );
+    if (baseDamage !== null) {
+      rows.push({ label: "组分基础区", value: formatDamage(baseDamage), base: true });
+    }
+    const crit = readNumber(component, "crit_multiplier");
+    if (crit !== null && crit !== 1) {
+      rows.push({ label: "暴击乘数", value: formatFactor(crit), base: true });
+    }
+    const resistance = readNumber(component, "resistance_multiplier");
+    if (resistance !== null && resistance !== 1) {
+      rows.push({ label: "抗性乘数", value: formatFactor(resistance), base: true });
+    }
+    if (ascension !== null && ascension !== 1) {
+      rows.push({ label: "擢升乘数", value: formatFactor(ascension), base: true });
+    }
+    const componentDamage = readNumber(component, "component_damage");
+    if (componentDamage !== null) {
+      rows.push({ label: "组分伤害", value: formatDamage(componentDamage), base: true });
+    }
+    const weight = readNumber(component, "weight");
+    if (weight !== null) {
+      rows.push({ label: "权重", value: formatNumber(weight), base: true });
+    }
+    rows.push(
+      ...readRecordList(component, "modifier_terms").map(slotRowFromTerm),
+      ...readRecordList(component, "panel_terms").map(slotRowFromTerm),
+    );
+    const weightedDamage = readNumber(component, "weighted_damage");
+    return {
+      id: `component-${index}`,
+      title: `组分 · ${ref === null ? `${index + 1} 号位` : resolveRef(ref)}`,
+      total: weightedDamage !== null ? formatDamage(weightedDamage) : "—",
+      rows,
+    };
+  });
+}
+
 /** 按阶段（可选按 component）收集生效与被拒词条并汇总生效值。 */
 function collectSlotTerms(
   applied: Record<string, unknown>[],
@@ -508,35 +633,11 @@ function collectSlotTerms(
   const match = (term: Record<string, unknown>) =>
     readString(term, "stage") === stage &&
     (componentKey === null || readString(term, "component_key") === componentKey);
-  const toRow = (term: Record<string, unknown>): SlotRow => {
-    const providerKey = readString(term, "provider_key");
-    const provider = readString(term, "provider_display_name") ?? providerKey ?? "未知来源";
-    const comp = readString(term, "component_key");
-    const value = readNumber(term, "value");
-    const panel = isPanelStage(stage);
-    return {
-      label: panel
-        ? panelStageLabel(stage, providerKey, comp)
-        : comp !== null
-          ? `${provider}（${comp}）`
-          : provider,
-      value:
-        value === null
-          ? "—"
-          : panel
-            ? panelValueText(stage, value)
-            : isFlatStage(stage)
-              ? formatNumber(value)
-              : formatSignedPercent(value),
-      base: panel || undefined,
-      title: providerKey ?? undefined,
-    };
-  };
   const matchedApplied = applied.filter(match);
   const matchedRejected = rejected.filter(match);
   return {
-    rows: matchedApplied.map(toRow),
-    rejectedRows: matchedRejected.map(toRow),
+    rows: matchedApplied.map(slotRowFromTerm),
+    rejectedRows: matchedRejected.map(slotRowFromTerm),
     sum: matchedApplied.reduce(
       (total, term) => total + (readNumber(term, "value") ?? 0),
       0,
@@ -565,10 +666,11 @@ function buildZoneModel(
   segmentId: ChainSegmentId,
   summary: Record<string, unknown>,
   audit: Record<string, unknown> | null,
+  resolveRef: (ref: string) => string,
 ): ZoneDetailModel {
   switch (segmentId) {
     case "base":
-      return buildBaseZone(summary, audit);
+      return buildBaseZone(summary, audit, resolveRef);
     case "bonus":
       return buildBonusZone(summary, audit);
     case "crit":
@@ -589,6 +691,7 @@ function buildZoneModel(
 function buildBaseZone(
   summary: Record<string, unknown>,
   audit: Record<string, unknown> | null,
+  resolveRef: (ref: string) => string,
 ): ZoneDetailModel {
   if (audit === null) {
     return { title: "基础区", lines: [], drawers: [], note: "无审计数据" };
@@ -710,6 +813,11 @@ function buildBaseZone(
     if (drawer !== null) {
       drawers.push(drawer);
     }
+  }
+
+  // 复合模式（月曜/星烁）的顶层账单为空，账本落在各组分审计内（决策 D-047）。
+  for (const ledger of compositeComponentLedgers(summary, resolveRef)) {
+    pushDrawer(drawers, ledger.id, ledger.title, ledger.total, ledger.rows);
   }
 
   // 合计行只在多组件求和或还有加值要加时有信息量；单组件且无加值时组件行结果就是基础伤害。
@@ -890,17 +998,32 @@ function buildCritZone(
   return { title: "暴击区", lines, drawers, note: null };
 }
 
+/** 反应区可渲染的乘数骨架类型：增幅与剧变；其余公式的反应明细不在反应乘区。 */
+function isReactionMultiplierKind(record: Record<string, unknown> | null): boolean {
+  if (record === null) {
+    return false;
+  }
+  const kind = readString(record, "kind");
+  return kind === "amplifying" || kind === "transformative";
+}
+
 function buildReactionZone(
   summary: Record<string, unknown>,
   audit: Record<string, unknown> | null,
 ): ZoneDetailModel {
   const multiplier = readNumber(summary, "reaction_multiplier");
-  const record =
-    audit !== null
-      ? readRecord(audit, "reaction")
-      : isRecord(summary.reaction)
-        ? summary.reaction
-        : null;
+  const auditReaction = audit === null ? null : readRecord(audit, "reaction");
+  const summaryReaction = isRecord(summary.reaction) ? summary.reaction : null;
+  // 反应区只渲染增幅/剧变的乘数骨架。审计反应被激化/月曜/星烁占用时，
+  // 主反应的乘数载荷仍在摘要里，回退到摘要以免整段公式丢失。
+  let record: Record<string, unknown> | null;
+  if (auditReaction === null) {
+    record = audit === null ? summaryReaction : null;
+  } else if (isReactionMultiplierKind(auditReaction)) {
+    record = auditReaction;
+  } else {
+    record = isReactionMultiplierKind(summaryReaction) ? summaryReaction : auditReaction;
+  }
   const kind = record === null ? null : readString(record, "kind");
   const appliedTerms = readRecordList(audit ?? {}, "applied_terms");
   const rejectedTerms = readRecordList(audit ?? {}, "rejected_terms");
@@ -1010,7 +1133,12 @@ function buildReactionZone(
     title: "反应区",
     lines,
     drawers,
-    note: record === null ? "无反应结算明细" : null,
+    note:
+      record === null
+        ? "无反应结算明细"
+        : isReactionMultiplierKind(record)
+          ? null
+          : "该伤害的反应明细不在反应乘区（见基础区与组分账本）",
   };
 }
 
@@ -1306,12 +1434,14 @@ function SegmentDetail({
   segmentId,
   summary,
   audit,
+  resolveRef,
 }: {
   segmentId: ChainSegmentId;
   summary: Record<string, unknown>;
   audit: Record<string, unknown> | null;
+  resolveRef: (ref: string) => string;
 }) {
-  const model = buildZoneModel(segmentId, summary, audit);
+  const model = buildZoneModel(segmentId, summary, audit, resolveRef);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   function toggle(id: string) {
     setCollapsed((current) => {
@@ -1480,6 +1610,7 @@ export function DamageSheet({ event }: { event: EventDetailResponse }) {
   const summary = isRecord(damage.summary) ? damage.summary : {};
   const audit = isRecord(damage.audit) ? damage.audit : null;
   const segments = buildChainSegments(summary);
+  const resolveRef = (ref: string) => resolveEntityName(event, ref) ?? ref;
 
   function toggle(id: ChainSegmentId) {
     setSelectedId((current) => (current === id ? null : id));
@@ -1515,7 +1646,13 @@ export function DamageSheet({ event }: { event: EventDetailResponse }) {
         {selectedId === null ? (
           <div className="analysis-view-state">点击乘区查看明细</div>
         ) : (
-          <SegmentDetail key={selectedId} segmentId={selectedId} summary={summary} audit={audit} />
+          <SegmentDetail
+            key={selectedId}
+            segmentId={selectedId}
+            summary={summary}
+            audit={audit}
+            resolveRef={resolveRef}
+          />
         )}
       </div>
     </div>

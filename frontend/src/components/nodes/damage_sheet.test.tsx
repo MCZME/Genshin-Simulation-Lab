@@ -1174,5 +1174,160 @@ describe("DamageSheet", () => {
     expect(screen.getByText("命之座第6层·星烁擢升")).toBeDefined();
     expect(screen.getByText(/1\.200/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
   });
+
+  it("星烁复合模式按参与者列出组分账本", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: {
+          ...base.damage.summary,
+          formula_key: "damage_formula.stellar_reaction",
+          main_attack_tag: "星扩散风",
+          stellar_reaction: {
+            mode: "reaction_composite",
+            components: [
+              {
+                participant_ref: { kind: "character", entity_id: "character:slot_1" },
+                base_damage: 1000,
+                crit_multiplier: 1.962,
+                resistance_multiplier: 0.9,
+                weight: 0.6,
+                component_damage: 5000,
+                weighted_damage: 3000,
+                slots: [
+                  {
+                    slot_key: "stellar_ascension_bonus",
+                    baseline: 0,
+                    modifier_sum: 0.2,
+                    merged: 0.2,
+                  },
+                ],
+                modifier_terms: [
+                  {
+                    stage: "stellar_base_bonus_add",
+                    value: 0.14,
+                    provider_key: "character.sandrone.stellar_base_bonus",
+                    provider_display_name: "星耀祝礼·唯理为光",
+                  },
+                ],
+                panel_terms: [],
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    expect(
+      screen.getByText("组分 · 芭芭拉", { selector: ".damage-sheet-drawer-title" }),
+    ).toBeDefined();
+    expect(screen.getByText("3,000", { selector: ".damage-sheet-drawer-total" })).toBeDefined();
+    expect(screen.getByText("组分基础区")).toBeDefined();
+    expect(screen.getByText("暴击乘数")).toBeDefined();
+    expect(screen.getByText("抗性乘数")).toBeDefined();
+    // 星烁组分的擢升来自槽位三段审计（baseline 0 + Σ 0.2 → 乘数 1.2）。
+    expect(screen.getByText("擢升乘数")).toBeDefined();
+    expect(screen.getByText("1.200")).toBeDefined();
+    expect(screen.getByText("星耀祝礼·唯理为光")).toBeDefined();
+  });
+
+  it("月曜复合模式按参与者列出组分账本", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: {
+          ...base.damage.summary,
+          formula_key: "damage_formula.lunar_reaction",
+          lunar_reaction: {
+            reaction: {
+              reaction_profile_key:
+                "reaction_profile.lunar_electro_charged.incoming_hydro_on_electro",
+              mode: "reaction_composite",
+            },
+            components: [
+              {
+                participant_ref: "character:slot_1",
+                base_damage_after_reaction: 2000,
+                crit_multiplier: 1.0,
+                resistance_multiplier: 0.9,
+                ascension_multiplier: 1.2,
+                weight: 0.6,
+                component_damage: 4000,
+                weighted_damage: 2400,
+                modifier_terms: [
+                  {
+                    stage: "lunar_base_damage_bonus_add",
+                    value: 0.2,
+                    provider_key: "content.moonsign.blessing",
+                    provider_display_name: "月兆祝赐",
+                  },
+                ],
+                panel_terms: [],
+              },
+            ],
+          },
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    expect(
+      screen.getByText("组分 · 芭芭拉", { selector: ".damage-sheet-drawer-title" }),
+    ).toBeDefined();
+    expect(screen.getByText("2,400", { selector: ".damage-sheet-drawer-total" })).toBeDefined();
+    expect(screen.getByText("2,000")).toBeDefined();
+    // 月曜组分直接携带擢升乘数。
+    expect(screen.getByText("擢升乘数")).toBeDefined();
+    expect(screen.getByText("月兆祝赐")).toBeDefined();
+  });
+
+  it("审计反应被激化占用时回退摘要主反应，反应区不丢公式", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: {
+          ...base.damage.summary,
+          reaction_multiplier: 1.5,
+          reaction: {
+            kind: "amplifying",
+            occurrence_ref: "occurrence:1",
+            reaction_profile_key: "reaction_profile.vaporize.incoming_hydro_on_pyro",
+            base_multiplier: 1.5,
+            elemental_mastery: 0,
+            mastery_bonus: 0,
+            reaction_bonus: 0,
+            multiplier: 1.5,
+          },
+        },
+        audit: {
+          ...base.damage.audit,
+          reaction: {
+            kind: "catalyze",
+            reaction_profile_key: "reaction_profile.aggravate.incoming_electro_on_quicken",
+            reaction_multiplier: 1.0,
+            reaction_bonus: 0.0,
+            base_damage_addition: 500,
+            addition_key: "catalyze.reaction_profile.aggravate.incoming_electro_on_quicken",
+          },
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    clickSegment("反应");
+    expect(screen.getByText("1.5", { selector: ".damage-sheet-formula-text" })).toBeDefined();
+    expect(screen.getByText(/1\.500/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
+  });
 });
+
 

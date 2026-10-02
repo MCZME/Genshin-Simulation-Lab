@@ -103,6 +103,42 @@ function stellarReactionProfileKey(summary: Record<string, unknown>): string | n
   return family === undefined ? null : `reaction_profile.${family}`;
 }
 
+/**
+ * 星烁直伤的基础区括号：base_damage 是
+ * 倍率区 × 星烁基础系数 × (1 + 基础增伤) × (1 + 精通 + 星烁增伤) × 大权区 + 羽毛区，
+ * 不是倍率区合计。各位置取摘要的合并值与槽位三段审计。
+ */
+interface StellarBracket {
+  slots: Record<string, unknown>[];
+  baseMultiplier: number | null;
+  baseBonus: number | null;
+  elementalMastery: number | null;
+  masteryBonus: number | null;
+  reactionBonus: number | null;
+  authority: number | null;
+  feather: number | null;
+  baseDamage: number | null;
+}
+
+/** 直伤星烁的基础区括号；复合模式的括号逐组分不同，返回 null。 */
+function stellarBracket(summary: Record<string, unknown>): StellarBracket | null {
+  const stellar = readRecord(summary, "stellar_reaction");
+  if (stellar === null || readString(stellar, "mode") !== "character_direct") {
+    return null;
+  }
+  return {
+    slots: readRecordList(stellar, "slots"),
+    baseMultiplier: readNumber(stellar, "stellar_base_multiplier"),
+    baseBonus: readNumber(stellar, "stellar_base_bonus"),
+    elementalMastery: readNumber(stellar, "elemental_mastery"),
+    masteryBonus: readNumber(stellar, "mastery_bonus"),
+    reactionBonus: readNumber(stellar, "stellar_bonus"),
+    authority: readNumber(stellar, "stellar_authority_multiplier"),
+    feather: readNumber(stellar, "direct_stellar_feather_addition"),
+    baseDamage: readNumber(stellar, "base_damage"),
+  };
+}
+
 /** 反应显示名：按族映射，未知族回退完整 profile key。 */
 function reactionLabel(profileKey: string | null): string | null {
   if (profileKey === null) {
@@ -390,15 +426,11 @@ interface SpecialtyDrawerSpec {
 }
 
 /**
- * 基础区专属位置：月曜/星烁把基础系数、基础增伤、反应加成、大权区、羽毛区与附加伤害
- * 折进基础区括号值（`base_damage`），因此账单归入基础区抽屉呈现。
+ * 月曜基础区专属位置：月曜把基础伤害提升、反应加成与附加伤害折进基础区括号值
+ * （`base_damage_after_reaction`），因此账单归入基础区抽屉呈现。
+ * 星烁直伤的基础区括号有独立骨架（见 buildBaseZone 的星烁分支），不在此列。
  */
 const BASE_SPECIALTY_DRAWERS: readonly SpecialtyDrawerSpec[] = [
-  { id: "base-stellar-base-multiplier", title: "星烁基础系数", stage: "stellar_base_multiplier_add" },
-  { id: "base-stellar-base-bonus", title: "星烁基础增伤", stage: "stellar_base_bonus_add" },
-  { id: "base-stellar-reaction-bonus", title: "星烁反应加成", stage: "stellar_reaction_bonus_add" },
-  { id: "base-stellar-authority", title: "星烁大权区", stage: "stellar_authority_multiplier_add" },
-  { id: "base-stellar-feather", title: "星烁羽毛区", stage: "stellar_feather_addition_add" },
   { id: "base-lunar-base-bonus", title: "月曜基础伤害提升", stage: "lunar_base_damage_bonus_add" },
   { id: "base-lunar-reaction-bonus", title: "月曜反应加成", stage: "lunar_reaction_bonus_add" },
   { id: "base-lunar-additional", title: "月曜附加基础伤害", stage: "lunar_additional_base_damage_add" },
@@ -426,6 +458,48 @@ function specialtyDrawer(
       : formatSignedPercent(collected.sum),
     rows,
   };
+}
+
+interface StellarSlotSpec {
+  id: string;
+  title: string;
+  slotKey: string;
+  stage: string;
+  /** 中性基线：基线等于它时不显示机制基线行。 */
+  neutral: number;
+  format: (value: number) => string;
+}
+
+/**
+ * 星烁一个基础区位置的抽屉：机制基线行 + 生效/未生效词条，
+ * 抽屉头取槽位三段审计的合并值（没有该槽位时回退词条合计）。
+ */
+function pushStellarSlotDrawer(
+  drawers: SlotDrawerData[],
+  slots: Record<string, unknown>[],
+  applied: Record<string, unknown>[],
+  rejected: Record<string, unknown>[],
+  spec: StellarSlotSpec,
+): void {
+  const slot = slots.find((item) => readString(item, "slot_key") === spec.slotKey);
+  const baseline = slot === undefined ? null : readNumber(slot, "baseline");
+  const merged = slot === undefined ? null : readNumber(slot, "merged");
+  const collected = collectSlotTerms(applied, rejected, spec.stage, null);
+  const hasTerms = collected.rows.length + collected.rejectedRows.length > 0;
+  const rows: SlotRow[] = [];
+  // 乘数型中性基线（1）在有账单时也要显示，否则词条行与抽屉头（合并乘数）对不上；
+  // 加算型中性基线（0）不贡献数值，省略。
+  if (baseline !== null && baseline !== 0 && (baseline !== spec.neutral || hasTerms)) {
+    rows.push({ label: "机制基线", value: spec.format(baseline), base: true });
+  }
+  rows.push(
+    ...collected.rows,
+    ...collected.rejectedRows.map((row) => ({ ...row, rejected: true })),
+  );
+  if (rows.length === 0) {
+    return;
+  }
+  pushDrawer(drawers, spec.id, spec.title, spec.format(merged ?? collected.sum), rows);
 }
 
 /**
@@ -712,11 +786,13 @@ function buildBaseZone(
   const lines: FormulaToken[][] = [];
   const drawers: SlotDrawerData[] = [];
 
+  const stellar = stellarBracket(summary);
   const percentRows: SlotRow[] = [];
   const percentSum = { value: 0 };
   const flatRows: SlotRow[] = [];
   const flatSum = { value: 0 };
   const attributeRows: SlotRow[] = [];
+  let scalingTotal = 0;
 
   for (const [index, component] of components.entries()) {
     const componentKey = readString(component, "component_key") ?? `#${index + 1}`;
@@ -766,8 +842,12 @@ function buildBaseZone(
     }
     const damage = readNumber(component, "damage");
     if (damage !== null) {
-      tokens.push({ kind: "text", text: " =" });
-      tokens.push({ kind: "result", text: ` ${formatDamage(damage)}` });
+      scalingTotal += damage;
+      // 星烁的倍率区只是基础区括号的第一个因子，结果统一落在括号行，组件行不收尾。
+      if (stellar === null) {
+        tokens.push({ kind: "text", text: " =" });
+        tokens.push({ kind: "result", text: ` ${formatDamage(damage)}` });
+      }
     }
     lines.push(tokens);
   }
@@ -781,6 +861,167 @@ function buildBaseZone(
   if (attributeRows.length > 0) {
     // 面板属性值按组件分别有意义，跨组件没有可加总的单一值，抽屉头不显示合计。
     pushDrawer(drawers, "base-attribute", "倍率段属性", "—", attributeRows);
+  }
+
+  // 星烁直伤的 base_damage 是括号值（倍率区 × 基础系数 × 基础增伤 × 精通与增伤区 × 大权区
+  // + 羽毛区），不是倍率区合计。这里把括号补成完整公式：各位置以槽位 + 抽屉呈现，
+  // 否则基础区只会显示倍率区结果，与乘法链上的"基础"段对不上账。
+  if (stellar !== null) {
+    const baseMultiplierTerms = collectSlotTerms(applied, rejected, "stellar_base_multiplier_add", null);
+    const baseBonusTerms = collectSlotTerms(applied, rejected, "stellar_base_bonus_add", null);
+    const reactionBonusTerms = collectSlotTerms(applied, rejected, "stellar_reaction_bonus_add", null);
+    const authorityTerms = collectSlotTerms(applied, rejected, "stellar_authority_multiplier_add", null);
+    const featherTerms = collectSlotTerms(applied, rejected, "stellar_feather_addition_add", null);
+    const panelMastery = collectSlotTerms(applied, rejected, "panel_elemental_mastery", null);
+    const hasTerms = (collected: CollectedTerms) =>
+      collected.rows.length + collected.rejectedRows.length > 0;
+    const slotOrText = (
+      slotId: string,
+      label: string,
+      hasContent: boolean,
+    ): FormulaToken => (hasContent ? slotValue(slotId, label, true) : { kind: "text", text: label });
+
+    const tokens: FormulaToken[] = [];
+    if (stellar.baseMultiplier !== null && stellar.baseMultiplier !== 1) {
+      tokens.push({ kind: "text", text: " × " });
+      tokens.push(
+        slotOrText(
+          "stellar-base-multiplier",
+          formatNumber(stellar.baseMultiplier),
+          hasTerms(baseMultiplierTerms),
+        ),
+      );
+    }
+    if (stellar.baseBonus !== null && stellar.baseBonus !== 0) {
+      tokens.push({ kind: "text", text: " × (1 + " });
+      tokens.push(
+        slotOrText(
+          "stellar-base-bonus",
+          formatPercent(stellar.baseBonus),
+          hasTerms(baseBonusTerms),
+        ),
+      );
+      tokens.push({ kind: "text", text: ")" });
+    }
+    const masteryBonus = stellar.masteryBonus ?? 0;
+    const reactionBonus = stellar.reactionBonus ?? 0;
+    if (masteryBonus !== 0 || reactionBonus !== 0) {
+      tokens.push({ kind: "text", text: " × (1" });
+      if (masteryBonus !== 0) {
+        tokens.push({ kind: "text", text: " + " });
+        tokens.push(
+          slotOrText("stellar-mastery", formatPercent(masteryBonus), hasTerms(panelMastery)),
+        );
+      }
+      if (reactionBonus !== 0) {
+        tokens.push({ kind: "text", text: reactionBonus < 0 ? " − " : " + " });
+        tokens.push(
+          slotOrText(
+            "stellar-reaction-bonus",
+            formatPercent(Math.abs(reactionBonus)),
+            hasTerms(reactionBonusTerms),
+          ),
+        );
+      }
+      tokens.push({ kind: "text", text: ")" });
+    }
+    if (stellar.authority !== null && stellar.authority !== 1) {
+      tokens.push({ kind: "text", text: " × " });
+      tokens.push(
+        slotOrText("stellar-authority", formatNumber(stellar.authority), hasTerms(authorityTerms)),
+      );
+    }
+    if (stellar.feather !== null && stellar.feather !== 0) {
+      tokens.push({ kind: "text", text: " + " });
+      tokens.push(
+        slotOrText("stellar-feather", formatNumber(stellar.feather), hasTerms(featherTerms)),
+      );
+    }
+    if (tokens.length > 0) {
+      if (stellar.baseDamage !== null) {
+        tokens.push({ kind: "result", text: ` = ${formatDamage(stellar.baseDamage)}` });
+      }
+      if (components.length > 1) {
+        // 多组件：倍率区先合计，再从合计继续乘。
+        lines.push([
+          { kind: "text", text: "=" },
+          { kind: "result", text: ` ${formatDamage(scalingTotal)}` },
+          ...tokens,
+        ]);
+      } else if (lines.length > 0) {
+        // 单组件：括号因子直接接在倍率区行尾，基础区保持一条连续公式。
+        lines[lines.length - 1].push(...tokens);
+      } else {
+        const [first, ...rest] = tokens;
+        lines.push(first.kind === "text" && first.text === " × " ? rest : tokens);
+      }
+    }
+
+    pushStellarSlotDrawer(drawers, stellar.slots, applied, rejected, {
+      id: "stellar-base-multiplier",
+      title: "星烁基础系数",
+      slotKey: "stellar_base_multiplier",
+      stage: "stellar_base_multiplier_add",
+      neutral: 1,
+      format: formatNumber,
+    });
+    pushStellarSlotDrawer(drawers, stellar.slots, applied, rejected, {
+      id: "stellar-base-bonus",
+      title: "星烁基础增伤",
+      slotKey: "stellar_base_bonus",
+      stage: "stellar_base_bonus_add",
+      neutral: 0,
+      format: formatSignedPercent,
+    });
+    if (masteryBonus !== 0) {
+      const masteryRows: SlotRow[] = [];
+      if (panelMastery.rows.length > 0) {
+        masteryRows.push(...panelMastery.rows);
+      } else if (stellar.elementalMastery !== null) {
+        masteryRows.push({
+          label: "元素精通",
+          value: formatNumber(stellar.elementalMastery),
+          base: true,
+        });
+      }
+      masteryRows.push({
+        label: "精通加成（由元素精通派生）",
+        value: formatSignedPercent(masteryBonus),
+        base: true,
+      });
+      pushDrawer(
+        drawers,
+        "stellar-mastery",
+        "精通加成",
+        formatSignedPercent(masteryBonus),
+        masteryRows,
+      );
+    }
+    pushStellarSlotDrawer(drawers, stellar.slots, applied, rejected, {
+      id: "stellar-reaction-bonus",
+      title: "星烁增伤",
+      slotKey: "stellar_reaction_bonus",
+      stage: "stellar_reaction_bonus_add",
+      neutral: 0,
+      format: formatSignedPercent,
+    });
+    pushStellarSlotDrawer(drawers, stellar.slots, applied, rejected, {
+      id: "stellar-authority",
+      title: "星烁大权区",
+      slotKey: "stellar_authority_multiplier",
+      stage: "stellar_authority_multiplier_add",
+      neutral: 1,
+      format: formatNumber,
+    });
+    pushStellarSlotDrawer(drawers, stellar.slots, applied, rejected, {
+      id: "stellar-feather",
+      title: "星烁羽毛区",
+      slotKey: "stellar_feather_addition",
+      stage: "stellar_feather_addition_add",
+      neutral: 0,
+      format: formatNumber,
+    });
+    return { title: "基础区", lines, drawers, note: null };
   }
 
   // 固定值加值行：非词条来源的加值（请求固定/激化等）作为基础行，词条加值来自 base_damage_flat_add。

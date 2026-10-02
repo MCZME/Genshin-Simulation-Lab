@@ -1066,7 +1066,7 @@ describe("DamageSheet", () => {
     ).toBe("星烁反应");
   });
 
-  it("基础区展示星烁专属阶段词条抽屉", () => {
+  it("星烁直伤基础区展示完整括号公式与位置抽屉", () => {
     const base = CRIT_GENERAL_EVENT as unknown as {
       damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
     };
@@ -1074,27 +1074,209 @@ describe("DamageSheet", () => {
       ...CRIT_GENERAL_EVENT,
       damage: {
         ...base.damage,
-        summary: { ...base.damage.summary, formula_key: "damage_formula.stellar_reaction" },
+        summary: {
+          ...base.damage.summary,
+          formula_key: "damage_formula.stellar_reaction",
+          base_damage: 6313,
+          stellar_reaction: {
+            mode: "character_direct",
+            base_damage: 6313,
+            stellar_base_multiplier: 1.55,
+            stellar_base_bonus: 0.09,
+            elemental_mastery: 104,
+            mastery_bonus: 0.297,
+            stellar_bonus: 0.48,
+            stellar_authority_multiplier: 1.0,
+            direct_stellar_feather_addition: 0,
+            stellar_ascension_bonus: 0,
+            slots: [
+              { slot_key: "stellar_base_multiplier", baseline: 1.55, modifier_sum: 0, merged: 1.55 },
+              { slot_key: "stellar_base_bonus", baseline: 0, modifier_sum: 0.09, merged: 0.09 },
+              { slot_key: "stellar_reaction_bonus", baseline: 0, modifier_sum: 0.48, merged: 0.48 },
+              { slot_key: "stellar_authority_multiplier", baseline: 1, modifier_sum: 0, merged: 1 },
+              { slot_key: "stellar_feather_addition", baseline: 0, modifier_sum: 0, merged: 0 },
+            ],
+          },
+        },
         audit: {
           ...base.damage.audit,
+          component_results: [
+            {
+              component_key: "ray",
+              attribute_key: "stat.atk.total",
+              attribute_value: 1301,
+              original_coefficient: 1.615,
+              final_coefficient: 1.615,
+              damage: 2101,
+            },
+          ],
           applied_terms: [
             ...(base.damage.audit.applied_terms as Record<string, unknown>[]),
             {
               stage: "stellar_base_bonus_add",
-              value: 0.14,
-              provider_key: "character.sandrone.stellar_base_bonus",
-              provider_display_name: "星耀祝礼·唯理为光",
+              value: 0.09,
+              provider_key: "character.sandrone.passive.p6.stellar_base_bonus",
+              provider_display_name: "星耀祝礼·唯理为光·星烁基础增伤",
+            },
+            {
+              stage: "stellar_reaction_bonus_add",
+              value: 0.48,
+              provider_key: "weapon.a_teaspoon_of_transcendence",
+              provider_display_name: "超越之匙·星超导增伤",
+            },
+            {
+              stage: "panel_elemental_mastery",
+              value: 104,
+              provider_key: "panel.stat.elemental_mastery",
             },
           ],
         },
       },
     } as unknown as EventDetailResponse;
     render(<DamageSheet event={event} />);
+    // 倍率区组件行不收尾，结果统一由括号行给出，避免与链段的"基础"段出现两个数。
+    expect(screen.getByText("攻击力 1,301", { selector: ".damage-sheet-formula-text" })).toBeDefined();
+    expect(screen.getByText("161.5%", { selector: ".damage-sheet-formula-text" })).toBeDefined();
+    expect(screen.queryByText(/2,101/)).toBeNull();
+    // 整个基础区是一条连续公式（倍率区与括号同一行）。
+    expect(document.querySelectorAll(".damage-sheet-formula")).toHaveLength(1);
+    expect(document.querySelector(".damage-sheet-formula")?.textContent).toBe(
+      "攻击力 1,301 × 161.5% × 1.55 × (1 + 9.0%) × (1 + 29.7% + 48.0%) = 6,313",
+    );
+    expect(screen.getByText("1.55", { selector: ".damage-sheet-formula-text" })).toBeDefined();
+    expect(screen.getByText("9.0%", { selector: ".damage-sheet-slot" })).toBeDefined();
+    expect(screen.getByText("29.7%", { selector: ".damage-sheet-slot" })).toBeDefined();
+    expect(screen.getByText("48.0%", { selector: ".damage-sheet-slot" })).toBeDefined();
+    expect(screen.getByText(/6,313/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
+    expect(
+      screen.getByText("星烁基础系数", { selector: ".damage-sheet-drawer-title" }),
+    ).toBeDefined();
     expect(
       screen.getByText("星烁基础增伤", { selector: ".damage-sheet-drawer-title" }),
     ).toBeDefined();
-    expect(screen.getByText("+14.0%", { selector: ".damage-sheet-drawer-total" })).toBeDefined();
-    expect(screen.getByText("星耀祝礼·唯理为光")).toBeDefined();
+    expect(screen.getByText("+9.0%", { selector: ".damage-sheet-drawer-total" })).toBeDefined();
+    expect(screen.getByText("星烁增伤", { selector: ".damage-sheet-drawer-title" })).toBeDefined();
+    expect(screen.getByText("+48.0%", { selector: ".damage-sheet-drawer-total" })).toBeDefined();
+    // 精通加成抽屉的基础行直接来自面板读取词条。
+    expect(screen.getByText("精通加成", { selector: ".damage-sheet-drawer-title" })).toBeDefined();
+    expect(screen.getByText("元素精通", { selector: ".damage-sheet-row-label" })).toBeDefined();
+    // 大权区与羽毛区的中性基线不渲染假槽位与假抽屉。
+    expect(screen.queryByText("星烁大权区")).toBeNull();
+    expect(screen.queryByText("星烁羽毛区")).toBeNull();
+  });
+
+  it("星烁大权区作为基础区括号内的槽位呈现", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: {
+          ...base.damage.summary,
+          formula_key: "damage_formula.stellar_reaction",
+          base_damage: 8207,
+          stellar_reaction: {
+            mode: "character_direct",
+            base_damage: 8207,
+            stellar_base_multiplier: 1.55,
+            stellar_base_bonus: 0,
+            elemental_mastery: 0,
+            mastery_bonus: 0,
+            stellar_bonus: 0,
+            stellar_authority_multiplier: 1.3,
+            direct_stellar_feather_addition: 0,
+            stellar_ascension_bonus: 0,
+            slots: [
+              { slot_key: "stellar_base_multiplier", baseline: 1.55, modifier_sum: 0, merged: 1.55 },
+              { slot_key: "stellar_base_bonus", baseline: 0, modifier_sum: 0, merged: 0 },
+              { slot_key: "stellar_reaction_bonus", baseline: 0, modifier_sum: 0, merged: 0 },
+              { slot_key: "stellar_authority_multiplier", baseline: 1, modifier_sum: 0.3, merged: 1.3 },
+              { slot_key: "stellar_feather_addition", baseline: 0, modifier_sum: 0, merged: 0 },
+            ],
+          },
+        },
+        audit: {
+          ...base.damage.audit,
+          component_results: [
+            {
+              component_key: "ray",
+              attribute_key: "stat.atk.total",
+              attribute_value: 1301,
+              original_coefficient: 1.615,
+              final_coefficient: 1.615,
+              damage: 2101,
+            },
+          ],
+          applied_terms: [
+            ...(base.damage.audit.applied_terms as Record<string, unknown>[]),
+            {
+              stage: "stellar_authority_multiplier_add",
+              value: 0.3,
+              provider_key: "character.sandrone.constellation.c4",
+              provider_display_name: "命之座第4层·棱晶弹强化",
+            },
+          ],
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    expect(screen.getByText("1.3", { selector: ".damage-sheet-slot" })).toBeDefined();
+    expect(
+      screen.getByText("星烁大权区", { selector: ".damage-sheet-drawer-title" }),
+    ).toBeDefined();
+    expect(screen.getByText("1.3", { selector: ".damage-sheet-drawer-total" })).toBeDefined();
+    expect(screen.getByText("命之座第4层·棱晶弹强化")).toBeDefined();
+    expect(screen.getByText(/8,207/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
+  });
+
+  it("星烁多组件时倍率区先合计再进括号", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const component = (key: string, damage: number) => ({
+      component_key: key,
+      attribute_key: "stat.atk.total",
+      attribute_value: damage,
+      original_coefficient: 1,
+      final_coefficient: 1,
+      damage,
+    });
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: {
+          ...base.damage.summary,
+          formula_key: "damage_formula.stellar_reaction",
+          base_damage: 4500,
+          stellar_reaction: {
+            mode: "character_direct",
+            base_damage: 4500,
+            stellar_base_multiplier: 1.5,
+            stellar_base_bonus: 0,
+            elemental_mastery: 0,
+            mastery_bonus: 0,
+            stellar_bonus: 0,
+            stellar_authority_multiplier: 1,
+            direct_stellar_feather_addition: 0,
+            stellar_ascension_bonus: 0,
+            slots: [
+              { slot_key: "stellar_base_multiplier", baseline: 1.5, modifier_sum: 0, merged: 1.5 },
+            ],
+          },
+        },
+        audit: {
+          ...base.damage.audit,
+          component_results: [component("a", 2000), component("b", 1000)],
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    expect(screen.getByText("3,000", { selector: ".damage-sheet-formula-result" })).toBeDefined();
+    expect(screen.getByText(/4,500/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
+    expect(screen.queryByText(/2,000/, { selector: ".damage-sheet-formula-result" })).toBeNull();
   });
 
   it("剧变反应区把专属阶段计入反应加成并生成槽位与抽屉", () => {

@@ -15,12 +15,14 @@ from genshin_sim.core.space.geometry import (
     CircleSectorArea,
     ImpactAreaSpec,
     OrientedBoxArea,
+    RayQuery,
     Vector3,
 )
 from genshin_sim.core.space.mutations import SpaceEntityCommitReceipt, SpaceEntityMutationPlan
 from genshin_sim.core.space.snapshots import SpaceSnapshot
 from genshin_sim.core.space.space import (
     ACTIVE_CHARACTER_ENTITY_ID,
+    RayHit,
     Space,
     SpaceEntityMutationPlanner,
 )
@@ -38,6 +40,8 @@ __all__ = [
     "CollisionBox",
     "ImpactAreaSpec",
     "OrientedBoxArea",
+    "RayHit",
+    "RayQuery",
     "Space",
     "SpaceEntityCommitReceipt",
     "SpaceEntityMutationPlan",

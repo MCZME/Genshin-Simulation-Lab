@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from math import hypot
 from typing import Any, cast
 
 import pytest
@@ -10,6 +11,9 @@ from genshin_sim.core.space import (
     CircleArea,
     CollisionBox,
     ImpactAreaSpec,
+    OrientedBoxArea,
+    RayHit,
+    RayQuery,
     Space,
     SpaceEntityMutationPlan,
     SpaceEntityPlanConflictError,
@@ -79,6 +83,87 @@ def test_impact_area_spec_rejects_invalid_box_dimensions():
         ImpactAreaSpec(shape="攻击盒", radius=0.0, length=4.3, width=-1.0)
     with pytest.raises(ValueError, match="length 与 width 必须为正数"):
         ImpactAreaSpec(shape="攻击盒", radius=0.0)
+
+
+def test_impact_area_spec_resolve_projects_sphere_to_circle_at_anchor():
+    spec = ImpactAreaSpec(shape="球", radius=2.5)
+
+    area = spec.resolve(Vector3(1, 7, 3), Vector3(0, 0, 1))
+
+    assert area == CircleArea(center=Vector3(1, 7, 3), radius=2.5)
+
+
+def test_impact_area_spec_resolve_keeps_local_y_offset_without_rotating_it():
+    spec = ImpactAreaSpec(shape="圆柱", radius=1.0, local_offset_xz=Vector3(0, 4.5, 3))
+
+    area = spec.resolve(Vector3(0, 1, 0), Vector3(0, 0, 1))
+
+    assert area == CircleArea(center=Vector3(0, 5.5, 3), radius=1.0)
+
+
+def test_impact_area_spec_resolve_rotates_local_offset_into_attack_frame():
+    # 攻击方向 +X：本地 forward(+z) 映射到世界 +x，本地 right(+x) 映射到世界 +z。
+    spec = ImpactAreaSpec(shape="球", radius=1.0, local_offset_xz=Vector3(1, 0, 2))
+
+    area = spec.resolve(Vector3(), Vector3(1, 0, 0))
+
+    assert area == CircleArea(center=Vector3(2, 0, 1), radius=1.0)
+
+
+def test_impact_area_spec_resolve_normalizes_xz_attack_direction_for_box():
+    spec = ImpactAreaSpec(shape="攻击盒", radius=0.0, length=4.0, width=2.0)
+
+    area = spec.resolve(Vector3(1, 0, 2), Vector3(0, 5, 30))
+
+    assert area == OrientedBoxArea(
+        center=Vector3(1, 0, 2),
+        facing=Vector3(0.0, 0.0, 1.0),
+        length=4.0,
+        width=2.0,
+    )
+
+
+def test_impact_area_spec_resolved_box_contains_inside_length_and_width():
+    spec = ImpactAreaSpec(shape="攻击盒", radius=0.0, length=4.0, width=2.0)
+
+    area = spec.resolve(Vector3(), Vector3(0, 0, 1))
+
+    assert isinstance(area, OrientedBoxArea)
+    assert area.contains(Vector3(0, 0, 1.9))
+    assert area.contains(Vector3(0.9, 0, 0))
+    assert not area.contains(Vector3(0, 0, 2.1))
+    assert not area.contains(Vector3(1.1, 0, 0))
+
+
+def test_impact_area_spec_resolve_rejects_zero_direction_and_unknown_shape():
+    with pytest.raises(ValueError, match="不能为零向量"):
+        ImpactAreaSpec(shape="球", radius=1.0).resolve(Vector3(), Vector3(0, 3, 0))
+    with pytest.raises(ValueError, match="未支持的伤害 AOE 形状"):
+        ImpactAreaSpec(shape="锥", radius=1.0).resolve(Vector3(), Vector3(0, 0, 1))
+
+
+def test_oriented_box_area_along_ray_spans_forward_from_origin():
+    area = OrientedBoxArea.along_ray(Vector3(0, 3, 0), Vector3(0, 0, 1), length=12, width=1)
+
+    assert area == OrientedBoxArea(
+        center=Vector3(0, 3, 6),
+        facing=Vector3(0.0, 0.0, 1.0),
+        length=12,
+        width=1,
+    )
+    assert area.contains(Vector3(0, 0, 0))
+    assert area.contains(Vector3(0, 0, 12))
+    assert not area.contains(Vector3(0, 0, 12.1))
+    assert not area.contains(Vector3(0, 0, -0.1))
+
+
+def test_oriented_box_area_along_ray_normalizes_xz_direction_and_rejects_zero():
+    area = OrientedBoxArea.along_ray(Vector3(), Vector3(3, 9, 4), length=10, width=2)
+
+    assert area.facing == Vector3(0.6, 0.0, 0.8)
+
+    with pytest.raises(ValueError, match="不能为零向量"):
+        OrientedBoxArea.along_ray(Vector3(), Vector3(0, 5, 0), length=10, width=2)
 
 
 def test_collision_box_defaults_to_cylinder_radius_half_height_one():
@@ -346,3 +431,196 @@ def test_space_runtime_apply_displacement_updates_position_only():
     assert runtime.apply_displacement("missing", Vector3(0, 0, 0)) is None
     with pytest.raises(TypeError, match="Vector3"):
         runtime.apply_displacement("target:target_1", cast(Any, (4, 5, 6)))
+
+
+def _target(
+    entity_id: str,
+    position: Vector3,
+    *,
+    radius: float = 0.5,
+    lifecycle: EntityLifecycle | None = None,
+    kind: SpatialEntityKind = SpatialEntityKind.TARGET,
+) -> SpatialEntity:
+    return SpatialEntity(
+        entity_id,
+        kind,
+        position=position,
+        lifecycle=lifecycle or EntityLifecycle(),
+        collision_box=CollisionBox(radius=radius),
+    )
+
+
+def test_ray_query_normalizes_xz_direction_and_ignores_y():
+    query = RayQuery(origin=Vector3(1, 99, 2), direction=Vector3(3, 7, 4), max_distance=12)
+
+    assert query.direction == Vector3(0.6, 0.0, 0.8)
+    assert query.origin == Vector3(1, 99, 2)
+    assert query.max_distance == 12
+    assert RayQuery(origin=Vector3(), direction=Vector3(0, 0, -5)).direction == Vector3(0, 0, -1)
+
+
+def test_ray_query_rejects_zero_xz_direction_and_invalid_arguments():
+    with pytest.raises(ValueError, match="不能为零向量"):
+        RayQuery(origin=Vector3(), direction=Vector3(0, 5, 0))
+    with pytest.raises(ValueError, match="max_distance 必须为 None 或非负数"):
+        RayQuery(origin=Vector3(), direction=Vector3(0, 0, 1), max_distance=-1)
+    with pytest.raises(ValueError, match="origin 必须是 Vector3"):
+        RayQuery(origin=cast(Any, (0, 0, 0)), direction=Vector3(0, 0, 1))
+
+
+def test_space_ray_hits_can_be_queried_without_max_distance():
+    distant = _target("target:1", Vector3(0, 0, 30))
+    space = Space([distant])
+
+    hits = space.ray_hits(RayQuery(origin=Vector3(), direction=Vector3(0, 0, 1)))
+
+    assert hits == (RayHit(entity=distant, forward=30.0, distance=30.0),)
+
+
+def test_space_ray_hits_uses_each_entity_collision_radius_not_center_point():
+    narrow = _target("target:narrow", Vector3(0.4, 0, 4), radius=0.2)
+    wide = _target("target:wide", Vector3(0.4, 0, 4), radius=0.5)
+    space = Space([narrow, wide])
+
+    hits = space.ray_hits(RayQuery(origin=Vector3(), direction=Vector3(0, 0, 1)))
+
+    assert tuple(hit.entity for hit in hits) == (wide,)
+    assert hits[0].forward == 4.0
+    assert hits[0].distance == pytest.approx(hypot(0.4, 4.0))
+
+
+def test_space_ray_hits_includes_exact_radius_boundary_and_excludes_wider_offset():
+    on_axis = _target("target:on_axis", Vector3(0, 0, 3), radius=0.0)
+    off_axis = _target("target:off_axis", Vector3(0.1, 0, 3), radius=0.0)
+    space = Space([on_axis, off_axis])
+
+    hits = space.ray_hits(RayQuery(origin=Vector3(), direction=Vector3(0, 0, 1)))
+
+    assert tuple(hit.entity for hit in hits) == (on_axis,)
+
+
+def test_space_ray_hits_ignores_entities_behind_or_on_origin_plane():
+    space = Space(
+        [
+            _target("target:behind", Vector3(0, 0, -3)),
+            _target("target:on_origin", Vector3()),
+            _target("target:ahead", Vector3(0, 0, 2)),
+        ]
+    )
+
+    hits = space.ray_hits(RayQuery(origin=Vector3(), direction=Vector3(0, 0, 1)))
+
+    assert tuple(hit.entity.entity_id for hit in hits) == ("target:ahead",)
+
+
+def test_space_ray_hits_measures_lateral_offset_orthogonal_to_diagonal_ray():
+    on_axis = _target("target:on_axis", Vector3(5, 0, 5), radius=0.0)
+    off_axis = _target("target:off_axis", Vector3(5, 0, 6), radius=0.5)
+    space = Space([on_axis, off_axis])
+
+    hits = space.ray_hits(RayQuery(origin=Vector3(), direction=Vector3(1, 0, 1)))
+
+    assert tuple(hit.entity for hit in hits) == (on_axis,)
+
+
+def test_space_ray_hits_sorts_by_forward_and_keeps_registration_order_on_ties():
+    far = _target("target:far", Vector3(0, 0, 5))
+    tie_first = _target("target:tie_first", Vector3(0, 0, 3))
+    tie_second = _target("target:tie_second", Vector3(-0.2, 0, 3))
+    near = _target("target:near", Vector3(0, 0, 1))
+    space = Space([far, tie_first, tie_second, near])
+    query = RayQuery(origin=Vector3(), direction=Vector3(0, 0, 1))
+
+    assert tuple(hit.entity for hit in space.ray_hits(query)) == (
+        near,
+        tie_first,
+        tie_second,
+        far,
+    )
+
+    first = space.first_ray_hit(query)
+
+    assert first is not None
+    assert first.entity is near
+
+
+def test_space_first_ray_hit_returns_none_when_nothing_is_hit():
+    space = Space([_target("target:behind", Vector3(0, 0, -1))])
+
+    assert space.first_ray_hit(RayQuery(origin=Vector3(), direction=Vector3(0, 0, 1))) is None
+
+
+def test_space_ray_hits_applies_inclusive_max_distance():
+    inside = _target("target:inside", Vector3(0, 0, 4))
+    outside = _target("target:outside", Vector3(0, 0, 4.5))
+    space = Space([inside, outside])
+
+    limited = RayQuery(origin=Vector3(), direction=Vector3(0, 0, 1), max_distance=4)
+
+    assert tuple(hit.entity for hit in space.ray_hits(limited)) == (inside,)
+    assert tuple(
+        hit.entity for hit in space.ray_hits(RayQuery(origin=Vector3(), direction=Vector3(0, 0, 1)))
+    ) == (inside, outside)
+
+
+def test_space_ray_hits_filters_by_kind_lifecycle_and_exclusions():
+    ctx = SimulationContext()
+    expired = _target(
+        "target:expired",
+        Vector3(0, 0, 1),
+        lifecycle=EntityLifecycle(created_frame=1, expires_at_frame=3),
+    )
+    created = _target(
+        "created_object:foo:1",
+        Vector3(0, 0, 2),
+        kind=SpatialEntityKind.CREATED_OBJECT,
+    )
+    excluded = _target("target:excluded", Vector3(0, 0, 3))
+    kept = _target("target:kept", Vector3(0, 0, 4))
+    space = Space([expired, created, excluded, kept])
+    space.update_frame(ctx, frame=3)
+    query = RayQuery(origin=Vector3(), direction=Vector3(0, 0, 1))
+
+    assert tuple(hit.entity for hit in space.ray_hits(query, kinds={SpatialEntityKind.TARGET})) == (
+        excluded,
+        kept,
+    )
+    assert tuple(
+        hit.entity
+        for hit in space.ray_hits(
+            query,
+            kinds={SpatialEntityKind.TARGET},
+            exclude_entity_ids=("target:excluded",),
+        )
+    ) == (kept,)
+    assert tuple(hit.entity for hit in space.ray_hits(query)) == (created, excluded, kept)
+
+
+def test_space_ray_hits_rejects_non_ray_query():
+    space = Space([_target("target:1", Vector3(0, 0, 1))])
+
+    with pytest.raises(TypeError, match="必须是 RayQuery"):
+        space.ray_hits(cast(Any, CircleArea(center=Vector3(), radius=1)))
+
+
+def test_space_runtime_delegates_ray_queries():
+    runtime = SpaceRuntime(
+        space=Space(
+            [
+                _target("target:far", Vector3(0, 0, 6)),
+                _target("target:near", Vector3(0, 0, 2)),
+            ]
+        ),
+        team_state=_team_state(),
+    )
+    query = RayQuery(origin=Vector3(), direction=Vector3(0, 0, 1), max_distance=5)
+
+    hits = runtime.ray_hits(query, kinds={SpatialEntityKind.TARGET})
+
+    assert tuple(hit.entity.entity_id for hit in hits) == ("target:near",)
+
+    first = runtime.first_ray_hit(query)
+
+    assert first is not None
+    assert first.entity.entity_id == "target:near"
+    assert runtime.first_ray_hit(RayQuery(origin=Vector3(), direction=Vector3(0, 0, -1))) is None

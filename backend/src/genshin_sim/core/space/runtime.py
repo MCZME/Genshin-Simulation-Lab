@@ -9,9 +9,15 @@ from genshin_sim.core.protocols import FrameUpdatable
 from genshin_sim.core.simulation.team import TeamRuntimeState
 from genshin_sim.core.space.created_objects import CreatedObjectRuntime
 from genshin_sim.core.space.entities import SpatialEntity, SpatialEntityKind
-from genshin_sim.core.space.geometry import CircleArea, CircleSectorArea, OrientedBoxArea, Vector3
+from genshin_sim.core.space.geometry import (
+    CircleArea,
+    CircleSectorArea,
+    OrientedBoxArea,
+    RayQuery,
+    Vector3,
+)
 from genshin_sim.core.space.snapshots import SpaceSnapshot
-from genshin_sim.core.space.space import Space
+from genshin_sim.core.space.space import RayHit, Space
 
 
 class SpaceRuntime(FrameUpdatable):
@@ -89,6 +95,32 @@ class SpaceRuntime(FrameUpdatable):
     ) -> tuple[SpatialEntity, ...]:
         return self.space.entities_in_area(
             area,
+            kinds=kinds,
+            exclude_entity_ids=exclude_entity_ids,
+        )
+
+    def ray_hits(
+        self,
+        query: RayQuery,
+        *,
+        kinds: Iterable[SpatialEntityKind] | None = None,
+        exclude_entity_ids: Iterable[str] = (),
+    ) -> tuple[RayHit, ...]:
+        return self.space.ray_hits(
+            query,
+            kinds=kinds,
+            exclude_entity_ids=exclude_entity_ids,
+        )
+
+    def first_ray_hit(
+        self,
+        query: RayQuery,
+        *,
+        kinds: Iterable[SpatialEntityKind] | None = None,
+        exclude_entity_ids: Iterable[str] = (),
+    ) -> RayHit | None:
+        return self.space.first_ray_hit(
+            query,
             kinds=kinds,
             exclude_entity_ids=exclude_entity_ids,
         )

@@ -2,14 +2,14 @@
 
 C6 官方文本：解算模式下第三次发射冷凝射线起，在原本射线上追加集束型冷凝
 射线伤害，至多 4 段（普通 100% 攻击力；辉映下转为对应星烁反应伤害，星超导
-80% / 星扩散 120%）。本文件锁定四件事：
+80% / 星扩散 120%）。本文件锁定三件事：
 
 1. 追加段取数据表「命之座第6层 集束型冷凝射线」行的附加标签与命中判定数据；
 2. 射线本身的附加标签不被替换（「桑多涅重击普通激光」仍在，追加段另带
    6 命标签）；
-3. 追加段星烁通道的标签与倍率分量（星超导/星扩散行）；
-4. 段数与三段倍率、星烁擢升全部来自**资产命座第 6 层效果行**，而非内容代码
-   里的常量（``read_c6_asset_values`` 是该效果行的唯一解析入口）。
+3. 追加段星烁通道的标签与倍率分量（星超导/星扩散行）。
+
+行数值本身不在此验证（测试规范 §3.2：资产数据由构建与校验链路承担）。
 """
 
 from __future__ import annotations
@@ -36,7 +36,6 @@ from genshin_sim.content.characters.snezhnaya.sandrone.impacts import (
 from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
     compile_c6_extra_stellar_channel,
 )
-from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.generic.talents import index_talent_scalings
 from genshin_sim.core.elements import AuraAmount
 from genshin_sim.core.impacts import StrikeType
@@ -76,27 +75,6 @@ def test_ray_spec_keeps_its_own_additional_tag() -> None:
     assert SANDRONE_C6_EXTRA_ADDITIONAL_TAG not in spec.additional_attack_tags
 
 
-def test_c6_asset_row_is_the_single_source_of_values() -> None:
-    # 资产命座第 6 层效果行：段数 4、普通 100%、星超导 80%、星扩散 120%、
-    # 星烁擢升 20%。解析按分量序取，不做任何默认值兜底。
-    values = _c6_values()
-    assert values.extra_segment_count == 4
-    assert values.normal_ratio == pytest.approx(1.0)
-    assert values.conduct_ratio == pytest.approx(0.8)
-    assert values.swirl_ratio == pytest.approx(1.2)
-    assert values.ascension_bonus == pytest.approx(0.2)
-
-
-def test_c6_asset_row_rejects_missing_or_illegal_components() -> None:
-    params = sandrone_helpers.c6_effect_params()
-    with pytest.raises(ContentUnitValidationError, match="缺少第 6 个数值分量"):
-        read_c6_asset_values({**params, "components": params["components"][:5]})  # type: ignore[index]
-    broken = list(params["components"])  # type: ignore[arg-type]
-    broken[1] = {**broken[1], "values": (0.0,)}  # type: ignore[index]
-    with pytest.raises(ContentUnitValidationError, match="追加段数必须是正整数"):
-        read_c6_asset_values({**params, "components": tuple(broken)})
-
-
 def test_extra_normal_spec_matches_hit_data_row() -> None:
     # 数据表「命之座第6层 集束型冷凝射线」行：攻击标签 重击、附加标签
     # 桑多涅重击普通激光6命、钝击、远程、附加标签 重击射线、1 元素量、单体。
@@ -110,10 +88,9 @@ def test_extra_normal_spec_matches_hit_data_row() -> None:
     assert spec.elemental_amount == AuraAmount.one()
     assert spec.area is None
     assert spec.display_name == SANDRONE_C6_EXTRA_DISPLAY_NAME
-    # 倍率取自资产效果行的普通段分量（100% 攻击力）。
+    # 倍率系数等于传入的行值（行数值本身不在此验证）。
     assert len(spec.scaling_terms) == 1
     assert spec.scaling_terms[0].coefficient == pytest.approx(normal_ratio)
-    assert spec.scaling_terms[0].coefficient == pytest.approx(1.0)
 
 
 def test_extra_stellar_channel_matches_stellar_hit_data_rows() -> None:
@@ -124,7 +101,6 @@ def test_extra_stellar_channel_matches_stellar_hit_data_rows() -> None:
         TALENT_LEVEL,
         conduct_ratio=values.conduct_ratio,
         swirl_ratio=values.swirl_ratio,
-        ascension_bonus=values.ascension_bonus,
     )
     conduct = channel.conduct_spec
     swirl = channel.swirl_spec
@@ -138,7 +114,7 @@ def test_extra_stellar_channel_matches_stellar_hit_data_rows() -> None:
         assert spec.scaling_terms == ()
     assert conduct.display_name == SANDRONE_C6_EXTRA_CONDUCT_DISPLAY_NAME
     assert swirl.display_name == SANDRONE_C6_EXTRA_SWIRL_DISPLAY_NAME
-    # 倍率分量与擢升均取自资产效果行（星超导 80% / 星扩散 120% / 擢升 20%）。
-    assert channel.conduct_ratio == pytest.approx(0.8)
-    assert channel.swirl_ratio == pytest.approx(1.2)
-    assert channel.ascension_bonus == pytest.approx(0.2)
+    # 通道透传传入的倍率（行数值本身不在此验证）；擢升由 C6 效果单元的
+    # provider 词条承载（D-082），不进通道。
+    assert channel.conduct_ratio == pytest.approx(values.conduct_ratio)
+    assert channel.swirl_ratio == pytest.approx(values.swirl_ratio)

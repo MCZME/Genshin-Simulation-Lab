@@ -6,13 +6,13 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from pathlib import Path
 
 from genshin_sim.assets.models import EffectPayload, TalentScalingEntry
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_RAY_FIRST_OFFSET_FRAMES,
     FAGEOU_RAY_INTERVAL_FRAMES,
-    SANDRONE_ASSET_KEY,
     SANDRONE_CHARACTER_HANDLER_KEY,
     SANDRONE_CONSTELLATION_C1_HANDLER_KEY,
     SANDRONE_CONSTELLATION_C2_HANDLER_KEY,
@@ -23,8 +23,8 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_PASSIVE_P4_HANDLER_KEY,
     SANDRONE_PASSIVE_P5_HANDLER_KEY,
     SANDRONE_PASSIVE_P6_HANDLER_KEY,
+    sandrone_tactics_definition_key,
 )
-from genshin_sim.content.state_container import resolve_mount
 from genshin_sim.core.attributes import (
     STAT_ATK_TOTAL,
     AttributeQuery,
@@ -51,7 +51,11 @@ from genshin_sim.infrastructure.assets_sqlite import (
     SQLiteAssetDataWriter,
 )
 
-SANDRONE_CHARACTER_KEY = SANDRONE_ASSET_KEY
+# 合成资产库的角色身份键：格式满足资产模型（``character:<source_id>``）的
+# 任意合成标识，不代表任何真实资产——测试不读取真实资产库，内容代码也不消费
+# asset_key（身份判断一律按 handler_key）。characters 行、等级行、效果行与
+# 效果键组合共用此键，保持夹具内部一致。
+SANDRONE_CHARACTER_KEY = "character:sandrone_test"
 SANDRONE_REF = AttributeSubjectRef.character("character:slot_1")
 
 
@@ -64,27 +68,17 @@ def c6_effect_params() -> dict[str, object]:
     raise AssertionError("合成效果行缺少命座第 6 层")
 
 
-def character_effect_params() -> dict[str, dict[str, object]]:
-    """合成资产中桑多涅全部效果行的 params，按 unlock_key 索引。"""
+def write_sandrone_asset_database(
+    db_path: Path,
+    *,
+    scaling_ratio_overrides: Mapping[str, float] | None = None,
+) -> Path:
+    """写入桑多涅单人最小合成资产库（倍率数值默认全部为 1.0）。
 
-    return {
-        str(payload.unlock_key): dict(payload.params)
-        for payload in _minimal_sandrone_effect_payloads()
-        if payload.unlock_key is not None
-    }
-
-
-def p4_effect_params() -> dict[str, object]:
-    """合成资产「被动第 4 层」效果行的 params（与资产库写入同一份数据）。"""
-
-    for payload in _minimal_sandrone_effect_payloads():
-        if payload.unlock_key == "passive:4":
-            return dict(payload.params)
-    raise AssertionError("合成效果行缺少被动第 4 层")
-
-
-def write_sandrone_asset_database(db_path: Path) -> Path:
-    """写入桑多涅单人最小合成资产库（倍率数值全部为 1.0）。"""
+    ``scaling_ratio_overrides`` 按倍率条目 key 覆盖合成倍率：默认全 1.0 时
+    「倍率区相加」与「倍率区相乘」在数值上不可区分，需要区分口径的用例必须
+    给出非 1.0 的倍率。
+    """
 
     from genshin_sim.assets.models import CharacterAsset, CharacterLevelStats
 
@@ -111,17 +105,6 @@ def write_sandrone_asset_database(db_path: Path) -> Path:
             ascension_stat="crit_rate",
             ascension_value=0.0,
         ),
-        # 20 级突破前的行：供突破门槛（P4=1、P5=4）锁定路径的测试使用。
-        CharacterLevelStats(
-            character_key=SANDRONE_CHARACTER_KEY,
-            level=19,
-            ascension_phase=0,
-            base_hp=10_000.0,
-            base_atk=200.0,
-            base_def=600.0,
-            ascension_stat="crit_rate",
-            ascension_value=0.0,
-        ),
     )
     return SQLiteAssetDataWriter(db_path).replace_all(
         meta={
@@ -136,7 +119,7 @@ def write_sandrone_asset_database(db_path: Path) -> Path:
         character_level_stats=character_level_stats,
         weapons=(),
         weapon_level_stats=(),
-        talent_scalings=minimal_sandrone_scaling_entries(),
+        talent_scalings=minimal_sandrone_scaling_entries(ratio_overrides=scaling_ratio_overrides),
         effect_payloads=_minimal_sandrone_effect_payloads(),
     )
 
@@ -180,8 +163,9 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
         )
 
     return (
-        # P4/P6 的数值行为在角色单元内：P4 行按位置读取数值，分量形状须与
-        # 真实资产一致（含前导链接分量），否则解析错位。
+        # P4/P6 的数值行为在角色单元内，均按位置读取数值，分量形状须与真实
+        # 资产一致，否则解析错位：P4 前导为链接分量；P6 前两位为链接（极星
+        # 辉域）与持续秒数，其后才是每 100 攻击 / 0.7% / 14%。
         _effect(
             "passive:4",
             "passive",
@@ -203,7 +187,7 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
             "passive",
             SANDRONE_PASSIVE_P6_HANDLER_KEY,
             "passive:6",
-            (100.0, 0.007, 0.14, 11330003.0),
+            (11330003.0, 8.0, 100.0, 0.007, 0.14),
             name="合成天赋6",
         ),
         _effect(
@@ -259,12 +243,19 @@ def _minimal_sandrone_effect_payloads() -> tuple[EffectPayload, ...]:
     )
 
 
-def minimal_sandrone_scaling_entries() -> tuple[TalentScalingEntry, ...]:
+def minimal_sandrone_scaling_entries(
+    *,
+    ratio_overrides: Mapping[str, float] | None = None,
+) -> tuple[TalentScalingEntry, ...]:
     """返回桑多涅 content 工厂接线所需的最小倍率行。
 
     所有数值取 1.0，只保证倍率条目结构（label、分量数与等级区间）满足
-    工厂编译；落地冲击条目需要低空/高空两个分量。
+    工厂编译；落地冲击条目需要低空/高空两个分量。``ratio_overrides`` 按
+    ``entry_key`` 覆盖指定条目的合成倍率（默认全 1.0 会让倍率区的相加与
+    相乘口径不可区分）。
     """
+
+    overrides = dict(ratio_overrides or {})
 
     specs = (
         ("na_1", "normal_attack", "一段伤害", ("plain_ratio",)),
@@ -305,7 +296,7 @@ def minimal_sandrone_scaling_entries() -> tuple[TalentScalingEntry, ...]:
                     {
                         "source_param": f"param_{index}",
                         "kind": kind,
-                        "values": tuple(1.0 for _ in range(15)),
+                        "values": tuple(overrides.get(entry_key, 1.0) for _ in range(15)),
                     }
                     for index, kind in enumerate(kinds)
                 ),
@@ -375,7 +366,7 @@ def sandrone_input_payload(
             {
                 "slot": 1,
                 "character": {
-                    "asset_key": SANDRONE_ASSET_KEY,
+                    "asset_key": SANDRONE_CHARACTER_KEY,
                     "level": level,
                     "constellation": constellation,
                     "talents": {
@@ -470,12 +461,18 @@ def resolved_atk(assembled) -> float:
     return float(resolution.final_value)
 
 
-def fageou_state_value(assembled, name: str):
-    """读取桑多涅内容状态挂载中的单个字段。"""
+def tactics_stack_count(assembled, *, frame: int) -> int:
+    """读取桑多涅改进战术 Buff 的活动层数（P4 层数断言口）。
 
-    mount = resolve_mount(
-        assembled.context,
-        slot=1,
-        state_key=SANDRONE_CHARACTER_HANDLER_KEY,
+    改进战术由状态效果系统承载（marker Buff），层数不再落角色状态字段；
+    冲突键保证单条活动记录，此处按层数求和以防表达变化。
+    """
+
+    runtime = assembled.context.get_system(BuffRuntime)
+    assert isinstance(runtime, BuffRuntime)
+    records = runtime.reader.active(
+        frame,
+        target_ref=SANDRONE_REF,
+        definition_key=sandrone_tactics_definition_key(1),
     )
-    return mount.values.get(name)
+    return sum(record.state.stack_count for record in records)

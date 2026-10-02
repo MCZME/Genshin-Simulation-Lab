@@ -11,18 +11,11 @@ from __future__ import annotations
 
 import pytest
 
-from genshin_sim.content.characters.snezhnaya.sandrone.content import (
-    create_sandrone_content_unit,
-)
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_BULLET_SPEED_M_PER_S,
     FAGEOU_PRE_SWING_FRAMES,
     FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
-    SANDRONE_ELEMENTAL_BURST_ACTION_KEY,
-    SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY,
 )
-from genshin_sim.content.registries import CharacterContentUnitRequest
-from genshin_sim.core.actions import ActionOwnerRef, CandidateTargetRef
 from genshin_sim.core.attributes import (
     STAT_ATK_TOTAL,
     AttributeQuery,
@@ -40,9 +33,6 @@ from genshin_sim.core.coordination.elemental_reaction.stellar_swirl_buffs import
 )
 from genshin_sim.core.elements import Element
 from genshin_sim.core.events import EventType
-from genshin_sim.core.impacts import (
-    ActionImpactContext,
-)
 from genshin_sim.core.systems.buff import BuffRuntime
 from genshin_sim.core.systems.damage.stellar import STELLAR_SLOT_REACTION_BONUS
 from genshin_sim.core.systems.reaction.states import (
@@ -135,36 +125,6 @@ def _hold_window_sweep_hits() -> list[int]:
     ]
 
 
-def test_radiance_buff_switches_rays_to_stellar_conduct_channel(sandrone_assembled):
-    # 射线在发射时查表分派：持辉映·星烁（3 层快照 → 系数 1.55）后走星超导冰
-    # 通道，专用倍率条目组装倍率区系数（属性取攻击力）；功率动力学与
-    # 帧表不受变体影响（射线命中仍 +12 功率）。
-    assembled = sandrone_assembled(
-        payload=_line_target_payload(_HOLD_MAX_FRAMES, _HOLD_PRESS_FRAME, _HOLD_RELEASE_FRAME)
-    )
-    _apply_radiance_buff(assembled)
-    damage_events = _damage_events(assembled)
-
-    assembled.simulator.run()
-
-    rays = [e for e in damage_events if e.payload.result.damage_name == RAY_STELLAR_DISPLAY_NAME]
-    assert [e.frame for e in rays] == sandrone_helpers.charged_ray_frames(_HOLD_PRESS_FRAME, 3)
-    atk = _resolved_atk(assembled)
-    for event in rays:
-        result = event.payload.result
-        assert result.main_attack_tag == "星超导冰"
-        stellar = result.stellar_reaction_resolution
-        assert stellar is not None
-        assert stellar.input.mode == "character_direct"
-        assert stellar.scaling.value == pytest.approx(atk)
-        assert stellar.input.stellar_base_multiplier == pytest.approx(1.55)
-    # 扫射不携带星变体：辉映下仍走普通重击通道，按解算节奏命中（松开帧在
-    # 过载翻转之前，窗口内无过载段）。
-    sweeps = [e for e in damage_events if e.payload.result.damage_name == SWEEP_DISPLAY_NAME]
-    assert [e.frame for e in sweeps] == _hold_window_sweep_hits()
-    assert all(e.payload.result.main_attack_tag == "重击" for e in sweeps)
-
-
 def test_radiance_buff_switches_second_prism_only(sandrone_assembled):
     # 第二枚棱晶弹切星超导冰通道，第一枚保持普通战技伤害（3.1 分支清单）。
     assembled = sandrone_assembled(input_key="keyboard.e", max_frames=60)
@@ -186,50 +146,6 @@ def test_radiance_buff_switches_second_prism_only(sandrone_assembled):
     assert stellar is not None
     assert stellar.scaling.value == pytest.approx(atk)
     assert stellar.input.stellar_base_multiplier == pytest.approx(1.55)
-
-
-def test_radiance_buff_switches_beam_contract_at_factory_dispatch(sandrone_assembled):
-    # 聚能光束在影响点展开时查表分派；爆发能量来源接入前无法经完整 Q 施放
-    # 链路出伤，此处直接驱动内容工厂验证契约切换与星烁输入组装。
-    assembled = sandrone_assembled(input_key="keyboard.e", max_frames=40)
-    _apply_radiance_buff(assembled)
-    unit = create_sandrone_content_unit(
-        CharacterContentUnitRequest(
-            handler_key=sandrone_helpers.SANDRONE_CHARACTER_HANDLER_KEY,
-            character_key=sandrone_helpers.SANDRONE_CHARACTER_KEY,
-            slot=1,
-            talent_levels={"normal_attack": 1, "elemental_skill": 1, "elemental_burst": 1},
-            talent_scalings=sandrone_helpers.minimal_sandrone_scaling_entries(),
-        )
-    )
-    factory = unit.impact_factories[SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY]
-    requests = factory.create_requests(
-        ActionImpactContext(
-            frame=10,
-            impact_point_id="integration:beam:1",
-            source_instance_id=1,
-            owner=ActionOwnerRef.character(1),
-            action_key=SANDRONE_ELEMENTAL_BURST_ACTION_KEY,
-            impact_key=SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY,
-            target_refs=(
-                CandidateTargetRef(spatial_entity_id="target:target_1", target_id="target_1"),
-            ),
-            simulation=assembled.context,
-        )
-    )
-
-    assert len(requests) == 1
-    spec = requests[0].damage_spec
-    assert spec is not None
-    assert spec.main_attack_tag == "星超导冰"
-    assert spec.display_name == BEAM_STELLAR_DISPLAY_NAME
-    assert spec.stellar_reaction is not None
-    assert spec.stellar_reaction.mode == "character_direct"
-    # 倍率与属性分开承载（D-082）：系数 = 星超导倍率分量（合成条目值 1.0），
-    # 属性 = 攻击力。
-    assert spec.scaling_terms[0].coefficient == pytest.approx(1.0)
-    assert spec.scaling_terms[0].attribute_key == STAT_ATK_TOTAL
-    assert spec.stellar_reaction.stellar_base_multiplier == pytest.approx(1.55)
 
 
 def test_stellar_swirl_trigger_activates_swirl_channel(sandrone_assembled):

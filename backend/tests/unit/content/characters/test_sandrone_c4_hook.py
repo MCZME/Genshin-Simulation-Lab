@@ -13,9 +13,6 @@ import pytest
 from genshin_sim.content.characters.snezhnaya.sandrone.hooks import (
     SandroneC4CoordinatedAttackHook,
 )
-from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
-    stellar_base_bonus_for_atk,
-)
 from genshin_sim.core.attributes import (
     STAT_ATK_BASE,
     STAT_ATK_TOTAL,
@@ -129,7 +126,10 @@ def test_c4_hook_procs_on_stellar_conduct_hit_with_cooldown():
     assert spec.scaling_terms[0].coefficient == pytest.approx(1.25)
     assert spec.scaling_terms[0].attribute_key == STAT_ATK_TOTAL
     assert stellar.stellar_base_multiplier == pytest.approx(1.0)
-    assert stellar.stellar_base_bonus == pytest.approx(stellar_base_bonus_for_atk(300.0))
+    # P6 基础增伤与 C6 擢升由 provider 词条在结算期叠加（D-082），
+    # 星烁输入基线保持缺省。
+    assert stellar.stellar_base_bonus == pytest.approx(0.0)
+    assert stellar.stellar_ascension_bonus == pytest.approx(0.0)
 
     # 冷却窗口内的星超导冰命中不重复触发；窗口外恢复。
     assert hook.handle(_c4_event(200), context).impact_requests == ()

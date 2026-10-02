@@ -1038,4 +1038,141 @@ describe("DamageSheet", () => {
     expect(screen.getByText("抗性提升")).toBeDefined();
     expect(screen.queryByText(/抗性来自目标属性/)).toBeNull();
   });
+
+  it("上下文条显示星烁反应徽标（星超导）并使用中文公式名", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: {
+          ...base.damage.summary,
+          formula_key: "damage_formula.stellar_reaction",
+          main_attack_tag: "星超导冰",
+          stellar_reaction: { mode: "character_direct", stellar_ascension_bonus: 0 },
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    expect(screen.getByText("星超导", { selector: ".damage-sheet-reaction-badge" })).toBeDefined();
+    expect(
+      screen.getByText("重击", { selector: ".damage-sheet-context-name" }).getAttribute("title"),
+    ).toBe("星烁反应");
+  });
+
+  it("基础区展示星烁专属阶段词条抽屉", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: { ...base.damage.summary, formula_key: "damage_formula.stellar_reaction" },
+        audit: {
+          ...base.damage.audit,
+          applied_terms: [
+            ...(base.damage.audit.applied_terms as Record<string, unknown>[]),
+            {
+              stage: "stellar_base_bonus_add",
+              value: 0.14,
+              provider_key: "character.sandrone.stellar_base_bonus",
+              provider_display_name: "星耀祝礼·唯理为光",
+            },
+          ],
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    expect(
+      screen.getByText("星烁基础增伤", { selector: ".damage-sheet-drawer-title" }),
+    ).toBeDefined();
+    expect(screen.getByText("+14.0%", { selector: ".damage-sheet-drawer-total" })).toBeDefined();
+    expect(screen.getByText("星耀祝礼·唯理为光")).toBeDefined();
+  });
+
+  it("剧变反应区把专属阶段计入反应加成并生成槽位与抽屉", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: { ...base.damage.summary, reaction_multiplier: 1.4167 },
+        audit: {
+          ...base.damage.audit,
+          reaction: {
+            kind: "transformative",
+            occurrence_ref: "occurrence:1",
+            reaction_profile_key: "reaction_profile.superconduct.incoming_cryo_on_electro",
+            source_kind: "character",
+            source_level: 90,
+            level_multiplier_table_key: "level_multiplier.character",
+            level_multiplier: 868,
+            base_multiplier: 1,
+            elemental_mastery: 180,
+            mastery_bonus: 0.3167,
+            reaction_bonus: 0,
+            defense_policy: "approximate_unity",
+          },
+          applied_terms: [
+            ...(base.damage.audit.applied_terms as Record<string, unknown>[]),
+            {
+              stage: "transformative_reaction_bonus_add",
+              value: 0.1,
+              provider_key: "artifact.disenchantment_4p.superconduct",
+              provider_display_name: "影中沉凝的幻灭 4件套·超导增伤",
+            },
+          ],
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    clickSegment("反应");
+    expect(screen.getByText("10.0%", { selector: ".damage-sheet-slot" })).toBeDefined();
+    expect(screen.getByText(/1\.417/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
+    expect(
+      screen.getByText("反应加成", { selector: ".damage-sheet-drawer-title" }),
+    ).toBeDefined();
+    expect(screen.getByText("影中沉凝的幻灭 4件套·超导增伤")).toBeDefined();
+  });
+
+  it("星烁直伤显示擢升链段并在详情区列出账单", () => {
+    const base = CRIT_GENERAL_EVENT as unknown as {
+      damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
+    };
+    const event = {
+      ...CRIT_GENERAL_EVENT,
+      damage: {
+        ...base.damage,
+        summary: {
+          ...base.damage.summary,
+          formula_key: "damage_formula.stellar_reaction",
+          main_attack_tag: "星超导冰",
+          stellar_reaction: { mode: "character_direct", stellar_ascension_bonus: 0.2 },
+        },
+        audit: {
+          ...base.damage.audit,
+          applied_terms: [
+            ...(base.damage.audit.applied_terms as Record<string, unknown>[]),
+            {
+              stage: "stellar_ascension_bonus_add",
+              value: 0.2,
+              provider_key: "character.sandrone.c6.ascension",
+              provider_display_name: "命之座第6层·星烁擢升",
+            },
+          ],
+        },
+      },
+    } as unknown as EventDetailResponse;
+    render(<DamageSheet event={event} />);
+    clickSegment("擢升");
+    expect(screen.getByText("+20.0%", { selector: ".damage-sheet-drawer-total" })).toBeDefined();
+    expect(screen.getByText("命之座第6层·星烁擢升")).toBeDefined();
+    expect(screen.getByText(/1\.200/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
+  });
 });
+

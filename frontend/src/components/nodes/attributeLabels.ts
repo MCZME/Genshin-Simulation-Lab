@@ -22,6 +22,8 @@ export const ATTRIBUTE_LABELS: Record<string, string> = {
   "bonus.damage.anemo": "风元素伤害加成",
   "bonus.damage.geo": "岩元素伤害加成",
   "bonus.damage.dendro": "草元素伤害加成",
+  "stellar.conduct.direct_base_multiplier": "星超导基础系数",
+  "stellar.swirl.direct_base_multiplier": "星扩散基础系数",
   "resistance.physical": "物理抗性",
   "resistance.pyro": "火元素抗性",
   "resistance.hydro": "水元素抗性",

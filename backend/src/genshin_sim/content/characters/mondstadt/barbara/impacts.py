@@ -57,18 +57,7 @@ from genshin_sim.content.characters.mondstadt.barbara.data import (
     BARBARA_RING_WET_TICK_INTERVAL,
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
-from genshin_sim.content.generic.plunge import (
-    PLUNGE_COLLISION_AOE_OFFSET,
-    PLUNGE_COLLISION_AOE_RADIUS,
-    PLUNGE_COLLISION_AOE_SHAPE,
-    PLUNGE_COLLISION_ELEMENTAL_AMOUNT,
-    PLUNGE_LANDING_AOE_OFFSET,
-    PLUNGE_LANDING_AOE_SHAPE,
-    PLUNGE_LANDING_ELEMENTAL_AMOUNT,
-    PLUNGE_LANDING_HIGH_AOE_RADIUS,
-    PLUNGE_LANDING_LOW_AOE_RADIUS,
-    PLUNGE_MAIN_ATTACK_TAG,
-)
+from genshin_sim.content.generic.plunge import PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE
 from genshin_sim.content.generic.talents import ScalingCompiler
 from genshin_sim.core.attributes import STAT_ATK_TOTAL
 from genshin_sim.core.elements import AuraAmount
@@ -392,18 +381,19 @@ def _compile_plunge_damage_spec(
     coefficient: float,
     talent_level: int,
     *,
+    main_attack_tag: str,
     aoe_shape: str,
     aoe_radius: float,
     aoe_offset: Vector3,
     elemental_amount: int,
     display_name: str,
 ) -> DamageImpactSpec:
-    """编译一段下落攻击伤害契约（法器通用资料数据）。"""
+    """编译一段下落攻击伤害契约（武器类型通用资料数据）。"""
 
     has_element = elemental_amount > 0
     return DamageImpactSpec(
         impact_ref=f"{impact_key}:{talent_level}",
-        main_attack_tag=PLUNGE_MAIN_ATTACK_TAG,
+        main_attack_tag=main_attack_tag,
         element=BARBARA_DAMAGE_ELEMENT,
         scaling_terms=(
             DamageScalingTerm(
@@ -457,16 +447,18 @@ def compile_plunge_damage_specs(
     collision = collision_compiled.components[0]
     low = landing_compiled.components[0]
     high = landing_compiled.components[1]
+    plunge_data = PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE["catalyst"]
     return {
         BARBARA_PLUNGE_COLLISION_IMPACT_KEY: _compile_plunge_damage_spec(
             BARBARA_PLUNGE_COLLISION_IMPACT_KEY,
             collision.component_key,
             collision.value,
             talent_level,
-            aoe_shape=PLUNGE_COLLISION_AOE_SHAPE,
-            aoe_radius=PLUNGE_COLLISION_AOE_RADIUS,
-            aoe_offset=PLUNGE_COLLISION_AOE_OFFSET,
-            elemental_amount=PLUNGE_COLLISION_ELEMENTAL_AMOUNT,
+            main_attack_tag=plunge_data.main_attack_tag,
+            aoe_shape=plunge_data.collision.aoe_shape,
+            aoe_radius=plunge_data.collision.aoe_radius,
+            aoe_offset=plunge_data.collision.aoe_offset,
+            elemental_amount=plunge_data.collision.elemental_amount,
             display_name=_BARBARA_PLUNGE_COLLISION_DAMAGE_LABEL,
         ),
         f"{BARBARA_PLUNGE_LANDING_IMPACT_KEY}.low": _compile_plunge_damage_spec(
@@ -474,10 +466,11 @@ def compile_plunge_damage_specs(
             low.component_key,
             low.value,
             talent_level,
-            aoe_shape=PLUNGE_LANDING_AOE_SHAPE,
-            aoe_radius=PLUNGE_LANDING_LOW_AOE_RADIUS,
-            aoe_offset=PLUNGE_LANDING_AOE_OFFSET,
-            elemental_amount=PLUNGE_LANDING_ELEMENTAL_AMOUNT,
+            main_attack_tag=plunge_data.main_attack_tag,
+            aoe_shape=plunge_data.landing.aoe_shape,
+            aoe_radius=plunge_data.landing.low_aoe_radius,
+            aoe_offset=plunge_data.landing.aoe_offset,
+            elemental_amount=plunge_data.landing.elemental_amount,
             display_name="低空坠地冲击伤害",
         ),
         f"{BARBARA_PLUNGE_LANDING_IMPACT_KEY}.high": _compile_plunge_damage_spec(
@@ -485,10 +478,11 @@ def compile_plunge_damage_specs(
             high.component_key,
             high.value,
             talent_level,
-            aoe_shape=PLUNGE_LANDING_AOE_SHAPE,
-            aoe_radius=PLUNGE_LANDING_HIGH_AOE_RADIUS,
-            aoe_offset=PLUNGE_LANDING_AOE_OFFSET,
-            elemental_amount=PLUNGE_LANDING_ELEMENTAL_AMOUNT,
+            main_attack_tag=plunge_data.main_attack_tag,
+            aoe_shape=plunge_data.landing.aoe_shape,
+            aoe_radius=plunge_data.landing.high_aoe_radius,
+            aoe_offset=plunge_data.landing.aoe_offset,
+            elemental_amount=plunge_data.landing.elemental_amount,
             display_name="高空坠地冲击伤害",
         ),
     }

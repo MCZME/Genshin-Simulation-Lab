@@ -83,9 +83,16 @@ def fetch_project_amber_source_cache(
     weapon_ids: Iterable[str] = (),
     artifact_set_ids: Iterable[str] = (),
     include_all_details: bool = False,
+    refresh: bool = False,
     client: JsonHttpClient | None = None,
     fetched_at: datetime | None = None,
 ) -> ProjectAmberSourceCacheSummary:
+    """抓取 Project Amber 源数据到本地 raw cache。
+
+    索引与静态曲线每次都会重新拉取；详情默认复用已存在的缓存文件，
+    传入 ``refresh=True`` 时忽略本地缓存重新拉取（用于刷新过期数值）。
+    """
+
     target_dir = Path(output_dir)
     target_dir.mkdir(parents=True, exist_ok=True)
     resolved_client = client or UrllibJsonHttpClient()
@@ -113,7 +120,7 @@ def fetch_project_amber_source_cache(
             output_path=target_dir / "avatar" / f"{character_id}.json",
             cache_root=target_dir,
             files=files,
-            reuse_existing=True,
+            reuse_existing=not refresh,
         )
 
     weapon_index = _fetch_and_write(
@@ -137,7 +144,7 @@ def fetch_project_amber_source_cache(
             output_path=target_dir / "weapon" / f"{weapon_id}.json",
             cache_root=target_dir,
             files=files,
-            reuse_existing=True,
+            reuse_existing=not refresh,
         )
 
     reliquary_index = _fetch_and_write(
@@ -161,7 +168,7 @@ def fetch_project_amber_source_cache(
             output_path=target_dir / "reliquary" / f"{artifact_set_id}.json",
             cache_root=target_dir,
             files=files,
-            reuse_existing=True,
+            reuse_existing=not refresh,
         )
 
     _fetch_and_write(

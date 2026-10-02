@@ -34,7 +34,7 @@ from genshin_sim.core.systems.damage.models import (
     LunarReactionDamageMode,
     LunarReactionParticipantInput,
 )
-from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 from genshin_sim.core.systems.damage.stellar import StellarReactionParticipantInput
 from tests.helpers import damage
 
@@ -164,12 +164,12 @@ def _direct_resolution(
     )
     query = _stellar_query(attribute_resolver, stellar_reaction=stellar_reaction)
     formula = StellarReactionDamageFormula()
-    session = DamageResolutionSession(attribute_resolver, query)
-    modifiers = DamageModifierIndex(()).collect(query, session)
+    scope = DamageResolutionScope(attribute_resolver, query)
+    modifiers = DamageModifierIndex(()).collect(query, scope)
     return formula.resolve(
         DamageFormulaContext(
             query=query,
-            session=session,
+            scope=scope,
             modifiers=modifiers,
             trace_level=TraceLevel.FULL,
             modifier_collector=DamageModifierIndex(()).collect,
@@ -213,8 +213,6 @@ def test_stellar_direct_formula_composes_specialized_zones_from_live_panels() ->
     assert resolution.critical.multiplier == pytest.approx(1.0)
     assert resolution.resistance is not None
     assert resolution.resistance.multiplier == pytest.approx(resistance_multiplier)
-    assert resolution.source_attribute_trace
-    assert resolution.target_attribute_trace
     # 面板账单不再被丢弃：角色面板读取进入 panel_terms。
     assert resolution.panel_terms
 
@@ -223,13 +221,13 @@ def test_stellar_direct_requires_attribute_scaling() -> None:
     attribute_resolver = _attribute_resolver()
     query = _stellar_query(attribute_resolver, scaling_terms=())
     formula = StellarReactionDamageFormula()
-    session = DamageResolutionSession(attribute_resolver, query)
-    modifiers = DamageModifierIndex(()).collect(query, session)
+    scope = DamageResolutionScope(attribute_resolver, query)
+    modifiers = DamageModifierIndex(()).collect(query, scope)
     with pytest.raises(DamageFormulaInputError, match="必须提供属性倍率"):
         formula.resolve(
             DamageFormulaContext(
                 query=query,
-                session=session,
+                scope=scope,
                 modifiers=modifiers,
                 trace_level=TraceLevel.FULL,
                 modifier_collector=DamageModifierIndex(()).collect,
@@ -248,13 +246,13 @@ def test_stellar_formula_rejects_composite_mode_without_participants() -> None:
         ),
     )
     formula = StellarReactionDamageFormula()
-    session = DamageResolutionSession(attribute_resolver, query)
-    modifiers = DamageModifierIndex(()).collect(query, session)
+    scope = DamageResolutionScope(attribute_resolver, query)
+    modifiers = DamageModifierIndex(()).collect(query, scope)
     with pytest.raises(DamageFormulaInputError, match="必须提供参与者列表"):
         formula.resolve(
             DamageFormulaContext(
                 query=query,
-                session=session,
+                scope=scope,
                 modifiers=modifiers,
                 trace_level=TraceLevel.FULL,
                 modifier_collector=DamageModifierIndex(()).collect,
@@ -272,13 +270,13 @@ def test_stellar_composite_rejects_request_level_scaling() -> None:
         stellar_reaction=damage.make_composite_input(),
     )
     formula = StellarReactionDamageFormula()
-    session = DamageResolutionSession(attribute_resolver, query)
-    modifiers = DamageModifierIndex(()).collect(query, session)
+    scope = DamageResolutionScope(attribute_resolver, query)
+    modifiers = DamageModifierIndex(()).collect(query, scope)
     with pytest.raises(DamageFormulaInputError, match="不能携带请求级倍率"):
         formula.resolve(
             DamageFormulaContext(
                 query=query,
-                session=session,
+                scope=scope,
                 modifiers=modifiers,
                 trace_level=TraceLevel.FULL,
                 modifier_collector=DamageModifierIndex(()).collect,
@@ -350,8 +348,6 @@ def test_stellar_formula_composite_settles_per_participant_with_weights() -> Non
     assert resolution.base_damage == pytest.approx(
         0.60 * resolution.components[0].base_damage + 0.30 * resolution.components[1].base_damage
     )
-    assert resolution.components[0].source_attribute_trace
-    assert resolution.components[0].target_attribute_trace
 
 
 def test_stellar_formula_composite_sorts_by_damage_and_truncates_to_four() -> None:
@@ -398,12 +394,12 @@ def _resolve_composite(
     attribute_resolver = damage.make_stellar_attribute_resolver()
     query = damage.make_query(stellar_reaction)
     formula = StellarReactionDamageFormula()
-    session = DamageResolutionSession(attribute_resolver, query)
-    modifiers = DamageModifierIndex(()).collect(query, session)
+    scope = DamageResolutionScope(attribute_resolver, query)
+    modifiers = DamageModifierIndex(()).collect(query, scope)
     return formula.resolve(
         DamageFormulaContext(
             query=query,
-            session=session,
+            scope=scope,
             modifiers=modifiers,
             trace_level=trace_level,
             modifier_collector=DamageModifierIndex(()).collect,

@@ -106,6 +106,7 @@ def test_assembler_builds_minimal_runtime_graph():
         assembled.space_runtime,
         assembled.moonsign_runtime,
         assembled.resonance_reaction_stage,
+        assembled.energy_recovery_stage,
         assembled.hook_dispatcher,
         assembled.attribute_panel_synchronizer,
     )

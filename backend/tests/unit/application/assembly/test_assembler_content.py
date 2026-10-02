@@ -160,7 +160,8 @@ def test_assembler_injects_content_attribute_modifier_as_core_term():
         AttributeQuery(character_ref, STAT_CRIT_RATE, frame=0)
     )
 
-    assert resolution.final_value == 0.2
+    # 公开属性存储绝对值：基础面板暴击率 5% + 内容侧词条 20%。
+    assert resolution.final_value == 0.25
     assert resolution.applied_terms[0].provider_key == "modifier.test.crit_rate"
     target_resolution = assembled.attribute_runtime.resolver.resolve(
         AttributeQuery(
@@ -169,6 +170,7 @@ def test_assembler_injects_content_attribute_modifier_as_core_term():
             frame=0,
         )
     )
+    # 游戏规则基础面板只注入角色主体，目标不获得。
     assert target_resolution.final_value == 0.0
 
 

@@ -67,7 +67,7 @@ from genshin_sim.core.systems.damage.modifiers import (
     DamageModifierIndex,
     StaticDamageModifierProvider,
 )
-from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 from genshin_sim.core.systems.damage.stellar import StellarReactionDamageInput
 from tests.helpers import damage
 
@@ -282,7 +282,7 @@ def _lunar_query() -> DamageQuery:
 def _collect(query: DamageQuery, *terms: DamageModifierTerm) -> DamageModifierCollection:
     """收集修饰项；无 term 时注册一个声明了专属阶段但不贡献的空 provider。"""
 
-    session = DamageResolutionSession(_attribute_resolver(), query)
+    scope = DamageResolutionScope(_attribute_resolver(), query)
     if terms:
         providers: tuple[StaticDamageModifierProvider, ...] = (_provider(*terms),)
     else:
@@ -291,13 +291,13 @@ def _collect(query: DamageQuery, *terms: DamageModifierTerm) -> DamageModifierCo
                 writes=frozenset({*STELLAR_ONLY_STAGES, *LUNAR_ONLY_STAGES, TRANSFORMATIVE_STAGE})
             ),
         )
-    return DamageModifierIndex(providers).collect(query, session)
+    return DamageModifierIndex(providers).collect(query, scope)
 
 
 def _context(query: DamageQuery, modifiers: Any) -> DamageFormulaContext:
     return DamageFormulaContext(
         query=query,
-        session=DamageResolutionSession(_attribute_resolver(), query),
+        scope=DamageResolutionScope(_attribute_resolver(), query),
         modifiers=modifiers,
         trace_level=TraceLevel.FULL,
         modifier_collector=DamageModifierIndex(()).collect,

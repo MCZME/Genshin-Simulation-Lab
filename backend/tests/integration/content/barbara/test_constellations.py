@@ -9,6 +9,10 @@ import pytest
 from genshin_sim.application.assembly import SimulationAssembler
 from genshin_sim.application.input import SimulationInput
 from genshin_sim.content import create_default_content_unit_registry
+from genshin_sim.content.characters.mondstadt.barbara.data import (
+    BARBARA_CONSTELLATION_C1_ENERGY_IMPACT_KEY,
+    BARBARA_CONSTELLATION_C4_ENERGY_IMPACT_KEY,
+)
 from genshin_sim.core.attributes import (
     BONUS_DAMAGE_HYDRO,
     AttributeQuery,
@@ -18,6 +22,20 @@ from genshin_sim.core.events import EventType
 from genshin_sim.core.systems.cooldown import CooldownKey, CooldownSubjectRef
 from genshin_sim.infrastructure.assets_sqlite import SQLiteAssetRepository
 from tests.helpers import barbara as barbara_helpers
+
+
+def _restored_amount_by_source(events, source_key: str) -> float:
+    """按恢复来源 impact key 汇总直接恢复的实际量。
+
+    通用回能等机制与命座恢复共用能量领域，来源 key 是各机制的隔离边界。
+    """
+
+    return sum(
+        event.payload.result.effective_amount
+        for event in events
+        if event.payload.result.source_context is not None
+        and event.payload.result.source_context.source_key == source_key
+    )
 
 
 @pytest.mark.parametrize(
@@ -39,14 +57,15 @@ def test_barbara_c1_restores_energy_over_time_when_unlocked(
     payload["input_trace"] = barbara_helpers.barbara_long_input_trace()
     assembled = barbara_assembled(payload=payload)
 
+    restores: list = []
+    assembled.context.events.subscribe(EventType.DIRECT_ENERGY_CHANGE_RESOLVED, restores.append)
     assembled.simulator.run()
 
-    energy_ref = AttributeSubjectRef.character("character:slot_1")
-    energy = assembled.energy_runtime.get_current_energy(energy_ref)
+    c1_restored = _restored_amount_by_source(restores, BARBARA_CONSTELLATION_C1_ENERGY_IMPACT_KEY)
     if expect_restored:
-        assert energy > 0
+        assert c1_restored > 0
     else:
-        assert energy == 0
+        assert c1_restored == 0
 
 
 def test_barbara_c2_reduces_elemental_skill_cooldown(barbara_assembled):
@@ -123,7 +142,7 @@ def test_barbara_c2_hydro_bonus_follows_active_character_on_switch(tmp_path: Pat
 
 
 def test_barbara_c4_restores_per_distinct_target_and_caps(barbara_assembled):
-    def _energy_with_targets(count: int) -> float:
+    def _c4_restored_with_targets(count: int) -> float:
         assembled = barbara_assembled(
             input_key="mouse.right",
             max_frames=80,
@@ -138,10 +157,12 @@ def test_barbara_c4_restores_per_distinct_target_and_caps(barbara_assembled):
                 for index in range(count)
             ),
         )
+        restores: list = []
+        assembled.context.events.subscribe(EventType.DIRECT_ENERGY_CHANGE_RESOLVED, restores.append)
         assembled.simulator.run()
-        energy_ref = AttributeSubjectRef.character("character:slot_1")
-        return assembled.energy_runtime.get_current_energy(energy_ref)
+        return _restored_amount_by_source(restores, BARBARA_CONSTELLATION_C4_ENERGY_IMPACT_KEY)
 
-    single = _energy_with_targets(1)
-    assert _energy_with_targets(3) == pytest.approx(3 * single)
-    assert _energy_with_targets(6) == pytest.approx(5 * single)
+    single = _c4_restored_with_targets(1)
+    assert single > 0
+    assert _c4_restored_with_targets(3) == pytest.approx(3 * single)
+    assert _c4_restored_with_targets(6) == pytest.approx(5 * single)

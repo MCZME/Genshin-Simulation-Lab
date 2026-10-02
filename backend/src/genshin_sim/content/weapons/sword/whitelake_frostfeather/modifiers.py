@@ -24,7 +24,7 @@ from genshin_sim.core.systems.damage import (
 )
 from genshin_sim.core.systems.damage.keys import FORMULA_KEY_STELLAR_REACTION
 from genshin_sim.core.systems.damage.models import DamageQuery
-from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 
 
 class WhitelakeFrostfeatherStellarCritDamageProvider:
@@ -70,9 +70,9 @@ class WhitelakeFrostfeatherStellarCritDamageProvider:
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        scope: DamageResolutionScope,
     ) -> tuple[DamageModifierTerm, ...]:
-        del session
+        del scope
         request = query.request
         if request.formula_key != FORMULA_KEY_STELLAR_REACTION:
             return ()

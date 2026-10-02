@@ -28,6 +28,10 @@ from genshin_sim.core.systems.damage.errors import (
     DamageValidationError,
     InvalidDamageScalingError,
 )
+from genshin_sim.core.systems.damage.facts import (
+    DamageFactValue,
+    validate_damage_fact_value,
+)
 from genshin_sim.core.systems.damage.keys import (
     FORMULA_KEY_GENERAL,
     FORMULA_KEY_LUNAR_REACTION,
@@ -432,6 +436,9 @@ class DamageRequest:
     scaling_terms: tuple[DamageScalingTerm, ...] = ()
     flat_base_damage: float = 0.0
     tags: frozenset[str] = frozenset()
+    # 请求级事实：发射方构造请求时绑定、随请求走到结算的身份与快照值；
+    # 对本次请求的全部目标结算一致。会话级事实走 DamageFactIndex，不在此处。
+    request_facts: Mapping[str, DamageFactValue] = field(default_factory=dict)
     can_crit: bool = True
     # 这一次伤害的显示名称，来自 DamageImpactSpec.display_name；缺失时审计回退 action_key。
     damage_name: str | None = None
@@ -500,6 +507,11 @@ class DamageRequest:
         tags = frozenset(self.tags)
         for tag in tags:
             _validate_non_empty_text(tag, "damage tag")
+        request_facts = dict(self.request_facts)
+        for key, value in request_facts.items():
+            _validate_non_empty_text(key, "damage request fact key")
+            validate_damage_fact_value(value, key)
+        object.__setattr__(self, "request_facts", MappingProxyType(request_facts))
         if not isinstance(self.can_crit, bool):
             raise DamageValidationError("can_crit 必须是布尔值")
         if (
@@ -832,7 +844,6 @@ class GeneralReactionZoneResolution:
     elemental_mastery: float = 0.0
     mastery_bonus: float = 0.0
     reaction_bonus: float = 0.0
-    elemental_mastery_trace: AttributeResolution | None = None
 
     def __post_init__(self) -> None:
         """校验反应区乘数。"""
@@ -961,8 +972,6 @@ class LunarReactionComponentResolution:
     component_damage: float
     weight: float
     weighted_damage: float
-    source_attribute_trace: tuple[AttributeResolution, ...] = ()
-    target_attribute_trace: tuple[AttributeResolution, ...] = ()
     applied_terms: tuple[DamageModifierTerm, ...] = ()
     rejected_terms: tuple[DamageModifierTerm, ...] = ()
     # 该组分独立收集到的伤害修饰项。复合路径的修饰不进入顶层 applied_terms，
@@ -1025,8 +1034,6 @@ class LunarReactionComponentResolution:
             abs_tol=1e-12,
         ):
             raise DamageValidationError("月曜伤害组分 weighted_damage 必须匹配权重")
-        object.__setattr__(self, "source_attribute_trace", tuple(self.source_attribute_trace))
-        object.__setattr__(self, "target_attribute_trace", tuple(self.target_attribute_trace))
         object.__setattr__(self, "applied_terms", tuple(self.applied_terms))
         object.__setattr__(self, "rejected_terms", tuple(self.rejected_terms))
         object.__setattr__(self, "modifier_terms", tuple(self.modifier_terms))
@@ -1078,8 +1085,6 @@ class LunarReactionDamageResolution:
     official_damage: float
     debug_multiplier: float
     final_damage: float
-    source_attribute_trace: tuple[AttributeResolution, ...] = ()
-    target_attribute_trace: tuple[AttributeResolution, ...] = ()
     # 直伤模式的槽位三段审计与面板词条；复合模式的账本在组分内各自保留。
     slots: tuple[LunarZoneSlotAudit, ...] = ()
     panel_terms: tuple[DamageModifierTerm, ...] = ()
@@ -1140,8 +1145,6 @@ class LunarReactionDamageResolution:
         ):
             raise DamageValidationError("月曜伤害 final_damage 必须匹配 debug_multiplier")
         object.__setattr__(self, "components", components)
-        object.__setattr__(self, "source_attribute_trace", tuple(self.source_attribute_trace))
-        object.__setattr__(self, "target_attribute_trace", tuple(self.target_attribute_trace))
         object.__setattr__(self, "panel_terms", tuple(self.panel_terms))
         slots = tuple(self.slots)
         if any(not isinstance(item, LunarZoneSlotAudit) for item in slots):
@@ -1204,8 +1207,6 @@ class GeneralDamageResolution:
     official_damage: float
     debug_multiplier: float
     final_damage: float
-    source_attribute_trace: tuple[AttributeResolution, ...] = ()
-    target_attribute_trace: tuple[AttributeResolution, ...] = ()
     catalyze: CatalyzeReactionResolution | None = None
     panel_terms: tuple[DamageModifierTerm, ...] = ()
 
@@ -1217,8 +1218,6 @@ class GeneralDamageResolution:
             if value < 0:
                 raise DamageValidationError(f"{field_name} 不能为负数")
             object.__setattr__(self, field_name, value)
-        object.__setattr__(self, "source_attribute_trace", tuple(self.source_attribute_trace))
-        object.__setattr__(self, "target_attribute_trace", tuple(self.target_attribute_trace))
         if self.catalyze is not None and not isinstance(
             self.catalyze,
             CatalyzeReactionResolution,
@@ -1239,7 +1238,6 @@ class TransformativeReactionResolution:
     official_damage: float
     debug_multiplier: float
     final_damage: float
-    target_attribute_trace: tuple[AttributeResolution, ...] = ()
     # 公式从属性系统读取到的面板值物化成的词条，与 applied_terms 合成槽位账单。
     panel_terms: tuple[DamageModifierTerm, ...] = ()
     secondary_amplifying_resolution: SecondaryAmplifyingReactionResolution | None = None
@@ -1255,7 +1253,6 @@ class TransformativeReactionResolution:
             SecondaryAmplifyingReactionResolution,
         ):
             raise DamageValidationError("secondary_amplifying_resolution 不受支持")
-        object.__setattr__(self, "target_attribute_trace", tuple(self.target_attribute_trace))
         object.__setattr__(self, "panel_terms", tuple(self.panel_terms))
 
 
@@ -1275,7 +1272,6 @@ class CatalyzeReactionResolution:
     reaction_multiplier: float
     reaction_bonus: float
     base_damage_addition: BaseDamageAddition
-    elemental_mastery_trace: AttributeResolution | None = None
 
     def __post_init__(self) -> None:
         for value, name in (
@@ -1367,12 +1363,12 @@ class DamageResult:
     lunar_reaction_resolution: LunarReactionDamageResolution | None = None
     stellar_reaction_resolution: StellarReactionDamageResolution | None = None
     component_results: tuple[DamageComponentResult, ...] = ()
-    source_attribute_trace: tuple[AttributeResolution, ...] = ()
-    target_attribute_trace: tuple[AttributeResolution, ...] = ()
     applied_terms: tuple[DamageModifierTerm, ...] = ()
     rejected_terms: tuple[DamageModifierTerm, ...] = ()
     trace_level: TraceLevel = TraceLevel.FULL
     trace_metadata: Mapping[str, object] = field(default_factory=dict)
+    # 本次结算读取的请求级事实快照（原样透传自 DamageRequest），供审计复现。
+    request_facts: Mapping[str, DamageFactValue] = field(default_factory=dict)
     damage_bonus_zone: DamageBonusZoneResolution | None = None
     critical_zone: CriticalZoneResolution | None = None
 
@@ -1451,11 +1447,10 @@ class DamageResult:
             raise DamageValidationError("只有星烁伤害可以携带 stellar_reaction_resolution")
         object.__setattr__(self, "base_damage_additions", tuple(self.base_damage_additions))
         object.__setattr__(self, "component_results", tuple(self.component_results))
-        object.__setattr__(self, "source_attribute_trace", tuple(self.source_attribute_trace))
-        object.__setattr__(self, "target_attribute_trace", tuple(self.target_attribute_trace))
         object.__setattr__(self, "applied_terms", tuple(self.applied_terms))
         object.__setattr__(self, "rejected_terms", tuple(self.rejected_terms))
         object.__setattr__(self, "trace_metadata", MappingProxyType(dict(self.trace_metadata)))
+        object.__setattr__(self, "request_facts", MappingProxyType(dict(self.request_facts)))
 
     @property
     def final_multiplier(self) -> float:
@@ -1498,7 +1493,7 @@ class DamageResult:
         }
 
     def to_audit_dict(self) -> dict[str, object]:
-        """返回完整伤害公式审计；字段只增不改，供 DAMAGE_RESOLVED 的 audit 载荷使用。"""
+        """返回完整伤害公式审计，供 DAMAGE_RESOLVED 的 audit 载荷使用。"""
 
         return {
             "component_results": tuple(item.to_dict() for item in self.component_results),
@@ -1510,8 +1505,7 @@ class DamageResult:
             "reaction": _audit_reaction_to_dict(self),
             "applied_terms": tuple(item.to_dict() for item in self.applied_terms),
             "rejected_terms": tuple(item.to_dict() for item in self.rejected_terms),
-            "source_attribute_trace": tuple(item.to_dict() for item in self.source_attribute_trace),
-            "target_attribute_trace": tuple(item.to_dict() for item in self.target_attribute_trace),
+            "request_facts": dict(self.request_facts),
             "trace_metadata": dict(self.trace_metadata),
         }
 

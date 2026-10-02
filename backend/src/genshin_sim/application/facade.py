@@ -121,6 +121,7 @@ class ApplicationFacade(Protocol):
         weapon_ids: Sequence[str] = (),
         artifact_set_ids: Sequence[str] = (),
         include_all_details: bool = False,
+        refresh: bool = False,
     ) -> Any: ...
 
     def build_asset_manifest(
@@ -429,6 +430,7 @@ class DefaultApplicationFacade:
         weapon_ids: Sequence[str] = (),
         artifact_set_ids: Sequence[str] = (),
         include_all_details: bool = False,
+        refresh: bool = False,
     ) -> Any:
         callback = self._context.fetch_asset_source_cache
         if callback is None:
@@ -441,6 +443,7 @@ class DefaultApplicationFacade:
             weapon_ids=tuple(weapon_ids),
             artifact_set_ids=tuple(artifact_set_ids),
             include_all_details=include_all_details,
+            refresh=refresh,
         )
 
     def build_asset_manifest(

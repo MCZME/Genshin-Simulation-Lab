@@ -2,6 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, replace
+from math import hypot
 from typing import Protocol
 
 from genshin_sim.core.actions import (
@@ -18,10 +19,9 @@ from genshin_sim.core.impacts.models import ActionImpactContext, ImpactKind, Imp
 from genshin_sim.core.movement import MovementImpactRequestHandler
 from genshin_sim.core.protocols import FrameUpdatable
 from genshin_sim.core.space import (
-    CircleArea,
+    ACTIVE_CHARACTER_ENTITY_ID,
     CreatedObjectSpec,
     CreatedObjectTickSpec,
-    ImpactAreaSpec,
     SpatialEntity,
     SpatialEntityKind,
     Vector3,
@@ -675,6 +675,7 @@ class ImpactRuntime(FrameUpdatable):
                 impact_key=impact_point.impact_key,
                 target_refs=target_refs,
                 params=impact_point.params,
+                simulation=context,
             )
             requests = self.dispatcher.dispatch(impact_context)
             requests = self._expand_damage_areas(context, impact_point, requests)
@@ -715,7 +716,10 @@ class ImpactRuntime(FrameUpdatable):
                 )
             target_refs: list[str] = []
             for anchor in anchors:
-                area = _area_from_spec(spec.area, anchor)
+                area = spec.area.resolve(
+                    anchor.position,
+                    _attack_direction(context.space_runtime, anchor),
+                )
                 for entity in context.space_runtime.entities_in_area(
                     area,
                     kinds={
@@ -799,7 +803,10 @@ class ImpactRuntime(FrameUpdatable):
                 anchors = tuple(anchor_list)
                 fallback_refs = tuple(fallback)
             for anchor in anchors:
-                area = _area_from_spec(spec.area, anchor)
+                area = spec.area.resolve(
+                    anchor.position,
+                    _attack_direction(context.space_runtime, anchor),
+                )
                 entities = context.space_runtime.entities_in_area(
                     area,
                     kinds=kinds,
@@ -859,18 +866,24 @@ def _aura_entity_ref(context, entity: SpatialEntity) -> str | None:
     return target.target_id
 
 
-def _area_from_spec(spec: ImpactAreaSpec, anchor: SpatialEntity) -> CircleArea:
-    """把未锚定的 AOE 规格投影到锚点位置（球/圆 -> 同半径 Circle）。"""
+def _attack_direction(space_runtime, anchor: SpatialEntity) -> Vector3:
+    """索敌确定的攻击方向（X/Z 平面）。
 
-    offset = spec.local_offset_xz
-    center = Vector3(
-        anchor.position.x + offset.x,
-        anchor.position.y + offset.y,
-        anchor.position.z + offset.z,
-    )
-    if spec.shape not in {"球", "圆", "圆柱"}:
-        raise ValueError(f"未支持的伤害 AOE 形状：{spec.shape}")
-    return CircleArea(center=center, radius=spec.radius)
+    当前空间模型只有 `player:active` 一个可控角色实体作为攻击者：优先取攻击
+    者指向锚点的方向；攻击者与锚点重合（如以攻击者为锚点的施加区域）时退化
+    为攻击者朝向；都不可用时退化为 +Z（与历史世界轴偏移行为一致）。
+    """
+
+    attacker = space_runtime.get_entity(ACTIVE_CHARACTER_ENTITY_ID)
+    if attacker is not None:
+        delta_x = anchor.position.x - attacker.position.x
+        delta_z = anchor.position.z - attacker.position.z
+        if delta_x != 0.0 or delta_z != 0.0:
+            length = hypot(delta_x, delta_z)
+            return Vector3(x=delta_x / length, y=0.0, z=delta_z / length)
+        if attacker.facing.x != 0.0 or attacker.facing.z != 0.0:
+            return attacker.facing
+    return Vector3(x=0.0, y=0.0, z=1.0)
 
 
 def _created_object_spec_from_request(request: ImpactRequest) -> CreatedObjectSpec:

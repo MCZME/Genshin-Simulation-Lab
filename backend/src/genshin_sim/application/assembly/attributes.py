@@ -19,6 +19,7 @@ from genshin_sim.core.attributes import (
     BONUS_DAMAGE_PYRO,
     BONUS_HEALING_OUTGOING,
     BONUS_SHIELD_STRENGTH,
+    GAME_BASE_CHARACTER_PANEL,
     RESISTANCE_KEYS_BY_ELEMENT,
     STAT_ATK_BASE,
     STAT_ATK_TOTAL,
@@ -48,6 +49,7 @@ from genshin_sim.core.attributes import (
     RuntimeSourceRef,
     StaticModifierProvider,
     create_public_attribute_registry,
+    game_base_panel_source_ref,
     validate_finite_float,
 )
 
@@ -155,6 +157,19 @@ def _iter_base_contributions(
                 source_ref=source_ref,
             ),
         )
+        # 游戏全局规则的基础面板：暴击率 5%、暴击伤害 50%、元素充能效率 100%。
+        # 这些不是资产数据，按属性系统契约第 9 节以基础贡献注入（不用
+        # AttributeDefinition.default_value，见契约第 7.1 节）。公开属性一律
+        # 存储绝对值，下游公式不再补基底。
+        for base_key, base_value in GAME_BASE_CHARACTER_PANEL:
+            yield (
+                subject_ref,
+                BaseAttributeContribution(
+                    attribute_key=base_key,
+                    value=base_value,
+                    source_ref=game_base_panel_source_ref(base_key),
+                ),
+            )
         if bundle.weapon_level_stats is not None:
             weapon_source_ref = RuntimeSourceRef(
                 RuntimeSourceKind.ASSET,

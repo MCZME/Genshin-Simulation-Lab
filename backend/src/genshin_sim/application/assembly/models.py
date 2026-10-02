@@ -81,6 +81,7 @@ if TYPE_CHECKING:
         CooldownRuntime,
     )
     from genshin_sim.core.systems.damage import (
+        DamageFactProvider,
         DamageModifierProvider,
         DamageModifierStackingGroupDefinition,
         DamageRequestHandler,
@@ -88,6 +89,8 @@ if TYPE_CHECKING:
     from genshin_sim.core.systems.energy import (
         CharacterEnergyStore,
         EnergyImpactRequestHandler,
+        EnergyRecoveryStage,
+        EnergyRecoveryStore,
         EnergyRuntime,
         EnergyTransitQueue,
     )
@@ -152,6 +155,8 @@ class RuntimeContentBundle:
     cooldown_definitions: tuple[CooldownDefinition, ...]
     damage_modifier_providers: tuple[DamageModifierProvider, ...]
     damage_modifier_stacking_groups: tuple[DamageModifierStackingGroupDefinition, ...]
+    damage_fact_providers: tuple[DamageFactProvider, ...]
+    damage_request_fact_keys: tuple[str, ...]
 
 
 @dataclass(slots=True)
@@ -181,6 +186,8 @@ class AssembledSimulation:
     energy_transit_queue: EnergyTransitQueue
     energy_runtime: EnergyRuntime
     energy_handler: EnergyImpactRequestHandler
+    energy_recovery_store: EnergyRecoveryStore
+    energy_recovery_stage: EnergyRecoveryStage
     cooldown_runtime: CooldownRuntime
     cooldown_frame_adapter: FrameUpdatable
     movement_runtime: MovementRuntime

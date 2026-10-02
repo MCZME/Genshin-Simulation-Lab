@@ -65,7 +65,7 @@ from genshin_sim.core.systems.damage.keys import (
     FORMULA_KEY_TRANSFORMATIVE_REACTION,
 )
 from genshin_sim.core.systems.damage.models import DamageQuery
-from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
     STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
     STELLAR_CONDUCT_ELECTRO_DAMAGE_TAG,
@@ -273,9 +273,9 @@ class DisenchantmentInDeepShadowReactionBonusProvider:
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        scope: DamageResolutionScope,
     ) -> tuple[DamageModifierTerm, ...]:
-        del session
+        del scope
         request = query.request
         if request.source_ref != self._owner_ref:
             return ()
@@ -330,9 +330,9 @@ class DisenchantmentInDeepShadowCritRateProvider:
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        scope: DamageResolutionScope,
     ) -> tuple[DamageModifierTerm, ...]:
-        del session
+        del scope
         request = query.request
         if request.source_ref != self._owner_ref:
             return ()

@@ -1,0 +1,678 @@
+"""法洁欧与解算模式：内容专属状态机的 FRAME_STARTED 周期 hook。
+
+法洁欧不做空间创建物：模式机（待机/解算/过载）与解算功率
+（0–100）承载在角色内容状态挂载（state_key = handler key，与连段状态同
+段），本 hook 每帧读取字段、推进功率动力学与双轨射击节奏，演化结果经
+``state_patch`` 意图写回，射击/射线以影响请求产出、由同帧下一轮结算消费。
+P4 改进战术的层数不在状态机里：E 排空按功率阈值跨越以 ``buff_requests``
+申请状态效果系统 Buff（层数与过期归 BuffRuntime）。
+
+时序锚定约定：所有节奏字段存绝对帧（solve_start / next_shot / next_ray），
+解释器在按下/松开帧经 ``state_patch`` 提交转移（round 0 结算，先于本帧
+hook 运行），hook 是状态字段与当前帧的纯函数——转移与节奏均无漂移。
+
+直线几何：瞄准方向取桑多涅实体 facing，出发点取其位置；
+射线为长条 oriented box 一次穿透全部命中（即时结算、一条攻击根、多目标
+聚合），子弹走 Space 射线查询取首个交点（单一实例，横向按各实体自身碰撞
+半径绕线判定、射程上限与射线一致），飞行延迟在发射时按距离一次性折算、
+经 hook 内 pending 队列在未来帧兑现（统一意图队列不支持未来帧到期，采用
+内容 pending 退路）。
+
+切人（宿主不在场）视为松开：解算退出并清节奏字段、过载按住停火保持模式，
+两种情况都不再产出射击/射线，功率按后台倍率衰减；已在途的子弹请求按
+原定结算帧兑现。
+"""
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from math import hypot
+from typing import cast
+
+from genshin_sim.content.characters.snezhnaya.sandrone.data import (
+    FAGEOU_BENCH_DECAY_MULTIPLIER,
+    FAGEOU_BULLET_SPEED_M_PER_S,
+    FAGEOU_DRAIN_PER_SECOND,
+    FAGEOU_MODE_IDLE,
+    FAGEOU_MODE_OVERLOAD,
+    FAGEOU_MODE_SOLVE,
+    FAGEOU_OVERLOAD_EXIT_POWER,
+    FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
+    FAGEOU_POWER_DECAY_PER_SECOND,
+    FAGEOU_POWER_MAX,
+    FAGEOU_POWER_RISE_PER_SECOND,
+    FAGEOU_PRE_SWING_FRAMES,
+    FAGEOU_RAY_HIT_POWER_GAIN,
+    FAGEOU_RAY_INDEX_FACT_KEY,
+    FAGEOU_RAY_INTERVAL_FRAMES,
+    FAGEOU_RAY_LENGTH,
+    FAGEOU_RAY_WIDTH,
+    FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
+    FAGEOU_STATE_DRAIN_ACTIVE,
+    FAGEOU_STATE_EXTRA_SEGMENTS_LEFT,
+    FAGEOU_STATE_LAST_PARTICLE_FRAME,
+    FAGEOU_STATE_MODE,
+    FAGEOU_STATE_NEXT_RAY_FRAME,
+    FAGEOU_STATE_NEXT_SHOT_FRAME,
+    FAGEOU_STATE_POWER,
+    FAGEOU_STATE_RAY_COUNT,
+    FAGEOU_STATE_SOLVE_START_FRAME,
+    FRAMES_PER_SECOND,
+    SANDRONE_CHARACTER_HANDLER_KEY,
+    SANDRONE_CHARGED_ATTACK_ACTION_KEY,
+    SANDRONE_CHARGED_ATTACK_EXTRA_IMPACT_KEY,
+    SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY,
+    SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
+    SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY,
+    SANDRONE_PASSIVE_P4_HANDLER_KEY,
+    SandroneP4AssetValues,
+)
+from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
+    SandroneStellarAttackChannel,
+    resolve_stellar_attack_spec,
+)
+from genshin_sim.content.generic.chain_state import chain_state_schema
+from genshin_sim.content.hooks import HookContext
+from genshin_sim.content.models import HookResult
+from genshin_sim.content.state_container import StatePatchRequest
+from genshin_sim.core.attributes import (
+    AttributeSubjectRef,
+    RuntimeSourceKind,
+    RuntimeSourceRef,
+)
+from genshin_sim.core.contracts.json import JSONValue
+from genshin_sim.core.contracts.state_schema import (
+    StateField,
+    StateFieldType,
+    StateSchema,
+)
+from genshin_sim.core.events import EventType
+from genshin_sim.core.impacts import DamageImpactSpec, ImpactKind, ImpactRequest
+from genshin_sim.core.space import (
+    OrientedBoxArea,
+    RayQuery,
+    SpatialEntityKind,
+    Vector3,
+)
+from genshin_sim.core.space.space import ACTIVE_CHARACTER_ENTITY_ID
+from genshin_sim.core.systems.buff import ApplyBuffRequest
+from genshin_sim.core.systems.damage import DamageFactValue
+
+
+class SandroneFageouError(RuntimeError):
+    """法洁欧状态机运行期错误（接线缺失或契约不完整）。"""
+
+
+def sandrone_state_schema(owner_ref: str) -> StateSchema:
+    """连段状态 + 法洁欧模式机的合并状态 schema。
+
+    P4 改进战术不在状态机里：层数与过期由状态效果系统 Buff 承载（定义见
+    effects.py，叠层申请与消费见本文件与 actions.py）。
+    """
+
+    chain = chain_state_schema(owner_ref)
+    machine = (
+        StateField(
+            name=FAGEOU_STATE_MODE,
+            field_type=StateFieldType.ENUM,
+            default=FAGEOU_MODE_IDLE,
+            allowed_values=(FAGEOU_MODE_IDLE, FAGEOU_MODE_SOLVE, FAGEOU_MODE_OVERLOAD),
+        ),
+        StateField(
+            name=FAGEOU_STATE_POWER,
+            field_type=StateFieldType.FLOAT,
+            default=0.0,
+            non_negative=True,
+            max_value=FAGEOU_POWER_MAX,
+            clamp=True,
+        ),
+        StateField(
+            name=FAGEOU_STATE_SOLVE_START_FRAME,
+            field_type=StateFieldType.INT,
+            default=0,
+            non_negative=True,
+        ),
+        StateField(
+            name=FAGEOU_STATE_NEXT_SHOT_FRAME,
+            field_type=StateFieldType.INT,
+            default=0,
+            non_negative=True,
+        ),
+        StateField(
+            name=FAGEOU_STATE_NEXT_RAY_FRAME,
+            field_type=StateFieldType.INT,
+            default=0,
+            non_negative=True,
+        ),
+        StateField(
+            name=FAGEOU_STATE_DRAIN_ACTIVE,
+            field_type=StateFieldType.BOOL,
+            default=False,
+        ),
+        StateField(
+            name=FAGEOU_STATE_RAY_COUNT,
+            field_type=StateFieldType.INT,
+            default=0,
+            non_negative=True,
+        ),
+        StateField(
+            name=FAGEOU_STATE_EXTRA_SEGMENTS_LEFT,
+            field_type=StateFieldType.INT,
+            default=0,
+            non_negative=True,
+        ),
+        StateField(
+            name=FAGEOU_STATE_LAST_PARTICLE_FRAME,
+            field_type=StateFieldType.INT,
+            default=0,
+            non_negative=True,
+        ),
+    )
+    return StateSchema(owner_ref=owner_ref, fields=chain.fields + machine)
+
+
+class SandroneFageouHook:
+    """解算模式状态机：功率动力学 + 射击/射线双轨 + 直线几何命中。"""
+
+    def __init__(
+        self,
+        *,
+        owner_ref: str,
+        slot: int,
+        damage_specs: Mapping[str, DamageImpactSpec],
+        stellar_channel: SandroneStellarAttackChannel | None = None,
+        pre_swing_frames: int = FAGEOU_PRE_SWING_FRAMES,
+        solve_shot_interval_frames: int = FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
+        overload_shot_interval_frames: int = FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
+        ray_interval_frames: int = FAGEOU_RAY_INTERVAL_FRAMES,
+        power_rise_per_second: float = FAGEOU_POWER_RISE_PER_SECOND,
+        ray_hit_power_gain: float = FAGEOU_RAY_HIT_POWER_GAIN,
+        power_decay_per_second: float = FAGEOU_POWER_DECAY_PER_SECOND,
+        bench_decay_multiplier: float = FAGEOU_BENCH_DECAY_MULTIPLIER,
+        drain_per_second: float = FAGEOU_DRAIN_PER_SECOND,
+        overload_exit_power: float = FAGEOU_OVERLOAD_EXIT_POWER,
+        power_max: float = FAGEOU_POWER_MAX,
+        ray_length: float = FAGEOU_RAY_LENGTH,
+        ray_width: float = FAGEOU_RAY_WIDTH,
+        bullet_speed_m_per_s: float = FAGEOU_BULLET_SPEED_M_PER_S,
+        p4: SandroneP4AssetValues | None = None,
+        tactics_definition_key: str | None = None,
+        c6_extra_normal_spec: DamageImpactSpec | None = None,
+        c6_extra_stellar_channel: SandroneStellarAttackChannel | None = None,
+        c6_extra_segments: int = 0,
+    ) -> None:
+        missing = {
+            SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY,
+            SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY,
+            SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
+        } - set(damage_specs)
+        if missing:
+            raise SandroneFageouError(f"法洁欧缺少伤害契约：{sorted(missing)}")
+        if c6_extra_segments and (c6_extra_normal_spec is None):
+            raise SandroneFageouError("C6 追加段已启用但缺少普通段伤害契约")
+        if c6_extra_stellar_channel is not None and c6_extra_segments == 0:
+            raise SandroneFageouError("C6 星烁追加段通道在未启用追加段时不应存在")
+        if (p4 is None) != (tactics_definition_key is None):
+            raise SandroneFageouError("P4 数值与改进战术 Buff 定义键必须同时提供或同时缺省")
+        self._owner_ref = owner_ref
+        self._slot = slot
+        self._damage_specs: dict[str, DamageImpactSpec] = dict(damage_specs)
+        self._stellar_channel = stellar_channel
+        self._pre_swing_frames = pre_swing_frames
+        self._solve_shot_interval = solve_shot_interval_frames
+        self._overload_shot_interval = overload_shot_interval_frames
+        self._ray_interval = ray_interval_frames
+        self._rise_per_frame = power_rise_per_second / FRAMES_PER_SECOND
+        self._ray_hit_gain = ray_hit_power_gain
+        self._decay_per_frame = power_decay_per_second / FRAMES_PER_SECOND
+        self._bench_decay_multiplier = bench_decay_multiplier
+        self._drain_per_frame = drain_per_second / FRAMES_PER_SECOND
+        self._overload_exit_power = overload_exit_power
+        self._power_max = power_max
+        self._ray_length = ray_length
+        self._ray_width = ray_width
+        self._bullet_speed_m_per_s = bullet_speed_m_per_s
+        # P4 数值取自资产效果行（content.py 装配期传入）；突破 1 阶前为 None，
+        # 排空只清功率、不申请改进战术层数。改进战术的层数与过期由状态效果
+        # 系统 Buff 承载（申请经 buff_requests 走统一意图队列）。
+        self._p4 = p4
+        self._tactics_definition_key = tactics_definition_key
+        self._tactics_source_context = RuntimeSourceRef(
+            RuntimeSourceKind.CONTENT,
+            SANDRONE_PASSIVE_P4_HANDLER_KEY,
+        )
+        self._c6_extra_normal_spec = c6_extra_normal_spec
+        self._c6_extra_stellar_channel = c6_extra_stellar_channel
+        self._c6_extra_segments = c6_extra_segments
+        self._pending: list[tuple[int, ImpactRequest, int]] = []
+        self._request_counter = 0
+        self.hook_key = f"sandrone.fageou:{owner_ref}"
+        self.state_key = SANDRONE_CHARACTER_HANDLER_KEY
+        self.subscriptions = ("FRAME_STARTED",)
+        self.priority = 0
+
+    @property
+    def owner_ref(self) -> str:
+        return self._owner_ref
+
+    @property
+    def pending_count(self) -> int:
+        return len(self._pending)
+
+    def handle(self, event: object, context: object) -> HookResult:
+        if getattr(event, "event_type", None) is not EventType.FRAME_STARTED:
+            return HookResult()
+        frame = getattr(event, "frame", 0)
+        if frame <= 0:
+            return HookResult()
+
+        hook_context = cast(HookContext, context)
+        state = hook_context.state(self._owner_ref)
+        requests = self._due_pending_requests(frame)
+        fields: dict[str, JSONValue] = {}
+
+        def put(name: str, value: JSONValue) -> None:
+            if state.get(name) != value:
+                fields[name] = value
+
+        def as_number(name: str, default: float) -> float:
+            raw = state.get(name, default)
+            if isinstance(raw, bool) or not isinstance(raw, int | float):
+                return default
+            return float(raw)
+
+        mode = state.get(FAGEOU_STATE_MODE, FAGEOU_MODE_IDLE)
+        power = as_number(FAGEOU_STATE_POWER, 0.0)
+        solve_start = int(as_number(FAGEOU_STATE_SOLVE_START_FRAME, 0))
+        next_shot = int(as_number(FAGEOU_STATE_NEXT_SHOT_FRAME, 0))
+        next_ray = int(as_number(FAGEOU_STATE_NEXT_RAY_FRAME, 0))
+        drain_active = bool(state.get(FAGEOU_STATE_DRAIN_ACTIVE, False))
+        ray_count = int(as_number(FAGEOU_STATE_RAY_COUNT, 0))
+        extra_segments_left = int(as_number(FAGEOU_STATE_EXTRA_SEGMENTS_LEFT, 0))
+
+        if drain_active:
+            # E 排空：约 0.5s 排满功率，排空期间停火。功率每跨越一个 10 点
+            # 阈值申请一层改进战术（P4，突破 1 阶解锁；层数与过期由状态效果
+            # 系统 Buff 承载——stack_refresh 策略每次叠层刷新共享到期帧，未
+            # 解锁时排空只清功率），满功率排空拿满 10 层。Buff 到期由
+            # BuffRuntime 按帧推进，本 hook 不再手写过期分支。
+            power_before = power
+            power = max(0.0, power - self._drain_per_frame)
+            if power <= 0.0:
+                drain_active = False
+            buff_requests: tuple[ApplyBuffRequest, ...] = ()
+            if self._p4 is not None:
+                power_step = self._p4.tactics_power_step
+                crossings = int(power_before // power_step) - int(power // power_step)
+                if crossings > 0:
+                    buff_requests = (self._tactics_apply_request(frame, crossings),)
+            put(FAGEOU_STATE_POWER, power)
+            put(FAGEOU_STATE_DRAIN_ACTIVE, drain_active)
+            return self._result(fields, requests, buff_requests=buff_requests)
+
+        off_field = self._is_off_field(hook_context)
+        if off_field and mode == FAGEOU_MODE_SOLVE:
+            # 切人视为松开：法洁欧不在场开火，解算退出并清节奏字段，功率
+            # 转入后台衰减；回到场上后需重新按住重击进入解算。
+            mode = FAGEOU_MODE_IDLE
+            solve_start = 0
+            next_shot = 0
+            next_ray = 0
+            put(FAGEOU_STATE_MODE, mode)
+            put(FAGEOU_STATE_SOLVE_START_FRAME, solve_start)
+            put(FAGEOU_STATE_NEXT_SHOT_FRAME, next_shot)
+            put(FAGEOU_STATE_NEXT_RAY_FRAME, next_ray)
+        elif off_field and mode == FAGEOU_MODE_OVERLOAD and next_shot:
+            # 过载按住中切人：停火（清射击轨）并保持过载模式，功率按后台
+            # 衰减直到跨越退出门回待机。
+            next_shot = 0
+            put(FAGEOU_STATE_NEXT_SHOT_FRAME, next_shot)
+
+        if mode == FAGEOU_MODE_SOLVE:
+            if frame >= solve_start:
+                power = min(self._power_max, power + self._rise_per_frame)
+            if next_shot and frame >= next_shot:
+                # 子弹请求由 pending 队列在命中帧兑现，不在本轮直接产出。
+                self._fire_bullet(hook_context, frame, SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY)
+                next_shot += self._solve_shot_interval
+            if next_ray and frame >= next_ray and power < self._power_max:
+                ray_count += 1
+                # C6：自第 3 次发射冷凝射线起开启追加段记账（每会话一次），
+                # 之后每条真正发射的射线各追加一段，至多 c6_extra_segments 段。
+                if ray_count == 3 and self._c6_extra_segments > 0:
+                    extra_segments_left = self._c6_extra_segments
+                request, hit, targets = self._fire_ray(
+                    hook_context,
+                    frame,
+                    ray_index=ray_count,
+                )
+                if request is not None:
+                    requests.append(request)
+                    if extra_segments_left > 0:
+                        # 追加段叠加在射线之上：与伴随射线同帧、同命中集合，
+                        # 不提供射线命中功率增量，也不改变射线节奏。
+                        extra = self._fire_extra_segment(hook_context, frame, targets)
+                        if extra is not None:
+                            requests.append(extra)
+                        extra_segments_left -= 1
+                if hit:
+                    power = min(self._power_max, power + self._ray_hit_gain)
+                next_ray += self._ray_interval
+            if power >= self._power_max:
+                # 满功率进入过载：射击轨换节奏不重置相位。
+                mode = FAGEOU_MODE_OVERLOAD
+                next_shot = frame + self._overload_shot_interval
+                next_ray = 0
+        elif mode == FAGEOU_MODE_OVERLOAD:
+            if next_shot:
+                # 按住过载：功率冻结，30F 间隔过载射击无限持续。
+                if frame >= next_shot:
+                    self._fire_bullet(
+                        hook_context,
+                        frame,
+                        SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY,
+                    )
+                    next_shot += self._overload_shot_interval
+            else:
+                # 松开停火但模式保持过载，衰减跨越阈值后回待机。
+                power = max(
+                    0.0,
+                    power - self._decay_per_frame * self._decay_multiplier(hook_context),
+                )
+                if power < self._overload_exit_power:
+                    mode = FAGEOU_MODE_IDLE
+        else:
+            power = max(
+                0.0,
+                power - self._decay_per_frame * self._decay_multiplier(hook_context),
+            )
+
+        put(FAGEOU_STATE_MODE, mode)
+        put(FAGEOU_STATE_POWER, power)
+        put(FAGEOU_STATE_SOLVE_START_FRAME, solve_start)
+        put(FAGEOU_STATE_NEXT_SHOT_FRAME, next_shot)
+        put(FAGEOU_STATE_NEXT_RAY_FRAME, next_ray)
+        put(FAGEOU_STATE_RAY_COUNT, ray_count)
+        put(FAGEOU_STATE_EXTRA_SEGMENTS_LEFT, extra_segments_left)
+        return self._result(fields, requests)
+
+    def _result(
+        self,
+        fields: dict[str, JSONValue],
+        requests: list[ImpactRequest],
+        *,
+        buff_requests: tuple[ApplyBuffRequest, ...] = (),
+    ) -> HookResult:
+        patches = ()
+        if fields:
+            patches = (
+                StatePatchRequest(
+                    owner_ref=self._owner_ref,
+                    state_key=self.state_key,
+                    fields=fields,
+                ),
+            )
+        return HookResult(
+            impact_requests=tuple(requests),
+            state_patches=patches,
+            buff_requests=buff_requests,
+        )
+
+    def _tactics_apply_request(self, frame: int, crossings: int) -> ApplyBuffRequest:
+        """E 排空跨越计层的改进战术 Buff 申请。
+
+        层数上限由 Buff 定义的 ``stack_refresh`` 解析收敛（满层继续申请只刷新
+        共享到期帧），本 hook 不感知当前层数。
+        """
+
+        if self._p4 is None or self._tactics_definition_key is None:
+            raise SandroneFageouError("P4 未解锁时不应产出改进战术叠层申请")
+        return ApplyBuffRequest(
+            request_id=f"hook:{self.hook_key}:{frame}:tactics",
+            frame=frame,
+            order=0,
+            definition_key=self._tactics_definition_key,
+            target_ref=AttributeSubjectRef.character(self._owner_ref),
+            source_context=self._tactics_source_context,
+            duration_frames=self._p4.tactics_duration_frames,
+            stack_delta=crossings,
+        )
+
+    def _is_off_field(self, context: HookContext) -> bool:
+        """宿主是否不在场：当前场上槽位存在且与宿主槽位不同。"""
+
+        simulation = context.simulation
+        if simulation is None:
+            return False
+        space_runtime = simulation.space_runtime
+        if space_runtime is None:
+            return False
+        active_slot = space_runtime.team_state.active_slot
+        return active_slot is not None and active_slot != self._slot
+
+    def _decay_multiplier(self, context: HookContext) -> float:
+        """后台衰减倍率：当前场角色为 1.0，宿主下场时 ×3（文本 300%）。"""
+
+        if self._is_off_field(context):
+            return self._bench_decay_multiplier
+        return 1.0
+
+    def _aim(self, context: HookContext) -> tuple[Vector3, Vector3] | None:
+        """瞄准方向与出发点：桑多涅实体位置与 facing（X/Z 归一）。"""
+
+        simulation = context.simulation
+        if simulation is None:
+            return None
+        space_runtime = simulation.space_runtime
+        if space_runtime is None:
+            return None
+        entity = space_runtime.get_entity(ACTIVE_CHARACTER_ENTITY_ID)
+        if entity is None:
+            return None
+        length = hypot(entity.facing.x, entity.facing.z)
+        if length == 0.0:
+            return None
+        direction = Vector3(x=entity.facing.x / length, y=0.0, z=entity.facing.z / length)
+        return entity.position, direction
+
+    def _resolve_ray_targets(
+        self,
+        context: HookContext,
+        origin: Vector3,
+        direction: Vector3,
+    ) -> tuple[str, ...]:
+        """射线穿透：以 facing 定向的长条 oriented box 一次求交全部命中。
+
+        等宽穿透条由 ``OrientedBoxArea.along_ray`` 构造，射程与条宽取
+        ``ray_length`` / ``ray_width``；横向判据是恒定半宽，与子弹按实体
+        碰撞半径判定的射线查询是两种语义。
+        """
+
+        simulation = context.simulation
+        if simulation is None:
+            return ()
+        space_runtime = simulation.space_runtime
+        if space_runtime is None:
+            return ()
+        area = OrientedBoxArea.along_ray(
+            origin,
+            direction,
+            length=self._ray_length,
+            width=self._ray_width,
+        )
+        entities = space_runtime.entities_in_area(area, kinds={SpatialEntityKind.TARGET})
+        candidates = space_runtime.resolve_candidate_targets(
+            tuple(entity.entity_id for entity in entities)
+        )
+        return tuple(candidate.target_id for candidate in candidates)
+
+    def _resolve_bullet(
+        self,
+        context: HookContext,
+        origin: Vector3,
+        direction: Vector3,
+    ) -> tuple[str, float] | None:
+        """子弹直线求交：沿 facing 射线的首个命中（单一实例）。
+        """
+
+        simulation = context.simulation
+        if simulation is None:
+            return None
+        space_runtime = simulation.space_runtime
+        if space_runtime is None:
+            return None
+        hit = space_runtime.first_ray_hit(
+            RayQuery(
+                origin=origin,
+                direction=direction,
+                max_distance=self._ray_length,
+            ),
+            kinds={SpatialEntityKind.TARGET},
+        )
+        if hit is None:
+            return None
+        candidates = space_runtime.resolve_candidate_targets((hit.entity.entity_id,))
+        if not candidates:
+            return None
+        return candidates[0].target_id, hit.distance
+
+    def _fire_bullet(
+        self,
+        context: HookContext,
+        frame: int,
+        impact_key: str,
+    ) -> bool:
+        """子弹出膛：发射时解析直线几何并折算延迟帧，命中结算排未来帧。
+
+        返回是否把子弹请求排入 pending 队列；请求由到期帧经 ``HookResult``
+        兑现，不在本轮直接产出。
+        """
+
+        aim = self._aim(context)
+        if aim is None:
+            return False
+        origin, direction = aim
+        hit = self._resolve_bullet(context, origin, direction)
+        if hit is None:
+            return False
+        target_id, distance = hit
+        delay_frames = int(round(distance / self._bullet_speed_m_per_s * FRAMES_PER_SECOND))
+        resolve_frame = frame + delay_frames
+        request = self._damage_request(
+            frame=resolve_frame,
+            impact_key=impact_key,
+            target_refs=(target_id,),
+        )
+        self._pending.append((resolve_frame, request, self._request_counter))
+        return True
+
+    def _fire_ray(
+        self,
+        context: HookContext,
+        frame: int,
+        *,
+        ray_index: int,
+    ) -> tuple[ImpactRequest | None, bool, tuple[str, ...]]:
+        """射线即时结算：穿透多目标聚合为一条攻击根，命中返回功率增量证据。
+
+        发射时按辉映状态查表分派：持用辉映·星超导/星扩散时射线契约切换为
+        星变体并附组装好的星烁输入（stellar.py），否则走普通射线契约。
+        C6 追加段由调用方另记为独立影响点，不改变本契约；C2 的射线会话
+        序号是发射时刻就确定的身份值，以请求级事实随本请求走结算。
+        """
+
+        aim = self._aim(context)
+        if aim is None:
+            return None, False, ()
+        origin, direction = aim
+        targets = self._resolve_ray_targets(context, origin, direction)
+        if not targets:
+            return None, False, ()
+        request = self._damage_request(
+            frame=frame,
+            impact_key=SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
+            target_refs=targets,
+            damage_spec=self._ray_damage_spec(context, frame),
+            request_facts={FAGEOU_RAY_INDEX_FACT_KEY: ray_index},
+        )
+        return request, True, targets
+
+    def _fire_extra_segment(
+        self,
+        context: HookContext,
+        frame: int,
+        targets: tuple[str, ...],
+    ) -> ImpactRequest | None:
+        """C6 追加段：与伴随射线同帧同命中集合，按辉映查表分派。
+
+        普通段与星变体都由编译期从资产命座第 6 层效果行解析的契约承载
+        （普通 100% 攻击力；星超导 80% / 星扩散 120%）。追加段不提供射线
+        命中功率增量。
+        """
+
+        if self._c6_extra_normal_spec is None:
+            return None
+        damage_spec: DamageImpactSpec = self._c6_extra_normal_spec
+        if self._c6_extra_stellar_channel is not None:
+            stellar_spec = resolve_stellar_attack_spec(
+                self._c6_extra_stellar_channel,
+                simulation=getattr(context, "simulation", None),
+                owner_ref=self._owner_ref,
+                frame=frame,
+            )
+            if stellar_spec is not None:
+                damage_spec = stellar_spec
+        return self._damage_request(
+            frame=frame,
+            impact_key=SANDRONE_CHARGED_ATTACK_EXTRA_IMPACT_KEY,
+            target_refs=targets,
+            damage_spec=damage_spec,
+        )
+
+    def _ray_damage_spec(
+        self,
+        context: HookContext,
+        frame: int,
+    ) -> DamageImpactSpec:
+        normal_spec = self._damage_specs[SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY]
+        if self._stellar_channel is None:
+            return normal_spec
+        stellar_spec = resolve_stellar_attack_spec(
+            self._stellar_channel,
+            simulation=context.simulation,
+            owner_ref=self._owner_ref,
+            frame=frame,
+        )
+        return normal_spec if stellar_spec is None else stellar_spec
+
+    def _damage_request(
+        self,
+        *,
+        frame: int,
+        impact_key: str,
+        target_refs: tuple[str, ...],
+        damage_spec: DamageImpactSpec | None = None,
+        request_facts: Mapping[str, DamageFactValue] | None = None,
+    ) -> ImpactRequest:
+        self._request_counter += 1
+        return ImpactRequest(
+            frame=frame,
+            kind=ImpactKind.DAMAGE,
+            impact_key=impact_key,
+            owner_slot=self._slot,
+            action_key=SANDRONE_CHARGED_ATTACK_ACTION_KEY,
+            request_id=f"{self.hook_key}:{impact_key}:{frame}:{self._request_counter}",
+            target_refs=target_refs,
+            request_facts=request_facts or {},
+            damage_spec=damage_spec if damage_spec is not None else self._damage_specs[impact_key],
+        )
+
+    def _due_pending_requests(self, frame: int) -> list[ImpactRequest]:
+        if not self._pending:
+            return []
+        due = [entry for entry in self._pending if entry[0] <= frame]
+        if not due:
+            return []
+        self._pending = [entry for entry in self._pending if entry[0] > frame]
+        due.sort(key=lambda entry: (entry[0], entry[2]))
+        return [entry[1] for entry in due]

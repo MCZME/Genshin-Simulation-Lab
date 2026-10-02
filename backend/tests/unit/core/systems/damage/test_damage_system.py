@@ -758,8 +758,8 @@ def test_trace_level_changes_audit_only():
     none = resolver.resolve(_query(), trace_level=TraceLevel.NONE)
 
     assert full.final_damage == none.final_damage
-    assert full.source_attribute_trace
-    assert none.source_attribute_trace == ()
+    # trace 级别只改变词条账单的数据量，不改变任何数值。
+    assert full.applied_terms
     assert none.applied_terms == ()
 
 
@@ -916,11 +916,11 @@ def test_lunar_composite_sorts_complete_components_before_weighting():
     assert result.to_dict()["lunar_reaction"] == resolution.to_dict()
 
 
-def test_general_result_audit_dict_exposes_zone_resolutions_and_traces():
+def test_general_result_audit_dict_exposes_zone_resolutions():
     result = DamageResolver(_attribute_resolver()).resolve(_query(can_crit=True))
 
     audit = cast(dict[str, Any], result.to_audit_dict())
-    # 审计形状由伤害系统契约 §9 承载，字段只增不改，因此只断言必要字段存在。
+    # 审计形状由伤害系统契约 §9 承载，只包含伤害系统自身的内容。
     assert {
         "component_results",
         "base_damage_additions",
@@ -931,10 +931,11 @@ def test_general_result_audit_dict_exposes_zone_resolutions_and_traces():
         "reaction",
         "applied_terms",
         "rejected_terms",
-        "source_attribute_trace",
-        "target_attribute_trace",
         "trace_metadata",
     } <= set(audit)
+    # 属性解析内容属于属性系统，不进入伤害审计（2026-08-30 决策）。
+    assert "source_attribute_trace" not in audit
+    assert "target_attribute_trace" not in audit
     assert audit["damage_bonus"] == {
         "element_bonus": 0.2,
         "modifier_bonus": 0.0,
@@ -951,22 +952,6 @@ def test_general_result_audit_dict_exposes_zone_resolutions_and_traces():
     assert audit["reaction"] is None
     assert audit["component_results"] == tuple(item.to_dict() for item in result.component_results)
     assert audit["trace_metadata"] == {"effective_crit_rate": critical["effective_crit_rate"]}
-    assert audit["source_attribute_trace"]
-    trace_entry = audit["source_attribute_trace"][0]
-    assert {
-        "attribute_key",
-        "subject_ref",
-        "final_value",
-        "base_value",
-        "applied_terms",
-        "rejected_terms",
-        "dependency_resolutions",
-        "policy_key",
-        "trace_metadata",
-    } <= set(trace_entry)
-    assert trace_entry["dependency_resolutions"] == tuple(
-        item.to_dict() for item in result.source_attribute_trace[0].dependency_resolutions
-    )
 
 
 def test_general_result_audit_reaction_reports_amplifying_details():
@@ -1126,6 +1111,3 @@ def test_lunar_result_audit_reaction_uses_lunar_resolution():
     }
     assert DamageModifierStage.PANEL_ELEMENTAL_MASTERY in panel_stages
     assert DamageModifierStage.PANEL_RESISTANCE in panel_stages
-    assert audit["source_attribute_trace"] == tuple(
-        item.to_dict() for item in result.source_attribute_trace
-    )

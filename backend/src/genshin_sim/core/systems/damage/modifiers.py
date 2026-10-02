@@ -23,7 +23,7 @@ from genshin_sim.core.systems.damage.errors import (
 from genshin_sim.core.systems.damage.models import DamageModifierTerm, DamageQuery
 
 if TYPE_CHECKING:
-    from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+    from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 
 
 @dataclass(frozen=True, slots=True)
@@ -48,6 +48,8 @@ class DamageModifierProviderSpec:
     reads: tuple[DamageAttributeRead, ...] = ()
     writes: frozenset[DamageModifierStage] = frozenset()
     owner_ref: AttributeSubjectRef | None = None
+    # provider 声明读取的伤害事实 key；读取未声明的 key 视为越权。
+    reads_facts: frozenset[str] = frozenset()
     # provider 显示名；由内容层提供，收集器注入返回 term 的审计。
     display_name: str | None = None
 
@@ -62,12 +64,16 @@ class DamageModifierProviderSpec:
             raise DamageValidationError("damage provider reads 包含非法声明")
         if any(not isinstance(stage, DamageModifierStage) for stage in self.writes):
             raise DamageValidationError("damage provider writes 包含非法阶段")
+        reads_facts = frozenset(self.reads_facts)
+        if any(not isinstance(key, str) or not key.strip() for key in reads_facts):
+            raise DamageValidationError("damage provider reads_facts 包含非法 key")
         if self.display_name is not None and (
             not isinstance(self.display_name, str) or not self.display_name.strip()
         ):
             raise DamageValidationError("damage provider display_name 必须是非空字符串")
         object.__setattr__(self, "reads", tuple(self.reads))
         object.__setattr__(self, "writes", frozenset(self.writes))
+        object.__setattr__(self, "reads_facts", reads_facts)
 
 
 class DamageModifierProvider(Protocol):
@@ -82,7 +88,7 @@ class DamageModifierProvider(Protocol):
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        scope: DamageResolutionScope,
     ) -> Sequence[DamageModifierTerm]:
         """根据当前伤害查询返回候选修饰项。"""
 
@@ -111,11 +117,11 @@ class StaticDamageModifierProvider:
     def contribute(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        scope: DamageResolutionScope,
     ) -> tuple[DamageModifierTerm, ...]:
         """忽略查询上下文，返回构造时提供的固定修饰项。"""
 
-        del query, session
+        del query, scope
         return self._terms
 
 
@@ -174,10 +180,20 @@ class DamageModifierIndex:
 
         return tuple(sorted(self._providers))
 
+    @property
+    def declared_fact_reads(self) -> tuple[tuple[str, str], ...]:
+        """返回 (provider_key, fact_key) 声明对，供装配期与事实索引交叉校验。"""
+
+        return tuple(
+            (provider_key, fact_key)
+            for provider_key in self.provider_keys
+            for fact_key in sorted(self._providers[provider_key].provider_spec.reads_facts)
+        )
+
     def collect(
         self,
         query: DamageQuery,
-        session: DamageResolutionSession,
+        scope: DamageResolutionScope,
     ) -> DamageModifierCollection:
         """调用所有 provider，校验返回值并产出生效/拒绝集合。"""
 
@@ -185,11 +201,11 @@ class DamageModifierIndex:
         for provider_key in self.provider_keys:
             provider = self._providers[provider_key]
             spec = provider.provider_spec
-            session.begin_provider(spec)
+            scope.begin_provider(spec)
             try:
-                provided = tuple(provider.contribute(query, session))
+                provided = tuple(provider.contribute(query, scope))
             finally:
-                session.end_provider(spec)
+                scope.end_provider(spec)
             for term in provided:
                 if not isinstance(term, DamageModifierTerm):
                     raise DamageProviderViolationError(

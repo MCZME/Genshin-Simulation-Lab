@@ -9,6 +9,7 @@ from genshin_sim.core.systems.damage.enums import (
     LunarReactionDamageMode,
 )
 from genshin_sim.core.systems.damage.errors import (
+    ConflictingDamageFactError,
     ConflictingDamageModifierError,
     CriticalDecisionError,
     DamageErrorDetail,
@@ -23,6 +24,12 @@ from genshin_sim.core.systems.damage.errors import (
     InvalidDamageScalingError,
     UnsupportedDamageElementError,
     UnsupportedDamageFormulaError,
+)
+from genshin_sim.core.systems.damage.facts import (
+    DamageFactIndex,
+    DamageFactProvider,
+    DamageFactSpec,
+    DamageFactValue,
 )
 from genshin_sim.core.systems.damage.formulas import (
     DamageFormula,
@@ -101,7 +108,7 @@ from genshin_sim.core.systems.damage.policies import (
     StandardScalingZonePolicy,
 )
 from genshin_sim.core.systems.damage.profiles import DamageProfileRegistry
-from genshin_sim.core.systems.damage.resolver import DamageResolutionSession, DamageResolver
+from genshin_sim.core.systems.damage.resolver import DamageResolutionScope, DamageResolver
 from genshin_sim.core.systems.damage.stellar import (
     StellarReactionDamageInput,
     StellarReactionDamageResolution,
@@ -109,6 +116,7 @@ from genshin_sim.core.systems.damage.stellar import (
 )
 
 __all__ = [
+    "ConflictingDamageFactError",
     "ConflictingDamageModifierError",
     "CritOutcome",
     "CriticalDecisionError",
@@ -124,6 +132,10 @@ __all__ = [
     "Element",
     "DamageReactionCapability",
     "DamageErrorDetail",
+    "DamageFactIndex",
+    "DamageFactProvider",
+    "DamageFactSpec",
+    "DamageFactValue",
     "DamageFormula",
     "DamageFormulaContext",
     "DamageFormulaInputError",
@@ -144,7 +156,7 @@ __all__ = [
     "DamageQuery",
     "DamageRequest",
     "DamageResolutionError",
-    "DamageResolutionSession",
+    "DamageResolutionScope",
     "DamageResolutionRecord",
     "DamageResolver",
     "DamageResult",

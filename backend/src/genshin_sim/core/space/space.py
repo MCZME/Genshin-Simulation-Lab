@@ -2,12 +2,19 @@ from __future__ import annotations
 
 from collections.abc import Callable, Iterable, Iterator
 from contextlib import contextmanager
-from dataclasses import replace
+from dataclasses import dataclass, replace
+from math import hypot
 from typing import TYPE_CHECKING
 
 from genshin_sim.core.space.entities import SpatialEntity, SpatialEntityKind
 from genshin_sim.core.space.errors import SpaceEntityPlanConflictError
-from genshin_sim.core.space.geometry import CircleArea, CircleSectorArea, OrientedBoxArea, Vector3
+from genshin_sim.core.space.geometry import (
+    CircleArea,
+    CircleSectorArea,
+    OrientedBoxArea,
+    RayQuery,
+    Vector3,
+)
 from genshin_sim.core.space.mutations import SpaceEntityCommitReceipt, SpaceEntityMutationPlan
 from genshin_sim.core.space.snapshots import SpaceSnapshot
 
@@ -15,6 +22,31 @@ if TYPE_CHECKING:
     from genshin_sim.core.simulation import SimulationContext
 
 ACTIVE_CHARACTER_ENTITY_ID = "player:active"
+
+
+@dataclass(frozen=True, slots=True)
+class RayHit:
+    """射线查询命中的空间实体与几何度量。
+
+    ``forward`` 是沿射线方向的投影距离（用于排序与射程截断），``distance``
+    是起点到实体中心的 X/Z 直线距离（用于弹道飞行时间等换算），两者在
+    实体偏离射线中轴时不同。
+    """
+
+    entity: SpatialEntity
+    forward: float
+    distance: float
+
+
+def _ray_offset(query: RayQuery, position: Vector3) -> tuple[float, float, float]:
+    """返回 ``(forward, lateral, distance)``；``lateral`` 为右向横向偏移。"""
+
+    delta_x = position.x - query.origin.x
+    delta_z = position.z - query.origin.z
+    direction = query.direction
+    forward = delta_x * direction.x + delta_z * direction.z
+    lateral = -delta_x * direction.z + delta_z * direction.x
+    return forward, lateral, hypot(delta_x, delta_z)
 
 
 class Space:
@@ -202,6 +234,61 @@ class Space:
             and (kind_filter is None or entity.kind in kind_filter)
             and area.contains(entity.position)
         )
+
+    def ray_hits(
+        self,
+        query: RayQuery,
+        *,
+        kinds: Iterable[SpatialEntityKind] | None = None,
+        exclude_entity_ids: Iterable[str] = (),
+    ) -> tuple[RayHit, ...]:
+        """按 X/Z 平面射线求交，返回沿射线前进距离升序的命中。
+
+        命中口径：实体在 Space 当前帧处于 active、通过排除列表与类型过滤、
+        ``forward > 0``、且 ``|lateral| <= entity.collision_box.radius``，
+        命中距离不超过 ``query.max_distance``。横向判定按各实体自身的碰撞
+        圆柱半径绕线计算，不使用实体中心点 contain，因此能表达实体中心
+        偏离射线中轴但本体仍被命中的情形。``forward`` 相同时按实体登记
+        顺序保持确定性。
+        """
+
+        if not isinstance(query, RayQuery):
+            raise TypeError("Space.ray_hits 的 query 必须是 RayQuery")
+        kind_filter = None if kinds is None else frozenset(kinds)
+        excluded = frozenset(exclude_entity_ids)
+        hits: list[RayHit] = []
+        for entity in self._entities.values():
+            if entity.entity_id in excluded:
+                continue
+            if not entity.is_active_at(self._current_frame):
+                continue
+            if kind_filter is not None and entity.kind not in kind_filter:
+                continue
+            forward, lateral, distance = _ray_offset(query, entity.position)
+            if forward <= 0.0:
+                continue
+            if query.max_distance is not None and forward > query.max_distance:
+                continue
+            if abs(lateral) > entity.collision_box.radius:
+                continue
+            hits.append(RayHit(entity=entity, forward=forward, distance=distance))
+        hits.sort(key=lambda hit: hit.forward)
+        return tuple(hits)
+
+    def first_ray_hit(
+        self,
+        query: RayQuery,
+        *,
+        kinds: Iterable[SpatialEntityKind] | None = None,
+        exclude_entity_ids: Iterable[str] = (),
+    ) -> RayHit | None:
+        """返回沿射线前进距离最小的命中；无命中返回 ``None``。
+
+        与 ``ray_hits`` 使用同一命中与排序口径，取排序后的首个元素。
+        """
+
+        hits = self.ray_hits(query, kinds=kinds, exclude_entity_ids=exclude_entity_ids)
+        return hits[0] if hits else None
 
     def update_frame(self, context: SimulationContext, frame: int) -> None:
         del context

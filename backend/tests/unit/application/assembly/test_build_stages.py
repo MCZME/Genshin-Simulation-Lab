@@ -3,6 +3,7 @@ from __future__ import annotations
 import pytest
 
 from genshin_sim.application.assembly.errors import (
+    InvalidRuntimePayloadError,
     MissingRuntimeAssetError,
     MissingRuntimeHandlerError,
 )
@@ -33,6 +34,7 @@ from genshin_sim.core.contracts.state_schema import (
     StateFieldType,
     StateSchema,
 )
+from genshin_sim.core.systems.damage import DamageFactSpec, DamageFactValue
 from tests.helpers.asset_repository import FakeAssetRepository
 
 
@@ -229,6 +231,65 @@ def test_content_compiler_instantiates_state_container_from_unit_schema():
     assert mount.owner == "character:slot_1"
     assert mount.state_key == "character.stage_contributed"
     assert mount.values == {"stacks": 0}
+
+
+def test_content_compiler_collects_fact_providers_and_request_fact_keys():
+    class _ForwardingProvider:
+        """会话容器的规定形态：无状态转发视图（测试中转发到空 store）。"""
+
+        def __init__(self) -> None:
+            self.fact_spec = DamageFactSpec(
+                provider_key="testing.facts",
+                facts=frozenset({"testing.facts.counter"}),
+            )
+
+        def read_fact(self, key: str) -> DamageFactValue | None:
+            del key
+            return None
+
+    provider = _ForwardingProvider()
+    unit_registry = ContentUnitRegistry()
+
+    def factory(request: CharacterContentUnitRequest) -> ContentUnit:
+        return ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
+            owner_key=request.character_key,
+            handler_key=request.handler_key,
+            version="dev-m3c",
+            slot=request.slot,
+            damage_fact_providers=(provider,),
+            damage_request_fact_keys=("testing.facts.prism_index",),
+        )
+
+    unit_registry.register_character_factory("character.stage_contributed", factory)
+    compiler = ContentCompiler(unit_registry)
+    assets = AssetBundleLoader(StageAssetRepositoryWithHandler()).load(_single_character_config())
+
+    bundle = compiler.compile(_single_character_config(), assets)
+
+    assert bundle.damage_fact_providers == (provider,)
+    assert bundle.damage_request_fact_keys == ("testing.facts.prism_index",)
+
+
+def test_content_compiler_rejects_empty_request_fact_key():
+    unit_registry = ContentUnitRegistry()
+
+    def factory(request: CharacterContentUnitRequest) -> ContentUnit:
+        return ContentUnit(
+            owner_type=ContentUnitOwnerType.CHARACTER,
+            owner_key=request.character_key,
+            handler_key=request.handler_key,
+            version="dev-m3c",
+            slot=request.slot,
+            damage_request_fact_keys=("  ",),
+        )
+
+    unit_registry.register_character_factory("character.stage_contributed", factory)
+    compiler = ContentCompiler(unit_registry)
+    assets = AssetBundleLoader(StageAssetRepositoryWithHandler()).load(_single_character_config())
+
+    with pytest.raises(InvalidRuntimePayloadError, match="非空字符串"):
+        compiler.compile(_single_character_config(), assets)
 
 
 def test_content_compiler_resolves_default_noop_handler_without_developer_mode():

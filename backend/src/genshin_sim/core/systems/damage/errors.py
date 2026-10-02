@@ -85,6 +85,12 @@ class ConflictingDamageModifierError(DamageSystemError):
     code = "conflicting_damage_modifier"
 
 
+class ConflictingDamageFactError(DamageSystemError):
+    """伤害事实容器之间存在身份或 key 冲突。"""
+
+    code = "conflicting_damage_fact"
+
+
 class CriticalDecisionError(DamageSystemError):
     """暴击决策 provider 返回了与请求不兼容的结果。"""
 

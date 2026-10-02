@@ -12,7 +12,7 @@ from genshin_sim.core.systems.damage import (
 )
 from genshin_sim.core.systems.damage.formulas import StellarReactionDamageFormula
 from genshin_sim.core.systems.damage.modifiers import DamageModifierIndex
-from genshin_sim.core.systems.damage.resolver import DamageResolutionSession
+from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 from tests.helpers import damage
 
 CRIT_DAMAGE_BONUS = 0.5
@@ -22,7 +22,7 @@ def _resolve_character_direct(critical: bool):
     """以固定暴击决策结算一次角色直击星烁伤害。"""
 
     query = damage.make_query(damage.make_character_direct_input())
-    session = DamageResolutionSession(damage.make_stellar_attribute_resolver(), query)
+    scope = DamageResolutionScope(damage.make_stellar_attribute_resolver(), query)
     index = DamageModifierIndex(
         (damage.OwnerScopedProvider(damage.SOURCE, damage.CRIT_DAMAGE_STAGE, CRIT_DAMAGE_BONUS),)
     )
@@ -36,8 +36,8 @@ def _resolve_character_direct(critical: bool):
     return formula.resolve(
         DamageFormulaContext(
             query=query,
-            session=session,
-            modifiers=index.collect(query, session),
+            scope=scope,
+            modifiers=index.collect(query, scope),
             trace_level=TraceLevel.FULL,
             modifier_collector=index.collect,
         )

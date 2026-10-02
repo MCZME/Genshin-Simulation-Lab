@@ -45,6 +45,7 @@ from genshin_sim.core.systems.cooldown import (
     CooldownKey,
 )
 from genshin_sim.core.systems.damage import (
+    DamageFactProvider,
     DamageModifierProvider,
     DamageModifierStackingGroupDefinition,
 )
@@ -77,7 +78,12 @@ class ContentCompiler:
         units: list[ContentUnit] = []
         for bundle in bundles:
             slot_config = slot_configs[bundle.slot]
-            owner_contexts = self._owner_contexts(bundle, slot_config)
+            character_effect_params = self._character_effect_params(bundle)
+            owner_contexts = self._owner_contexts(
+                bundle,
+                slot_config,
+                character_effect_params=character_effect_params,
+            )
             raw_effect_units = [
                 self._prepare_effect(
                     payload,
@@ -100,6 +106,7 @@ class ContentCompiler:
                 slot_config,
                 talent_boosts=talent_boosts,
                 cooldown_duration_terms=cooldown_duration_terms,
+                effect_params=character_effect_params,
             )
             if unit is not None:
                 units.append(unit)
@@ -153,21 +160,48 @@ class ContentCompiler:
                 )
 
     @staticmethod
+    def _character_effect_params(
+        bundle: RuntimeAssetBundle,
+    ) -> dict[str, dict[str, Any]]:
+        """该角色名下全部效果行的参数，按 ``unlock_key`` 索引。
+
+        角色单元与角色效果单元都需要这些数值：前者直接编译命座/被动的机器
+        行为（动作状态机、伤害契约），后者承载效果自身的切片。同一个来源，
+        两条通道，避免内容代码留下第二份常量。效果行的 ``unlock_key`` 是资产
+        侧的位置元数据，这里仅用作索引键。
+        """
+
+        collected: dict[str, dict[str, Any]] = {}
+        for payload in bundle.effect_payloads:
+            if payload.owner_type != "character":
+                continue
+            if payload.owner_key != bundle.character.asset_key:
+                continue
+            unlock_key = payload.unlock_key
+            if not isinstance(unlock_key, str) or not unlock_key.strip():
+                continue
+            collected[unlock_key] = dict(payload.params)
+        return collected
+
+    @staticmethod
     def _owner_contexts(
         bundle: RuntimeAssetBundle,
         slot_config: TeamSlotConfig,
+        *,
+        character_effect_params: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> dict[tuple[str, str], EffectOwnerContext]:
         """按资产归属建立「效果行 owner -> 拥有者编译期上下文」的映射。
 
-        拥有者把被拥有单元所需的证据一并交给它：角色给命座与天赋等级，武器给精炼
-        等级，圣遗物套装给穿戴件数。这些取值来自配置与资产索引行，被拥有的单元
-        不需要在自己的效果行里重复声明。
+        拥有者把被拥有单元所需的证据一并交给它：角色给命座、天赋等级与自身
+        全部效果行的参数，武器给精炼等级，圣遗物套装给穿戴件数。这些取值来自
+        配置与资产索引行，被拥有的单元不需要在自己的效果行里重复声明。
         """
 
         contexts: dict[tuple[str, str], EffectOwnerContext] = {
             ("character", bundle.character.asset_key): EffectOwnerContext(
                 constellation=slot_config.character.constellation,
                 talent_levels=dict(slot_config.character.talents),
+                effect_params=dict(character_effect_params or {}),
             ),
         }
         if bundle.weapon is not None:
@@ -194,6 +228,7 @@ class ContentCompiler:
             CooldownKey,
             tuple[CooldownDurationTerm, ...],
         ],
+        effect_params: Mapping[str, Mapping[str, Any]] | None = None,
     ) -> ContentUnit | None:
         handler_key = bundle.character.handler_key
         if handler_key is None:
@@ -205,10 +240,12 @@ class ContentCompiler:
             character_key=bundle.character.asset_key,
             slot=bundle.slot,
             constellation=slot_config.character.constellation,
+            ascension_phase=bundle.character_level_stats.ascension_phase,
             talent_levels=slot_config.character.talents,
             talent_boosts=dict(talent_boosts),
             cooldown_duration_terms=cooldown_duration_terms,
             talent_scalings=bundle.talent_scalings,
+            effect_params=dict(effect_params or {}),
             asset=bundle.character,
         )
         try:
@@ -227,8 +264,9 @@ class ContentCompiler:
         """按静态解锁条件过滤效果单元的静态贡献切片。
 
         事件 hook 保留在单元内，仍由 HookDispatcher 在第 0 帧按解锁求值；
-        ``talent_level_boosts`` / ``cooldown_duration_terms`` / 属性 provider
-        在编译期按配置命座过滤，避免锁定效果影响倍率、冷却或属性解析。
+        ``talent_level_boosts`` / ``cooldown_duration_terms`` / 属性 provider /
+        伤害修饰 provider 在编译期按配置命座过滤，避免锁定效果影响倍率、
+        冷却、属性解析或伤害结算。
         """
 
         if len(unit.effects) != 1:
@@ -242,7 +280,10 @@ class ContentCompiler:
         if unlock.evaluate(values):
             return unit
         if not (
-            unit.talent_level_boosts or unit.cooldown_duration_terms or unit.attribute_providers
+            unit.talent_level_boosts
+            or unit.cooldown_duration_terms
+            or unit.attribute_providers
+            or unit.damage_modifier_providers
         ):
             return unit
         return replace(
@@ -250,6 +291,7 @@ class ContentCompiler:
             talent_level_boosts={},
             cooldown_duration_terms={},
             attribute_providers=(),
+            damage_modifier_providers=(),
         )
 
     @staticmethod
@@ -440,6 +482,8 @@ class ContentCompiler:
         modifiers: list[Modifier] = []
         damage_modifier_providers: list[DamageModifierProvider] = []
         damage_modifier_stacking_groups: list[DamageModifierStackingGroupDefinition] = []
+        damage_fact_providers: list[DamageFactProvider] = []
+        damage_request_fact_keys: list[str] = []
         attribute_stacking_groups: list[ModifierStackingGroupDefinition] = []
         buff_definitions: list[BuffDefinition] = []
         infusion_definitions: list[InfusionDefinition] = []
@@ -464,6 +508,8 @@ class ContentCompiler:
             cooldown_definitions.extend(unit.cooldown_definitions)
             damage_modifier_providers.extend(unit.damage_modifier_providers)
             damage_modifier_stacking_groups.extend(unit.damage_modifier_stacking_groups)
+            damage_fact_providers.extend(unit.damage_fact_providers)
+            damage_request_fact_keys.extend(unit.damage_request_fact_keys)
 
         return RuntimeContentBundle(
             content_units=units,
@@ -481,6 +527,8 @@ class ContentCompiler:
             cooldown_definitions=tuple(cooldown_definitions),
             damage_modifier_providers=tuple(damage_modifier_providers),
             damage_modifier_stacking_groups=tuple(damage_modifier_stacking_groups),
+            damage_fact_providers=tuple(damage_fact_providers),
+            damage_request_fact_keys=tuple(sorted(set(damage_request_fact_keys))),
         )
 
     def _register_state_schema(

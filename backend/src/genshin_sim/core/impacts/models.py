@@ -3,12 +3,19 @@ from __future__ import annotations
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
+from typing import TYPE_CHECKING
 
 from genshin_sim.core.actions import ActionOwnerRef, CandidateTargetRef
 from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.space.geometry import ImpactAreaSpec
 from genshin_sim.core.systems.aura import AuraStrength
 from genshin_sim.core.systems.damage import DamageScalingTerm
+from genshin_sim.core.systems.damage.errors import DamageValidationError
+from genshin_sim.core.systems.damage.facts import DamageFactValue, validate_damage_fact_value
+from genshin_sim.core.systems.damage.stellar import StellarReactionDamageInput
+
+if TYPE_CHECKING:
+    from genshin_sim.core.simulation.context import SimulationContext
 
 
 class ImpactKind(StrEnum):
@@ -32,6 +39,8 @@ class StrikeType(StrEnum):
 
     DEFAULT = "默认"
     BLUNT = "钝击"
+    SLASH = "切割"
+    PIERCE = "穿刺"
 
 
 @dataclass(frozen=True, slots=True)
@@ -54,6 +63,9 @@ class DamageImpactSpec:
     area: ImpactAreaSpec | None = None
     # 这一次伤害的显示名称（如"重击"）；由内容定义提供，进入 DAMAGE_RESOLVED 审计。
     display_name: str | None = None
+    # 直伤星烁输入（角色能力在发射时组装）；携带时本契约必须满足星烁请求边界：
+    # 不携带普通倍率、不附着元素、无 ICD 标签。
+    stellar_reaction: StellarReactionDamageInput | None = None
 
     def __post_init__(self) -> None:
         for value, name in (
@@ -110,6 +122,24 @@ class DamageImpactSpec:
             raise ValueError("display_name 提供时必须是非空字符串")
         if self.area is not None and not isinstance(self.area, ImpactAreaSpec):
             raise ValueError("area 提供时必须是非空 ImpactAreaSpec")
+        if self.stellar_reaction is not None and not isinstance(
+            self.stellar_reaction,
+            StellarReactionDamageInput,
+        ):
+            raise ValueError("stellar_reaction 提供时必须是 StellarReactionDamageInput")
+        if self.stellar_reaction is not None:
+            # 星烁请求边界（星超导反应契约 §8）：直伤模式的倍率与属性由
+            # scaling_terms 的 coefficient 与 attribute_key 分别承载；复合模式的
+            # 倍率区基线来自参与者反应基础值，请求级倍率没有承载对象，显式拒绝。
+            # 两种模式都不携带固定基础伤害与附着、ICD。
+            if self.stellar_reaction.mode == "reaction_composite" and self.scaling_terms:
+                raise ValueError("星烁复合伤害不能携带请求级倍率 scaling_terms")
+            if self.flat_base_damage:
+                raise ValueError("星烁伤害契约不能携带 flat_base_damage")
+            if self.elemental_strength is not None or not self.elemental_amount.is_zero:
+                raise ValueError("星烁伤害契约不能附着元素")
+            if self.icd_tag_key is not None:
+                raise ValueError("星烁伤害契约不能携带 ICD 标签")
         object.__setattr__(self, "scaling_terms", terms)
         object.__setattr__(self, "additional_attack_tags", tags)
 
@@ -167,6 +197,9 @@ class ImpactRequest:
     element: str | None = None
     tags: tuple[str, ...] = ()
     params: Mapping[str, object] = field(default_factory=dict)
+    # 请求级事实：发射方绑定的身份与快照值（如弹序、施放帧功率），随请求
+    # 走到伤害结算；取值语义固定为"发射时刻"，与会话级事实（读当下）分工。
+    request_facts: Mapping[str, DamageFactValue] = field(default_factory=dict)
     damage_spec: DamageImpactSpec | None = None
     elemental_application_spec: ElementalApplicationSpec | None = None
 
@@ -184,6 +217,16 @@ class ImpactRequest:
         object.__setattr__(self, "target_refs", tuple(self.target_refs))
         object.__setattr__(self, "tags", tuple(self.tags))
         object.__setattr__(self, "params", dict(self.params))
+        request_facts = dict(self.request_facts)
+        for key, value in request_facts.items():
+            if not isinstance(key, str) or not key.strip():
+                msg = "request_facts key 必须是非空字符串"
+                raise ValueError(msg)
+            try:
+                validate_damage_fact_value(value, key)
+            except DamageValidationError as error:
+                raise ValueError(str(error)) from error
+        object.__setattr__(self, "request_facts", request_facts)
         if self.damage_spec is not None and self.kind is not ImpactKind.DAMAGE:
             raise ValueError("只有 DAMAGE ImpactRequest 可以携带 damage_spec")
         if self.elemental_application_spec is not None and self.kind is not ImpactKind.APPLY_AURA:
@@ -225,6 +268,9 @@ class ActionImpactContext:
     impact_key: str
     target_refs: tuple[CandidateTargetRef, ...] = ()
     params: Mapping[str, object] = field(default_factory=dict)
+    # 当前仿真上下文；由 ImpactRuntime 在派发时注入，供工厂读取运行时证据
+    # （如辉映 Buff 的属性投影）。直接构造上下文的旧调用方可省略。
+    simulation: SimulationContext | None = None
 
     def __post_init__(self) -> None:
         if self.frame < 0:

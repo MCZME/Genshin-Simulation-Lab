@@ -177,6 +177,78 @@ def test_fetch_project_amber_source_cache_reuses_existing_detail_files(tmp_path)
     assert "https://gi.yatta.moe/api/v2/chs/reliquary/15032" not in client.requested_urls
 
 
+def test_fetch_project_amber_source_cache_refresh_overwrites_detail_files(tmp_path):
+    cache_dir = tmp_path / "cache"
+    for folder in ("avatar", "weapon", "reliquary"):
+        (cache_dir / folder).mkdir(parents=True)
+    (cache_dir / "avatar" / "75.json").write_text(
+        json.dumps({"response": 200, "data": {"id": 75, "name": "过期占位"}}),
+        encoding="utf-8",
+    )
+    (cache_dir / "weapon" / "11512.json").write_text(
+        json.dumps({"response": 200, "data": {"id": 11512, "name": "过期占位"}}),
+        encoding="utf-8",
+    )
+    (cache_dir / "reliquary" / "15032.json").write_text(
+        json.dumps({"response": 200, "data": {"id": 15032, "name": "过期占位"}}),
+        encoding="utf-8",
+    )
+    client = FakeJsonClient(
+        {
+            "https://gi.yatta.moe/api/v2/chs/avatar": {
+                "response": 200,
+                "data": {"items": {"75": {"name": "芙宁娜"}}},
+            },
+            "https://gi.yatta.moe/api/v2/chs/avatar/75": {
+                "response": 200,
+                "data": {"id": 75, "name": "芙宁娜"},
+            },
+            "https://gi.yatta.moe/api/v2/chs/weapon": {
+                "response": 200,
+                "data": {"items": {"11512": {"name": "静水流涌之辉"}}},
+            },
+            "https://gi.yatta.moe/api/v2/chs/weapon/11512": {
+                "response": 200,
+                "data": {"id": 11512, "name": "静水流涌之辉"},
+            },
+            "https://gi.yatta.moe/api/v2/chs/reliquary": {
+                "response": 200,
+                "data": {"items": {"15032": {"name": "黄金剧团"}}},
+            },
+            "https://gi.yatta.moe/api/v2/chs/reliquary/15032": {
+                "response": 200,
+                "data": {"id": 15032, "name": "黄金剧团"},
+            },
+            "https://gi.yatta.moe/api/v2/static/avatarCurve": {
+                "response": 200,
+                "data": {"1": {"curveInfos": {}}},
+            },
+            "https://gi.yatta.moe/api/v2/static/weaponCurve": {
+                "response": 200,
+                "data": {"1": {"curveInfos": {}}},
+            },
+        }
+    )
+
+    summary = fetch_project_amber_source_cache(
+        cache_dir, include_all_details=True, refresh=True, client=client
+    )
+
+    assert summary.character_detail_count == 1
+    assert summary.weapon_detail_count == 1
+    assert summary.artifact_set_detail_count == 1
+    assert "https://gi.yatta.moe/api/v2/chs/avatar/75" in client.requested_urls
+    assert "https://gi.yatta.moe/api/v2/chs/weapon/11512" in client.requested_urls
+    assert "https://gi.yatta.moe/api/v2/chs/reliquary/15032" in client.requested_urls
+    for relative_path, expected_name in (
+        ("avatar/75.json", "芙宁娜"),
+        ("weapon/11512.json", "静水流涌之辉"),
+        ("reliquary/15032.json", "黄金剧团"),
+    ):
+        payload = json.loads((cache_dir / relative_path).read_text(encoding="utf-8"))
+        assert payload["data"]["name"] == expected_name
+
+
 def test_urllib_json_client_retries_transient_failures(monkeypatch):
     calls = {"count": 0}
 

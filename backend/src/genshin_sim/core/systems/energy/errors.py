@@ -51,3 +51,7 @@ class EnergyPickupNotFoundError(EnergySystemError, LookupError):
 
 class InsufficientEnergyAtSpendError(EnergySystemError):
     code = "insufficient_energy_at_spend"
+
+
+class EnergyRecoveryError(EnergySystemError):
+    code = "energy_recovery_error"

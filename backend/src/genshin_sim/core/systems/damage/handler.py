@@ -155,7 +155,6 @@ class DamageRequestHandler:
         damage_name = damage_spec.display_name
         tags = frozenset(
             (
-                *request.tags,
                 main_attack_tag,
                 *damage_spec.additional_attack_tags,
             )
@@ -236,6 +235,10 @@ class DamageRequestHandler:
                 or stellar_reactions.get(target_id)
                 or stellar_reactions.get(target_spatial_entity_id)
             )
+            if stellar_reaction is None and damage_spec.stellar_reaction is not None:
+                # 内容直伤通道：星烁输入随 damage_spec 携带（按目标映射之外的提交方式），
+                # 与显式 stellar_reactions 映射落入同一输入通道；映射条目优先。
+                stellar_reaction = damage_spec.stellar_reaction
             if stellar_reaction is not None and formula_key is not FORMULA_KEY_STELLAR_REACTION:
                 raise DamageValidationError("DamageProfile 未选择星烁完整公式")
             catalyze_reaction = (
@@ -267,6 +270,7 @@ class DamageRequestHandler:
                 scaling_terms=scaling_terms,
                 flat_base_damage=flat_base_damage,
                 tags=tags,
+                request_facts=request.request_facts,
                 can_crit=can_crit,
                 source_context=source_context,
                 damage_name=damage_name,

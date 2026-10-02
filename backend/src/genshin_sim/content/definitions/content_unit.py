@@ -27,6 +27,7 @@ from genshin_sim.core.systems.cooldown import (
     CooldownKey,
 )
 from genshin_sim.core.systems.damage import (
+    DamageFactProvider,
     DamageModifierProvider,
     DamageModifierStackingGroupDefinition,
 )
@@ -81,6 +82,11 @@ class ContentUnit:
     damage_modifier_stacking_groups: Sequence[DamageModifierStackingGroupDefinition] = field(
         default_factory=tuple
     )
+    # 内容侧定义并维护的模拟状态投影；伤害系统只读，装配期注册进事实索引。
+    damage_fact_providers: Sequence[DamageFactProvider] = field(default_factory=tuple)
+    # 本单元发射方可能写入的请求级事实 key（发射时绑定、随请求走结算）；
+    # 装配期并入全局声明集合，用于交叉校验 provider 的 reads_facts。
+    damage_request_fact_keys: Sequence[str] = field(default_factory=tuple)
     buff_definitions: Sequence[BuffDefinition] = field(default_factory=tuple)
     infusion_definitions: Sequence[InfusionDefinition] = field(default_factory=tuple)
     aura_icd_definitions: Sequence[IcdDefinition] = field(default_factory=tuple)
@@ -142,6 +148,12 @@ class ContentUnit:
             "damage_modifier_stacking_groups",
             tuple(self.damage_modifier_stacking_groups),
         )
+        object.__setattr__(self, "damage_fact_providers", tuple(self.damage_fact_providers))
+        request_fact_keys = tuple(self.damage_request_fact_keys)
+        for key in request_fact_keys:
+            if not isinstance(key, str) or not key.strip():
+                raise ContentUnitValidationError("damage_request_fact_keys 成员必须是非空字符串")
+        object.__setattr__(self, "damage_request_fact_keys", request_fact_keys)
         object.__setattr__(self, "buff_definitions", tuple(self.buff_definitions))
         object.__setattr__(
             self,

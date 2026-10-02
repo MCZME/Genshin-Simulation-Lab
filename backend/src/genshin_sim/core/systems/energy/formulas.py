@@ -26,10 +26,10 @@ def field_multiplier(*, is_active: bool, team_size: int) -> float:
     return 1.0 - 0.1 * team_size
 
 
-def recharge_multiplier(recharge_bonus: float | int) -> float:
-    if isinstance(recharge_bonus, bool) or not isinstance(recharge_bonus, int | float):
+def recharge_multiplier(energy_recharge: float | int) -> float:
+    if isinstance(energy_recharge, bool) or not isinstance(energy_recharge, int | float):
         raise InvalidEnergyAttributeError("stat.energy_recharge 必须是有限数字")
-    result = 1.0 + float(recharge_bonus)
+    result = float(energy_recharge)
     if not math.isfinite(result) or result <= 0:
         raise InvalidEnergyAttributeError("stat.energy_recharge 必须产生有限正倍率")
     return result

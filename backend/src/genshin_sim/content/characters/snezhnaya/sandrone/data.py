@@ -1,13 +1,4 @@
 """桑多涅内容数据：稳定键、动作数据表与伤害数据。
-
-数据与解释逻辑分离：``actions.py`` 只保留解释器与动作编译，``content.py``
-只负责内容单元编译。本文件统一承载角色身份键（handler/action/impact）、
-输入映射、帧表与动作表、伤害标签与 AOE 数据；普攻倍率仍来自资产库倍率表，
-不在本文件维护。
-
-帧表为 60 帧制——普攻一段完整 130F/衔接切入 59F/命中均值 +44F，二段 59F/+24F，
-三段 159F/+50F；元素战技棱晶弹 +16F/+32F；元素爆发轰炸 +182/+198/+214
-（16F 等间隔）、光束 +252F、结束 +306F。
 """
 
 from __future__ import annotations
@@ -23,7 +14,6 @@ from genshin_sim.core.space import Vector3
 from genshin_sim.core.systems.aura import AuraStrength
 
 SANDRONE_CHARACTER_HANDLER_KEY = "character.sandrone"
-SANDRONE_ASSET_KEY = "character:10000133"
 SANDRONE_CONTENT_VERSION = "dev-passives-constellations"
 
 # ---------------------------------------------------------------------------
@@ -32,39 +22,39 @@ SANDRONE_CONTENT_VERSION = "dev-passives-constellations"
 SANDRONE_PASSIVE_P4_HANDLER_KEY = "character.sandrone.passive.p4"
 SANDRONE_PASSIVE_P5_HANDLER_KEY = "character.sandrone.passive.p5"
 SANDRONE_PASSIVE_P6_HANDLER_KEY = "character.sandrone.passive.p6"
+# P8 行为未实现，bootstrap 为其注册空效果 handler（键仍被装配引用）。
 SANDRONE_PASSIVE_P8_HANDLER_KEY = "character.sandrone.passive.p8"
 
+SANDRONE_CONSTELLATION_C1_HANDLER_KEY = "character.sandrone.constellation.c1"
+SANDRONE_CONSTELLATION_C2_HANDLER_KEY = "character.sandrone.constellation.c2"
+SANDRONE_CONSTELLATION_C3_HANDLER_KEY = "character.sandrone.constellation.c3"
+SANDRONE_CONSTELLATION_C4_HANDLER_KEY = "character.sandrone.constellation.c4"
+SANDRONE_CONSTELLATION_C5_HANDLER_KEY = "character.sandrone.constellation.c5"
+SANDRONE_CONSTELLATION_C6_HANDLER_KEY = "character.sandrone.constellation.c6"
 
-def _constellation_handler_key(index: int) -> str:
-    return f"character.sandrone.constellation.c{index}"
+# P4 悠久的演算机关：
+# 改进战术 Buff 的身份词：definition_key 按槽位区分（同源勺子「超越」先例），
+# 冲突键刻意同值，使同槽位实例互斥、层数收敛于单条记录。
+SANDRONE_TACTICS_BUFF_MECHANIC_KEY = "sandrone.p4.tactics"
 
 
-SANDRONE_CONSTELLATION_HANDLER_KEYS = {
-    index: _constellation_handler_key(index) for index in range(1, 7)
-}
-SANDRONE_CONSTELLATION_C1_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[1]
-SANDRONE_CONSTELLATION_C2_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[2]
-SANDRONE_CONSTELLATION_C3_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[3]
-SANDRONE_CONSTELLATION_C4_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[4]
-SANDRONE_CONSTELLATION_C5_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[5]
-SANDRONE_CONSTELLATION_C6_HANDLER_KEY = SANDRONE_CONSTELLATION_HANDLER_KEYS[6]
+def sandrone_tactics_definition_key(slot: int) -> str:
+    """改进战术 Buff 的定义键（与冲突键同值，见 ``effects.py``）。"""
 
-# P4 悠久的演算机关：机器数值（功率阈值、棱晶弹强化倍率、改进战术层数上限与
-# 持续秒数、功率步长、光束倍率基座与每层倍率）一律从资产效果行 components
-# 解析（``effects.read_p4_asset_values``，与 P5/C1/C2/C4/C6 同口径），本文件
-# 不维护第二份数值常量。改进战术承载为角色内容状态（跨会话保留、按持续秒数
-# 统一过期——每次获得叠层即刷新全部层数的过期帧，与通用堆叠 Buff 的刷新语义
-# 一致），清空发生在辉映下施放爆发时。
-# 突破解锁门槛为 20 级突破解锁，对应突破 1 阶；行为随角色单元编译，
-# 锁定时（ascension_phase < 1）不叠层、不强化棱晶弹、不结算光束加成。
-# 光束加成作用于倍率区（原本倍率 + 基座 + 每层倍率 × 层数），随原本倍率
-# 一并折进缩放值。
-SANDRONE_P4_UNLOCK_KEY = "passive:4"
-SANDRONE_P4_ASCENSION_THRESHOLD = 1
+    return f"{SANDRONE_TACTICS_BUFF_MECHANIC_KEY}.slot:{slot}"
+
+
 # 棱晶弹强化以 E 动作参数透传：施放帧判定一次（P4 已解锁 ∧ 解算功率 > 阈值
 # ∧ 施放时持辉映），判定结果随影响点带到第二枚棱晶弹展开帧由影响工厂消费。
 # 不在角色状态里留跨帧标志，也不需要时间窗口常量（见 actions.py / impacts.py）。
 SANDRONE_P4_PRISM2_BOOST_PARAM = "sandrone_prism2_boost"
+# 光束加成以「消费层数」透传，不传加成数值：Q 施放帧读改进战术活动记录取层数
+# （证据），随 Q 动作参数带到聚能光束展开帧，由影响工厂绑定为请求级事实；加成
+# 数值由 P4 伤害修饰 provider 在结算期按星烁大权区乘数产出。不落状态快照。
+SANDRONE_P4_TACTICS_STACKS_PARAM = "sandrone_p4_tactics_stacks"
+# Q 消费改进战术的移除影响点：解释器施放帧派生倍率后，以 REMOVE_STATUS 请求
+# 携带活动实例身份提交移除（消费方读记录、handler 不推断，见 buff/handler.py）。
+SANDRONE_TACTICS_CONSUME_IMPACT_KEY = f"{SANDRONE_TACTICS_BUFF_MECHANIC_KEY}.consume"
 
 
 @dataclass(frozen=True, slots=True)
@@ -80,42 +70,19 @@ class SandroneP4AssetValues:
     tactics_power_step: float
     tactics_max_stacks: int
     tactics_duration_frames: int
-    beam_bonus_base_multiplier: float
     beam_bonus_per_stack: float
 
-
-# P5 淑女的行事准则（效果行 components：每 100 攻击 +8 精通、上限 160）。
-# 数值经 P5 效果单元从资产行读取，这里只承载 provider 键词。
-# 突破解锁门槛为 60 级突破解锁，对应突破 4 阶。
-SANDRONE_P5_ASCENSION_THRESHOLD = 4
-
-# P6 星耀祝礼·唯理为光（效果行 components：每 100 攻击 +0.7% 星超导基础伤害、
-# 上限 14%）。固定天赋（ALWAYS），数值由星烁通道组装时按攻击力实时折算。
-SANDRONE_P6_BASE_BONUS_PER_100_ATK = 0.007
-SANDRONE_P6_BASE_BONUS_CAP = 0.14
-
-# C1 鎏金未凋，夕暮已远：解算功率提升速度 -50%（效果行 number_3）——功率
-# 自然上升与「发射冷凝射线时的进一步提升」同属功率提升，二者一并折算。星烁
-# 增伤 +30%（number_4）由 C1 效果单元的伤害修饰 provider 承载；覆盖口径为
-# 星烁反应通用增伤，星超导与星扩散都可吃到。
-FAGEOU_C1_POWER_RATE_REDUCTION = 0.5
-
-# C2 回望镜中，时岁翩然：射线暴伤（效果行：+40% 基础、逐射线 +20%、至多
-# 3 层；仅加成射线的星超导冰伤）。射线会话序号是发射时刻就确定的身份值：
-# 法洁欧 hook 发射射线时以请求级事实绑定（FAGEOU_RAY_INDEX_FACT_KEY），随
-# 请求走结算，C2 provider 声明读取后换算。
-SANDRONE_C2_CRIT_DAMAGE_BASE = 0.4
-SANDRONE_C2_CRIT_DAMAGE_PER_RAY = 0.2
-SANDRONE_C2_CRIT_DAMAGE_MAX_RAYS = 3
-
-# 法洁欧请求级事实的命名空间与 key。key 归 `sandrone.fageou` 域，写入只发生
-# 在发射时刻（hook 自身），伤害系统只读。
-FAGEOU_FACT_PROVIDER_KEY = "sandrone.fageou"
-FAGEOU_RAY_INDEX_FACT_KEY = f"{FAGEOU_FACT_PROVIDER_KEY}.ray_index"
+# 法洁欧请求级事实 key。写入只发生在发射时刻（hook 自身），伤害系统只读。
+FAGEOU_RAY_INDEX_FACT_KEY = "sandrone.fageou.ray_index"
 
 # P4 棱晶弹强化的请求级事实 key：施放帧判定结果由 E 动作参数带到影响工厂，
 # 工厂在展开第二枚棱晶弹请求时绑定；倍率强化由 P4 provider 在结算期展开。
 SANDRONE_P4_PRISM_BOOST_FACT_KEY = "sandrone.passive.p4.prism_boost"
+
+# P4 光束加成的请求级事实 key：Q 施放帧消费改进战术得到层数，层数由 Q 动作参数
+# 带到影响工厂，工厂在展开聚能光束（星变体）请求时绑定。事实只承载「层数」这一
+# 机制原始状态，加成数值（大权区乘数）由 P4 provider 换算（见 modifiers.py）。
+SANDRONE_P4_TACTICS_STACKS_FACT_KEY = "sandrone.passive.p4.tactics_stacks"
 
 # C4 棱晶谐振炮（效果行：星超导 125% / 星扩散 187.5% 攻击力、每 4s 至多一次）。
 # 星烁直伤请求由 C4 效果单元的 hook 产出（触发按伤害来源判定为桑多涅自身）；
@@ -153,9 +120,9 @@ SANDRONE_ELEMENTAL_BURST_ACTION_KEY = "character.sandrone.elemental_burst"
 SANDRONE_JUMP_ACTION_KEY = "character.sandrone.jump"
 SANDRONE_PLUNGE_ACTION_KEY = "character.sandrone.plunge"
 
-SANDRONE_NORMAL_ATTACK_1_IMPACT_KEY = f"{SANDRONE_NORMAL_ATTACK_1_ACTION_KEY}.hit"
-SANDRONE_NORMAL_ATTACK_2_IMPACT_KEY = f"{SANDRONE_NORMAL_ATTACK_2_ACTION_KEY}.hit"
-SANDRONE_NORMAL_ATTACK_3_IMPACT_KEY = f"{SANDRONE_NORMAL_ATTACK_3_ACTION_KEY}.hit"
+SANDRONE_NORMAL_ATTACK_1_IMPACT_KEY = "character.sandrone.normal_attack.1.hit"
+SANDRONE_NORMAL_ATTACK_2_IMPACT_KEY = "character.sandrone.normal_attack.2.hit"
+SANDRONE_NORMAL_ATTACK_3_IMPACT_KEY = "character.sandrone.normal_attack.3.hit"
 SANDRONE_ELEMENTAL_SKILL_PRISM_1_IMPACT_KEY = f"{SANDRONE_ELEMENTAL_SKILL_ACTION_KEY}.prism_1"
 SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY = f"{SANDRONE_ELEMENTAL_SKILL_ACTION_KEY}.prism_2"
 SANDRONE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY = (
@@ -198,10 +165,8 @@ JUMP_INPUT = "jump"
 # 语义由解释器叠加——按下即按重击处理（法洁欧前摇切入解算），前摇 36F 内松开
 # 改判点按普攻，前摇完成后松开按重击松开处理（见 actions.py）。右键为冲刺位，
 # 冲刺未接入，桑多涅不支持该输入。
-SANDRONE_ATTACK_INPUT_KEY = "mouse.left"
-
 INPUT_KIND_BY_KEY = {
-    SANDRONE_ATTACK_INPUT_KEY: NORMAL_ATTACK_INPUT,
+    "mouse.left": NORMAL_ATTACK_INPUT,
     "keyboard.e": ELEMENTAL_SKILL_INPUT,
     "keyboard.q": ELEMENTAL_BURST_INPUT,
     "keyboard.space": JUMP_INPUT,
@@ -220,17 +185,15 @@ SANDRONE_DAMAGE_ICD_SEQUENCE_KEY = "默认"
 SANDRONE_MELEE_ELEMENT = Element.PHYSICAL
 
 SANDRONE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY = "elemental_skill"
-SANDRONE_ELEMENTAL_SKILL_COOLDOWN_START_FRAME = 1
 SANDRONE_ELEMENTAL_SKILL_COOLDOWN_FRAMES = 240
 SANDRONE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY = "elemental_burst"
-SANDRONE_ELEMENTAL_BURST_COOLDOWN_START_FRAME = 1
-SANDRONE_ELEMENTAL_BURST_ENERGY_SPEND_FRAME = 1
 SANDRONE_ELEMENTAL_BURST_COOLDOWN_FRAMES = 900
 
 # ---------------------------------------------------------------------------
 # 法洁欧与解算模式。
 # 帧制为 60 帧/秒。
 # ---------------------------------------------------------------------------
+FRAMES_PER_SECOND = 60
 SANDRONE_CHARGED_ATTACK_ACTION_KEY = "character.sandrone.charged_attack"
 SANDRONE_CHARGED_ATTACK_SWEEP_IMPACT_KEY = f"{SANDRONE_CHARGED_ATTACK_ACTION_KEY}.sweep"
 SANDRONE_CHARGED_ATTACK_OVERLOAD_IMPACT_KEY = f"{SANDRONE_CHARGED_ATTACK_ACTION_KEY}.overload"
@@ -245,15 +208,13 @@ FAGEOU_STATE_SOLVE_START_FRAME = "fageou_solve_start_frame"
 FAGEOU_STATE_NEXT_SHOT_FRAME = "fageou_next_shot_frame"
 FAGEOU_STATE_NEXT_RAY_FRAME = "fageou_next_ray_frame"
 FAGEOU_STATE_DRAIN_ACTIVE = "fageou_drain_active"
-# 射线会话序号与 C6 集束型额外段余量（进入解算时清零）；
-# P4 改进战术叠层与过期帧（跨会话保留）、爆发光束加成快照。
-# P4 棱晶弹强化不在状态里留字段：施放帧判定结果以 E 动作参数透传到影响点，
-# 再由影响工厂绑定为请求级事实（SANDRONE_P4_PRISM_BOOST_FACT_KEY）。
+# 射线会话序号与 C6 集束型额外段余量（进入解算时清零）。
+# P4 改进战术不占状态字段：叠层与过期由状态效果系统 Buff 承载（E 排空跨越
+# 计层申请、辉映下 Q 施放消费），光束倍率以 Q 动作参数透传到影响工厂；
+# 棱晶弹强化施放帧判定结果以 E 动作参数透传，再由影响工厂绑定为请求级事实
+# （SANDRONE_P4_PRISM_BOOST_FACT_KEY）。
 FAGEOU_STATE_RAY_COUNT = "fageou_ray_count"
 FAGEOU_STATE_EXTRA_SEGMENTS_LEFT = "fageou_extra_segments_left"
-FAGEOU_STATE_TACTICS_STACKS = "fageou_tactics_stacks"
-FAGEOU_STATE_TACTICS_EXPIRE_FRAME = "fageou_tactics_expire_frame"
-FAGEOU_STATE_BEAM_BONUS = "fageou_beam_bonus"
 # 产球审计字段：最近一次产球的命中结算帧（0 = 尚未产球）；冷却判定游标
 # 在产球 hook 实例内。
 FAGEOU_STATE_LAST_PARTICLE_FRAME = "fageou_last_particle_frame"
@@ -261,7 +222,6 @@ FAGEOU_STATE_LAST_PARTICLE_FRAME = "fageou_last_particle_frame"
 FAGEOU_MODE_IDLE = "idle"
 FAGEOU_MODE_SOLVE = "solve"
 FAGEOU_MODE_OVERLOAD = "overload"
-FAGEOU_MODES = (FAGEOU_MODE_IDLE, FAGEOU_MODE_SOLVE, FAGEOU_MODE_OVERLOAD)
 
 # 前摇 36F（按下→首颗子弹/进入解算）；功率自解算起算（solve_start）。
 FAGEOU_PRE_SWING_FRAMES = 36
@@ -482,6 +442,18 @@ SANDRONE_NORMAL_ATTACK_ACTION_KEYS = (
     SANDRONE_NORMAL_ATTACK_3_ACTION_KEY,
 )
 
+# 元素爆发 -> 元素战技的最早衔接帧。出处：维护者确认（2026-10-02）——「游戏中大概在
+# 第 3 次元素爆发伤害之后就可以释放（战技）」；取第 3 段轰炸的影响点帧 +214 作锚点
+# （轰炸 +182/+198/+214）。
+#
+# 该值把「角色锁定窗口」与「技能效果时间轴」分开表达：爆发动作 duration_frames 仍为
+# 306（轰炸与光束按原节奏结算，影响点不随动作完成取消），锁定窗口只由 transitions
+# 承载。此前无输入窗口数据时以「duration + 1」兜底，等价于整段 5.1s 内拒绝战技输入，
+# 且拒绝为静默丢弃（解释器 reject 不产生动作决策事件），表现为「爆发后放不出战技」。
+#
+# 待确认：普攻与跳跃衔接是否同口径（当前保留原值）。
+SANDRONE_ELEMENTAL_BURST_SKILL_CHAIN_FRAME = 204
+
 SANDRONE_ACTION_TABLE: dict[str, TimedActionSpec] = {
     SANDRONE_NORMAL_ATTACK_1_ACTION_KEY: TimedActionSpec(
         action_key=SANDRONE_NORMAL_ATTACK_1_ACTION_KEY,
@@ -522,7 +494,7 @@ SANDRONE_ACTION_TABLE: dict[str, TimedActionSpec] = {
                 targeting=SANDRONE_TARGETING_ELEMENTAL_SKILL,
             ),
         ),
-        cooldown_start_frame=SANDRONE_ELEMENTAL_SKILL_COOLDOWN_START_FRAME,
+        cooldown_start_frame=1,
         cooldown_ability_key=SANDRONE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
         transitions={
             NORMAL_ATTACK_INPUT: 33,
@@ -537,7 +509,7 @@ SANDRONE_ACTION_TABLE: dict[str, TimedActionSpec] = {
         impact_points=(
             TimedImpactPointSpec(
                 impact_key=SANDRONE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY,
-                frame=SANDRONE_ELEMENTAL_BURST_ENERGY_SPEND_FRAME,
+                frame=1,
             ),
             TimedImpactPointSpec(
                 impact_key=SANDRONE_ELEMENTAL_BURST_BOMBARDMENT_1_IMPACT_KEY,
@@ -560,11 +532,12 @@ SANDRONE_ACTION_TABLE: dict[str, TimedActionSpec] = {
                 targeting=SANDRONE_TARGETING_ELEMENTAL_BURST,
             ),
         ),
-        cooldown_start_frame=SANDRONE_ELEMENTAL_BURST_COOLDOWN_START_FRAME,
+        cooldown_start_frame=1,
         cooldown_ability_key=SANDRONE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
         transitions={
             NORMAL_ATTACK_INPUT: 307,
-            ELEMENTAL_SKILL_INPUT: 307,
+            # 战技自第 3 段轰炸起可释放（角色可动帧，见上）；普攻/跳跃保持原值待确认。
+            ELEMENTAL_SKILL_INPUT: SANDRONE_ELEMENTAL_BURST_SKILL_CHAIN_FRAME,
             JUMP_INPUT: 340,
         },
     ),

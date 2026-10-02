@@ -1,17 +1,4 @@
-"""桑多涅内容单元编译入口。
-
-本文件只负责内容单元编排：读取资产倍率，调用 ``impacts.py`` 的影响契约
-编译函数，构造冷却定义、自定义 ICD 与法洁欧状态机 hook，最后组装
-``ContentUnit``。
-
-命座数值一律取自资产：天赋倍率走 ``talent_scalings``，命座/被动数值走
-``request.effect_params``（按 ``unlock_key`` 索引的效果行）。C6 的段数、
-三段倍率与星烁擢升即由此解析（``effects.read_c6_asset_values``），本文件
-只负责把取值折进机器参数与伤害契约，不留常量。
-
-已接入范围：普攻/重击/战技/爆发/下落伤害、冷却、解算模式、辉映星烁直伤
-通道与被动/命座全量；产球（射线/棱晶弹命中冰微粒）定案已确认、尚未接入。
-"""
+"""桑多涅内容单元编译入口。"""
 
 from __future__ import annotations
 
@@ -22,19 +9,9 @@ from genshin_sim.content.characters.snezhnaya.sandrone.actions import (
     create_sandrone_actions,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
-    FAGEOU_BULLET_SPEED_M_PER_S,
-    FAGEOU_C1_POWER_RATE_REDUCTION,
-    FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
-    FAGEOU_POWER_DECAY_PER_SECOND,
-    FAGEOU_POWER_MAX,
     FAGEOU_POWER_RISE_PER_SECOND,
-    FAGEOU_PRE_SWING_FRAMES,
     FAGEOU_RAY_HIT_POWER_GAIN,
     FAGEOU_RAY_INDEX_FACT_KEY,
-    FAGEOU_RAY_INTERVAL_FRAMES,
-    FAGEOU_RAY_LENGTH,
-    FAGEOU_RAY_WIDTH,
-    FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
     SANDRONE_C6_UNLOCK_KEY,
     SANDRONE_CHARACTER_HANDLER_KEY,
     SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
@@ -46,15 +23,16 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_ELEMENTAL_SKILL_COOLDOWN_FRAMES,
     SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY,
     SANDRONE_HIT_IMPACT_KEYS,
-    SANDRONE_P4_ASCENSION_THRESHOLD,
     SANDRONE_P4_PRISM_BOOST_FACT_KEY,
-    SANDRONE_P4_UNLOCK_KEY,
+    SANDRONE_P4_TACTICS_STACKS_FACT_KEY,
     SANDRONE_SWEEP_ICD_RESET_FRAMES,
     SANDRONE_SWEEP_ICD_SEQUENCE_KEY,
     SandroneP4AssetValues,
+    sandrone_tactics_definition_key,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.effects import (
     SandroneC6AssetValues,
+    read_c1_power_rate_reduction,
     read_c6_asset_values,
     read_p4_asset_values,
 )
@@ -165,29 +143,36 @@ def create_sandrone_content_unit(
         talent_level,
     )
     c6_unlocked = constellation >= 6
-    # C6 集束型追加段：段数、三段倍率与星烁擢升全部取自资产命座第 6 层效果行
-    # （装配期经 request.effect_params 交给角色单元）。已解锁却没有该效果行时
-    # 直接失败，不在内容代码里留数值常量兜底。
     c6_values: SandroneC6AssetValues | None = None
     if c6_unlocked:
         c6_params = request.effect_params.get(SANDRONE_C6_UNLOCK_KEY)
         if c6_params is None:
             raise ContentUnitValidationError(f"C6 已解锁但缺少资产效果行：{SANDRONE_C6_UNLOCK_KEY}")
         c6_values = read_c6_asset_values(c6_params)
-    # C1：解算功率提升速度 -50%。功率自然上升与射线命中增量同属「功率提升」，
-    # 二者按同一系数折算（0 命 20/s 与 +12/条，1 命 10/s 与 +6/条）。
-    power_rate_factor = 1.0 - FAGEOU_C1_POWER_RATE_REDUCTION if constellation >= 1 else 1.0
+    # C1：解算功率提升速度按资产行折算。功率自然上升与射线命中增量同属
+    # 「功率提升」，二者按同一系数折算（0 命 20/s 与 +12/条，1 命 10/s 与
+    # +6/条）。
+    if constellation >= 1:
+        c1_params = request.effect_params.get("c1")
+        if c1_params is None:
+            raise ContentUnitValidationError("C1 已解锁但缺少资产效果行：c1")
+        power_rate_factor = 1.0 - read_c1_power_rate_reduction(c1_params)
+    else:
+        power_rate_factor = 1.0
     # P4 悠久的演算机关：突破 1 阶（20 级突破）解锁；行为随角色单元编译，
     # 锁定时排空不计层、棱晶弹不强化、爆发不结算光束加成。机器数值一律取自
     # 资产效果行（装配期经 request.effect_params 交给角色单元），内容代码不留
     # 第二份常量；已解锁却缺少该效果行时直接失败，不静默回落。
-    p4_unlocked = request.ascension_phase >= SANDRONE_P4_ASCENSION_THRESHOLD
+    p4_unlocked = request.ascension_phase >= 1
     p4_values: SandroneP4AssetValues | None = None
     if p4_unlocked:
-        p4_params = request.effect_params.get(SANDRONE_P4_UNLOCK_KEY)
+        # P4 行在 effect_params 中按资产行的 unlock_key（"passive:4"）索引。
+        p4_params = request.effect_params.get("passive:4")
         if p4_params is None:
-            raise ContentUnitValidationError(f"P4 已解锁但缺少资产效果行：{SANDRONE_P4_UNLOCK_KEY}")
+            raise ContentUnitValidationError("P4 已解锁但缺少资产效果行：passive:4")
         p4_values = read_p4_asset_values(p4_params)
+    if request.effect_params.get("passive:6") is None:
+        raise ContentUnitValidationError("缺少 P6 资产效果行：passive:6")
     stellar_channels = compile_stellar_attack_channels(
         request.character_key,
         entries_by_key,
@@ -196,7 +181,6 @@ def create_sandrone_content_unit(
             "elemental_skill": skill_talent_level,
             "elemental_burst": burst_talent_level,
         },
-        ascension_bonus=c6_values.ascension_bonus if c6_values is not None else 0.0,
     )
     impact_factory = SandroneActionImpactFactory(
         damage_specs,
@@ -236,25 +220,22 @@ def create_sandrone_content_unit(
         tags=("elemental_burst",),
     )
     # 法洁欧 hook 发射射线时把会话序号绑定为请求级事实（key 见 data.py），
-    # 随射线请求走结算，供 C2 伤害修饰读取。
+    # 随射线请求走结算，供 C2 伤害修饰读取。P4 已解锁时，hook 以改进战术
+    # Buff 定义键申请叠层、解释器消费 Buff 派生光束倍率（键见 data.py）。
+    tactics_definition_key = (
+        sandrone_tactics_definition_key(request.slot) if p4_values is not None else None
+    )
     fageou_hook = SandroneFageouHook(
         owner_ref=owner_ref,
         slot=request.slot,
         damage_specs=charged_specs,
         stellar_channel=stellar_channels[SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY],
-        pre_swing_frames=FAGEOU_PRE_SWING_FRAMES,
-        solve_shot_interval_frames=FAGEOU_SOLVE_SHOT_INTERVAL_FRAMES,
-        overload_shot_interval_frames=FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
-        ray_interval_frames=FAGEOU_RAY_INTERVAL_FRAMES,
-        # C1：解算功率提升速度降低 50%，功率上升与射线命中增量一并折算。
+        # C1：解算功率提升速度按资产行折算，功率上升与射线命中增量一并折算；
+        # 其余机器参数直接用 hook 的同批默认值（data.py 帧表）。
         power_rise_per_second=FAGEOU_POWER_RISE_PER_SECOND * power_rate_factor,
         ray_hit_power_gain=FAGEOU_RAY_HIT_POWER_GAIN * power_rate_factor,
-        power_decay_per_second=FAGEOU_POWER_DECAY_PER_SECOND,
-        power_max=FAGEOU_POWER_MAX,
-        ray_length=FAGEOU_RAY_LENGTH,
-        ray_width=FAGEOU_RAY_WIDTH,
-        bullet_speed_m_per_s=FAGEOU_BULLET_SPEED_M_PER_S,
         p4=p4_values,
+        tactics_definition_key=tactics_definition_key,
         c6_extra_normal_spec=(
             compile_c6_extra_normal_spec(c6_values.normal_ratio) if c6_values is not None else None
         ),
@@ -263,7 +244,6 @@ def create_sandrone_content_unit(
                 talent_level,
                 conduct_ratio=c6_values.conduct_ratio,
                 swirl_ratio=c6_values.swirl_ratio,
-                ascension_bonus=c6_values.ascension_bonus,
             )
             if c6_values is not None
             else None
@@ -276,14 +256,14 @@ def create_sandrone_content_unit(
         handler_key=request.handler_key,
         version=SANDRONE_CONTENT_VERSION,
         slot=request.slot,
-        action_interpreter=SandroneActionInterpreter(p4=p4_values),
+        action_interpreter=SandroneActionInterpreter(
+            p4=p4_values,
+            tactics_definition_key=tactics_definition_key,
+        ),
         actions=create_sandrone_actions(
             cooldown_duration_terms=cooldown_terms_by_ability,
         ),
-        state_schema=sandrone_state_schema(
-            owner_ref,
-            tactics_max_stacks=(p4_values.tactics_max_stacks if p4_values is not None else None),
-        ),
+        state_schema=sandrone_state_schema(owner_ref),
         impact_factories={impact_key: impact_factory for impact_key in SANDRONE_HIT_IMPACT_KEYS},
         event_hooks=(
             fageou_hook,
@@ -292,6 +272,7 @@ def create_sandrone_content_unit(
         damage_request_fact_keys=(
             FAGEOU_RAY_INDEX_FACT_KEY,
             SANDRONE_P4_PRISM_BOOST_FACT_KEY,
+            SANDRONE_P4_TACTICS_STACKS_FACT_KEY,
         ),
         cooldown_definitions=(skill_cooldown_definition, burst_cooldown_definition),
         aura_icd_definitions=(

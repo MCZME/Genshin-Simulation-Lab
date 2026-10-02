@@ -34,7 +34,6 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
 from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
     radiance_evidence,
     resolve_attribute_final_value,
-    stellar_base_bonus_for_atk,
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.models import HookResult
@@ -100,7 +99,6 @@ class SandroneC4CoordinatedAttackHook:
         attack_ratio: float,
         swirl_ratio: float,
         cooldown_frames: int,
-        ascension_bonus: float = 0.0,
     ) -> None:
         if not isinstance(owner_ref, str) or not owner_ref.strip():
             raise ContentUnitValidationError("C4 协同攻击 owner_ref 必须是非空字符串")
@@ -126,7 +124,6 @@ class SandroneC4CoordinatedAttackHook:
         self._attack_ratio = float(attack_ratio)
         self._swirl_ratio = float(swirl_ratio)
         self._cooldown_frames = cooldown_frames
-        self._ascension_bonus = float(ascension_bonus)
         self._last_proc_frame: int | None = None
         self.hook_key = f"sandrone.c4:{owner_ref}"
         self.subscriptions = ("DAMAGE_RESOLVED",)
@@ -168,12 +165,6 @@ class SandroneC4CoordinatedAttackHook:
 
         return self._cooldown_frames
 
-    @property
-    def ascension_bonus(self) -> float:
-        """C6 星烁擢升（覆盖本协同攻击）；仅供测试与诊断读取。"""
-
-        return self._ascension_bonus
-
     def _attack_ratio_for(self, variant: _CoordinatedAttackVariant) -> float:
         """按产出变体取攻击力倍率档：星超导冰取星超导档，星扩散冰取星扩散档。"""
 
@@ -209,14 +200,9 @@ class SandroneC4CoordinatedAttackHook:
         simulation = getattr(context, "simulation", None)
         if not isinstance(simulation, SimulationContext):
             raise SandroneConstellationError(f"C4 协同攻击缺少仿真上下文：{self.hook_key}")
-        atk = resolve_attribute_final_value(
-            simulation,
-            self._owner_ref,
-            STAT_ATK_TOTAL,
-            frame,
-        )
         # 星烁基础系数取对应反应的词条（非角色当前辉映状态的证据）；无任何辉映
-        # 证据时保守回落 1.0。
+        # 证据时保守回落 1.0。P6 基础增伤与 C6 擢升由 provider 词条在结算期
+        # 叠加，不在此折叠。
         evidence = radiance_evidence(simulation, self._owner_ref, frame)
         base_multiplier = (
             resolve_attribute_final_value(
@@ -260,8 +246,6 @@ class SandroneC4CoordinatedAttackHook:
                         stellar_reaction=StellarReactionDamageInput(
                             mode="character_direct",
                             stellar_base_multiplier=base_multiplier,
-                            stellar_base_bonus=stellar_base_bonus_for_atk(atk),
-                            stellar_ascension_bonus=self._ascension_bonus,
                         ),
                     ),
                 ),

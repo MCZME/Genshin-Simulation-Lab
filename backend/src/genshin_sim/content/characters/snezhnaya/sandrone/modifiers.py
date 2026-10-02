@@ -1,25 +1,13 @@
-"""桑多涅被动与命座的伤害/属性修饰 provider。
-
-- P5 淑女的行事准则：每 100 点攻击力提升 8 点元素精通、至多 160（属性
-  provider，攻击力按声明依赖实时读取，攻击力面板变化即时反映到精通）。
-- C1 鎏金未凋，夕暮已远：全队星烁反应伤害 +30%（星烁公式专属阶段
-  ``stellar_reaction_bonus_add``，全队口径不按来源自筛，覆盖星超导（冰/雷）
-  与星扩散（冰/风）全部星烁反应伤害）。
-- C2 回望镜中，时岁翩然：重击冷凝射线的星超导冰伤逐射线获得暴伤提升（通用暴伤
-  槽位 ``crit_damage_add``；会话序号由法洁欧 hook 以请求附加标签承载，
-  provider 只做换算）。
-
-折算口径：P5 按攻击力线性换算后应用上限，不做取整截断。
-"""
-
-# 说明：provider 的审计显示名由 C1/C2 效果单元的工厂传入（`f"{效果行名称}·…"`），
-# 效果行名称取自资产 `params.name`，本文件不硬编码命座名。
+"""桑多涅被动与命座的伤害/属性修饰 provider。"""
 
 from __future__ import annotations
+
+from dataclasses import dataclass
 
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_RAY_INDEX_FACT_KEY,
     SANDRONE_P4_PRISM_BOOST_FACT_KEY,
+    SANDRONE_P4_TACTICS_STACKS_FACT_KEY,
     SANDRONE_RAY_STELLAR_ADDITIONAL_TAG,
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
@@ -32,11 +20,14 @@ from genshin_sim.core.attributes import (
     ModifierStage,
     ModifierTerm,
     ProviderAttributeRead,
+    ProviderAttributeSubjectScope,
     RuntimeSourceKind,
     RuntimeSourceRef,
 )
 from genshin_sim.core.attributes.session import AttributeResolutionSession
 from genshin_sim.core.systems.damage import (
+    FORMULA_KEY_STELLAR_REACTION,
+    DamageAttributeRead,
     DamageFactValue,
     DamageModifierProviderSpec,
     DamageModifierStage,
@@ -53,9 +44,10 @@ from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
     STELLAR_SWIRL_WIND_DAMAGE_TAG,
 )
 
-# C1 星烁反应通用增伤覆盖的星烁伤害标签（星超导与星扩散都可以吃到）：
-# 星超导冰/雷、星扩散冰/风，含携带对应标签的星变体直伤与反应本体伤害。
-_C1_STELLAR_REACTION_DAMAGE_TAGS = frozenset(
+# 星烁反应伤害标签（星超导冰/雷、星扩散冰/风），含携带对应标签的星变体直伤
+# 与反应本体伤害。C1「星超导反应伤害」与 P6「上述反应的基础伤害」的覆盖口径
+# 均按此集合理解。
+_STELLAR_REACTION_DAMAGE_TAGS = frozenset(
     {
         STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
         STELLAR_CONDUCT_ELECTRO_DAMAGE_TAG,
@@ -168,12 +160,156 @@ class SandroneC1StellarBonusProvider:
     ) -> tuple[DamageModifierTerm, ...]:
         del scope
         request = query.request
-        if request.main_attack_tag not in _C1_STELLAR_REACTION_DAMAGE_TAGS:
+        if request.main_attack_tag not in _STELLAR_REACTION_DAMAGE_TAGS:
             return ()
         return (
             DamageModifierTerm(
                 stage=DamageModifierStage.STELLAR_REACTION_BONUS_ADD,
                 value=self._bonus_value,
+                provider_key=self._provider_key,
+                source_ref=self._source_ref,
+            ),
+        )
+
+
+@dataclass(frozen=True, slots=True)
+class P6BaseBonus:
+    """P6 星烁基础增伤折算参数：每 ``per_100_atk`` 点攻击力 + ``bonus_rate``，
+    至多 ``cap``（取自资产 P6 效果行 components，组装期读入、由 provider 携带）。"""
+
+    per_100_atk: float
+    bonus_rate: float
+    cap: float
+
+    def __post_init__(self) -> None:
+        # 比例与上限是伤害的百分比量，落在 (0, 1] 区间；组件错位（文本序号、
+        # 持续秒数混入比例位）会在此处失败，而不是静默折算出近零增伤。
+        if self.per_100_atk <= 0.0:
+            raise ContentUnitValidationError("P6 星烁基础增伤的攻击力步长必须为正数")
+        if not 0.0 < self.bonus_rate <= 1.0 or not 0.0 < self.cap <= 1.0:
+            raise ContentUnitValidationError("P6 星烁基础增伤比例与上限必须在 (0, 1] 区间")
+
+
+class SandroneP6StellarBaseBonusProvider:
+    """P6 星耀祝礼·唯理为光：基于桑多涅攻击力的星烁基础增伤（词条通道）。
+
+    资产文本「基于桑多涅的攻击力，提升队伍中角色造成的上述反应的基础伤害」：
+    增伤按**桑多涅本人**的实时面板攻击力折算（provider owner 作用域读取），
+    作用于**全队**造成的星烁反应伤害——因此不按伤害来源自筛，只按星烁伤害
+    标签命中（口径与 C1 相同）。折算发生在伤害结算期：数值与署名
+    都通过 ``stellar_base_bonus_add`` 词条进入星烁基础增伤槽位，不再于请求
+    组装期折叠进 ``StellarReactionDamageInput`` 基线。
+    """
+
+    def __init__(
+        self,
+        *,
+        owner_ref: str,
+        base_bonus: P6BaseBonus,
+        source_key: str,
+        display_name: str,
+    ) -> None:
+        if not isinstance(owner_ref, str) or not owner_ref.strip():
+            raise ContentUnitValidationError("P6 星烁基础增伤 owner_ref 必须是非空字符串")
+        if not isinstance(base_bonus, P6BaseBonus):
+            raise ContentUnitValidationError("P6 星烁基础增伤折算参数类型不符")
+        self._owner_ref = AttributeSubjectRef.character(owner_ref)
+        self._base_bonus = base_bonus
+        self._provider_key = f"{source_key}.stellar_base_bonus:{owner_ref}"
+        self._source_ref = RuntimeSourceRef(RuntimeSourceKind.CONTENT, source_key)
+        self.provider_spec = DamageModifierProviderSpec(
+            provider_key=self._provider_key,
+            reads=(
+                DamageAttributeRead(STAT_ATK_TOTAL, ProviderAttributeSubjectScope.PROVIDER_OWNER),
+            ),
+            writes=frozenset({DamageModifierStage.STELLAR_BASE_BONUS_ADD}),
+            owner_ref=self._owner_ref,
+            display_name=display_name,
+        )
+
+    def contribute(
+        self,
+        query: DamageQuery,
+        scope: DamageResolutionScope,
+    ) -> tuple[DamageModifierTerm, ...]:
+        request = query.request
+        if request.main_attack_tag not in _STELLAR_REACTION_DAMAGE_TAGS:
+            return ()
+        atk = float(
+            scope.resolve_for_provider(
+                STAT_ATK_TOTAL,
+                ProviderAttributeSubjectScope.PROVIDER_OWNER,
+            ).final_value
+        )
+        value = stellar_base_bonus_for_atk(atk, self._base_bonus)
+        if value <= 0.0:
+            return ()
+        return (
+            DamageModifierTerm(
+                stage=DamageModifierStage.STELLAR_BASE_BONUS_ADD,
+                value=value,
+                provider_key=self._provider_key,
+                source_ref=self._source_ref,
+            ),
+        )
+
+
+def stellar_base_bonus_for_atk(atk: float, base_bonus: P6BaseBonus) -> float:
+    """P6 星烁基础增伤：每 ``per_100_atk`` 点攻击力 + ``bonus_rate``，至多
+    ``cap``（线性折算，参数取自资产 P6 效果行）。"""
+
+    return min(atk / base_bonus.per_100_atk * base_bonus.bonus_rate, base_bonus.cap)
+
+
+class SandroneC6StellarAscensionProvider:
+    """C6 水仙梦醒，且望晨光：桑多涅造成的星烁反应伤害擢升（词条通道）。
+
+    资产文本「桑多涅造成的所有星烁反应伤害擢升 20%」：按伤害来源自筛为
+    桑多涅本人（覆盖其直伤星变体与 C4 协同攻击），经
+    ``stellar_ascension_bonus_add`` 词条进入星烁擢升槽位（多个来源加算），
+    不再于请求组装期折叠进 ``StellarReactionDamageInput`` 基线。
+    """
+
+    def __init__(
+        self,
+        *,
+        owner_ref: str,
+        ascension_bonus: float,
+        source_key: str,
+        display_name: str,
+    ) -> None:
+        if not isinstance(owner_ref, str) or not owner_ref.strip():
+            raise ContentUnitValidationError("C6 星烁擢升 owner_ref 必须是非空字符串")
+        if ascension_bonus < 0.0:
+            raise ContentUnitValidationError("C6 星烁擢升不能为负数")
+        self._owner_ref = AttributeSubjectRef.character(owner_ref)
+        self._ascension_bonus = ascension_bonus
+        self._provider_key = f"{source_key}.stellar_ascension:{owner_ref}"
+        self._source_ref = RuntimeSourceRef(RuntimeSourceKind.CONTENT, source_key)
+        self.provider_spec = DamageModifierProviderSpec(
+            provider_key=self._provider_key,
+            writes=frozenset({DamageModifierStage.STELLAR_ASCENSION_BONUS_ADD}),
+            owner_ref=self._owner_ref,
+            display_name=display_name,
+        )
+
+    def contribute(
+        self,
+        query: DamageQuery,
+        scope: DamageResolutionScope,
+    ) -> tuple[DamageModifierTerm, ...]:
+        del scope
+        request = query.request
+        if request.source_ref != self._owner_ref:
+            return ()
+        if request.main_attack_tag not in _STELLAR_REACTION_DAMAGE_TAGS:
+            return ()
+        if self._ascension_bonus <= 0.0:
+            return ()
+        return (
+            DamageModifierTerm(
+                stage=DamageModifierStage.STELLAR_ASCENSION_BONUS_ADD,
+                value=self._ascension_bonus,
                 provider_key=self._provider_key,
                 source_ref=self._source_ref,
             ),
@@ -257,10 +393,12 @@ class SandroneP4PrismBoostProvider:
 
     施放帧判定（P4 已解锁 ∧ 解算功率 > 阈值 ∧ 施放时持辉映）由 E 动作完成，
     判定结果经影响工厂以请求级事实绑定在第二枚棱晶弹请求上（发射时刻冻结，
-    与子弹落点时刻的功率无关）。本 provider 读到该事实后，对请求的每个倍率
-    组件产出系数百分比词条：``coefficient × multiplier`` 等价于
-    ``percent_add = multiplier - 1``，普通与星烁契约共用同一倍率区阶段
-    （D-082），因此一个 provider 同时覆盖两种契约。
+    与子弹落点时刻的功率无关）。
+
+    provider 按 ``formula_key`` 自筛：判定条件要求施放时持辉映，强化因此只应
+    发生在切到星变体的第二枚棱晶弹上。但判定帧在施放帧、变体分派在展开帧，两者
+    相隔数十帧，辉映可能在中间到期——此时请求走通用公式，而通用公式白名单不含
+    大权区阶段，不筛选会被阶段校验当成 provider 违规抛错。
     """
 
     def __init__(
@@ -277,7 +415,7 @@ class SandroneP4PrismBoostProvider:
         self._source_ref = RuntimeSourceRef(RuntimeSourceKind.CONTENT, source_key)
         self.provider_spec = DamageModifierProviderSpec(
             provider_key=self._provider_key,
-            writes=frozenset({DamageModifierStage.COMPONENT_COEFFICIENT_PERCENT_ADD}),
+            writes=frozenset({DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD}),
             owner_ref=self._owner_ref,
             reads_facts=frozenset({SANDRONE_P4_PRISM_BOOST_FACT_KEY}),
             display_name=display_name,
@@ -291,15 +429,80 @@ class SandroneP4PrismBoostProvider:
         request = query.request
         if request.source_ref != self._owner_ref:
             return ()
+        if request.formula_key != FORMULA_KEY_STELLAR_REACTION:
+            return ()
         if scope.read_fact(SANDRONE_P4_PRISM_BOOST_FACT_KEY) is not True:
             return ()
-        return tuple(
+        return (
             DamageModifierTerm(
-                stage=DamageModifierStage.COMPONENT_COEFFICIENT_PERCENT_ADD,
+                stage=DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD,
                 value=self._boost_multiplier - 1.0,
-                component_key=term.component_key,
                 provider_key=self._provider_key,
                 source_ref=self._source_ref,
-            )
-            for term in request.scaling_terms
+            ),
         )
+
+
+class SandroneP4BeamBonusProvider:
+    """P4 悠久的演算机关：辉映下施放爆发后，聚能光束伤害按消费层数放大。
+
+    官方文本「光束造成原本 100% + 清除层数 × 10% 的伤害」= 原本伤害 ×
+    (100% + 层数 × 10%)，即一个**乘数**：落在星烁公式的**大权区乘数**
+    （``stellar_authority_multiplier``）上，从冻结基线 1.0 加算
+    ``每层倍率 × 层数``。资产行的 100% 基座就是该冻结基线本身、不构成贡献，
+    内容侧不提取该分量（资产行保留原文数值以追溯官方文本）。
+
+    判定输入是 Q 施放帧消费改进战术得到的**层数**（请求级事实，由影响工厂在
+    展开聚能光束星变体请求时绑定）；事实只在真正切到星变体时存在，因此本
+    provider 无需自行判定辉映状态。层数换算与署名发生在伤害侧（D-082）。
+    """
+
+    def __init__(
+        self,
+        *,
+        owner_ref: str,
+        bonus_per_stack: float,
+        source_key: str,
+        display_name: str,
+    ) -> None:
+        if not isinstance(owner_ref, str) or not owner_ref.strip():
+            raise ContentUnitValidationError("P4 光束加成 owner_ref 必须是非空字符串")
+        self._owner_ref = AttributeSubjectRef.character(owner_ref)
+        self._bonus_per_stack = _require_positive_number(bonus_per_stack, "P4 光束每层加成")
+        self._provider_key = f"{source_key}.beam_bonus:{owner_ref}"
+        self._source_ref = RuntimeSourceRef(RuntimeSourceKind.CONTENT, source_key)
+        self.provider_spec = DamageModifierProviderSpec(
+            provider_key=self._provider_key,
+            writes=frozenset({DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD}),
+            owner_ref=self._owner_ref,
+            reads_facts=frozenset({SANDRONE_P4_TACTICS_STACKS_FACT_KEY}),
+            display_name=display_name,
+        )
+
+    def contribute(
+        self,
+        query: DamageQuery,
+        scope: DamageResolutionScope,
+    ) -> tuple[DamageModifierTerm, ...]:
+        request = query.request
+        if request.source_ref != self._owner_ref:
+            return ()
+        stacks = _tactics_stacks_of(scope.read_fact(SANDRONE_P4_TACTICS_STACKS_FACT_KEY))
+        if stacks is None:
+            return ()
+        return (
+            DamageModifierTerm(
+                stage=DamageModifierStage.STELLAR_AUTHORITY_MULTIPLIER_ADD,
+                value=self._bonus_per_stack * stacks,
+                provider_key=self._provider_key,
+                source_ref=self._source_ref,
+            ),
+        )
+
+
+def _tactics_stacks_of(value: DamageFactValue | None) -> int | None:
+    """把事实值收敛为正整数消费层数；非正整数或类型不符时返回 ``None``。"""
+
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        return None
+    return value

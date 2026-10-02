@@ -25,7 +25,6 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_OVERLOAD_SHOT_INTERVAL_FRAMES,
     FAGEOU_PRE_SWING_FRAMES,
     FAGEOU_RAY_FIRST_OFFSET_FRAMES,
-    FAGEOU_STATE_BEAM_BONUS,
     FAGEOU_STATE_DRAIN_ACTIVE,
     FAGEOU_STATE_EXTRA_SEGMENTS_LEFT,
     FAGEOU_STATE_MODE,
@@ -34,8 +33,6 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_STATE_POWER,
     FAGEOU_STATE_RAY_COUNT,
     FAGEOU_STATE_SOLVE_START_FRAME,
-    FAGEOU_STATE_TACTICS_EXPIRE_FRAME,
-    FAGEOU_STATE_TACTICS_STACKS,
     INPUT_KIND_BY_KEY,
     JUMP_INPUT,
     NORMAL_ATTACK_INPUT,
@@ -46,9 +43,11 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_JUMP_ACTION_KEY,
     SANDRONE_NORMAL_ATTACK_ACTION_KEYS,
     SANDRONE_P4_PRISM2_BOOST_PARAM,
+    SANDRONE_P4_TACTICS_STACKS_PARAM,
     SANDRONE_PLUNGE_ACTION_KEY,
     SANDRONE_PLUNGE_COLLISION_IMPACT_KEY,
     SANDRONE_PLUNGE_LANDING_IMPACT_KEY,
+    SANDRONE_TACTICS_CONSUME_IMPACT_KEY,
     SandroneP4AssetValues,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.stellar import radiance_evidence
@@ -80,16 +79,20 @@ from genshin_sim.core.actions import (
     PreparedAction,
     TimedImpactAction,
 )
+from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.contracts.intents import IntentEnvelope, IntentKind
 from genshin_sim.core.contracts.json import JSONValue
 from genshin_sim.core.contracts.phases import FramePhase
 from genshin_sim.core.coordination.character_ability_condition.models import (
     CharacterAbilityConditionQuery,
 )
+from genshin_sim.core.impacts import ImpactKind, ImpactRequest
 from genshin_sim.core.simulation.context import SimulationContext
 from genshin_sim.core.simulation.intent_queue import IntentQueue
 from genshin_sim.core.space.entities import SpatialEntity
 from genshin_sim.core.space.space import ACTIVE_CHARACTER_ENTITY_ID
+from genshin_sim.core.systems.buff.models import BuffInstanceRef, BuffRecord
+from genshin_sim.core.systems.buff.protocols import BuffReader
 from genshin_sim.core.systems.cooldown import CooldownDurationTerm
 
 
@@ -99,9 +102,6 @@ class SandroneInterpreterError(RuntimeError):
 
 class SandroneActionInterpreter:
     """按已确认帧表解释桑多涅动作输入。
-
-    解释器无实例可变字段；上次动作与起始帧从宿主状态容器读取，推进结果经
-    ``state_patch`` 意图提交。
     """
 
     def __init__(
@@ -109,11 +109,15 @@ class SandroneActionInterpreter:
         *,
         action_table: dict[str, TimedActionSpec] | None = None,
         p4: SandroneP4AssetValues | None = None,
+        tactics_definition_key: str | None = None,
     ) -> None:
         self._action_table = dict(action_table or SANDRONE_ACTION_TABLE)
         # P4 数值取自资产效果行（content.py 装配期传入）；突破 1 阶前为 None，
         # 相关行为（棱晶弹强化、爆发清层与光束加成）不触发。
         self._p4 = p4
+        if (p4 is None) != (tactics_definition_key is None):
+            raise SandroneInterpreterError("P4 数值与改进战术 Buff 定义键必须同时提供或同时缺省")
+        self._tactics_definition_key = tactics_definition_key
 
     @property
     def supported_action_keys(self) -> tuple[str, ...]:
@@ -186,6 +190,7 @@ class SandroneActionInterpreter:
         action = self._select_action(input_kind, last_action_key, height)
         owner_ref = f"character:slot_{slot}"
         prism2_boost = False
+        tactics_stacks = 0
         if input_kind == ELEMENTAL_SKILL_INPUT:
             # 判定在施放帧完成一次，结果随 E 动作参数透传给第二枚棱晶弹的
             # 影响点（不再写跨帧状态字段、也不需要时间窗口）。
@@ -196,8 +201,10 @@ class SandroneActionInterpreter:
                 session_id=session.session_id,
             )
         if input_kind == ELEMENTAL_BURST_INPUT and self._p4 is not None:
-            self._queue_burst_cast_patch(
-                context.simulation,
+            # P4 光束加成：施放帧消费改进战术，只取出层数
+            # 随 Q 动作参数透传给聚能光束影响点；
+            tactics_stacks = self._consume_tactics_stacks(
+                context,
                 owner_ref=owner_ref,
                 frame=session.current_frame,
                 session_id=session.session_id,
@@ -220,6 +227,7 @@ class SandroneActionInterpreter:
                     input_kind,
                     height,
                     prism2_boost=prism2_boost,
+                    tactics_stacks=tactics_stacks,
                 ),
                 source_session_id=session.session_id,
             )
@@ -310,6 +318,7 @@ class SandroneActionInterpreter:
         height: float,
         *,
         prism2_boost: bool = False,
+        tactics_stacks: int = 0,
     ) -> dict[str, object]:
         params: dict[str, object] = {
             "content_handler_key": SANDRONE_CHARACTER_HANDLER_KEY,
@@ -320,6 +329,10 @@ class SandroneActionInterpreter:
             # P4 棱晶弹强化标记：E 动作的两个影响点都携带，影响工厂只对
             # 第二枚棱晶弹消费（键值常量见 data.py）。
             params[SANDRONE_P4_PRISM2_BOOST_PARAM] = prism2_boost
+        if action.action_key == SANDRONE_ELEMENTAL_BURST_ACTION_KEY:
+            # P4 改进战术消费层数：Q 施放帧读到多少层就带多少层（未消费为 0），
+            # 影响工厂只对聚能光束影响点消费（键值常量见 data.py）。
+            params[SANDRONE_P4_TACTICS_STACKS_PARAM] = tactics_stacks
         if action.action_key != SANDRONE_PLUNGE_ACTION_KEY:
             return params
         params.update(
@@ -550,68 +563,112 @@ class SandroneActionInterpreter:
         )
         return prism2_boost
 
-    def _queue_burst_cast_patch(
+    def _consume_tactics_stacks(
+        self,
+        context: ActionInterpretationContext,
+        *,
+        owner_ref: str,
+        frame: int,
+        session_id: int,
+    ) -> int:
+        """辉映下施放爆发：消费改进战术并返回被清除的层数（P4）。
+        """
+
+        if self._p4 is None or self._tactics_definition_key is None:
+            raise SandroneInterpreterError("P4 未解锁时不应消费改进战术")
+        if context.buff_reader is None:
+            raise SandroneInterpreterError(
+                "缺少 Buff 只读端口（装配期未注入动作管理器），无法消费改进战术"
+            )
+        if radiance_evidence(context.simulation, owner_ref, frame) is None:
+            return 0
+        record = self._active_tactics_record(
+            context.buff_reader,
+            owner_ref=owner_ref,
+            frame=frame,
+        )
+        if record is None:
+            return 0
+        stacks = record.state.stack_count
+        self._queue_tactics_removal(
+            context.simulation,
+            owner_ref=owner_ref,
+            frame=frame,
+            session_id=session_id,
+            instance_ref=record.instance_ref,
+        )
+        return stacks
+
+    def _active_tactics_record(
+        self,
+        buff_reader: BuffReader,
+        *,
+        owner_ref: str,
+        frame: int,
+    ) -> BuffRecord | None:
+        """读取宿主当前活动的改进战术记录；冲突键保证至多一条。"""
+
+        if self._tactics_definition_key is None:  # pragma: no cover - 构造期已校验
+            raise SandroneInterpreterError("缺少改进战术 Buff 定义键")
+        records = buff_reader.active(
+            frame,
+            target_ref=AttributeSubjectRef.character(owner_ref),
+            definition_key=self._tactics_definition_key,
+        )
+        if not records:
+            return None
+        first, *rest = records
+        if rest:
+            raise SandroneInterpreterError(
+                f"改进战术 Buff 出现多条活动记录：{len(records)} 条（冲突键应保证互斥）"
+            )
+        return first
+
+    def _queue_tactics_removal(
         self,
         context: SimulationContext,
         *,
         owner_ref: str,
         frame: int,
         session_id: int,
+        instance_ref: BuffInstanceRef,
     ) -> None:
-        """Q 施放：辉映下清空全部改进战术层数并快照光束加成（P4）。
+        """以 REMOVE_STATUS 影响请求提交改进战术消费移除。
 
-        P4 提供的倍率 = 100% + 0.1 × 清空层数（一层即 110%），写入状态字段
-        供聚能光束影响工厂在展开帧并入星变体倍率区（原本倍率 + P4 提供的
-        倍率）；非辉映施放不清层，字段写 0 覆盖旧值（星烁通道只在辉映下
-        可达，普通光束不消费该字段）。
+        消费方读记录、移除 handler 不推断（buff/handler.py 契约）：实例身份
+        由本方法携带；移除经意图队列在下一轮结算落地。
         """
 
-        slot = int(owner_ref.removeprefix("character:slot_"))
-        stacks, _ = self._read_tactics_state(context, slot)
-        fields: dict[str, JSONValue] = {FAGEOU_STATE_BEAM_BONUS: 0.0}
-        if stacks > 0 and radiance_evidence(context, owner_ref, frame) is not None:
-            p4 = self._p4
-            if p4 is None:
-                raise SandroneInterpreterError("P4 数值缺失，无法结算光束加成")
-            # 层数已由状态 schema 的 max_value 与 hook 的 min 双重限制在资产
-            # 上限内，此处无需再截断。
-            fields[FAGEOU_STATE_BEAM_BONUS] = (
-                p4.beam_bonus_base_multiplier + p4.beam_bonus_per_stack * stacks
+        queue = cast(IntentQueue | None, context.get_system(IntentQueue))
+        if queue is None:
+            raise SandroneInterpreterError("缺少 IntentQueue，无法提交改进战术消费移除")
+        queue.enqueue(
+            IntentEnvelope(
+                intent_id=f"sandrone_p4_tactics_consume:{owner_ref}:{session_id}:{frame}",
+                kind=IntentKind.IMPACT,
+                frame=frame,
+                phase=FramePhase.SETTLEMENT,
+                round=context.settlement_round + 1,
+                source_ref=SANDRONE_CHARACTER_HANDLER_KEY,
+                payload=ImpactRequest(
+                    frame=frame,
+                    kind=ImpactKind.REMOVE_STATUS,
+                    impact_key=SANDRONE_TACTICS_CONSUME_IMPACT_KEY,
+                    owner_slot=int(owner_ref.removeprefix("character:slot_")),
+                    action_key=SANDRONE_ELEMENTAL_BURST_ACTION_KEY,
+                    source_impact_point_id=(
+                        f"{SANDRONE_TACTICS_CONSUME_IMPACT_KEY}:{frame}:{session_id}"
+                    ),
+                    target_refs=(owner_ref,),
+                    params={
+                        "buff_remove": {
+                            "instance_ref": instance_ref.to_key(),
+                            "reason": "consumed",
+                        },
+                    },
+                ),
             )
-            fields[FAGEOU_STATE_TACTICS_STACKS] = 0
-            fields[FAGEOU_STATE_TACTICS_EXPIRE_FRAME] = 0
-        self._queue_machine_patch(
-            context,
-            owner_ref=owner_ref,
-            frame=frame,
-            session_id=session_id,
-            fields=fields,
         )
-
-    def _read_tactics_state(
-        self,
-        context: SimulationContext,
-        slot: int,
-    ) -> tuple[int, int]:
-        """读取 P4 改进战术层数与过期帧。"""
-
-        try:
-            mount = resolve_mount(
-                context,
-                slot=slot,
-                state_key=SANDRONE_CHARACTER_HANDLER_KEY,
-            )
-        except StateContainerNotFoundError as exc:
-            raise SandroneInterpreterError(f"缺少桑多涅状态挂载：{exc}") from exc
-        raw_stacks = mount.values.get(FAGEOU_STATE_TACTICS_STACKS)
-        stacks = (
-            raw_stacks if isinstance(raw_stacks, int) and not isinstance(raw_stacks, bool) else 0
-        )
-        raw_expire = mount.values.get(FAGEOU_STATE_TACTICS_EXPIRE_FRAME)
-        expire = (
-            raw_expire if isinstance(raw_expire, int) and not isinstance(raw_expire, bool) else 0
-        )
-        return stacks, expire
 
     def _transition_rejection(
         self,

@@ -1,9 +1,6 @@
 """桑多涅影响契约编译与影响点展开。
 
-本文件负责"资产数据 -> 伤害契约 -> ImpactRequest"的链路：内容编译期把资产
-倍率编译为 ``DamageImpactSpec``，运行期由 ``SandroneActionImpactFactory``
-把动作影响点展开为 ``ImpactRequest``。普攻/棱晶弹/轰炸/光束均施加弱冰附着
-（1 元素量，ICD 序列"默认"）；下落落地攻击按资料无附着冷却标签。
+本文件负责"资产数据 -> 伤害契约 -> ImpactRequest"的链路
 """
 
 from __future__ import annotations
@@ -13,7 +10,6 @@ from dataclasses import replace
 
 from genshin_sim.assets.models import TalentScalingEntry
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
-    FAGEOU_STATE_BEAM_BONUS,
     SANDRONE_C6_EXTRA_DAMAGE_DATA,
     SANDRONE_C6_EXTRA_DISPLAY_NAME,
     SANDRONE_CHARACTER_HANDLER_KEY,
@@ -39,6 +35,7 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_ELEMENTAL_BURST_RANGE_TYPE,
     SANDRONE_ELEMENTAL_BURST_STRIKE_TYPE,
     SANDRONE_ELEMENTAL_SKILL_AOE_RADIUS,
+    SANDRONE_ELEMENTAL_SKILL_AOE_SHAPE,
     SANDRONE_ELEMENTAL_SKILL_ICD_TAG_KEY,
     SANDRONE_ELEMENTAL_SKILL_MAIN_ATTACK_TAG,
     SANDRONE_ELEMENTAL_SKILL_PRISM_1_IMPACT_KEY,
@@ -50,6 +47,8 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_NORMAL_ATTACK_DAMAGE_DATA,
     SANDRONE_P4_PRISM2_BOOST_PARAM,
     SANDRONE_P4_PRISM_BOOST_FACT_KEY,
+    SANDRONE_P4_TACTICS_STACKS_FACT_KEY,
+    SANDRONE_P4_TACTICS_STACKS_PARAM,
     SANDRONE_PLUNGE_ATTACK_DATA,
     SANDRONE_PLUNGE_COLLISION_IMPACT_KEY,
     SANDRONE_PLUNGE_LANDING_IMPACT_KEY,
@@ -60,7 +59,6 @@ from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.generic.talents import ScalingCompiler
-from genshin_sim.content.state_container import StateContainerNotFoundError, resolve_mount
 from genshin_sim.core.attributes import STAT_ATK_TOTAL
 from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.impacts import (
@@ -226,7 +224,7 @@ def compile_elemental_skill_damage_specs(
             elemental_amount=1,
             icd_tag_key=SANDRONE_ELEMENTAL_SKILL_ICD_TAG_KEY,
             display_name=_SANDRONE_ELEMENTAL_SKILL_DAMAGE_LABEL,
-            aoe_shape="球",
+            aoe_shape=SANDRONE_ELEMENTAL_SKILL_AOE_SHAPE,
             aoe_radius=SANDRONE_ELEMENTAL_SKILL_AOE_RADIUS,
             aoe_offset=Vector3(),
         )
@@ -518,25 +516,27 @@ class SandroneActionImpactFactory:
             )
         damage_spec = self._damage_specs.get(context.impact_key)
         stellar_channel = self._stellar_channels.get(context.impact_key)
+        beam_tactics_stacks = 0
         if stellar_channel is not None:
-            # P4 光束加成：Q 施放时快照的 P4 提供倍率（100% + 10%/层）作用于
-            # 倍率区，随变体原本倍率一并并入缩放系数；仅在光束星变体上消费
-            # （普通光束不消费该字段）。
-            beam_extra_multiplier = (
-                self._read_state_float(context, FAGEOU_STATE_BEAM_BONUS)
-                if context.impact_key == SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY
-                else 0.0
-            )
+            # P4 光束加成：Q 施放帧消费改进战术得到的层数随 Q 动作参数透传到这里
+            # （只是机制原始状态，不是加成数值）。加成作用于星烁大权区乘数，由
+            # P4 provider 在结算期按层数换算——内容侧不把层数折进倍率（D-082）。
+            if context.impact_key == SANDRONE_ELEMENTAL_BURST_BEAM_IMPACT_KEY:
+                beam_tactics_stacks = self._beam_tactics_stacks_of(context)
             stellar_spec = resolve_stellar_attack_spec(
                 stellar_channel,
                 simulation=context.simulation,
                 owner_ref=f"character:slot_{context.owner.slot}",
                 frame=context.frame,
-                extra_multiplier=beam_extra_multiplier,
             )
             if stellar_spec is not None:
                 damage_spec = stellar_spec
+            else:
+                # 未切到星变体（无辉映证据）：不绑事实，加成不参与结算。
+                beam_tactics_stacks = 0
         request_facts: dict[str, DamageFactValue] = {}
+        if beam_tactics_stacks > 0:
+            request_facts[SANDRONE_P4_TACTICS_STACKS_FACT_KEY] = beam_tactics_stacks
         if (
             context.impact_key == SANDRONE_ELEMENTAL_SKILL_PRISM_2_IMPACT_KEY
             and damage_spec is not None
@@ -579,20 +579,22 @@ class SandroneActionImpactFactory:
             ),
         )
 
-    def _read_state_float(self, context: ActionImpactContext, name: str) -> float:
-        """读取宿主状态字段的浮点值；缺挂载或缺字段时返回 0.0。"""
+    def _beam_tactics_stacks_of(self, context: ActionImpactContext) -> int:
+        """读取 Q 动作参数携带的改进战术消费层数；缺省为 0。
 
-        if context.simulation is None or context.owner.slot is None:
-            return 0.0
-        try:
-            mount = resolve_mount(
-                context.simulation,
-                slot=context.owner.slot,
-                state_key=SANDRONE_CHARACTER_HANDLER_KEY,
+        参数由解释器在 Q 施放帧写入（消费改进战术所得层数），同一动作实例内
+        透传，不落状态快照；类型不符属内容契约破坏，确定性报错。
+        """
+
+        raw = context.params.get(SANDRONE_P4_TACTICS_STACKS_PARAM)
+        if raw is None:
+            return 0
+        if isinstance(raw, bool) or not isinstance(raw, int):
+            raise ContentUnitValidationError(
+                f"P4 改进战术层数参数 {SANDRONE_P4_TACTICS_STACKS_PARAM} 必须是非负整数"
             )
-        except StateContainerNotFoundError:
-            return 0.0
-        raw = mount.values.get(name)
-        if isinstance(raw, bool) or not isinstance(raw, int | float):
-            return 0.0
-        return float(raw)
+        if raw < 0:
+            raise ContentUnitValidationError(
+                f"P4 改进战术层数参数 {SANDRONE_P4_TACTICS_STACKS_PARAM} 不能为负"
+            )
+        return raw

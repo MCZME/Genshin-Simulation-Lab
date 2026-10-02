@@ -1,23 +1,4 @@
-"""桑多涅效果行读取与效果 handler 工厂：被动 P4/P5/P6 与命座 C1–C6。
-
-统一把资产 ``effect_payloads`` 编译为 ContentUnit。行为切片按载体拆分：
-
-- P5（攻击力转精通）、C1（全队星烁增伤）、C2（射线暴伤）由本包
-  ``modifiers.py`` 的 provider 承载；
-- C4（星超导/星扩散冰伤害命中召唤协同攻击）由 ``hooks.py`` 的事件钩子承载；
-- C3/C5（天赋等级提升）以 ``talent_level_boosts`` 静态切片承载，经
-  content compiler 收敛进角色单元的天赋等级解析；
-- P4 与 C6 的数值行为与法洁欧状态机/影响工厂深度耦合（排空叠层、棱晶弹
-  强化、集束型射线与额外段、星烁擢升），承载在角色单元内（fageou.py /
-  impacts.py / stellar.py）；本文件的效果单元保留效果声明与解锁门槛，
-  metadata 记录真实载体。
-
-C6 的机器数值（段数、三段倍率、星烁擢升）由 ``read_c6_asset_values`` 从
-**资产命座第 6 层效果行**解析；角色单元经 ``request.effect_params``、效果
-单元经 ``request.owner_context.effect_params`` 拿到同一条效果行，不另设常量。
-
-P8 生活天赋为空实现（bootstrap 注册 EMPTY handler，不建单元）。
-"""
+"""桑多涅效果行读取与效果 handler 工厂：被动 P4/P5/P6 与命座 C1–C6。"""
 
 from __future__ import annotations
 
@@ -25,8 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
-    SANDRONE_ASSET_KEY,
-    SANDRONE_C6_UNLOCK_KEY,
+    FRAMES_PER_SECOND,
     SANDRONE_CONSTELLATION_C1_HANDLER_KEY,
     SANDRONE_CONSTELLATION_C2_HANDLER_KEY,
     SANDRONE_CONSTELLATION_C3_HANDLER_KEY,
@@ -34,21 +14,25 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     SANDRONE_CONSTELLATION_C5_HANDLER_KEY,
     SANDRONE_CONSTELLATION_C6_HANDLER_KEY,
     SANDRONE_CONTENT_VERSION,
-    SANDRONE_P4_ASCENSION_THRESHOLD,
-    SANDRONE_P5_ASCENSION_THRESHOLD,
     SANDRONE_PASSIVE_P4_HANDLER_KEY,
     SANDRONE_PASSIVE_P5_HANDLER_KEY,
     SANDRONE_PASSIVE_P6_HANDLER_KEY,
+    SANDRONE_TACTICS_BUFF_MECHANIC_KEY,
     SandroneP4AssetValues,
+    sandrone_tactics_definition_key,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.hooks import (
     SandroneC4CoordinatedAttackHook,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.modifiers import (
+    P6BaseBonus,
     SandroneAtkToMasteryProvider,
     SandroneC1StellarBonusProvider,
     SandroneC2RayCritDamageProvider,
+    SandroneC6StellarAscensionProvider,
+    SandroneP4BeamBonusProvider,
     SandroneP4PrismBoostProvider,
+    SandroneP6StellarBaseBonusProvider,
 )
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
@@ -62,28 +46,15 @@ from genshin_sim.content.definitions.effects import (
     UnlockSpec,
 )
 from genshin_sim.content.models import EventHook
-from genshin_sim.content.registries import EffectContentUnitRequest, EffectOwnerContext
-from genshin_sim.core.attributes import ModifierProvider
+from genshin_sim.content.registries import EffectContentUnitRequest
+from genshin_sim.core.attributes import AttributeSubjectKind, ModifierProvider
 from genshin_sim.core.contracts.json import JSONValue
+from genshin_sim.core.systems.buff import (
+    BuffApplicationPolicy,
+    BuffDefinition,
+    BuffValueRefreshPolicy,
+)
 from genshin_sim.core.systems.damage import DamageModifierProvider
-
-FRAMES_PER_SECOND = 60
-
-P4_CARRIER_NOTE = (
-    "数值行为承载于角色单元与效果单元：排空叠层与过期（fageou.py）、棱晶弹"
-    "强化判定（actions.py 施放帧判定，impacts.py 绑请求级事实）与光束加成；"
-    "强化的倍率展开在本条效果单元的 provider（modifiers.py）；机器数值取自"
-    "本条效果行（read_p4_asset_values），帧表派生的强化窗口常量见 data.py。"
-)
-P6_CARRIER_NOTE = (
-    "固定天赋：capability 随角色单元静态声明，基础增伤在星烁输入组装时按"
-    "攻击力折算（stellar.py stellar_base_bonus_for_atk，常量见 data.py）。"
-)
-C1_CARRIER_NOTE = "功率上升减速由角色单元按命座等级编译（fageou 构造参数）。"
-C6_CARRIER_NOTE = (
-    "集束型追加段与星烁擢升由角色单元按命座等级编译（fageou/impacts/"
-    "stellar），机器数值取自本条效果行（段数/三段倍率/擢升）。"
-)
 
 
 def _components(params: Mapping[str, object], *, purpose: str) -> tuple[float, ...]:
@@ -145,13 +116,7 @@ class SandroneC6AssetValues:
 
 
 def read_c6_asset_values(params: Mapping[str, object]) -> SandroneC6AssetValues:
-    """解析资产命座第 6 层效果行：追加段段数与三段倍率、星烁擢升。
-
-    分量顺序与资产一致（见 data.py ``SANDRONE_C6_UNLOCK_KEY`` 注释）：
-    ``[1]`` 段数、``[2]`` 普通倍率、``[4]`` 星超导倍率、``[5]`` 星扩散倍率、
-    ``[7]`` 星烁擢升；``[0]`` / ``[3]`` / ``[6]`` 是文本内链接编号与重复段数，
-    不参与解析（与 C1/C2/C4 的按序取分量口径一致）。
-    """
+    """解析资产命座第 6 层效果行：追加段段数与三段倍率、星烁擢升。"""
 
     purpose = "命之座第6层 集束型冷凝射线"
     segment_count = _component(params, 1, purpose=purpose)
@@ -174,35 +139,34 @@ def read_c6_asset_values(params: Mapping[str, object]) -> SandroneC6AssetValues:
     )
 
 
-def resolve_c6_ascension_bonus(
-    owner_context: EffectOwnerContext,
-    *,
-    purpose: str,
-) -> float:
-    """从拥有者上下文读取 C6 星烁擢升；未解锁第 6 层时为 0。
+def read_p6_base_bonus(params: Mapping[str, object]) -> P6BaseBonus:
+    """解析资产被动「星耀祝礼·唯理为光」效果行：P6 星烁基础增伤折算参数。
 
-    跨效果行的机器耦合（C6 擢升覆盖 C4 协同攻击的星烁伤害）需要同一条效果行
-    的数值，走 ``EffectOwnerContext.effect_params`` 取序，不另设常量。
+    分量顺序（与资产一致，前两位为文本内链接编号与持续秒数）：
+    [0] 链接 极星辉域  [1] 持续秒数  [2] 每 N 点攻击（100）
+    [3] 增伤比例（0.7%）  [4] 上限（14%）。
     """
 
-    if owner_context.constellation < 6:
-        return 0.0
-    params = owner_context.effect_params.get(SANDRONE_C6_UNLOCK_KEY)
-    if params is None:
-        raise ContentUnitValidationError(f"{purpose} 已解锁第 6 层但缺少 C6 资产效果行")
-    return read_c6_asset_values(params).ascension_bonus
+    purpose = "天赋「星耀祝礼·唯理为光」"
+    return P6BaseBonus(
+        per_100_atk=_component(params, 2, purpose=purpose),
+        bonus_rate=_component(params, 3, purpose=purpose),
+        cap=_component(params, 4, purpose=purpose),
+    )
+
+
+def read_c1_power_rate_reduction(params: Mapping[str, object]) -> float:
+    """解析资产命座第 1 层效果行：解算功率提升速度折算系数（number_3，-50%）。"""
+
+    purpose = "命之座第 1 层 鎏金未凋，夕暮已远"
+    reduction = _component(params, 2, purpose=purpose)
+    if not 0.0 < reduction <= 1.0:
+        raise ContentUnitValidationError(f"{purpose} 功率提升折算系数必须在 (0, 1] 区间")
+    return reduction
 
 
 def read_p4_asset_values(params: Mapping[str, object]) -> SandroneP4AssetValues:
-    """解析资产被动「悠久的演算机关」效果行：阈值、强化倍率与光束加成。
-
-    分量顺序与资产一致（文本内链接编号与纯数分量交错）：
-    ``[3]`` 解算功率阈值、``[4]`` 第二枚棱晶弹强化倍率、``[5]`` 改进战术层数
-    上限、``[6]`` 改进战术持续秒数、``[7]`` 每层功率步长、``[9]`` 光束倍率
-    基座、``[10]`` 光束每层倍率；``[0]``/``[1]``/``[2]``/``[8]`` 是文本内
-    链接编号，不参与解析（与 C1/C2/C4/C6 的按位置取分量口径一致）。
-    持续秒数在此折算为帧（``FRAMES_PER_SECOND``）。
-    """
+    """解析资产被动「悠久的演算机关」效果行：阈值、强化倍率与光束加成。"""
 
     purpose = "天赋「悠久的演算机关」"
     power_threshold = _component(params, 3, purpose=purpose)
@@ -210,7 +174,6 @@ def read_p4_asset_values(params: Mapping[str, object]) -> SandroneP4AssetValues:
     max_stacks = _component(params, 5, purpose=purpose)
     duration_seconds = _component(params, 6, purpose=purpose)
     power_step = _component(params, 7, purpose=purpose)
-    beam_base = _component(params, 9, purpose=purpose)
     beam_per_stack = _component(params, 10, purpose=purpose)
     if power_threshold <= 0.0:
         raise ContentUnitValidationError(f"{purpose} 解算功率阈值必须为正数")
@@ -222,23 +185,24 @@ def read_p4_asset_values(params: Mapping[str, object]) -> SandroneP4AssetValues:
         raise ContentUnitValidationError(f"{purpose} 改进战术持续秒数必须为正数")
     if power_step <= 0.0:
         raise ContentUnitValidationError(f"{purpose} 改进战术功率步长必须为正数")
-    if beam_base < 0.0 or beam_per_stack < 0.0:
-        raise ContentUnitValidationError(f"{purpose} 光束倍率不能为负数")
+    if beam_per_stack < 0.0:
+        raise ContentUnitValidationError(f"{purpose} 光束每层倍率不能为负数")
     return SandroneP4AssetValues(
         power_threshold=power_threshold,
         prism_boost_multiplier=prism_boost_multiplier,
         tactics_power_step=power_step,
         tactics_max_stacks=int(max_stacks),
         tactics_duration_frames=round(duration_seconds * FRAMES_PER_SECOND),
-        beam_bonus_base_multiplier=beam_base,
         beam_bonus_per_stack=beam_per_stack,
     )
 
 
 def _validate_owner(request: EffectContentUnitRequest, handler_key: str) -> int:
-    if request.owner_key != SANDRONE_ASSET_KEY:
+    """身份判断按 handler_key（代码实现绑定入口）：请求路由到本工厂的键必须一致。"""
+
+    if request.handler_key != handler_key:
         raise ContentUnitValidationError(
-            f"{handler_key} 效果 handler 只接受桑多涅资产：{request.owner_key}"
+            f"{handler_key} 收到 handler 键不符的效果请求：{request.handler_key}"
         )
     if request.slot is None:
         raise ContentUnitValidationError(f"{handler_key} 效果缺少角色槽位")
@@ -252,16 +216,13 @@ def _effect_unit(
     kind: EffectKind,
     unlock: UnlockSpec,
     purpose: str,
-    note: str | None = None,
     event_hooks: tuple[EventHook, ...] = (),
     attribute_providers: tuple[ModifierProvider, ...] = (),
     damage_modifier_providers: tuple[DamageModifierProvider, ...] = (),
+    buff_definitions: tuple[BuffDefinition, ...] = (),
     talent_level_boosts: Mapping[str, int] | None = None,
     compiled_params: Mapping[str, JSONValue] | None = None,
 ) -> ContentUnit:
-    metadata: dict[str, str] = {"purpose": purpose}
-    if note is not None:
-        metadata["carrier_note"] = note
     return ContentUnit(
         owner_type=ContentUnitOwnerType.CHARACTER,
         owner_key=request.owner_key,
@@ -279,18 +240,15 @@ def _effect_unit(
         event_hooks=event_hooks,
         attribute_providers=attribute_providers,
         damage_modifier_providers=damage_modifier_providers,
+        buff_definitions=buff_definitions,
         talent_level_boosts=dict(talent_level_boosts or {}),
         compiled_params=dict(compiled_params or {}),
-        metadata=metadata,
+        metadata={"purpose": purpose},
     )
 
 
 def create_sandrone_passive_p4(request: EffectContentUnitRequest) -> ContentUnit:
-    """P4 悠久的演算机关：战技排空叠层与爆发光束加成（角色单元承载）。
-
-    数值在本条效果行里，行为在角色单元里：这里解析一遍（数值不合法时本条单元
-    直接失败），并把取值写进 ``compiled_params`` 供装配/诊断核对。
-    """
+    """P4 悠久的演算机关：战技排空叠层与爆发光束加成（角色单元承载）。"""
 
     slot = _validate_owner(request, SANDRONE_PASSIVE_P4_HANDLER_KEY)
     name = _effect_name(request.params, position="天赋「悠久的演算机关」")
@@ -302,17 +260,31 @@ def create_sandrone_passive_p4(request: EffectContentUnitRequest) -> ContentUnit
         source_key=SANDRONE_PASSIVE_P4_HANDLER_KEY,
         display_name=f"{name}·棱晶弹强化",
     )
+    beam_provider = SandroneP4BeamBonusProvider(
+        owner_ref=owner_ref,
+        bonus_per_stack=values.beam_bonus_per_stack,
+        source_key=SANDRONE_PASSIVE_P4_HANDLER_KEY,
+        display_name=f"{name}·光束加成",
+    )
+    tactics_definition_key = sandrone_tactics_definition_key(slot)
     return _effect_unit(
         request=request,
         handler_key=SANDRONE_PASSIVE_P4_HANDLER_KEY,
         kind=EffectKind.PASSIVE,
         unlock=UnlockSpec(
+            # 突破 1 阶（20 级突破）解锁。
             kind=UnlockKind.ASCENSION,
-            threshold=SANDRONE_P4_ASCENSION_THRESHOLD,
+            threshold=1,
         ),
         purpose="sandrone_passive_p4",
-        note=P4_CARRIER_NOTE,
-        damage_modifier_providers=(provider,),
+        damage_modifier_providers=(provider, beam_provider),
+        buff_definitions=(
+            _tactics_buff_definition(
+                tactics_definition_key,
+                values.tactics_max_stacks,
+                display_name=f"{name}·改进战术",
+            ),
+        ),
         compiled_params={
             "name": name,
             "power_threshold": values.power_threshold,
@@ -320,9 +292,36 @@ def create_sandrone_passive_p4(request: EffectContentUnitRequest) -> ContentUnit
             "tactics_power_step": values.tactics_power_step,
             "tactics_max_stacks": values.tactics_max_stacks,
             "tactics_duration_frames": values.tactics_duration_frames,
-            "beam_bonus_base_multiplier": values.beam_bonus_base_multiplier,
             "beam_bonus_per_stack": values.beam_bonus_per_stack,
+            "tactics_definition_key": tactics_definition_key,
         },
+    )
+
+
+def _tactics_buff_definition(
+    definition_key: str,
+    max_stacks: int,
+    *,
+    display_name: str,
+) -> BuffDefinition:
+    """改进战术：共享期限的纯层数载体，不带属性词条。
+
+    ``stack_refresh`` 策略与资产语义一致：每次叠层刷新全部层数的共享到期帧；
+    层数满后继续申请只刷新期限（resolver 收敛，申请侧不感知层数）。定义键按
+    槽位区分，冲突键刻意同值——同槽位实例互斥，层数收敛于单条记录。
+    """
+
+    return BuffDefinition(
+        definition_key=definition_key,
+        mechanic_key=SANDRONE_TACTICS_BUFF_MECHANIC_KEY,
+        handler_key=SANDRONE_PASSIVE_P4_HANDLER_KEY,
+        conflict_key=definition_key,
+        target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
+        application_policy=BuffApplicationPolicy.STACK_REFRESH,
+        value_refresh_policy=BuffValueRefreshPolicy.REPLACE_LATEST,
+        max_stacks=max_stacks,
+        marker_only=True,
+        display_name=display_name,
     )
 
 
@@ -345,8 +344,9 @@ def create_sandrone_passive_p5(request: EffectContentUnitRequest) -> ContentUnit
         handler_key=SANDRONE_PASSIVE_P5_HANDLER_KEY,
         kind=EffectKind.PASSIVE,
         unlock=UnlockSpec(
+            # 突破 4 阶（60 级突破）解锁。
             kind=UnlockKind.ASCENSION,
-            threshold=SANDRONE_P5_ASCENSION_THRESHOLD,
+            threshold=4,
         ),
         purpose="sandrone_passive_p5",
         attribute_providers=(provider,),
@@ -354,16 +354,28 @@ def create_sandrone_passive_p5(request: EffectContentUnitRequest) -> ContentUnit
 
 
 def create_sandrone_passive_p6(request: EffectContentUnitRequest) -> ContentUnit:
-    """P6 星耀祝礼·唯理为光：星烁基础增伤随攻击力折算（角色星烁通道承载）。"""
+    """P6 星耀祝礼·唯理为光：星烁基础增伤随攻击力折算（provider 词条承载）。
 
-    _validate_owner(request, SANDRONE_PASSIVE_P6_HANDLER_KEY)
+    折算参数取自本条资产效果行；增伤数值在伤害结算期由 provider 按桑多涅
+    实时攻击力换算并署名（D-082），效果单元因此自持全部机器行为。
+    """
+
+    slot = _validate_owner(request, SANDRONE_PASSIVE_P6_HANDLER_KEY)
+    name = _effect_name(request.params, position="天赋「星耀祝礼·唯理为光」")
+    owner_ref = f"character:slot_{slot}"
+    provider = SandroneP6StellarBaseBonusProvider(
+        owner_ref=owner_ref,
+        base_bonus=read_p6_base_bonus(request.params),
+        source_key=SANDRONE_PASSIVE_P6_HANDLER_KEY,
+        display_name=f"{name}·星烁基础增伤",
+    )
     return _effect_unit(
         request=request,
         handler_key=SANDRONE_PASSIVE_P6_HANDLER_KEY,
         kind=EffectKind.PASSIVE,
         unlock=UnlockSpec(kind=UnlockKind.ALWAYS, threshold=0),
         purpose="sandrone_passive_p6",
-        note=P6_CARRIER_NOTE,
+        damage_modifier_providers=(provider,),
     )
 
 
@@ -386,7 +398,6 @@ def create_sandrone_constellation_c1(request: EffectContentUnitRequest) -> Conte
         kind=EffectKind.CONSTELLATION,
         unlock=UnlockSpec(kind=UnlockKind.CONSTELLATION, threshold=1),
         purpose="sandrone_constellation_c1",
-        note=C1_CARRIER_NOTE,
         damage_modifier_providers=(provider,),
     )
 
@@ -414,7 +425,6 @@ def create_sandrone_constellation_c2(request: EffectContentUnitRequest) -> Conte
         kind=EffectKind.CONSTELLATION,
         unlock=UnlockSpec(kind=UnlockKind.CONSTELLATION, threshold=2),
         purpose="sandrone_constellation_c2",
-        note="射线会话序号标签由法洁欧 hook 承载（按命座等级启用）。",
         damage_modifier_providers=(provider,),
     )
 
@@ -460,12 +470,6 @@ def create_sandrone_constellation_c4(request: EffectContentUnitRequest) -> Conte
         attack_ratio=attack_ratio,
         swirl_ratio=swirl_ratio,
         cooldown_frames=round(cooldown_seconds * FRAMES_PER_SECOND),
-        # C6 擢升覆盖桑多涅全部星烁伤害，含 C4 产出的协同攻击：数值取自资产
-        # 命座第 6 层效果行（拥有者上下文带全部效果行），未解锁第 6 层为 0。
-        ascension_bonus=resolve_c6_ascension_bonus(
-            request.owner_context,
-            purpose=name,
-        ),
     )
     return _effect_unit(
         request=request,
@@ -496,22 +500,31 @@ def create_sandrone_constellation_c5(request: EffectContentUnitRequest) -> Conte
 
 
 def create_sandrone_constellation_c6(request: EffectContentUnitRequest) -> ContentUnit:
-    """C6 水仙梦醒，且望晨光：集束型追加段与星烁擢升（角色单元承载）。
+    """C6 水仙梦醒，且望晨光：集束型追加段与星烁擢升。
 
-    机器数值在本条效果行里，行为在角色单元里：这里解析一遍效果行（数值不合法
-    时本条单元直接失败），并把取值写进 ``compiled_params`` 供装配/诊断核对。
+    集束型追加段（段数与三段倍率）在角色单元编译期折算；星烁擢升由本条效果
+    单元的 provider 词条承载（按伤害来源自筛桑多涅本人，D-082）。这里解析一遍
+    效果行（数值不合法时本条单元直接失败），并把取值写进 ``compiled_params``
+    供装配/诊断核对。
     """
 
-    _validate_owner(request, SANDRONE_CONSTELLATION_C6_HANDLER_KEY)
+    slot = _validate_owner(request, SANDRONE_CONSTELLATION_C6_HANDLER_KEY)
     name = _effect_name(request.params, position="命之座第 6 层")
     values = read_c6_asset_values(request.params)
+    owner_ref = f"character:slot_{slot}"
+    provider = SandroneC6StellarAscensionProvider(
+        owner_ref=owner_ref,
+        ascension_bonus=values.ascension_bonus,
+        source_key=SANDRONE_CONSTELLATION_C6_HANDLER_KEY,
+        display_name=f"{name}·星烁擢升",
+    )
     return _effect_unit(
         request=request,
         handler_key=SANDRONE_CONSTELLATION_C6_HANDLER_KEY,
         kind=EffectKind.CONSTELLATION,
         unlock=UnlockSpec(kind=UnlockKind.CONSTELLATION, threshold=6),
         purpose="sandrone_constellation_c6",
-        note=C6_CARRIER_NOTE,
+        damage_modifier_providers=(provider,),
         compiled_params={
             "name": name,
             "extra_segment_count": values.extra_segment_count,

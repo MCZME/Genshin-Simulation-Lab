@@ -541,12 +541,6 @@ class RuntimeAssembler:
             raise InvalidRuntimePayloadError(str(exc)) from exc
         self._validate_action_bindings(content_bundle, action_registry)
 
-        action_manager = ActionManager(
-            input_trace=input_trace,
-            interpreter_registry=action_interpreter_registry,
-            action_registry=action_registry,
-            ability_condition_port=ability_condition_coordinator,
-        )
         impact_dispatcher = ImpactDispatcher(content_bundle.impact_factories)
         try:
             damage_modifier_index = DamageModifierIndex(
@@ -599,6 +593,13 @@ class RuntimeAssembler:
             raise InvalidRuntimePayloadError(str(exc)) from exc
         self._bind_content_runtime_ports(
             content_bundle,
+            buff_reader=buff_runtime.reader,
+        )
+        action_manager = ActionManager(
+            input_trace=input_trace,
+            interpreter_registry=action_interpreter_registry,
+            action_registry=action_registry,
+            ability_condition_port=ability_condition_coordinator,
             buff_reader=buff_runtime.reader,
         )
         buff_max_hp_coordinator = BuffMaxHpChangeCoordinator(

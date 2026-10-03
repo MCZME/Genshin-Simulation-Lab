@@ -29,6 +29,8 @@ from genshin_sim.core.systems.buff.models import (
     BuffMutationPlan,
     BuffRecord,
     BuffRemovalResult,
+    BuffStackReductionResult,
+    ReduceBuffStacksRequest,
     RemoveBuffRequest,
     removal_result_from_record,
     validate_frame,
@@ -95,6 +97,25 @@ class BuffRuntime:
             for event in self.events_for(receipt):
                 self._emit_event(event)
             return plan.removal_results[0]
+
+    def prepare_reduce_stacks(self, request: ReduceBuffStacksRequest) -> BuffMutationPlan:
+        self._ensure_can_write()
+        return self._prepare_reduce_stacks_unchecked(request)
+
+    def reduce_stacks(self, request: ReduceBuffStacksRequest) -> BuffStackReductionResult:
+        """减少指定实例的层数；减至 0 时整条移除并发布移除事实。
+
+        部分减层不发布事件：词条投影按 ``stack_count`` 实时缩放，属性侧
+        无需重放；减层结果随影响请求记录进入审计。
+        """
+
+        with self._mutation_scope():
+            plan = self._prepare_reduce_stacks_unchecked(request)
+            self.validate(plan)
+            receipt = self._commit_prevalidated_unchecked(plan)
+            for event in self.events_for(receipt):
+                self._emit_event(event)
+            return self._stack_reduction_result(request, plan)
 
     def validate(self, plan: BuffMutationPlan) -> None:
         self.buff_store.validate(plan)
@@ -292,6 +313,65 @@ class BuffRuntime:
             replacement_records=(removed,),
             application_results=(),
             removal_results=(removal_result_from_record(removed),),
+        )
+
+    def _prepare_reduce_stacks_unchecked(
+        self, request: ReduceBuffStacksRequest
+    ) -> BuffMutationPlan:
+        record = self.buff_store.get(request.instance_ref)
+        if record is None or not record.is_active_at(request.frame):
+            raise BuffInstanceNotFoundError(
+                f"请求 {request.request_id} 要减少层数的 Buff 不存在或不活动："
+                f"{request.instance_ref.to_key()}"
+            )
+        stacks_after = record.state.stack_count - request.stacks
+        if stacks_after <= 0:
+            return self._prepare_remove_unchecked(
+                RemoveBuffRequest(
+                    request_id=request.request_id,
+                    frame=request.frame,
+                    instance_ref=request.instance_ref,
+                    reason=request.reason,
+                )
+            )
+        if record.definition.application_policy is BuffApplicationPolicy.STACK_INDEPENDENT:
+            new_state = replace(
+                record.state,
+                stack_count=stacks_after,
+                layer_expires_at_frames=record.state.layer_expires_at_frames[request.stacks :],
+            )
+        else:
+            new_state = replace(record.state, stack_count=stacks_after)
+        reduced = replace(record, state=new_state)
+        return BuffMutationPlan(
+            operation_id=_remove_operation_id(request.request_id),
+            frame=request.frame,
+            expected_store_version=self.buff_store.version,
+            request_ids=(request.request_id,),
+            expected_records=(record,),
+            replacement_records=(reduced,),
+            application_results=(),
+            removal_results=(),
+        )
+
+    @staticmethod
+    def _stack_reduction_result(
+        request: ReduceBuffStacksRequest,
+        plan: BuffMutationPlan,
+    ) -> BuffStackReductionResult:
+        record = plan.expected_records[0]
+        removal = plan.removal_results[0] if plan.removal_results else None
+        stacks_after = 0 if removal is not None else plan.replacement_records[0].state.stack_count
+        return BuffStackReductionResult(
+            frame=request.frame,
+            request_id=request.request_id,
+            instance_ref=request.instance_ref,
+            definition_key=record.definition.definition_key,
+            mechanic_key=record.definition.mechanic_key,
+            target_ref=record.state.target_ref,
+            stacks_before=record.state.stack_count,
+            stacks_after=stacks_after,
+            removal_result=removal,
         )
 
     def _commit_prevalidated_unchecked(self, plan: BuffMutationPlan) -> BuffCommitReceipt:

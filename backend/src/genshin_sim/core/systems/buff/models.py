@@ -387,6 +387,70 @@ class RemoveBuffRequest:
 
 
 @dataclass(frozen=True, slots=True)
+class ReduceBuffStacksRequest:
+    """按实例减少 Buff 层数的显式请求（叠加 Buff 的减层能力）。
+
+    ``stacks`` 为本次减少的层数；减至 0 时整条记录按 ``reason`` 移除，否则
+    记录保留、仅减少 ``stack_count``：共享期限策略的到期帧不变，
+    ``stack_independent`` 策略去掉最早到期的层（记录到期帧等于最后一层的
+    到期帧，因此同样不变）。
+    """
+
+    request_id: str
+    frame: int
+    instance_ref: BuffInstanceRef
+    stacks: int
+    reason: BuffRemovalReason = BuffRemovalReason.CONSUMED
+
+    def __post_init__(self) -> None:
+        validate_non_empty_text(self.request_id, "request_id")
+        validate_frame(self.frame)
+        if not isinstance(self.instance_ref, BuffInstanceRef):
+            raise BuffValidationError("instance_ref 必须是 BuffInstanceRef")
+        validate_positive_int(self.stacks, "stacks")
+        if self.reason not in {
+            BuffRemovalReason.DISPELLED,
+            BuffRemovalReason.CONSUMED,
+            BuffRemovalReason.EXPLICIT,
+        }:
+            raise BuffValidationError("减层请求只允许 dispelled、consumed 或 explicit")
+
+
+@dataclass(frozen=True, slots=True)
+class BuffStackReductionResult:
+    """一次减层请求的结算结果；``removal_result`` 非空表示减至 0 后整条移除。"""
+
+    frame: int
+    request_id: str
+    instance_ref: BuffInstanceRef
+    definition_key: str
+    mechanic_key: str
+    target_ref: AttributeSubjectRef
+    stacks_before: int
+    stacks_after: int
+    removal_result: BuffRemovalResult | None
+
+    @property
+    def removed(self) -> bool:
+        return self.removal_result is not None
+
+    def __post_init__(self) -> None:
+        validate_frame(self.frame)
+        validate_non_empty_text(self.request_id, "request_id")
+        if not isinstance(self.instance_ref, BuffInstanceRef):
+            raise BuffValidationError("instance_ref 必须是 BuffInstanceRef")
+        validate_non_empty_text(self.definition_key, "definition_key")
+        validate_non_empty_text(self.mechanic_key, "mechanic_key")
+        validate_subject_ref(self.target_ref, "target_ref")
+        if self.stacks_after < 0:
+            raise BuffValidationError("stacks_after 不能为负数")
+        if (self.removal_result is None) == (self.stacks_after == 0):
+            raise BuffValidationError("stacks_after 为 0 必须携带移除结果，反之必须为部分减层")
+        if self.stacks_after > self.stacks_before:
+            raise BuffValidationError("stacks_after 不能大于 stacks_before")
+
+
+@dataclass(frozen=True, slots=True)
 class BuffRemovalResult:
     frame: int
     instance_ref: BuffInstanceRef

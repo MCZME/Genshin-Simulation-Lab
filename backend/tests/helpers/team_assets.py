@@ -41,8 +41,13 @@ def make_character_asset(
     *,
     asset_key: str | None = None,
     name: str | None = None,
+    handler_key: str = "generic.test_character",
 ) -> CharacterAsset:
-    """构造带稳定测试 handler_key 的角色资产。"""
+    """构造带稳定测试 handler_key 的角色资产。
+
+    ``handler_key`` 默认走内置 noop 占位（无动作解释器）；需要该槽位可切人
+    或提供行为的用例传入自定义测试 handler 键。
+    """
 
     final_key = asset_key or f"character:{element}_{slot}"
     return CharacterAsset(
@@ -53,7 +58,7 @@ def make_character_asset(
         weapon_type="sword",
         rarity=4,
         burst_energy_cost=60.0,
-        handler_key="generic.test_character",
+        handler_key=handler_key,
     )
 
 

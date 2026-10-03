@@ -34,6 +34,7 @@ from genshin_sim.core.systems.buff.handler import (
     BuffRemovalImpactRequestHandler,
     BuffRemovalRecord,
     BuffRemovePort,
+    BuffStackReductionPort,
 )
 from genshin_sim.core.systems.buff.models import (
     ApplyBuffRequest,
@@ -45,7 +46,9 @@ from genshin_sim.core.systems.buff.models import (
     BuffRecord,
     BuffRemovalResult,
     BuffResolvedAttributeModifier,
+    BuffStackReductionResult,
     BuffState,
+    ReduceBuffStacksRequest,
     RemoveBuffRequest,
 )
 from genshin_sim.core.systems.buff.protocols import BuffReader
@@ -94,6 +97,8 @@ __all__ = [
     "BuffRemovalRecord",
     "BuffRemovalResult",
     "BuffRemovePort",
+    "BuffStackReductionPort",
+    "BuffStackReductionResult",
     "BuffResolvedAttributeModifier",
     "BuffResolver",
     "BuffRuntime",
@@ -105,5 +110,6 @@ __all__ = [
     "BuffSystemError",
     "BuffValidationError",
     "BuffValueRefreshPolicy",
+    "ReduceBuffStacksRequest",
     "RemoveBuffRequest",
 ]

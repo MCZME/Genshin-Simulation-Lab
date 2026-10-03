@@ -24,6 +24,8 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
 from genshin_sim.content.characters.snezhnaya.odette.effects import (
     create_odette_constellation_c6,
     create_odette_passive_p4,
+    create_odette_passive_p5,
+    create_odette_passive_p6,
 )
 
 __all__ = [
@@ -41,4 +43,6 @@ __all__ = [
     "create_odette_constellation_c6",
     "create_odette_content_unit",
     "create_odette_passive_p4",
+    "create_odette_passive_p5",
+    "create_odette_passive_p6",
 ]

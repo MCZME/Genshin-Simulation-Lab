@@ -95,12 +95,15 @@ def write_odette_asset_database(
     *,
     scaling_ratio_overrides: Mapping[str, float] | None = None,
     companions: int = 0,
+    ascension_phase: int = 6,
 ) -> Path:
     """写入奥黛塔最小合成资产库（倍率数值默认全部为 1.0）。
 
     ``companions`` 按槽位 2..N+1 追加陪测角色（``character.testing.odette_
     companion_noop``，由 ``create_odette_companion_content_unit`` 提供等待型
     动作解释器），用于华彩转交等多角色队伍用例；装配时必须注册该工厂。
+    ``ascension_phase`` 是奥黛塔的突破阶段（默认 6 = 满突破），突破门槛用例用它
+    验证被动/命座的解锁门控。
     ``scaling_ratio_overrides`` 按倍率条目 key 覆盖合成倍率：默认全 1.0 时
     「倍率区相加」与「倍率区相乘」在数值上不可区分，需要区分口径的用例必须
     给出非 1.0 的倍率。
@@ -133,7 +136,7 @@ def write_odette_asset_database(
         CharacterLevelStats(
             character_key=ODETTE_CHARACTER_KEY,
             level=90,
-            ascension_phase=6,
+            ascension_phase=ascension_phase,
             base_hp=10_000.0,
             base_atk=200.0,
             base_def=600.0,
@@ -227,6 +230,8 @@ def minimal_odette_effect_payloads() -> tuple[EffectPayload, ...]:
             "passive",
             ODETTE_PASSIVE_P5_HANDLER_KEY,
             "passive:5",
+            # 组件位对齐真实资产行：number_1 起算攻击力、number_2 步长、
+            # number_3 每档增伤、number_4 上限。
             (1000.0, 100.0, 0.015, 0.3),
             name="合成天赋5",
         ),
@@ -235,7 +240,10 @@ def minimal_odette_effect_payloads() -> tuple[EffectPayload, ...]:
             "passive",
             ODETTE_PASSIVE_P6_HANDLER_KEY,
             "passive:6",
-            (100.0, 0.007, 0.14),
+            # 组件位对齐真实资产行：number_1 词条链接编号、number_2 辉映·星扩散
+            # 窗口秒数（两者内容侧不消费）、number_3 步长、number_4 每档增伤、
+            # number_5 上限。
+            (1.0, 8.0, 100.0, 0.007, 0.14),
             name="合成天赋6",
         ),
         _effect(
@@ -302,6 +310,18 @@ def minimal_odette_effect_payloads() -> tuple[EffectPayload, ...]:
             name="合成命座6",
         ),
     )
+
+
+def odette_effect_params(unlock_key: str) -> dict[str, object]:
+    """合成资产指定效果行的 params（与资产库写入同一份数据）。
+
+    组件位单元用例用它在不装配仿真链路的前提下验证效果行读数与错位校验。
+    """
+
+    for payload in minimal_odette_effect_payloads():
+        if payload.unlock_key == unlock_key:
+            return dict(payload.params)
+    raise AssertionError(f"合成效果行缺少 {unlock_key}")
 
 
 def minimal_odette_scaling_entries(
@@ -391,12 +411,15 @@ def odette_input_payload(
     constellation: int = 0,
     level: int = 90,
     companions: int = 0,
+    stats: Mapping[str, float] | None = None,
 ) -> dict[str, object]:
     """奥黛塔单人集成测试配置。
 
     ``companions`` 与 ``write_odette_asset_database(companions=...)`` 配套：
     槽位 2..N+1 放置通用测试角色（资产键 ``character:hydro_<slot>``，与
-    ``make_character_asset`` 的键规则一致）。
+    ``make_character_asset`` 的键规则一致）。``stats`` 是奥黛塔的圣遗物总词条
+    （攻击力曲线用例用它把面板攻击力抬到起算值以上，合成资产基础攻击力只有
+    200）。
     """
 
     if input_trace is None:
@@ -426,7 +449,7 @@ def odette_input_payload(
                     "elemental_burst": 1,
                 },
             },
-            "artifacts": {"sets": [], "stats": {}},
+            "artifacts": {"sets": [], "stats": dict(stats or {})},
         }
     ]
     for slot in range(2, 2 + companions):

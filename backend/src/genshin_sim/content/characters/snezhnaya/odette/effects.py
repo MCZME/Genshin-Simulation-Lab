@@ -1,4 +1,4 @@
-"""奥黛塔被动与命座效果单元工厂（切片 4：P4 华彩、C6 擢升）。
+"""奥黛塔被动与命座效果单元工厂（切片 4：P4 华彩、C6 擢升；切片 5：P5/P6）。
 
 机器数值一律取自资产效果行组件（``number_N`` 位置约定与桑多涅一致，前导
 分量为文本内链接编号）；组件位映射见各读取函数 docstring。C2「每层华彩
@@ -14,8 +14,16 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_CONSTELLATION_C6_HANDLER_KEY,
     ODETTE_CONTENT_VERSION,
     ODETTE_PASSIVE_P4_HANDLER_KEY,
+    ODETTE_PASSIVE_P5_HANDLER_KEY,
+    ODETTE_PASSIVE_P6_HANDLER_KEY,
     ODETTE_SPLENDOR_REACTION_BONUS_PER_STACK,
     odette_splendor_definition_key,
+)
+from genshin_sim.content.characters.snezhnaya.odette.modifiers import (
+    OdetteP5AuthorityBonus,
+    OdetteP5StellarAuthorityProvider,
+    OdetteP6BaseBonus,
+    OdetteP6StellarBaseBonusProvider,
 )
 from genshin_sim.content.characters.snezhnaya.odette.splendor import (
     OdetteSplendorAscensionProvider,
@@ -177,6 +185,41 @@ def read_c6_ascension_values(params: Mapping[str, object]) -> tuple[float, float
     return holder_bonus, self_extra_bonus
 
 
+def read_p5_authority_bonus(params: Mapping[str, object]) -> OdetteP5AuthorityBonus:
+    """解析 P5 效果行：起算攻击力（number_1 = 1000）、步长（number_2 = 100）、
+    每档增伤（number_3 = 1.5%）、上限（number_4 = 30%）。
+
+    资产行原文「基于奥黛塔攻击力超过1000点的部分，每100点攻击力都将使奥黛塔
+    造成的星烁反应伤害额外造成原本1.5%的伤害，至多通过这种方式额外造成原本
+    30%的伤害」——四个分量依次为上述四项，无前导链接编号。
+    """
+
+    purpose = "天赋「赤忱者的悲歌」"
+    return OdetteP5AuthorityBonus(
+        threshold_atk=_component(params, 0, purpose=purpose),
+        per_100_atk=_component(params, 1, purpose=purpose),
+        bonus_rate=_component(params, 2, purpose=purpose),
+        cap=_component(params, 3, purpose=purpose),
+    )
+
+
+def read_p6_base_bonus(params: Mapping[str, object]) -> OdetteP6BaseBonus:
+    """解析 P6 效果行：攻击力步长（number_3 = 100）、每档增伤（number_4 =
+    0.7%）、上限（number_5 = 14%）。
+
+    分量顺序与桑多涅 P6 同构：number_1 为文本内链接编号（极星辉域）、number_2
+    为「触发星扩散反应后的 8 秒内」窗口秒数——两者分别由链接文本与机制侧
+    （``STELLAR_SWIRL_RADIANCE_DURATION_FRAMES``）承载，内容侧不消费。
+    """
+
+    purpose = "天赋「星耀祝礼·银晓之舞」"
+    return OdetteP6BaseBonus(
+        per_100_atk=_component(params, 2, purpose=purpose),
+        bonus_rate=_component(params, 3, purpose=purpose),
+        cap=_component(params, 4, purpose=purpose),
+    )
+
+
 def create_odette_passive_p4(request: EffectContentUnitRequest) -> ContentUnit:
     """P4 获选者的春祭：华彩 Buff 定义 + 每层星烁增伤 provider。
 
@@ -227,6 +270,60 @@ def create_odette_passive_p4(request: EffectContentUnitRequest) -> ContentUnit:
             "atk_per_stack": atk_per_stack,
             "reaction_bonus_per_stack": ODETTE_SPLENDOR_REACTION_BONUS_PER_STACK,
         },
+    )
+
+
+def create_odette_passive_p5(request: EffectContentUnitRequest) -> ContentUnit:
+    """P5 赤忱者的悲歌：攻击力超过起算值的部分按档提升自身星烁反应伤害。
+
+    「额外造成原本 X% 的伤害」按 D-082 变更记录（2026-10-02）口径落在星烁
+    大权区；provider 按伤害来源自筛为奥黛塔本人。突破 4 阶（60 级突破）解锁：
+    静态门控在编译期按解锁条件过滤 provider（锁定命座/突破不影响伤害结算）。
+    """
+
+    slot = _validate_owner(request, ODETTE_PASSIVE_P5_HANDLER_KEY)
+    name = _effect_name(request.params, position="天赋「赤忱者的悲歌」")
+    owner_ref = f"character:slot_{slot}"
+    provider = OdetteP5StellarAuthorityProvider(
+        owner_ref=owner_ref,
+        authority_bonus=read_p5_authority_bonus(request.params),
+        source_key=ODETTE_PASSIVE_P5_HANDLER_KEY,
+        display_name=f"{name}·星烁大权区加成",
+    )
+    return _effect_unit(
+        request=request,
+        handler_key=ODETTE_PASSIVE_P5_HANDLER_KEY,
+        kind=EffectKind.PASSIVE,
+        unlock=UnlockSpec(kind=UnlockKind.ASCENSION, threshold=4),
+        purpose="odette_passive_p5_stellar_authority",
+        damage_modifier_providers=(provider,),
+    )
+
+
+def create_odette_passive_p6(request: EffectContentUnitRequest) -> ContentUnit:
+    """P6 星耀祝礼·银晓之舞：星烁基础增伤随奥黛塔攻击力折算（词条通道）。
+
+    折算参数取自本条资产效果行；增伤数值在伤害结算期由 provider 按奥黛塔实时
+    攻击力换算并署名（D-082），作用于全队造成的星烁反应伤害。星反应转换
+    capability 随角色内容单元静态声明（固定天赋，见 ``content.py``）。
+    """
+
+    slot = _validate_owner(request, ODETTE_PASSIVE_P6_HANDLER_KEY)
+    name = _effect_name(request.params, position="天赋「星耀祝礼·银晓之舞」")
+    owner_ref = f"character:slot_{slot}"
+    provider = OdetteP6StellarBaseBonusProvider(
+        owner_ref=owner_ref,
+        base_bonus=read_p6_base_bonus(request.params),
+        source_key=ODETTE_PASSIVE_P6_HANDLER_KEY,
+        display_name=f"{name}·星烁基础增伤",
+    )
+    return _effect_unit(
+        request=request,
+        handler_key=ODETTE_PASSIVE_P6_HANDLER_KEY,
+        kind=EffectKind.PASSIVE,
+        unlock=UnlockSpec(kind=UnlockKind.ALWAYS, threshold=0),
+        purpose="odette_passive_p6_stellar_base_bonus",
+        damage_modifier_providers=(provider,),
     )
 
 

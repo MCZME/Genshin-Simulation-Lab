@@ -30,6 +30,7 @@ def odette_assembled(
         max_frames: int = 60,
         payload: dict[str, object] | None = None,
         companions: int = 0,
+        ascension_phase: int | None = None,
     ) -> AssembledSimulation:
         if payload is None:
             payload = odette_helpers.odette_input_payload(
@@ -39,13 +40,16 @@ def odette_assembled(
             )
         db_path = odette_asset_db
         registry = None
-        if companions:
-            # 队伍含陪测角色时按需重建资产库（默认夹具库只有奥黛塔），并注册
-            # 陪测角色内容单元（动作输入校验要求每个队伍槽位都有解释器）。
+        if companions or ascension_phase is not None:
+            # 队伍含陪测角色或需要非满突破时按需重建资产库（默认夹具库只有满
+            # 突破的奥黛塔）；陪测角色还需注册其内容单元（动作输入校验要求
+            # 每个队伍槽位都有解释器）。
             db_path = odette_helpers.write_odette_asset_database(
-                tmp_path / "assets-team.db",
+                tmp_path / "assets-variant.db",
                 companions=companions,
+                ascension_phase=6 if ascension_phase is None else ascension_phase,
             )
+        if companions:
             registry = create_default_content_unit_registry()
             registry.register_character_factory(
                 odette_helpers.ODETTE_COMPANION_HANDLER_KEY,

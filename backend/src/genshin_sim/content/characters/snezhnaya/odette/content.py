@@ -2,8 +2,8 @@
 
 本文件只负责内容单元编排：读取资产倍率，调用 ``impacts.py`` 的影响契约
 编译函数，构造冷却/ICD 定义，最后组装 ``ContentUnit``。星耀祝礼·银晓之舞
-（P6）的星反应转换 capability 随内容单元静态声明；其基础增伤 provider 与
-其余被动/命座行为在后续切片落地。
+（P6）的星反应转换 capability 随内容单元静态声明；其基础增伤 provider 随
+P6 效果单元落地（``effects.py``），其余被动/命座行为在后续切片落地。
 """
 
 from __future__ import annotations
@@ -212,6 +212,11 @@ def create_odette_content_unit(
             talent_level,
         )
     )
+    # P6 星耀祝礼·银晓之舞是固定天赋（无解锁条件），其效果行必须存在：星反应
+    # 转换 capability 与星烁基础增伤 provider 都挂在「passive:6」这条行上，
+    # 行缺失时静默退化为「能转换但不加基础伤害」，因此在组装期直接失败。
+    if request.effect_params.get("passive:6") is None:
+        raise ContentUnitValidationError("缺少 P6 资产效果行：passive:6")
     # P4 获选者的春祭（华彩）：突破 1 阶解锁；发放层数取 P4 行，C1 强化
     # （额外叠层 + 后台清除提速）与 C6 强化（转交不减层）按命座取值接入，
     # C2 攻击力词条值随发放/转交申请携带（Buff 定义由 P4 效果单元按命座

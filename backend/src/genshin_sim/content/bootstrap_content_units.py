@@ -45,6 +45,20 @@ from genshin_sim.content.characters.mondstadt.barbara import (
     create_barbara_content_unit,
     create_barbara_encore_effect,
 )
+from genshin_sim.content.characters.snezhnaya.odette import (
+    ODETTE_CHARACTER_HANDLER_KEY,
+    ODETTE_CONSTELLATION_C1_HANDLER_KEY,
+    ODETTE_CONSTELLATION_C2_HANDLER_KEY,
+    ODETTE_CONSTELLATION_C3_HANDLER_KEY,
+    ODETTE_CONSTELLATION_C4_HANDLER_KEY,
+    ODETTE_CONSTELLATION_C5_HANDLER_KEY,
+    ODETTE_CONSTELLATION_C6_HANDLER_KEY,
+    ODETTE_PASSIVE_P4_HANDLER_KEY,
+    ODETTE_PASSIVE_P5_HANDLER_KEY,
+    ODETTE_PASSIVE_P6_HANDLER_KEY,
+    ODETTE_PASSIVE_P8_HANDLER_KEY,
+    create_odette_content_unit,
+)
 from genshin_sim.content.characters.snezhnaya.sandrone import (
     SANDRONE_CHARACTER_HANDLER_KEY,
     SANDRONE_CONSTELLATION_C1_HANDLER_KEY,
@@ -165,6 +179,10 @@ def create_default_content_unit_registry(
     registry.register_character_factory(
         SANDRONE_CHARACTER_HANDLER_KEY,
         create_sandrone_content_unit,
+    )
+    registry.register_character_factory(
+        ODETTE_CHARACTER_HANDLER_KEY,
+        create_odette_content_unit,
     )
     if developer_mode:
         from genshin_sim.content.test import register_test_content_units
@@ -294,6 +312,21 @@ def create_default_content_unit_registry(
         registry.register_effect_factory(handler_key, factory)
     # P8 生活天赋：不参与仿真，注册空实现。
     registry.register_empty_effect_handler(SANDRONE_PASSIVE_P8_HANDLER_KEY)
+    # 奥黛塔效果行：被动/命座行为按切片落地（P4 华彩、P5/P6、C1/C2/C4/C6、
+    # C3/C5 天赋等级提升），先注册 UNIMPLEMENTED 占位；P8 生活天赋为空实现。
+    for handler_key in (
+        ODETTE_PASSIVE_P4_HANDLER_KEY,
+        ODETTE_PASSIVE_P5_HANDLER_KEY,
+        ODETTE_PASSIVE_P6_HANDLER_KEY,
+        ODETTE_CONSTELLATION_C1_HANDLER_KEY,
+        ODETTE_CONSTELLATION_C2_HANDLER_KEY,
+        ODETTE_CONSTELLATION_C3_HANDLER_KEY,
+        ODETTE_CONSTELLATION_C4_HANDLER_KEY,
+        ODETTE_CONSTELLATION_C5_HANDLER_KEY,
+        ODETTE_CONSTELLATION_C6_HANDLER_KEY,
+    ):
+        registry.register_unimplemented_effect_handler(handler_key)
+    registry.register_empty_effect_handler(ODETTE_PASSIVE_P8_HANDLER_KEY)
     for handler_key in BUILTIN_NOOP_CONTENT_HANDLER_KEYS:
         registry.register_noop_handler(handler_key)
     return registry

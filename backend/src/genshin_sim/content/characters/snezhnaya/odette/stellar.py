@@ -1,9 +1,11 @@
 """奥黛塔直伤星烁通道：辉映查表分派与星变体契约编译。
 
 本模块是奥黛塔直伤星烁的私有实现（包内同构，不跨角色包 import），覆盖
-破晓终奏结束段与拂羽/旋翼舞步的「星超导冰/星扩散冰」双分支（切片 3 的
-辉映变体通道随本切片一并接入舞步与结束段；非辉映口径待切片 3 定案——
-当前结束段无辉映证据时不产出伤害请求）。
+破晓终奏结束段与拂羽/旋翼舞步的「星超导冰/星扩散冰」双分支。两者辉映
+门控口径不同（资产技能文本定案）：结束段基础文本无条件「视为星超导反应
+伤害」，辉映只改变持用的变体与基础系数，无辉映证据时按星超导变体、系数
+1 出伤；舞步星变体文本以「奥黛塔处于辉映·星烁状态」为前提，无辉映证据
+时不出伤（C1 追加段口径与结束段一致，切片 6 接入）。
 
 发射时读取辉映状态的属性证据——辉映 Buff 投影到角色属性的
 ``stellar.conduct.direct_base_multiplier`` / ``stellar.swirl.direct_base_multiplier``
@@ -114,17 +116,24 @@ def resolve_stellar_variant_spec(
     simulation: SimulationContext | None,
     owner_ref: str,
     frame: int,
+    conduct_fallback: bool = False,
 ) -> DamageImpactSpec | None:
     """辉映状态查表分派：返回星变体契约（附星烁输入），无辉映时返回 None。
 
     证据为辉映 Buff 投影到 ``owner_ref`` 的直伤系数词条：值 > 0 视为持用
     对应辉映状态，星超导优先。倍率与属性分开承载：变体倍率分量写进
     ``scaling_terms`` 的系数，属性固定为攻击力、由公式侧从面板读取。
+
+    ``conduct_fallback`` 承载结束段口径：无辉映证据时按星超导变体、星烁
+    基础系数 1 出伤（与辉映 0 层同值，对齐星超导反应设计 §6「0 层时基础
+    系数为 1」）；舞步星变体的辉映门控不传该参数。
     """
 
     evidence = radiance_evidence(simulation, owner_ref, frame)
-    if evidence is None or simulation is None:
-        return None
+    if evidence is None:
+        if not conduct_fallback or simulation is None:
+            return None
+        evidence = RadianceEvidence(RadianceVariant.CONDUCT, 1.0)
     if evidence.variant is RadianceVariant.CONDUCT:
         base_spec, ratio = channel.conduct_spec, channel.conduct_ratio
     else:

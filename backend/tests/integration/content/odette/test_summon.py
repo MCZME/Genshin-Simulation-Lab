@@ -3,17 +3,29 @@
 帧位与节奏数值来自维护者提供的 gcsim 动作帧数据、不作断言目标之外的
 数值口径（测试规范 §3.3）；本文件锁定：召唤物创建与轮换节奏
 （首击 134f、拂羽/旋翼交替 109/125f）、Q 重召唤保留顺序并重排首击、
-特殊战技共舞持续三段与恢复攻击锚点、辉映下舞步双命中（冰 + 星变体）、
+特殊战技共舞持续三段与恢复攻击锚点、结束段星变体口径（无辉映按星超导、
+系数 1；辉映按 Buff 层数系数）、辉映下舞步双命中（冰 + 星变体）、
+星扩散全链路可达性（反应 → 辉映·星扩散 Buff → 星扩散冰通道）、
 召唤物过期解除轮换、产球触发面与判定冷却。
 """
 
 from __future__ import annotations
+
+import pytest
 
 from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_CHARACTER_HANDLER_KEY,
     ODETTE_DANCE_OBJECT_KEY,
     ODETTE_STATE_SUMMON_NEXT_ATTACK_FRAME,
 )
+from genshin_sim.core.coordination.elemental_reaction.settlement_coordinator import (
+    ElementalSettlementCoordinator,
+)
+from genshin_sim.core.coordination.elemental_reaction.stellar_swirl_buffs import (
+    STELLAR_SWIRL_RADIANCE_BUFF_DEFINITION_KEY,
+)
+from genshin_sim.core.elements import Element
+from genshin_sim.core.systems.buff import BuffRuntime
 from tests.helpers import odette as odette_helpers
 
 CHAIN_STATE_LAST_ACTION_KEY = "chain_last_action_key"
@@ -70,17 +82,24 @@ def test_rotation_rhythm(odette_assembled):
     )
 
 
-def test_special_skill_dot_and_resume_anchor(odette_assembled):
-    # E 后窗口内施放特殊战技：共舞持续三段（62/71/79）命中；无辉映时结束段
-    # 不产出伤害；轮换在特殊战技施放 +114f 恢复（165，舞步保持拂羽）。
+def _special_e_trace() -> list[dict[str, object]]:
+    # E 施放（1/2）解锁 6s 窗口，窗口内特殊战技（50/51）。
+    return [
+        {"frame": 1, "events": [{"key": "keyboard.e", "phase": "press"}]},
+        {"frame": 2, "events": [{"key": "keyboard.e", "phase": "release"}]},
+        {"frame": 50, "events": [{"key": "keyboard.e", "phase": "press"}]},
+        {"frame": 51, "events": [{"key": "keyboard.e", "phase": "release"}]},
+    ]
+
+
+def test_special_skill_dot_end_segment_and_resume(odette_assembled):
+    # E 后窗口内施放特殊战技：共舞持续三段（62/71/79）命中；结束段在共舞
+    # 结束帧（51+62=113）无条件出伤——无辉映证据时按星超导变体、星烁基础
+    # 系数 1（结束段口径）；轮换在特殊战技施放 +114f 恢复（165，舞步保持
+    # 拂羽）。
     payload = odette_helpers.odette_input_payload(
         max_frames=200,
-        input_trace=[
-            {"frame": 1, "events": [{"key": "keyboard.e", "phase": "press"}]},
-            {"frame": 2, "events": [{"key": "keyboard.e", "phase": "release"}]},
-            {"frame": 50, "events": [{"key": "keyboard.e", "phase": "press"}]},
-            {"frame": 51, "events": [{"key": "keyboard.e", "phase": "release"}]},
-        ],
+        input_trace=_special_e_trace(),
     )
     assembled = odette_assembled(payload=payload)
     events = odette_helpers.odette_damage_events(assembled)
@@ -93,8 +112,98 @@ def test_special_skill_dot_and_resume_anchor(odette_assembled):
         (62, "破晓终奏持续伤害"),
         (71, "破晓终奏持续伤害"),
         (79, "破晓终奏持续伤害"),
+        (113, "破晓终奏星超导伤害"),
         (165, "拂羽舞步伤害"),
     ]
+    end_hit = [e for e in events if e.frame == 113][0].payload.result
+    assert end_hit.main_attack_tag == "星超导冰"
+    stellar = end_hit.stellar_reaction_resolution
+    assert stellar is not None
+    assert stellar.input.stellar_base_multiplier == pytest.approx(1.0)
+
+
+def test_end_segment_conduct_radiance_multiplier(odette_assembled):
+    # 辉映·星超导下结束段星超导变体携带 Buff 层数系数（3 层 → 1.55，
+    # 星超导反应契约层数映射）；舞步星变体同窗口保持星超导通道。
+    payload = odette_helpers.odette_input_payload(
+        max_frames=200,
+        input_trace=_special_e_trace(),
+    )
+    assembled = odette_assembled(payload=payload)
+    events = odette_helpers.odette_damage_events(assembled)
+    odette_helpers.apply_radiance_buff(assembled, settled_stacks=3, frame=0)
+
+    assembled.simulator.run()
+
+    end_hits = [e for e in events if e.payload.result.damage_name == "破晓终奏星超导伤害"]
+    assert [e.frame for e in end_hits] == [113]
+    result = end_hits[0].payload.result
+    assert result.main_attack_tag == "星超导冰"
+    stellar = result.stellar_reaction_resolution
+    assert stellar is not None
+    assert stellar.input.stellar_base_multiplier == pytest.approx(1.55)
+
+
+def test_stellar_swirl_reaches_end_segment_and_dance_steps(odette_assembled):
+    # 全链路：奥黛塔声明星扩散 capability → 风命中冰排他替代普通扩散触发
+    # 星扩散 → 辉映·星扩散 Buff 发放给 capability 提供者（奥黛塔）→ 特殊
+    # 战技结束段与舞步星变体切到星扩散冰通道（系数证据固定 1.0）。冰/风
+    # 附着经注册的元素结算协调器在仿真前种入；「附着触发反应」链路本身由
+    # core 星扩散测试覆盖，此处验证内容侧 capability 声明到直伤分派。
+    payload = odette_helpers.odette_input_payload(
+        max_frames=200,
+        input_trace=_special_e_trace(),
+    )
+    assembled = odette_assembled(payload=payload)
+    events = odette_helpers.odette_damage_events(assembled)
+    coordinator = assembled.context.get_system(ElementalSettlementCoordinator)
+    assert isinstance(coordinator, ElementalSettlementCoordinator)
+    coordinator.settle_aura_impact(
+        assembled.context,
+        odette_helpers.make_aura_application_impact(
+            0, Element.CRYO, "target:target_1", "test:swirl:cryo"
+        ),
+    )
+    coordinator.settle_aura_impact(
+        assembled.context,
+        odette_helpers.make_aura_application_impact(
+            0, Element.ANEMO, "target:target_1", "test:swirl:anemo"
+        ),
+    )
+
+    buff_runtime = assembled.context.get_system(BuffRuntime)
+    assert isinstance(buff_runtime, BuffRuntime)
+    swirl_buffs = buff_runtime.reader.active(
+        0, definition_key=STELLAR_SWIRL_RADIANCE_BUFF_DEFINITION_KEY
+    )
+    assert [record.state.target_ref.entity_id for record in swirl_buffs] == ["character:slot_1"]
+
+    assembled.simulator.run()
+
+    # 种子附着触发的星扩散反应自身伤害：风（0f，立即）与风旋爆炸冰（180f，
+    # 3s 基线到期）不携带内容显示名。
+    reaction_hits = [e for e in events if e.payload.result.damage_name is None]
+    assert [(e.frame, e.payload.result.main_attack_tag) for e in reaction_hits] == [
+        (0, "星扩散风"),
+        (180, "星扩散冰"),
+    ]
+    names = [(e.payload.result.frame, e.payload.result.damage_name) for e in events]
+    assert [(frame, name) for frame, name in names if name is not None] == [
+        (25, "技能伤害"),
+        (62, "破晓终奏持续伤害"),
+        (71, "破晓终奏持续伤害"),
+        (79, "破晓终奏持续伤害"),
+        (113, "破晓终奏星扩散伤害"),
+        (165, "拂羽舞步伤害"),
+        (165, "拂羽舞步星扩散伤害"),
+    ]
+    end_hit = [e for e in events if e.frame == 113][0].payload.result
+    assert end_hit.main_attack_tag == "星扩散冰"
+    stellar = end_hit.stellar_reaction_resolution
+    assert stellar is not None
+    assert stellar.input.stellar_base_multiplier == pytest.approx(1.0)
+    dance_star = [e for e in events if e.payload.result.damage_name == "拂羽舞步星扩散伤害"]
+    assert [e.frame for e in dance_star] == [165]
 
 
 def test_burst_resummon_preserves_step_order(odette_assembled):

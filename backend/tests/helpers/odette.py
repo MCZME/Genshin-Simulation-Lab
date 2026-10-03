@@ -24,7 +24,14 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_PASSIVE_P8_HANDLER_KEY,
 )
 from genshin_sim.core.attributes import AttributeSubjectRef
+from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.events import EventType
+from genshin_sim.core.impacts import (
+    ElementalApplicationSpec,
+    ImpactKind,
+    ImpactRequest,
+)
+from genshin_sim.core.systems.aura import AuraStrength
 from genshin_sim.infrastructure.assets_sqlite import (
     ASSET_SCHEMA_VERSION,
     SQLiteAssetDataWriter,
@@ -378,4 +385,30 @@ def apply_radiance_buff(assembled, *, settled_stacks: int = 3, frame: int = 0) -
                 field_expires_at_frame=frame + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
             )
         )
+    )
+
+
+def make_aura_application_impact(
+    frame: int,
+    element: Element,
+    target_ref: str,
+    request_id: str,
+    *,
+    owner_slot: int = 1,
+) -> ImpactRequest:
+    """构造一次最小元素附着影响请求，用于在仿真前种入 Aura 以触发反应。"""
+
+    return ImpactRequest(
+        frame=frame,
+        kind=ImpactKind.APPLY_AURA,
+        impact_key=f"test.odette.aura_application.{element.value}",
+        owner_slot=owner_slot,
+        request_id=request_id,
+        target_refs=(target_ref,),
+        elemental_application_spec=ElementalApplicationSpec(
+            impact_ref=f"{request_id}:spec",
+            element=element,
+            elemental_strength=AuraStrength.WEAK,
+            elemental_amount=AuraAmount.one(),
+        ),
     )

@@ -513,9 +513,9 @@ class OdetteActionImpactFactory:
 
     ``damage_specs`` 由内容编译期按资产倍率表生成，按 impact_key 索引；
     未登记契约的影响点仍展开为无伤害请求（不结算）。``stellar_channels``
-    携带破晓终奏结束段的星烁通道：展开时读取辉映证据分派星变体，无辉映
-    证据时不产出伤害请求（非辉映口径待切片 3 定案）。召唤创建影响点展开
-    为 CREATE_ENTITY 请求。
+    携带破晓终奏结束段的星烁通道：展开时按辉映证据分派星变体，无辉映证据
+    时按星超导变体、星烁基础系数 1 出伤（结束段口径，见 ``stellar.py``）。
+    召唤创建影响点展开为 CREATE_ENTITY 请求。
     """
 
     def __init__(
@@ -631,11 +631,13 @@ class OdetteActionImpactFactory:
         )
 
     def _special_end_requests(self, context: ActionImpactContext) -> tuple[ImpactRequest, ...]:
-        """展开破晓终奏结束段：按辉映证据分派星变体，无证据时不产出请求。
+        """展开破晓终奏结束段：按辉映证据分派星变体，无证据时按星超导出伤。
 
-        命中数据表该段只有星超导/星扩散两个星变体行（元素量 0）；星烁输入
-        携带辉映基础系数，P6 基础增伤由伤害修饰 provider 在结算期产出词条。
-        非辉映口径（C1 追加段同款问题）待切片 3 定案，当前不产出伤害请求。
+        命中数据表该段只有星超导/星扩散两个星变体行（元素量 0）；基础文本
+        无条件「视为星超导反应伤害」，辉映只改变变体与基础系数，无辉映证据
+        时按星超导变体、星烁基础系数 1 出伤（C1 追加段同口径，切片 6 接入）。
+        星烁输入携带辉映基础系数，P6 基础增伤由伤害修饰 provider 在结算期
+        产出词条。
         """
 
         channel = self._stellar_channels.get(ODETTE_SPECIAL_END_IMPACT_KEY)
@@ -646,6 +648,7 @@ class OdetteActionImpactFactory:
             simulation=context.simulation,
             owner_ref=f"character:slot_{context.owner.slot}",
             frame=context.frame,
+            conduct_fallback=True,
         )
         if stellar_spec is None:
             return ()

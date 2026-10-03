@@ -23,8 +23,8 @@ ODETTE_ASSET_KEY = "character:10000150"
 ODETTE_CONTENT_VERSION = "dev-basic-kit"
 
 # ---------------------------------------------------------------------------
-# 被动与命座。效果行 handler 键对齐 sandrone 命名；行为在后续切片落地，
-# bootstrap 先注册占位实现（P8 生活天赋为空实现）。
+# 被动与命座。效果行 handler 键对齐 sandrone 命名；P4–P6 与 C1–C6 的行为由
+# 对应效果单元承载（P8 生活天赋为空实现）。
 # ---------------------------------------------------------------------------
 ODETTE_PASSIVE_P4_HANDLER_KEY = "character.odette.passive.p4"
 ODETTE_PASSIVE_P5_HANDLER_KEY = "character.odette.passive.p5"
@@ -156,7 +156,7 @@ ODETTE_STATE_SKILL_WINDOW_ANCHOR_FRAME = "odette_skill_window_anchor_frame"
 
 # ---------------------------------------------------------------------------
 # 破晓终奏持续段的专属衰减序列（ICD 表「奥黛塔元素战技」：重置时限 3s、
-# 元素量序列 1,0,0,0）。定义随内容单元声明；持续段命中在后续切片接入时消费。
+# 元素量序列 1,0,0,0）。定义随内容单元声明，由破晓终奏持续三段命中消费。
 # ---------------------------------------------------------------------------
 ODETTE_SPECIAL_SKILL_ICD_SEQUENCE_KEY = "奥黛塔元素战技"
 ODETTE_SPECIAL_SKILL_ICD_RESET_FRAMES = 180
@@ -249,6 +249,80 @@ ODETTE_STATE_SPLENDOR_TICK_PARITY = "odette_splendor_tick_parity"
 # 发放（重召唤重置 + 授层）与后台衰减/转交的影响请求审计键。
 ODETTE_SPLENDOR_GRANT_IMPACT_KEY = f"{ODETTE_CHARACTER_HANDLER_KEY}.splendor.grant"
 ODETTE_SPLENDOR_DECAY_IMPACT_KEY = f"{ODETTE_CHARACTER_HANDLER_KEY}.splendor.decay"
+
+# ---------------------------------------------------------------------------
+# 雪鹄之梦（元素爆发）：施放疾板·苍羽一梦后获得的自持标记 Buff，持续 20 秒。
+# 效果为「奥黛塔造成的星烁反应伤害提升」，数值随 Q 等级成长，取自资产倍率表
+# 元素爆发表条目「雪鹄之梦星烁反应伤害提升」（Lv1 0.14）与「雪鹄之梦持续时间」
+# （20 秒）；数值在内容编译期按有效 Q 等级（含 C5 的 +3）编译为确定值，由伤害
+# 修饰 provider 在结算期按标记存在性产出词条（D-082）。
+# C4「均摊」：获得雪鹄之梦时，队伍中其他角色造成的星烁反应伤害提升其 50%
+# （比例取 C4 行 number_1 = 0.5）。
+# ---------------------------------------------------------------------------
+ODETTE_SWAN_DREAM_BUFF_MECHANIC_KEY = "odette.q.swan_dream"
+ODETTE_SWAN_DREAM_BONUS_TALENT_LABEL = "雪鹄之梦星烁反应伤害提升"
+ODETTE_SWAN_DREAM_DURATION_TALENT_LABEL = "雪鹄之梦持续时间"
+# 发放影响点：与爆发能量花费同帧（Q 施放第 1 帧）。
+ODETTE_SWAN_DREAM_GRANT_IMPACT_KEY = f"{ODETTE_ELEMENTAL_BURST_ACTION_KEY}.swan_dream"
+
+
+def odette_swan_dream_definition_key(slot: int) -> str:
+    """雪鹄之梦 Buff 的定义键（与冲突键同值，按槽位区分）。"""
+
+    return f"{ODETTE_SWAN_DREAM_BUFF_MECHANIC_KEY}.slot:{slot}"
+
+
+# ---------------------------------------------------------------------------
+# C1「不曾起舞的清晨，她望向倒影」追加段：特殊战技共舞结束时追加一次冰元素
+# 范围伤害（星变体，元素量 0）。倍率取 C1 行 number_2/number_3（300% 星超导 /
+# 450% 星扩散）；几何取命中表「C1 额外伤害」行（圆柱 4.5,3.5、偏移 0），索敌
+# 与结束段一致（该行索敌列为「-」）。辉映·星扩散走星扩散变体，辉映·星超导或
+# 不处于辉映状态走星超导变体（与结束段同口径，见 stellar.py）。
+# ---------------------------------------------------------------------------
+ODETTE_C1_EXTRA_IMPACT_KEY = f"{ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY}.c1_extra"
+ODETTE_C1_EXTRA_AOE_RADIUS = 4.5
+ODETTE_C1_EXTRA_CONDUCT_DISPLAY_NAME = "破晓终奏追加星超导伤害"
+ODETTE_C1_EXTRA_SWIRL_DISPLAY_NAME = "破晓终奏追加星扩散伤害"
+
+# ---------------------------------------------------------------------------
+# C2「她想，我要见证雪鹄未见之梦」减抗光环：独舞倒影在场且奥黛塔处于辉映·
+# 星烁状态时，倒影附近敌人对应元素抗性 −20%（辉映·星超导：冰、雷；辉映·
+# 星扩散：冰、风）。判定周期 60 帧（gcsim 帧表「C2 减抗检查 60f」），按帧号
+# 取模触发；每次判定先清除另一变体（以及条件不成立时的本变体）残留，再给
+# 命中范围内的目标应用当前变体。
+# 「附近」半径未在来源中量化，实现基线取召唤物自身索敌半径（命中表圆柱
+# 15,10）——与舞步索敌同口径，待来源确认后替换。
+# ---------------------------------------------------------------------------
+ODETTE_C2_RESISTANCE_MECHANIC_KEY = "odette.c2.resistance_aura"
+ODETTE_C2_CONDUCT_VARIANT = "conduct"
+ODETTE_C2_SWIRL_VARIANT = "swirl"
+ODETTE_C2_CHECK_INTERVAL_FRAMES = 60
+# 光环期限取判定周期的两倍：条件失效由下一次判定显式移除，期限内不会自然过期。
+ODETTE_C2_AURA_DURATION_FRAMES = 120
+ODETTE_C2_AURA_RADIUS = 15.0
+ODETTE_C2_AURA_IMPACT_KEY = f"{ODETTE_CHARACTER_HANDLER_KEY}.c2.resistance_aura"
+
+
+def odette_c2_resistance_definition_key(slot: int, variant: str) -> str:
+    """C2 减抗光环 Buff 的定义键（按变体与槽位区分）。"""
+
+    if variant not in (ODETTE_C2_CONDUCT_VARIANT, ODETTE_C2_SWIRL_VARIANT):
+        raise ValueError(f"未知的 C2 减抗变体：{variant}")
+    return f"{ODETTE_C2_RESISTANCE_MECHANIC_KEY}.{variant}.slot:{slot}"
+
+
+# ---------------------------------------------------------------------------
+# C4「向上，坠往恍惚、燃烧的蓝空」协同攻击：队伍中的角色对敌人造成星烁反应
+# 伤害时，奥黛塔对同一敌人追加一次冰元素范围伤害（星变体，元素量 0），每
+# 3.5 秒（210f）至多触发一次，触发后再延迟 5f 落地（gcsim 帧表）。倍率取 C4
+# 行 number_3/number_4（66% 星超导 / 99% 星扩散）；变体按**落地时**奥黛塔的
+# 辉映状态分派（文本「视为：辉映·星超导或不处于辉映状态…」），无辉映证据时
+# 走星超导变体。命中表该行的 AOE 列（圆柱 3.0,4.0）不消费：协同攻击目标为
+# 触发命中的敌人（与桑多涅 C4 同口径，行内索敌列为「-」）。
+# ---------------------------------------------------------------------------
+ODETTE_C4_COORDINATED_IMPACT_KEY = f"{ODETTE_CONSTELLATION_C4_HANDLER_KEY}.coordinated_attack"
+ODETTE_C4_COORDINATED_DELAY_FRAMES = 5
+ODETTE_C4_COORDINATED_DISPLAY_NAME = "雪鹄·协同攻击"
 
 
 @dataclass(frozen=True, slots=True)

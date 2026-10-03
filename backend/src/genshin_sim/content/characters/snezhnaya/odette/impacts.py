@@ -19,6 +19,7 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_BURST_SLASH_1_HIT,
     ODETTE_BURST_SLASH_2_HIT,
     ODETTE_BURST_SLASH_3_HIT,
+    ODETTE_C1_EXTRA_IMPACT_KEY,
     ODETTE_CHARACTER_HANDLER_KEY,
     ODETTE_CHARGED_ATTACK_HIT,
     ODETTE_CHARGED_ATTACK_IMPACT_KEY,
@@ -52,6 +53,10 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_SPECIAL_END_IMPACT_KEY,
     ODETTE_SUMMON_CREATE_IMPACT_KEY,
     OdetteHitData,
+)
+from genshin_sim.content.characters.snezhnaya.odette.dream import (
+    SwanDreamGrantConfig,
+    swan_dream_grant_request,
 )
 from genshin_sim.content.characters.snezhnaya.odette.splendor import (
     OdetteSplendorError,
@@ -520,7 +525,9 @@ class OdetteActionImpactFactory:
     未登记契约的影响点仍展开为无伤害请求（不结算）。``stellar_channels``
     携带破晓终奏结束段的星烁通道：展开时按辉映证据分派星变体，无辉映证据
     时按星超导变体、星烁基础系数 1 出伤（结束段口径，见 ``stellar.py``）。
-    召唤创建影响点展开为 CREATE_ENTITY 请求。
+    ``c1_channel`` 存在时（C1 已解锁）在同帧追加 C1 追加段；``swan_dream_grant``
+    存在时随爆发能量花费展开雪鹄之梦发放。召唤创建影响点展开为 CREATE_ENTITY
+    请求。
     """
 
     def __init__(
@@ -529,10 +536,14 @@ class OdetteActionImpactFactory:
         *,
         stellar_channels: Mapping[str, OdetteStellarChannel] | None = None,
         splendor_grant: SplendorGrantConfig | None = None,
+        swan_dream_grant: SwanDreamGrantConfig | None = None,
+        c1_channel: OdetteStellarChannel | None = None,
     ) -> None:
         self._damage_specs = dict(damage_specs)
         self._stellar_channels = dict(stellar_channels or {})
         self._splendor_grant = splendor_grant
+        self._swan_dream_grant = swan_dream_grant
+        self._c1_channel = c1_channel
 
     def create_requests(self, context: ActionImpactContext) -> tuple[ImpactRequest, ...]:
         params: dict[str, object] = {
@@ -557,7 +568,7 @@ class OdetteActionImpactFactory:
             )
             return (reset, self._summon_create_request(context), grant)
         if context.impact_key == ODETTE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY:
-            return (
+            requests = [
                 ImpactRequest(
                     frame=context.frame,
                     kind=ImpactKind.ENERGY,
@@ -575,8 +586,22 @@ class OdetteActionImpactFactory:
                             "tags": (),
                         },
                     },
-                ),
-            )
+                )
+            ]
+            # 雪鹄之梦随爆发施放同帧发放（文本「获得雪鹄之梦」）。
+            if self._swan_dream_grant is not None:
+                owner_slot = context.owner.slot
+                if owner_slot is None:
+                    raise OdetteSplendorError("奥黛塔爆发缺少角色归属槽位，无法发放雪鹄之梦")
+                requests.append(
+                    swan_dream_grant_request(
+                        frame=context.frame,
+                        slot=owner_slot,
+                        definition_key=self._swan_dream_grant.definition_key,
+                        duration_frames=self._swan_dream_grant.duration_frames,
+                    )
+                )
+            return tuple(requests)
         damage_spec = self._damage_specs.get(context.impact_key)
         if context.impact_key == ODETTE_SPECIAL_END_IMPACT_KEY:
             return self._special_end_requests(context)
@@ -654,45 +679,88 @@ class OdetteActionImpactFactory:
 
         命中数据表该段只有星超导/星扩散两个星变体行（元素量 0）；基础文本
         无条件「视为星超导反应伤害」，辉映只改变变体与基础系数，无辉映证据
-        时按星超导变体、星烁基础系数 1 出伤（C1 追加段同口径，切片 6 接入）。
-        星烁输入携带辉映基础系数，P6 基础增伤由伤害修饰 provider 在结算期
-        产出词条。
+        时按星超导变体、星烁基础系数 1 出伤。C1 已解锁时在同帧追加 C1 追加段
+        （同口径、倍率取 C1 行、几何取命中表该行、索敌沿用结束段命中集合）。
+        星烁输入携带辉映基础系数，P6 基础增伤与雪鹄之梦增伤由伤害修饰
+        provider 在结算期产出词条。
         """
 
         channel = self._stellar_channels.get(ODETTE_SPECIAL_END_IMPACT_KEY)
         if channel is None:
             return ()
+        owner_ref = f"character:slot_{context.owner.slot}"
+        target_refs = tuple(target.target_id for target in context.target_refs)
+        if not target_refs:
+            return ()
         stellar_spec = resolve_stellar_variant_spec(
             channel,
             simulation=context.simulation,
-            owner_ref=f"character:slot_{context.owner.slot}",
+            owner_ref=owner_ref,
             frame=context.frame,
             conduct_fallback=True,
         )
         if stellar_spec is None:
             return ()
-        target_refs = tuple(target.target_id for target in context.target_refs)
-        if not target_refs:
-            return ()
-        return (
-            ImpactRequest(
-                frame=context.frame,
-                kind=ImpactKind.DAMAGE,
-                impact_key=context.impact_key,
-                owner_slot=context.owner.slot,
-                action_key=context.action_key,
-                source_impact_point_id=context.impact_point_id,
+        requests = [
+            self._stellar_request(
+                context,
+                impact_key=ODETTE_SPECIAL_END_IMPACT_KEY,
+                spec=stellar_spec,
                 target_refs=target_refs,
-                params={
-                    "content_handler_key": ODETTE_CHARACTER_HANDLER_KEY,
-                    "odette": {
-                        "handler_key": ODETTE_CHARACTER_HANDLER_KEY,
-                        "source_impact_key": context.impact_key,
-                    },
+            )
+        ]
+        if self._c1_channel is not None:
+            c1_spec = resolve_stellar_variant_spec(
+                self._c1_channel,
+                simulation=context.simulation,
+                owner_ref=owner_ref,
+                frame=context.frame,
+                conduct_fallback=True,
+            )
+            if c1_spec is not None:
+                requests.append(
+                    self._stellar_request(
+                        context,
+                        impact_key=ODETTE_C1_EXTRA_IMPACT_KEY,
+                        spec=c1_spec,
+                        target_refs=target_refs,
+                    )
+                )
+        return tuple(requests)
+
+    def _stellar_request(
+        self,
+        context: ActionImpactContext,
+        *,
+        impact_key: str,
+        spec: DamageImpactSpec,
+        target_refs: tuple[str, ...],
+    ) -> ImpactRequest:
+        """把星变体契约展开为伤害请求（同帧、同命中集合，逐段独立元素量 0）。"""
+
+        request_id = (
+            context.impact_point_id
+            if impact_key == context.impact_key
+            else f"{context.impact_point_id}:c1"
+        )
+        return ImpactRequest(
+            frame=context.frame,
+            kind=ImpactKind.DAMAGE,
+            impact_key=impact_key,
+            owner_slot=context.owner.slot,
+            action_key=context.action_key,
+            request_id=request_id,
+            source_impact_point_id=context.impact_point_id,
+            target_refs=target_refs,
+            params={
+                "content_handler_key": ODETTE_CHARACTER_HANDLER_KEY,
+                "odette": {
+                    "handler_key": ODETTE_CHARACTER_HANDLER_KEY,
+                    "source_impact_key": context.impact_key,
                 },
-                damage_spec=replace(
-                    stellar_spec,
-                    impact_ref=f"{context.impact_point_id}:damage",
-                ),
+            },
+            damage_spec=replace(
+                spec,
+                impact_ref=f"{request_id}:damage",
             ),
         )

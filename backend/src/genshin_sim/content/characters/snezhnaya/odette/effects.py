@@ -1,23 +1,42 @@
-"""奥黛塔被动与命座效果单元工厂（切片 4：P4 华彩、C6 擢升；切片 5：P5/P6）。
+"""奥黛塔被动与命座效果单元工厂（切片 4：P4 华彩、C6 擢升；切片 5：P5/P6；
+切片 6：C1–C5）。
 
 机器数值一律取自资产效果行组件（``number_N`` 位置约定与桑多涅一致，前导
 分量为文本内链接编号）；组件位映射见各读取函数 docstring。C2「每层华彩
 再 +7% 攻击力」是华彩 Buff 自身的词条强化，随 P4 工厂按命座门控编译进
-Buff 定义（见 ``splendor.py``），C2 效果行本身注册为空实现。
+Buff 定义（见 ``splendor.py``）；C2 效果行自身承载减抗光环（``hooks.py``）。
+C1 追加段与 C4 均摊的机器数值各自由角色单元编译（前者进影响工厂、后者进
+雪鹄之梦 provider），效果单元只解析核对并写进 ``compiled_params``。
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 from genshin_sim.content.characters.snezhnaya.odette.data import (
+    ODETTE_C2_CONDUCT_VARIANT,
+    ODETTE_C2_RESISTANCE_MECHANIC_KEY,
+    ODETTE_C2_SWIRL_VARIANT,
+    ODETTE_CONSTELLATION_C1_HANDLER_KEY,
+    ODETTE_CONSTELLATION_C2_HANDLER_KEY,
+    ODETTE_CONSTELLATION_C3_HANDLER_KEY,
+    ODETTE_CONSTELLATION_C4_HANDLER_KEY,
+    ODETTE_CONSTELLATION_C5_HANDLER_KEY,
     ODETTE_CONSTELLATION_C6_HANDLER_KEY,
     ODETTE_CONTENT_VERSION,
     ODETTE_PASSIVE_P4_HANDLER_KEY,
     ODETTE_PASSIVE_P5_HANDLER_KEY,
     ODETTE_PASSIVE_P6_HANDLER_KEY,
     ODETTE_SPLENDOR_REACTION_BONUS_PER_STACK,
+    odette_c2_resistance_definition_key,
     odette_splendor_definition_key,
+)
+from genshin_sim.content.characters.snezhnaya.odette.hooks import (
+    OdetteC2ResistanceHook,
+    OdetteC4CoordinatedAttackHook,
+    ResistanceAuraVariantSpec,
+    compile_coordinated_attack_channel,
 )
 from genshin_sim.content.characters.snezhnaya.odette.modifiers import (
     OdetteP5AuthorityBonus,
@@ -41,10 +60,30 @@ from genshin_sim.content.definitions.effects import (
     UnlockKind,
     UnlockSpec,
 )
+from genshin_sim.content.models import EventHook
 from genshin_sim.content.registries import EffectContentUnitRequest
+from genshin_sim.core.attributes import (
+    RESISTANCE_ANEMO,
+    RESISTANCE_CRYO,
+    RESISTANCE_ELECTRO,
+    AttributeKey,
+    AttributeSubjectKind,
+    ModifierStage,
+)
 from genshin_sim.core.contracts.json import JSONValue
-from genshin_sim.core.systems.buff import BuffDefinition
+from genshin_sim.core.systems.buff import (
+    BuffApplicationPolicy,
+    BuffAttributeModifierTemplate,
+    BuffDefinition,
+    BuffValueRefreshPolicy,
+)
 from genshin_sim.core.systems.damage import DamageModifierProvider
+
+FRAMES_PER_SECOND = 60
+# 天赋等级框架上限：与 TalentLevelResolver.resolve 的 max_level 默认值一致；
+# C3/C5 效果行自带的「至多提升至 15 级」在这里与框架核对（不一致时显式失败，
+# 而不是静默按框架值截断）。
+TALENT_LEVEL_CAP = 15
 
 
 def _components(params: Mapping[str, object], *, purpose: str) -> tuple[float, ...]:
@@ -108,8 +147,10 @@ def _effect_unit(
     kind: EffectKind,
     unlock: UnlockSpec,
     purpose: str,
+    event_hooks: tuple[EventHook, ...] = (),
     damage_modifier_providers: tuple[DamageModifierProvider, ...] = (),
     buff_definitions: tuple[BuffDefinition, ...] = (),
+    talent_level_boosts: Mapping[str, int] | None = None,
     compiled_params: Mapping[str, JSONValue] | None = None,
 ) -> ContentUnit:
     return ContentUnit(
@@ -126,8 +167,10 @@ def _effect_unit(
                 params=dict(request.params),
             ),
         ),
+        event_hooks=event_hooks,
         damage_modifier_providers=damage_modifier_providers,
         buff_definitions=buff_definitions,
+        talent_level_boosts=dict(talent_level_boosts or {}),
         compiled_params=dict(compiled_params or {}),
         metadata={"purpose": purpose},
     )
@@ -146,32 +189,120 @@ def read_p4_splendor_values(params: Mapping[str, object]) -> int:
     return int(grant_stacks)
 
 
-def read_c1_splendor_values(params: Mapping[str, object]) -> tuple[int, int]:
-    """解析 C1 效果行的华彩强化：额外叠层（number_5）与后台清除速度（number_7）。
+@dataclass(frozen=True, slots=True)
+class OdetteC1AssetValues:
+    """C1 效果行的机器数值：追加段两档倍率 + 华彩强化。"""
 
-    资产行原文「召唤独舞倒影时，奥黛塔将额外获得2层华彩，且奥黛塔处于队伍
-    后台时，清除华彩的速度提升至每秒2层」——number_5 = 2、number_7 = 2
-    （number_2/number_3 为 C1 追加段倍率，切片 6 消费）。
+    conduct_ratio: float
+    swirl_ratio: float
+    extra_stacks: int
+    layers_per_tick: int
+
+
+@dataclass(frozen=True, slots=True)
+class OdetteC2AssetValues:
+    """C2 效果行的机器数值：每层华彩攻击力提升 + 减抗光环幅度。"""
+
+    atk_per_stack: float
+    resistance_reduction: float
+
+
+@dataclass(frozen=True, slots=True)
+class OdetteC4AssetValues:
+    """C4 效果行的机器数值：均摊比例 + 内置冷却 + 协同攻击两档倍率。"""
+
+    share_ratio: float
+    cooldown_frames: int
+    conduct_ratio: float
+    swirl_ratio: float
+
+
+def read_c1_asset_values(params: Mapping[str, object]) -> OdetteC1AssetValues:
+    """解析 C1 效果行：追加段倍率（number_2 = 300% 星超导 / number_3 = 450%
+    星扩散）与华彩强化（number_5 = 额外 2 层、number_7 = 后台每秒 2 层）。
+
+    资产行原文「…相当于奥黛塔攻击力300%的星超导反应伤害；…450%的星扩散反应
+    伤害。此外…额外获得2层华彩，且…清除华彩的速度提升至每秒2层」。
     """
 
     purpose = "命之座第1层 「不曾起舞的清晨，她望向倒影」"
+    conduct_ratio = _component(params, 1, purpose=purpose)
+    swirl_ratio = _component(params, 2, purpose=purpose)
     extra_stacks = _component(params, 4, purpose=purpose)
     clear_layers = _component(params, 6, purpose=purpose)
+    if conduct_ratio <= 0.0 or swirl_ratio <= 0.0:
+        raise ContentUnitValidationError(f"{purpose} 追加段倍率必须为正数")
     if extra_stacks != int(extra_stacks) or extra_stacks <= 0:
         raise ContentUnitValidationError(f"{purpose} 华彩额外叠层数必须是正整数")
     if clear_layers != int(clear_layers) or clear_layers <= 0:
         raise ContentUnitValidationError(f"{purpose} 后台清除层数必须是正整数")
-    return int(extra_stacks), int(clear_layers)
+    return OdetteC1AssetValues(
+        conduct_ratio=conduct_ratio,
+        swirl_ratio=swirl_ratio,
+        extra_stacks=int(extra_stacks),
+        layers_per_tick=int(clear_layers),
+    )
 
 
-def read_c2_atk_per_stack(params: Mapping[str, object]) -> float:
-    """解析 C2 效果行：每层华彩的攻击力提升（number_2，0.07）。"""
+def read_c2_asset_values(params: Mapping[str, object]) -> OdetteC2AssetValues:
+    """解析 C2 效果行：每层华彩攻击力提升（number_2 = 0.07）与减抗幅度
+    （number_5 = 0.2）。"""
 
     purpose = "命之座第2层 「她想，我要见证雪鹄未见之梦」"
     atk_per_stack = _component(params, 1, purpose=purpose)
+    resistance_reduction = _component(params, 4, purpose=purpose)
     if atk_per_stack <= 0.0:
         raise ContentUnitValidationError(f"{purpose} 每层攻击力提升必须为正数")
-    return atk_per_stack
+    if not 0.0 < resistance_reduction <= 1.0:
+        raise ContentUnitValidationError(f"{purpose} 减抗幅度必须在 (0, 1] 区间")
+    return OdetteC2AssetValues(
+        atk_per_stack=atk_per_stack,
+        resistance_reduction=resistance_reduction,
+    )
+
+
+def read_c4_asset_values(params: Mapping[str, object]) -> OdetteC4AssetValues:
+    """解析 C4 效果行：均摊比例（number_1 = 0.5）、内置冷却秒数（number_2 =
+    3.5）、协同攻击两档倍率（number_3 = 66% 星超导 / number_4 = 99% 星扩散）。"""
+
+    purpose = "命之座第4层 「向上，坠往恍惚、燃烧的蓝空」"
+    share_ratio = _component(params, 0, purpose=purpose)
+    cooldown_seconds = _component(params, 1, purpose=purpose)
+    conduct_ratio = _component(params, 2, purpose=purpose)
+    swirl_ratio = _component(params, 3, purpose=purpose)
+    if not 0.0 < share_ratio <= 1.0:
+        raise ContentUnitValidationError(f"{purpose} 均摊比例必须在 (0, 1] 区间")
+    if cooldown_seconds <= 0.0:
+        raise ContentUnitValidationError(f"{purpose} 协同攻击内置冷却必须为正数秒")
+    if conduct_ratio <= 0.0 or swirl_ratio <= 0.0:
+        raise ContentUnitValidationError(f"{purpose} 协同攻击倍率必须为正数")
+    return OdetteC4AssetValues(
+        share_ratio=share_ratio,
+        cooldown_frames=round(cooldown_seconds * FRAMES_PER_SECOND),
+        conduct_ratio=conduct_ratio,
+        swirl_ratio=swirl_ratio,
+    )
+
+
+def read_talent_level_boost(params: Mapping[str, object]) -> tuple[int, int]:
+    """解析 C3/C5 效果行：天赋等级提升（number_2 = 3）与提升上限（number_3 = 15）。
+
+    上限分量按框架的能力上限核对：``TalentLevelResolver`` 默认 ``max_level``
+    为 15，行内上限与之一致（不一致时由内容侧显式失败，而不是静默按 15 截断）。
+    """
+
+    purpose = "命之座天赋等级提升"
+    boost = _component(params, 1, purpose=purpose)
+    cap = _component(params, 2, purpose=purpose)
+    if boost != int(boost) or boost <= 0:
+        raise ContentUnitValidationError(f"{purpose} 天赋等级提升必须是正整数")
+    if cap != int(cap) or cap <= 0:
+        raise ContentUnitValidationError(f"{purpose} 天赋等级上限必须是正整数")
+    if int(cap) != TALENT_LEVEL_CAP:
+        raise ContentUnitValidationError(
+            f"{purpose} 天赋等级上限 {int(cap)} 与框架上限 {TALENT_LEVEL_CAP} 不一致"
+        )
+    return int(boost), int(cap)
 
 
 def read_c6_ascension_values(params: Mapping[str, object]) -> tuple[float, float]:
@@ -239,7 +370,7 @@ def create_odette_passive_p4(request: EffectContentUnitRequest) -> ContentUnit:
         c2_params = request.owner_context.effect_params.get("c2")
         if c2_params is None:
             raise ContentUnitValidationError("C2 已解锁但缺少资产效果行：c2")
-        atk_per_stack = read_c2_atk_per_stack(c2_params)
+        atk_per_stack = read_c2_asset_values(c2_params).atk_per_stack
 
     definition = build_splendor_buff_definition(
         slot,
@@ -324,6 +455,214 @@ def create_odette_passive_p6(request: EffectContentUnitRequest) -> ContentUnit:
         unlock=UnlockSpec(kind=UnlockKind.ALWAYS, threshold=0),
         purpose="odette_passive_p6_stellar_base_bonus",
         damage_modifier_providers=(provider,),
+    )
+
+
+def create_odette_constellation_c1(request: EffectContentUnitRequest) -> ContentUnit:
+    """C1 追加段与华彩强化：解析并核对效果行（两段机器数值由各自的拥有者编译）。
+
+    追加段（星超导 300% / 星扩散 450%、共舞结束时追加）由角色单元按本行倍率
+    编译进影响工厂；华彩强化（额外 +2 层、后台清除 2 层/秒）由角色单元传给
+    华彩发放与衰减 hook。本条单元因此只做读数、校验与审计记录。
+    """
+
+    _validate_owner(request, ODETTE_CONSTELLATION_C1_HANDLER_KEY)
+    name = _effect_name(request.params, position="命之座第1层")
+    values = read_c1_asset_values(request.params)
+    return _effect_unit(
+        request=request,
+        handler_key=ODETTE_CONSTELLATION_C1_HANDLER_KEY,
+        kind=EffectKind.CONSTELLATION,
+        unlock=UnlockSpec(kind=UnlockKind.CONSTELLATION, threshold=1),
+        purpose="odette_constellation_c1_extra_segment",
+        compiled_params={
+            "name": name,
+            "conduct_ratio": values.conduct_ratio,
+            "swirl_ratio": values.swirl_ratio,
+            "extra_stacks": values.extra_stacks,
+            "layers_per_tick": values.layers_per_tick,
+        },
+    )
+
+
+def _build_c2_resistance_aura(
+    slot: int,
+    *,
+    reduction: float,
+    handler_key: str,
+    display_name: str,
+) -> tuple[tuple[BuffDefinition, ...], dict[str, ResistanceAuraVariantSpec]]:
+    """编译 C2 两个变体的减抗 Buff 定义与 hook 侧申请参数。
+
+    变体按辉映状态区分（星超导：冰+雷；星扩散：冰+风），各自一个定义键：
+    APPLY_STATUS 要求 ``modifier_values`` 与定义模板完整匹配，合成单一定义
+    会让另一元素的零值词条进入目标账本。词条值为 ``-reduction``（抗性区
+    FLAT_ADD，有效抗性 = 面板值 + Σ）。
+    """
+
+    elements_by_variant = {
+        ODETTE_C2_CONDUCT_VARIANT: (RESISTANCE_CRYO, RESISTANCE_ELECTRO),
+        ODETTE_C2_SWIRL_VARIANT: (RESISTANCE_CRYO, RESISTANCE_ANEMO),
+    }
+    definitions: list[BuffDefinition] = []
+    variants: dict[str, ResistanceAuraVariantSpec] = {}
+    variant_labels = {
+        ODETTE_C2_CONDUCT_VARIANT: "星超导",
+        ODETTE_C2_SWIRL_VARIANT: "星扩散",
+    }
+    for variant in (ODETTE_C2_CONDUCT_VARIANT, ODETTE_C2_SWIRL_VARIANT):
+        term_keys_by_element = {
+            element: _c2_resistance_term_key(variant, element)
+            for element in elements_by_variant[variant]
+        }
+        definition_key = odette_c2_resistance_definition_key(slot, variant)
+        definitions.append(
+            BuffDefinition(
+                definition_key=definition_key,
+                mechanic_key=ODETTE_C2_RESISTANCE_MECHANIC_KEY,
+                handler_key=handler_key,
+                conflict_key=definition_key,
+                target_kinds=frozenset({AttributeSubjectKind.TARGET}),
+                application_policy=BuffApplicationPolicy.REFRESH,
+                value_refresh_policy=BuffValueRefreshPolicy.REPLACE_LATEST,
+                max_stacks=1,
+                attribute_modifiers=tuple(
+                    BuffAttributeModifierTemplate(
+                        term_key=term_key,
+                        target_key=element,
+                        stage=ModifierStage.FLAT_ADD,
+                    )
+                    for element, term_key in term_keys_by_element.items()
+                ),
+                display_name=f"{display_name}·{variant_labels[variant]}减抗",
+            )
+        )
+        variants[variant] = ResistanceAuraVariantSpec(
+            definition_key=definition_key,
+            modifier_values=tuple(
+                {"term_key": term_key, "value": -reduction}
+                for term_key in term_keys_by_element.values()
+            ),
+        )
+    return tuple(definitions), variants
+
+
+def _c2_resistance_term_key(variant: str, element: AttributeKey) -> str:
+    """C2 减抗词条键：按变体与元素区分（审计与模板一对一）。"""
+
+    element_key = element.value.removeprefix("resistance.")
+    return f"{ODETTE_C2_RESISTANCE_MECHANIC_KEY}.{variant}.{element_key}"
+
+
+def create_odette_constellation_c2(request: EffectContentUnitRequest) -> ContentUnit:
+    """C2 减抗光环：两个变体的减抗 Buff 定义 + 每 60 帧的判定 hook。
+
+    每层华彩的 +7% 攻击力由 P4 工厂编译进华彩 Buff 词条（见 ``splendor.py``），
+    本条单元只承载光环部分。
+    """
+
+    slot = _validate_owner(request, ODETTE_CONSTELLATION_C2_HANDLER_KEY)
+    name = _effect_name(request.params, position="命之座第2层")
+    values = read_c2_asset_values(request.params)
+    owner_ref = f"character:slot_{slot}"
+    definitions, variants = _build_c2_resistance_aura(
+        slot,
+        reduction=values.resistance_reduction,
+        handler_key=ODETTE_CONSTELLATION_C2_HANDLER_KEY,
+        display_name=name,
+    )
+    hook = OdetteC2ResistanceHook(
+        owner_ref=owner_ref,
+        slot=slot,
+        variants=variants,
+    )
+    return _effect_unit(
+        request=request,
+        handler_key=ODETTE_CONSTELLATION_C2_HANDLER_KEY,
+        kind=EffectKind.CONSTELLATION,
+        unlock=UnlockSpec(kind=UnlockKind.CONSTELLATION, threshold=2),
+        purpose="odette_constellation_c2_resistance_aura",
+        event_hooks=(hook,),
+        buff_definitions=definitions,
+        compiled_params={
+            "name": name,
+            "atk_per_stack": values.atk_per_stack,
+            "resistance_reduction": values.resistance_reduction,
+            "definition_keys": {
+                variant: spec.definition_key for variant, spec in sorted(variants.items())
+            },
+        },
+    )
+
+
+def create_odette_constellation_c3(request: EffectContentUnitRequest) -> ContentUnit:
+    """C3：元素战技天赋等级 +3（至多 15，上限由天赋框架承担）。"""
+
+    _validate_owner(request, ODETTE_CONSTELLATION_C3_HANDLER_KEY)
+    name = _effect_name(request.params, position="命之座第3层")
+    boost, cap = read_talent_level_boost(request.params)
+    return _effect_unit(
+        request=request,
+        handler_key=ODETTE_CONSTELLATION_C3_HANDLER_KEY,
+        kind=EffectKind.CONSTELLATION,
+        unlock=UnlockSpec(kind=UnlockKind.CONSTELLATION, threshold=3),
+        purpose="odette_constellation_c3_talent_boost",
+        talent_level_boosts={"elemental_skill": boost},
+        compiled_params={"name": name, "boost": boost, "cap": cap},
+    )
+
+
+def create_odette_constellation_c4(request: EffectContentUnitRequest) -> ContentUnit:
+    """C4：协同攻击 hook（触发后延迟 5f、内置冷却取本行秒数）。
+
+    「雪鹄之梦均摊」需要元素爆发表里的雪鹄之梦数值，由角色单元按有效 Q 等级
+    编译并门控（见 ``content.py`` 与 ``dream.py``），本条单元只承载协同攻击。
+    """
+
+    slot = _validate_owner(request, ODETTE_CONSTELLATION_C4_HANDLER_KEY)
+    name = _effect_name(request.params, position="命之座第4层")
+    values = read_c4_asset_values(request.params)
+    owner_ref = f"character:slot_{slot}"
+    hook = OdetteC4CoordinatedAttackHook(
+        owner_ref=owner_ref,
+        slot=slot,
+        channel=compile_coordinated_attack_channel(
+            conduct_ratio=values.conduct_ratio,
+            swirl_ratio=values.swirl_ratio,
+        ),
+        cooldown_frames=values.cooldown_frames,
+    )
+    return _effect_unit(
+        request=request,
+        handler_key=ODETTE_CONSTELLATION_C4_HANDLER_KEY,
+        kind=EffectKind.CONSTELLATION,
+        unlock=UnlockSpec(kind=UnlockKind.CONSTELLATION, threshold=4),
+        purpose="odette_constellation_c4_coordinated_attack",
+        event_hooks=(hook,),
+        compiled_params={
+            "name": name,
+            "share_ratio": values.share_ratio,
+            "cooldown_frames": values.cooldown_frames,
+            "conduct_ratio": values.conduct_ratio,
+            "swirl_ratio": values.swirl_ratio,
+        },
+    )
+
+
+def create_odette_constellation_c5(request: EffectContentUnitRequest) -> ContentUnit:
+    """C5：元素爆发天赋等级 +3（至多 15，上限由天赋框架承担）。"""
+
+    _validate_owner(request, ODETTE_CONSTELLATION_C5_HANDLER_KEY)
+    name = _effect_name(request.params, position="命之座第5层")
+    boost, cap = read_talent_level_boost(request.params)
+    return _effect_unit(
+        request=request,
+        handler_key=ODETTE_CONSTELLATION_C5_HANDLER_KEY,
+        kind=EffectKind.CONSTELLATION,
+        unlock=UnlockSpec(kind=UnlockKind.CONSTELLATION, threshold=5),
+        purpose="odette_constellation_c5_talent_boost",
+        talent_level_boosts={"elemental_burst": boost},
+        compiled_params={"name": name, "boost": boost, "cap": cap},
     )
 
 

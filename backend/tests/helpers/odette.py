@@ -27,7 +27,10 @@ from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
 )
-from genshin_sim.content.registries import CharacterContentUnitRequest
+from genshin_sim.content.registries import (
+    CharacterContentUnitRequest,
+    EffectContentUnitRequest,
+)
 from genshin_sim.core.actions import (
     ActionInterpretationContext,
     ActionInterpretationResult,
@@ -94,6 +97,7 @@ def write_odette_asset_database(
     db_path: Path,
     *,
     scaling_ratio_overrides: Mapping[str, float] | None = None,
+    scaling_level_overrides: Mapping[str, Mapping[int, float]] | None = None,
     companions: int = 0,
     ascension_phase: int = 6,
 ) -> Path:
@@ -106,7 +110,8 @@ def write_odette_asset_database(
     验证被动/命座的解锁门控。
     ``scaling_ratio_overrides`` 按倍率条目 key 覆盖合成倍率：默认全 1.0 时
     「倍率区相加」与「倍率区相乘」在数值上不可区分，需要区分口径的用例必须
-    给出非 1.0 的倍率。
+    给出非 1.0 的倍率。``scaling_level_overrides`` 再按条目 key 与等级覆盖
+    单点取值（验证 C3/C5 的天赋等级提升确实改变编译值）。
     """
 
     from genshin_sim.assets.models import CharacterAsset, CharacterLevelStats
@@ -170,7 +175,10 @@ def write_odette_asset_database(
         character_level_stats=character_level_stats,
         weapons=(),
         weapon_level_stats=(),
-        talent_scalings=minimal_odette_scaling_entries(ratio_overrides=scaling_ratio_overrides),
+        talent_scalings=minimal_odette_scaling_entries(
+            ratio_overrides=scaling_ratio_overrides,
+            level_overrides=scaling_level_overrides,
+        ),
         effect_payloads=minimal_odette_effect_payloads(),
     )
 
@@ -202,15 +210,17 @@ def minimal_odette_effect_payloads() -> tuple[EffectPayload, ...]:
             params={
                 "schema_version": 1,
                 "name": name,
-                "components": tuple(
+                # 组件用列表承载：写入资产库经 JSON 序列化后即列表，行读数与
+                # 效果单元请求（EffectSpec 要求 JSON 兼容）都消费同一形态。
+                "components": [
                     {
                         "source_param": f"number_{index}",
                         "kind": "numeric",
                         "format": "number",
-                        "values": (value,),
+                        "values": [value],
                     }
                     for index, value in enumerate(values, start=1)
-                ),
+                ],
             },
         )
 
@@ -280,7 +290,9 @@ def minimal_odette_effect_payloads() -> tuple[EffectPayload, ...]:
             "constellation",
             ODETTE_CONSTELLATION_C3_HANDLER_KEY,
             "c3",
-            (3.0, 15.0),
+            # 组件位对齐真实资产行：number_2 天赋等级提升、number_3 提升上限；
+            # number_1 为词条链接编号占位。
+            (1.0, 3.0, 15.0),
             name="合成命座3",
         ),
         _effect(
@@ -288,7 +300,9 @@ def minimal_odette_effect_payloads() -> tuple[EffectPayload, ...]:
             "constellation",
             ODETTE_CONSTELLATION_C4_HANDLER_KEY,
             "c4",
-            (0.5, 0.66, 0.99),
+            # 组件位对齐真实资产行：number_1 均摊比例、number_2 内置冷却秒数、
+            # number_3/4 协同攻击两档倍率。
+            (0.5, 3.5, 0.66, 0.99),
             name="合成命座4",
         ),
         _effect(
@@ -296,7 +310,8 @@ def minimal_odette_effect_payloads() -> tuple[EffectPayload, ...]:
             "constellation",
             ODETTE_CONSTELLATION_C5_HANDLER_KEY,
             "c5",
-            (3.0, 15.0),
+            # 组件位对齐真实资产行：number_2 天赋等级提升、number_3 提升上限。
+            (1.0, 3.0, 15.0),
             name="合成命座5",
         ),
         _effect(
@@ -324,18 +339,49 @@ def odette_effect_params(unlock_key: str) -> dict[str, object]:
     raise AssertionError(f"合成效果行缺少 {unlock_key}")
 
 
+def odette_effect_request(
+    handler_key: str,
+    *,
+    effect_key: str,
+    effect_kind: str = "constellation",
+    params: Mapping[str, object] | None = None,
+    unlock_key: str | None = None,
+    slot: int = 1,
+) -> EffectContentUnitRequest:
+    """构造奥黛塔效果内容单元请求（效果单元工厂单测用）。
+
+    ``params`` 缺省取合成资产命座第 1 层效果行；需要指定行时传
+    ``odette_effect_params("<unlock_key>")``。
+    """
+
+    return EffectContentUnitRequest(
+        handler_key=handler_key,
+        effect_key=effect_key,
+        effect_kind=effect_kind,
+        owner_type="character",
+        owner_key=ODETTE_CHARACTER_KEY,
+        slot=slot,
+        params=dict(params if params is not None else odette_effect_params("c1")),
+        unlock_key=unlock_key if unlock_key is not None else effect_key.rsplit(":", 1)[-1],
+    )
+
+
 def minimal_odette_scaling_entries(
     *,
     ratio_overrides: Mapping[str, float] | None = None,
+    level_overrides: Mapping[str, Mapping[int, float]] | None = None,
 ) -> tuple[TalentScalingEntry, ...]:
     """返回奥黛塔 content 工厂接线所需的最小倍率行。
 
     所有数值取 1.0，只保证倍率条目结构（label、分量数与等级区间）满足工厂
     编译；三段伤害与落地冲击条目需要两个分量。``ratio_overrides`` 按
-    ``entry_key`` 覆盖指定条目的合成倍率。
+    ``entry_key`` 覆盖指定条目的合成倍率（全部等级同值）；``level_overrides``
+    按 ``entry_key`` 再按等级覆盖单点的合成倍率，用于验证天赋等级提升
+    （C3/C5）确实改变编译后的取值。
     """
 
     overrides = dict(ratio_overrides or {})
+    per_level = {key: dict(values) for key, values in (level_overrides or {}).items()}
 
     specs = (
         ("na_1", "normal_attack", "一段伤害", ("plain_ratio",)),
@@ -375,6 +421,9 @@ def minimal_odette_scaling_entries(
         ),
         ("burst_slash", "elemental_burst", "斩击伤害", ("plain_ratio",)),
         ("burst_final", "elemental_burst", "斩击最终段伤害", ("plain_ratio",)),
+        # 雪鹄之梦：增伤比例（随等级成长）与持续秒数（内容编译期折算帧数）。
+        ("swan_dream_bonus", "elemental_burst", "雪鹄之梦星烁反应伤害提升", ("plain_ratio",)),
+        ("swan_dream_duration", "elemental_burst", "雪鹄之梦持续时间", ("plain_value",)),
     )
     return tuple(
         TalentScalingEntry(
@@ -391,7 +440,10 @@ def minimal_odette_scaling_entries(
                     {
                         "source_param": f"param_{index}",
                         "kind": kind,
-                        "values": tuple(overrides.get(entry_key, 1.0) for _ in range(15)),
+                        "values": tuple(
+                            per_level.get(entry_key, {}).get(level, overrides.get(entry_key, 1.0))
+                            for level in range(1, 16)
+                        ),
                     }
                     for index, kind in enumerate(kinds)
                 ),
@@ -513,6 +565,32 @@ def apply_radiance_buff(assembled, *, settled_stacks: int = 3, frame: int = 0) -
             )
         )
     )
+
+
+def apply_swan_dream_buff(assembled, *, duration_frames: int = 240, frame: int = 0) -> None:
+    """直接注入雪鹄之梦 Buff（多角色用例在爆发施放前就需要它存在时的入口）。"""
+
+    from genshin_sim.content.characters.snezhnaya.odette.data import (
+        odette_swan_dream_definition_key,
+    )
+    from genshin_sim.core.attributes import RuntimeSourceKind, RuntimeSourceRef
+    from genshin_sim.core.systems.buff import ApplyBuffRequest, BuffRuntime
+
+    runtime = assembled.context.get_system(BuffRuntime)
+    assert isinstance(runtime, BuffRuntime)
+    request = ApplyBuffRequest(
+        request_id=f"test:swan_dream:{frame}",
+        frame=frame,
+        order=0,
+        definition_key=odette_swan_dream_definition_key(1),
+        target_ref=ODETTE_REF,
+        source_context=RuntimeSourceRef(
+            RuntimeSourceKind.CONTENT,
+            ODETTE_CHARACTER_HANDLER_KEY,
+        ),
+        duration_frames=duration_frames,
+    )
+    runtime.commit_prevalidated(runtime.prepare_apply((request,)))
 
 
 def make_aura_application_impact(

@@ -1,9 +1,11 @@
 """奥黛塔内容单元编译入口。
 
-本文件只负责内容单元编排：读取资产倍率，调用 ``impacts.py`` 的影响契约
-编译函数，构造冷却/ICD 定义，最后组装 ``ContentUnit``。星耀祝礼·银晓之舞
-（P6）的星反应转换 capability 随内容单元静态声明；其基础增伤 provider 随
-P6 效果单元落地（``effects.py``），其余被动/命座行为在后续切片落地。
+本文件只负责内容单元编排：读取资产倍率与效果行数值，调用 ``impacts.py`` 的
+影响契约编译函数，构造冷却/ICD 定义与自持 Buff（雪鹄之梦），最后组装
+``ContentUnit``。星耀祝礼·银晓之舞（P6）的星反应转换 capability 随内容单元
+静态声明；C1 追加段（影响工厂）与 C4 均摊（雪鹄之梦 provider）的机器数值
+需要元素战技/爆发表，因此在本单元按有效天赋等级编译，其余被动/命座行为由
+各效果单元承载（``effects.py``）。
 """
 
 from __future__ import annotations
@@ -16,6 +18,10 @@ from genshin_sim.content.characters.snezhnaya.odette.actions import (
 )
 from genshin_sim.content.characters.snezhnaya.odette.dance import OdetteDanceHook
 from genshin_sim.content.characters.snezhnaya.odette.data import (
+    ODETTE_C1_EXTRA_AOE_RADIUS,
+    ODETTE_C1_EXTRA_CONDUCT_DISPLAY_NAME,
+    ODETTE_C1_EXTRA_IMPACT_KEY,
+    ODETTE_C1_EXTRA_SWIRL_DISPLAY_NAME,
     ODETTE_CHARACTER_HANDLER_KEY,
     ODETTE_CHARGED_ATTACK_IMPACT_KEY,
     ODETTE_CONTENT_VERSION,
@@ -42,10 +48,19 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_STATE_SUMMON_NEXT_ATTACK_FRAME,
     ODETTE_STATE_SUMMON_NEXT_STEP,
     odette_splendor_definition_key,
+    odette_swan_dream_definition_key,
+)
+from genshin_sim.content.characters.snezhnaya.odette.dream import (
+    OdetteC4SwanDreamShareProvider,
+    OdetteSwanDreamStellarBonusProvider,
+    SwanDreamGrantConfig,
+    build_swan_dream_buff_definition,
+    read_swan_dream_values,
 )
 from genshin_sim.content.characters.snezhnaya.odette.effects import (
-    read_c1_splendor_values,
-    read_c2_atk_per_stack,
+    read_c1_asset_values,
+    read_c2_asset_values,
+    read_c4_asset_values,
     read_p4_splendor_values,
 )
 from genshin_sim.content.characters.snezhnaya.odette.hooks import OdetteParticleHook
@@ -64,6 +79,10 @@ from genshin_sim.content.characters.snezhnaya.odette.splendor import (
     OdetteSplendorDecayHook,
     SplendorGrantConfig,
 )
+from genshin_sim.content.characters.snezhnaya.odette.stellar import (
+    OdetteStellarChannel,
+    stellar_variant_hit,
+)
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
@@ -81,6 +100,8 @@ from genshin_sim.core.contracts.state_schema import (
     StateSchema,
 )
 from genshin_sim.core.elements import AuraAmount
+from genshin_sim.core.impacts import StrikeType
+from genshin_sim.core.space import ImpactAreaSpec
 from genshin_sim.core.systems.aura_icd import IcdDefinition
 from genshin_sim.core.systems.cooldown import (
     AbilityKind,
@@ -92,9 +113,11 @@ from genshin_sim.core.systems.cooldown import (
 )
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
     STELLAR_CONDUCT_CAPABILITY_KEY,
+    STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
 )
 from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
     STELLAR_SWIRL_CAPABILITY_KEY,
+    STELLAR_SWIRL_ICE_DAMAGE_TAG,
 )
 
 
@@ -222,6 +245,12 @@ def create_odette_content_unit(
     # C2 攻击力词条值随发放/转交申请携带（Buff 定义由 P4 效果单元按命座
     # 门控编译，两侧必须一致）。已解锁却缺效果行时直接失败，不静默回落。
     owner_ref = f"character:slot_{request.slot}"
+    c1_values = None
+    if request.constellation >= 1:
+        c1_params = request.effect_params.get("c1")
+        if c1_params is None:
+            raise ContentUnitValidationError("C1 已解锁但缺少资产效果行：c1")
+        c1_values = read_c1_asset_values(c1_params)
     splendor_grant_config: SplendorGrantConfig | None = None
     splendor_hook: OdetteSplendorDecayHook | None = None
     if request.ascension_phase >= 1:
@@ -230,13 +259,9 @@ def create_odette_content_unit(
             raise ContentUnitValidationError("P4 已解锁但缺少资产效果行：passive:4")
         grant_stacks = read_p4_splendor_values(p4_params)
         layers_per_tick = 1
-        keep_own_stacks = False
-        if request.constellation >= 1:
-            c1_params = request.effect_params.get("c1")
-            if c1_params is None:
-                raise ContentUnitValidationError("C1 已解锁但缺少资产效果行：c1")
-            extra_stacks, layers_per_tick = read_c1_splendor_values(c1_params)
-            grant_stacks += extra_stacks
+        if c1_values is not None:
+            grant_stacks += c1_values.extra_stacks
+            layers_per_tick = c1_values.layers_per_tick
         splendor_modifier_values: tuple[dict[str, object], ...] = ()
         if request.constellation >= 2:
             c2_params = request.effect_params.get("c2")
@@ -245,7 +270,7 @@ def create_odette_content_unit(
             splendor_modifier_values = (
                 {
                     "term_key": ODETTE_SPLENDOR_ATK_TERM_KEY,
-                    "value": read_c2_atk_per_stack(c2_params),
+                    "value": read_c2_asset_values(c2_params).atk_per_stack,
                 },
             )
         keep_own_stacks = request.constellation >= 6
@@ -264,12 +289,79 @@ def create_odette_content_unit(
             keep_own_stacks=keep_own_stacks,
             modifier_values=splendor_modifier_values,
         )
+    # 雪鹄之梦（元素爆发）：值随有效 Q 等级（含 C5 的 +3）在编译期确定；buff
+    # 定义由角色单元贡献（handler 键即角色 handler），发放随爆发施放帧展开。
+    # C4 均摊（获得雪鹄之梦时其他角色星烁伤害提升其 50%）按命座门控编译。
+    swan_dream_values = read_swan_dream_values(
+        request.character_key,
+        entries_by_key,
+        burst_talent_level,
+    )
+    swan_dream_definition_key = odette_swan_dream_definition_key(request.slot)
+    swan_dream_definition = build_swan_dream_buff_definition(
+        request.slot,
+        handler_key=ODETTE_CHARACTER_HANDLER_KEY,
+        display_name="雪鹄之梦",
+    )
+    swan_dream_provider = OdetteSwanDreamStellarBonusProvider(
+        owner_ref=owner_ref,
+        definition_key=swan_dream_definition_key,
+        stellar_bonus=swan_dream_values.stellar_bonus,
+        source_key=ODETTE_CHARACTER_HANDLER_KEY,
+        display_name="雪鹄之梦·星烁增伤",
+    )
+    damage_modifier_providers: tuple = (swan_dream_provider,)
+    if request.constellation >= 4:
+        c4_params = request.effect_params.get("c4")
+        if c4_params is None:
+            raise ContentUnitValidationError("C4 已解锁但缺少资产效果行：c4")
+        c4_values = read_c4_asset_values(c4_params)
+        damage_modifier_providers += (
+            OdetteC4SwanDreamShareProvider(
+                owner_ref=owner_ref,
+                definition_key=swan_dream_definition_key,
+                share_bonus=swan_dream_values.stellar_bonus * c4_values.share_ratio,
+                source_key=ODETTE_CHARACTER_HANDLER_KEY,
+                display_name="雪鹄之梦·均摊",
+            ),
+        )
+    # C1 追加段：倍率取 C1 行两档（星超导/星扩散），几何取命中表该行；索敌
+    # 沿用结束段命中集合（命中表该行索敌列为「-」）。
+    c1_channel = None
+    if c1_values is not None:
+        c1_area = ImpactAreaSpec(shape="圆柱", radius=ODETTE_C1_EXTRA_AOE_RADIUS)
+        c1_channel = OdetteStellarChannel(
+            impact_key=ODETTE_C1_EXTRA_IMPACT_KEY,
+            conduct_spec=stellar_variant_hit(
+                impact_ref=ODETTE_C1_EXTRA_IMPACT_KEY,
+                main_attack_tag=STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
+                display_name=ODETTE_C1_EXTRA_CONDUCT_DISPLAY_NAME,
+                strike_type=StrikeType.DEFAULT,
+                range_type="默认",
+                area=c1_area,
+            ),
+            swirl_spec=stellar_variant_hit(
+                impact_ref=ODETTE_C1_EXTRA_IMPACT_KEY,
+                main_attack_tag=STELLAR_SWIRL_ICE_DAMAGE_TAG,
+                display_name=ODETTE_C1_EXTRA_SWIRL_DISPLAY_NAME,
+                strike_type=StrikeType.DEFAULT,
+                range_type="默认",
+                area=c1_area,
+            ),
+            conduct_ratio=c1_values.conduct_ratio,
+            swirl_ratio=c1_values.swirl_ratio,
+        )
     impact_factory = OdetteActionImpactFactory(
         damage_specs,
         stellar_channels={
             ODETTE_SPECIAL_END_IMPACT_KEY: stellar_channels[ODETTE_SPECIAL_END_IMPACT_KEY],
         },
         splendor_grant=splendor_grant_config,
+        swan_dream_grant=SwanDreamGrantConfig(
+            definition_key=swan_dream_definition_key,
+            duration_frames=swan_dream_values.duration_frames,
+        ),
+        c1_channel=c1_channel,
     )
     dance_hook = OdetteDanceHook(
         owner_ref=owner_ref,
@@ -366,6 +458,10 @@ def create_odette_content_unit(
             STELLAR_CONDUCT_CAPABILITY_KEY,
             STELLAR_SWIRL_CAPABILITY_KEY,
         ),
+        # 雪鹄之梦 Buff 定义 + 伤害修饰 provider：本体（自身星烁增伤）与 C4
+        # 均摊（其他角色提升其 50%）都在编译期按有效 Q 等级确定数值。
+        buff_definitions=(swan_dream_definition,),
+        damage_modifier_providers=damage_modifier_providers,
         metadata={"purpose": "odette_content_basic_kit_and_summon"},
     )
 

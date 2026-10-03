@@ -3,8 +3,9 @@
 本文件负责“资产数据 -> 伤害契约 -> ImpactRequest”的链路：命中几何、打击
 类型、衰减序列/衰减标签与附加标签取自 ``data.py`` 的命中数据，倍率来自资产
 倍率表（普攻/重击/下落走 normal_attack，战技走 elemental_skill，爆发走
-elemental_burst）。破晓终奏持续/结束段的星烁契约随独舞倒影召唤物在后续
-切片接入。
+elemental_burst）。破晓终奏持续段为普通动作影响点；结束段与舞步的星变体
+经 ``stellar.py`` 星烁通道在展开时按辉映证据分派；独舞倒影创建影响点展开为
+CREATE_ENTITY 请求（召唤物本体与轮换见 ``dance.py``）。
 """
 
 from __future__ import annotations
@@ -24,6 +25,14 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_DAMAGE_ELEMENT,
     ODETTE_DAMAGE_ELEMENTAL_AMOUNT,
     ODETTE_DAMAGE_ELEMENTAL_STRENGTH,
+    ODETTE_DANCE_DURATION_FRAMES,
+    ODETTE_DANCE_OBJECT_KEY,
+    ODETTE_DANCE_PLUME_HIT,
+    ODETTE_DANCE_PLUME_IMPACT_KEY,
+    ODETTE_DANCE_STEP_PLUME,
+    ODETTE_DANCE_STEP_WING,
+    ODETTE_DANCE_WING_HIT,
+    ODETTE_DANCE_WING_IMPACT_KEY,
     ODETTE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY,
     ODETTE_ELEMENTAL_BURST_FINAL_IMPACT_KEY,
     ODETTE_ELEMENTAL_BURST_SLASH_1_IMPACT_KEY,
@@ -36,7 +45,19 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_PLUNGE_ATTACK_DATA,
     ODETTE_PLUNGE_COLLISION_IMPACT_KEY,
     ODETTE_PLUNGE_LANDING_IMPACT_KEY,
+    ODETTE_SPECIAL_DOT_1_IMPACT_KEY,
+    ODETTE_SPECIAL_DOT_2_IMPACT_KEY,
+    ODETTE_SPECIAL_DOT_3_IMPACT_KEY,
+    ODETTE_SPECIAL_DOT_HIT,
+    ODETTE_SPECIAL_END_IMPACT_KEY,
+    ODETTE_SUMMON_CREATE_IMPACT_KEY,
     OdetteHitData,
+)
+from genshin_sim.content.characters.snezhnaya.odette.stellar import (
+    OdetteStellarChannel,
+    compile_stellar_channel,
+    resolve_stellar_variant_spec,
+    stellar_variant_hit,
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.generic.talents import ScalingCompiler
@@ -47,10 +68,17 @@ from genshin_sim.core.impacts import (
     DamageImpactSpec,
     ImpactKind,
     ImpactRequest,
+    StrikeType,
 )
-from genshin_sim.core.space import ImpactAreaSpec
+from genshin_sim.core.space import ImpactAreaSpec, Vector3
 from genshin_sim.core.space.space import ACTIVE_CHARACTER_ENTITY_ID
 from genshin_sim.core.systems.damage import DamageScalingTerm
+from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
+    STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
+)
+from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
+    STELLAR_SWIRL_ICE_DAMAGE_TAG,
+)
 
 
 def _compile_damage_spec(
@@ -306,18 +334,198 @@ def compile_plunge_damage_specs(
     return specs
 
 
-class OdetteActionImpactFactory:
-    """把奥黛塔动作影响点展开为带伤害契约的 DAMAGE/ENERGY 请求。
+def compile_special_dot_damage_specs(
+    character_key: str,
+    entries_by_key: dict[tuple[str, str, str], TalentScalingEntry],
+    talent_level: int,
+) -> dict[str, DamageImpactSpec]:
+    """编译破晓终奏持续三段的伤害契约（同一倍率条目、三个影响点）。"""
 
-    ``damage_specs`` 由内容编译期按资产倍率表生成，按 impact_key 索引；未
-    登记契约的影响点仍展开为无伤害请求（不结算）。
+    entry = entries_by_key.get((character_key, "elemental_skill", "破晓终奏持续伤害"))
+    if entry is None:
+        raise ContentUnitValidationError("奥黛塔元素战技缺少资产倍率条目：破晓终奏持续伤害")
+    specs: dict[str, DamageImpactSpec] = {}
+    for impact_key in (
+        ODETTE_SPECIAL_DOT_1_IMPACT_KEY,
+        ODETTE_SPECIAL_DOT_2_IMPACT_KEY,
+        ODETTE_SPECIAL_DOT_3_IMPACT_KEY,
+    ):
+        specs[impact_key] = _compile_damage_spec(
+            impact_key,
+            talent_level,
+            entry=entry,
+            component_index=0,
+            hit_data=ODETTE_SPECIAL_DOT_HIT,
+            display_name="破晓终奏持续伤害",
+        )
+    return specs
+
+
+def compile_dance_damage_specs(
+    character_key: str,
+    entries_by_key: dict[tuple[str, str, str], TalentScalingEntry],
+    talent_level: int,
+) -> dict[str, DamageImpactSpec]:
+    """编译拂羽/旋翼舞步冰命中伤害契约（按步名键控，供轮换 hook 使用）。
+
+    舞步请求由轮换 hook 在到期帧产出，``impact_ref`` 随请求改写；这里的
+    impact_key 只作为契约占位标识。
+    """
+
+    plans = (
+        (
+            ODETTE_DANCE_STEP_PLUME,
+            ODETTE_DANCE_PLUME_HIT,
+            ODETTE_DANCE_PLUME_IMPACT_KEY,
+            "拂羽舞步伤害",
+        ),
+        (
+            ODETTE_DANCE_STEP_WING,
+            ODETTE_DANCE_WING_HIT,
+            ODETTE_DANCE_WING_IMPACT_KEY,
+            "旋翼舞步伤害",
+        ),
+    )
+    specs: dict[str, DamageImpactSpec] = {}
+    for step, hit_data, impact_key, label in plans:
+        entry = entries_by_key.get((character_key, "elemental_skill", label))
+        if entry is None:
+            raise ContentUnitValidationError(f"奥黛塔元素战技缺少资产倍率条目：{label}")
+        specs[step] = _compile_damage_spec(
+            impact_key,
+            talent_level,
+            entry=entry,
+            component_index=0,
+            hit_data=hit_data,
+            display_name=label,
+        )
+    return specs
+
+
+def compile_stellar_channels(
+    character_key: str,
+    entries_by_key: dict[tuple[str, str, str], TalentScalingEntry],
+    talent_level: int,
+) -> dict[str, OdetteStellarChannel]:
+    """编译破晓终奏结束段与拂羽/旋翼舞步的星烁通道。
+
+    星超导/星扩散倍率取资产倍率条目「星超导/星扩散伤害」的双分量（分量 0 =
+    星超导、分量 1 = 星扩散）；星变体几何/打击/远近按命中数据表星变体行。
+    返回键：结束段影响键与舞步步名（plume/wing）。
+    """
+
+    end_area = ImpactAreaSpec(
+        shape="圆柱",
+        radius=4.6,
+        local_offset_xz=Vector3(0.0, -1.0, 0.0),
+    )
+    end_channel = compile_stellar_channel(
+        ODETTE_SPECIAL_END_IMPACT_KEY,
+        character_key=character_key,
+        entries_by_key=entries_by_key,
+        talent_key="elemental_skill",
+        label="破晓终奏星超导/星扩散伤害",
+        talent_level=talent_level,
+        conduct_spec=stellar_variant_hit(
+            impact_ref=ODETTE_SPECIAL_END_IMPACT_KEY,
+            main_attack_tag=STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
+            display_name="破晓终奏星超导伤害",
+            strike_type=StrikeType.DEFAULT,
+            range_type="默认",
+            area=end_area,
+        ),
+        swirl_spec=stellar_variant_hit(
+            impact_ref=ODETTE_SPECIAL_END_IMPACT_KEY,
+            main_attack_tag=STELLAR_SWIRL_ICE_DAMAGE_TAG,
+            display_name="破晓终奏星扩散伤害",
+            strike_type=StrikeType.DEFAULT,
+            range_type="默认",
+            area=end_area,
+        ),
+    )
+    plume_area = ImpactAreaSpec(
+        shape="圆柱",
+        radius=4.0,
+        local_offset_xz=ODETTE_DANCE_PLUME_HIT.aoe_offset,
+    )
+    plume_channel = compile_stellar_channel(
+        ODETTE_DANCE_PLUME_IMPACT_KEY,
+        character_key=character_key,
+        entries_by_key=entries_by_key,
+        talent_key="elemental_skill",
+        label="拂羽舞步星超导/星扩散伤害",
+        talent_level=talent_level,
+        conduct_spec=stellar_variant_hit(
+            impact_ref=ODETTE_DANCE_PLUME_IMPACT_KEY,
+            main_attack_tag=STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
+            display_name="拂羽舞步星超导伤害",
+            strike_type=StrikeType.DEFAULT,
+            range_type="默认",
+            area=plume_area,
+        ),
+        swirl_spec=stellar_variant_hit(
+            impact_ref=ODETTE_DANCE_PLUME_IMPACT_KEY,
+            main_attack_tag=STELLAR_SWIRL_ICE_DAMAGE_TAG,
+            display_name="拂羽舞步星扩散伤害",
+            strike_type=StrikeType.DEFAULT,
+            range_type="默认",
+            area=plume_area,
+        ),
+    )
+    wing_area = ImpactAreaSpec(
+        shape="圆柱",
+        radius=4.0,
+        local_offset_xz=ODETTE_DANCE_WING_HIT.aoe_offset,
+    )
+    wing_channel = compile_stellar_channel(
+        ODETTE_DANCE_WING_IMPACT_KEY,
+        character_key=character_key,
+        entries_by_key=entries_by_key,
+        talent_key="elemental_skill",
+        label="旋翼舞步星超导/星扩散伤害",
+        talent_level=talent_level,
+        conduct_spec=stellar_variant_hit(
+            impact_ref=ODETTE_DANCE_WING_IMPACT_KEY,
+            main_attack_tag=STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
+            display_name="旋翼舞步星超导伤害",
+            strike_type=StrikeType.DEFAULT,
+            range_type="默认",
+            area=wing_area,
+        ),
+        swirl_spec=stellar_variant_hit(
+            impact_ref=ODETTE_DANCE_WING_IMPACT_KEY,
+            main_attack_tag=STELLAR_SWIRL_ICE_DAMAGE_TAG,
+            display_name="旋翼舞步星扩散伤害",
+            strike_type=StrikeType.DEFAULT,
+            range_type="默认",
+            area=wing_area,
+        ),
+    )
+    return {
+        ODETTE_SPECIAL_END_IMPACT_KEY: end_channel,
+        ODETTE_DANCE_STEP_PLUME: plume_channel,
+        ODETTE_DANCE_STEP_WING: wing_channel,
+    }
+
+
+class OdetteActionImpactFactory:
+    """把奥黛塔动作影响点展开为带伤害契约的 DAMAGE/ENERGY/CREATE 请求。
+
+    ``damage_specs`` 由内容编译期按资产倍率表生成，按 impact_key 索引；
+    未登记契约的影响点仍展开为无伤害请求（不结算）。``stellar_channels``
+    携带破晓终奏结束段的星烁通道：展开时读取辉映证据分派星变体，无辉映
+    证据时不产出伤害请求（非辉映口径待切片 3 定案）。召唤创建影响点展开
+    为 CREATE_ENTITY 请求。
     """
 
     def __init__(
         self,
         damage_specs: Mapping[str, DamageImpactSpec],
+        *,
+        stellar_channels: Mapping[str, OdetteStellarChannel] | None = None,
     ) -> None:
         self._damage_specs = dict(damage_specs)
+        self._stellar_channels = dict(stellar_channels or {})
 
     def create_requests(self, context: ActionImpactContext) -> tuple[ImpactRequest, ...]:
         params: dict[str, object] = {
@@ -327,6 +535,8 @@ class OdetteActionImpactFactory:
                 "source_impact_key": context.impact_key,
             },
         }
+        if context.impact_key == ODETTE_SUMMON_CREATE_IMPACT_KEY:
+            return (self._summon_create_request(context),)
         if context.impact_key == ODETTE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY:
             return (
                 ImpactRequest(
@@ -349,6 +559,8 @@ class OdetteActionImpactFactory:
                 ),
             )
         damage_spec = self._damage_specs.get(context.impact_key)
+        if context.impact_key == ODETTE_SPECIAL_END_IMPACT_KEY:
+            return self._special_end_requests(context)
         if damage_spec is None and context.impact_key == ODETTE_PLUNGE_LANDING_IMPACT_KEY:
             variant = context.params.get("plunge_variant")
             if isinstance(variant, str):
@@ -378,5 +590,87 @@ class OdetteActionImpactFactory:
                 ),
                 params=params,
                 damage_spec=damage_spec,
+            ),
+        )
+
+    def _summon_create_request(self, context: ActionImpactContext) -> ImpactRequest:
+        """展开独舞倒影创建请求（CREATE_ENTITY）。
+
+        位置固定于召唤点：位移要素不实现（规划已确认），当前仿真中角色位置
+        即玩家实体位置，创建位置取玩家实体当前位置；无 tick 行为、无跟随，
+        轮换攻击由 ``dance.py`` 的 FRAME_STARTED hook 驱动。
+        """
+
+        position = Vector3()
+        simulation = context.simulation
+        if simulation is not None and simulation.space_runtime is not None:
+            entity = simulation.space_runtime.get_entity(ACTIVE_CHARACTER_ENTITY_ID)
+            if entity is not None:
+                position = entity.position
+        return ImpactRequest(
+            frame=context.frame,
+            kind=ImpactKind.CREATE_ENTITY,
+            impact_key=context.impact_key,
+            owner_slot=context.owner.slot,
+            action_key=context.action_key,
+            source_impact_point_id=context.impact_point_id,
+            target_refs=(),
+            params={
+                "content_handler_key": ODETTE_CHARACTER_HANDLER_KEY,
+                "odette": {
+                    "handler_key": ODETTE_CHARACTER_HANDLER_KEY,
+                    "source_impact_key": context.impact_key,
+                },
+                "object_key": ODETTE_DANCE_OBJECT_KEY,
+                "duration_frames": ODETTE_DANCE_DURATION_FRAMES,
+                "position": {"x": position.x, "y": position.y, "z": position.z},
+                "owner_key": f"character:slot_{context.owner.slot}",
+                "tags": (ODETTE_DANCE_OBJECT_KEY,),
+                "object_params": {},
+            },
+        )
+
+    def _special_end_requests(self, context: ActionImpactContext) -> tuple[ImpactRequest, ...]:
+        """展开破晓终奏结束段：按辉映证据分派星变体，无证据时不产出请求。
+
+        命中数据表该段只有星超导/星扩散两个星变体行（元素量 0）；星烁输入
+        携带辉映基础系数，P6 基础增伤由伤害修饰 provider 在结算期产出词条。
+        非辉映口径（C1 追加段同款问题）待切片 3 定案，当前不产出伤害请求。
+        """
+
+        channel = self._stellar_channels.get(ODETTE_SPECIAL_END_IMPACT_KEY)
+        if channel is None:
+            return ()
+        stellar_spec = resolve_stellar_variant_spec(
+            channel,
+            simulation=context.simulation,
+            owner_ref=f"character:slot_{context.owner.slot}",
+            frame=context.frame,
+        )
+        if stellar_spec is None:
+            return ()
+        target_refs = tuple(target.target_id for target in context.target_refs)
+        if not target_refs:
+            return ()
+        return (
+            ImpactRequest(
+                frame=context.frame,
+                kind=ImpactKind.DAMAGE,
+                impact_key=context.impact_key,
+                owner_slot=context.owner.slot,
+                action_key=context.action_key,
+                source_impact_point_id=context.impact_point_id,
+                target_refs=target_refs,
+                params={
+                    "content_handler_key": ODETTE_CHARACTER_HANDLER_KEY,
+                    "odette": {
+                        "handler_key": ODETTE_CHARACTER_HANDLER_KEY,
+                        "source_impact_key": context.impact_key,
+                    },
+                },
+                damage_spec=replace(
+                    stellar_spec,
+                    impact_ref=f"{context.impact_point_id}:damage",
+                ),
             ),
         )

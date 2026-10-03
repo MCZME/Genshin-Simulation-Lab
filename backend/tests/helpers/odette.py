@@ -245,6 +245,27 @@ def minimal_odette_scaling_entries(
             ("plain_ratio", "plain_ratio"),
         ),
         ("skill", "elemental_skill", "技能伤害", ("plain_ratio",)),
+        ("dot", "elemental_skill", "破晓终奏持续伤害", ("plain_ratio",)),
+        (
+            "special_stellar",
+            "elemental_skill",
+            "破晓终奏星超导/星扩散伤害",
+            ("plain_ratio", "plain_ratio"),
+        ),
+        ("plume", "elemental_skill", "拂羽舞步伤害", ("plain_ratio",)),
+        (
+            "plume_stellar",
+            "elemental_skill",
+            "拂羽舞步星超导/星扩散伤害",
+            ("plain_ratio", "plain_ratio"),
+        ),
+        ("wing", "elemental_skill", "旋翼舞步伤害", ("plain_ratio",)),
+        (
+            "wing_stellar",
+            "elemental_skill",
+            "旋翼舞步星超导/星扩散伤害",
+            ("plain_ratio", "plain_ratio"),
+        ),
         ("burst_slash", "elemental_burst", "斩击伤害", ("plain_ratio",)),
         ("burst_final", "elemental_burst", "斩击最终段伤害", ("plain_ratio",)),
     )
@@ -332,3 +353,29 @@ def odette_damage_events(assembled) -> list:
     events: list = []
     assembled.context.events.subscribe(EventType.DAMAGE_RESOLVED, events.append)
     return events
+
+
+def apply_radiance_buff(assembled, *, settled_stacks: int = 3, frame: int = 0) -> None:
+    """按星超导协调的申请计划注入辉映·星烁 Buff（属性证据侧入口）。"""
+
+    from genshin_sim.core.coordination.elemental_reaction.stellar_buffs import (
+        plan_radiance_buff_requests,
+    )
+    from genshin_sim.core.systems.buff import BuffRuntime
+    from genshin_sim.core.systems.reaction.states import (
+        STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
+    )
+
+    runtime = assembled.context.get_system(BuffRuntime)
+    assert isinstance(runtime, BuffRuntime)
+    runtime.commit_prevalidated(
+        runtime.prepare_apply(
+            plan_radiance_buff_requests(
+                frame=frame,
+                occurrence_ref=f"integration:radiance:{frame}",
+                character_refs=(ODETTE_REF,),
+                settled_stacks=settled_stacks,
+                field_expires_at_frame=frame + STELLAR_CONDUCT_FIELD_LIFETIME_FRAMES,
+            )
+        )
+    )

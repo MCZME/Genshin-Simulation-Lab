@@ -75,6 +75,10 @@ ODETTE_NORMAL_ATTACK_4_IMPACT_KEY = f"{ODETTE_NORMAL_ATTACK_4_ACTION_KEY}.hit"
 ODETTE_NORMAL_ATTACK_5_IMPACT_KEY = f"{ODETTE_NORMAL_ATTACK_5_ACTION_KEY}.hit"
 ODETTE_CHARGED_ATTACK_IMPACT_KEY = f"{ODETTE_CHARGED_ATTACK_ACTION_KEY}.hit"
 ODETTE_ELEMENTAL_SKILL_IMPACT_KEY = f"{ODETTE_ELEMENTAL_SKILL_ACTION_KEY}.hit"
+ODETTE_SPECIAL_DOT_1_IMPACT_KEY = f"{ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY}.dot_1"
+ODETTE_SPECIAL_DOT_2_IMPACT_KEY = f"{ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY}.dot_2"
+ODETTE_SPECIAL_DOT_3_IMPACT_KEY = f"{ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY}.dot_3"
+ODETTE_SPECIAL_END_IMPACT_KEY = f"{ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY}.end"
 ODETTE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY = f"{ODETTE_ELEMENTAL_BURST_ACTION_KEY}.spend_energy"
 ODETTE_ELEMENTAL_BURST_SLASH_1_IMPACT_KEY = f"{ODETTE_ELEMENTAL_BURST_ACTION_KEY}.slash_1"
 ODETTE_ELEMENTAL_BURST_SLASH_2_IMPACT_KEY = f"{ODETTE_ELEMENTAL_BURST_ACTION_KEY}.slash_2"
@@ -82,6 +86,15 @@ ODETTE_ELEMENTAL_BURST_SLASH_3_IMPACT_KEY = f"{ODETTE_ELEMENTAL_BURST_ACTION_KEY
 ODETTE_ELEMENTAL_BURST_FINAL_IMPACT_KEY = f"{ODETTE_ELEMENTAL_BURST_ACTION_KEY}.final"
 ODETTE_PLUNGE_COLLISION_IMPACT_KEY = f"{ODETTE_PLUNGE_ACTION_KEY}.collision"
 ODETTE_PLUNGE_LANDING_IMPACT_KEY = f"{ODETTE_PLUNGE_ACTION_KEY}.landing"
+
+# 独舞倒影召唤创建影响点（E 命中帧与爆发第 1 帧各一个，展开为 CREATE_ENTITY）。
+ODETTE_SUMMON_CREATE_IMPACT_KEY = f"{ODETTE_CHARACTER_HANDLER_KEY}.summon.create"
+
+# 独舞倒影舞步影响键：请求由轮换 hook 产出（非动作影响点），键用于请求识别
+# 与产球/审计匹配。星变体（辉映下额外命中）与冰命中同帧同目标集合。
+ODETTE_DANCE_PLUME_IMPACT_KEY = f"{ODETTE_CHARACTER_HANDLER_KEY}.dance.plume"
+ODETTE_DANCE_WING_IMPACT_KEY = f"{ODETTE_CHARACTER_HANDLER_KEY}.dance.wing"
+ODETTE_PARTICLE_SPAWN_IMPACT_KEY = f"{ODETTE_CHARACTER_HANDLER_KEY}.particle.spawn"
 
 ODETTE_HIT_IMPACT_KEYS = (
     ODETTE_NORMAL_ATTACK_1_IMPACT_KEY,
@@ -92,6 +105,11 @@ ODETTE_HIT_IMPACT_KEYS = (
     ODETTE_NORMAL_ATTACK_5_IMPACT_KEY,
     ODETTE_CHARGED_ATTACK_IMPACT_KEY,
     ODETTE_ELEMENTAL_SKILL_IMPACT_KEY,
+    ODETTE_SPECIAL_DOT_1_IMPACT_KEY,
+    ODETTE_SPECIAL_DOT_2_IMPACT_KEY,
+    ODETTE_SPECIAL_DOT_3_IMPACT_KEY,
+    ODETTE_SPECIAL_END_IMPACT_KEY,
+    ODETTE_SUMMON_CREATE_IMPACT_KEY,
     ODETTE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY,
     ODETTE_ELEMENTAL_BURST_SLASH_1_IMPACT_KEY,
     ODETTE_ELEMENTAL_BURST_SLASH_2_IMPACT_KEY,
@@ -146,6 +164,55 @@ ODETTE_SPECIAL_SKILL_ICD_APPLICATION_SEQUENCE = (1, 0, 0, 0)
 
 # 奥黛塔为单手剑：下落攻击取单手剑通用资料（content/generic/plunge.py）。
 ODETTE_PLUNGE_ATTACK_DATA = PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE["sword"]
+
+# ---------------------------------------------------------------------------
+# 独舞倒影（召唤物）与轮换舞步。
+# 节奏参数取自维护者提供的 gcsim 动作帧数据（2026-10-03）：E 命中后 +134f
+# 首击；拂羽→旋翼 109f、旋翼→拂羽 125f 交替；特殊战施放 +114f 恢复攻击；
+# 爆发施放 +252f 首击，重召唤前已存在时保留拂羽/旋翼顺序。持续时间 20s 取
+# 资产倍率条目「独舞倒影持续时间」。位置固定于召唤点（位移要素不实现）。
+# ---------------------------------------------------------------------------
+ODETTE_DANCE_OBJECT_KEY = "odette.dance_reflection"
+ODETTE_DANCE_DURATION_FRAMES = 1200
+ODETTE_DANCE_FIRST_ATTACK_AFTER_E_HIT_FRAMES = 134
+ODETTE_DANCE_FIRST_ATTACK_AFTER_BURST_FRAMES = 252
+ODETTE_DANCE_RESUME_AFTER_SPECIAL_FRAMES = 114
+ODETTE_DANCE_PLUME_TO_WING_FRAMES = 109
+ODETTE_DANCE_WING_TO_PLUME_FRAMES = 125
+ODETTE_DANCE_STEP_PLUME = "plume"
+ODETTE_DANCE_STEP_WING = "wing"
+# 轮换状态字段（挂载于角色内容状态，与连段状态同段）：
+# next_attack_frame 为下次舞步攻击的绝对帧（0 = 轮换未激活）。
+ODETTE_STATE_SUMMON_NEXT_ATTACK_FRAME = "odette_summon_next_attack_frame"
+ODETTE_STATE_SUMMON_NEXT_STEP = "odette_summon_next_step"
+
+# 元素战技命中帧（E 动作影响点与轮换首击锚点共用）。
+ODETTE_ELEMENTAL_SKILL_HIT_FRAME = 23
+# 破晓终奏时间轴：共舞持续三段 11/20/28f，结束星烁段 62f（动画 76f）。
+ODETTE_SPECIAL_DOT_FRAMES = (11, 20, 28)
+ODETTE_SPECIAL_END_FRAME = 62
+# 爆发第 1 帧重召唤/刷新独舞倒影（与能量花费同帧）。
+ODETTE_ELEMENTAL_BURST_SUMMON_FRAME = 1
+
+# 命中数据表舞步行与破晓终奏行。舞步索敌「就近」由已实现的「分数」策略承载
+# （X/Z 就近、并列取稳定实体 id 较小者，sandrone 棱晶弹先例）。
+ODETTE_DANCE_SEARCH_RADIUS = 15.0
+
+# 产球（维护者提供的角色产球表）：战技技能伤害或破晓终奏持续命中触发，
+# 5 冰微粒 / 100% / 12s 判定冷却；与命中表「元素战技掉球」附加标签命中面一致。
+ODETTE_PARTICLE_TRIGGER_IMPACT_KEYS = (
+    ODETTE_ELEMENTAL_SKILL_IMPACT_KEY,
+    ODETTE_SPECIAL_DOT_1_IMPACT_KEY,
+    ODETTE_SPECIAL_DOT_2_IMPACT_KEY,
+    ODETTE_SPECIAL_DOT_3_IMPACT_KEY,
+)
+ODETTE_PARTICLE_ELEMENT = Element.CRYO
+ODETTE_PARTICLE_COUNT = 5
+ODETTE_PARTICLE_COOLDOWN_FRAMES = 720
+# 待确认：产球载体飞行延迟为占位值（sandrone 同款）。
+ODETTE_PARTICLE_TRAVEL_FRAMES = 30
+# 产球审计字段：最近一次产球的命中结算帧（0 = 尚未产球）。
+ODETTE_STATE_LAST_PARTICLE_FRAME = "odette_last_particle_frame"
 
 
 @dataclass(frozen=True, slots=True)
@@ -287,6 +354,48 @@ ODETTE_BURST_SLASH_2_HIT = OdetteHitData(
 ODETTE_BURST_SLASH_3_HIT = ODETTE_BURST_SLASH_2_HIT
 ODETTE_BURST_FINAL_HIT = ODETTE_BURST_SLASH_2_HIT
 
+# 破晓终奏持续段（命中数据表「元素战技 破晓终奏持续」行）：专属衰减序列
+# 「奥黛塔元素战技」；「元素战技掉球，破晓终奏持续」附加标签与产球表触发面
+# 一致（见下方产球常量）。
+ODETTE_SPECIAL_DOT_HIT = OdetteHitData(
+    main_attack_tag="元素战技",
+    strike_type=StrikeType.DEFAULT,
+    range_type="远程",
+    aoe_shape="圆柱",
+    aoe_radius=4.2,
+    aoe_length=0.0,
+    aoe_width=0.0,
+    aoe_offset=Vector3(0.0, 0.0, 0.5),
+    icd_tag_key=ODETTE_SPECIAL_SKILL_ICD_SEQUENCE_KEY,
+    icd_sequence_key=ODETTE_SPECIAL_SKILL_ICD_SEQUENCE_KEY,
+    additional_attack_tags=("元素战技掉球", "破晓终奏持续"),
+)
+# 舞步冰命中（命中数据表「元素战技 拂羽舞步 / 旋翼舞步」行）：无衰减序列
+# （ICD 表无标签/无冷却，逐次独立附着）；星变体（辉映下额外命中）由
+# stellar.py 按星超导冰/星扩散冰标签编译，元素量 0、不参与附着。
+ODETTE_DANCE_PLUME_HIT = OdetteHitData(
+    main_attack_tag="元素战技",
+    strike_type=StrikeType.DEFAULT,
+    range_type="远程",
+    aoe_shape="圆柱",
+    aoe_radius=4.0,
+    aoe_length=0.0,
+    aoe_width=0.0,
+    aoe_offset=Vector3(0.0, 0.0, 0.0),
+    icd_tag_key=None,
+)
+ODETTE_DANCE_WING_HIT = OdetteHitData(
+    main_attack_tag="元素战技",
+    strike_type=StrikeType.DEFAULT,
+    range_type="远程",
+    aoe_shape="圆柱",
+    aoe_radius=4.0,
+    aoe_length=0.0,
+    aoe_width=0.0,
+    aoe_offset=Vector3(0.0, 0.0, 1.0),
+    icd_tag_key=None,
+)
+
 # 普攻编译计划：倍率条目按 (talent_key, label, 分量序号) 取值；三段伤害条目
 # 自带 3A/3B 两个分量。
 ODETTE_NORMAL_ATTACK_DAMAGE_PLANS = (
@@ -418,9 +527,19 @@ ODETTE_ACTION_TABLE: dict[str, TimedActionSpec] = {
     ODETTE_ELEMENTAL_SKILL_ACTION_KEY: TimedActionSpec(
         action_key=ODETTE_ELEMENTAL_SKILL_ACTION_KEY,
         duration_frames=42,
-        hit_frame=23,
-        impact_key=ODETTE_ELEMENTAL_SKILL_IMPACT_KEY,
-        targeting=ODETTE_TARGETING_SKILL,
+        impact_points=(
+            # 命中与召唤同帧（23f）：独舞倒影随技能伤害一同出现，轮换首击
+            # 锚点为「命中后 +134f」（见 actions.py 解释器）。
+            TimedImpactPointSpec(
+                impact_key=ODETTE_ELEMENTAL_SKILL_IMPACT_KEY,
+                frame=ODETTE_ELEMENTAL_SKILL_HIT_FRAME,
+                targeting=ODETTE_TARGETING_SKILL,
+            ),
+            TimedImpactPointSpec(
+                impact_key=ODETTE_SUMMON_CREATE_IMPACT_KEY,
+                frame=ODETTE_ELEMENTAL_SKILL_HIT_FRAME,
+            ),
+        ),
         cooldown_start_frame=1,
         cooldown_ability_key=ODETTE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
         transitions={
@@ -431,11 +550,34 @@ ODETTE_ACTION_TABLE: dict[str, TimedActionSpec] = {
             JUMP_INPUT: 42,
         },
     ),
-    # 柔板·破晓终奏：伤害时间轴（DoT 11/20/28f、终结 62f）随独舞倒影召唤物
-    # 在后续切片接入；本切片先落动作存续、独立冷却与取消窗口。
+    # 柔板·破晓终奏：共舞持续冰伤与结束星烁段已随本切片接入（见影响点）。
     ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY: TimedActionSpec(
         action_key=ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY,
         duration_frames=76,
+        impact_points=(
+            # 共舞持续三段（11/20/28f）+ 结束星烁段（62f）。结束段的星变体
+            # 由影响工厂按辉映证据分派（见 impacts.py / stellar.py）。
+            TimedImpactPointSpec(
+                impact_key=ODETTE_SPECIAL_DOT_1_IMPACT_KEY,
+                frame=ODETTE_SPECIAL_DOT_FRAMES[0],
+                targeting=ODETTE_TARGETING_SKILL,
+            ),
+            TimedImpactPointSpec(
+                impact_key=ODETTE_SPECIAL_DOT_2_IMPACT_KEY,
+                frame=ODETTE_SPECIAL_DOT_FRAMES[1],
+                targeting=ODETTE_TARGETING_SKILL,
+            ),
+            TimedImpactPointSpec(
+                impact_key=ODETTE_SPECIAL_DOT_3_IMPACT_KEY,
+                frame=ODETTE_SPECIAL_DOT_FRAMES[2],
+                targeting=ODETTE_TARGETING_SKILL,
+            ),
+            TimedImpactPointSpec(
+                impact_key=ODETTE_SPECIAL_END_IMPACT_KEY,
+                frame=ODETTE_SPECIAL_END_FRAME,
+                targeting=ODETTE_TARGETING_SKILL,
+            ),
+        ),
         cooldown_start_frame=1,
         cooldown_ability_key=ODETTE_SPECIAL_SKILL_COOLDOWN_ABILITY_KEY,
         transitions={
@@ -453,6 +595,10 @@ ODETTE_ACTION_TABLE: dict[str, TimedActionSpec] = {
             TimedImpactPointSpec(
                 impact_key=ODETTE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY,
                 frame=1,
+            ),
+            TimedImpactPointSpec(
+                impact_key=ODETTE_SUMMON_CREATE_IMPACT_KEY,
+                frame=ODETTE_ELEMENTAL_BURST_SUMMON_FRAME,
             ),
             TimedImpactPointSpec(
                 impact_key=ODETTE_ELEMENTAL_BURST_SLASH_1_IMPACT_KEY,

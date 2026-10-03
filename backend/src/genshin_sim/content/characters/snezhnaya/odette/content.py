@@ -14,30 +14,41 @@ from genshin_sim.content.characters.snezhnaya.odette.actions import (
     OdetteActionInterpreter,
     create_odette_actions,
 )
+from genshin_sim.content.characters.snezhnaya.odette.dance import OdetteDanceHook
 from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_CHARACTER_HANDLER_KEY,
     ODETTE_CHARGED_ATTACK_IMPACT_KEY,
     ODETTE_CONTENT_VERSION,
+    ODETTE_DANCE_STEP_PLUME,
+    ODETTE_DANCE_STEP_WING,
     ODETTE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
     ODETTE_ELEMENTAL_BURST_COOLDOWN_FRAMES,
     ODETTE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
     ODETTE_ELEMENTAL_SKILL_COOLDOWN_FRAMES,
     ODETTE_ELEMENTAL_SKILL_IMPACT_KEY,
     ODETTE_HIT_IMPACT_KEYS,
+    ODETTE_SPECIAL_END_IMPACT_KEY,
     ODETTE_SPECIAL_SKILL_COOLDOWN_ABILITY_KEY,
     ODETTE_SPECIAL_SKILL_COOLDOWN_FRAMES,
     ODETTE_SPECIAL_SKILL_ICD_APPLICATION_SEQUENCE,
     ODETTE_SPECIAL_SKILL_ICD_RESET_FRAMES,
     ODETTE_SPECIAL_SKILL_ICD_SEQUENCE_KEY,
+    ODETTE_STATE_LAST_PARTICLE_FRAME,
     ODETTE_STATE_SKILL_WINDOW_ANCHOR_FRAME,
+    ODETTE_STATE_SUMMON_NEXT_ATTACK_FRAME,
+    ODETTE_STATE_SUMMON_NEXT_STEP,
 )
+from genshin_sim.content.characters.snezhnaya.odette.hooks import OdetteParticleHook
 from genshin_sim.content.characters.snezhnaya.odette.impacts import (
     OdetteActionImpactFactory,
     compile_charged_attack_damage_spec,
+    compile_dance_damage_specs,
     compile_elemental_burst_damage_specs,
     compile_elemental_skill_damage_spec,
     compile_normal_attack_damage_specs,
     compile_plunge_damage_specs,
+    compile_special_dot_damage_specs,
+    compile_stellar_channels,
 )
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
@@ -74,7 +85,7 @@ from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
 
 
 def odette_state_schema(owner_ref: str) -> StateSchema:
-    """连段状态 + 特殊战技窗口锚点的合并状态 schema。"""
+    """连段状态 + 特殊战技窗口锚点 + 独舞倒影轮换 + 产球审计的合并 schema。"""
 
     chain = chain_state_schema(owner_ref)
     return StateSchema(
@@ -83,6 +94,24 @@ def odette_state_schema(owner_ref: str) -> StateSchema:
             *tuple(chain.fields),
             StateField(
                 name=ODETTE_STATE_SKILL_WINDOW_ANCHOR_FRAME,
+                field_type=StateFieldType.INT,
+                default=0,
+                non_negative=True,
+            ),
+            StateField(
+                name=ODETTE_STATE_SUMMON_NEXT_ATTACK_FRAME,
+                field_type=StateFieldType.INT,
+                default=0,
+                non_negative=True,
+            ),
+            StateField(
+                name=ODETTE_STATE_SUMMON_NEXT_STEP,
+                field_type=StateFieldType.ENUM,
+                default=ODETTE_DANCE_STEP_PLUME,
+                allowed_values=(ODETTE_DANCE_STEP_PLUME, ODETTE_DANCE_STEP_WING),
+            ),
+            StateField(
+                name=ODETTE_STATE_LAST_PARTICLE_FRAME,
                 field_type=StateFieldType.INT,
                 default=0,
                 non_negative=True,
@@ -127,6 +156,23 @@ def create_odette_content_unit(
         skill_talent_level,
     )
     damage_specs.update(
+        compile_special_dot_damage_specs(
+            request.character_key,
+            entries_by_key,
+            skill_talent_level,
+        )
+    )
+    stellar_channels = compile_stellar_channels(
+        request.character_key,
+        entries_by_key,
+        skill_talent_level,
+    )
+    dance_cryo_specs = compile_dance_damage_specs(
+        request.character_key,
+        entries_by_key,
+        skill_talent_level,
+    )
+    damage_specs.update(
         compile_elemental_burst_damage_specs(
             request.character_key,
             entries_by_key,
@@ -140,8 +186,22 @@ def create_odette_content_unit(
             talent_level,
         )
     )
-    impact_factory = OdetteActionImpactFactory(damage_specs)
+    impact_factory = OdetteActionImpactFactory(
+        damage_specs,
+        stellar_channels={
+            ODETTE_SPECIAL_END_IMPACT_KEY: stellar_channels[ODETTE_SPECIAL_END_IMPACT_KEY],
+        },
+    )
     owner_ref = f"character:slot_{request.slot}"
+    dance_hook = OdetteDanceHook(
+        owner_ref=owner_ref,
+        slot=request.slot,
+        cryo_specs=dance_cryo_specs,
+        stellar_channels={
+            ODETTE_DANCE_STEP_PLUME: stellar_channels[ODETTE_DANCE_STEP_PLUME],
+            ODETTE_DANCE_STEP_WING: stellar_channels[ODETTE_DANCE_STEP_WING],
+        },
+    )
     cooldown_terms_by_ability = _cooldown_terms_for_actions(request)
     skill_cooldown_definition = CooldownDefinition(
         key=CooldownKey(
@@ -191,17 +251,22 @@ def create_odette_content_unit(
         ),
         state_schema=odette_state_schema(owner_ref),
         impact_factories={
-            # 爆发能量花费影响点由工厂的 ENERGY 分支处理，与伤害影响点共用工厂。
+            # 爆发能量花费/召唤创建影响点由工厂的 ENERGY/CREATE 分支处理，
+            # 与伤害影响点共用工厂。
             key: impact_factory
             for key in ODETTE_HIT_IMPACT_KEYS
         },
+        event_hooks=(
+            dance_hook,
+            OdetteParticleHook(owner_ref=owner_ref, slot=request.slot),
+        ),
         cooldown_definitions=(
             skill_cooldown_definition,
             special_skill_cooldown_definition,
             burst_cooldown_definition,
         ),
-        # 破晓终奏持续段的专属衰减序列（重置时限 3s、序列 1,0,0,0）；持续段
-        # 命中在后续切片接入时消费。
+        # 破晓终奏持续段的专属衰减序列（重置时限 3s、序列 1,0,0,0），由
+        # DoT 三段命中消费。
         aura_icd_definitions=(
             IcdDefinition(
                 sequence_key=ODETTE_SPECIAL_SKILL_ICD_SEQUENCE_KEY,
@@ -220,7 +285,7 @@ def create_odette_content_unit(
             STELLAR_CONDUCT_CAPABILITY_KEY,
             STELLAR_SWIRL_CAPABILITY_KEY,
         ),
-        metadata={"purpose": "odette_content_skeleton"},
+        metadata={"purpose": "odette_content_basic_kit_and_summon"},
     )
 
 

@@ -23,10 +23,17 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_ACTION_TABLE,
     ODETTE_CHARACTER_HANDLER_KEY,
     ODETTE_CHARGED_ATTACK_ACTION_KEY,
+    ODETTE_DANCE_FIRST_ATTACK_AFTER_BURST_FRAMES,
+    ODETTE_DANCE_FIRST_ATTACK_AFTER_E_HIT_FRAMES,
+    ODETTE_DANCE_OBJECT_KEY,
+    ODETTE_DANCE_RESUME_AFTER_SPECIAL_FRAMES,
+    ODETTE_DANCE_STEP_PLUME,
+    ODETTE_DANCE_STEP_WING,
     ODETTE_ELEMENTAL_BURST_ACTION_KEY,
     ODETTE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
     ODETTE_ELEMENTAL_SKILL_ACTION_KEY,
     ODETTE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
+    ODETTE_ELEMENTAL_SKILL_HIT_FRAME,
     ODETTE_JUMP_ACTION_KEY,
     ODETTE_NORMAL_ATTACK_ACTION_KEYS,
     ODETTE_PLUNGE_ACTION_KEY,
@@ -36,6 +43,8 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_SPECIAL_SKILL_COOLDOWN_ABILITY_KEY,
     ODETTE_SPECIAL_WINDOW_FRAMES,
     ODETTE_STATE_SKILL_WINDOW_ANCHOR_FRAME,
+    ODETTE_STATE_SUMMON_NEXT_ATTACK_FRAME,
+    ODETTE_STATE_SUMMON_NEXT_STEP,
 )
 from genshin_sim.content.generic.chain_state import (
     CHAIN_STATE_LAST_ACTION_KEY,
@@ -179,6 +188,7 @@ class OdetteActionInterpreter:
             session_id=session.session_id,
             action=action,
             start_frame=session.release_frame,
+            slot=slot,
             arm_special_window=(
                 input_kind in (ELEMENTAL_SKILL_INPUT, ELEMENTAL_BURST_INPUT)
                 and action.action_key != ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY
@@ -314,6 +324,7 @@ class OdetteActionInterpreter:
         session_id: int,
         action: TimedActionSpec,
         start_frame: int,
+        slot: int,
         arm_special_window: bool,
     ) -> None:
         queue = cast(IntentQueue | None, context.get_system(IntentQueue))
@@ -325,6 +336,7 @@ class OdetteActionInterpreter:
         }
         if arm_special_window:
             fields[ODETTE_STATE_SKILL_WINDOW_ANCHOR_FRAME] = frame
+        self._apply_summon_schedule(context, action, start_frame, slot, fields)
         queue.enqueue(
             IntentEnvelope(
                 intent_id=f"odette_state:{owner_ref}:{session_id}:{frame}",
@@ -340,6 +352,70 @@ class OdetteActionInterpreter:
                 ),
             )
         )
+
+    def _apply_summon_schedule(
+        self,
+        context: SimulationContext,
+        action: TimedActionSpec,
+        start_frame: int,
+        slot: int,
+        fields: dict[str, JSONValue],
+    ) -> None:
+        """E/Q/特殊战技施放帧重排独舞倒影轮换（见 dance.py 节奏约定）。
+
+        E：召唤随命中帧出现，首击 = 命中帧 +134，舞步从拂羽重开（重复施放
+        文本为「重新召唤」）；Q：施放 +252f 首击，重召唤前召唤物已存在时
+        保留拂羽/旋翼顺序；特殊战技：施放 +114f 恢复攻击，不改变舞步顺序。
+        """
+
+        if action.action_key == ODETTE_ELEMENTAL_SKILL_ACTION_KEY:
+            fields[ODETTE_STATE_SUMMON_NEXT_ATTACK_FRAME] = (
+                start_frame
+                + ODETTE_ELEMENTAL_SKILL_HIT_FRAME
+                + ODETTE_DANCE_FIRST_ATTACK_AFTER_E_HIT_FRAMES
+            )
+            fields[ODETTE_STATE_SUMMON_NEXT_STEP] = ODETTE_DANCE_STEP_PLUME
+            return
+        if action.action_key == ODETTE_ELEMENTAL_BURST_ACTION_KEY:
+            fields[ODETTE_STATE_SUMMON_NEXT_ATTACK_FRAME] = (
+                start_frame + ODETTE_DANCE_FIRST_ATTACK_AFTER_BURST_FRAMES
+            )
+            fields[ODETTE_STATE_SUMMON_NEXT_STEP] = (
+                self._current_summon_step(context, slot)
+                if self._summon_active(context, slot, start_frame)
+                else ODETTE_DANCE_STEP_PLUME
+            )
+            return
+        if action.action_key == ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY:
+            fields[ODETTE_STATE_SUMMON_NEXT_ATTACK_FRAME] = (
+                start_frame + ODETTE_DANCE_RESUME_AFTER_SPECIAL_FRAMES
+            )
+
+    def _summon_active(self, context: SimulationContext, slot: int, frame: int) -> bool:
+        space_runtime = context.space_runtime
+        if space_runtime is None:
+            return False
+        owner_key = f"character:slot_{slot}"
+        return any(
+            obj.object_key == ODETTE_DANCE_OBJECT_KEY
+            and obj.entity.owner_key == owner_key
+            and obj.is_active_at(frame)
+            for obj in space_runtime.created_object_runtime.objects
+        )
+
+    def _current_summon_step(self, context: SimulationContext, slot: int) -> str:
+        try:
+            mount = resolve_mount(
+                context,
+                slot=slot,
+                state_key=ODETTE_CHARACTER_HANDLER_KEY,
+            )
+        except StateContainerNotFoundError:
+            return ODETTE_DANCE_STEP_PLUME
+        raw_step = mount.values.get(ODETTE_STATE_SUMMON_NEXT_STEP)
+        if raw_step in (ODETTE_DANCE_STEP_PLUME, ODETTE_DANCE_STEP_WING):
+            return raw_step
+        return ODETTE_DANCE_STEP_PLUME
 
     def _transition_rejection(
         self,

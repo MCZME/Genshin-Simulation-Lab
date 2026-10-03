@@ -53,6 +53,11 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_SUMMON_CREATE_IMPACT_KEY,
     OdetteHitData,
 )
+from genshin_sim.content.characters.snezhnaya.odette.splendor import (
+    OdetteSplendorError,
+    SplendorGrantConfig,
+    summon_grant_requests,
+)
 from genshin_sim.content.characters.snezhnaya.odette.stellar import (
     OdetteStellarChannel,
     compile_stellar_channel,
@@ -523,9 +528,11 @@ class OdetteActionImpactFactory:
         damage_specs: Mapping[str, DamageImpactSpec],
         *,
         stellar_channels: Mapping[str, OdetteStellarChannel] | None = None,
+        splendor_grant: SplendorGrantConfig | None = None,
     ) -> None:
         self._damage_specs = dict(damage_specs)
         self._stellar_channels = dict(stellar_channels or {})
+        self._splendor_grant = splendor_grant
 
     def create_requests(self, context: ActionImpactContext) -> tuple[ImpactRequest, ...]:
         params: dict[str, object] = {
@@ -536,7 +543,19 @@ class OdetteActionImpactFactory:
             },
         }
         if context.impact_key == ODETTE_SUMMON_CREATE_IMPACT_KEY:
-            return (self._summon_create_request(context),)
+            # 华彩发放随召唤创建同帧展开：先清除全部持有者的旧华彩（重新
+            # 召唤语义，对未持层目标是无操作），再创建召唤物、授予新层。
+            if self._splendor_grant is None:
+                return (self._summon_create_request(context),)
+            owner_slot = context.owner.slot
+            if owner_slot is None:
+                raise OdetteSplendorError("奥黛塔召唤缺少角色归属槽位，无法展开华彩发放")
+            reset, grant = summon_grant_requests(
+                context,
+                self._splendor_grant,
+                slot=owner_slot,
+            )
+            return (reset, self._summon_create_request(context), grant)
         if context.impact_key == ODETTE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY:
             return (
                 ImpactRequest(

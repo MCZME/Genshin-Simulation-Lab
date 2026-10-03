@@ -214,6 +214,42 @@ ODETTE_PARTICLE_TRAVEL_FRAMES = 30
 # 产球审计字段：最近一次产球的命中结算帧（0 = 尚未产球）。
 ODETTE_STATE_LAST_PARTICLE_FRAME = "odette_last_particle_frame"
 
+# ---------------------------------------------------------------------------
+# 华彩（P4 获选者的春祭）：召唤独舞倒影时获得层数 Buff，每层使持有者星烁
+# 反应伤害提升（率取资产 dictionary N11500003 props[0] = 0.15，效果行未携带，
+# 按桑多涅 data.py 机器常量先例承载并注明出处）；奥黛塔处于队伍后台时每秒
+# 清除 1 层并转交给队伍中附近的其他角色（附近简化为全部其他队伍角色：仿真
+# 不建模后台角色位置）。持续至独舞倒影退场或重新召唤（Buff 期限对齐召唤物
+# 剩余时间实现）。后台 tick 59.25f 平均以 59/60 帧交替承载（gcsim 动作帧
+# 数据，2026-10-03）。
+# ---------------------------------------------------------------------------
+ODETTE_SPLENDOR_BUFF_MECHANIC_KEY = "odette.p4.splendor"
+
+
+# 定义键按奥黛塔槽位区分（sandrone 改进战术先例）；冲突键与定义键同值，
+# 同主体多条申请收敛于单条记录，不同主体各自持层互不冲突。
+def odette_splendor_definition_key(slot: int) -> str:
+    """华彩 Buff 的定义键（与冲突键同值）。"""
+
+    return f"{ODETTE_SPLENDOR_BUFF_MECHANIC_KEY}.slot:{slot}"
+
+
+# Buff 词条键：C2（每层华彩再 +7% 攻击力）解锁时随定义携带的攻击力词条，
+# 申请值取 C2 行分量、模板按 LINEAR 逐层缩放；C2 未解锁时定义为纯层数载体。
+ODETTE_SPLENDOR_ATK_TERM_KEY = "odette.splendor.atk_percent"
+ODETTE_SPLENDOR_REACTION_BONUS_PER_STACK = 0.15
+# 层数上限为实现边界：C1 清速（2 层/秒）下单次召唤周期（1200f / 59f ≈ 21 tick
+# × 2 层 ≈ 41 层）内可转交层数的宽松覆盖，非游戏数值；发放层数（4/6）远低于此。
+ODETTE_SPLENDOR_MAX_STACKS = 48
+# 后台 tick 整数帧交替序列（平均 59.25f）：59 起步、59/60 交替。
+ODETTE_SPLENDOR_TICK_INTERVALS = (59, 60)
+# 转交/衰减的 Buff 申请期限跟随召唤物剩余时间；无法解析召唤物时 tick 跳过。
+ODETTE_STATE_SPLENDOR_NEXT_TICK_FRAME = "odette_splendor_next_tick_frame"
+ODETTE_STATE_SPLENDOR_TICK_PARITY = "odette_splendor_tick_parity"
+# 发放（重召唤重置 + 授层）与后台衰减/转交的影响请求审计键。
+ODETTE_SPLENDOR_GRANT_IMPACT_KEY = f"{ODETTE_CHARACTER_HANDLER_KEY}.splendor.grant"
+ODETTE_SPLENDOR_DECAY_IMPACT_KEY = f"{ODETTE_CHARACTER_HANDLER_KEY}.splendor.decay"
+
 
 @dataclass(frozen=True, slots=True)
 class OdetteHitData:

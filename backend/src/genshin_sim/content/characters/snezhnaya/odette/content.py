@@ -19,6 +19,7 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_CHARACTER_HANDLER_KEY,
     ODETTE_CHARGED_ATTACK_IMPACT_KEY,
     ODETTE_CONTENT_VERSION,
+    ODETTE_DANCE_DURATION_FRAMES,
     ODETTE_DANCE_STEP_PLUME,
     ODETTE_DANCE_STEP_WING,
     ODETTE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
@@ -33,10 +34,19 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_SPECIAL_SKILL_ICD_APPLICATION_SEQUENCE,
     ODETTE_SPECIAL_SKILL_ICD_RESET_FRAMES,
     ODETTE_SPECIAL_SKILL_ICD_SEQUENCE_KEY,
+    ODETTE_SPLENDOR_ATK_TERM_KEY,
     ODETTE_STATE_LAST_PARTICLE_FRAME,
     ODETTE_STATE_SKILL_WINDOW_ANCHOR_FRAME,
+    ODETTE_STATE_SPLENDOR_NEXT_TICK_FRAME,
+    ODETTE_STATE_SPLENDOR_TICK_PARITY,
     ODETTE_STATE_SUMMON_NEXT_ATTACK_FRAME,
     ODETTE_STATE_SUMMON_NEXT_STEP,
+    odette_splendor_definition_key,
+)
+from genshin_sim.content.characters.snezhnaya.odette.effects import (
+    read_c1_splendor_values,
+    read_c2_atk_per_stack,
+    read_p4_splendor_values,
 )
 from genshin_sim.content.characters.snezhnaya.odette.hooks import OdetteParticleHook
 from genshin_sim.content.characters.snezhnaya.odette.impacts import (
@@ -49,6 +59,10 @@ from genshin_sim.content.characters.snezhnaya.odette.impacts import (
     compile_plunge_damage_specs,
     compile_special_dot_damage_specs,
     compile_stellar_channels,
+)
+from genshin_sim.content.characters.snezhnaya.odette.splendor import (
+    OdetteSplendorDecayHook,
+    SplendorGrantConfig,
 )
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
@@ -112,6 +126,18 @@ def odette_state_schema(owner_ref: str) -> StateSchema:
             ),
             StateField(
                 name=ODETTE_STATE_LAST_PARTICLE_FRAME,
+                field_type=StateFieldType.INT,
+                default=0,
+                non_negative=True,
+            ),
+            StateField(
+                name=ODETTE_STATE_SPLENDOR_NEXT_TICK_FRAME,
+                field_type=StateFieldType.INT,
+                default=0,
+                non_negative=True,
+            ),
+            StateField(
+                name=ODETTE_STATE_SPLENDOR_TICK_PARITY,
                 field_type=StateFieldType.INT,
                 default=0,
                 non_negative=True,
@@ -186,13 +212,60 @@ def create_odette_content_unit(
             talent_level,
         )
     )
+    # P4 获选者的春祭（华彩）：突破 1 阶解锁；发放层数取 P4 行，C1 强化
+    # （额外叠层 + 后台清除提速）与 C6 强化（转交不减层）按命座取值接入，
+    # C2 攻击力词条值随发放/转交申请携带（Buff 定义由 P4 效果单元按命座
+    # 门控编译，两侧必须一致）。已解锁却缺效果行时直接失败，不静默回落。
+    owner_ref = f"character:slot_{request.slot}"
+    splendor_grant_config: SplendorGrantConfig | None = None
+    splendor_hook: OdetteSplendorDecayHook | None = None
+    if request.ascension_phase >= 1:
+        p4_params = request.effect_params.get("passive:4")
+        if p4_params is None:
+            raise ContentUnitValidationError("P4 已解锁但缺少资产效果行：passive:4")
+        grant_stacks = read_p4_splendor_values(p4_params)
+        layers_per_tick = 1
+        keep_own_stacks = False
+        if request.constellation >= 1:
+            c1_params = request.effect_params.get("c1")
+            if c1_params is None:
+                raise ContentUnitValidationError("C1 已解锁但缺少资产效果行：c1")
+            extra_stacks, layers_per_tick = read_c1_splendor_values(c1_params)
+            grant_stacks += extra_stacks
+        splendor_modifier_values: tuple[dict[str, object], ...] = ()
+        if request.constellation >= 2:
+            c2_params = request.effect_params.get("c2")
+            if c2_params is None:
+                raise ContentUnitValidationError("C2 已解锁但缺少资产效果行：c2")
+            splendor_modifier_values = (
+                {
+                    "term_key": ODETTE_SPLENDOR_ATK_TERM_KEY,
+                    "value": read_c2_atk_per_stack(c2_params),
+                },
+            )
+        keep_own_stacks = request.constellation >= 6
+        splendor_definition_key = odette_splendor_definition_key(request.slot)
+        splendor_grant_config = SplendorGrantConfig(
+            definition_key=splendor_definition_key,
+            grant_stacks=grant_stacks,
+            duration_frames=ODETTE_DANCE_DURATION_FRAMES,
+            modifier_values=splendor_modifier_values,
+        )
+        splendor_hook = OdetteSplendorDecayHook(
+            owner_ref=owner_ref,
+            slot=request.slot,
+            definition_key=splendor_definition_key,
+            layers_per_tick=layers_per_tick,
+            keep_own_stacks=keep_own_stacks,
+            modifier_values=splendor_modifier_values,
+        )
     impact_factory = OdetteActionImpactFactory(
         damage_specs,
         stellar_channels={
             ODETTE_SPECIAL_END_IMPACT_KEY: stellar_channels[ODETTE_SPECIAL_END_IMPACT_KEY],
         },
+        splendor_grant=splendor_grant_config,
     )
-    owner_ref = f"character:slot_{request.slot}"
     dance_hook = OdetteDanceHook(
         owner_ref=owner_ref,
         slot=request.slot,
@@ -202,6 +275,9 @@ def create_odette_content_unit(
             ODETTE_DANCE_STEP_WING: stellar_channels[ODETTE_DANCE_STEP_WING],
         },
     )
+    event_hooks: tuple = (dance_hook,)
+    if splendor_hook is not None:
+        event_hooks += (splendor_hook,)
     cooldown_terms_by_ability = _cooldown_terms_for_actions(request)
     skill_cooldown_definition = CooldownDefinition(
         key=CooldownKey(
@@ -257,7 +333,7 @@ def create_odette_content_unit(
             for key in ODETTE_HIT_IMPACT_KEYS
         },
         event_hooks=(
-            dance_hook,
+            *event_hooks,
             OdetteParticleHook(owner_ref=owner_ref, slot=request.slot),
         ),
         cooldown_definitions=(

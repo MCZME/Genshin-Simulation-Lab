@@ -57,7 +57,9 @@ from genshin_sim.content.characters.snezhnaya.odette import (
     ODETTE_PASSIVE_P5_HANDLER_KEY,
     ODETTE_PASSIVE_P6_HANDLER_KEY,
     ODETTE_PASSIVE_P8_HANDLER_KEY,
+    create_odette_constellation_c6,
     create_odette_content_unit,
+    create_odette_passive_p4,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone import (
     SANDRONE_CHARACTER_HANDLER_KEY,
@@ -312,18 +314,27 @@ def create_default_content_unit_registry(
         registry.register_effect_factory(handler_key, factory)
     # P8 生活天赋：不参与仿真，注册空实现。
     registry.register_empty_effect_handler(SANDRONE_PASSIVE_P8_HANDLER_KEY)
-    # 奥黛塔效果行：被动/命座行为按切片落地（P4 华彩、P5/P6、C1/C2/C4/C6、
-    # C3/C5 天赋等级提升），先注册 UNIMPLEMENTED 占位；P8 生活天赋为空实现。
-    for handler_key in (
+    # 奥黛塔效果行：P4 华彩与 C6 擢升已随切片 4 落地（注册真工厂）；C2 的
+    # 「每层华彩再 +7% 攻击力」编译为华彩 Buff 自身的攻击力词条（P4 工厂按
+    # 命座门控携带，见 effects.py），效果行本身注册空实现；其余行为按切片
+    # 落地（P5/P6、C1/C3/C4/C5），先注册 UNIMPLEMENTED 占位；P8 生活天赋为
+    # 空实现。
+    registry.register_effect_factory(
         ODETTE_PASSIVE_P4_HANDLER_KEY,
+        create_odette_passive_p4,
+    )
+    registry.register_effect_factory(
+        ODETTE_CONSTELLATION_C6_HANDLER_KEY,
+        create_odette_constellation_c6,
+    )
+    registry.register_empty_effect_handler(ODETTE_CONSTELLATION_C2_HANDLER_KEY)
+    for handler_key in (
         ODETTE_PASSIVE_P5_HANDLER_KEY,
         ODETTE_PASSIVE_P6_HANDLER_KEY,
         ODETTE_CONSTELLATION_C1_HANDLER_KEY,
-        ODETTE_CONSTELLATION_C2_HANDLER_KEY,
         ODETTE_CONSTELLATION_C3_HANDLER_KEY,
         ODETTE_CONSTELLATION_C4_HANDLER_KEY,
         ODETTE_CONSTELLATION_C5_HANDLER_KEY,
-        ODETTE_CONSTELLATION_C6_HANDLER_KEY,
     ):
         registry.register_unimplemented_effect_handler(handler_key)
     registry.register_empty_effect_handler(ODETTE_PASSIVE_P8_HANDLER_KEY)

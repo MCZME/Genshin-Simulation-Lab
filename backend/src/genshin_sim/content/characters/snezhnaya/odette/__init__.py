@@ -21,6 +21,10 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_PASSIVE_P6_HANDLER_KEY,
     ODETTE_PASSIVE_P8_HANDLER_KEY,
 )
+from genshin_sim.content.characters.snezhnaya.odette.effects import (
+    create_odette_constellation_c6,
+    create_odette_passive_p4,
+)
 
 __all__ = [
     "ODETTE_CHARACTER_HANDLER_KEY",
@@ -34,5 +38,7 @@ __all__ = [
     "ODETTE_PASSIVE_P5_HANDLER_KEY",
     "ODETTE_PASSIVE_P6_HANDLER_KEY",
     "ODETTE_PASSIVE_P8_HANDLER_KEY",
+    "create_odette_constellation_c6",
     "create_odette_content_unit",
+    "create_odette_passive_p4",
 ]

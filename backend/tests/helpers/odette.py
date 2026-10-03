@@ -23,6 +23,16 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_PASSIVE_P6_HANDLER_KEY,
     ODETTE_PASSIVE_P8_HANDLER_KEY,
 )
+from genshin_sim.content.definitions.content_unit import (
+    ContentUnit,
+    ContentUnitOwnerType,
+)
+from genshin_sim.content.registries import CharacterContentUnitRequest
+from genshin_sim.core.actions import (
+    ActionInterpretationContext,
+    ActionInterpretationResult,
+    InputSessionView,
+)
 from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.events import EventType
@@ -44,20 +54,67 @@ from genshin_sim.infrastructure.assets_sqlite import (
 ODETTE_CHARACTER_KEY = "character:odette_test"
 ODETTE_REF = AttributeSubjectRef.character("character:slot_1")
 
+# 陪测角色（华彩转交等多角色队伍用例）的测试 handler 键。动作输入校验要求
+# 全部队伍槽位都提供动作解释器，内置 noop 占位不带解释器，因此陪测角色必须
+# 单独注册内容单元工厂。
+ODETTE_COMPANION_HANDLER_KEY = "character.testing.odette_companion_noop"
+
+
+class OdetteCompanionActionInterpreter:
+    """陪测角色动作解释器：始终等待，不产生任何动作。"""
+
+    supported_action_keys: tuple[str, ...] = ()
+
+    def interpret(
+        self,
+        context: ActionInterpretationContext,
+        session: InputSessionView,
+    ) -> ActionInterpretationResult:
+        del context, session
+        return ActionInterpretationResult.wait()
+
+
+def create_odette_companion_content_unit(
+    request: CharacterContentUnitRequest,
+) -> ContentUnit:
+    """陪测角色内容单元工厂：只提供槽位身份与等待型动作解释器。"""
+
+    return ContentUnit(
+        owner_type=ContentUnitOwnerType.CHARACTER,
+        owner_key=request.character_key,
+        handler_key=request.handler_key,
+        version="dev-test",
+        slot=request.slot,
+        action_interpreter=OdetteCompanionActionInterpreter(),
+        metadata={"purpose": "odette_companion_fixture"},
+    )
+
 
 def write_odette_asset_database(
     db_path: Path,
     *,
     scaling_ratio_overrides: Mapping[str, float] | None = None,
+    companions: int = 0,
 ) -> Path:
-    """写入奥黛塔单人最小合成资产库（倍率数值默认全部为 1.0）。
+    """写入奥黛塔最小合成资产库（倍率数值默认全部为 1.0）。
 
+    ``companions`` 按槽位 2..N+1 追加陪测角色（``character.testing.odette_
+    companion_noop``，由 ``create_odette_companion_content_unit`` 提供等待型
+    动作解释器），用于华彩转交等多角色队伍用例；装配时必须注册该工厂。
     ``scaling_ratio_overrides`` 按倍率条目 key 覆盖合成倍率：默认全 1.0 时
     「倍率区相加」与「倍率区相乘」在数值上不可区分，需要区分口径的用例必须
     给出非 1.0 的倍率。
     """
 
     from genshin_sim.assets.models import CharacterAsset, CharacterLevelStats
+    from tests.helpers.team_assets import make_character_asset
+
+    def _companion(slot: int):
+        return make_character_asset(
+            slot,
+            "hydro",
+            handler_key=ODETTE_COMPANION_HANDLER_KEY,
+        )
 
     characters = (
         CharacterAsset(
@@ -70,6 +127,7 @@ def write_odette_asset_database(
             burst_energy_cost=60.0,
             handler_key=ODETTE_CHARACTER_HANDLER_KEY,
         ),
+        *(_companion(slot) for slot in range(2, 2 + companions)),
     )
     character_level_stats = (
         CharacterLevelStats(
@@ -81,6 +139,19 @@ def write_odette_asset_database(
             base_def=600.0,
             ascension_stat="crit_damage",
             ascension_value=0.0,
+        ),
+        *(
+            CharacterLevelStats(
+                character_key=_companion(slot).asset_key,
+                level=90,
+                ascension_phase=6,
+                base_hp=10_000.0,
+                base_atk=200.0,
+                base_def=600.0,
+                ascension_stat="crit_damage",
+                ascension_value=0.0,
+            )
+            for slot in range(2, 2 + companions)
         ),
     )
     return SQLiteAssetDataWriter(db_path).replace_all(
@@ -146,7 +217,9 @@ def minimal_odette_effect_payloads() -> tuple[EffectPayload, ...]:
             "passive",
             ODETTE_PASSIVE_P4_HANDLER_KEY,
             "passive:4",
-            (0.15,),
+            # 组件位对齐真实资产行：number_2 为华彩发放层数（number_1/3 为
+            # 文本内词条链接编号，行为代码不消费）。
+            (1.0, 4.0, 1.0),
             name="合成天赋4",
         ),
         _effect(
@@ -178,7 +251,10 @@ def minimal_odette_effect_payloads() -> tuple[EffectPayload, ...]:
             "constellation",
             ODETTE_CONSTELLATION_C1_HANDLER_KEY,
             "c1",
-            (3.0, 4.5),
+            # 组件位对齐真实资产行：number_5 为华彩额外叠层、number_7 为
+            # 后台清除层数/秒；number_2/3 为 C1 追加段倍率（切片 6 消费），
+            # 其余为词条链接编号占位。
+            (1.0, 3.0, 4.0, 1.0, 2.0, 1.0, 2.0),
             name="合成命座1",
         ),
         _effect(
@@ -186,7 +262,9 @@ def minimal_odette_effect_payloads() -> tuple[EffectPayload, ...]:
             "constellation",
             ODETTE_CONSTELLATION_C2_HANDLER_KEY,
             "c2",
-            (0.07, 0.2),
+            # 组件位对齐真实资产行：number_2 为每层攻击力提升、number_5 为
+            # 减抗（切片 6 消费），其余为词条链接编号占位。
+            (1.0, 0.07, 1.0, 1.0, 0.2),
             name="合成命座2",
         ),
         _effect(
@@ -218,7 +296,9 @@ def minimal_odette_effect_payloads() -> tuple[EffectPayload, ...]:
             "constellation",
             ODETTE_CONSTELLATION_C6_HANDLER_KEY,
             "c6",
-            (0.25, 0.2),
+            # 组件位对齐真实资产行：number_3 为持有者擢升、number_4 为奥黛塔
+            # 额外擢升，前两位为词条链接编号占位。
+            (1.0, 1.0, 0.25, 0.2),
             name="合成命座6",
         ),
     )
@@ -310,8 +390,14 @@ def odette_input_payload(
     targets: list[dict[str, object]] | None = None,
     constellation: int = 0,
     level: int = 90,
+    companions: int = 0,
 ) -> dict[str, object]:
-    """奥黛塔单人集成测试配置。"""
+    """奥黛塔单人集成测试配置。
+
+    ``companions`` 与 ``write_odette_asset_database(companions=...)`` 配套：
+    槽位 2..N+1 放置通用测试角色（资产键 ``character:hydro_<slot>``，与
+    ``make_character_asset`` 的键规则一致）。
+    """
 
     if input_trace is None:
         input_trace = [
@@ -327,17 +413,30 @@ def odette_input_payload(
                 "resistance": {},
             }
         ]
-    return {
-        "schema_version": 2,
-        "kind": "simulation_input",
-        "meta": {"name": "odette integration", "description": ""},
-        "team": [
+    team: list[dict[str, object]] = [
+        {
+            "slot": 1,
+            "character": {
+                "asset_key": ODETTE_CHARACTER_KEY,
+                "level": level,
+                "constellation": constellation,
+                "talents": {
+                    "normal_attack": 1,
+                    "elemental_skill": 1,
+                    "elemental_burst": 1,
+                },
+            },
+            "artifacts": {"sets": [], "stats": {}},
+        }
+    ]
+    for slot in range(2, 2 + companions):
+        team.append(
             {
-                "slot": 1,
+                "slot": slot,
                 "character": {
-                    "asset_key": ODETTE_CHARACTER_KEY,
+                    "asset_key": f"character:hydro_{slot}",
                     "level": level,
-                    "constellation": constellation,
+                    "constellation": 0,
                     "talents": {
                         "normal_attack": 1,
                         "elemental_skill": 1,
@@ -346,7 +445,12 @@ def odette_input_payload(
                 },
                 "artifacts": {"sets": [], "stats": {}},
             }
-        ],
+        )
+    return {
+        "schema_version": 2,
+        "kind": "simulation_input",
+        "meta": {"name": "odette integration", "description": ""},
+        "team": team,
         "scene": {"targets": targets},
         "input_trace": input_trace,
         "rules": {"active": []},

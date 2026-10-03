@@ -47,6 +47,26 @@ from genshin_sim.core.simulation.context import SimulationContext
 from genshin_sim.core.space import ImpactAreaSpec
 from genshin_sim.core.systems.damage import DamageScalingTerm
 from genshin_sim.core.systems.damage.stellar import StellarReactionDamageInput
+from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
+    STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
+    STELLAR_CONDUCT_ELECTRO_DAMAGE_TAG,
+)
+from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
+    STELLAR_SWIRL_ICE_DAMAGE_TAG,
+    STELLAR_SWIRL_WIND_DAMAGE_TAG,
+)
+
+# 星烁反应伤害标签（星超导冰/雷、星扩散冰/风），含携带对应标签的星变体直伤
+# 与反应本体伤害。华彩「星烁反应伤害」增伤与擢升的覆盖口径按此集合理解
+# （sandrone C1/P6 同款口径）。
+STELLAR_REACTION_DAMAGE_TAGS = frozenset(
+    {
+        STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
+        STELLAR_CONDUCT_ELECTRO_DAMAGE_TAG,
+        STELLAR_SWIRL_ICE_DAMAGE_TAG,
+        STELLAR_SWIRL_WIND_DAMAGE_TAG,
+    }
+)
 
 
 class RadianceVariant(Enum):

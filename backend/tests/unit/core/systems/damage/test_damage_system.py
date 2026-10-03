@@ -874,6 +874,9 @@ def test_lunar_direct_formula_resolves_one_component_without_normal_damage_bonus
     assert result.final_damage == pytest.approx(expected_component)
     assert result.damage_bonus_multiplier == 1.0
     assert result.resistance.multiplier == 1.0
+    # 月曜直伤把唯一组分的倍率区提到顶层，供伤害详情展示「属性 × 倍率」分解。
+    assert [item.component_key for item in result.component_results] == ["hp"]
+    assert result.component_results[0].damage == pytest.approx(1000.0)
 
 
 def test_lunar_composite_sorts_complete_components_before_weighting():
@@ -914,6 +917,8 @@ def test_lunar_composite_sorts_complete_components_before_weighting():
     assert [item.weight for item in resolution.components] == [0.6, 0.3, 0.05]
     assert result.final_damage == pytest.approx(86.0)
     assert result.to_dict()["lunar_reaction"] == resolution.to_dict()
+    # 复合模式的倍率账本在各组分内保留，顶层不重复列入。
+    assert result.component_results == ()
 
 
 def test_general_result_audit_dict_exposes_zone_resolutions():

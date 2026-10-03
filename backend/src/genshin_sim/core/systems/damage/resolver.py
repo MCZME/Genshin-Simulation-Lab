@@ -343,6 +343,14 @@ def _build_damage_result(
             element=query.request.element,
             base_damage=resolution.weighted_base_damage,
             base_damage_additions=(),
+            # 直伤模式的倍率分解对齐星烁：取唯一组分的倍率区组件；复合模式的账本
+            # 在组分内各自保留，顶层不再重复列入。倍率区数值是反应前值，
+            # 与 base_damage（反应后加权值）不同量纲，由前端分区呈现。
+            component_results=(
+                ()
+                if not lunar_direct or top.scaling is None
+                else tuple(top.scaling.component_results)
+            ),
             damage_bonus_multiplier=1.0,
             crit_outcome=top.critical.outcome,
             crit_rate=top.critical.crit_rate,

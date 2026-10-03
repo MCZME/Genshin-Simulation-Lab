@@ -84,4 +84,5 @@ export const FORMULA_KEY_LABELS: Record<string, string> = {
   "damage_formula.general": "常规伤害",
   "damage_formula.transformative_reaction": "剧变反应",
   "damage_formula.lunar_reaction": "月曜反应",
+  "damage_formula.stellar_reaction": "星烁反应",
 };

@@ -22,6 +22,7 @@ const FORMULA_KEY_LABELS: Record<string, string> = {
   "damage_formula.general": "直伤",
   "damage_formula.transformative_reaction": "剧变",
   "damage_formula.lunar_reaction": "月曜反应",
+  "damage_formula.stellar_reaction": "星烁反应",
 };
 
 /** 反应族显示名；键取 reaction_profile.<family> 的第二段，未知族回退完整 profile key。 */
@@ -46,6 +47,8 @@ const REACTION_LABELS: Record<string, string> = {
   lunar_electro_charged: "月曜感电",
   lunar_crystallize: "月曜结晶",
   lunar_bloom: "月曜绽放",
+  stellar_conduct: "星超导",
+  stellar_swirl: "星扩散",
 };
 
 type ChainSegmentId =
@@ -55,6 +58,7 @@ type ChainSegmentId =
   | "reaction"
   | "defense"
   | "resistance"
+  | "ascension"
   | "debug";
 
 interface ChainSegment {
@@ -71,10 +75,68 @@ interface ReactionBadge {
   key: string;
 }
 
+/**
+ * 星烁伤害没有 reaction_profile_key：反应身份由主攻击标签承载，取值与后端
+ * application/assembly/damage_profiles.py 的星烁 DamageProfile 注册一致。
+ * 反应复合（星扩散）与角色直伤（星超导/星扩散）共用同一套标签。
+ */
+const STELLAR_ATTACK_TAG_FAMILIES: Record<string, string> = {
+  "星超导冰": "stellar_conduct",
+  "星超导雷": "stellar_conduct",
+  "星扩散风": "stellar_swirl",
+  "星扩散冰": "stellar_swirl",
+};
+
 /** 从 reaction_profile.<family>.* 提取反应族名。 */
 function reactionProfileFamily(profileKey: string): string | null {
   const parts = profileKey.split(".");
   return parts.length >= 2 ? parts[1] : null;
+}
+
+/** 星烁反应族 profile key：按主攻击标签反查；无星烁载荷或标签未知时返回 null。 */
+function stellarReactionProfileKey(summary: Record<string, unknown>): string | null {
+  if (!isRecord(summary.stellar_reaction)) {
+    return null;
+  }
+  const tag = readString(summary, "main_attack_tag");
+  const family = tag === null ? undefined : STELLAR_ATTACK_TAG_FAMILIES[tag];
+  return family === undefined ? null : `reaction_profile.${family}`;
+}
+
+/**
+ * 星烁直伤的基础区括号：base_damage 是
+ * 倍率区 × 星烁基础系数 × (1 + 基础增伤) × (1 + 精通 + 星烁增伤) × 大权区 + 羽毛区，
+ * 不是倍率区合计。各位置取摘要的合并值与槽位三段审计。
+ */
+interface StellarBracket {
+  slots: Record<string, unknown>[];
+  baseMultiplier: number | null;
+  baseBonus: number | null;
+  elementalMastery: number | null;
+  masteryBonus: number | null;
+  reactionBonus: number | null;
+  authority: number | null;
+  feather: number | null;
+  baseDamage: number | null;
+}
+
+/** 直伤星烁的基础区括号；复合模式的括号逐组分不同，返回 null。 */
+function stellarBracket(summary: Record<string, unknown>): StellarBracket | null {
+  const stellar = readRecord(summary, "stellar_reaction");
+  if (stellar === null || readString(stellar, "mode") !== "character_direct") {
+    return null;
+  }
+  return {
+    slots: readRecordList(stellar, "slots"),
+    baseMultiplier: readNumber(stellar, "stellar_base_multiplier"),
+    baseBonus: readNumber(stellar, "stellar_base_bonus"),
+    elementalMastery: readNumber(stellar, "elemental_mastery"),
+    masteryBonus: readNumber(stellar, "mastery_bonus"),
+    reactionBonus: readNumber(stellar, "stellar_bonus"),
+    authority: readNumber(stellar, "stellar_authority_multiplier"),
+    feather: readNumber(stellar, "direct_stellar_feather_addition"),
+    baseDamage: readNumber(stellar, "base_damage"),
+  };
 }
 
 /** 反应显示名：按族映射，未知族回退完整 profile key。 */
@@ -88,7 +150,7 @@ function reactionLabel(profileKey: string | null): string | null {
     : profileKey;
 }
 
-/** 从摘要收集本次伤害发生的反应徽标：激化 → 月曜 → 主反应（增幅/剧变）+ 二次增幅。 */
+/** 从摘要收集本次伤害发生的反应徽标：激化 → 月曜 → 星烁 → 主反应（增幅/剧变）+ 二次增幅。 */
 function collectReactionBadges(summary: Record<string, unknown>): ReactionBadge[] {
   const catalyze = isRecord(summary.catalyze_reaction) ? summary.catalyze_reaction : null;
   const catalyzeKey = readString(catalyze ?? {}, "reaction_profile_key");
@@ -101,6 +163,10 @@ function collectReactionBadges(summary: Record<string, unknown>): ReactionBadge[
   const lunarKey = readString(lunar ?? {}, "reaction_profile_key");
   if (lunarKey !== null) {
     return [{ label: reactionLabel(lunarKey) ?? lunarKey, key: lunarKey }];
+  }
+  const stellarKey = stellarReactionProfileKey(summary);
+  if (stellarKey !== null) {
+    return [{ label: reactionLabel(stellarKey) ?? stellarKey, key: stellarKey }];
   }
   const reaction = isRecord(summary.reaction) ? summary.reaction : null;
   const badges: ReactionBadge[] = [];
@@ -244,6 +310,12 @@ function buildChainSegments(summary: Record<string, unknown>): ChainSegment[] {
     );
   }
 
+  const ascension = ascensionMultiplier(summary);
+  if (ascension !== 1) {
+    running = running * ascension;
+    segments.push(multiplierSegment("ascension", "擢升", ascension, running));
+  }
+
   const debug = readNumber(summary, "debug_multiplier");
   if (debug !== null && debug !== 1) {
     running = running * debug;
@@ -328,14 +400,130 @@ interface ZoneDetailModel {
   note: string | null;
 }
 
+/** 固定值类伤害修饰阶段：显示数值而非百分比。 */
+const FLAT_STAGES = new Set([
+  "base_damage_flat_add",
+  "component_coefficient_flat_add",
+  "stellar_base_multiplier_add",
+  "stellar_feather_addition_add",
+  "lunar_additional_base_damage_add",
+]);
+
 /** 伤害修饰阶段是否为固定值类；固定值显示数值，其余按比例显示百分比。 */
 function isFlatStage(stage: string): boolean {
-  return stage === "base_damage_flat_add" || stage === "component_coefficient_flat_add";
+  return FLAT_STAGES.has(stage);
 }
 
 /** 面板读取阶段：来自属性系统的面板值，作为槽位账单的基础贡献。 */
 function isPanelStage(stage: string): boolean {
   return stage.startsWith("panel_");
+}
+
+interface SpecialtyDrawerSpec {
+  id: string;
+  title: string;
+  stage: string;
+}
+
+/**
+ * 月曜基础区专属位置：月曜把基础伤害提升、反应加成与附加伤害折进基础区括号值
+ * （`base_damage_after_reaction`），因此账单归入基础区抽屉呈现。
+ * 星烁直伤的基础区括号有独立骨架（见 buildBaseZone 的星烁分支），不在此列。
+ */
+const BASE_SPECIALTY_DRAWERS: readonly SpecialtyDrawerSpec[] = [
+  { id: "base-lunar-base-bonus", title: "月曜基础伤害提升", stage: "lunar_base_damage_bonus_add" },
+  { id: "base-lunar-reaction-bonus", title: "月曜反应加成", stage: "lunar_reaction_bonus_add" },
+  { id: "base-lunar-additional", title: "月曜附加基础伤害", stage: "lunar_additional_base_damage_add" },
+];
+
+/** 按阶段收集生效/未生效词条并生成抽屉；无词条时不生成空抽屉。 */
+function specialtyDrawer(
+  applied: Record<string, unknown>[],
+  rejected: Record<string, unknown>[],
+  spec: SpecialtyDrawerSpec,
+): SlotDrawerData | null {
+  const collected = collectSlotTerms(applied, rejected, spec.stage, null);
+  const rows = [
+    ...collected.rows,
+    ...collected.rejectedRows.map((row) => ({ ...row, rejected: true })),
+  ];
+  if (rows.length === 0) {
+    return null;
+  }
+  return {
+    id: spec.id,
+    title: spec.title,
+    total: isFlatStage(spec.stage)
+      ? formatNumber(collected.sum)
+      : formatSignedPercent(collected.sum),
+    rows,
+  };
+}
+
+interface StellarSlotSpec {
+  id: string;
+  title: string;
+  slotKey: string;
+  stage: string;
+  /** 中性基线：基线等于它时不显示机制基线行。 */
+  neutral: number;
+  format: (value: number) => string;
+}
+
+/**
+ * 星烁一个基础区位置的抽屉：机制基线行 + 生效/未生效词条，
+ * 抽屉头取槽位三段审计的合并值（没有该槽位时回退词条合计）。
+ */
+function pushStellarSlotDrawer(
+  drawers: SlotDrawerData[],
+  slots: Record<string, unknown>[],
+  applied: Record<string, unknown>[],
+  rejected: Record<string, unknown>[],
+  spec: StellarSlotSpec,
+): void {
+  const slot = slots.find((item) => readString(item, "slot_key") === spec.slotKey);
+  const baseline = slot === undefined ? null : readNumber(slot, "baseline");
+  const merged = slot === undefined ? null : readNumber(slot, "merged");
+  const collected = collectSlotTerms(applied, rejected, spec.stage, null);
+  const hasTerms = collected.rows.length + collected.rejectedRows.length > 0;
+  const rows: SlotRow[] = [];
+  // 乘数型中性基线（1）在有账单时也要显示，否则词条行与抽屉头（合并乘数）对不上；
+  // 加算型中性基线（0）不贡献数值，省略。
+  if (baseline !== null && baseline !== 0 && (baseline !== spec.neutral || hasTerms)) {
+    rows.push({ label: "机制基线", value: spec.format(baseline), base: true });
+  }
+  rows.push(
+    ...collected.rows,
+    ...collected.rejectedRows.map((row) => ({ ...row, rejected: true })),
+  );
+  if (rows.length === 0) {
+    return;
+  }
+  pushDrawer(drawers, spec.id, spec.title, spec.format(merged ?? collected.sum), rows);
+}
+
+/**
+ * 月曜/星烁的擢升乘区：扁平结果没有独立字段承载，从公式专属 resolution 取。
+ * 复合模式的擢升逐组分不同、没有单一乘数，因此只在直伤模式返回。
+ */
+function ascensionMultiplier(summary: Record<string, unknown>): number {
+  const stellar = readRecord(summary, "stellar_reaction");
+  if (stellar !== null && readString(stellar, "mode") === "character_direct") {
+    return 1 + (readNumber(stellar, "stellar_ascension_bonus") ?? 0);
+  }
+  const lunar = readRecord(summary, "lunar_reaction");
+  if (lunar !== null) {
+    const mode = readString(readRecord(lunar, "reaction") ?? {}, "mode");
+    if (mode === "character_direct") {
+      const components = readRecordList(lunar, "components");
+      const multiplier =
+        components.length > 0 ? readNumber(components[0], "ascension_multiplier") : null;
+      if (multiplier !== null) {
+        return multiplier;
+      }
+    }
+  }
+  return 1;
 }
 
 /** 面板读取词条的值显示：数值类按原值，增伤/爆伤沿用带符号百分比，率与抗性沿用普通百分比。 */
@@ -384,6 +572,140 @@ interface CollectedTerms {
   sum: number;
 }
 
+/** 单条伤害修饰词条 → 抽屉行；面板读取词条渲染为基础值行。 */
+function slotRowFromTerm(term: Record<string, unknown>): SlotRow {
+  const stage = readString(term, "stage") ?? "";
+  const providerKey = readString(term, "provider_key");
+  const provider = readString(term, "provider_display_name") ?? providerKey ?? "未知来源";
+  const comp = readString(term, "component_key");
+  const value = readNumber(term, "value");
+  const panel = isPanelStage(stage);
+  return {
+    label: panel
+      ? panelStageLabel(stage, providerKey, comp)
+      : comp !== null
+        ? `${provider}（${comp}）`
+        : provider,
+    value:
+      value === null
+        ? "—"
+        : panel
+          ? panelValueText(stage, value)
+          : isFlatStage(stage)
+            ? formatNumber(value)
+            : formatSignedPercent(value),
+    base: panel || undefined,
+    title: termTitle(term, providerKey),
+  };
+}
+
+/** 词条 hover 标题：provider 原键 + 叠加组（未生效词条据此定位被哪个叠加组淘汰）。 */
+function termTitle(term: Record<string, unknown>, providerKey: string | null): string | undefined {
+  const stacking = readString(term, "stacking_group");
+  const parts = [providerKey, stacking === null ? null : `叠加组 ${stacking}`].filter(
+    (part): part is string => part !== null,
+  );
+  return parts.length > 0 ? parts.join(" · ") : undefined;
+}
+
+/** 复合模式（月曜/星烁）单个参与者组分的账本抽屉。 */
+interface CompositeComponentLedger {
+  id: string;
+  title: string;
+  total: string;
+  rows: SlotRow[];
+}
+
+/** 从槽位三段审计里取合并值；没有该槽位返回 null。 */
+function slotMergedValue(slots: Record<string, unknown>[], slotKey: string): number | null {
+  for (const slot of slots) {
+    if (readString(slot, "slot_key") === slotKey) {
+      return readNumber(slot, "merged");
+    }
+  }
+  return null;
+}
+
+/**
+ * 复合模式的逐参与者组分账本：顶层 `applied_terms` 为空，
+ * 账单落在各组分审计内（决策 D-047）。每个组分列出基础区、乘区、
+ * 组分伤害、权重与该组分自己的词条，使组分内的乘法链可以逐项对账；
+ * 顶层扁平字段只取排名第一的组分，无法代表全部参与者。
+ */
+function compositeComponentLedgers(
+  summary: Record<string, unknown>,
+  resolveRef: (ref: string) => string,
+): CompositeComponentLedger[] {
+  const stellar = readRecord(summary, "stellar_reaction");
+  const lunar = readRecord(summary, "lunar_reaction");
+  const isStellarComposite =
+    stellar !== null && readString(stellar, "mode") === "reaction_composite";
+  const isLunarComposite =
+    lunar !== null &&
+    readString(readRecord(lunar, "reaction") ?? {}, "mode") === "reaction_composite";
+  const components = isStellarComposite
+    ? readRecordList(stellar ?? {}, "components")
+    : isLunarComposite
+      ? readRecordList(lunar ?? {}, "components")
+      : [];
+  if (components.length === 0) {
+    return [];
+  }
+  return components.map((component, index) => {
+    const rawRef = component.participant_ref;
+    const ref =
+      typeof rawRef === "string"
+        ? rawRef
+        : readString(isRecord(rawRef) ? rawRef : {}, "entity_id");
+    const slots = readRecordList(component, "slots");
+    // 星烁组分的擢升只有槽位三段审计，月曜组分直接带乘数。
+    const ascension = isLunarComposite
+      ? readNumber(component, "ascension_multiplier")
+      : (() => {
+          const bonus = slotMergedValue(slots, "stellar_ascension_bonus");
+          return bonus === null ? null : 1 + bonus;
+        })();
+    const rows: SlotRow[] = [];
+    const baseDamage = readNumber(
+      component,
+      isLunarComposite ? "base_damage_after_reaction" : "base_damage",
+    );
+    if (baseDamage !== null) {
+      rows.push({ label: "组分基础区", value: formatDamage(baseDamage), base: true });
+    }
+    const crit = readNumber(component, "crit_multiplier");
+    if (crit !== null && crit !== 1) {
+      rows.push({ label: "暴击乘数", value: formatFactor(crit), base: true });
+    }
+    const resistance = readNumber(component, "resistance_multiplier");
+    if (resistance !== null && resistance !== 1) {
+      rows.push({ label: "抗性乘数", value: formatFactor(resistance), base: true });
+    }
+    if (ascension !== null && ascension !== 1) {
+      rows.push({ label: "擢升乘数", value: formatFactor(ascension), base: true });
+    }
+    const componentDamage = readNumber(component, "component_damage");
+    if (componentDamage !== null) {
+      rows.push({ label: "组分伤害", value: formatDamage(componentDamage), base: true });
+    }
+    const weight = readNumber(component, "weight");
+    if (weight !== null) {
+      rows.push({ label: "权重", value: formatNumber(weight), base: true });
+    }
+    rows.push(
+      ...readRecordList(component, "modifier_terms").map(slotRowFromTerm),
+      ...readRecordList(component, "panel_terms").map(slotRowFromTerm),
+    );
+    const weightedDamage = readNumber(component, "weighted_damage");
+    return {
+      id: `component-${index}`,
+      title: `组分 · ${ref === null ? `${index + 1} 号位` : resolveRef(ref)}`,
+      total: weightedDamage !== null ? formatDamage(weightedDamage) : "—",
+      rows,
+    };
+  });
+}
+
 /** 按阶段（可选按 component）收集生效与被拒词条并汇总生效值。 */
 function collectSlotTerms(
   applied: Record<string, unknown>[],
@@ -394,35 +716,11 @@ function collectSlotTerms(
   const match = (term: Record<string, unknown>) =>
     readString(term, "stage") === stage &&
     (componentKey === null || readString(term, "component_key") === componentKey);
-  const toRow = (term: Record<string, unknown>): SlotRow => {
-    const providerKey = readString(term, "provider_key");
-    const provider = readString(term, "provider_display_name") ?? providerKey ?? "未知来源";
-    const comp = readString(term, "component_key");
-    const value = readNumber(term, "value");
-    const panel = isPanelStage(stage);
-    return {
-      label: panel
-        ? panelStageLabel(stage, providerKey, comp)
-        : comp !== null
-          ? `${provider}（${comp}）`
-          : provider,
-      value:
-        value === null
-          ? "—"
-          : panel
-            ? panelValueText(stage, value)
-            : isFlatStage(stage)
-              ? formatNumber(value)
-              : formatSignedPercent(value),
-      base: panel || undefined,
-      title: providerKey ?? undefined,
-    };
-  };
   const matchedApplied = applied.filter(match);
   const matchedRejected = rejected.filter(match);
   return {
-    rows: matchedApplied.map(toRow),
-    rejectedRows: matchedRejected.map(toRow),
+    rows: matchedApplied.map(slotRowFromTerm),
+    rejectedRows: matchedRejected.map(slotRowFromTerm),
     sum: matchedApplied.reduce(
       (total, term) => total + (readNumber(term, "value") ?? 0),
       0,
@@ -451,10 +749,11 @@ function buildZoneModel(
   segmentId: ChainSegmentId,
   summary: Record<string, unknown>,
   audit: Record<string, unknown> | null,
+  resolveRef: (ref: string) => string,
 ): ZoneDetailModel {
   switch (segmentId) {
     case "base":
-      return buildBaseZone(summary, audit);
+      return buildBaseZone(summary, audit, resolveRef);
     case "bonus":
       return buildBonusZone(summary, audit);
     case "crit":
@@ -465,6 +764,8 @@ function buildZoneModel(
       return buildDefenseZone(summary, audit);
     case "resistance":
       return buildResistanceZone(summary, audit);
+    case "ascension":
+      return buildAscensionZone(summary, audit);
     case "debug":
       return { title: "调试区", lines: [], drawers: [], note: "调试倍率不属于正式公式；正式公式伤害见结果行小字" };
   }
@@ -473,6 +774,7 @@ function buildZoneModel(
 function buildBaseZone(
   summary: Record<string, unknown>,
   audit: Record<string, unknown> | null,
+  resolveRef: (ref: string) => string,
 ): ZoneDetailModel {
   if (audit === null) {
     return { title: "基础区", lines: [], drawers: [], note: "无审计数据" };
@@ -484,11 +786,13 @@ function buildBaseZone(
   const lines: FormulaToken[][] = [];
   const drawers: SlotDrawerData[] = [];
 
+  const stellar = stellarBracket(summary);
   const percentRows: SlotRow[] = [];
   const percentSum = { value: 0 };
   const flatRows: SlotRow[] = [];
   const flatSum = { value: 0 };
   const attributeRows: SlotRow[] = [];
+  let scalingTotal = 0;
 
   for (const [index, component] of components.entries()) {
     const componentKey = readString(component, "component_key") ?? `#${index + 1}`;
@@ -538,8 +842,12 @@ function buildBaseZone(
     }
     const damage = readNumber(component, "damage");
     if (damage !== null) {
-      tokens.push({ kind: "text", text: " =" });
-      tokens.push({ kind: "result", text: ` ${formatDamage(damage)}` });
+      scalingTotal += damage;
+      // 星烁的倍率区只是基础区括号的第一个因子，结果统一落在括号行，组件行不收尾。
+      if (stellar === null) {
+        tokens.push({ kind: "text", text: " =" });
+        tokens.push({ kind: "result", text: ` ${formatDamage(damage)}` });
+      }
     }
     lines.push(tokens);
   }
@@ -553,6 +861,167 @@ function buildBaseZone(
   if (attributeRows.length > 0) {
     // 面板属性值按组件分别有意义，跨组件没有可加总的单一值，抽屉头不显示合计。
     pushDrawer(drawers, "base-attribute", "倍率段属性", "—", attributeRows);
+  }
+
+  // 星烁直伤的 base_damage 是括号值（倍率区 × 基础系数 × 基础增伤 × 精通与增伤区 × 大权区
+  // + 羽毛区），不是倍率区合计。这里把括号补成完整公式：各位置以槽位 + 抽屉呈现，
+  // 否则基础区只会显示倍率区结果，与乘法链上的"基础"段对不上账。
+  if (stellar !== null) {
+    const baseMultiplierTerms = collectSlotTerms(applied, rejected, "stellar_base_multiplier_add", null);
+    const baseBonusTerms = collectSlotTerms(applied, rejected, "stellar_base_bonus_add", null);
+    const reactionBonusTerms = collectSlotTerms(applied, rejected, "stellar_reaction_bonus_add", null);
+    const authorityTerms = collectSlotTerms(applied, rejected, "stellar_authority_multiplier_add", null);
+    const featherTerms = collectSlotTerms(applied, rejected, "stellar_feather_addition_add", null);
+    const panelMastery = collectSlotTerms(applied, rejected, "panel_elemental_mastery", null);
+    const hasTerms = (collected: CollectedTerms) =>
+      collected.rows.length + collected.rejectedRows.length > 0;
+    const slotOrText = (
+      slotId: string,
+      label: string,
+      hasContent: boolean,
+    ): FormulaToken => (hasContent ? slotValue(slotId, label, true) : { kind: "text", text: label });
+
+    const tokens: FormulaToken[] = [];
+    if (stellar.baseMultiplier !== null && stellar.baseMultiplier !== 1) {
+      tokens.push({ kind: "text", text: " × " });
+      tokens.push(
+        slotOrText(
+          "stellar-base-multiplier",
+          formatNumber(stellar.baseMultiplier),
+          hasTerms(baseMultiplierTerms),
+        ),
+      );
+    }
+    if (stellar.baseBonus !== null && stellar.baseBonus !== 0) {
+      tokens.push({ kind: "text", text: " × (1 + " });
+      tokens.push(
+        slotOrText(
+          "stellar-base-bonus",
+          formatPercent(stellar.baseBonus),
+          hasTerms(baseBonusTerms),
+        ),
+      );
+      tokens.push({ kind: "text", text: ")" });
+    }
+    const masteryBonus = stellar.masteryBonus ?? 0;
+    const reactionBonus = stellar.reactionBonus ?? 0;
+    if (masteryBonus !== 0 || reactionBonus !== 0) {
+      tokens.push({ kind: "text", text: " × (1" });
+      if (masteryBonus !== 0) {
+        tokens.push({ kind: "text", text: " + " });
+        tokens.push(
+          slotOrText("stellar-mastery", formatPercent(masteryBonus), hasTerms(panelMastery)),
+        );
+      }
+      if (reactionBonus !== 0) {
+        tokens.push({ kind: "text", text: reactionBonus < 0 ? " − " : " + " });
+        tokens.push(
+          slotOrText(
+            "stellar-reaction-bonus",
+            formatPercent(Math.abs(reactionBonus)),
+            hasTerms(reactionBonusTerms),
+          ),
+        );
+      }
+      tokens.push({ kind: "text", text: ")" });
+    }
+    if (stellar.authority !== null && stellar.authority !== 1) {
+      tokens.push({ kind: "text", text: " × " });
+      tokens.push(
+        slotOrText("stellar-authority", formatNumber(stellar.authority), hasTerms(authorityTerms)),
+      );
+    }
+    if (stellar.feather !== null && stellar.feather !== 0) {
+      tokens.push({ kind: "text", text: " + " });
+      tokens.push(
+        slotOrText("stellar-feather", formatNumber(stellar.feather), hasTerms(featherTerms)),
+      );
+    }
+    if (tokens.length > 0) {
+      if (stellar.baseDamage !== null) {
+        tokens.push({ kind: "result", text: ` = ${formatDamage(stellar.baseDamage)}` });
+      }
+      if (components.length > 1) {
+        // 多组件：倍率区先合计，再从合计继续乘。
+        lines.push([
+          { kind: "text", text: "=" },
+          { kind: "result", text: ` ${formatDamage(scalingTotal)}` },
+          ...tokens,
+        ]);
+      } else if (lines.length > 0) {
+        // 单组件：括号因子直接接在倍率区行尾，基础区保持一条连续公式。
+        lines[lines.length - 1].push(...tokens);
+      } else {
+        const [first, ...rest] = tokens;
+        lines.push(first.kind === "text" && first.text === " × " ? rest : tokens);
+      }
+    }
+
+    pushStellarSlotDrawer(drawers, stellar.slots, applied, rejected, {
+      id: "stellar-base-multiplier",
+      title: "星烁基础系数",
+      slotKey: "stellar_base_multiplier",
+      stage: "stellar_base_multiplier_add",
+      neutral: 1,
+      format: formatNumber,
+    });
+    pushStellarSlotDrawer(drawers, stellar.slots, applied, rejected, {
+      id: "stellar-base-bonus",
+      title: "星烁基础增伤",
+      slotKey: "stellar_base_bonus",
+      stage: "stellar_base_bonus_add",
+      neutral: 0,
+      format: formatSignedPercent,
+    });
+    if (masteryBonus !== 0) {
+      const masteryRows: SlotRow[] = [];
+      if (panelMastery.rows.length > 0) {
+        masteryRows.push(...panelMastery.rows);
+      } else if (stellar.elementalMastery !== null) {
+        masteryRows.push({
+          label: "元素精通",
+          value: formatNumber(stellar.elementalMastery),
+          base: true,
+        });
+      }
+      masteryRows.push({
+        label: "精通加成（由元素精通派生）",
+        value: formatSignedPercent(masteryBonus),
+        base: true,
+      });
+      pushDrawer(
+        drawers,
+        "stellar-mastery",
+        "精通加成",
+        formatSignedPercent(masteryBonus),
+        masteryRows,
+      );
+    }
+    pushStellarSlotDrawer(drawers, stellar.slots, applied, rejected, {
+      id: "stellar-reaction-bonus",
+      title: "星烁增伤",
+      slotKey: "stellar_reaction_bonus",
+      stage: "stellar_reaction_bonus_add",
+      neutral: 0,
+      format: formatSignedPercent,
+    });
+    pushStellarSlotDrawer(drawers, stellar.slots, applied, rejected, {
+      id: "stellar-authority",
+      title: "星烁大权区",
+      slotKey: "stellar_authority_multiplier",
+      stage: "stellar_authority_multiplier_add",
+      neutral: 1,
+      format: formatNumber,
+    });
+    pushStellarSlotDrawer(drawers, stellar.slots, applied, rejected, {
+      id: "stellar-feather",
+      title: "星烁羽毛区",
+      slotKey: "stellar_feather_addition",
+      stage: "stellar_feather_addition_add",
+      neutral: 0,
+      format: formatNumber,
+    });
+    return { title: "基础区", lines, drawers, note: null };
   }
 
   // 固定值加值行：非词条来源的加值（请求固定/激化等）作为基础行，词条加值来自 base_damage_flat_add。
@@ -587,8 +1056,24 @@ function buildBaseZone(
     pushDrawer(drawers, "base-addition", "基础伤害加值", formatDamage(additionTotal), additionRows);
   }
 
+  // 月曜/星烁把基础系数、基础增伤、反应加成、大权区、羽毛区与附加伤害折进基础区括号值；
+  // 这些专属阶段不在通用公式骨架内，按文档"有账单时按槽位与抽屉规则渲染"落成抽屉。
+  for (const spec of BASE_SPECIALTY_DRAWERS) {
+    const drawer = specialtyDrawer(applied, rejected, spec);
+    if (drawer !== null) {
+      drawers.push(drawer);
+    }
+  }
+
+  // 复合模式（月曜/星烁）的顶层账单为空，账本落在各组分审计内（决策 D-047）。
+  for (const ledger of compositeComponentLedgers(summary, resolveRef)) {
+    pushDrawer(drawers, ledger.id, ledger.title, ledger.total, ledger.rows);
+  }
+
   // 合计行只在多组件求和或还有加值要加时有信息量；单组件且无加值时组件行结果就是基础伤害。
-  if (components.length > 1 || additionRows.length > 0) {
+  // 月曜的倍率区组件是反应前数值，与 base_damage（反应后加权值）不同量纲，因此不追加合计。
+  const isLunarReaction = readString(summary, "formula_key") === "damage_formula.lunar_reaction";
+  if (!isLunarReaction && (components.length > 1 || additionRows.length > 0)) {
     const base = readNumber(summary, "base_damage");
     if (base !== null && lines.length > 0) {
       lines.push([{ kind: "text", text: "=" }, { kind: "result", text: ` ${formatDamage(base)}` }]);
@@ -607,6 +1092,10 @@ function buildBaseZone(
         },
         { kind: "result", text: ` = ${formatDamage(base)}` },
       ]);
+      const provenance = transformativeProvenance(reaction);
+      if (provenance !== null) {
+        lines.push([{ kind: "muted", text: provenance }]);
+      }
     } else if (base !== null) {
       lines.push([
         { kind: "text", text: "基础伤害" },
@@ -619,8 +1108,35 @@ function buildBaseZone(
     title: "基础区",
     lines,
     drawers,
-    note: null,
+    note:
+      isLunarReaction && components.length > 0
+        ? "倍率区为反应前数值；反应倍率、基础伤害提升、精通与反应加成、附加伤害见下方抽屉"
+        : null,
   };
+}
+
+/** 剧变反应的等级系数溯源：来源分类、来源等级与等级系数表键。 */
+function transformativeProvenance(reaction: Record<string, unknown>): string | null {
+  const sourceKind = readString(reaction, "source_kind");
+  const sourceLevel = readNumber(reaction, "source_level");
+  const tableKey = readString(reaction, "level_multiplier_table_key");
+  const parts: string[] = [];
+  if (sourceKind !== null) {
+    const label =
+      sourceKind === "character"
+        ? "角色"
+        : sourceKind === "enemy_environment"
+          ? "敌人/环境"
+          : sourceKind;
+    parts.push(`来源 ${label}`);
+  }
+  if (sourceLevel !== null) {
+    parts.push(`等级 ${sourceLevel}`);
+  }
+  if (tableKey !== null) {
+    parts.push(`系数表 ${tableKey}`);
+  }
+  return parts.length > 0 ? `（${parts.join(" · ")}）` : null;
 }
 
 function additionLabel(key: string): string {
@@ -765,17 +1281,32 @@ function buildCritZone(
   return { title: "暴击区", lines, drawers, note: null };
 }
 
+/** 反应区可渲染的乘数骨架类型：增幅与剧变；其余公式的反应明细不在反应乘区。 */
+function isReactionMultiplierKind(record: Record<string, unknown> | null): boolean {
+  if (record === null) {
+    return false;
+  }
+  const kind = readString(record, "kind");
+  return kind === "amplifying" || kind === "transformative";
+}
+
 function buildReactionZone(
   summary: Record<string, unknown>,
   audit: Record<string, unknown> | null,
 ): ZoneDetailModel {
   const multiplier = readNumber(summary, "reaction_multiplier");
-  const record =
-    audit !== null
-      ? readRecord(audit, "reaction")
-      : isRecord(summary.reaction)
-        ? summary.reaction
-        : null;
+  const auditReaction = audit === null ? null : readRecord(audit, "reaction");
+  const summaryReaction = isRecord(summary.reaction) ? summary.reaction : null;
+  // 反应区只渲染增幅/剧变的乘数骨架。审计反应被激化/月曜/星烁占用时，
+  // 主反应的乘数载荷仍在摘要里，回退到摘要以免整段公式丢失。
+  let record: Record<string, unknown> | null;
+  if (auditReaction === null) {
+    record = audit === null ? summaryReaction : null;
+  } else if (isReactionMultiplierKind(auditReaction)) {
+    record = auditReaction;
+  } else {
+    record = isReactionMultiplierKind(summaryReaction) ? summaryReaction : auditReaction;
+  }
   const kind = record === null ? null : readString(record, "kind");
   const appliedTerms = readRecordList(audit ?? {}, "applied_terms");
   const rejectedTerms = readRecordList(audit ?? {}, "rejected_terms");
@@ -797,6 +1328,7 @@ function buildReactionZone(
           baseMultiplier,
           masteryBonus,
           reactionBonus,
+          reactionBonusSlotId: null,
           multiplier,
           masterySlotId: masteryHasContent ? "reaction-mastery" : null,
         }),
@@ -816,16 +1348,50 @@ function buildReactionZone(
         pushDrawer(drawers, "reaction-mastery", "精通加成", formatSignedPercent(masteryBonus), rows);
       }
     } else if (kind === "transformative") {
+      // 剧变的反应加成专属阶段（transformative_reaction_bonus_add）由公式在
+      // 结算时加到反应乘数上；审计的 reaction_bonus 只是请求级原值，因此这里
+      // 把账单合计并入显示值与公式，避免公式行与结尾乘数对不上账。
+      const reactionBonusTerms = collectSlotTerms(
+        appliedTerms,
+        rejectedTerms,
+        "transformative_reaction_bonus_add",
+        null,
+      );
+      const reactionBonusTotal = (reactionBonus ?? 0) + reactionBonusTerms.sum;
+      const reactionBonusHasSlot =
+        reactionBonusTerms.rows.length + reactionBonusTerms.rejectedRows.length > 0;
       lines.push(
         reactionFormulaLine({
           prefix: null,
           baseMultiplier: null,
           masteryBonus,
-          reactionBonus,
+          reactionBonus: reactionBonusTotal,
+          reactionBonusSlotId: reactionBonusHasSlot ? "reaction-bonus" : null,
           multiplier,
           masterySlotId: null,
         }),
       );
+      if (reactionBonusHasSlot) {
+        const rows: SlotRow[] = [];
+        if (reactionBonus !== null && reactionBonus !== 0) {
+          rows.push({
+            label: "反应加成基础值",
+            value: formatSignedPercent(reactionBonus),
+            base: true,
+          });
+        }
+        rows.push(
+          ...reactionBonusTerms.rows,
+          ...reactionBonusTerms.rejectedRows.map((row) => ({ ...row, rejected: true })),
+        );
+        pushDrawer(
+          drawers,
+          "reaction-bonus",
+          "反应加成",
+          formatSignedPercent(reactionBonusTotal),
+          rows,
+        );
+      }
       const secondary = readRecord(record, "secondary_amplifying");
       const secondaryMultiplier = secondary === null ? null : readNumber(secondary, "multiplier");
       if (secondary !== null && secondaryMultiplier !== null) {
@@ -835,6 +1401,7 @@ function buildReactionZone(
             baseMultiplier: readNumber(secondary, "base_multiplier"),
             masteryBonus: readNumber(secondary, "mastery_bonus"),
             reactionBonus: readNumber(secondary, "reaction_bonus"),
+            reactionBonusSlotId: null,
             multiplier: secondaryMultiplier,
             masterySlotId: null,
           }),
@@ -849,7 +1416,12 @@ function buildReactionZone(
     title: "反应区",
     lines,
     drawers,
-    note: record === null ? "无反应结算明细" : null,
+    note:
+      record === null
+        ? "无反应结算明细"
+        : isReactionMultiplierKind(record)
+          ? null
+          : "该伤害的反应明细不在反应乘区（见基础区与组分账本）",
   };
 }
 
@@ -859,6 +1431,7 @@ function reactionFormulaLine({
   baseMultiplier,
   masteryBonus,
   reactionBonus,
+  reactionBonusSlotId,
   multiplier,
   masterySlotId,
 }: {
@@ -866,6 +1439,7 @@ function reactionFormulaLine({
   baseMultiplier: number | null;
   masteryBonus: number | null;
   reactionBonus: number | null;
+  reactionBonusSlotId: string | null;
   multiplier: number;
   masterySlotId: string | null;
 }): FormulaToken[] {
@@ -890,7 +1464,7 @@ function reactionFormulaLine({
       }
       if (hasReaction) {
         tokens.push({ kind: "text", text: reactionBonus < 0 ? " − " : " + " });
-        tokens.push({ kind: "text", text: formatPercent(Math.abs(reactionBonus)) });
+        tokens.push(reactionSlot(reactionBonus, reactionBonusSlotId));
       }
       tokens.push({ kind: "text", text: ")" });
     }
@@ -902,11 +1476,17 @@ function reactionFormulaLine({
     }
     if (hasReaction) {
       tokens.push({ kind: "text", text: reactionBonus < 0 ? " − " : " + " });
-      tokens.push({ kind: "text", text: formatPercent(Math.abs(reactionBonus)) });
+      tokens.push(reactionSlot(reactionBonus, reactionBonusSlotId));
     }
   }
   tokens.push({ kind: "result", text: ` = ${formatFactor(multiplier)}` });
   return tokens;
+}
+
+/** 反应加成项：有专属阶段账单时呈现为可折叠槽位，否则为普通数值。 */
+function reactionSlot(value: number, slotId: string | null): FormulaToken {
+  const label = formatPercent(Math.abs(value));
+  return slotId !== null ? slotValue(slotId, label, true) : { kind: "text", text: label };
 }
 
 function buildDefenseZone(
@@ -1082,17 +1662,69 @@ function buildResistanceZone(
   };
 }
 
+/**
+ * 擢升区：月曜/星烁把擢升按乘性括号 (1 + Σ) 施加在基础区之后。
+ * 扁平结果模型没有独立字段承载它，因此从公式专属 resolution 取值；
+ * 复合模式的擢升逐组分不同、没有单一乘数，此时不生成链段。
+ */
+function buildAscensionZone(
+  summary: Record<string, unknown>,
+  audit: Record<string, unknown> | null,
+): ZoneDetailModel {
+  const multiplier = ascensionMultiplier(summary);
+  const applied = readRecordList(audit ?? {}, "applied_terms");
+  const rejected = readRecordList(audit ?? {}, "rejected_terms");
+  const stellar = collectSlotTerms(applied, rejected, "stellar_ascension_bonus_add", null);
+  const lunar = collectSlotTerms(applied, rejected, "lunar_ascension_bonus_add", null);
+  const rows: SlotRow[] = [
+    ...stellar.rows,
+    ...stellar.rejectedRows.map((row) => ({ ...row, rejected: true })),
+    ...lunar.rows,
+    ...lunar.rejectedRows.map((row) => ({ ...row, rejected: true })),
+  ];
+  const termSum = stellar.sum + lunar.sum;
+  const drawers: SlotDrawerData[] = [];
+  if (rows.length > 0) {
+    pushDrawer(drawers, "ascension", "擢升", formatSignedPercent(termSum), rows);
+  }
+  const lines: FormulaToken[][] = [];
+  if (rows.length > 0) {
+    const baseline = multiplier - 1 - termSum;
+    lines.push([
+      { kind: "text", text: "1 + " },
+      slotValue("ascension", formatSignedPercent(termSum), true),
+      ...(baseline !== 0
+        ? [{ kind: "muted" as const, text: `（机制基线 ${formatSignedPercent(baseline)}）` }]
+        : []),
+      { kind: "result", text: ` = ${formatFactor(multiplier)}` },
+    ]);
+  } else if (multiplier !== 1) {
+    lines.push([
+      { kind: "text", text: "机制基线" },
+      { kind: "result", text: ` = ${formatFactor(multiplier)}` },
+    ]);
+  }
+  return {
+    title: "擢升区",
+    lines,
+    drawers,
+    note: rows.length > 0 || multiplier !== 1 ? null : "无擢升修饰词条",
+  };
+}
+
 /** 链段详情：上部公式区，下部按可修饰位置分类的抽屉；槽位胶囊与抽屉头点击均可折叠。 */
 function SegmentDetail({
   segmentId,
   summary,
   audit,
+  resolveRef,
 }: {
   segmentId: ChainSegmentId;
   summary: Record<string, unknown>;
   audit: Record<string, unknown> | null;
+  resolveRef: (ref: string) => string;
 }) {
-  const model = buildZoneModel(segmentId, summary, audit);
+  const model = buildZoneModel(segmentId, summary, audit, resolveRef);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
   function toggle(id: string) {
     setCollapsed((current) => {
@@ -1261,6 +1893,7 @@ export function DamageSheet({ event }: { event: EventDetailResponse }) {
   const summary = isRecord(damage.summary) ? damage.summary : {};
   const audit = isRecord(damage.audit) ? damage.audit : null;
   const segments = buildChainSegments(summary);
+  const resolveRef = (ref: string) => resolveEntityName(event, ref) ?? ref;
 
   function toggle(id: ChainSegmentId) {
     setSelectedId((current) => (current === id ? null : id));
@@ -1296,7 +1929,13 @@ export function DamageSheet({ event }: { event: EventDetailResponse }) {
         {selectedId === null ? (
           <div className="analysis-view-state">点击乘区查看明细</div>
         ) : (
-          <SegmentDetail key={selectedId} segmentId={selectedId} summary={summary} audit={audit} />
+          <SegmentDetail
+            key={selectedId}
+            segmentId={selectedId}
+            summary={summary}
+            audit={audit}
+            resolveRef={resolveRef}
+          />
         )}
       </div>
     </div>

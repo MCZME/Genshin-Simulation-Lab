@@ -58,7 +58,9 @@ from genshin_sim.core.space.runtime import SpaceRuntime
 
 if TYPE_CHECKING:
     from genshin_sim.core.simulation.context import SimulationContext
+
 from genshin_sim.core.systems.damage import DamageRequestHandler
+from tests.helpers.assembly import TestCreatedObjectType
 
 
 class ReleaseInterpreter:
@@ -97,32 +99,6 @@ class CreateEntityImpactFactory:
                 },
             ),
         )
-
-
-class _SalonMemberType:
-    """无调度、无产出的测试类型：只验证创建/刷新/过期链路。"""
-
-    type_key = "furina.salon_member"
-
-    def build_state(
-        self,
-        config: Mapping[str, object],
-        entity: SpatialEntity,
-        frame: int,
-        previous: CreatedObjectRuntimeState | None,
-    ) -> CreatedObjectRuntimeState:
-        del config, frame, previous
-        return CreatedObjectRuntimeState(entity=entity, type_key=self.type_key)
-
-    def on_tick(
-        self,
-        state: CreatedObjectRuntimeState,
-        schedule: CreatedObjectTickState,
-        frame: int,
-        context: object,
-    ) -> tuple[ImpactRequest, ...]:
-        del state, schedule, frame, context
-        return ()
 
 
 class DamageTickType:
@@ -299,7 +275,9 @@ def _runtime_pair(
         created_object_runtime=(
             created_object_runtime
             if created_object_runtime is not None
-            else CreatedObjectRuntime({"furina.salon_member": _SalonMemberType()})
+            else CreatedObjectRuntime(
+                {"furina.salon_member": TestCreatedObjectType("furina.salon_member")}
+            )
         ),
     )
     interpreter = ReleaseInterpreter()

@@ -78,7 +78,17 @@ class TestImpactFactory:
 
 
 class TestCreatedObjectType:
-    type_key = "created.test"
+    """无调度、无产出的测试创建实体类型：只验证创建/刷新/过期链路。
+
+    ``type_key`` 可按需覆盖（默认 ``created.test``），供需要指定类型键的用例
+    复用，避免各测试文件再复制一份同构空实现。
+    """
+
+    # 类名以 Test 开头但并非测试类，显式退出 pytest 收集。
+    __test__ = False
+
+    def __init__(self, type_key: str = "created.test") -> None:
+        self.type_key = type_key
 
     def build_state(
         self,

@@ -34,7 +34,12 @@ from tests.helpers.buff import (
 DEFINITION_KEY = "buff.test.consumable"
 CONFLICT_KEY = "conflict.test.consumable"
 TARGET_REF = AttributeSubjectRef.active_character("player_team")
-_NULL_CONTEXT = SimpleNamespace(space_runtime=None)
+
+
+def _null_context() -> SimpleNamespace:
+    """definition_key 形态不读取 space_runtime，用无副作用上下文占位。"""
+
+    return SimpleNamespace(space_runtime=None)
 
 
 def _removal_result(
@@ -217,7 +222,7 @@ def test_definition_keyed_removal_clears_target_record():
     _apply(runtime, stack_delta=3, target_ref=_CHARACTER_REF)
 
     results = handler.handle_impact_request(
-        _NULL_CONTEXT,
+        _null_context(),
         _definition_keyed_request(stacks=None),
     )
 
@@ -232,7 +237,7 @@ def test_definition_keyed_reduction_removes_partial_stacks():
     _apply(runtime, stack_delta=3, target_ref=_CHARACTER_REF)
 
     results = handler.handle_impact_request(
-        _NULL_CONTEXT,
+        _null_context(),
         _definition_keyed_request(stacks=2),
     )
 
@@ -251,7 +256,7 @@ def test_definition_keyed_reduction_to_zero_removes_record():
     _apply(runtime, stack_delta=2, target_ref=_CHARACTER_REF)
 
     results = handler.handle_impact_request(
-        _NULL_CONTEXT,
+        _null_context(),
         _definition_keyed_request(stacks=5),
     )
 
@@ -271,12 +276,13 @@ def test_definition_keyed_removal_skips_targets_without_buff():
     other_ref = AttributeSubjectRef.character("character:slot_2")
 
     results = handler.handle_impact_request(
-        _NULL_CONTEXT,
+        _null_context(),
         _definition_keyed_request(stacks=None, extra_targets=(other_ref,)),
     )
 
     assert len(results) == 1
-    assert len(runtime.reader.active(5, definition_key=DEFINITION_KEY)) == 0
+    assert _removal_result(results[0]).target_ref == _CHARACTER_REF
+    assert runtime.reader.active(5, definition_key=DEFINITION_KEY) == ()
 
 
 def test_removal_impact_rejects_unsupported_reason():

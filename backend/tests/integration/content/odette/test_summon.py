@@ -6,7 +6,7 @@
 特殊战技共舞持续三段与恢复攻击锚点、结束段星变体口径（无辉映按星超导、
 系数 1；辉映按 Buff 层数系数）、辉映下舞步双命中（冰 + 星变体）、
 星扩散全链路可达性（反应 → 辉映·星扩散 Buff → 星扩散冰通道）、
-召唤物过期解除轮换、产球触发面与判定冷却。
+召唤物过期停摆（tick 到期停机）、产球触发面与判定冷却。
 """
 
 from __future__ import annotations
@@ -16,7 +16,8 @@ import pytest
 from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_CHARACTER_HANDLER_KEY,
     ODETTE_DANCE_OBJECT_KEY,
-    ODETTE_STATE_SUMMON_NEXT_ATTACK_FRAME,
+    ODETTE_DANCE_PLUME_BEHAVIOR_KEY,
+    ODETTE_DANCE_WING_BEHAVIOR_KEY,
 )
 from genshin_sim.core.coordination.elemental_reaction.settlement_coordinator import (
     ElementalSettlementCoordinator,
@@ -254,9 +255,10 @@ def test_radiance_dual_hit_on_dance_step(odette_assembled):
 
 def test_summon_expiry_stops_dance_hits(odette_assembled):
     # 召唤物 20s 到期（1225）后不再产出舞步伤害：到期帧前的 10 次舞步照常，
-    # 之后无任何舞步命中。轮换锚点保留 1329（1204+125）属无害的过期残留——
-    # 仿真在召唤物过期后因世界空闲提前结束，解除分支（到期帧写回 0）只在
-    # 仿真因其他活动继续时可达；E/Q 重召唤也会覆写该锚点。
+    # 之后无任何舞步命中。调度残留 1329（拂羽）/1438（旋翼）均晚于过期帧，
+    # 属无害残留——仿真在召唤物过期后因世界空闲提前结束，tick 到期停机分支
+    # （next_tick 写回 None）只在仿真因其他活动继续时可达；E/Q 重召唤会
+    # 重置调度。
     payload = odette_helpers.odette_input_payload(
         max_frames=1400,
         input_trace=_e_then_wait_trace(),
@@ -270,7 +272,70 @@ def test_summon_expiry_stops_dance_hits(odette_assembled):
     # 159/268/393/502/627/736/861/970/1095/1204 共 10 次，交替拂羽/旋翼。
     assert len(dance) == 10
     assert all(frame < _SUMMON_EXPIRY_FRAME for frame, _name in dance)
-    assert _state_values(assembled)[ODETTE_STATE_SUMMON_NEXT_ATTACK_FRAME] == 1329
+    obj = next(o for o in assembled.context.space_runtime.created_object_runtime.objects)
+    schedules = {s.behavior_key: s.next_tick_frame for s in obj.tick_schedules}
+    assert schedules[ODETTE_DANCE_PLUME_BEHAVIOR_KEY] == 1329
+    assert schedules[ODETTE_DANCE_WING_BEHAVIOR_KEY] == 1438
+
+
+def test_skill_summon_lands_on_nearest_target(odette_assembled):
+    # 倒影由 E 发射、在命中的敌人处停下：位移过程不实现，改为直接在就近
+    # 敌人位置生成（飞行不计入时序，首击锚点不变）。敌人在 z=8 时倒影落
+    # 在 (0,0,8)，而不是角色所在的 (0,0,0)。
+    payload = odette_helpers.odette_input_payload(
+        max_frames=60,
+        input_trace=_e_then_wait_trace(),
+        targets=[
+            {
+                "id": "target_1",
+                "level": 90,
+                "position": {"x": 0, "y": 0, "z": 8.0},
+                "resistance": {},
+            }
+        ],
+    )
+    assembled = odette_assembled(payload=payload)
+
+    assembled.simulator.run()
+
+    objects = assembled.context.space_runtime.created_object_runtime.objects
+    assert len(objects) == 1
+    position = objects[0].entity.position
+    assert (position.x, position.y, position.z) == (0.0, 0.0, 8.0)
+
+
+def test_burst_summon_stays_beside_character(odette_assembled):
+    # Q 是「召唤至身边」：即便存在远处敌人，倒影仍生成在角色位置，与 E 的
+    # 发射落点区分。
+    payload = odette_helpers.odette_input_payload(
+        max_frames=60,
+        input_trace=[
+            {"frame": 1, "events": [{"key": "keyboard.q", "phase": "press"}]},
+            {"frame": 2, "events": [{"key": "keyboard.q", "phase": "release"}]},
+        ],
+        targets=[
+            {
+                "id": "target_1",
+                "level": 90,
+                "position": {"x": 0, "y": 0, "z": 8.0},
+                "resistance": {},
+            }
+        ],
+    )
+    payload["rules"] = {"active": ["start_with_full_energy"]}
+    assembled = odette_assembled(payload=payload)
+
+    assembled.simulator.run()
+
+    objects = assembled.context.space_runtime.created_object_runtime.objects
+    assert len(objects) == 1
+    position = objects[0].entity.position
+    player = assembled.context.space_runtime.get_entity("player:active")
+    assert (position.x, position.y, position.z) == (
+        player.position.x,
+        player.position.y,
+        player.position.z,
+    )
 
 
 def test_particle_trigger_and_judgement_cooldown(odette_assembled):

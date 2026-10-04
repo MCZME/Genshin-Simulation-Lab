@@ -16,7 +16,7 @@ from genshin_sim.content.characters.snezhnaya.odette.actions import (
     OdetteActionInterpreter,
     create_odette_actions,
 )
-from genshin_sim.content.characters.snezhnaya.odette.dance import OdetteDanceHook
+from genshin_sim.content.characters.snezhnaya.odette.dance import OdetteDanceStepBehavior
 from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_C1_EXTRA_AOE_RADIUS,
     ODETTE_C1_EXTRA_CONDUCT_DISPLAY_NAME,
@@ -26,8 +26,10 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_CHARGED_ATTACK_IMPACT_KEY,
     ODETTE_CONTENT_VERSION,
     ODETTE_DANCE_DURATION_FRAMES,
+    ODETTE_DANCE_PLUME_BEHAVIOR_KEY,
     ODETTE_DANCE_STEP_PLUME,
     ODETTE_DANCE_STEP_WING,
+    ODETTE_DANCE_WING_BEHAVIOR_KEY,
     ODETTE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
     ODETTE_ELEMENTAL_BURST_COOLDOWN_FRAMES,
     ODETTE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
@@ -45,8 +47,6 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_STATE_SKILL_WINDOW_ANCHOR_FRAME,
     ODETTE_STATE_SPLENDOR_NEXT_TICK_FRAME,
     ODETTE_STATE_SPLENDOR_TICK_PARITY,
-    ODETTE_STATE_SUMMON_NEXT_ATTACK_FRAME,
-    ODETTE_STATE_SUMMON_NEXT_STEP,
     odette_splendor_definition_key,
     odette_swan_dream_definition_key,
 )
@@ -122,7 +122,7 @@ from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
 
 
 def odette_state_schema(owner_ref: str) -> StateSchema:
-    """连段状态 + 特殊战技窗口锚点 + 独舞倒影轮换 + 产球审计的合并 schema。"""
+    """连段状态 + 特殊战技窗口锚点 + 产球/华彩审计的合并 schema。"""
 
     chain = chain_state_schema(owner_ref)
     return StateSchema(
@@ -134,18 +134,6 @@ def odette_state_schema(owner_ref: str) -> StateSchema:
                 field_type=StateFieldType.INT,
                 default=0,
                 non_negative=True,
-            ),
-            StateField(
-                name=ODETTE_STATE_SUMMON_NEXT_ATTACK_FRAME,
-                field_type=StateFieldType.INT,
-                default=0,
-                non_negative=True,
-            ),
-            StateField(
-                name=ODETTE_STATE_SUMMON_NEXT_STEP,
-                field_type=StateFieldType.ENUM,
-                default=ODETTE_DANCE_STEP_PLUME,
-                allowed_values=(ODETTE_DANCE_STEP_PLUME, ODETTE_DANCE_STEP_WING),
             ),
             StateField(
                 name=ODETTE_STATE_LAST_PARTICLE_FRAME,
@@ -363,16 +351,24 @@ def create_odette_content_unit(
         ),
         c1_channel=c1_channel,
     )
-    dance_hook = OdetteDanceHook(
-        owner_ref=owner_ref,
-        slot=request.slot,
-        cryo_specs=dance_cryo_specs,
-        stellar_channels={
-            ODETTE_DANCE_STEP_PLUME: stellar_channels[ODETTE_DANCE_STEP_PLUME],
-            ODETTE_DANCE_STEP_WING: stellar_channels[ODETTE_DANCE_STEP_WING],
-        },
-    )
-    event_hooks: tuple = (dance_hook,)
+    # 独舞倒影轮换由创建物自身 tick 调度驱动：拂羽/旋翼各一条调度（周期 234f、
+    # 首拍错开 109f，见 data.py），节奏锚定/重锚在影响工厂展开（E/Q 随创建、
+    # 特殊战技随恢复影响点），到期帧由舞步行为产出伤害请求。
+    created_object_behaviors = {
+        ODETTE_DANCE_PLUME_BEHAVIOR_KEY: OdetteDanceStepBehavior(
+            step=ODETTE_DANCE_STEP_PLUME,
+            slot=request.slot,
+            cryo_spec=dance_cryo_specs[ODETTE_DANCE_STEP_PLUME],
+            stellar_channel=stellar_channels[ODETTE_DANCE_STEP_PLUME],
+        ),
+        ODETTE_DANCE_WING_BEHAVIOR_KEY: OdetteDanceStepBehavior(
+            step=ODETTE_DANCE_STEP_WING,
+            slot=request.slot,
+            cryo_spec=dance_cryo_specs[ODETTE_DANCE_STEP_WING],
+            stellar_channel=stellar_channels[ODETTE_DANCE_STEP_WING],
+        ),
+    }
+    event_hooks: tuple = ()
     if splendor_hook is not None:
         event_hooks += (splendor_hook,)
     cooldown_terms_by_ability = _cooldown_terms_for_actions(request)
@@ -424,11 +420,12 @@ def create_odette_content_unit(
         ),
         state_schema=odette_state_schema(owner_ref),
         impact_factories={
-            # 爆发能量花费/召唤创建影响点由工厂的 ENERGY/CREATE 分支处理，
-            # 与伤害影响点共用工厂。
+            # 爆发能量花费/召唤创建/特殊战技恢复影响点由工厂的 ENERGY/CREATE/
+            # ALIGN 分支处理，与伤害影响点共用工厂。
             key: impact_factory
             for key in ODETTE_HIT_IMPACT_KEYS
         },
+        created_object_behaviors=created_object_behaviors,
         event_hooks=(
             *event_hooks,
             OdetteParticleHook(owner_ref=owner_ref, slot=request.slot),

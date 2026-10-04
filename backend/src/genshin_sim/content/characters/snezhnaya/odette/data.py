@@ -79,6 +79,12 @@ ODETTE_SPECIAL_DOT_1_IMPACT_KEY = f"{ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY}.
 ODETTE_SPECIAL_DOT_2_IMPACT_KEY = f"{ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY}.dot_2"
 ODETTE_SPECIAL_DOT_3_IMPACT_KEY = f"{ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY}.dot_3"
 ODETTE_SPECIAL_END_IMPACT_KEY = f"{ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY}.end"
+# 特殊战技恢复影响点（第 1 帧，动作时长内）：展开为 ALIGN_CREATED_ENTITY_TICKS
+# 请求，把独舞倒影 tick 调度重锚到施放 +114f（ODETTE_DANCE_RESUME_AFTER_SPECIAL_
+# FRAMES，自施放帧起算；影响点在次帧展开，目标帧 = 请求帧 + 113）。无活动倒影
+# 时请求被分发器忽略，等价于无需恢复。
+ODETTE_SPECIAL_RESUME_IMPACT_KEY = f"{ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY}.resume"
+ODETTE_SPECIAL_RESUME_IMPACT_FRAME = 1
 ODETTE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY = f"{ODETTE_ELEMENTAL_BURST_ACTION_KEY}.spend_energy"
 ODETTE_ELEMENTAL_BURST_SLASH_1_IMPACT_KEY = f"{ODETTE_ELEMENTAL_BURST_ACTION_KEY}.slash_1"
 ODETTE_ELEMENTAL_BURST_SLASH_2_IMPACT_KEY = f"{ODETTE_ELEMENTAL_BURST_ACTION_KEY}.slash_2"
@@ -109,6 +115,7 @@ ODETTE_HIT_IMPACT_KEYS = (
     ODETTE_SPECIAL_DOT_2_IMPACT_KEY,
     ODETTE_SPECIAL_DOT_3_IMPACT_KEY,
     ODETTE_SPECIAL_END_IMPACT_KEY,
+    ODETTE_SPECIAL_RESUME_IMPACT_KEY,
     ODETTE_SUMMON_CREATE_IMPACT_KEY,
     ODETTE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY,
     ODETTE_ELEMENTAL_BURST_SLASH_1_IMPACT_KEY,
@@ -170,7 +177,12 @@ ODETTE_PLUNGE_ATTACK_DATA = PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE["sword"]
 # 节奏参数取自维护者提供的 gcsim 动作帧数据（2026-10-03）：E 命中后 +134f
 # 首击；拂羽→旋翼 109f、旋翼→拂羽 125f 交替；特殊战施放 +114f 恢复攻击；
 # 爆发施放 +252f 首击，重召唤前已存在时保留拂羽/旋翼顺序。持续时间 20s 取
-# 资产倍率条目「独舞倒影持续时间」。位置固定于召唤点（位移要素不实现）。
+# 资产倍率条目「独舞倒影持续时间」。倒影由 E 发射并在命中的敌人处停下：
+# 位移过程不实现（规划已确认），改为直接在就近敌人位置生成（索敌同舞步
+# 口径），飞行时间不计入时序，故首击节奏不变；Q「召唤至身边」取角色位置。
+# 轮换节奏由召唤物自身的 tick 调度承载（创建物运行态）：E/Q 施放经
+# CREATE_ENTITY 的 ``tick_schedules`` 锚定，特殊战技恢复经
+# ALIGN_CREATED_ENTITY_TICKS 请求重锚（相位保持）。
 # ---------------------------------------------------------------------------
 ODETTE_DANCE_OBJECT_KEY = "odette.dance_reflection"
 ODETTE_DANCE_DURATION_FRAMES = 1200
@@ -179,12 +191,17 @@ ODETTE_DANCE_FIRST_ATTACK_AFTER_BURST_FRAMES = 252
 ODETTE_DANCE_RESUME_AFTER_SPECIAL_FRAMES = 114
 ODETTE_DANCE_PLUME_TO_WING_FRAMES = 109
 ODETTE_DANCE_WING_TO_PLUME_FRAMES = 125
+# 轮换交替（109/125）以两条并行 tick 调度承载：拂羽/旋翼各自周期 234
+# （109+125），首拍错开 109f，展开后即「拂羽→旋翼 109、旋翼→拂羽 125」。
+ODETTE_DANCE_STEP_PERIOD_FRAMES = (
+    ODETTE_DANCE_PLUME_TO_WING_FRAMES + ODETTE_DANCE_WING_TO_PLUME_FRAMES
+)
 ODETTE_DANCE_STEP_PLUME = "plume"
 ODETTE_DANCE_STEP_WING = "wing"
-# 轮换状态字段（挂载于角色内容状态，与连段状态同段）：
-# next_attack_frame 为下次舞步攻击的绝对帧（0 = 轮换未激活）。
-ODETTE_STATE_SUMMON_NEXT_ATTACK_FRAME = "odette_summon_next_attack_frame"
-ODETTE_STATE_SUMMON_NEXT_STEP = "odette_summon_next_step"
+# 舞步 tick 行为键：CREATE_ENTITY params.tick_schedules 按 behavior_key 消费，
+# 行为在内容单元 ``created_object_behaviors`` 注册（barbara 水环先例）。
+ODETTE_DANCE_PLUME_BEHAVIOR_KEY = f"{ODETTE_DANCE_OBJECT_KEY}.plume"
+ODETTE_DANCE_WING_BEHAVIOR_KEY = f"{ODETTE_DANCE_OBJECT_KEY}.wing"
 
 # 元素战技命中帧（E 动作影响点与轮换首击锚点共用）。
 ODETTE_ELEMENTAL_SKILL_HIT_FRAME = 23
@@ -665,8 +682,14 @@ ODETTE_ACTION_TABLE: dict[str, TimedActionSpec] = {
         action_key=ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY,
         duration_frames=76,
         impact_points=(
-            # 共舞持续三段（11/20/28f）+ 结束星烁段（62f）。结束段的星变体
-            # 由影响工厂按辉映证据分派（见 impacts.py / stellar.py）。
+            # 恢复影响点（第 1 帧）：施放即把倒影轮换重锚到 +114f（恢复影响
+            # 点展开为 ALIGN_CREATED_ENTITY_TICKS，见 impacts.py）。共舞持续
+            # 三段（11/20/28f）+ 结束星烁段（62f），结束段的星变体由影响工厂
+            # 按辉映证据分派（见 impacts.py / stellar.py）。
+            TimedImpactPointSpec(
+                impact_key=ODETTE_SPECIAL_RESUME_IMPACT_KEY,
+                frame=ODETTE_SPECIAL_RESUME_IMPACT_FRAME,
+            ),
             TimedImpactPointSpec(
                 impact_key=ODETTE_SPECIAL_DOT_1_IMPACT_KEY,
                 frame=ODETTE_SPECIAL_DOT_FRAMES[0],

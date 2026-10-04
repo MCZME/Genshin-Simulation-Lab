@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import replace
+from typing import TYPE_CHECKING
 
 from genshin_sim.assets.models import TalentScalingEntry
 from genshin_sim.content.characters.snezhnaya.odette.data import (
@@ -27,18 +28,29 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_DAMAGE_ELEMENTAL_AMOUNT,
     ODETTE_DAMAGE_ELEMENTAL_STRENGTH,
     ODETTE_DANCE_DURATION_FRAMES,
+    ODETTE_DANCE_FIRST_ATTACK_AFTER_BURST_FRAMES,
+    ODETTE_DANCE_FIRST_ATTACK_AFTER_E_HIT_FRAMES,
     ODETTE_DANCE_OBJECT_KEY,
+    ODETTE_DANCE_PLUME_BEHAVIOR_KEY,
     ODETTE_DANCE_PLUME_HIT,
     ODETTE_DANCE_PLUME_IMPACT_KEY,
+    ODETTE_DANCE_PLUME_TO_WING_FRAMES,
+    ODETTE_DANCE_RESUME_AFTER_SPECIAL_FRAMES,
+    ODETTE_DANCE_SEARCH_RADIUS,
+    ODETTE_DANCE_STEP_PERIOD_FRAMES,
     ODETTE_DANCE_STEP_PLUME,
     ODETTE_DANCE_STEP_WING,
+    ODETTE_DANCE_WING_BEHAVIOR_KEY,
     ODETTE_DANCE_WING_HIT,
     ODETTE_DANCE_WING_IMPACT_KEY,
+    ODETTE_DANCE_WING_TO_PLUME_FRAMES,
     ODETTE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY,
     ODETTE_ELEMENTAL_BURST_FINAL_IMPACT_KEY,
     ODETTE_ELEMENTAL_BURST_SLASH_1_IMPACT_KEY,
     ODETTE_ELEMENTAL_BURST_SLASH_2_IMPACT_KEY,
     ODETTE_ELEMENTAL_BURST_SLASH_3_IMPACT_KEY,
+    ODETTE_ELEMENTAL_BURST_SUMMON_FRAME,
+    ODETTE_ELEMENTAL_SKILL_ACTION_KEY,
     ODETTE_ELEMENTAL_SKILL_HIT,
     ODETTE_ELEMENTAL_SKILL_IMPACT_KEY,
     ODETTE_MELEE_ELEMENT,
@@ -51,6 +63,8 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_SPECIAL_DOT_3_IMPACT_KEY,
     ODETTE_SPECIAL_DOT_HIT,
     ODETTE_SPECIAL_END_IMPACT_KEY,
+    ODETTE_SPECIAL_RESUME_IMPACT_FRAME,
+    ODETTE_SPECIAL_RESUME_IMPACT_KEY,
     ODETTE_SUMMON_CREATE_IMPACT_KEY,
     OdetteHitData,
 )
@@ -80,7 +94,8 @@ from genshin_sim.core.impacts import (
     ImpactRequest,
     StrikeType,
 )
-from genshin_sim.core.space import ImpactAreaSpec, Vector3
+from genshin_sim.core.space import ImpactAreaSpec, SpatialEntityKind, Vector3
+from genshin_sim.core.space.runtime import SpaceRuntime
 from genshin_sim.core.space.space import ACTIVE_CHARACTER_ENTITY_ID
 from genshin_sim.core.systems.damage import DamageScalingTerm
 from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
@@ -89,6 +104,44 @@ from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
 from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
     STELLAR_SWIRL_ICE_DAMAGE_TAG,
 )
+
+if TYPE_CHECKING:
+    from genshin_sim.core.simulation.context import SimulationContext
+
+_DANCE_STEP_BY_BEHAVIOR_KEY = {
+    ODETTE_DANCE_PLUME_BEHAVIOR_KEY: ODETTE_DANCE_STEP_PLUME,
+    ODETTE_DANCE_WING_BEHAVIOR_KEY: ODETTE_DANCE_STEP_WING,
+}
+
+
+def _active_dance_next_step(simulation: SimulationContext | None, owner_key: str) -> str | None:
+    """读活动倒影 tick 调度中最早一拍的舞步（Q 重召唤保留顺序用）。
+
+    没有活动倒影或调度无下一拍时返回 ``None``（调用方按拂羽起拍处理）。
+    """
+
+    if simulation is None or simulation.space_runtime is None:
+        return None
+    obj = next(
+        (
+            created
+            for created in simulation.space_runtime.created_object_runtime.active_objects
+            if created.object_key == ODETTE_DANCE_OBJECT_KEY
+            and created.entity.owner_key == owner_key
+        ),
+        None,
+    )
+    if obj is None or not obj.tick_schedules:
+        return None
+    due = [
+        (schedule.next_tick_frame, schedule.behavior_key)
+        for schedule in obj.tick_schedules
+        if schedule.next_tick_frame is not None
+    ]
+    if not due:
+        return None
+    _, behavior_key = min(due)
+    return _DANCE_STEP_BY_BEHAVIOR_KEY.get(behavior_key)
 
 
 def _compile_damage_spec(
@@ -602,6 +655,8 @@ class OdetteActionImpactFactory:
                     )
                 )
             return tuple(requests)
+        if context.impact_key == ODETTE_SPECIAL_RESUME_IMPACT_KEY:
+            return (self._special_resume_request(context),)
         damage_spec = self._damage_specs.get(context.impact_key)
         if context.impact_key == ODETTE_SPECIAL_END_IMPACT_KEY:
             return self._special_end_requests(context)
@@ -637,20 +692,54 @@ class OdetteActionImpactFactory:
             ),
         )
 
+    @staticmethod
+    def _nearest_target_position(space_runtime: SpaceRuntime, origin: Vector3) -> Vector3:
+        """就近敌人位置：与舞步索敌同口径（半径 15、X/Z 就近、并列取实体 id 较小者）。
+
+        没有候选敌人时返回原点，由调用方落在角色位置。
+        """
+
+        candidates = space_runtime.entities_in_radius(
+            origin,
+            ODETTE_DANCE_SEARCH_RADIUS,
+            kinds={SpatialEntityKind.TARGET},
+        )
+        if not candidates:
+            return origin
+        return min(
+            candidates,
+            key=lambda entity: (entity.position.distance_xz_to(origin), entity.entity_id),
+        ).position
+
     def _summon_create_request(self, context: ActionImpactContext) -> ImpactRequest:
         """展开独舞倒影创建请求（CREATE_ENTITY）。
 
-        位置固定于召唤点：位移要素不实现（规划已确认），当前仿真中角色位置
-        即玩家实体位置，创建位置取玩家实体当前位置；无 tick 行为、无跟随，
-        轮换攻击由 ``dance.py`` 的 FRAME_STARTED hook 驱动。
+        倒影由元素战技向前发射、在命中的敌人处停下；位移过程不实现（规划
+        已确认），改为**直接在就近敌人位置生成**——飞行时间不计入时序，因此
+        首击锚点（命中帧 +134f）保持不变。元素爆发是「召唤至身边」，仍取
+        角色当前位置。附近没有敌人时两种入口都回退到角色位置。
+
+        轮换节奏经 ``tick_schedules`` 随创建/刷新锚定（调度状态由创建物运行
+        态持有，舞步攻击由 ``dance.py`` 的 tick 行为驱动）：E 重召唤重置为
+        拂羽首拍（命中帧 +134f）；Q 重召唤已存在时保留拂羽/旋翼顺序、从当前
+        下一拍继续，否则从拂羽起拍（施放 +252f 首击）。索敌以倒影位置为中心，
+        因此停在敌人处等价于「停下后就近攻击」。
         """
 
+        owner_key = f"character:slot_{context.owner.slot}"
         position = Vector3()
         simulation = context.simulation
         if simulation is not None and simulation.space_runtime is not None:
             entity = simulation.space_runtime.get_entity(ACTIVE_CHARACTER_ENTITY_ID)
-            if entity is not None:
-                position = entity.position
+            origin = entity.position if entity is not None else Vector3()
+            position = origin
+            if context.action_key == ODETTE_ELEMENTAL_SKILL_ACTION_KEY:
+                position = self._nearest_target_position(simulation.space_runtime, origin)
+        plume_offset, wing_offset = self._dance_schedule_offsets(
+            simulation,
+            context.action_key,
+            owner_key,
+        )
         return ImpactRequest(
             frame=context.frame,
             kind=ImpactKind.CREATE_ENTITY,
@@ -668,9 +757,79 @@ class OdetteActionImpactFactory:
                 "object_key": ODETTE_DANCE_OBJECT_KEY,
                 "duration_frames": ODETTE_DANCE_DURATION_FRAMES,
                 "position": {"x": position.x, "y": position.y, "z": position.z},
-                "owner_key": f"character:slot_{context.owner.slot}",
+                "owner_key": owner_key,
                 "tags": (ODETTE_DANCE_OBJECT_KEY,),
                 "object_params": {},
+                "tick_schedules": (
+                    {
+                        "behavior_key": ODETTE_DANCE_PLUME_BEHAVIOR_KEY,
+                        "first_tick_frame_offset": plume_offset,
+                        "interval_frames": ODETTE_DANCE_STEP_PERIOD_FRAMES,
+                    },
+                    {
+                        "behavior_key": ODETTE_DANCE_WING_BEHAVIOR_KEY,
+                        "first_tick_frame_offset": wing_offset,
+                        "interval_frames": ODETTE_DANCE_STEP_PERIOD_FRAMES,
+                    },
+                ),
+            },
+        )
+
+    @staticmethod
+    def _dance_schedule_offsets(
+        simulation: SimulationContext | None,
+        action_key: str | None,
+        owner_key: str,
+    ) -> tuple[int, int]:
+        """计算拂羽/旋翼两条 tick 调度的首拍偏移（相对创建帧）。
+
+        E（重新召唤）：命中帧 +134f 拂羽首拍、+109f 后旋翼接拍；Q：施放
+        +252f 首击（创建帧为施放第 1 帧，故首拍偏移 251），重召唤前倒影已
+        存在时保留既有顺序（下一拍先落），否则从拂羽起拍。
+        """
+
+        if action_key == ODETTE_ELEMENTAL_SKILL_ACTION_KEY:
+            plume_offset = ODETTE_DANCE_FIRST_ATTACK_AFTER_E_HIT_FRAMES
+            return plume_offset, plume_offset + ODETTE_DANCE_PLUME_TO_WING_FRAMES
+        first_offset = (
+            ODETTE_DANCE_FIRST_ATTACK_AFTER_BURST_FRAMES - ODETTE_ELEMENTAL_BURST_SUMMON_FRAME
+        )
+        if _active_dance_next_step(simulation, owner_key) == ODETTE_DANCE_STEP_WING:
+            return first_offset + ODETTE_DANCE_WING_TO_PLUME_FRAMES, first_offset
+        return first_offset, first_offset + ODETTE_DANCE_PLUME_TO_WING_FRAMES
+
+    @staticmethod
+    def _special_resume_request(context: ActionImpactContext) -> ImpactRequest:
+        """展开特殊战技恢复请求（ALIGN_CREATED_ENTITY_TICKS）。
+
+        特殊战技施放 +114f 恢复倒影攻击且不改变舞步顺序：把活动倒影的全部
+        tick 调度按同一偏移平移（相位保持），使最早一拍落在施放 +114f。恢复
+        影响点在施放次帧展开，目标帧 = 请求帧 + 113。无活动倒影时请求被分发
+        器忽略，等价于无需恢复。
+        """
+
+        target_frame = (
+            context.frame
+            + ODETTE_DANCE_RESUME_AFTER_SPECIAL_FRAMES
+            - ODETTE_SPECIAL_RESUME_IMPACT_FRAME
+        )
+        return ImpactRequest(
+            frame=context.frame,
+            kind=ImpactKind.ALIGN_CREATED_ENTITY_TICKS,
+            impact_key=context.impact_key,
+            owner_slot=context.owner.slot,
+            action_key=context.action_key,
+            source_impact_point_id=context.impact_point_id,
+            target_refs=(),
+            params={
+                "content_handler_key": ODETTE_CHARACTER_HANDLER_KEY,
+                "odette": {
+                    "handler_key": ODETTE_CHARACTER_HANDLER_KEY,
+                    "source_impact_key": context.impact_key,
+                },
+                "object_key": ODETTE_DANCE_OBJECT_KEY,
+                "owner_key": f"character:slot_{context.owner.slot}",
+                "target_frame": target_frame,
             },
         )
 

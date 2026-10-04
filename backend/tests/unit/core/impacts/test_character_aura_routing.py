@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import cast
 
 from genshin_sim.core.actions import ActionManager
@@ -23,7 +24,7 @@ from genshin_sim.core.space import (
     CreatedObjectRuntime,
     CreatedObjectRuntimeState,
     CreatedObjectSpec,
-    CreatedObjectTickSpec,
+    CreatedObjectTickState,
     ImpactAreaSpec,
     Space,
     SpatialEntity,
@@ -194,13 +195,34 @@ def test_dispatcher_splits_character_and_target_aura_refs():
     assert settlement.aura_requests[0].target_refs == ("target_1",)
 
 
-class _AuraAreaTickBehavior:
-    def create_tick_requests(
+class _AuraAreaTickType:
+    type_key = "barbara.ring"
+    _schedule_seed = ("wet", 1, 90)
+
+    def build_state(
+        self,
+        config: Mapping[str, object],
+        entity: SpatialEntity,
+        frame: int,
+        previous: CreatedObjectRuntimeState | None,
+    ) -> CreatedObjectRuntimeState:
+        del config, previous
+        key, offset, interval = self._schedule_seed
+        return CreatedObjectRuntimeState(
+            entity=entity,
+            type_key=self.type_key,
+            schedules=(CreatedObjectTickState(schedule_key=key, next_tick_frame=frame + offset),),
+        )
+
+    def on_tick(
         self,
         state: CreatedObjectRuntimeState,
+        schedule: CreatedObjectTickState,
         frame: int,
+        context: object,
     ) -> tuple[ImpactRequest, ...]:
-        del state
+        del state, context
+        schedule.next_tick_frame = frame + self._schedule_seed[2]
         return (
             ImpactRequest(
                 frame=frame,
@@ -262,18 +284,11 @@ def test_impact_runtime_expands_aura_area_for_created_object_tick():
             ),
         ]
     )
-    created_object_runtime = CreatedObjectRuntime({"barbara.ring.wet": _AuraAreaTickBehavior()})
+    created_object_runtime = CreatedObjectRuntime({"barbara.ring": _AuraAreaTickType()})
     created_object_runtime.create_or_refresh(
         CreatedObjectSpec(
-            object_key="barbara.ring",
+            type_key="barbara.ring",
             duration_frames=300,
-            tick_schedules=(
-                CreatedObjectTickSpec(
-                    "barbara.ring.wet",
-                    first_tick_frame_offset=1,
-                    interval_frames=90,
-                ),
-            ),
             follow_entity_id="player:active",
         ),
         frame=1,

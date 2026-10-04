@@ -24,7 +24,7 @@ class _SpatialEntityPort(Protocol):
 
 
 class _CreatedObjectStatePort(Protocol):
-    object_key: str
+    type_key: str
     entity: _SpatialEntityPort
 
     def is_active_at(self, frame: int) -> bool: ...
@@ -52,11 +52,11 @@ class BarbaraConstellationC2HydroBonusProvider:
         *,
         slot: int,
         bonus_value: float,
-        object_key: str,
+        type_key: str,
     ) -> None:
         self._slot = slot
         self._bonus_value = float(bonus_value)
-        self._object_key = object_key
+        self._type_key = type_key
         self._created_object_runtime: _CreatedObjectRuntimePort | None = None
         self._team_state: _TeamRuntimeStatePort | None = None
         self.provider_spec = ModifierProviderSpec(
@@ -108,7 +108,7 @@ class BarbaraConstellationC2HydroBonusProvider:
         if runtime is None:
             return False
         return any(
-            obj.object_key == self._object_key
+            obj.type_key == self._type_key
             and obj.entity.owner_key == f"slot:{self._slot}"
             and obj.is_active_at(frame)
             for obj in runtime.objects

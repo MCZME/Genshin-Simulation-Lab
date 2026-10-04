@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import cast
+from collections.abc import Mapping
+from typing import TYPE_CHECKING, cast
 
 from genshin_sim.core.actions import (
     ActionInterpretationResult,
@@ -46,6 +47,7 @@ from genshin_sim.core.space import (
     ACTIVE_CHARACTER_ENTITY_ID,
     CreatedObjectRuntime,
     CreatedObjectRuntimeState,
+    CreatedObjectTickState,
     ImpactAreaSpec,
     Space,
     SpatialEntity,
@@ -53,7 +55,12 @@ from genshin_sim.core.space import (
     Vector3,
 )
 from genshin_sim.core.space.runtime import SpaceRuntime
+
+if TYPE_CHECKING:
+    from genshin_sim.core.simulation.context import SimulationContext
+
 from genshin_sim.core.systems.damage import DamageRequestHandler
+from tests.helpers.assembly import TestCreatedObjectType
 
 
 class ReleaseInterpreter:
@@ -83,28 +90,52 @@ class CreateEntityImpactFactory:
                 owner_slot=context.owner.slot,
                 action_key=context.action_key,
                 params={
-                    "object_key": "furina.salon_member",
+                    "type_key": "furina.salon_member",
                     "duration_frames": 4,
                     "position": {"x": 1, "y": 0, "z": 2},
                     "entity_id": "created:salon_member:1",
                     "tags": ("salon_member",),
-                    "object_params": {"member": "chevalmarin"},
+                    "config": {"member": "chevalmarin"},
                 },
             ),
         )
 
 
-class DamageTickBehavior:
-    def create_tick_requests(
+class DamageTickType:
+    type_key = "furina.salon_member"
+
+    def __init__(self) -> None:
+        self._schedule_seed = ("tick", 1, 2)
+
+    def build_state(
+        self,
+        config: Mapping[str, object],
+        entity: SpatialEntity,
+        frame: int,
+        previous: CreatedObjectRuntimeState | None,
+    ) -> CreatedObjectRuntimeState:
+        del config, previous
+        key, offset, interval = self._schedule_seed
+        return CreatedObjectRuntimeState(
+            entity=entity,
+            type_key=self.type_key,
+            schedules=(CreatedObjectTickState(schedule_key=key, next_tick_frame=frame + offset),),
+        )
+
+    def on_tick(
         self,
         state: CreatedObjectRuntimeState,
+        schedule: CreatedObjectTickState,
         frame: int,
+        context: object,
     ) -> tuple[ImpactRequest, ...]:
+        del context
+        schedule.next_tick_frame = frame + self._schedule_seed[2]
         return (
             ImpactRequest(
                 frame=frame,
                 kind=ImpactKind.DAMAGE,
-                impact_key=f"{state.object_key}.tick",
+                impact_key=f"{state.type_key}.tick",
                 owner_slot=1,
             ),
         )
@@ -241,7 +272,13 @@ def _runtime_pair(
         team_state=TeamRuntimeState(
             [CharacterRuntimeState(slot=1, character_key="character:1", level=90)]
         ),
-        created_object_runtime=created_object_runtime,
+        created_object_runtime=(
+            created_object_runtime
+            if created_object_runtime is not None
+            else CreatedObjectRuntime(
+                {"furina.salon_member": TestCreatedObjectType("furina.salon_member")}
+            )
+        ),
     )
     interpreter = ReleaseInterpreter()
     registry = ActionInterpreterRegistry()
@@ -411,11 +448,11 @@ def test_impact_runtime_dispatches_action_impact_and_creates_space_entity():
     assert ctx.space_runtime is not None
     assert len(ctx.space_runtime.created_object_runtime.objects) == 1
     created = ctx.space_runtime.created_object_runtime.objects[0]
-    assert created.object_key == "furina.salon_member"
+    assert created.type_key == "furina.salon_member"
     assert created.entity.owner_key == "slot:1"
     assert created.entity.source_key == "furina.skill"
     assert created.entity.position == Vector3(1, 0, 2)
-    assert created.params == {"member": "chevalmarin"}
+    assert created.schedules == []
     assert ctx.space_runtime.get_entity("created:salon_member:1") is created.entity
     created_events = [
         event
@@ -444,7 +481,7 @@ def test_impact_runtime_syncs_expired_created_object_to_space():
 
 
 def test_impact_runtime_handles_created_object_tick_requests():
-    created_object_runtime = CreatedObjectRuntime({"furina.salon_member": DamageTickBehavior()})
+    created_object_runtime = CreatedObjectRuntime({"furina.salon_member": DamageTickType()})
     ctx, action_manager, impact_runtime = _runtime_pair(
         created_object_runtime=created_object_runtime
     )
@@ -452,9 +489,6 @@ def test_impact_runtime_handles_created_object_tick_requests():
     action_manager.update_frame(ctx, frame=1)
     action_manager.update_frame(ctx, frame=2)
     impact_runtime.update_frame(ctx, frame=2)
-    created = created_object_runtime.objects[0]
-    created.next_tick_frame = 3
-    created.tick_interval_frames = None
     impact_runtime.update_frame(ctx, frame=3)
 
     assert created_object_runtime.pending_impact_requests == ()

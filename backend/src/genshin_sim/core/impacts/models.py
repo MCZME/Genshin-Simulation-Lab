@@ -30,6 +30,7 @@ class ImpactKind(StrEnum):
     REMOVE_STATUS = "remove_status"
     CREATE_ENTITY = "create_entity"
     EXTEND_CREATED_ENTITY = "extend_created_entity"
+    ALIGN_CREATED_ENTITY_TICKS = "align_created_entity_ticks"
     ENERGY = "energy"
     MOVEMENT = "movement"
 

@@ -91,7 +91,7 @@ def test_assembler_builds_minimal_runtime_graph():
     assert assembled.action_manager.is_idle()
     assert assembled.action_registry.action_keys == ("team.switch",)
     assert assembled.impact_dispatcher.factory_keys == ()
-    assert assembled.space_runtime.created_object_runtime.behavior_keys == ()
+    assert assembled.space_runtime.created_object_runtime.type_keys == ()
     assert assembled.runtime_world.updatables == (
         assembled.buff_max_hp_coordinator,
         assembled.infusion_runtime,

@@ -65,7 +65,7 @@ if TYPE_CHECKING:
         Simulator,
     )
     from genshin_sim.core.snapshots import SnapshotRuntime
-    from genshin_sim.core.space import CreatedObjectBehavior
+    from genshin_sim.core.space import CreatedEntityType
     from genshin_sim.core.space.runtime import SpaceRuntime
     from genshin_sim.core.systems.aura import AuraRuntime
     from genshin_sim.core.systems.aura_icd import AuraIcdRuntime, IcdDefinition
@@ -145,7 +145,7 @@ class RuntimeContentBundle:
     action_interpreters: dict[int, ActionInterpreter]
     actions: tuple[Action, ...]
     impact_factories: dict[str, ImpactFactory]
-    created_object_behaviors: dict[str, CreatedObjectBehavior]
+    created_object_types: dict[str, CreatedEntityType]
     event_hooks: tuple[EventHook, ...]
     modifiers: tuple[Modifier, ...]
     attribute_stacking_groups: tuple[ModifierStackingGroupDefinition, ...]

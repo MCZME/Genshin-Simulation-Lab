@@ -44,8 +44,7 @@ from genshin_sim.content.characters.mondstadt.barbara.impacts import (
     compile_self_wet_spec,
 )
 from genshin_sim.content.characters.mondstadt.barbara.ring import (
-    BarbaraRingHealBehavior,
-    BarbaraRingWetBehavior,
+    BarbaraRingType,
 )
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
@@ -179,9 +178,11 @@ def create_barbara_content_unit(
         ),
         state_schema=chain_state_schema(owner_ref),
         impact_factories={impact_key: impact_factory for impact_key in BARBARA_HIT_IMPACT_KEYS},
-        created_object_behaviors={
-            f"{BARBARA_RING_OBJECT_KEY}.heal": BarbaraRingHealBehavior(ring_heal_payload),
-            f"{BARBARA_RING_OBJECT_KEY}.wet": BarbaraRingWetBehavior(ring_wet_spec),
+        created_object_types={
+            BARBARA_RING_OBJECT_KEY: BarbaraRingType(
+                heal_payload=ring_heal_payload,
+                wet_spec=ring_wet_spec,
+            ),
         },
         event_hooks=(
             BarbaraRingOnHitHealHook(

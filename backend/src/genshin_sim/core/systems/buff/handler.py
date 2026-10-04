@@ -22,8 +22,11 @@ from genshin_sim.core.systems.buff.models import (
     BuffModifierValue,
     BuffRemovalReason,
     BuffRemovalResult,
+    BuffStackReductionResult,
+    ReduceBuffStacksRequest,
     RemoveBuffRequest,
 )
+from genshin_sim.core.systems.buff.protocols import BuffReader
 
 if TYPE_CHECKING:
     from genshin_sim.core.impacts import ImpactRequest
@@ -47,6 +50,21 @@ class BuffRemovePort(Protocol):
     def remove(self, request: RemoveBuffRequest) -> BuffRemovalResult: ...
 
 
+class BuffStackReductionPort(Protocol):
+    """Buff 减层与移除入口的窄端口，由 `BuffRuntime` 满足。
+
+    减层按实例身份执行；definition_key 形态的 REMOVE_STATUS 请求由适配器
+    先经 ``reader`` 解析目标上的唯一活动记录，再落到实例身份。
+    """
+
+    @property
+    def reader(self) -> BuffReader: ...
+
+    def remove(self, request: RemoveBuffRequest) -> BuffRemovalResult: ...
+
+    def reduce_stacks(self, request: ReduceBuffStacksRequest) -> BuffStackReductionResult: ...
+
+
 @dataclass(frozen=True, slots=True)
 class BuffApplicationRecord:
     frame: int
@@ -59,8 +77,9 @@ class BuffApplicationRecord:
 class BuffRemovalRecord:
     frame: int
     impact_request: ImpactRequest
-    removal_request: RemoveBuffRequest
-    result: BuffRemovalResult
+    removal_request: RemoveBuffRequest | None = None
+    reduction_request: ReduceBuffStacksRequest | None = None
+    results: tuple[BuffRemovalResult | BuffStackReductionResult, ...] = ()
 
 
 class BuffImpactRequestHandler:
@@ -163,13 +182,21 @@ class BuffImpactRequestHandler:
 
 
 class BuffRemovalImpactRequestHandler:
-    """把 REMOVE_STATUS ImpactRequest 转换为显式 Buff 移除请求。
+    """把 REMOVE_STATUS ImpactRequest 转换为显式 Buff 移除/减层请求。
 
-    消费方（当前是角色的动作侧）先按主体读到活动记录，再把该记录的实例身份
-    交给本入口；这里只做契约适配，不查询活动记录、不推断该移除哪一条。
+    支持两种互斥形态：
+
+    - ``instance_ref``：消费方（当前是角色的动作侧）先按主体读到活动记录，
+      把实例身份交给本入口；这里只做契约适配，不查询活动记录、不推断该
+      移除哪一条；
+    - ``definition_key`` + ``target_refs``：按（目标, 定义键）解析唯一活动
+      记录（冲突键保证至多一条）后落到实例身份，逐目标执行；目标未持该
+      Buff 时静默跳过（转交/衰减语义下是无操作）。
+
+    ``stacks`` 缺省表示整条移除；给出时按层数减少（减至 0 整条移除）。
     """
 
-    def __init__(self, runtime: BuffRemovePort) -> None:
+    def __init__(self, runtime: BuffStackReductionPort) -> None:
         self.runtime = runtime
         self._records: list[BuffRemovalRecord] = []
 
@@ -185,34 +212,137 @@ class BuffRemovalImpactRequestHandler:
         self,
         context,
         request: ImpactRequest,
-    ) -> BuffRemovalResult:
-        del context
+    ) -> tuple[BuffRemovalResult | BuffStackReductionResult, ...]:
         payload = request.params.get("buff_remove")
         if not isinstance(payload, Mapping):
             msg = "REMOVE_STATUS ImpactRequest 缺少 params.buff_remove 对象"
             raise BuffImpactContractError(msg)
-        _reject_unknown_fields(payload, allowed={"instance_ref", "reason"})
-        instance_ref = _instance_ref(payload.get("instance_ref"))
+        _reject_unknown_fields(
+            payload,
+            allowed={"instance_ref", "definition_key", "stacks", "reason"},
+        )
+        has_instance = payload.get("instance_ref") is not None
+        has_definition = payload.get("definition_key") is not None
+        if has_instance == has_definition:
+            raise BuffImpactContractError(
+                "buff_remove 必须且只能提供 instance_ref 或 definition_key 之一"
+            )
         reason = _removal_reason(payload.get("reason"))
-        removal_request = RemoveBuffRequest(
-            request_id=_buff_removal_request_id(
-                source_impact_point_id=request.source_impact_point_id,
-                impact_request_id=request.request_id,
-            ),
+        stacks = _optional_positive_int(payload.get("stacks"), "buff_remove.stacks")
+        if has_instance:
+            return self._handle_instance_keyed(request, payload, reason, stacks)
+        return self._handle_definition_keyed(context, request, payload, reason, stacks)
+
+    def _handle_instance_keyed(
+        self,
+        request: ImpactRequest,
+        payload: Mapping[str, object],
+        reason: BuffRemovalReason,
+        stacks: int | None,
+    ) -> tuple[BuffRemovalResult | BuffStackReductionResult, ...]:
+        instance_ref = _instance_ref(payload.get("instance_ref"))
+        request_id = _buff_removal_request_id(
+            source_impact_point_id=request.source_impact_point_id,
+            impact_request_id=request.request_id,
+        )
+        if stacks is None:
+            removal_request = RemoveBuffRequest(
+                request_id=request_id,
+                frame=request.frame,
+                instance_ref=instance_ref,
+                reason=reason,
+            )
+            result: BuffRemovalResult | BuffStackReductionResult = self.runtime.remove(
+                removal_request
+            )
+            self._records.append(
+                BuffRemovalRecord(
+                    frame=request.frame,
+                    impact_request=request,
+                    removal_request=removal_request,
+                    results=(result,),
+                )
+            )
+            return (result,)
+        reduction_request = ReduceBuffStacksRequest(
+            request_id=request_id,
             frame=request.frame,
             instance_ref=instance_ref,
+            stacks=stacks,
             reason=reason,
         )
-        result = self.runtime.remove(removal_request)
+        result = self.runtime.reduce_stacks(reduction_request)
         self._records.append(
             BuffRemovalRecord(
                 frame=request.frame,
                 impact_request=request,
-                removal_request=removal_request,
-                result=result,
+                reduction_request=reduction_request,
+                results=(result,),
             )
         )
-        return result
+        return (result,)
+
+    def _handle_definition_keyed(
+        self,
+        context,
+        request: ImpactRequest,
+        payload: Mapping[str, object],
+        reason: BuffRemovalReason,
+        stacks: int | None,
+    ) -> tuple[BuffRemovalResult | BuffStackReductionResult, ...]:
+        definition_key = _required_text(payload, "definition_key")
+        if not request.target_refs:
+            raise BuffImpactContractError(
+                "definition_key 形态的 REMOVE_STATUS ImpactRequest target_refs 不能为空"
+            )
+        targets = tuple(_subject_ref_from_target(context, value) for value in request.target_refs)
+        if len(targets) != len(set(targets)):
+            raise BuffImpactContractError("REMOVE_STATUS ImpactRequest target_refs 不能重复")
+        base_request_id = _buff_removal_request_id(
+            source_impact_point_id=request.source_impact_point_id,
+            impact_request_id=request.request_id,
+        )
+        results: list[BuffRemovalResult | BuffStackReductionResult] = []
+        for order, target_ref in enumerate(targets):
+            records = self.runtime.reader.active(
+                request.frame,
+                target_ref=target_ref,
+                definition_key=definition_key,
+            )
+            if len(records) == 0:
+                continue
+            if len(records) > 1:
+                raise BuffImpactContractError(
+                    f"目标 {target_ref.entity_id} 的 Buff {definition_key!r} 出现多条活动记录"
+                    f"：{len(records)} 条（冲突键应保证互斥）"
+                )
+            instance_ref = records[0].instance_ref
+            request_id = f"{base_request_id}:t{order}"
+            if stacks is None:
+                removal_request = RemoveBuffRequest(
+                    request_id=request_id,
+                    frame=request.frame,
+                    instance_ref=instance_ref,
+                    reason=reason,
+                )
+                results.append(self.runtime.remove(removal_request))
+            else:
+                reduction_request = ReduceBuffStacksRequest(
+                    request_id=request_id,
+                    frame=request.frame,
+                    instance_ref=instance_ref,
+                    stacks=stacks,
+                    reason=reason,
+                )
+                results.append(self.runtime.reduce_stacks(reduction_request))
+        self._records.append(
+            BuffRemovalRecord(
+                frame=request.frame,
+                impact_request=request,
+                results=tuple(results),
+            )
+        )
+        return tuple(results)
 
 
 def _instance_ref(value: object) -> BuffInstanceRef:
@@ -248,6 +378,14 @@ def _instance_ref(value: object) -> BuffInstanceRef:
 def _instance_sequence(value: object) -> int:
     if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
         raise BuffImpactContractError("buff_remove.instance_ref.sequence 必须是正整数")
+    return value
+
+
+def _optional_positive_int(value: object, field_name: str) -> int | None:
+    if value is None:
+        return None
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise BuffImpactContractError(f"{field_name} 必须是正整数")
     return value
 
 

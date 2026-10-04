@@ -18,6 +18,7 @@ data/
 
 # Local project configuration
 config.toml
+.vscode/
 
 # Frontend
 node_modules/

@@ -40,7 +40,7 @@ def test_barbara_encore_particle_pickup_extends_ring_per_particle(
 
         ring = assembled.space_runtime.created_object_runtime.objects[0]
         records = assembled.space_runtime.created_object_runtime.extension_records
-        assert ring.object_key == BARBARA_RING_OBJECT_KEY
+        assert ring.type_key == BARBARA_RING_OBJECT_KEY
         assert len(records) == 1
         assert records[0].applied_frames == records[0].requested_frames
         assert len(assembled.impact_request_dispatcher.created_object_extension_records) == 1

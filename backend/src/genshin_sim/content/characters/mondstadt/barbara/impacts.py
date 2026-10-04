@@ -45,16 +45,12 @@ from genshin_sim.content.characters.mondstadt.barbara.data import (
     BARBARA_PLUNGE_COLLISION_IMPACT_KEY,
     BARBARA_PLUNGE_LANDING_IMPACT_KEY,
     BARBARA_RING_DURATION_FRAMES,
-    BARBARA_RING_HEAL_FIRST_TICK_OFFSET,
-    BARBARA_RING_HEAL_TICK_INTERVAL,
     BARBARA_RING_OBJECT_KEY,
     BARBARA_RING_WET_AOE_OFFSET,
     BARBARA_RING_WET_AOE_RADIUS,
     BARBARA_RING_WET_AOE_SHAPE,
-    BARBARA_RING_WET_FIRST_TICK_OFFSET,
     BARBARA_RING_WET_ICD_SEQUENCE_KEY,
     BARBARA_RING_WET_ICD_TAG_KEY,
-    BARBARA_RING_WET_TICK_INTERVAL,
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.generic.plunge import PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE
@@ -351,27 +347,15 @@ def compile_ring_wet_spec() -> ElementalApplicationSpec:
 
 
 def compile_ring_create_params(slot: int) -> dict[str, object]:
-    """编译歌声之环创建物的 CREATE_ENTITY 参数。"""
+    """编译歌声之环创建实体的 CREATE_ENTITY 参数（节奏由类型声明）。"""
 
     return {
-        "object_key": BARBARA_RING_OBJECT_KEY,
+        "type_key": BARBARA_RING_OBJECT_KEY,
         "duration_frames": BARBARA_RING_DURATION_FRAMES,
         "position": {"x": 0.0, "y": 0.0, "z": 0.0},
         "follow_entity_id": ACTIVE_CHARACTER_ENTITY_ID,
-        "tick_schedules": (
-            {
-                "behavior_key": f"{BARBARA_RING_OBJECT_KEY}.heal",
-                "first_tick_frame_offset": BARBARA_RING_HEAL_FIRST_TICK_OFFSET,
-                "interval_frames": BARBARA_RING_HEAL_TICK_INTERVAL,
-            },
-            {
-                "behavior_key": f"{BARBARA_RING_OBJECT_KEY}.wet",
-                "first_tick_frame_offset": BARBARA_RING_WET_FIRST_TICK_OFFSET,
-                "interval_frames": BARBARA_RING_WET_TICK_INTERVAL,
-            },
-        ),
         "tags": ("barbara.ring",),
-        "object_params": {"owner_slot": slot},
+        "config": {"owner_slot": slot},
     }
 
 

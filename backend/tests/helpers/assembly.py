@@ -23,7 +23,11 @@ from genshin_sim.core.attributes import (
     RuntimeSourceRef,
 )
 from genshin_sim.core.impacts import ActionImpactContext, ImpactKind, ImpactRequest
-from genshin_sim.core.space import CreatedObjectRuntimeState
+from genshin_sim.core.space import (
+    CreatedObjectRuntimeState,
+    CreatedObjectTickState,
+    SpatialEntity,
+)
 from genshin_sim.infrastructure.assets_sqlite import SQLiteAssetRepository
 from tests.helpers.fixture_assets import (
     FIXTURE_ARTIFACT_SET_ASSET_KEY,
@@ -73,9 +77,37 @@ class TestImpactFactory:
         )
 
 
-class TestCreatedObjectBehavior:
-    def create_tick_requests(self, state: CreatedObjectRuntimeState, frame: int):
-        del state, frame
+class TestCreatedObjectType:
+    """无调度、无产出的测试创建实体类型：只验证创建/刷新/过期链路。
+
+    ``type_key`` 可按需覆盖（默认 ``created.test``），供需要指定类型键的用例
+    复用，避免各测试文件再复制一份同构空实现。
+    """
+
+    # 类名以 Test 开头但并非测试类，显式退出 pytest 收集。
+    __test__ = False
+
+    def __init__(self, type_key: str = "created.test") -> None:
+        self.type_key = type_key
+
+    def build_state(
+        self,
+        config,
+        entity: SpatialEntity,
+        frame: int,
+        previous: CreatedObjectRuntimeState | None,
+    ) -> CreatedObjectRuntimeState:
+        del config, frame, previous
+        return CreatedObjectRuntimeState(entity=entity, type_key=self.type_key)
+
+    def on_tick(
+        self,
+        state: CreatedObjectRuntimeState,
+        schedule: CreatedObjectTickState,
+        frame: int,
+        context: object,
+    ):
+        del state, schedule, frame, context
         return ()
 
 

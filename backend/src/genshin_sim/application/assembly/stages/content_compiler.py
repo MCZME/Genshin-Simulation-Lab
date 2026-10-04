@@ -36,7 +36,7 @@ from genshin_sim.core.actions import Action, ActionInterpreter
 from genshin_sim.core.attributes import ModifierStackingGroupDefinition
 from genshin_sim.core.entity_states.content_state import ContentStateMount
 from genshin_sim.core.impacts import ImpactFactory
-from genshin_sim.core.space import CreatedObjectBehavior
+from genshin_sim.core.space import CreatedEntityType
 from genshin_sim.core.systems.aura_icd import IcdDefinition
 from genshin_sim.core.systems.buff import BuffDefinition, BuffSystemError
 from genshin_sim.core.systems.cooldown import (
@@ -477,7 +477,7 @@ class ContentCompiler:
         action_interpreters: dict[int, ActionInterpreter] = {}
         actions: list[Action] = []
         impact_factories: dict[str, ImpactFactory] = {}
-        created_object_behaviors: dict[str, CreatedObjectBehavior] = {}
+        created_object_types: dict[str, CreatedEntityType] = {}
         event_hooks: list[EventHook] = []
         modifiers: list[Modifier] = []
         damage_modifier_providers: list[DamageModifierProvider] = []
@@ -495,8 +495,8 @@ class ContentCompiler:
             self._register_action_interpreter(action_interpreters, unit)
             actions.extend(unit.actions)
             self._register_impact_factories(impact_factories, unit)
-            self._register_created_object_behaviors(
-                created_object_behaviors,
+            self._register_created_object_types(
+                created_object_types,
                 unit,
             )
             event_hooks.extend(unit.event_hooks)
@@ -517,7 +517,7 @@ class ContentCompiler:
             action_interpreters=action_interpreters,
             actions=tuple(actions),
             impact_factories=impact_factories,
-            created_object_behaviors=created_object_behaviors,
+            created_object_types=created_object_types,
             event_hooks=tuple(event_hooks),
             modifiers=tuple(modifiers),
             attribute_stacking_groups=tuple(attribute_stacking_groups),
@@ -576,19 +576,19 @@ class ContentCompiler:
                 raise InvalidRuntimePayloadError(f"重复 impact factory：{impact_key}")
             impact_factories[impact_key] = cast(ImpactFactory, factory)
 
-    def _register_created_object_behaviors(
+    def _register_created_object_types(
         self,
-        created_object_behaviors: dict[str, CreatedObjectBehavior],
+        created_object_types: dict[str, CreatedEntityType],
         unit: ContentUnit,
     ) -> None:
-        if unit.created_object_behaviors and unit.owner_type is not ContentUnitOwnerType.CHARACTER:
-            raise InvalidRuntimePayloadError("只有角色内容可以贡献内容创建对象行为")
-        for behavior_key, behavior in unit.created_object_behaviors.items():
-            if behavior_key in created_object_behaviors:
-                raise InvalidRuntimePayloadError(f"重复内容创建对象行为：{behavior_key}")
-            created_object_behaviors[behavior_key] = cast(
-                CreatedObjectBehavior,
-                behavior,
+        if unit.created_object_types and unit.owner_type is not ContentUnitOwnerType.CHARACTER:
+            raise InvalidRuntimePayloadError("只有角色内容可以贡献内容创建实体类型")
+        for type_key, type_impl in unit.created_object_types.items():
+            if type_key in created_object_types:
+                raise InvalidRuntimePayloadError(f"重复内容创建实体类型：{type_key}")
+            created_object_types[type_key] = cast(
+                CreatedEntityType,
+                type_impl,
             )
 
     def _register_buff_definitions(

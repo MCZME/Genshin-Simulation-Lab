@@ -48,7 +48,7 @@ from genshin_sim.core.systems.buff import (
 from tests.helpers.assembly import (
     ContributedActionInterpreter,
     MissingActionInterpreter,
-    TestCreatedObjectBehavior,
+    TestCreatedObjectType,
     minimal_input,
     skill_input_trace,
 )
@@ -475,7 +475,7 @@ def test_assembler_rejects_created_object_behavior_from_weapon():
             handler_key=request.handler_key,
             version="dev-test",
             slot=request.slot,
-            created_object_behaviors={"created_object.bad": TestCreatedObjectBehavior()},
+            created_object_types={"created_object.bad": TestCreatedObjectType()},
         ),
     )
 
@@ -486,7 +486,7 @@ def test_assembler_rejects_created_object_behavior_from_weapon():
 
     with pytest.raises(
         InvalidRuntimePayloadError,
-        match="只有角色内容单元可以贡献内容创建对象行为",
+        match="只有角色内容单元可以贡献内容创建实体类型",
     ):
         assembler.assemble(minimal_input())
 

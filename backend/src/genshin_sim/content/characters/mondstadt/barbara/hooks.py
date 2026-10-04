@@ -103,7 +103,7 @@ class BarbaraRingOnHitHealHook:
         if created_object_runtime is None:
             return False
         return any(
-            obj.object_key == BARBARA_RING_OBJECT_KEY
+            obj.type_key == BARBARA_RING_OBJECT_KEY
             and obj.is_active_at(getattr(simulation, "current_frame", 0))
             for obj in created_object_runtime.objects
         )
@@ -175,13 +175,13 @@ class BarbaraRingEncoreHook:
         *,
         owner_ref: str,
         slot: int,
-        object_key: str,
+        type_key: str,
         extend_frames: int,
         max_extra_frames: int,
     ) -> None:
         self._owner_ref = owner_ref
         self._slot = slot
-        self._object_key = object_key
+        self._type_key = type_key
         self._extend_frames = extend_frames
         self._max_extra_frames = max_extra_frames
         self.hook_key = f"barbara.encore:{owner_ref}"
@@ -212,7 +212,7 @@ class BarbaraRingEncoreHook:
             owner_slot=self._slot,
             request_id=f"hook:{self.hook_key}:{pickup.pickup_id}",
             params={
-                "object_key": self._object_key,
+                "type_key": self._type_key,
                 "owner_key": f"slot:{self._slot}",
                 "frames": self._extend_frames * count,
                 "max_extra_frames": self._max_extra_frames,
@@ -231,7 +231,7 @@ class BarbaraRingEncoreHook:
         if created_object_runtime is None:
             return False
         return any(
-            obj.object_key == self._object_key
+            obj.type_key == self._type_key
             and obj.entity.owner_key == f"slot:{self._slot}"
             and obj.is_active_at(getattr(simulation, "current_frame", 0))
             for obj in created_object_runtime.objects

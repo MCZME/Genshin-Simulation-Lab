@@ -1,21 +1,5 @@
 """奥黛塔华彩体系（P4 获选者的春祭）：Buff 定义、发放、后台衰减转交与
 星烁伤害修饰。
-
-机制口径（资产技能文本，规划文档切片 4）：
-
-- 召唤独舞倒影时获得层数 Buff（P4 行 number_2 = 4 层，C1 额外 +2）；每层使
-  **持有者**造成的星烁反应伤害提升（率取资产 dictionary N11500003 props[0]
-  = 0.15，见 ``data.py``）；持续至独舞倒影退场或重新召唤——Buff 申请期限
-  跟随召唤物剩余时间实现，自然对齐两种结束方式。
-- 奥黛塔处于队伍后台时每秒清除 1 层并转交给队伍中附近的其他角色：仿真不
-  建模后台角色位置，「附近」简化为全部其他队伍角色；后台 tick 59.25f 平均
-  以 59/60 帧交替承载。清除经 Buff 系统减层能力（REMOVE_STATUS 的
-  definition_key 形态 + stacks）实现；C6 转交时自己的层数不再减少。
-- C2（每层华彩再 +7% 攻击力）是华彩 Buff 自身的词条强化，随定义在 P4
-  工厂按命座门控携带（PERCENT_ADD + LINEAR 逐层缩放），作用于基础攻击力。
-- 伤害侧读数：P4 星烁增伤与 C6 擢升 provider 经 ``bind_runtime_ports``
-  绑定的目标 Buff 只读端口，在结算期读取**伤害来源**的持有层数折算（多个
-  擢升/增伤来源互相加算的语义由公式槽位承担）。
 """
 
 from __future__ import annotations
@@ -23,17 +7,17 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
+from genshin_sim.content.characters.snezhnaya.odette.dance import active_dance_reflection
 from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_CHARACTER_HANDLER_KEY,
-    ODETTE_DANCE_OBJECT_KEY,
     ODETTE_SPLENDOR_ATK_TERM_KEY,
+    ODETTE_SPLENDOR_BACKGROUND_TICK_FRAMES,
     ODETTE_SPLENDOR_BUFF_MECHANIC_KEY,
     ODETTE_SPLENDOR_DECAY_IMPACT_KEY,
     ODETTE_SPLENDOR_GRANT_IMPACT_KEY,
     ODETTE_SPLENDOR_MAX_STACKS,
-    ODETTE_SPLENDOR_TICK_INTERVALS,
+    ODETTE_SPLENDOR_TRANSFER_STACK_CAP,
     ODETTE_STATE_SPLENDOR_NEXT_TICK_FRAME,
-    ODETTE_STATE_SPLENDOR_TICK_PARITY,
     odette_splendor_definition_key,
 )
 from genshin_sim.content.characters.snezhnaya.odette.stellar import (
@@ -53,7 +37,6 @@ from genshin_sim.core.attributes import (
 from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import ImpactKind, ImpactRequest
 from genshin_sim.core.impacts.models import ActionImpactContext
-from genshin_sim.core.space import CreatedObjectRuntimeState
 from genshin_sim.core.systems.buff.definitions import (
     BuffAttributeModifierTemplate,
     BuffDefinition,
@@ -247,26 +230,24 @@ class OdetteSplendorDecayHook:
             return HookResult()
         state = hook_context.state(self._owner_ref)
         next_tick = _as_int(state.get(ODETTE_STATE_SPLENDOR_NEXT_TICK_FRAME))
-        parity = _as_int(state.get(ODETTE_STATE_SPLENDOR_TICK_PARITY))
 
         if next_tick <= 0:
             return HookResult(
-                state_patches=(self._cursor_patch(frame + self._tick_interval(parity), parity),)
+                state_patches=(self._cursor_patch(frame + ODETTE_SPLENDOR_BACKGROUND_TICK_FRAMES),)
             )
         if frame < next_tick:
             return HookResult()
-        return self._fire_tick(hook_context, frame, parity)
+        return self._fire_tick(hook_context, frame)
 
     def _fire_tick(
         self,
         hook_context: HookContext,
         frame: int,
-        parity: int,
     ) -> HookResult:
         states = hook_context.states
         assert states is not None
-        summon = self._active_summon(hook_context, frame)
-        advance = self._cursor_patch(frame + self._tick_interval(1 - parity), 1 - parity)
+        summon = active_dance_reflection(hook_context.simulation, self._slot)
+        advance = self._cursor_patch(frame + ODETTE_SPLENDOR_BACKGROUND_TICK_FRAMES)
         if summon is None:
             return HookResult(state_patches=(advance,))
         expiry = summon.entity.lifecycle.expires_at_frame
@@ -290,8 +271,19 @@ class OdetteSplendorDecayHook:
             for character in states.characters:
                 if character.combat_entity_id == self._owner_ref:
                     continue
+                companion_ref = AttributeSubjectRef.character(character.combat_entity_id)
+                held = self._target_status_port.active_stack_count(
+                    target_ref=companion_ref,
+                    definition_key=self._definition_key,
+                    frame=frame,
+                )
+                # 转交到「单次召唤的总发放层数」为止（C6 自身不减层时靠这个
+                # 上限兜住，否则会随 tick 无上限累加）。
+                delta = min(transfer, ODETTE_SPLENDOR_TRANSFER_STACK_CAP - held)
+                if delta <= 0:
+                    continue
                 requests.append(
-                    self._apply_request(frame, character.combat_entity_id, transfer, remaining)
+                    self._apply_request(frame, character.combat_entity_id, delta, remaining)
                 )
             if not self._keep_own_stacks:
                 requests.append(self._reduce_request(frame, min(self._layers_per_tick, stacks)))
@@ -341,30 +333,14 @@ class OdetteSplendorDecayHook:
             },
         )
 
-    def _cursor_patch(self, next_tick: int, parity: int) -> StatePatchRequest:
+    def _cursor_patch(self, next_tick: int) -> StatePatchRequest:
         return StatePatchRequest(
             owner_ref=self._owner_ref,
             state_key=self.state_key,
             fields={
                 ODETTE_STATE_SPLENDOR_NEXT_TICK_FRAME: next_tick,
-                ODETTE_STATE_SPLENDOR_TICK_PARITY: parity,
             },
         )
-
-    def _tick_interval(self, parity: int) -> int:
-        return ODETTE_SPLENDOR_TICK_INTERVALS[parity % len(ODETTE_SPLENDOR_TICK_INTERVALS)]
-
-    def _active_summon(
-        self, hook_context: HookContext, frame: int
-    ) -> CreatedObjectRuntimeState | None:
-        simulation = hook_context.simulation
-        if simulation is None or simulation.space_runtime is None:
-            return None
-        owner_key = f"character:slot_{self._slot}"
-        for obj in simulation.space_runtime.created_object_runtime.active_objects:
-            if obj.type_key == ODETTE_DANCE_OBJECT_KEY and obj.entity.owner_key == owner_key:
-                return obj
-        return None
 
 
 class OdetteSplendorReactionBonusProvider:

@@ -1,13 +1,4 @@
-"""奥黛塔被动与命座效果单元工厂（切片 4：P4 华彩、C6 擢升；切片 5：P5/P6；
-切片 6：C1–C5）。
-
-机器数值一律取自资产效果行组件（``number_N`` 位置约定与桑多涅一致，前导
-分量为文本内链接编号）；组件位映射见各读取函数 docstring。C2「每层华彩
-再 +7% 攻击力」是华彩 Buff 自身的词条强化，随 P4 工厂按命座门控编译进
-Buff 定义（见 ``splendor.py``）；C2 效果行自身承载减抗光环（``hooks.py``）。
-C1 追加段与 C4 均摊的机器数值各自由角色单元编译（前者进影响工厂、后者进
-雪鹄之梦 provider），效果单元只解析核对并写进 ``compiled_params``。
-"""
+"""奥黛塔被动与命座效果单元工厂"""
 
 from __future__ import annotations
 
@@ -15,6 +6,7 @@ from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 
 from genshin_sim.content.characters.snezhnaya.odette.data import (
+    FRAMES_PER_SECOND,
     ODETTE_C2_CONDUCT_VARIANT,
     ODETTE_C2_RESISTANCE_MECHANIC_KEY,
     ODETTE_C2_SWIRL_VARIANT,
@@ -79,7 +71,6 @@ from genshin_sim.core.systems.buff import (
 )
 from genshin_sim.core.systems.damage import DamageModifierProvider
 
-FRAMES_PER_SECOND = 60
 # 天赋等级框架上限：与 TalentLevelResolver.resolve 的 max_level 默认值一致；
 # C3/C5 效果行自带的「至多提升至 15 级」在这里与框架核对（不一致时显式失败，
 # 而不是静默按框架值截断）。
@@ -405,12 +396,7 @@ def create_odette_passive_p4(request: EffectContentUnitRequest) -> ContentUnit:
 
 
 def create_odette_passive_p5(request: EffectContentUnitRequest) -> ContentUnit:
-    """P5 赤忱者的悲歌：攻击力超过起算值的部分按档提升自身星烁反应伤害。
-
-    「额外造成原本 X% 的伤害」按 D-082 变更记录（2026-10-02）口径落在星烁
-    大权区；provider 按伤害来源自筛为奥黛塔本人。突破 4 阶（60 级突破）解锁：
-    静态门控在编译期按解锁条件过滤 provider（锁定命座/突破不影响伤害结算）。
-    """
+    """P5 赤忱者的悲歌：攻击力超过起算值的部分按档提升自身星烁反应伤害。"""
 
     slot = _validate_owner(request, ODETTE_PASSIVE_P5_HANDLER_KEY)
     name = _effect_name(request.params, position="天赋「赤忱者的悲歌」")
@@ -432,12 +418,7 @@ def create_odette_passive_p5(request: EffectContentUnitRequest) -> ContentUnit:
 
 
 def create_odette_passive_p6(request: EffectContentUnitRequest) -> ContentUnit:
-    """P6 星耀祝礼·银晓之舞：星烁基础增伤随奥黛塔攻击力折算（词条通道）。
-
-    折算参数取自本条资产效果行；增伤数值在伤害结算期由 provider 按奥黛塔实时
-    攻击力换算并署名（D-082），作用于全队造成的星烁反应伤害。星反应转换
-    capability 随角色内容单元静态声明（固定天赋，见 ``content.py``）。
-    """
+    """P6 星耀祝礼·银晓之舞：星烁基础增伤随奥黛塔攻击力折算（词条通道）。"""
 
     slot = _validate_owner(request, ODETTE_PASSIVE_P6_HANDLER_KEY)
     name = _effect_name(request.params, position="天赋「星耀祝礼·银晓之舞」")

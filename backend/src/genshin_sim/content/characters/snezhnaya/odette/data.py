@@ -1,10 +1,4 @@
-"""奥黛塔内容数据：稳定键、命中数据与动作帧表。
-
-数据与解释逻辑分离：``actions.py`` 只保留解释器与动作编译，``content.py``
-只负责内容单元编译。命中几何、索敌、打击类型、衰减序列/衰减标签与元素量
-取自维护者提供的命中数据表（2026-10-03），动作帧与取消窗口取自同日提供的
-gcsim 动作帧数据（60fps，与仓库帧制一致）；倍率仍来自资产库倍率表。
-"""
+"""奥黛塔内容数据：稳定键、命中数据与动作帧表。"""
 
 from __future__ import annotations
 
@@ -19,8 +13,10 @@ from genshin_sim.core.space import Vector3
 from genshin_sim.core.systems.aura import AuraStrength
 
 ODETTE_CHARACTER_HANDLER_KEY = "character.odette"
-ODETTE_ASSET_KEY = "character:10000150"
-ODETTE_CONTENT_VERSION = "dev-basic-kit"
+ODETTE_CONTENT_VERSION = "dev"
+
+# 仿真帧制：全仓库统一 60fps，内容侧秒->帧折算的唯一入口。
+FRAMES_PER_SECOND = 60
 
 # ---------------------------------------------------------------------------
 # 被动与命座。效果行 handler 键对齐 sandrone 命名；P4–P6 与 C1–C6 的行为由
@@ -174,11 +170,11 @@ ODETTE_PLUNGE_ATTACK_DATA = PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE["sword"]
 
 # ---------------------------------------------------------------------------
 # 独舞倒影（召唤物）与轮换舞步。
-# 节奏参数取自维护者提供的 gcsim 动作帧数据（2026-10-03）：E 命中后 +134f
-# 首击；拂羽→旋翼 109f、旋翼→拂羽 125f 交替；特殊战施放 +114f 恢复攻击；
-# 爆发施放 +252f 首击，重召唤前已存在时保留拂羽/旋翼顺序。持续时间 20s 取
-# 资产倍率条目「独舞倒影持续时间」。倒影由 E 发射并在命中的敌人处停下：
-# 位移过程不实现（规划已确认），改为直接在就近敌人位置生成（索敌同舞步
+# 首拍：E 命中后 +134f、Q 施放后 +252f；拂羽→旋翼 109f、旋翼→拂羽 125f 交替；
+# 特殊战施放 +114f 恢复攻击；重召唤前已存在时保留拂羽/旋翼顺序（Q「刷新持续
+# 时间」路径）。持续时间 20s 取资产倍率条目「独舞倒影持续时间」。倒影由 E 发射
+# 并在命中的敌人处停下：
+# 位移过程不实现，改为直接在就近敌人位置生成（索敌同舞步
 # 口径），飞行时间不计入时序，故首击节奏不变；Q「召唤至身边」取角色位置。
 # 轮换节奏由召唤物自身的 tick 调度承载（创建物运行态）：E/Q 施放经创建类型
 # 的 build_state 声明初始调度，特殊战技恢复经 ALIGN_CREATED_ENTITY_TICKS 请求
@@ -187,6 +183,15 @@ ODETTE_PLUNGE_ATTACK_DATA = PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE["sword"]
 ODETTE_DANCE_OBJECT_KEY = "odette.dance_reflection"
 ODETTE_DANCE_DURATION_FRAMES = 1200
 ODETTE_DANCE_FIRST_ATTACK_AFTER_E_HIT_FRAMES = 134
+# 爆发施放 +252f 首击：比战技首拍晚，且与台上是否存在未消散的倒影无关；爆发
+# 的创建影响点在施放第 1 帧，``dance.py`` 会扣掉这一帧，保证首拍落在施放
+# +252f。
+#
+# 来源待定：外部研究资料对爆发首拍有两种互斥说法——（a）「从按下爆发按钮起
+# 约 2.2s」（≈132f，与战技同径）；（b）「爆发动画期间倒影不攻击，下次攻击
+# 固定在释放大招后约 2s 开始」（支持晚于动画结束的 252f）。(a) 还会让倒影在
+# 爆发斩击帧（112/128/140/144）之间插一拍，与 (b) 的「动画期间不攻击」冲突。
+# 当前保留 252f，改值需维护者先定来源。
 ODETTE_DANCE_FIRST_ATTACK_AFTER_BURST_FRAMES = 252
 ODETTE_DANCE_RESUME_AFTER_SPECIAL_FRAMES = 114
 ODETTE_DANCE_PLUME_TO_WING_FRAMES = 109
@@ -226,7 +231,7 @@ ODETTE_PARTICLE_TRIGGER_IMPACT_KEYS = (
 ODETTE_PARTICLE_ELEMENT = Element.CRYO
 ODETTE_PARTICLE_COUNT = 5
 ODETTE_PARTICLE_COOLDOWN_FRAMES = 720
-# 待确认：产球载体飞行延迟为占位值（sandrone 同款）。
+# 产球载体飞行延迟为占位值（sandrone 同款）。
 ODETTE_PARTICLE_TRAVEL_FRAMES = 30
 # 产球审计字段：最近一次产球的命中结算帧（0 = 尚未产球）。
 ODETTE_STATE_LAST_PARTICLE_FRAME = "odette_last_particle_frame"
@@ -237,8 +242,7 @@ ODETTE_STATE_LAST_PARTICLE_FRAME = "odette_last_particle_frame"
 # 按桑多涅 data.py 机器常量先例承载并注明出处）；奥黛塔处于队伍后台时每秒
 # 清除 1 层并转交给队伍中附近的其他角色（附近简化为全部其他队伍角色：仿真
 # 不建模后台角色位置）。持续至独舞倒影退场或重新召唤（Buff 期限对齐召唤物
-# 剩余时间实现）。后台 tick 59.25f 平均以 59/60 帧交替承载（gcsim 动作帧
-# 数据，2026-10-03）。
+# 剩余时间实现）。后台 tick 固定每 60 帧（1 秒）一次。
 # ---------------------------------------------------------------------------
 ODETTE_SPLENDOR_BUFF_MECHANIC_KEY = "odette.p4.splendor"
 
@@ -255,14 +259,17 @@ def odette_splendor_definition_key(slot: int) -> str:
 # 申请值取 C2 行分量、模板按 LINEAR 逐层缩放；C2 未解锁时定义为纯层数载体。
 ODETTE_SPLENDOR_ATK_TERM_KEY = "odette.splendor.atk_percent"
 ODETTE_SPLENDOR_REACTION_BONUS_PER_STACK = 0.15
-# 层数上限为实现边界：C1 清速（2 层/秒）下单次召唤周期（1200f / 59f ≈ 21 tick
-# × 2 层 ≈ 41 层）内可转交层数的宽松覆盖，非游戏数值；发放层数（4/6）远低于此。
+# 层数上限为实现边界：C1 清速（2 层/秒）下单次召唤周期（1200f / 60f = 20 tick
+# × 2 层 = 40 层）内可转交层数的宽松覆盖，非游戏数值；发放层数（4/6）远低于此。
 ODETTE_SPLENDOR_MAX_STACKS = 48
-# 后台 tick 整数帧交替序列（平均 59.25f）：59 起步、59/60 交替。
-ODETTE_SPLENDOR_TICK_INTERVALS = (59, 60)
+# 单个队友能累计持有的华彩层数上限（6）：即便 C6 下奥黛塔自身不减层，转交也
+# 不能超过单次「召唤」的总发放层数；按 C1 清速 2 层/秒折算为后台约 3s 后停止
+# 给予。未持层时不发放，已达上限的目标跳过（对未持层目标是空操作）。
+ODETTE_SPLENDOR_TRANSFER_STACK_CAP = 6
+# 后台衰减/转交 tick 周期（60fps 下 1 秒一次）。
+ODETTE_SPLENDOR_BACKGROUND_TICK_FRAMES = 60
 # 转交/衰减的 Buff 申请期限跟随召唤物剩余时间；无法解析召唤物时 tick 跳过。
 ODETTE_STATE_SPLENDOR_NEXT_TICK_FRAME = "odette_splendor_next_tick_frame"
-ODETTE_STATE_SPLENDOR_TICK_PARITY = "odette_splendor_tick_parity"
 # 发放（重召唤重置 + 授层）与后台衰减/转交的影响请求审计键。
 ODETTE_SPLENDOR_GRANT_IMPACT_KEY = f"{ODETTE_CHARACTER_HANDLER_KEY}.splendor.grant"
 ODETTE_SPLENDOR_DECAY_IMPACT_KEY = f"{ODETTE_CHARACTER_HANDLER_KEY}.splendor.decay"
@@ -272,9 +279,8 @@ ODETTE_SPLENDOR_DECAY_IMPACT_KEY = f"{ODETTE_CHARACTER_HANDLER_KEY}.splendor.dec
 # 效果为「奥黛塔造成的星烁反应伤害提升」，数值随 Q 等级成长，取自资产倍率表
 # 元素爆发表条目「雪鹄之梦星烁反应伤害提升」（Lv1 0.14）与「雪鹄之梦持续时间」
 # （20 秒）；数值在内容编译期按有效 Q 等级（含 C5 的 +3）编译为确定值，由伤害
-# 修饰 provider 在结算期按标记存在性产出词条（D-082）。
+# 修饰 provider 在结算期按标记存在性产出词条。
 # C4「均摊」：获得雪鹄之梦时，队伍中其他角色造成的星烁反应伤害提升其 50%
-# （比例取 C4 行 number_1 = 0.5）。
 # ---------------------------------------------------------------------------
 ODETTE_SWAN_DREAM_BUFF_MECHANIC_KEY = "odette.q.swan_dream"
 ODETTE_SWAN_DREAM_BONUS_TALENT_LABEL = "雪鹄之梦星烁反应伤害提升"
@@ -304,7 +310,7 @@ ODETTE_C1_EXTRA_SWIRL_DISPLAY_NAME = "破晓终奏追加星扩散伤害"
 # ---------------------------------------------------------------------------
 # C2「她想，我要见证雪鹄未见之梦」减抗光环：独舞倒影在场且奥黛塔处于辉映·
 # 星烁状态时，倒影附近敌人对应元素抗性 −20%（辉映·星超导：冰、雷；辉映·
-# 星扩散：冰、风）。判定周期 60 帧（gcsim 帧表「C2 减抗检查 60f」），按帧号
+# 星扩散：冰、风）。判定周期 60 帧，按帧号
 # 取模触发；每次判定先清除另一变体（以及条件不成立时的本变体）残留，再给
 # 命中范围内的目标应用当前变体。
 # 「附近」半径未在来源中量化，实现基线取召唤物自身索敌半径（命中表圆柱
@@ -331,7 +337,7 @@ def odette_c2_resistance_definition_key(slot: int, variant: str) -> str:
 # ---------------------------------------------------------------------------
 # C4「向上，坠往恍惚、燃烧的蓝空」协同攻击：队伍中的角色对敌人造成星烁反应
 # 伤害时，奥黛塔对同一敌人追加一次冰元素范围伤害（星变体，元素量 0），每
-# 3.5 秒（210f）至多触发一次，触发后再延迟 5f 落地（gcsim 帧表）。倍率取 C4
+# 3.5 秒（210f）至多触发一次，触发后再延迟 5f 落地。倍率取 C4
 # 行 number_3/number_4（66% 星超导 / 99% 星扩散）；变体按**落地时**奥黛塔的
 # 辉映状态分派（文本「视为：辉映·星超导或不处于辉映状态…」），无辉映证据时
 # 走星超导变体。命中表该行的 AOE 列（圆柱 3.0,4.0）不消费：协同攻击目标为
@@ -553,7 +559,7 @@ ODETTE_NORMAL_ATTACK_ACTION_KEYS = (
 )
 
 # ---------------------------------------------------------------------------
-# 动作帧表（gcsim 动作帧数据，60fps）。取消窗口语义：默认取消等到动画结束
+# 动作帧表 取消窗口语义：默认取消等到动画结束
 # 帧，普攻连段/重击/战技/爆发/跳跃可从表内帧衔接；duration_frames 覆盖完整
 # 伤害时间轴（爆发动画 126f 结束但伤害持续到 144f，故 duration 取 145）。
 # ---------------------------------------------------------------------------
@@ -677,7 +683,7 @@ ODETTE_ACTION_TABLE: dict[str, TimedActionSpec] = {
             JUMP_INPUT: 42,
         },
     ),
-    # 柔板·破晓终奏：共舞持续冰伤与结束星烁段已随本切片接入（见影响点）。
+    # 柔板·破晓终奏：共舞持续冰伤与结束星烁段（见下方影响点）。
     ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY: TimedActionSpec(
         action_key=ODETTE_SPECIAL_ELEMENTAL_SKILL_ACTION_KEY,
         duration_frames=76,

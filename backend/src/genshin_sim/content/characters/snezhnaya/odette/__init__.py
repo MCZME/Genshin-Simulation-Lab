@@ -2,7 +2,7 @@
 
 包根只暴露稳定入口：角色 handler key、内容单元工厂与效果行 handler 键。
 内部实现符号按需从 ``data`` / ``actions`` / ``impacts`` / ``content`` 子模块
-导入；效果行工厂随对应切片落地后加入导出。
+导入。
 """
 
 from genshin_sim.content.characters.snezhnaya.odette.content import (

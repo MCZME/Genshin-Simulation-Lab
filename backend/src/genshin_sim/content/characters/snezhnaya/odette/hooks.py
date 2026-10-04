@@ -8,13 +8,13 @@ hook 实例，最近产球帧同步写入内容状态 ``odette_last_particle_fra
 审计（0 表示尚未产球）。产球经 ``ImpactKind.ENERGY`` 的 ``spawn_pickup``
 出口，归属宿主奥黛塔（冰属性微粒）。
 
-C2 减抗光环：`FRAME_STARTED` 每 60 帧判定一次（gcsim 帧表），条件为「独舞
+C2 减抗光环：`FRAME_STARTED` 每 60 帧判定一次，条件为「独舞
 倒影在场 ∧ 奥黛塔处于辉映·星烁」；满足时给倒影附近敌人应用对应变体的减抗
 Buff（辉映·星超导：冰+雷；辉映·星扩散：冰+风），并把另一变体的残留显式
 移除——同一目标任意时刻至多一条该光环实例。
 
 C4 协同攻击：订阅 ``DAMAGE_RESOLVED``，**队伍中任意角色**造成星烁反应伤害
-命中敌人时排队一次协同攻击，在触发后第 5 帧（gcsim 帧表「触发后再延迟 5f」）
+命中敌人时排队一次协同攻击，在触发后第 5 帧
 落地，变体按**落地时**奥黛塔的辉映状态分派（无辉映证据时走星超导变体）；
 内置冷却 210f 由实例游标承担，排队帧与目标同样记在实例（短生命周期，与
 ``_last_proc_frame`` 同口径）。
@@ -25,6 +25,7 @@ from __future__ import annotations
 from dataclasses import dataclass, replace
 from typing import cast
 
+from genshin_sim.content.characters.snezhnaya.odette.dance import active_dance_reflection
 from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_C2_AURA_DURATION_FRAMES,
     ODETTE_C2_AURA_IMPACT_KEY,
@@ -36,7 +37,6 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_C4_COORDINATED_DISPLAY_NAME,
     ODETTE_C4_COORDINATED_IMPACT_KEY,
     ODETTE_CHARACTER_HANDLER_KEY,
-    ODETTE_DANCE_OBJECT_KEY,
     ODETTE_PARTICLE_COOLDOWN_FRAMES,
     ODETTE_PARTICLE_COUNT,
     ODETTE_PARTICLE_ELEMENT,
@@ -219,7 +219,7 @@ class OdetteC2ResistanceHook:
         if not target_refs:
             return HookResult()
 
-        summon = self._active_summon(hook_context, frame)
+        summon = active_dance_reflection(hook_context.simulation, self._slot)
         active_variant = None if summon is None else self._active_variant(hook_context, frame)
         requests: list[ImpactRequest] = []
         for variant in sorted(self._variants):
@@ -307,18 +307,6 @@ class OdetteC2ResistanceHook:
         if simulation is None or simulation.space_runtime is None:
             return ()
         return simulation.space_runtime.targets.targets
-
-    def _active_summon(
-        self, hook_context: HookContext, frame: int
-    ) -> CreatedObjectRuntimeState | None:
-        simulation = hook_context.simulation
-        if simulation is None or simulation.space_runtime is None:
-            return None
-        owner_key = f"character:slot_{self._slot}"
-        for obj in simulation.space_runtime.created_object_runtime.active_objects:
-            if obj.type_key == ODETTE_DANCE_OBJECT_KEY and obj.entity.owner_key == owner_key:
-                return obj
-        return None
 
 
 class OdetteC4CoordinatedAttackHook:

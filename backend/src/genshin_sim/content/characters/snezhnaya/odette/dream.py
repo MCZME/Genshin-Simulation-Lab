@@ -1,6 +1,6 @@
 """奥黛塔雪鹄之梦体系（元素爆发）与 C4 均摊。
 
-机制口径（资产技能文本，规划文档切片 6）：
+机制口径：
 
 - **雪鹄之梦**（`雪鹄变奏` 技能文本「获得雪鹄之梦：提升奥黛塔造成的星烁反应
   伤害」）：施放元素爆发后获得的自身标记 Buff，持续 20 秒（重施放刷新）。提升
@@ -23,6 +23,7 @@ from dataclasses import dataclass
 
 from genshin_sim.assets.models import TalentScalingEntry
 from genshin_sim.content.characters.snezhnaya.odette.data import (
+    FRAMES_PER_SECOND,
     ODETTE_SWAN_DREAM_BONUS_TALENT_LABEL,
     ODETTE_SWAN_DREAM_BUFF_MECHANIC_KEY,
     ODETTE_SWAN_DREAM_DURATION_TALENT_LABEL,
@@ -55,12 +56,6 @@ from genshin_sim.core.systems.damage import (
 )
 from genshin_sim.core.systems.damage.models import DamageQuery
 from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
-
-FRAMES_PER_SECOND = 60
-
-
-class OdetteSwanDreamError(RuntimeError):
-    """雪鹄之梦体系运行期错误（接线缺失或契约不完整）。"""
 
 
 @dataclass(frozen=True, slots=True)

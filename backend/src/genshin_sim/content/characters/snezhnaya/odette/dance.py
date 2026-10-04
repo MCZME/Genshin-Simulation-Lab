@@ -66,6 +66,24 @@ class OdetteDanceError(RuntimeError):
     """独舞倒影实体类型运行期错误（接线缺失或契约不完整）。"""
 
 
+def active_dance_reflection(
+    simulation: SimulationContext | None, slot: int
+) -> CreatedObjectRuntimeState | None:
+    """取指定槽位奥黛塔当前在场的独舞倒影（按归属键判定，无契合则返回 None）。
+
+    钩子与影响工厂共用：前者直接用 ``hook_context.simulation``，后者在展开
+    创造物请求前据此区分「召唤」与「刷新持续时间」两条路径。
+    """
+
+    if simulation is None or simulation.space_runtime is None:
+        return None
+    owner_key = f"character:slot_{slot}"
+    for obj in simulation.space_runtime.created_object_runtime.active_objects:
+        if obj.type_key == ODETTE_DANCE_OBJECT_KEY and obj.entity.owner_key == owner_key:
+            return obj
+    return None
+
+
 _STEP_HIT_DATA = {
     ODETTE_DANCE_STEP_PLUME: ODETTE_DANCE_PLUME_HIT,
     ODETTE_DANCE_STEP_WING: ODETTE_DANCE_WING_HIT,

@@ -1,12 +1,4 @@
-"""奥黛塔内容单元编译入口。
-
-本文件只负责内容单元编排：读取资产倍率与效果行数值，调用 ``impacts.py`` 的
-影响契约编译函数，构造冷却/ICD 定义与自持 Buff（雪鹄之梦），最后组装
-``ContentUnit``。星耀祝礼·银晓之舞（P6）的星反应转换 capability 随内容单元
-静态声明；C1 追加段（影响工厂）与 C4 均摊（雪鹄之梦 provider）的机器数值
-需要元素战技/爆发表，因此在本单元按有效天赋等级编译，其余被动/命座行为由
-各效果单元承载（``effects.py``）。
-"""
+"""奥黛塔内容单元编译入口。"""
 
 from __future__ import annotations
 
@@ -45,7 +37,6 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_STATE_LAST_PARTICLE_FRAME,
     ODETTE_STATE_SKILL_WINDOW_ANCHOR_FRAME,
     ODETTE_STATE_SPLENDOR_NEXT_TICK_FRAME,
-    ODETTE_STATE_SPLENDOR_TICK_PARITY,
     odette_splendor_definition_key,
     odette_swan_dream_definition_key,
 )
@@ -142,12 +133,6 @@ def odette_state_schema(owner_ref: str) -> StateSchema:
             ),
             StateField(
                 name=ODETTE_STATE_SPLENDOR_NEXT_TICK_FRAME,
-                field_type=StateFieldType.INT,
-                default=0,
-                non_negative=True,
-            ),
-            StateField(
-                name=ODETTE_STATE_SPLENDOR_TICK_PARITY,
                 field_type=StateFieldType.INT,
                 default=0,
                 non_negative=True,

@@ -1,12 +1,4 @@
-"""奥黛塔影响契约编译与影响点展开。
-
-本文件负责“资产数据 -> 伤害契约 -> ImpactRequest”的链路：命中几何、打击
-类型、衰减序列/衰减标签与附加标签取自 ``data.py`` 的命中数据，倍率来自资产
-倍率表（普攻/重击/下落走 normal_attack，战技走 elemental_skill，爆发走
-elemental_burst）。破晓终奏持续段为普通动作影响点；结束段与舞步的星变体
-经 ``stellar.py`` 星烁通道在展开时按辉映证据分派；独舞倒影创建影响点展开为
-CREATE_ENTITY 请求（召唤物本体与轮换见 ``dance.py``）。
-"""
+"""奥黛塔影响契约编译与影响点展开。"""
 
 from __future__ import annotations
 
@@ -15,6 +7,7 @@ from dataclasses import replace
 from typing import TYPE_CHECKING
 
 from genshin_sim.assets.models import TalentScalingEntry
+from genshin_sim.content.characters.snezhnaya.odette.dance import active_dance_reflection
 from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_BURST_FINAL_HIT,
     ODETTE_BURST_SLASH_1_HIT,
@@ -564,19 +557,30 @@ class OdetteActionImpactFactory:
             },
         }
         if context.impact_key == ODETTE_SUMMON_CREATE_IMPACT_KEY:
-            # 华彩发放随召唤创建同帧展开：先清除全部持有者的旧华彩（重新
-            # 召唤语义，对未持层目标是无操作），再创建召唤物、授予新层。
+            create_request = self._summon_create_request(context)
             if self._splendor_grant is None:
-                return (self._summon_create_request(context),)
+                return (create_request,)
             owner_slot = context.owner.slot
             if owner_slot is None:
-                raise OdetteSplendorError("奥黛塔召唤缺少角色归属槽位，无法展开华彩发放")
+                raise OdetteSplendorError("奥黛塔召唤缺少角色归属槽位，无法判定华彩发放")
+            # 只有「召唤」会发放华彩：E 必定走召唤；Q 在场上有未消散的倒影时是
+            # 「刷新持续时间」，此时不清除持有者的旧层、也不重新授予。
+            #
+            # 已知缺口（MCZME/Genshin-Simulation-Lab#24）：刷新路径只延长了倒影
+            # 自身的存续，华彩各持有者的记录期限没有被同步延长，因此倒影会比
+            # 华彩活得更久。补齐需要一个「只续期、不加层」的 Buff 能力——现有
+            # stack_delta 必须为正整数且对已有记录是累加语义，工厂期也读不到
+            # 各持有者的当前层数。方案定下来前保持现状。
+            if context.action_key != ODETTE_ELEMENTAL_SKILL_ACTION_KEY and (
+                active_dance_reflection(context.simulation, owner_slot) is not None
+            ):
+                return (create_request,)
             reset, grant = summon_grant_requests(
                 context,
                 self._splendor_grant,
                 slot=owner_slot,
             )
-            return (reset, self._summon_create_request(context), grant)
+            return (reset, create_request, grant)
         if context.impact_key == ODETTE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY:
             requests = [
                 ImpactRequest(
@@ -671,10 +675,10 @@ class OdetteActionImpactFactory:
     def _summon_create_request(self, context: ActionImpactContext) -> ImpactRequest:
         """展开独舞倒影创建请求（CREATE_ENTITY）。
 
-        倒影由元素战技向前发射、在命中的敌人处停下；位移过程不实现（规划
-        已确认），改为**直接在就近敌人位置生成**——飞行时间不计入时序，因此
-        首击锚点（命中帧 +134f）保持不变。元素爆发是「召唤至身边」，仍取
-        角色当前位置。附近没有敌人时两种入口都回退到角色位置。
+        倒影由元素战技向前发射、在命中的敌人处停下；位移过程不实现，改为
+        **直接在就近敌人位置生成**——飞行时间不计入时序，因此首击锚点
+        （命中帧 +134f）保持不变。元素爆发是「召唤至身边」，仍取角色当前位置。
+        附近没有敌人时两种入口都回退到角色位置。
 
         轮换节奏由创建类型（``dance.py``）接管：请求只携带 type_key 与类型化
         config（施放入口 + Q 是否保留顺序），初始调度在 ``build_state`` 声明，

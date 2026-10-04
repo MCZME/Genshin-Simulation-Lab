@@ -14,9 +14,9 @@ hook 运行），hook 是状态字段与当前帧的纯函数——转移与节�
 直线几何：瞄准方向取桑多涅实体 facing，出发点取其位置；
 射线为长条 oriented box 一次穿透全部命中（即时结算、一条攻击根、多目标
 聚合），子弹走 Space 射线查询取首个交点（单一实例，横向按各实体自身碰撞
-半径绕线判定、射程上限与射线一致），飞行延迟在发射时按距离一次性折算、
-经 hook 内 pending 队列在未来帧兑现（统一意图队列不支持未来帧到期，采用
-内容 pending 退路）。
+半径绕线判定、射程上限与射线一致），飞行延迟在发射时按距离一次性折算
+（下限 1 帧）、经 hook 内 pending 队列在未来帧兑现（统一意图队列不支持
+未来帧到期，采用内容 pending 退路）。
 
 切人（宿主不在场）视为松开：解算退出并清节奏字段、过载按住停火保持模式，
 两种情况都不再产出射击/射线，功率按后台倍率衰减；已在途的子弹请求按
@@ -556,7 +556,12 @@ class SandroneFageouHook:
         if hit is None:
             return False
         target_id, distance = hit
-        delay_frames = int(round(distance / self._bullet_speed_m_per_s * FRAMES_PER_SECOND))
+        # 延迟下限 1 帧：pending 队列要等下一帧 tick 才兑现，贴脸零延迟子弹
+        # 会带着落后于结算帧的请求帧跨帧，触发元素结算的帧规范化断言。
+        delay_frames = max(
+            1,
+            int(round(distance / self._bullet_speed_m_per_s * FRAMES_PER_SECOND)),
+        )
         resolve_frame = frame + delay_frames
         request = self._damage_request(
             frame=resolve_frame,

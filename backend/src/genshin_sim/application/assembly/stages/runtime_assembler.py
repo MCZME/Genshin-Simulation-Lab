@@ -502,7 +502,7 @@ class RuntimeAssembler:
             ]
         )
         input_trace = InputTraceCompiler().compile(config.to_core_input_frames())
-        created_object_runtime = CreatedObjectRuntime(content_bundle.created_object_behaviors)
+        created_object_runtime = CreatedObjectRuntime(content_bundle.created_object_types)
         self._bind_attribute_provider_ports(
             content_bundle,
             team_state=team_state,

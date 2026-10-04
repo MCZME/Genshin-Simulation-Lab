@@ -362,7 +362,7 @@ class OdetteSplendorDecayHook:
             return None
         owner_key = f"character:slot_{self._slot}"
         for obj in simulation.space_runtime.created_object_runtime.active_objects:
-            if obj.object_key == ODETTE_DANCE_OBJECT_KEY and obj.entity.owner_key == owner_key:
+            if obj.type_key == ODETTE_DANCE_OBJECT_KEY and obj.entity.owner_key == owner_key:
                 return obj
         return None
 

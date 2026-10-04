@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, replace
 from math import hypot
 from typing import Protocol
@@ -21,7 +21,6 @@ from genshin_sim.core.protocols import FrameUpdatable
 from genshin_sim.core.space import (
     ACTIVE_CHARACTER_ENTITY_ID,
     CreatedObjectSpec,
-    CreatedObjectTickSpec,
     SpatialEntity,
     SpatialEntityKind,
     Vector3,
@@ -79,7 +78,7 @@ class CreatedObjectRecord:
 
     frame: int
     request: ImpactRequest
-    object_key: str
+    type_key: str
     entity_id: str
 
 
@@ -89,7 +88,7 @@ class CreatedObjectExtensionDispatchRecord:
 
     frame: int
     request: ImpactRequest
-    object_key: str
+    type_key: str
     entity_id: str
     applied_frames: int
     remaining_cap_frames: int | None
@@ -520,7 +519,7 @@ class ImpactRequestDispatcher:
             CreatedObjectRecord(
                 frame=request.frame,
                 request=request,
-                object_key=state.object_key,
+                type_key=state.type_key,
                 entity_id=state.entity.entity_id,
             )
         )
@@ -552,13 +551,13 @@ class ImpactRequestDispatcher:
             return
 
         params = dict(request.params)
-        object_key = _required_text(params, "object_key")
+        type_key = _required_text(params, "type_key")
         frames = _required_positive_int(params, "frames")
         max_extra_frames = _optional_positive_int(params, "max_extra_frames")
         owner_key = _optional_text(params, "owner_key") or _owner_key_from_request(request)
         runtime = context.space_runtime.created_object_runtime
         record = runtime.extend_duration(
-            object_key=object_key,
+            type_key=type_key,
             owner_key=owner_key,
             frames=frames,
             max_extra_frames=max_extra_frames,
@@ -577,7 +576,7 @@ class ImpactRequestDispatcher:
             CreatedObjectExtensionDispatchRecord(
                 frame=request.frame,
                 request=request,
-                object_key=record.object_key,
+                type_key=record.type_key,
                 entity_id=record.entity_id,
                 applied_frames=record.applied_frames,
                 remaining_cap_frames=record.remaining_cap_frames,
@@ -606,12 +605,12 @@ class ImpactRequestDispatcher:
             return
 
         params = dict(request.params)
-        object_key = _required_text(params, "object_key")
+        type_key = _required_text(params, "type_key")
         target_frame = _required_positive_int(params, "target_frame")
         owner_key = _optional_text(params, "owner_key") or _owner_key_from_request(request)
         runtime = context.space_runtime.created_object_runtime
         record = runtime.align_tick_schedules(
-            object_key=object_key,
+            type_key=type_key,
             owner_key=owner_key,
             target_frame=target_frame,
             frame=request.frame,
@@ -926,40 +925,32 @@ def _attack_direction(space_runtime, anchor: SpatialEntity) -> Vector3:
 
 def _created_object_spec_from_request(request: ImpactRequest) -> CreatedObjectSpec:
     params = dict(request.params)
-    object_key = _required_text(params, "object_key")
+    type_key = _required_text(params, "type_key")
     duration_frames = _required_positive_int(params, "duration_frames")
     position = _vector3_from_param(params.get("position"), "position")
     facing = _vector3_from_param(params.get("facing"), "facing", default=Vector3(0.0, 0.0, 1.0))
-    behavior_key = _optional_text(params, "behavior_key")
     entity_id = _optional_text(params, "entity_id")
     owner_key = _optional_text(params, "owner_key") or _owner_key_from_request(request)
     source_key = _optional_text(params, "source_key") or request.action_key or request.impact_key
-    tick_interval_frames = _optional_positive_int(params, "tick_interval_frames")
-    first_tick_frame_offset = _optional_non_negative_int(params, "first_tick_frame_offset")
-    tick_schedules = _optional_tick_schedules(params.get("tick_schedules"))
     follow_entity_id = _optional_text(params, "follow_entity_id")
     max_instances = _optional_positive_int(params, "max_instances") or 1
     refresh_existing = _optional_bool(params, "refresh_existing", default=True)
     tags = _tuple_of_text(params.get("tags"), "tags")
-    spec_params = _mapping_param(params.get("object_params"), "object_params")
+    config = _mapping_param(params.get("config"), "config")
 
     return CreatedObjectSpec(
-        object_key=object_key,
+        type_key=type_key,
         duration_frames=duration_frames,
         position=position,
         facing=facing,
         owner_key=owner_key,
         source_key=source_key,
-        behavior_key=behavior_key,
         entity_id=entity_id,
-        tick_interval_frames=tick_interval_frames,
-        first_tick_frame_offset=first_tick_frame_offset,
-        tick_schedules=tick_schedules,
         follow_entity_id=follow_entity_id,
         max_instances=max_instances,
         refresh_existing=refresh_existing,
         tags=tags,
-        params=spec_params,
+        config=config,
     )
 
 
@@ -1023,52 +1014,6 @@ def _optional_bool(params: Mapping[str, object], field_name: str, *, default: bo
         msg = f"create_entity.params.{field_name} 必须是布尔值"
         raise ValueError(msg)
     return value
-
-
-def _optional_tick_schedules(value: object) -> tuple[CreatedObjectTickSpec, ...]:
-    if value is None:
-        return ()
-    if not isinstance(value, Sequence) or isinstance(value, (str, bytes)):
-        msg = "create_entity.params.tick_schedules 必须是序列"
-        raise ValueError(msg)
-    schedules: list[CreatedObjectTickSpec] = []
-    for index, raw in enumerate(value):
-        if not isinstance(raw, Mapping):
-            msg = f"create_entity.params.tick_schedules[{index}] 必须是映射"
-            raise ValueError(msg)
-        behavior_key = raw.get("behavior_key")
-        first_tick_frame_offset = raw.get("first_tick_frame_offset", 0)
-        interval_frames = raw.get("interval_frames")
-        if not isinstance(behavior_key, str) or not behavior_key.strip():
-            msg = f"create_entity.params.tick_schedules[{index}].behavior_key 必须是非空字符串"
-            raise ValueError(msg)
-        if (
-            isinstance(first_tick_frame_offset, bool)
-            or not isinstance(first_tick_frame_offset, int)
-            or first_tick_frame_offset < 0
-        ):
-            msg = (
-                f"create_entity.params.tick_schedules[{index}].first_tick_frame_offset "
-                "必须是非负整数"
-            )
-            raise ValueError(msg)
-        if interval_frames is not None and (
-            isinstance(interval_frames, bool)
-            or not isinstance(interval_frames, int)
-            or interval_frames <= 0
-        ):
-            msg = (
-                f"create_entity.params.tick_schedules[{index}].interval_frames 必须是正整数或 None"
-            )
-            raise ValueError(msg)
-        schedules.append(
-            CreatedObjectTickSpec(
-                behavior_key=behavior_key,
-                first_tick_frame_offset=first_tick_frame_offset,
-                interval_frames=interval_frames,
-            )
-        )
-    return tuple(schedules)
 
 
 def _vector3_from_param(

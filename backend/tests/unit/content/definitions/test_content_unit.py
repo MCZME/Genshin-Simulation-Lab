@@ -201,7 +201,7 @@ def test_character_unit_accepts_runtime_slices():
         slot=1,
         action_interpreter=_slice(),
         impact_factories={"impact.test": _slice()},
-        created_object_behaviors={"created.test": _slice()},
+        created_object_types={"created.test": _slice()},
         event_hooks=[_slice()],
         attribute_definitions=[_slice()],
         damage_modifier_providers=[_slice()],
@@ -233,7 +233,7 @@ def test_action_interpreter_requires_character_and_slot():
         )
 
 
-def test_created_object_behaviors_require_character():
+def test_created_object_types_require_character():
     with pytest.raises(ContentUnitValidationError, match="角色"):
         ContentUnit(
             owner_type=ContentUnitOwnerType.ARTIFACT,
@@ -241,7 +241,7 @@ def test_created_object_behaviors_require_character():
             handler_key="artifact.test",
             version="dev-m3",
             slot=1,
-            created_object_behaviors={"created.test": _slice()},
+            created_object_types={"created.test": _slice()},
         )
 
 

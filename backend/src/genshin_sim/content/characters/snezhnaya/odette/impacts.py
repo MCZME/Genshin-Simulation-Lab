@@ -28,28 +28,20 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_DAMAGE_ELEMENTAL_AMOUNT,
     ODETTE_DAMAGE_ELEMENTAL_STRENGTH,
     ODETTE_DANCE_DURATION_FRAMES,
-    ODETTE_DANCE_FIRST_ATTACK_AFTER_BURST_FRAMES,
-    ODETTE_DANCE_FIRST_ATTACK_AFTER_E_HIT_FRAMES,
     ODETTE_DANCE_OBJECT_KEY,
-    ODETTE_DANCE_PLUME_BEHAVIOR_KEY,
     ODETTE_DANCE_PLUME_HIT,
     ODETTE_DANCE_PLUME_IMPACT_KEY,
-    ODETTE_DANCE_PLUME_TO_WING_FRAMES,
     ODETTE_DANCE_RESUME_AFTER_SPECIAL_FRAMES,
     ODETTE_DANCE_SEARCH_RADIUS,
-    ODETTE_DANCE_STEP_PERIOD_FRAMES,
     ODETTE_DANCE_STEP_PLUME,
     ODETTE_DANCE_STEP_WING,
-    ODETTE_DANCE_WING_BEHAVIOR_KEY,
     ODETTE_DANCE_WING_HIT,
     ODETTE_DANCE_WING_IMPACT_KEY,
-    ODETTE_DANCE_WING_TO_PLUME_FRAMES,
     ODETTE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY,
     ODETTE_ELEMENTAL_BURST_FINAL_IMPACT_KEY,
     ODETTE_ELEMENTAL_BURST_SLASH_1_IMPACT_KEY,
     ODETTE_ELEMENTAL_BURST_SLASH_2_IMPACT_KEY,
     ODETTE_ELEMENTAL_BURST_SLASH_3_IMPACT_KEY,
-    ODETTE_ELEMENTAL_BURST_SUMMON_FRAME,
     ODETTE_ELEMENTAL_SKILL_ACTION_KEY,
     ODETTE_ELEMENTAL_SKILL_HIT,
     ODETTE_ELEMENTAL_SKILL_IMPACT_KEY,
@@ -106,42 +98,7 @@ from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
 )
 
 if TYPE_CHECKING:
-    from genshin_sim.core.simulation.context import SimulationContext
-
-_DANCE_STEP_BY_BEHAVIOR_KEY = {
-    ODETTE_DANCE_PLUME_BEHAVIOR_KEY: ODETTE_DANCE_STEP_PLUME,
-    ODETTE_DANCE_WING_BEHAVIOR_KEY: ODETTE_DANCE_STEP_WING,
-}
-
-
-def _active_dance_next_step(simulation: SimulationContext | None, owner_key: str) -> str | None:
-    """读活动倒影 tick 调度中最早一拍的舞步（Q 重召唤保留顺序用）。
-
-    没有活动倒影或调度无下一拍时返回 ``None``（调用方按拂羽起拍处理）。
-    """
-
-    if simulation is None or simulation.space_runtime is None:
-        return None
-    obj = next(
-        (
-            created
-            for created in simulation.space_runtime.created_object_runtime.active_objects
-            if created.object_key == ODETTE_DANCE_OBJECT_KEY
-            and created.entity.owner_key == owner_key
-        ),
-        None,
-    )
-    if obj is None or not obj.tick_schedules:
-        return None
-    due = [
-        (schedule.next_tick_frame, schedule.behavior_key)
-        for schedule in obj.tick_schedules
-        if schedule.next_tick_frame is not None
-    ]
-    if not due:
-        return None
-    _, behavior_key = min(due)
-    return _DANCE_STEP_BY_BEHAVIOR_KEY.get(behavior_key)
+    pass
 
 
 def _compile_damage_spec(
@@ -719,11 +676,10 @@ class OdetteActionImpactFactory:
         首击锚点（命中帧 +134f）保持不变。元素爆发是「召唤至身边」，仍取
         角色当前位置。附近没有敌人时两种入口都回退到角色位置。
 
-        轮换节奏经 ``tick_schedules`` 随创建/刷新锚定（调度状态由创建物运行
-        态持有，舞步攻击由 ``dance.py`` 的 tick 行为驱动）：E 重召唤重置为
-        拂羽首拍（命中帧 +134f）；Q 重召唤已存在时保留拂羽/旋翼顺序、从当前
-        下一拍继续，否则从拂羽起拍（施放 +252f 首击）。索敌以倒影位置为中心，
-        因此停在敌人处等价于「停下后就近攻击」。
+        轮换节奏由创建类型（``dance.py``）接管：请求只携带 type_key 与类型化
+        config（施放入口 + Q 是否保留顺序），初始调度在 ``build_state`` 声明，
+        E 重召唤重置为拂羽首拍、Q 重召唤已存在时经 ``previous`` 保留拂羽/旋翼
+        顺序。索敌以倒影位置为中心，因此停在敌人处等价于「停下后就近攻击」。
         """
 
         owner_key = f"character:slot_{context.owner.slot}"
@@ -735,11 +691,6 @@ class OdetteActionImpactFactory:
             position = origin
             if context.action_key == ODETTE_ELEMENTAL_SKILL_ACTION_KEY:
                 position = self._nearest_target_position(simulation.space_runtime, origin)
-        plume_offset, wing_offset = self._dance_schedule_offsets(
-            simulation,
-            context.action_key,
-            owner_key,
-        )
         return ImpactRequest(
             frame=context.frame,
             kind=ImpactKind.CREATE_ENTITY,
@@ -754,49 +705,17 @@ class OdetteActionImpactFactory:
                     "handler_key": ODETTE_CHARACTER_HANDLER_KEY,
                     "source_impact_key": context.impact_key,
                 },
-                "object_key": ODETTE_DANCE_OBJECT_KEY,
+                "type_key": ODETTE_DANCE_OBJECT_KEY,
                 "duration_frames": ODETTE_DANCE_DURATION_FRAMES,
                 "position": {"x": position.x, "y": position.y, "z": position.z},
                 "owner_key": owner_key,
                 "tags": (ODETTE_DANCE_OBJECT_KEY,),
-                "object_params": {},
-                "tick_schedules": (
-                    {
-                        "behavior_key": ODETTE_DANCE_PLUME_BEHAVIOR_KEY,
-                        "first_tick_frame_offset": plume_offset,
-                        "interval_frames": ODETTE_DANCE_STEP_PERIOD_FRAMES,
-                    },
-                    {
-                        "behavior_key": ODETTE_DANCE_WING_BEHAVIOR_KEY,
-                        "first_tick_frame_offset": wing_offset,
-                        "interval_frames": ODETTE_DANCE_STEP_PERIOD_FRAMES,
-                    },
-                ),
+                "config": {
+                    "entry": context.action_key,
+                    "preserve_order": context.action_key != ODETTE_ELEMENTAL_SKILL_ACTION_KEY,
+                },
             },
         )
-
-    @staticmethod
-    def _dance_schedule_offsets(
-        simulation: SimulationContext | None,
-        action_key: str | None,
-        owner_key: str,
-    ) -> tuple[int, int]:
-        """计算拂羽/旋翼两条 tick 调度的首拍偏移（相对创建帧）。
-
-        E（重新召唤）：命中帧 +134f 拂羽首拍、+109f 后旋翼接拍；Q：施放
-        +252f 首击（创建帧为施放第 1 帧，故首拍偏移 251），重召唤前倒影已
-        存在时保留既有顺序（下一拍先落），否则从拂羽起拍。
-        """
-
-        if action_key == ODETTE_ELEMENTAL_SKILL_ACTION_KEY:
-            plume_offset = ODETTE_DANCE_FIRST_ATTACK_AFTER_E_HIT_FRAMES
-            return plume_offset, plume_offset + ODETTE_DANCE_PLUME_TO_WING_FRAMES
-        first_offset = (
-            ODETTE_DANCE_FIRST_ATTACK_AFTER_BURST_FRAMES - ODETTE_ELEMENTAL_BURST_SUMMON_FRAME
-        )
-        if _active_dance_next_step(simulation, owner_key) == ODETTE_DANCE_STEP_WING:
-            return first_offset + ODETTE_DANCE_WING_TO_PLUME_FRAMES, first_offset
-        return first_offset, first_offset + ODETTE_DANCE_PLUME_TO_WING_FRAMES
 
     @staticmethod
     def _special_resume_request(context: ActionImpactContext) -> ImpactRequest:
@@ -827,7 +746,7 @@ class OdetteActionImpactFactory:
                     "handler_key": ODETTE_CHARACTER_HANDLER_KEY,
                     "source_impact_key": context.impact_key,
                 },
-                "object_key": ODETTE_DANCE_OBJECT_KEY,
+                "type_key": ODETTE_DANCE_OBJECT_KEY,
                 "owner_key": f"character:slot_{context.owner.slot}",
                 "target_frame": target_frame,
             },

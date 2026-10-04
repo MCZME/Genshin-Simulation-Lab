@@ -18,7 +18,7 @@ from genshin_sim.core.contracts.json import JSONValue, validate_json_compatible
 from genshin_sim.core.contracts.phases import MountPoint
 from genshin_sim.core.contracts.state_schema import StateSchema
 from genshin_sim.core.impacts import ImpactFactory
-from genshin_sim.core.space import CreatedObjectBehavior
+from genshin_sim.core.space import CreatedEntityType
 from genshin_sim.core.systems.aura_icd import IcdDefinition
 from genshin_sim.core.systems.buff import BuffDefinition
 from genshin_sim.core.systems.cooldown import (
@@ -70,7 +70,7 @@ class ContentUnit:
     state_schema: StateSchema | None = None
     metadata: Mapping[str, JSONValue] = field(default_factory=dict)
     impact_factories: Mapping[str, ImpactFactory] = field(default_factory=dict)
-    created_object_behaviors: Mapping[str, CreatedObjectBehavior] = field(default_factory=dict)
+    created_object_types: Mapping[str, CreatedEntityType] = field(default_factory=dict)
     event_hooks: Sequence[EventHook] = field(default_factory=tuple)
     modifiers: Sequence[Modifier] = field(default_factory=tuple)
     attribute_definitions: Sequence[AttributeDefinition] = field(default_factory=tuple)
@@ -118,8 +118,8 @@ class ContentUnit:
         object.__setattr__(self, "impact_factories", dict(self.impact_factories))
         object.__setattr__(
             self,
-            "created_object_behaviors",
-            dict(self.created_object_behaviors),
+            "created_object_types",
+            dict(self.created_object_types),
         )
         object.__setattr__(self, "event_hooks", tuple(self.event_hooks))
         object.__setattr__(self, "modifiers", tuple(self.modifiers))
@@ -211,7 +211,7 @@ class ContentUnit:
         )
         object.__setattr__(self, "mount_points", tuple(self.mount_points))
         self._validate_interpreter_slice()
-        self._validate_created_object_behaviors()
+        self._validate_created_object_types()
         self._validate_impact_factory_keys()
         self._validate_effect_keys()
         self._validate_reaction_capabilities()
@@ -230,13 +230,13 @@ class ContentUnit:
         if self.slot is None:
             raise ContentUnitValidationError("角色动作解释器必须绑定队伍槽位")
 
-    def _validate_created_object_behaviors(self) -> None:
-        if not self.created_object_behaviors:
+    def _validate_created_object_types(self) -> None:
+        if not self.created_object_types:
             return
         if self.owner_type is not ContentUnitOwnerType.CHARACTER:
-            raise ContentUnitValidationError("只有角色内容单元可以贡献内容创建对象行为")
-        for behavior_key in self.created_object_behaviors:
-            _require_non_empty(behavior_key, "created_object_behaviors key")
+            raise ContentUnitValidationError("只有角色内容单元可以贡献内容创建实体类型")
+        for type_key in self.created_object_types:
+            _require_non_empty(type_key, "created_object_types key")
 
     def _validate_impact_factory_keys(self) -> None:
         for impact_key in self.impact_factories:

@@ -180,9 +180,9 @@ ODETTE_PLUNGE_ATTACK_DATA = PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE["sword"]
 # 资产倍率条目「独舞倒影持续时间」。倒影由 E 发射并在命中的敌人处停下：
 # 位移过程不实现（规划已确认），改为直接在就近敌人位置生成（索敌同舞步
 # 口径），飞行时间不计入时序，故首击节奏不变；Q「召唤至身边」取角色位置。
-# 轮换节奏由召唤物自身的 tick 调度承载（创建物运行态）：E/Q 施放经
-# CREATE_ENTITY 的 ``tick_schedules`` 锚定，特殊战技恢复经
-# ALIGN_CREATED_ENTITY_TICKS 请求重锚（相位保持）。
+# 轮换节奏由召唤物自身的 tick 调度承载（创建物运行态）：E/Q 施放经创建类型
+# 的 build_state 声明初始调度，特殊战技恢复经 ALIGN_CREATED_ENTITY_TICKS 请求
+# 重锚（相位保持）。
 # ---------------------------------------------------------------------------
 ODETTE_DANCE_OBJECT_KEY = "odette.dance_reflection"
 ODETTE_DANCE_DURATION_FRAMES = 1200
@@ -198,10 +198,10 @@ ODETTE_DANCE_STEP_PERIOD_FRAMES = (
 )
 ODETTE_DANCE_STEP_PLUME = "plume"
 ODETTE_DANCE_STEP_WING = "wing"
-# 舞步 tick 行为键：CREATE_ENTITY params.tick_schedules 按 behavior_key 消费，
-# 行为在内容单元 ``created_object_behaviors`` 注册（barbara 水环先例）。
-ODETTE_DANCE_PLUME_BEHAVIOR_KEY = f"{ODETTE_DANCE_OBJECT_KEY}.plume"
-ODETTE_DANCE_WING_BEHAVIOR_KEY = f"{ODETTE_DANCE_OBJECT_KEY}.wing"
+# 舞步调度键：类型在 build_state 声明的两条 tick 调度（拂羽/旋翼），on_tick
+# 按调度键分派产出（调度存储与推进由创建物运行时基座持有）。
+ODETTE_DANCE_PLUME_SCHEDULE_KEY = ODETTE_DANCE_STEP_PLUME
+ODETTE_DANCE_WING_SCHEDULE_KEY = ODETTE_DANCE_STEP_WING
 
 # 元素战技命中帧（E 动作影响点与轮换首击锚点共用）。
 ODETTE_ELEMENTAL_SKILL_HIT_FRAME = 23

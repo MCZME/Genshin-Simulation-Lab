@@ -16,7 +16,7 @@ from genshin_sim.content.characters.snezhnaya.odette.actions import (
     OdetteActionInterpreter,
     create_odette_actions,
 )
-from genshin_sim.content.characters.snezhnaya.odette.dance import OdetteDanceStepBehavior
+from genshin_sim.content.characters.snezhnaya.odette.dance import OdetteDanceReflectionType
 from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_C1_EXTRA_AOE_RADIUS,
     ODETTE_C1_EXTRA_CONDUCT_DISPLAY_NAME,
@@ -26,10 +26,9 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_CHARGED_ATTACK_IMPACT_KEY,
     ODETTE_CONTENT_VERSION,
     ODETTE_DANCE_DURATION_FRAMES,
-    ODETTE_DANCE_PLUME_BEHAVIOR_KEY,
+    ODETTE_DANCE_OBJECT_KEY,
     ODETTE_DANCE_STEP_PLUME,
     ODETTE_DANCE_STEP_WING,
-    ODETTE_DANCE_WING_BEHAVIOR_KEY,
     ODETTE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
     ODETTE_ELEMENTAL_BURST_COOLDOWN_FRAMES,
     ODETTE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
@@ -351,21 +350,18 @@ def create_odette_content_unit(
         ),
         c1_channel=c1_channel,
     )
-    # 独舞倒影轮换由创建物自身 tick 调度驱动：拂羽/旋翼各一条调度（周期 234f、
-    # 首拍错开 109f，见 data.py），节奏锚定/重锚在影响工厂展开（E/Q 随创建、
-    # 特殊战技随恢复影响点），到期帧由舞步行为产出伤害请求。
-    created_object_behaviors = {
-        ODETTE_DANCE_PLUME_BEHAVIOR_KEY: OdetteDanceStepBehavior(
-            step=ODETTE_DANCE_STEP_PLUME,
+    # 独舞倒影注册为类型化创建实体：轮换由创建物自身 tick 调度驱动（拂羽/
+    # 旋翼各一条周期 234f、首拍错开 109f 的调度，见 data.py），创建请求只带
+    # type_key 与 config（施放入口 + Q 是否保留顺序），初始调度与到期产出由
+    # 类型接管（``dance.py``）；特殊战技恢复经重锚请求重排节奏。
+    created_object_types = {
+        ODETTE_DANCE_OBJECT_KEY: OdetteDanceReflectionType(
             slot=request.slot,
-            cryo_spec=dance_cryo_specs[ODETTE_DANCE_STEP_PLUME],
-            stellar_channel=stellar_channels[ODETTE_DANCE_STEP_PLUME],
-        ),
-        ODETTE_DANCE_WING_BEHAVIOR_KEY: OdetteDanceStepBehavior(
-            step=ODETTE_DANCE_STEP_WING,
-            slot=request.slot,
-            cryo_spec=dance_cryo_specs[ODETTE_DANCE_STEP_WING],
-            stellar_channel=stellar_channels[ODETTE_DANCE_STEP_WING],
+            cryo_specs=dance_cryo_specs,
+            stellar_channels={
+                ODETTE_DANCE_STEP_PLUME: stellar_channels[ODETTE_DANCE_STEP_PLUME],
+                ODETTE_DANCE_STEP_WING: stellar_channels[ODETTE_DANCE_STEP_WING],
+            },
         ),
     }
     event_hooks: tuple = ()
@@ -425,7 +421,7 @@ def create_odette_content_unit(
             key: impact_factory
             for key in ODETTE_HIT_IMPACT_KEYS
         },
-        created_object_behaviors=created_object_behaviors,
+        created_object_types=created_object_types,
         event_hooks=(
             *event_hooks,
             OdetteParticleHook(owner_ref=owner_ref, slot=request.slot),

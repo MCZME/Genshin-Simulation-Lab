@@ -113,7 +113,7 @@ def create_barbara_encore_effect(
     hook = BarbaraRingEncoreHook(
         owner_ref=owner_ref,
         slot=slot,
-        object_key=BARBARA_RING_OBJECT_KEY,
+        type_key=BARBARA_RING_OBJECT_KEY,
         extend_frames=extend_frames,
         max_extra_frames=max_extra_frames,
     )
@@ -124,7 +124,7 @@ def create_barbara_encore_effect(
         component=GenericComponent(
             kind="extend_created_object_on_energy_pickup",
             params={
-                "object_key": BARBARA_RING_OBJECT_KEY,
+                "type_key": BARBARA_RING_OBJECT_KEY,
                 "extend_frames": extend_frames,
                 "max_extra_frames": max_extra_frames,
             },
@@ -197,7 +197,7 @@ def create_barbara_constellation_c2(
     provider = BarbaraConstellationC2HydroBonusProvider(
         slot=slot,
         bonus_value=hydro_bonus,
-        object_key=BARBARA_RING_OBJECT_KEY,
+        type_key=BARBARA_RING_OBJECT_KEY,
     )
     return ContentUnit(
         owner_type=ContentUnitOwnerType.CHARACTER,

@@ -23,7 +23,11 @@ from genshin_sim.core.attributes import (
     RuntimeSourceRef,
 )
 from genshin_sim.core.impacts import ActionImpactContext, ImpactKind, ImpactRequest
-from genshin_sim.core.space import CreatedObjectRuntimeState
+from genshin_sim.core.space import (
+    CreatedObjectRuntimeState,
+    CreatedObjectTickState,
+    SpatialEntity,
+)
 from genshin_sim.infrastructure.assets_sqlite import SQLiteAssetRepository
 from tests.helpers.fixture_assets import (
     FIXTURE_ARTIFACT_SET_ASSET_KEY,
@@ -73,9 +77,27 @@ class TestImpactFactory:
         )
 
 
-class TestCreatedObjectBehavior:
-    def create_tick_requests(self, state: CreatedObjectRuntimeState, frame: int, context: object):
-        del state, frame, context
+class TestCreatedObjectType:
+    type_key = "created.test"
+
+    def build_state(
+        self,
+        config,
+        entity: SpatialEntity,
+        frame: int,
+        previous: CreatedObjectRuntimeState | None,
+    ) -> CreatedObjectRuntimeState:
+        del config, frame, previous
+        return CreatedObjectRuntimeState(entity=entity, type_key=self.type_key)
+
+    def on_tick(
+        self,
+        state: CreatedObjectRuntimeState,
+        schedule: CreatedObjectTickState,
+        frame: int,
+        context: object,
+    ):
+        del state, schedule, frame, context
         return ()
 
 

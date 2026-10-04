@@ -127,7 +127,10 @@ BARBARA_ELEMENTAL_SKILL_ICD_SEQUENCE_KEY = "默认"
 BARBARA_ELEMENTAL_SKILL_ICD_TAG_KEY = "元素战技"
 
 # 歌声之环（已确认资料）：持续 15s + 6 帧；首次治疗第 6 帧、间隔 5s；
-# 接触施湿首次第 36 帧、间隔 1.5s。环实体跟随当前场上角色。
+# 接触施湿首次第 36 帧、间隔 1.5s。环实体跟随当前场上角色。节奏由水环
+# 创建实体类型在 build_state 声明（on_tick 按调度键分派产出）。
+BARBARA_RING_HEAL_SCHEDULE_KEY = "heal"
+BARBARA_RING_WET_SCHEDULE_KEY = "wet"
 BARBARA_RING_DURATION_FRAMES = 907
 BARBARA_RING_HEAL_FIRST_TICK_OFFSET = 6
 BARBARA_RING_HEAL_TICK_INTERVAL = 300

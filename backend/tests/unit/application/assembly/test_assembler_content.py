@@ -50,7 +50,7 @@ from genshin_sim.core.systems.buff import (
 from tests.helpers.assembly import (
     ContributedActionInterpreter,
     TestAttributeModifier,
-    TestCreatedObjectBehavior,
+    TestCreatedObjectType,
     TestImpactFactory,
     minimal_input,
     skill_input_trace,
@@ -78,7 +78,7 @@ def test_assembler_injects_character_runtime_contribution_and_actions():
 
     interpreter = ContributedActionInterpreter()
     impact_factory = TestImpactFactory()
-    created_object_behavior = TestCreatedObjectBehavior()
+    created_object_type = TestCreatedObjectType()
     registry = create_default_content_unit_registry()
     registry.register_character_factory(
         "character.runtime",
@@ -97,7 +97,7 @@ def test_assembler_injects_character_runtime_contribution_and_actions():
                 ),
             ),
             impact_factories={"impact.character_runtime": impact_factory},
-            created_object_behaviors={"created_object.character_runtime": created_object_behavior},
+            created_object_types={"created_object.character_runtime": created_object_type},
         ),
     )
 
@@ -111,7 +111,7 @@ def test_assembler_injects_character_runtime_contribution_and_actions():
     assert assembled.content_bundle.action_interpreters == {1: interpreter}
     assert "character.runtime.skill" in assembled.action_registry.action_keys
     assert assembled.impact_dispatcher.factory_keys == ("impact.character_runtime",)
-    assert assembled.space_runtime.created_object_runtime.behavior_keys == (
+    assert assembled.space_runtime.created_object_runtime.type_keys == (
         "created_object.character_runtime",
     )
     assert assembled.action_manager.decisions[0].action_key == "character.runtime.skill"

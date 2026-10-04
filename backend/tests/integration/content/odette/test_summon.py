@@ -16,8 +16,8 @@ import pytest
 from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_CHARACTER_HANDLER_KEY,
     ODETTE_DANCE_OBJECT_KEY,
-    ODETTE_DANCE_PLUME_BEHAVIOR_KEY,
-    ODETTE_DANCE_WING_BEHAVIOR_KEY,
+    ODETTE_DANCE_PLUME_SCHEDULE_KEY,
+    ODETTE_DANCE_WING_SCHEDULE_KEY,
 )
 from genshin_sim.core.coordination.elemental_reaction.settlement_coordinator import (
     ElementalSettlementCoordinator,
@@ -78,7 +78,7 @@ def test_rotation_rhythm(odette_assembled):
     # 召唤物为归属本槽位的活动创建物。
     owner_key = "character:slot_1"
     assert any(
-        obj.object_key == ODETTE_DANCE_OBJECT_KEY and obj.entity.owner_key == owner_key
+        obj.type_key == ODETTE_DANCE_OBJECT_KEY and obj.entity.owner_key == owner_key
         for obj in assembled.context.space_runtime.created_object_runtime.active_objects
     )
 
@@ -255,10 +255,8 @@ def test_radiance_dual_hit_on_dance_step(odette_assembled):
 
 def test_summon_expiry_stops_dance_hits(odette_assembled):
     # 召唤物 20s 到期（1225）后不再产出舞步伤害：到期帧前的 10 次舞步照常，
-    # 之后无任何舞步命中。调度残留 1329（拂羽）/1438（旋翼）均晚于过期帧，
-    # 属无害残留——仿真在召唤物过期后因世界空闲提前结束，tick 到期停机分支
-    # （next_tick 写回 None）只在仿真因其他活动继续时可达；E/Q 重召唤会
-    # 重置调度。
+    # 之后无任何舞步命中。到期停机由运行时基座承载：expire 清空全部调度的
+    # 下一拍（无残留），E/Q 重召唤则经类型重建调度。
     payload = odette_helpers.odette_input_payload(
         max_frames=1400,
         input_trace=_e_then_wait_trace(),
@@ -273,9 +271,9 @@ def test_summon_expiry_stops_dance_hits(odette_assembled):
     assert len(dance) == 10
     assert all(frame < _SUMMON_EXPIRY_FRAME for frame, _name in dance)
     obj = next(o for o in assembled.context.space_runtime.created_object_runtime.objects)
-    schedules = {s.behavior_key: s.next_tick_frame for s in obj.tick_schedules}
-    assert schedules[ODETTE_DANCE_PLUME_BEHAVIOR_KEY] == 1329
-    assert schedules[ODETTE_DANCE_WING_BEHAVIOR_KEY] == 1438
+    schedules = {s.schedule_key: s.next_tick_frame for s in obj.schedules}
+    assert schedules[ODETTE_DANCE_PLUME_SCHEDULE_KEY] is None
+    assert schedules[ODETTE_DANCE_WING_SCHEDULE_KEY] is None
 
 
 def test_skill_summon_lands_on_nearest_target(odette_assembled):

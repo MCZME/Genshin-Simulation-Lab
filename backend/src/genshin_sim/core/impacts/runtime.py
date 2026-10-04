@@ -239,6 +239,9 @@ class ImpactRequestDispatcher:
             if request.kind is ImpactKind.EXTEND_CREATED_ENTITY:
                 self._handle_extend_created_entity_request(context, request)
                 continue
+            if request.kind is ImpactKind.ALIGN_CREATED_ENTITY_TICKS:
+                self._handle_align_created_entity_ticks_request(context, request)
+                continue
             self._ignored_requests.append(
                 IgnoredImpactRecord(
                     frame=request.frame,
@@ -586,6 +589,41 @@ class ImpactRequestDispatcher:
         )
         if state is not None:
             context.space_runtime.sync_entity_to_space(state.entity)
+
+    def _handle_align_created_entity_ticks_request(
+        self,
+        context,
+        request: ImpactRequest,
+    ) -> None:
+        if context.space_runtime is None:
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="缺少 SpaceRuntime，无法重锚创建物 tick 调度",
+                )
+            )
+            return
+
+        params = dict(request.params)
+        object_key = _required_text(params, "object_key")
+        target_frame = _required_positive_int(params, "target_frame")
+        owner_key = _optional_text(params, "owner_key") or _owner_key_from_request(request)
+        runtime = context.space_runtime.created_object_runtime
+        record = runtime.align_tick_schedules(
+            object_key=object_key,
+            owner_key=owner_key,
+            target_frame=target_frame,
+            frame=request.frame,
+        )
+        if record is None:
+            self._ignored_requests.append(
+                IgnoredImpactRecord(
+                    frame=request.frame,
+                    request=request,
+                    reason="未找到可重锚 tick 的活动创建对象",
+                )
+            )
 
 
 class ImpactRuntime(FrameUpdatable):

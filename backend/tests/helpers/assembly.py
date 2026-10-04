@@ -74,8 +74,8 @@ class TestImpactFactory:
 
 
 class TestCreatedObjectBehavior:
-    def create_tick_requests(self, state: CreatedObjectRuntimeState, frame: int):
-        del state, frame
+    def create_tick_requests(self, state: CreatedObjectRuntimeState, frame: int, context: object):
+        del state, frame, context
         return ()
 
 

@@ -199,8 +199,9 @@ class _AuraAreaTickBehavior:
         self,
         state: CreatedObjectRuntimeState,
         frame: int,
+        context: object,
     ) -> tuple[ImpactRequest, ...]:
-        del state
+        del state, context
         return (
             ImpactRequest(
                 frame=frame,

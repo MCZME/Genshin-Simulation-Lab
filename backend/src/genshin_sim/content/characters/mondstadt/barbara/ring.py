@@ -37,6 +37,7 @@ class BarbaraRingHealBehavior:
         self,
         state: CreatedObjectRuntimeState,
         frame: int,
+        context: object,
     ) -> Sequence[ImpactRequest]:
         return (
             ImpactRequest(
@@ -66,6 +67,7 @@ class BarbaraRingWetBehavior:
         self,
         state: CreatedObjectRuntimeState,
         frame: int,
+        context: object,
     ) -> Sequence[ImpactRequest]:
         return (
             ImpactRequest(

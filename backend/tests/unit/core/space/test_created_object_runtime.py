@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from genshin_sim.core.entity_states import EntityLifecycleState
 from genshin_sim.core.impacts import ImpactKind, ImpactRequest
 from genshin_sim.core.simulation import SimulationContext
@@ -17,13 +19,16 @@ from genshin_sim.core.space import (
 class RecordingCreatedObjectBehavior:
     def __init__(self) -> None:
         self.calls: list[tuple[str, int]] = []
+        self.contexts: list[SimulationContext] = []
 
     def create_tick_requests(
         self,
         state: CreatedObjectRuntimeState,
         frame: int,
+        context: SimulationContext,
     ) -> tuple[ImpactRequest, ...]:
         self.calls.append((state.entity.entity_id, frame))
+        self.contexts.append(context)
         return (
             ImpactRequest(
                 frame=frame,
@@ -94,6 +99,8 @@ def test_created_object_runtime_tick_emits_impact_requests():
     runtime.update_frame(ctx, 2)
 
     assert behavior.calls == [(obj.entity.entity_id, 2)]
+    # tick 行为按协议收到仿真上下文（星变体分派等现场查询依赖）。
+    assert behavior.contexts == [ctx]
     assert [
         (request.frame, request.kind, request.impact_key, request.tags, request.params)
         for request in runtime.pending_impact_requests
@@ -342,3 +349,102 @@ def test_created_object_runtime_extension_ignores_missing_or_expired_object():
     assert unknown is None
     assert expired is None
     assert runtime.extension_records == ()
+
+
+def test_created_object_runtime_aligns_tick_schedules_phase_preserving():
+    # 重锚把全部调度按同一偏移平移：相对间隔（相位）不变，最早一拍落在目标帧。
+    ctx = SimulationContext()
+    behavior = RecordingCreatedObjectBehavior()
+    runtime = CreatedObjectRuntime(
+        {
+            "created.rotor.a": behavior,
+            "created.rotor.b": behavior,
+        }
+    )
+    spec = CreatedObjectSpec(
+        object_key="created.rotor",
+        duration_frames=1000,
+        owner_key="slot:1",
+        tick_schedules=(
+            CreatedObjectTickSpec(
+                "created.rotor.a", first_tick_frame_offset=100, interval_frames=50
+            ),
+            CreatedObjectTickSpec(
+                "created.rotor.b", first_tick_frame_offset=130, interval_frames=70
+            ),
+        ),
+    )
+    obj = runtime.create_or_refresh(spec, frame=1)
+
+    record = runtime.align_tick_schedules(
+        object_key="created.rotor",
+        owner_key="slot:1",
+        target_frame=60,
+        frame=10,
+    )
+
+    assert record is not None
+    assert record.earliest_tick_frame_before == 101
+    assert record.target_tick_frame == 60
+    assert record.delta_frames == -41
+    schedules = {s.behavior_key: s.next_tick_frame for s in obj.tick_schedules}
+    # a 提前到 60，b 保持 +30 相位；间隔（a→b=30、周期 50/70）不变。
+    assert schedules == {"created.rotor.a": 60, "created.rotor.b": 90}
+    runtime.update_frame(ctx, 60)
+    assert behavior.calls[0] == (obj.entity.entity_id, 60)
+    assert len(runtime.tick_align_records) == 1
+
+
+def test_created_object_runtime_align_rejects_past_target_and_missing_object():
+    runtime = CreatedObjectRuntime()
+    runtime.create_or_refresh(
+        CreatedObjectSpec(
+            object_key="created.rotor",
+            duration_frames=1000,
+            owner_key="slot:1",
+            tick_schedules=(CreatedObjectTickSpec("created.rotor.a", first_tick_frame_offset=100),),
+        ),
+        frame=1,
+    )
+
+    missing = runtime.align_tick_schedules(
+        object_key="created.rotor",
+        owner_key="slot:2",
+        target_frame=50,
+        frame=10,
+    )
+    with pytest.raises(ValueError, match="不能早于当前帧"):
+        runtime.align_tick_schedules(
+            object_key="created.rotor",
+            owner_key="slot:1",
+            target_frame=5,
+            frame=10,
+        )
+
+    assert missing is None
+    assert runtime.tick_align_records == ()
+
+
+def test_created_object_runtime_align_stopped_schedules_returns_none():
+    # 全部调度无下一拍（一次性 tick 已消费）时无可重锚，返回 None。
+    runtime = CreatedObjectRuntime()
+    obj = runtime.create_or_refresh(
+        CreatedObjectSpec(
+            object_key="created.once",
+            duration_frames=1000,
+            owner_key="slot:1",
+            tick_schedules=(CreatedObjectTickSpec("created.once.a", first_tick_frame_offset=10),),
+        ),
+        frame=1,
+    )
+    obj.tick_schedules[0].next_tick_frame = None
+
+    record = runtime.align_tick_schedules(
+        object_key="created.once",
+        owner_key="slot:1",
+        target_frame=50,
+        frame=20,
+    )
+
+    assert record is None
+    assert runtime.tick_align_records == ()

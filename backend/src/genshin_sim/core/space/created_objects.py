@@ -112,6 +112,32 @@ class CreatedObjectExtensionRecord:
             _validate_non_negative_int(self.remaining_cap_frames, "剩余上限帧数")
 
 
+@dataclass(frozen=True, slots=True)
+class CreatedObjectTickAlignRecord:
+    """一次创建物 tick 调度重锚的提交记录。
+
+    重锚把全部 tick 调度按同一偏移平移（相位保持），使最早一拍落在目标帧；
+    ``delta_frames`` 为正表示推迟、为负表示提前、为 0 表示本已对齐。
+    """
+
+    frame: int
+    object_key: str
+    entity_id: str
+    earliest_tick_frame_before: int
+    target_tick_frame: int
+    delta_frames: int
+
+    def __post_init__(self) -> None:
+        _validate_frame(self.frame)
+        _validate_non_empty_text(self.object_key, "创建对象 key")
+        _validate_non_empty_text(self.entity_id, "创建对象实体 id")
+        _validate_non_negative_int(self.earliest_tick_frame_before, "重锚前最早 tick 帧")
+        _validate_non_negative_int(self.target_tick_frame, "重锚目标帧")
+        if isinstance(self.delta_frames, bool) or not isinstance(self.delta_frames, int):
+            msg = "重锚平移帧数必须是整数"
+            raise ValueError(msg)
+
+
 @dataclass(slots=True)
 class CreatedObjectTickState:
     """创建物上一个 tick 调度的运行态。"""
@@ -179,6 +205,7 @@ class CreatedObjectBehavior(Protocol):
         self,
         state: CreatedObjectRuntimeState,
         frame: int,
+        context: SimulationContext,
     ) -> Sequence[ImpactRequest]:
         """为到期 tick 帧创建影响请求。"""
         ...
@@ -193,6 +220,7 @@ class CreatedObjectRuntime(FrameUpdatable):
         self._pending_impact_requests: list[ImpactRequest] = []
         self._emitted_impact_requests: list[ImpactRequest] = []
         self._extension_records: list[CreatedObjectExtensionRecord] = []
+        self._tick_align_records: list[CreatedObjectTickAlignRecord] = []
         self._current_frame = 0
         self._next_entity_index = 1
 
@@ -223,6 +251,10 @@ class CreatedObjectRuntime(FrameUpdatable):
     @property
     def extension_records(self) -> tuple[CreatedObjectExtensionRecord, ...]:
         return tuple(self._extension_records)
+
+    @property
+    def tick_align_records(self) -> tuple[CreatedObjectTickAlignRecord, ...]:
+        return tuple(self._tick_align_records)
 
     def register(self, behavior_key: str, behavior: CreatedObjectBehavior) -> None:
         _validate_non_empty_text(behavior_key, "内容创建对象行为 key")
@@ -286,6 +318,68 @@ class CreatedObjectRuntime(FrameUpdatable):
         )
         return record
 
+    def align_tick_schedules(
+        self,
+        *,
+        object_key: str,
+        owner_key: str | None,
+        target_frame: int,
+        frame: int,
+    ) -> CreatedObjectTickAlignRecord | None:
+        """把活动创建物的全部 tick 调度按同一偏移平移，使最早一拍落在目标帧。
+
+        相位保持：各调度间的相对间隔不变，只整体提前或推迟（用于召唤物暂停
+        后恢复攻击等场景，不重置持续时间、不重建对象）。没有活动匹配对象、
+        或全部调度都没有下一 tick 帧时返回 ``None``；目标帧早于当前帧时拒绝。
+        """
+
+        _validate_non_empty_text(object_key, "创建对象 key")
+        if owner_key is not None:
+            _validate_non_empty_text(owner_key, "创建对象归属 key")
+        _validate_frame(frame)
+        _validate_frame(target_frame)
+        if target_frame < frame:
+            msg = "创建物 tick 重锚目标帧不能早于当前帧"
+            raise ValueError(msg)
+        obj = self._active_object_for(object_key, owner_key, frame)
+        if obj is None:
+            return None
+        due_frames = [
+            schedule.next_tick_frame
+            for schedule in obj.tick_schedules
+            if schedule.next_tick_frame is not None
+        ]
+        if not due_frames and obj.next_tick_frame is not None:
+            due_frames = [obj.next_tick_frame]
+        if not due_frames:
+            return None
+        earliest = min(due_frames)
+        delta = target_frame - earliest
+        if obj.tick_schedules:
+            obj.tick_schedules = tuple(
+                replace(
+                    schedule,
+                    next_tick_frame=(
+                        None
+                        if schedule.next_tick_frame is None
+                        else schedule.next_tick_frame + delta
+                    ),
+                )
+                for schedule in obj.tick_schedules
+            )
+        elif obj.next_tick_frame is not None:
+            obj.next_tick_frame += delta
+        record = CreatedObjectTickAlignRecord(
+            frame=frame,
+            object_key=object_key,
+            entity_id=obj.entity.entity_id,
+            earliest_tick_frame_before=earliest,
+            target_tick_frame=target_frame,
+            delta_frames=delta,
+        )
+        self._tick_align_records.append(record)
+        return record
+
     def create(self, spec: CreatedObjectSpec, frame: int) -> CreatedObjectRuntimeState:
         return self.create_or_refresh(spec, frame)
 
@@ -321,7 +415,7 @@ class CreatedObjectRuntime(FrameUpdatable):
                 continue
             if _expire_if_due(obj, frame):
                 continue
-            self._tick_object(obj, frame)
+            self._tick_object(obj, frame, context)
 
     def is_idle(self) -> bool:
         return all(
@@ -405,10 +499,12 @@ class CreatedObjectRuntime(FrameUpdatable):
         obj.extra_duration_frames = 0
         return obj
 
-    def _tick_object(self, obj: CreatedObjectRuntimeState, frame: int) -> None:
+    def _tick_object(
+        self, obj: CreatedObjectRuntimeState, frame: int, context: SimulationContext
+    ) -> None:
         if obj.tick_schedules:
             for schedule in obj.tick_schedules:
-                self._tick_schedule(obj, schedule, frame)
+                self._tick_schedule(obj, schedule, frame, context)
             return
         while obj.next_tick_frame is not None and obj.next_tick_frame <= frame:
             tick_frame = obj.next_tick_frame
@@ -418,7 +514,7 @@ class CreatedObjectRuntime(FrameUpdatable):
                 return
 
             behavior = self._behavior_for(obj.behavior_key or obj.object_key)
-            requests = tuple(behavior.create_tick_requests(obj, tick_frame))
+            requests = tuple(behavior.create_tick_requests(obj, tick_frame, context))
             self._pending_impact_requests.extend(requests)
             self._emitted_impact_requests.extend(requests)
 
@@ -432,6 +528,7 @@ class CreatedObjectRuntime(FrameUpdatable):
         obj: CreatedObjectRuntimeState,
         schedule: CreatedObjectTickState,
         frame: int,
+        context: SimulationContext,
     ) -> None:
         while schedule.next_tick_frame is not None and schedule.next_tick_frame <= frame:
             tick_frame = schedule.next_tick_frame
@@ -441,7 +538,7 @@ class CreatedObjectRuntime(FrameUpdatable):
                 return
 
             behavior = self._behavior_for(schedule.behavior_key)
-            requests = tuple(behavior.create_tick_requests(obj, tick_frame))
+            requests = tuple(behavior.create_tick_requests(obj, tick_frame, context))
             self._pending_impact_requests.extend(requests)
             self._emitted_impact_requests.extend(requests)
 

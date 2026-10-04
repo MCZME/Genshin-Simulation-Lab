@@ -99,7 +99,9 @@ class DamageTickBehavior:
         self,
         state: CreatedObjectRuntimeState,
         frame: int,
+        context: object,
     ) -> tuple[ImpactRequest, ...]:
+        del context
         return (
             ImpactRequest(
                 frame=frame,

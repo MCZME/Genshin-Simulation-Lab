@@ -202,7 +202,11 @@ def test_stellar_settlement_refreshes_radiance_buff_values() -> None:
     )
     del buff_receipt
     record = _radiance_record(buff_runtime, 0)
-    baseline = {item.template.term_key: item.value for item in record.state.resolved_modifiers}
+
+    def _payload_values(state):
+        return {item.template.term_key: item.value for item in state.resolved_payloads}
+
+    baseline = _payload_values(record.state)
 
     settlement_coordinator.update_frame(context, STELLAR_CONDUCT_COUNTER_WINDOW_FRAMES)
 
@@ -213,7 +217,7 @@ def test_stellar_settlement_refreshes_radiance_buff_values() -> None:
     assert refreshed.instance_ref == record.instance_ref
     # 数值按 2 层快照统一刷新；具体映射由 test_stellar_buffs 参数化持有，
     # 这里只锁定"结算确实更新了数值"这一链路行为。
-    after = {item.template.term_key: item.value for item in refreshed.state.resolved_modifiers}
+    after = _payload_values(refreshed.state)
     assert (
         after["stellar.conduct.radiance.direct_base_multiplier"]
         > baseline["stellar.conduct.radiance.direct_base_multiplier"]

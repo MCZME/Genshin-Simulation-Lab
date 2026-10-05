@@ -91,6 +91,23 @@ class BuffAttributeModifierTemplate:
 
 
 @dataclass(frozen=True, slots=True)
+class BuffPayloadTermTemplate:
+    """载荷词条模板：Buff 携带但不进入属性系统的机制数值证据。
+
+    载荷词条只有 term_key，没有属性目标与修饰阶段；数值随 Buff 记录留存，
+    由所属领域的窄只读端口消费（例如星烁辉映证据），不产生属性 ModifierTerm。
+    """
+
+    term_key: str
+
+    def __post_init__(self) -> None:
+        validate_non_empty_text(self.term_key, "term_key")
+
+    def to_dict(self) -> dict[str, object]:
+        return {"term_key": self.term_key}
+
+
+@dataclass(frozen=True, slots=True)
 class BuffDefinition:
     definition_key: str
     mechanic_key: str
@@ -101,6 +118,7 @@ class BuffDefinition:
     value_refresh_policy: BuffValueRefreshPolicy
     max_stacks: int
     attribute_modifiers: tuple[BuffAttributeModifierTemplate, ...] = ()
+    payload_terms: tuple[BuffPayloadTermTemplate, ...] = ()
     marker_only: bool = False
     tags: frozenset[str] = frozenset()
     # Buff 显示名：内容层提供的可读名称，进入属性词条审计（provider_display_name）。
@@ -147,15 +165,19 @@ class BuffDefinition:
                 "只有 stack_refresh 与 stack_independent 策略允许 max_stacks > 1"
             )
         modifiers = tuple(self.attribute_modifiers)
-        if self.marker_only and modifiers:
-            raise BuffValidationError("marker_only 定义不能声明 attribute_modifiers")
-        if not self.marker_only and not modifiers:
-            raise BuffValidationError("非 marker 定义必须声明 attribute_modifiers")
-        term_keys = [template.term_key for template in modifiers]
+        payloads = tuple(self.payload_terms)
+        if self.marker_only and (modifiers or payloads):
+            raise BuffValidationError(
+                "marker_only 定义不能声明 attribute_modifiers 或 payload_terms"
+            )
+        if not self.marker_only and not modifiers and not payloads:
+            raise BuffValidationError("非 marker 定义必须声明 attribute_modifiers 或 payload_terms")
+        term_keys = [template.term_key for template in (*modifiers, *payloads)]
         if len(term_keys) != len(set(term_keys)):
             raise BuffValidationError(f"BuffDefinition {self.definition_key!r} term_key 重复")
         object.__setattr__(self, "target_kinds", target_kinds)
         object.__setattr__(self, "attribute_modifiers", modifiers)
+        object.__setattr__(self, "payload_terms", payloads)
         object.__setattr__(self, "tags", normalize_tags(self.tags, "buff definition tags"))
 
     def template_by_key(self) -> dict[str, BuffAttributeModifierTemplate]:
@@ -174,6 +196,7 @@ class BuffDefinition:
             "attribute_modifiers": tuple(
                 template.to_dict() for template in self.attribute_modifiers
             ),
+            "payload_terms": tuple(template.to_dict() for template in self.payload_terms),
             "marker_only": self.marker_only,
             "tags": tuple(sorted(self.tags)),
         }

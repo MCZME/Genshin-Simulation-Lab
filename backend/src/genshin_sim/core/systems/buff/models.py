@@ -12,6 +12,7 @@ from genshin_sim.core.attributes import (
 from genshin_sim.core.systems.buff.definitions import (
     BuffAttributeModifierTemplate,
     BuffDefinition,
+    BuffPayloadTermTemplate,
     normalize_tags,
     validate_non_empty_text,
     validate_non_negative_int,
@@ -148,6 +149,26 @@ class BuffResolvedAttributeModifier:
 
 
 @dataclass(frozen=True, slots=True)
+class BuffResolvedPayloadTerm:
+    """载荷词条的解析结果：模板 + 应用时固化的数值。"""
+
+    template: BuffPayloadTermTemplate
+    value: float
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.template, BuffPayloadTermTemplate):
+            raise BuffValidationError("template 必须是 BuffPayloadTermTemplate")
+        object.__setattr__(self, "value", validate_finite_number(self.value, "resolved value"))
+
+    @property
+    def term_key(self) -> str:
+        return self.template.term_key
+
+    def to_dict(self) -> dict[str, object]:
+        return {"template": self.template.to_dict(), "value": self.value}
+
+
+@dataclass(frozen=True, slots=True)
 class BuffState:
     target_ref: AttributeSubjectRef
     applier_ref: AttributeSubjectRef | None
@@ -159,6 +180,7 @@ class BuffState:
     # 数层将在同一帧同时消失（例如同帧内多次应用），这些层各自计入 stack_count。
     layer_expires_at_frames: tuple[int, ...] = ()
     resolved_modifiers: tuple[BuffResolvedAttributeModifier, ...] = ()
+    resolved_payloads: tuple[BuffResolvedPayloadTerm, ...] = ()
     tags: frozenset[str] = frozenset()
 
     def __post_init__(self) -> None:
@@ -180,6 +202,7 @@ class BuffState:
             raise BuffValidationError("layer_expires_at_frames 数量必须等于 stack_count")
         object.__setattr__(self, "layer_expires_at_frames", layers)
         object.__setattr__(self, "resolved_modifiers", tuple(self.resolved_modifiers))
+        object.__setattr__(self, "resolved_payloads", tuple(self.resolved_payloads))
         object.__setattr__(self, "tags", normalize_tags(self.tags, "buff state tags"))
 
     @property
@@ -199,6 +222,7 @@ class BuffState:
             "max_stacks": self.max_stacks,
             "layer_expires_at_frames": self.layer_expires_at_frames,
             "resolved_modifiers": tuple(item.to_dict() for item in self.resolved_modifiers),
+            "resolved_payloads": tuple(item.to_dict() for item in self.resolved_payloads),
             "tags": tuple(sorted(self.tags)),
         }
 
@@ -249,6 +273,10 @@ class BuffRecord:
         actual_terms = tuple(item.term_key for item in self.state.resolved_modifiers)
         if actual_terms != expected_terms:
             raise BuffValidationError("resolved modifier keys 必须与 definition 模板一致")
+        expected_payloads = tuple(template.term_key for template in self.definition.payload_terms)
+        actual_payloads = tuple(item.term_key for item in self.state.resolved_payloads)
+        if actual_payloads != expected_payloads:
+            raise BuffValidationError("resolved payload keys 必须与 definition 模板一致")
         if self.lifecycle_state is BuffLifecycleState.ACTIVE:
             if self.removed_frame is not None or self.removal_reason is not None:
                 raise BuffValidationError("活动 Buff 不能携带移除信息")

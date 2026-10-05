@@ -7,9 +7,9 @@
 1 出伤；舞步星变体文本以「奥黛塔处于辉映·星烁状态」为前提，无辉映证据
 时不出伤（C1 追加段口径与结束段一致）。
 
-发射时读取辉映状态的属性证据——辉映 Buff 投影到角色属性的
-``stellar.conduct.direct_base_multiplier`` / ``stellar.swirl.direct_base_multiplier``
-词条——组装 ``StellarReactionDamageInput(mode=character_direct)`` 后随
+发射时经星烁辉映证据窄端口读取辉映状态——辉映 Buff 以载荷词条携带直伤
+星烁基础系数，端口按星超导优先输出证据——组装
+``StellarReactionDamageInput(mode=character_direct)`` 后随
 ``DamageImpactSpec.stellar_reaction`` 提交，经 DamageRequestHandler 的星烁
 输入通道进入独立星烁公式（星超导反应契约 §8）。星烁输入只携带机制侧冻结
 基线（辉映基础系数）；P6 星烁基础增伤由伤害修饰 provider 在结算期产出词条
@@ -23,8 +23,6 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass, replace
-from enum import Enum, auto
-from typing import NamedTuple
 
 from genshin_sim.assets.models import TalentScalingEntry
 from genshin_sim.content.characters.snezhnaya.odette.data import (
@@ -32,15 +30,7 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.generic.talents import ScalingCompiler
-from genshin_sim.core.attributes import (
-    STAT_ATK_TOTAL,
-    STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER,
-    STELLAR_SWIRL_DIRECT_BASE_MULTIPLIER,
-    AttributeKey,
-    AttributeQuery,
-    AttributeResolver,
-    AttributeSubjectRef,
-)
+from genshin_sim.core.attributes import STAT_ATK_TOTAL
 from genshin_sim.core.elements import AuraAmount
 from genshin_sim.core.impacts import DamageImpactSpec, StrikeType
 from genshin_sim.core.simulation.context import SimulationContext
@@ -55,6 +45,11 @@ from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
     STELLAR_SWIRL_ICE_DAMAGE_TAG,
     STELLAR_SWIRL_WIND_DAMAGE_TAG,
 )
+from genshin_sim.core.systems.reaction.radiance import (
+    RadianceEvidence,
+    RadianceVariant,
+    StellarRadianceEvidencePort,
+)
 
 # 星烁反应伤害标签（星超导冰/雷、星扩散冰/风），含携带对应标签的星变体直伤
 # 与反应本体伤害。华彩「星烁反应伤害」增伤与擢升的覆盖口径按此集合理解
@@ -67,18 +62,6 @@ STELLAR_REACTION_DAMAGE_TAGS = frozenset(
         STELLAR_SWIRL_WIND_DAMAGE_TAG,
     }
 )
-
-
-class RadianceVariant(Enum):
-    """持用的辉映状态；两者同时成立时星超导优先（D-069）。"""
-
-    CONDUCT = auto()
-    SWIRL = auto()
-
-
-class RadianceEvidence(NamedTuple):
-    variant: RadianceVariant
-    direct_base_multiplier: float
 
 
 @dataclass(frozen=True, slots=True)
@@ -140,8 +123,8 @@ def resolve_stellar_variant_spec(
 ) -> DamageImpactSpec | None:
     """辉映状态查表分派：返回星变体契约（附星烁输入），无辉映时返回 None。
 
-    证据为辉映 Buff 投影到 ``owner_ref`` 的直伤系数词条：值 > 0 视为持用
-    对应辉映状态，星超导优先。倍率与属性分开承载：变体倍率分量写进
+    证据为辉映 Buff 载荷词条经辉映证据端口输出的直伤系数：值 > 0 视为
+    持用对应辉映状态，星超导优先。倍率与属性分开承载：变体倍率分量写进
     ``scaling_terms`` 的系数，属性固定为攻击力、由公式侧从面板读取。
 
     ``conduct_fallback`` 承载结束段口径：无辉映证据时按星超导变体、星烁
@@ -179,38 +162,22 @@ def radiance_evidence(
     owner_ref: str,
     frame: int,
 ) -> RadianceEvidence | None:
-    """读取 ``owner_ref`` 当前的辉映属性证据；无辉映时返回 None。"""
+    """读取 ``owner_ref`` 当前的辉映证据；无辉映时返回 None。
+
+    证据由星烁辉映证据窄端口提供（辉映 Buff 以载荷词条携带直伤系数，端口
+    按星超导优先输出）；本函数只做转发，不接触 Buff 细节。
+    """
 
     if simulation is None:
         return None
-    conduct = _resolve_final_value(
-        simulation, owner_ref, STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER, frame
-    )
-    if conduct > 0.0:
-        return RadianceEvidence(RadianceVariant.CONDUCT, conduct)
-    swirl = _resolve_final_value(simulation, owner_ref, STELLAR_SWIRL_DIRECT_BASE_MULTIPLIER, frame)
-    if swirl > 0.0:
-        return RadianceEvidence(RadianceVariant.SWIRL, swirl)
-    return None
+    return _stellar_radiance_port(simulation).resolve(owner_ref=owner_ref, frame=frame)
 
 
-def _resolve_final_value(
-    simulation: SimulationContext,
-    owner_ref: str,
-    attribute_key: AttributeKey,
-    frame: int,
-) -> float:
-    resolver = simulation.get_system(AttributeResolver)
-    if not isinstance(resolver, AttributeResolver):
-        raise ContentUnitValidationError("缺少 AttributeResolver，无法读取辉映属性证据")
-    resolution = resolver.resolve(
-        AttributeQuery(
-            subject_ref=AttributeSubjectRef.character(owner_ref),
-            attribute_key=attribute_key,
-            frame=frame,
-        )
-    )
-    return float(resolution.final_value)
+def _stellar_radiance_port(simulation: SimulationContext) -> StellarRadianceEvidencePort:
+    port = simulation.get_system(StellarRadianceEvidencePort)
+    if not isinstance(port, StellarRadianceEvidencePort):
+        raise ContentUnitValidationError("缺少星烁辉映证据端口，无法读取辉映证据")
+    return port
 
 
 def stellar_variant_hit(

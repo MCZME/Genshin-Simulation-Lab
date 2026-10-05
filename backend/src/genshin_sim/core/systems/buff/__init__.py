@@ -4,6 +4,7 @@ from genshin_sim.core.systems.buff.definitions import (
     BuffAttributeModifierTemplate,
     BuffDefinition,
     BuffDefinitionRegistry,
+    BuffPayloadTermTemplate,
 )
 from genshin_sim.core.systems.buff.enums import (
     BuffApplicationOutcome,
@@ -46,6 +47,7 @@ from genshin_sim.core.systems.buff.models import (
     BuffRecord,
     BuffRemovalResult,
     BuffResolvedAttributeModifier,
+    BuffResolvedPayloadTerm,
     BuffStackReductionResult,
     BuffState,
     ReduceBuffStacksRequest,
@@ -88,6 +90,7 @@ __all__ = [
     "BuffModifierBindingError",
     "BuffModifierValue",
     "BuffMutationPlan",
+    "BuffPayloadTermTemplate",
     "BuffPlanConflictError",
     "BuffReader",
     "BuffReentrancyError",
@@ -100,6 +103,7 @@ __all__ = [
     "BuffStackReductionPort",
     "BuffStackReductionResult",
     "BuffResolvedAttributeModifier",
+    "BuffResolvedPayloadTerm",
     "BuffResolver",
     "BuffRuntime",
     "BuffSnapshot",

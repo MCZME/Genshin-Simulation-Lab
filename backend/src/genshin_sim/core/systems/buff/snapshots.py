@@ -8,6 +8,7 @@ from genshin_sim.core.systems.buff.models import (
     BuffInstanceRef,
     BuffRecord,
     BuffResolvedAttributeModifier,
+    BuffResolvedPayloadTerm,
     validate_frame,
 )
 
@@ -28,6 +29,7 @@ class BuffInstanceSnapshot:
     stack_count: int
     max_stacks: int
     resolved_modifiers: tuple[BuffResolvedAttributeModifier, ...]
+    resolved_payloads: tuple[BuffResolvedPayloadTerm, ...]
     created_frame: int
     last_applied_frame: int
     expires_at_frame: int
@@ -53,6 +55,7 @@ class BuffInstanceSnapshot:
             stack_count=state.stack_count,
             max_stacks=state.max_stacks,
             resolved_modifiers=state.resolved_modifiers,
+            resolved_payloads=state.resolved_payloads,
             created_frame=record.created_frame,
             last_applied_frame=record.last_applied_frame,
             expires_at_frame=record.expires_at_frame,
@@ -77,6 +80,7 @@ class BuffInstanceSnapshot:
             "stack_count": self.stack_count,
             "max_stacks": self.max_stacks,
             "resolved_modifiers": tuple(item.to_dict() for item in self.resolved_modifiers),
+            "resolved_payloads": tuple(item.to_dict() for item in self.resolved_payloads),
             "created_frame": self.created_frame,
             "last_applied_frame": self.last_applied_frame,
             "expires_at_frame": self.expires_at_frame,

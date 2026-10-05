@@ -462,10 +462,10 @@ def test_swirl_interaction_applies_radiance_buff_to_capability_qualified_charact
     record = records[0]
     assert record.state.target_ref.entity_id == CHARACTER_ENTITY_ID
     assert record.expires_at_frame == STELLAR_SWIRL_RADIANCE_DURATION_FRAMES
-    resolved = record.state.resolved_modifiers
-    assert len(resolved) == 1
-    assert resolved[0].term_key == STELLAR_SWIRL_RADIANCE_DIRECT_MULTIPLIER_TERM_KEY
-    assert resolved[0].value == pytest.approx(1.0)
+    payloads = record.state.resolved_payloads
+    assert len(payloads) == 1
+    assert payloads[0].term_key == STELLAR_SWIRL_RADIANCE_DIRECT_MULTIPLIER_TERM_KEY
+    assert payloads[0].value == pytest.approx(1.0)
 
     # 未触发风扩散时不申请：新协调器在冰附着后无 Buff。
     fresh = _PreparedSwirlCoordinator()

@@ -15,7 +15,6 @@ from typing import Any
 from genshin_sim.core.attributes import (
     BONUS_DAMAGE_CRYO,
     BONUS_DAMAGE_ELECTRO,
-    STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER,
     AttributeSubjectKind,
     AttributeSubjectRef,
     ModifierStage,
@@ -36,6 +35,7 @@ from genshin_sim.core.systems.buff import (
     BuffAttributeModifierTemplate,
     BuffDefinition,
     BuffModifierValue,
+    BuffPayloadTermTemplate,
     BuffValueRefreshPolicy,
     RemoveBuffRequest,
 )
@@ -66,7 +66,11 @@ STELLAR_FIELD_RESISTANCE_REDUCTION = -0.40
 
 
 def stellar_radiance_buff_definition() -> BuffDefinition:
-    """辉映·星烁 Buff：共享会话的角色侧投影，携带冰/雷增伤与直伤系数证据。"""
+    """辉映·星烁 Buff：共享会话的角色侧投影。
+
+    冰/雷普通增伤走属性词条进入通用伤害增伤区；直伤星烁基础系数是机制
+    证据，走载荷词条承载（不进属性系统），由辉映证据窄端口供角色能力读取。
+    """
 
     return BuffDefinition(
         definition_key=STELLAR_RADIANCE_BUFF_DEFINITION_KEY,
@@ -88,10 +92,10 @@ def stellar_radiance_buff_definition() -> BuffDefinition:
                 target_key=BONUS_DAMAGE_ELECTRO,
                 stage=ModifierStage.FLAT_ADD,
             ),
-            BuffAttributeModifierTemplate(
+        ),
+        payload_terms=(
+            BuffPayloadTermTemplate(
                 term_key=STELLAR_RADIANCE_DIRECT_MULTIPLIER_TERM_KEY,
-                target_key=STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER,
-                stage=ModifierStage.FLAT_ADD,
             ),
         ),
         tags=frozenset({STELLAR_RADIANCE_BUFF_MECHANIC_KEY}),

@@ -33,18 +33,12 @@ from genshin_sim.content.characters.snezhnaya.sandrone.data import (
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.stellar import (
     radiance_evidence,
-    resolve_attribute_final_value,
+    radiance_variant_multiplier,
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.models import HookResult
 from genshin_sim.content.state_container import StatePatchRequest
-from genshin_sim.core.attributes import (
-    STAT_ATK_TOTAL,
-    STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER,
-    STELLAR_SWIRL_DIRECT_BASE_MULTIPLIER,
-    AttributeKey,
-    AttributeSubjectRef,
-)
+from genshin_sim.core.attributes import STAT_ATK_TOTAL, AttributeSubjectRef
 from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import DamageImpactSpec, ImpactKind, ImpactRequest
@@ -57,16 +51,17 @@ from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
 from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
     STELLAR_SWIRL_ICE_DAMAGE_TAG,
 )
+from genshin_sim.core.systems.reaction.radiance import RadianceVariant
 
 # 敌方目标判据按 entity_id 前缀区分（与西风系列武器钩子同口径）。
 _ENEMY_TARGET_PREFIX = "target:"
 
 
 class _CoordinatedAttackVariant(NamedTuple):
-    """一次协同攻击的产出变体：产出标签与星烁基础系数词条。"""
+    """一次协同攻击的产出变体：产出标签与对应辉映变体。"""
 
     main_attack_tag: str
-    base_multiplier_key: AttributeKey
+    variant: RadianceVariant
 
 
 # 触发标签 → 产出变体。官方文本要求协同攻击"视为**对应**星烁反应造成的伤害"，
@@ -75,11 +70,11 @@ class _CoordinatedAttackVariant(NamedTuple):
 _VARIANTS_BY_TRIGGER_TAG: Mapping[str, _CoordinatedAttackVariant] = {
     STELLAR_CONDUCT_CRYO_DAMAGE_TAG: _CoordinatedAttackVariant(
         main_attack_tag=STELLAR_CONDUCT_CRYO_DAMAGE_TAG,
-        base_multiplier_key=STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER,
+        variant=RadianceVariant.CONDUCT,
     ),
     STELLAR_SWIRL_ICE_DAMAGE_TAG: _CoordinatedAttackVariant(
         main_attack_tag=STELLAR_SWIRL_ICE_DAMAGE_TAG,
-        base_multiplier_key=STELLAR_SWIRL_DIRECT_BASE_MULTIPLIER,
+        variant=RadianceVariant.SWIRL,
     ),
 }
 
@@ -200,15 +195,15 @@ class SandroneC4CoordinatedAttackHook:
         simulation = getattr(context, "simulation", None)
         if not isinstance(simulation, SimulationContext):
             raise SandroneConstellationError(f"C4 协同攻击缺少仿真上下文：{self.hook_key}")
-        # 星烁基础系数取对应反应的词条（非角色当前辉映状态的证据）；无任何辉映
-        # 证据时保守回落 1.0。P6 基础增伤与 C6 擢升由 provider 词条在结算期
-        # 叠加，不在此折叠。
+        # 星烁基础系数取触发标签对应辉映变体的载荷词条（非角色当前辉映状态
+        # 的证据）；无任何辉映证据时保守回落 1.0。P6 基础增伤与 C6 擢升由
+        # provider 词条在结算期叠加，不在此折叠。
         evidence = radiance_evidence(simulation, self._owner_ref, frame)
         base_multiplier = (
-            resolve_attribute_final_value(
+            radiance_variant_multiplier(
                 simulation,
                 self._owner_ref,
-                variant.base_multiplier_key,
+                variant.variant,
                 frame,
             )
             if evidence is not None

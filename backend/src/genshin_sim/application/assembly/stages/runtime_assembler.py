@@ -99,6 +99,9 @@ from genshin_sim.core.coordination.elemental_reaction.observers import (
     CharacterCrystallizeSourceObserver,
     CharacterTransformativeSourceObserver,
 )
+from genshin_sim.core.coordination.elemental_reaction.radiance_evidence import (
+    StellarRadianceEvidenceReader,
+)
 from genshin_sim.core.coordination.elemental_reaction.status import (
     ReactionStatusBuffAdapter,
     superconduct_buff_definition,
@@ -595,6 +598,12 @@ class RuntimeAssembler:
             content_bundle,
             buff_reader=buff_runtime.reader,
         )
+        # 星烁辉映证据窄端口：包装 BuffReader 的只读适配器，注册为仿真系统
+        # 供角色内容经 ``simulation.get_system`` 读取（与 AttributeResolver 同模式）。
+        radiance_port: StellarRadianceEvidenceReader = StellarRadianceEvidenceReader(
+            buff_runtime.reader
+        )
+        context.register_system(radiance_port)
         action_manager = ActionManager(
             input_trace=input_trace,
             interpreter_registry=action_interpreter_registry,

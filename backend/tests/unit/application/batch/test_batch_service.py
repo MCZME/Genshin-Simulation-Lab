@@ -16,10 +16,9 @@ from genshin_sim.application.batch import (
 )
 from genshin_sim.application.jobs import SimulationJobState, SimulationJobStatus
 from genshin_sim.application.services import BatchInputValidationService
-from genshin_sim.assets import CharacterAsset
 from genshin_sim.content import create_default_content_unit_registry
 from tests.helpers.assembly import minimal_input
-from tests.helpers.asset_repository import FakeAssetRepository
+from tests.helpers.asset_repository import FakeAssetRepository, make_default_character
 
 _SERVICE_LOGGER = "genshin_sim.application.batch.service"
 
@@ -216,20 +215,7 @@ def test_batch_rejects_invalid_batch_shape(members, code: str) -> None:
 
 
 def test_batch_input_validation_reports_structure_asset_and_handler_errors() -> None:
-    repository = FakeAssetRepository(
-        characters=(
-            CharacterAsset(
-                asset_key="character:75",
-                source_id="75",
-                name="test",
-                element="hydro",
-                weapon_type="sword",
-                rarity=5,
-                burst_energy_cost=60.0,
-                handler_key=None,
-            ),
-        )
-    )
+    repository = FakeAssetRepository(characters=(make_default_character(None),))
     validator = BatchInputValidationService(
         repository,
         content_unit_registry=create_default_content_unit_registry(),

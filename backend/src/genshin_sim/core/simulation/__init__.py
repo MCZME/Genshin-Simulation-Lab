@@ -46,8 +46,14 @@ from genshin_sim.core.simulation.settlement import (
 )
 from genshin_sim.core.simulation.simulator import (
     SimulationResult,
-    SimulationStopReason,
     Simulator,
+)
+from genshin_sim.core.simulation.stop_conditions import (
+    ActionLayerIdlePort,
+    ActionsSettledStopCondition,
+    IdleStopCondition,
+    SimulationStopCondition,
+    SimulationStopReason,
 )
 from genshin_sim.core.simulation.team import (
     TeamRuntimeState,
@@ -58,6 +64,8 @@ from genshin_sim.core.simulation.world import BasicRuntimeWorld
 
 __all__ = [
     "SUPPORTED_INPUT_KEYS",
+    "ActionsSettledStopCondition",
+    "ActionLayerIdlePort",
     "BasicRuntimeWorld",
     "DuplicateIntentError",
     "DuplicateIntentHandlerError",
@@ -68,6 +76,7 @@ __all__ = [
     "FramePipelineError",
     "FramePipelineRoundLimitError",
     "FrameZeroIntentError",
+    "IdleStopCondition",
     "IntentKindHandler",
     "IntentQueue",
     "IntentQueueError",
@@ -88,6 +97,7 @@ __all__ = [
     "RuntimeWorld",
     "SimulationContext",
     "SimulationResult",
+    "SimulationStopCondition",
     "SimulationStopReason",
     "Simulator",
     "TeamRuntimeState",

@@ -1,7 +1,12 @@
 from __future__ import annotations
 
 from genshin_sim.core.events import EventType, GameEvent
-from genshin_sim.core.simulation import SimulationContext, SimulationStopReason, Simulator
+from genshin_sim.core.simulation import (
+    ActionsSettledStopCondition,
+    SimulationContext,
+    SimulationStopReason,
+    Simulator,
+)
 
 
 class RecordingRuntimeWorld:
@@ -17,6 +22,17 @@ class RecordingRuntimeWorld:
 
     def is_idle(self) -> bool:
         return bool(self.frames) and self.frames[-1] >= self.idle_after_frame
+
+
+class RecordingActionLayer:
+    """动作层静止证据替身：与世界推进同一帧号轴，按阈值返回静止。"""
+
+    def __init__(self, world: RecordingRuntimeWorld, idle_after_frame: int) -> None:
+        self._world = world
+        self.idle_after_frame = idle_after_frame
+
+    def is_idle(self) -> bool:
+        return bool(self._world.frames) and self._world.frames[-1] >= self.idle_after_frame
 
 
 def test_simulator_advances_frame_and_updates_runtime_world():
@@ -117,3 +133,54 @@ def test_simulator_rejects_negative_max_frames():
         assert str(exc) == "max_frames 不能为负数"
     else:
         raise AssertionError("negative max_frames should fail")
+
+
+def test_simulator_with_actions_settled_condition_stops_before_world_idle():
+    calls: list[str] = []
+    ctx = SimulationContext()
+    runtime_world = RecordingRuntimeWorld(calls, idle_after_frame=99)
+    action_layer = RecordingActionLayer(runtime_world, idle_after_frame=2)
+
+    result = Simulator(
+        ctx,
+        runtime_world=runtime_world,
+        max_frames=10,
+        stop_condition=ActionsSettledStopCondition(action_layer),
+    ).run()
+
+    assert result.stop_reason is SimulationStopReason.ACTIONS_SETTLED
+    assert result.end_frame == 2
+    assert runtime_world.frames == [1, 2]
+
+
+def test_simulator_with_actions_settled_condition_ignores_world_idle():
+    ctx = SimulationContext()
+    runtime_world = RecordingRuntimeWorld([], idle_after_frame=1)
+    action_layer = RecordingActionLayer(runtime_world, idle_after_frame=3)
+
+    result = Simulator(
+        ctx,
+        runtime_world=runtime_world,
+        max_frames=10,
+        stop_condition=ActionsSettledStopCondition(action_layer),
+    ).run()
+
+    # 世界在第 1 帧后已空闲，但动作层要到第 3 帧才静止。
+    assert result.stop_reason is SimulationStopReason.ACTIONS_SETTLED
+    assert result.end_frame == 3
+
+
+def test_simulator_with_actions_settled_condition_runs_until_max_frames_when_actions_busy():
+    ctx = SimulationContext()
+    runtime_world = RecordingRuntimeWorld([], idle_after_frame=99)
+    action_layer = RecordingActionLayer(runtime_world, idle_after_frame=99)
+
+    result = Simulator(
+        ctx,
+        runtime_world=runtime_world,
+        max_frames=2,
+        stop_condition=ActionsSettledStopCondition(action_layer),
+    ).run()
+
+    assert result.stop_reason is SimulationStopReason.MAX_FRAMES_REACHED
+    assert result.end_frame == 2

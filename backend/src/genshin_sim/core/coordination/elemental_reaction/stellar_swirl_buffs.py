@@ -11,19 +11,17 @@ from __future__ import annotations
 from collections.abc import Sequence
 
 from genshin_sim.core.attributes import (
-    STELLAR_SWIRL_DIRECT_BASE_MULTIPLIER,
     AttributeSubjectKind,
     AttributeSubjectRef,
-    ModifierStage,
     RuntimeSourceKind,
     RuntimeSourceRef,
 )
 from genshin_sim.core.systems.buff import (
     ApplyBuffRequest,
     BuffApplicationPolicy,
-    BuffAttributeModifierTemplate,
     BuffDefinition,
     BuffModifierValue,
+    BuffPayloadTermTemplate,
     BuffValueRefreshPolicy,
 )
 from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
@@ -52,7 +50,11 @@ STELLAR_SWIRL_JUMP_BOOST_DURATION_FRAMES = 360
 
 
 def stellar_swirl_radiance_buff_definition() -> BuffDefinition:
-    """辉映·星扩散 Buff：星扩散·风触发的角色侧投影，携带直伤系数证据。"""
+    """辉映·星扩散 Buff：星扩散·风触发的角色侧投影。
+
+    直伤星烁基础系数是机制证据，走载荷词条承载（不进属性系统），由辉映
+    证据窄端口供角色能力读取；固定值 ``1.0``。
+    """
 
     return BuffDefinition(
         definition_key=STELLAR_SWIRL_RADIANCE_BUFF_DEFINITION_KEY,
@@ -63,11 +65,9 @@ def stellar_swirl_radiance_buff_definition() -> BuffDefinition:
         application_policy=BuffApplicationPolicy.REFRESH,
         value_refresh_policy=BuffValueRefreshPolicy.REPLACE_LATEST,
         max_stacks=1,
-        attribute_modifiers=(
-            BuffAttributeModifierTemplate(
+        payload_terms=(
+            BuffPayloadTermTemplate(
                 term_key=STELLAR_SWIRL_RADIANCE_DIRECT_MULTIPLIER_TERM_KEY,
-                target_key=STELLAR_SWIRL_DIRECT_BASE_MULTIPLIER,
-                stage=ModifierStage.FLAT_ADD,
             ),
         ),
         tags=frozenset({STELLAR_SWIRL_RADIANCE_BUFF_MECHANIC_KEY}),

@@ -23,6 +23,7 @@ from genshin_sim.core.systems.buff.models import (
     BuffRecord,
     BuffRemovalResult,
     BuffResolvedAttributeModifier,
+    BuffResolvedPayloadTerm,
     BuffState,
 )
 
@@ -116,6 +117,7 @@ class BuffResolver:
         outcome: BuffApplicationOutcome,
     ) -> BuffApplicationResolution:
         resolved = _resolved_modifiers(definition, request)
+        payloads = _resolved_payloads(definition, request)
         stack_count = 1
         if definition.application_policy is BuffApplicationPolicy.STACK_REFRESH:
             stack_count = min(request.stack_delta, definition.max_stacks)
@@ -137,6 +139,7 @@ class BuffResolver:
                 max_stacks=definition.max_stacks,
                 layer_expires_at_frames=layer_expires,
                 resolved_modifiers=resolved,
+                resolved_payloads=payloads,
                 tags=definition.tags,
             ),
         )
@@ -195,6 +198,7 @@ class BuffResolver:
         existing: BuffRecord,
     ) -> BuffApplicationResolution:
         resolved = _refreshed_modifiers(definition, request, existing)
+        payloads = _refreshed_payloads(definition, request, existing)
         refreshed = replace(
             existing,
             last_applied_frame=request.frame,
@@ -202,7 +206,11 @@ class BuffResolver:
                 existing.expires_at_frame,
                 request.frame + request.duration_frames,
             ),
-            state=replace(existing.state, resolved_modifiers=resolved),
+            state=replace(
+                existing.state,
+                resolved_modifiers=resolved,
+                resolved_payloads=payloads,
+            ),
         )
         result = _application_result(
             definition,
@@ -235,6 +243,7 @@ class BuffResolver:
             else BuffApplicationOutcome.STACK_CAPPED_REFRESHED
         )
         resolved = _refreshed_modifiers(definition, request, existing)
+        payloads = _refreshed_payloads(definition, request, existing)
         refreshed = replace(
             existing,
             last_applied_frame=request.frame,
@@ -246,6 +255,7 @@ class BuffResolver:
                 existing.state,
                 stack_count=stacks_after,
                 resolved_modifiers=resolved,
+                resolved_payloads=payloads,
             ),
         )
         result = _application_result(
@@ -292,6 +302,7 @@ class BuffResolver:
         layers.append(new_expiry)
         layers.sort()
         resolved = _refreshed_modifiers(definition, request, existing)
+        payloads = _refreshed_payloads(definition, request, existing)
         refreshed = replace(
             existing,
             last_applied_frame=request.frame,
@@ -301,6 +312,7 @@ class BuffResolver:
                 stack_count=len(layers),
                 layer_expires_at_frames=tuple(layers),
                 resolved_modifiers=resolved,
+                resolved_payloads=payloads,
             ),
         )
         result = _application_result(
@@ -344,7 +356,10 @@ def _validate_request_matches_definition(
             raise BuffModifierBindingError("marker Buff 请求不能提供 modifier_values")
         return
     values_by_key = {value.term_key: value for value in request.modifier_values}
-    expected_keys = tuple(template.term_key for template in definition.attribute_modifiers)
+    expected_keys = tuple(
+        template.term_key
+        for template in (*definition.attribute_modifiers, *definition.payload_terms)
+    )
     if tuple(sorted(values_by_key)) != tuple(sorted(expected_keys)):
         raise BuffModifierBindingError(
             f"Buff {definition.definition_key!r} modifier_values 必须完整匹配模板"
@@ -362,6 +377,17 @@ def _resolved_modifiers(
     )
 
 
+def _resolved_payloads(
+    definition: BuffDefinition,
+    request: ApplyBuffRequest,
+) -> tuple[BuffResolvedPayloadTerm, ...]:
+    values_by_key = {value.term_key: value for value in request.modifier_values}
+    return tuple(
+        BuffResolvedPayloadTerm(template, values_by_key[template.term_key].value)
+        for template in definition.payload_terms
+    )
+
+
 def _refreshed_modifiers(
     definition: BuffDefinition,
     request: ApplyBuffRequest,
@@ -370,6 +396,16 @@ def _refreshed_modifiers(
     if definition.value_refresh_policy is BuffValueRefreshPolicy.KEEP_INITIAL:
         return existing.state.resolved_modifiers
     return _resolved_modifiers(definition, request)
+
+
+def _refreshed_payloads(
+    definition: BuffDefinition,
+    request: ApplyBuffRequest,
+    existing: BuffRecord,
+) -> tuple[BuffResolvedPayloadTerm, ...]:
+    if definition.value_refresh_policy is BuffValueRefreshPolicy.KEEP_INITIAL:
+        return existing.state.resolved_payloads
+    return _resolved_payloads(definition, request)
 
 
 def _single_compatible_conflict(

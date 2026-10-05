@@ -5,7 +5,6 @@ import pytest
 
 from genshin_sim.core.attributes import (
     BONUS_DAMAGE_CRYO,
-    STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER,
     AttributeQuery,
     AttributeResolver,
     AttributeSubjectRef,
@@ -68,7 +67,7 @@ def _radiance_request(
     )[0]
 
 
-def test_radiance_buff_definition_targets_character_bonus_and_multiplier_terms() -> None:
+def test_radiance_buff_targets_bonus_terms_and_carries_multiplier_payload() -> None:
     definition = stellar_radiance_buff_definition()
 
     assert definition.definition_key == STELLAR_RADIANCE_BUFF_DEFINITION_KEY
@@ -77,10 +76,11 @@ def test_radiance_buff_definition_targets_character_bonus_and_multiplier_terms()
         template.term_key: template.target_key for template in definition.attribute_modifiers
     }
     assert term_targets[STELLAR_RADIANCE_CRYO_BONUS_TERM_KEY] is BONUS_DAMAGE_CRYO
-    assert (
-        term_targets[STELLAR_RADIANCE_DIRECT_MULTIPLIER_TERM_KEY]
-        is STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER
-    )
+    # 直伤系数是机制证据：不进属性系统，作为载荷词条随 Buff 记录留存。
+    assert STELLAR_RADIANCE_DIRECT_MULTIPLIER_TERM_KEY not in term_targets
+    assert [template.term_key for template in definition.payload_terms] == [
+        STELLAR_RADIANCE_DIRECT_MULTIPLIER_TERM_KEY
+    ]
 
 
 @pytest.mark.parametrize(
@@ -157,8 +157,8 @@ def test_field_resistance_replaces_superconduct_source_in_same_conflict_slot() -
     assert len(runtime.reader.active(0, definition_key=SUPERCONDUCT_BUFF_DEFINITION_KEY)) == 1
 
 
-def test_radiance_buff_contributes_element_bonus_through_attribute_system() -> None:
-    """辉映 Buff 的冰/雷增伤与直伤系数词条必须经属性系统可读。"""
+def test_radiance_buff_contributes_element_bonus_and_carries_multiplier_payload() -> None:
+    """辉映 Buff 的冰/雷增伤经属性系统可读；直伤系数作为载荷词条随记录留存。"""
 
     registry = create_public_attribute_registry()
     buff_store = BuffStore()
@@ -193,7 +193,6 @@ def test_radiance_buff_contributes_element_bonus_through_attribute_system() -> N
             registry=registry,
         ),
     )
-
     cryo = attribute_resolver.resolve(
         AttributeQuery(
             subject_ref=CHARACTER,
@@ -201,12 +200,10 @@ def test_radiance_buff_contributes_element_bonus_through_attribute_system() -> N
             frame=10,
         )
     )
-    multiplier = attribute_resolver.resolve(
-        AttributeQuery(
-            subject_ref=CHARACTER,
-            attribute_key=STELLAR_CONDUCT_DIRECT_BASE_MULTIPLIER,
-            frame=10,
-        )
-    )
     assert cryo.final_value == pytest.approx(0.31)
-    assert multiplier.final_value == pytest.approx(1.55)
+
+    record = buff_runtime.reader.active(
+        10, target_ref=CHARACTER, definition_key=STELLAR_RADIANCE_BUFF_DEFINITION_KEY
+    )[0]
+    payload_values = {payload.term_key: payload.value for payload in record.state.resolved_payloads}
+    assert payload_values[STELLAR_RADIANCE_DIRECT_MULTIPLIER_TERM_KEY] == pytest.approx(1.55)

@@ -29,6 +29,11 @@ from genshin_sim.core.space import (
     SpatialEntity,
 )
 from genshin_sim.infrastructure.assets_sqlite import SQLiteAssetRepository
+from tests.helpers.asset_repository import (
+    DEFAULT_ARTIFACT_SET_ASSET_KEY,
+    DEFAULT_CHARACTER_ASSET_KEY,
+    DEFAULT_WEAPON_ASSET_KEY,
+)
 from tests.helpers.fixture_assets import (
     FIXTURE_ARTIFACT_SET_ASSET_KEY,
     FIXTURE_CHARACTER_ASSET_KEY,
@@ -145,19 +150,19 @@ def minimal_input(
                 {
                     "slot": 1,
                     "character": {
-                        "asset_key": "character:75",
+                        "asset_key": DEFAULT_CHARACTER_ASSET_KEY,
                         "level": 90,
                         "constellation": 2,
                         "talents": {"normal_attack": 1},
                     },
                     "weapon": {
-                        "asset_key": "weapon:11512",
+                        "asset_key": DEFAULT_WEAPON_ASSET_KEY,
                         "level": 90,
                         "refinement": 1,
                     },
                     "artifacts": {
                         "sets": [
-                            {"asset_key": "artifact_set:15032", "pieces": 4},
+                            {"asset_key": DEFAULT_ARTIFACT_SET_ASSET_KEY, "pieces": 4},
                         ],
                         "stats": {},
                     },

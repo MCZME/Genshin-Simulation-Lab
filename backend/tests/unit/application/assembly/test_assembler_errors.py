@@ -10,10 +10,6 @@ from genshin_sim.application.assembly import (
     MissingRuntimeHandlerError,
     SimulationAssembler,
 )
-from genshin_sim.assets.models import (
-    CharacterAsset,
-    WeaponAsset,
-)
 from genshin_sim.content.bootstrap_content_units import (
     create_default_content_unit_registry,
 )
@@ -52,22 +48,16 @@ from tests.helpers.assembly import (
     minimal_input,
     skill_input_trace,
 )
-from tests.helpers.asset_repository import FakeAssetRepository
+from tests.helpers.asset_repository import (
+    FakeAssetRepository,
+    make_default_character,
+    make_default_weapon,
+)
 
 
 def test_assembler_rejects_character_asset_without_burst_energy_cost():
     repository = FakeAssetRepository(
-        characters=(
-            CharacterAsset(
-                asset_key="character:75",
-                source_id="75",
-                name="test",
-                element="hydro",
-                weapon_type="sword",
-                rarity=5,
-                handler_key="generic.test_character",
-            ),
-        )
+        characters=(make_default_character("generic.test_character", burst_energy_cost=None),)
     )
 
     with pytest.raises(InvalidRuntimePayloadError, match="缺少 burst_energy_cost"):
@@ -80,20 +70,7 @@ def test_assembler_accepts_buff_definition_with_dynamic_hp_dependency_via_provid
 
     class RuntimeRepository(FakeAssetRepository):
         def __init__(self) -> None:
-            super().__init__(
-                characters=(
-                    CharacterAsset(
-                        asset_key="character:75",
-                        source_id="75",
-                        name="test",
-                        element="hydro",
-                        weapon_type="sword",
-                        rarity=5,
-                        burst_energy_cost=60.0,
-                        handler_key="character.buff",
-                    ),
-                ),
-            )
+            super().__init__(characters=(make_default_character("character.buff"),))
 
     provider_key = "character.buff.max_hp_from_private"
     provider = StaticModifierProvider(
@@ -175,20 +152,7 @@ def test_assembler_accepts_buff_definition_writing_max_hp_directly():
 
     class RuntimeRepository(FakeAssetRepository):
         def __init__(self) -> None:
-            super().__init__(
-                characters=(
-                    CharacterAsset(
-                        asset_key="character:75",
-                        source_id="75",
-                        name="test",
-                        element="hydro",
-                        weapon_type="sword",
-                        rarity=5,
-                        burst_energy_cost=60.0,
-                        handler_key="character.buff",
-                    ),
-                ),
-            )
+            super().__init__(characters=(make_default_character("character.buff"),))
 
     provider_key = "character.buff.max_hp_flat"
     provider = StaticModifierProvider(
@@ -257,20 +221,7 @@ def test_assembler_accepts_buff_definition_writing_max_hp_directly():
 def test_assembler_rejects_buff_definition_with_unknown_attribute_target():
     class RuntimeRepository(FakeAssetRepository):
         def __init__(self) -> None:
-            super().__init__(
-                characters=(
-                    CharacterAsset(
-                        asset_key="character:75",
-                        source_id="75",
-                        name="test",
-                        element="hydro",
-                        weapon_type="sword",
-                        rarity=5,
-                        burst_energy_cost=60.0,
-                        handler_key="character.buff",
-                    ),
-                ),
-            )
+            super().__init__(characters=(make_default_character("character.buff"),))
 
     unknown_key = AttributeKey("character.buff.unknown")
     definition = BuffDefinition(
@@ -316,20 +267,7 @@ def test_assembler_rejects_buff_definition_with_unknown_attribute_target():
 def test_assembler_converts_buff_validation_error_raised_inside_content_factory():
     class RuntimeRepository(FakeAssetRepository):
         def __init__(self) -> None:
-            super().__init__(
-                characters=(
-                    CharacterAsset(
-                        asset_key="character:75",
-                        source_id="75",
-                        name="test",
-                        element="hydro",
-                        weapon_type="sword",
-                        rarity=5,
-                        burst_energy_cost=60.0,
-                        handler_key="character.buff",
-                    ),
-                ),
-            )
+            super().__init__(characters=(make_default_character("character.buff"),))
 
     def create_invalid_contribution(request) -> ContentUnit:
         definition = BuffDefinition(
@@ -365,18 +303,7 @@ def test_assembler_converts_buff_validation_error_raised_inside_content_factory(
 def test_assembler_rejects_action_interpreter_from_weapon():
     class RuntimeRepository(FakeAssetRepository):
         def __init__(self) -> None:
-            super().__init__(
-                weapons=(
-                    WeaponAsset(
-                        asset_key="weapon:11512",
-                        source_id="11512",
-                        name="test weapon",
-                        weapon_type="sword",
-                        rarity=5,
-                        handler_key="weapon.bad_action_interpreter",
-                    ),
-                ),
-            )
+            super().__init__(weapons=(make_default_weapon("weapon.bad_action_interpreter"),))
 
     registry = create_default_content_unit_registry()
     registry.register_weapon_factory(
@@ -413,20 +340,7 @@ def test_assembler_rejects_missing_character_interpreter_when_action_input_exist
 def test_assembler_rejects_interpreter_declared_action_without_registered_action():
     class RuntimeRepository(FakeAssetRepository):
         def __init__(self) -> None:
-            super().__init__(
-                characters=(
-                    CharacterAsset(
-                        asset_key="character:75",
-                        source_id="75",
-                        name="test",
-                        element="hydro",
-                        weapon_type="sword",
-                        rarity=5,
-                        burst_energy_cost=60.0,
-                        handler_key="character.runtime",
-                    ),
-                ),
-            )
+            super().__init__(characters=(make_default_character("character.runtime"),))
 
     registry = create_default_content_unit_registry()
     registry.register_character_factory(
@@ -453,18 +367,7 @@ def test_assembler_rejects_interpreter_declared_action_without_registered_action
 def test_assembler_rejects_created_object_behavior_from_weapon():
     class RuntimeRepository(FakeAssetRepository):
         def __init__(self) -> None:
-            super().__init__(
-                weapons=(
-                    WeaponAsset(
-                        asset_key="weapon:11512",
-                        source_id="11512",
-                        name="test weapon",
-                        weapon_type="sword",
-                        rarity=5,
-                        handler_key="weapon.bad_created_object",
-                    ),
-                ),
-            )
+            super().__init__(weapons=(make_default_weapon("weapon.bad_created_object"),))
 
     registry = create_default_content_unit_registry()
     registry.register_weapon_factory(

@@ -360,7 +360,7 @@ def test_facade_lists_assets() -> None:
     assets = facade.list_assets(AssetListKind.CHARACTERS)
 
     assert len(assets) == 1
-    assert assets[0].asset_key == "character:75"
+    assert assets[0].asset_key == "character:test"
     assert assets[0].name == "test"
 
 
@@ -368,14 +368,14 @@ def test_facade_asset_search_detail_and_display_fields() -> None:
     facade = _make_facade(asset_repository=FakeAssetRepository(meta={"data_version": "test-1"}))
 
     items = facade.list_assets(AssetListKind.CHARACTERS, q="test", limit=1, offset=0)
-    detail = facade.get_asset("characters", "75")
+    detail = facade.get_asset("characters", "test")
 
-    assert items[0].source_id == "75"
+    assert items[0].source_id == "test"
     assert items[0].usable is True
     assert items[0].element == "hydro"
     assert items[0].weapon_type == "sword"
     assert items[0].rarity == 5
-    assert detail.asset_key == "character:75"
+    assert detail.asset_key == "character:test"
     assert detail.status is None
 
 
@@ -639,7 +639,7 @@ def _run_entities_detail() -> RunDetail:
             "team": [
                 {
                     "slot": 1,
-                    "character": {"asset_key": "character:75", "level": 90},
+                    "character": {"asset_key": "character:test", "level": 90},
                     "artifacts": {"sets": [], "stats": {}},
                 },
                 {
@@ -678,8 +678,8 @@ def test_facade_get_run_entities_resolves_names_from_snapshot_and_assets() -> No
     asset_repository = FakeAssetRepository(
         characters=(
             CharacterAsset(
-                asset_key="character:75",
-                source_id="75",
+                asset_key="character:test",
+                source_id="test",
                 name="测试角色",
                 element="hydro",
                 weapon_type="sword",
@@ -696,7 +696,7 @@ def test_facade_get_run_entities_resolves_names_from_snapshot_and_assets() -> No
     entities = facade.get_run_entities("session-entities")
 
     assert entities["characters"] == [
-        {"slot": 1, "asset_key": "character:75", "name": "测试角色"},
+        {"slot": 1, "asset_key": "character:test", "name": "测试角色"},
         {"slot": 2, "asset_key": "character:missing", "name": ""},
     ]
     assert entities["targets"] == [

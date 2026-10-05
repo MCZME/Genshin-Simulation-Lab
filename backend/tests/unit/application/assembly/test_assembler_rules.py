@@ -58,7 +58,7 @@ def test_assembler_applies_start_with_full_energy_rule():
         "characters": (
             {
                 "character_ref": {"kind": "character", "entity_id": "character:slot_1"},
-                "character_key": "character:75",
+                "character_key": "character:test",
                 "element": "hydro",
                 "current_energy": 60.0,
                 "capacity": 60.0,

@@ -5,9 +5,6 @@ from __future__ import annotations
 from genshin_sim.application.assembly import (
     SimulationAssembler,
 )
-from genshin_sim.assets.models import (
-    CharacterAsset,
-)
 from genshin_sim.content.bootstrap_content_units import (
     create_default_content_unit_registry,
 )
@@ -55,26 +52,16 @@ from tests.helpers.assembly import (
     minimal_input,
     skill_input_trace,
 )
-from tests.helpers.asset_repository import FakeAssetRepository
+from tests.helpers.asset_repository import (
+    FakeAssetRepository,
+    make_default_character,
+)
 
 
 def test_assembler_injects_character_runtime_contribution_and_actions():
     class RuntimeRepository(FakeAssetRepository):
         def __init__(self) -> None:
-            super().__init__(
-                characters=(
-                    CharacterAsset(
-                        asset_key="character:75",
-                        source_id="75",
-                        name="test",
-                        element="hydro",
-                        weapon_type="sword",
-                        rarity=5,
-                        burst_energy_cost=60.0,
-                        handler_key="character.runtime",
-                    ),
-                ),
-            )
+            super().__init__(characters=(make_default_character("character.runtime"),))
 
     interpreter = ContributedActionInterpreter()
     impact_factory = TestImpactFactory()
@@ -123,20 +110,7 @@ def test_assembler_injects_character_runtime_contribution_and_actions():
 def test_assembler_injects_content_attribute_modifier_as_core_term():
     class RuntimeRepository(FakeAssetRepository):
         def __init__(self) -> None:
-            super().__init__(
-                characters=(
-                    CharacterAsset(
-                        asset_key="character:75",
-                        source_id="75",
-                        name="test",
-                        element="hydro",
-                        weapon_type="sword",
-                        rarity=5,
-                        burst_energy_cost=60.0,
-                        handler_key="character.attribute_modifier",
-                    ),
-                ),
-            )
+            super().__init__(characters=(make_default_character("character.attribute_modifier"),))
 
     registry = create_default_content_unit_registry()
     registry.register_character_factory(
@@ -177,20 +151,7 @@ def test_assembler_injects_content_attribute_modifier_as_core_term():
 def test_assembler_injects_content_buff_definition_and_attribute_provider():
     class RuntimeRepository(FakeAssetRepository):
         def __init__(self) -> None:
-            super().__init__(
-                characters=(
-                    CharacterAsset(
-                        asset_key="character:75",
-                        source_id="75",
-                        name="test",
-                        element="hydro",
-                        weapon_type="sword",
-                        rarity=5,
-                        burst_energy_cost=60.0,
-                        handler_key="character.buff",
-                    ),
-                ),
-            )
+            super().__init__(characters=(make_default_character("character.buff"),))
 
     definition = BuffDefinition(
         definition_key="buff.assembler.atk",
@@ -274,20 +235,7 @@ def test_assembler_registers_content_private_attribute_and_native_provider():
 
     class RuntimeRepository(FakeAssetRepository):
         def __init__(self) -> None:
-            super().__init__(
-                characters=(
-                    CharacterAsset(
-                        asset_key="character:75",
-                        source_id="75",
-                        name="test",
-                        element="hydro",
-                        weapon_type="sword",
-                        rarity=5,
-                        burst_energy_cost=60.0,
-                        handler_key="character.attribute_modifier",
-                    ),
-                ),
-            )
+            super().__init__(characters=(make_default_character("character.attribute_modifier"),))
 
     provider_key = "character.attribute_modifier.private_provider"
     provider = StaticModifierProvider(
@@ -347,20 +295,7 @@ def test_assembler_registers_content_private_attribute_and_native_provider():
 def test_assembler_mounts_content_state_under_character_runtime_state():
     class RuntimeRepository(FakeAssetRepository):
         def __init__(self) -> None:
-            super().__init__(
-                characters=(
-                    CharacterAsset(
-                        asset_key="character:75",
-                        source_id="75",
-                        name="test",
-                        element="hydro",
-                        weapon_type="sword",
-                        rarity=5,
-                        burst_energy_cost=60.0,
-                        handler_key="character.state_mount",
-                    ),
-                ),
-            )
+            super().__init__(characters=(make_default_character("character.state_mount"),))
 
     registry = create_default_content_unit_registry()
     registry.register_character_factory(

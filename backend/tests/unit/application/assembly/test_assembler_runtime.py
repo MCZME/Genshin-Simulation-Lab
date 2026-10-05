@@ -85,7 +85,7 @@ def test_assembler_builds_minimal_runtime_graph():
     assert runtime_target.level == 90
     assert runtime_target.resistance == {"hydro": 0.1}
     assert not hasattr(runtime_target, "health")
-    assert assembled.space_runtime.team_state.current_character.character_key == "character:75"
+    assert assembled.space_runtime.team_state.current_character.character_key == "character:test"
     assert assembled.space_runtime.team_state.current_character.health.current_hp == 10000
     assert assembled.simulator.max_frames == 10
     assert assembled.action_manager.is_idle()
@@ -191,7 +191,7 @@ def test_assembler_routes_structured_energy_impact_and_settles_pickup():
         "characters": (
             {
                 "character_ref": {"kind": "character", "entity_id": "character:slot_1"},
-                "character_key": "character:75",
+                "character_key": "character:test",
                 "element": "hydro",
                 "current_energy": 7.0,
                 "capacity": 60.0,

@@ -16,27 +16,50 @@ from genshin_sim.assets import (
     WeaponLevelStats,
 )
 
-_DEFAULT_CHARACTER = CharacterAsset(
-    asset_key="character:75",
-    source_id="75",
-    name="test",
-    element="hydro",
-    weapon_type="sword",
-    rarity=5,
-    burst_energy_cost=60.0,
-    handler_key="generic.test_character",
-)
-_DEFAULT_WEAPON = WeaponAsset(
-    asset_key="weapon:11512",
-    source_id="11512",
-    name="test weapon",
-    weapon_type="sword",
-    rarity=5,
-    handler_key="generic.test_weapon",
-)
+# 装配测试共享接线身份：FakeAssetRepository 默认数据与 minimal_input 等
+# 测试输入按这些键配对；source_id 必须是合成值，禁止使用真实资产 id。
+DEFAULT_CHARACTER_ASSET_KEY = "character:test"
+DEFAULT_WEAPON_ASSET_KEY = "weapon:test"
+DEFAULT_ARTIFACT_SET_ASSET_KEY = "artifact_set:test"
+
+
+def make_default_character(
+    handler_key: str | None,
+    *,
+    burst_energy_cost: float | None = 60.0,
+) -> CharacterAsset:
+    """按默认接线键构造角色资产，handler_key 由调用方指定。"""
+
+    return CharacterAsset(
+        asset_key=DEFAULT_CHARACTER_ASSET_KEY,
+        source_id=DEFAULT_CHARACTER_ASSET_KEY.removeprefix("character:"),
+        name="test",
+        element="hydro",
+        weapon_type="sword",
+        rarity=5,
+        burst_energy_cost=burst_energy_cost,
+        handler_key=handler_key,
+    )
+
+
+def make_default_weapon(handler_key: str) -> WeaponAsset:
+    """按默认接线键构造武器资产，handler_key 由调用方指定。"""
+
+    return WeaponAsset(
+        asset_key=DEFAULT_WEAPON_ASSET_KEY,
+        source_id=DEFAULT_WEAPON_ASSET_KEY.removeprefix("weapon:"),
+        name="test weapon",
+        weapon_type="sword",
+        rarity=5,
+        handler_key=handler_key,
+    )
+
+
+_DEFAULT_CHARACTER = make_default_character("generic.test_character")
+_DEFAULT_WEAPON = make_default_weapon("generic.test_weapon")
 _DEFAULT_ARTIFACT_SET = ArtifactSetAsset(
-    asset_key="artifact_set:15032",
-    source_id="15032",
+    asset_key=DEFAULT_ARTIFACT_SET_ASSET_KEY,
+    source_id=DEFAULT_ARTIFACT_SET_ASSET_KEY.removeprefix("artifact_set:"),
     name="test set",
     handler_key="generic.test_artifact_set",
 )
@@ -86,7 +109,7 @@ class FakeAssetRepository:
             if artifact_set_bonuses is not None
             else (
                 ArtifactSetBonus(
-                    artifact_set_key="artifact_set:15032",
+                    artifact_set_key=DEFAULT_ARTIFACT_SET_ASSET_KEY,
                     piece_count=4,
                     handler_key="generic.static_modifiers",
                     params={"schema_version": 1},
@@ -101,7 +124,7 @@ class FakeAssetRepository:
                 EffectPayload(
                     effect_key="effect:char",
                     owner_type="character",
-                    owner_key="character:75",
+                    owner_key=DEFAULT_CHARACTER_ASSET_KEY,
                     effect_kind="passive",
                     handler_key="generic.static_modifiers",
                     params={"schema_version": 1},

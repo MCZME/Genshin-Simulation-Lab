@@ -457,10 +457,14 @@ def _rule_activation_from_item(item: Any, path: str) -> RuleActivationConfig:
     raise ConfigError(f"{path} 必须是非空字符串或对象")
 
 
+SUPPORTED_END_CONDITIONS: tuple[str, ...] = ("idle", "actions_settled")
+
+
 @dataclass(frozen=True, slots=True)
 class RunOptions:
     max_frames: int = 18000
     seed: int = 0
+    end_condition: str = "idle"
 
     @classmethod
     def from_mapping(cls, raw: Mapping[str, Any]) -> RunOptions:
@@ -468,10 +472,23 @@ class RunOptions:
         if max_frames <= 0:
             raise ConfigError("run_options.max_frames 必须是正整数")
         seed = _require_int(raw.get("seed", 0), "run_options.seed")
-        return cls(max_frames=max_frames, seed=seed)
+        end_condition = _require_string(
+            raw.get("end_condition", "idle"),
+            "run_options.end_condition",
+        )
+        if end_condition not in SUPPORTED_END_CONDITIONS:
+            supported = "、".join(SUPPORTED_END_CONDITIONS)
+            raise ConfigError(
+                f"run_options.end_condition 必须是 {supported} 之一，实际 {end_condition!r}"
+            )
+        return cls(max_frames=max_frames, seed=seed, end_condition=end_condition)
 
     def to_dict(self) -> dict[str, Any]:
-        return {"max_frames": self.max_frames, "seed": self.seed}
+        return {
+            "max_frames": self.max_frames,
+            "seed": self.seed,
+            "end_condition": self.end_condition,
+        }
 
 
 @dataclass(frozen=True, slots=True)

@@ -234,6 +234,10 @@ function runOptionsFragment(
   if (seed !== null) {
     value.seed = seed;
   }
+  const endCondition = asString(node.params.end_condition) ?? "idle";
+  if (endCondition !== "idle") {
+    value.end_condition = endCondition;
+  }
   return {
     item_id: `node:${node.id}`,
     path: asString(node.params.path) ?? "run_options",
@@ -243,6 +247,9 @@ function runOptionsFragment(
 
 /** 规则节点支持的暴击模式；与后端 crit_mode 规则定义保持一致。 */
 export const CRIT_MODES: readonly string[] = ["off", "random"];
+
+/** 运行选项支持的结束条件；与后端 run_options.end_condition 取值保持一致。 */
+export const END_CONDITIONS: readonly string[] = ["idle", "actions_settled"];
 
 /** 内置规则词汇表；与后端 create_default_rule_registry 保持一致。 */
 export const BUILTIN_RULE_KEYS: readonly string[] = [
@@ -617,6 +624,10 @@ function validateRunOptions(node: WorkflowNode): Diagnostic[] {
   const seed = node.params.seed;
   if (seed !== undefined && (typeof seed !== "number" || !Number.isInteger(seed))) {
     diagnostics.push(paramError(node, "seed", "seed 必须是整数"));
+  }
+  const endCondition = node.params.end_condition;
+  if (endCondition !== undefined && !END_CONDITIONS.includes(asString(endCondition) ?? "")) {
+    diagnostics.push(paramError(node, "end_condition", "end_condition 必须是 idle 或 actions_settled"));
   }
   return diagnostics;
 }
@@ -1050,6 +1061,7 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     paramFields: {
       max_frames: { type: "integer", default: 18000 },
       seed: { type: "integer" },
+      end_condition: { type: "string", default: "idle" },
     },
     defaultParams: { max_frames: 18000 },
     fragment: runOptionsFragment,

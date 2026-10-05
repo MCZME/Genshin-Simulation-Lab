@@ -183,6 +183,16 @@ describe("validateWorkflow", () => {
     expect(params.map((item) => item.path)).toEqual(["seed"]);
   });
 
+  it("运行选项节点结束条件非法值报参数错误", () => {
+    const nodes = [
+      makeNode("run", "run_options", { max_frames: 60, end_condition: "damage_settled" }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, []);
+    const params = validateWorkflow(definition).filter((item) => item.code === "PARAM_INVALID");
+    expect(params.map((item) => item.path)).toEqual(["end_condition"]);
+  });
+
   it("同一区域内节点链连线合法", () => {
     const nodes = [
       makeNode("root", "root"),

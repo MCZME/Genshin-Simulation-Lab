@@ -2,13 +2,21 @@ import { FieldRow, NumberField, SelectField } from "../common/fields";
 import { useRunState } from "../run_state_context";
 import { BATCH_STATUS_LABELS } from "../../state/run_state";
 import type { RunMemberStatus } from "../../api/client";
-import { CRIT_MODES } from "../../workflow/registry";
+import { CRIT_MODES, END_CONDITIONS } from "../../workflow/registry";
 import type { NodeEditorProps } from "./common";
 import { asNumber, asString, firstError } from "./common";
 export function RunOptionsEditor({ node, onChange, fieldErrors = {} }: NodeEditorProps) {
   const params = node.params;
+  const endCondition = asString(params.end_condition) ?? "idle";
   return (
     <div className="node-editor">
+      <FieldRow label="结束条件" error={firstError(fieldErrors, "end_condition")}>
+        <SelectField
+          value={END_CONDITIONS.includes(endCondition) ? endCondition : "idle"}
+          options={[...END_CONDITION_OPTIONS]}
+          onChange={(value) => onChange({ ...params, end_condition: value })}
+        />
+      </FieldRow>
       <FieldRow label="最大帧数" error={firstError(fieldErrors, "max_frames")}>
         <NumberField
           value={asNumber(params.max_frames)}
@@ -35,6 +43,11 @@ export function RunOptionsEditor({ node, onChange, fieldErrors = {} }: NodeEdito
     </div>
   );
 }
+
+const END_CONDITION_OPTIONS = [
+  { value: "idle", label: "空闲时结束" },
+  { value: "actions_settled", label: "最后一个动作完成后结束" },
+] as const;
 
 const CRIT_MODE_OPTIONS = [
   { value: "off", label: "关闭" },

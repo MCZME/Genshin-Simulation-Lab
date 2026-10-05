@@ -311,7 +311,7 @@
       "session_id": "a1b2c3",
       "state": "completed",
       "name": "主配队",
-      "stop_reason": "INPUT_EXHAUSTED",
+      "stop_reason": "COMPLETED",
       "end_frame": 600,
       "frames_run": 600,
       "created_at": "2026-08-17T12:00:00+00:00",
@@ -331,7 +331,7 @@
   "state": "completed",
   "name": "主配队",
   "summary": {
-    "stop_reason": "INPUT_EXHAUSTED",
+    "stop_reason": "COMPLETED",
     "end_frame": 600,
     "frames_run": 600
   },

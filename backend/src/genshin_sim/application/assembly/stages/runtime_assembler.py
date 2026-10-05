@@ -139,7 +139,9 @@ from genshin_sim.core.rules import (
     create_default_rule_registry,
 )
 from genshin_sim.core.simulation import (
+    ActionsSettledStopCondition,
     FramePipeline,
+    IdleStopCondition,
     InputSessionTrace,
     InputTraceCompiler,
     SimulationContext,
@@ -951,10 +953,15 @@ class RuntimeAssembler:
             "attributes_panel",
             attribute_panel_synchronizer,
         )
+        if config.run_options.end_condition == "actions_settled":
+            stop_condition = ActionsSettledStopCondition(action_manager)
+        else:
+            stop_condition = IdleStopCondition(runtime_world)
         simulator = Simulator(
             context,
             runtime_world=runtime_world,
             max_frames=config.run_options.max_frames,
+            stop_condition=stop_condition,
         )
 
         return AssembledSimulation(

@@ -357,6 +357,27 @@ describe("固定路径节点的编辑器", () => {
     fireEvent.blur(clearInput);
     expect(onChange).toHaveBeenCalledWith({ max_frames: 18000 });
   });
+
+  it("运行选项编辑器可切换结束条件", () => {
+    const onChange = vi.fn();
+    const node: WorkflowNode = {
+      id: "run-node",
+      kind: "run_options",
+      region_id: "region-1",
+      position: { x: 0, y: 0 },
+      params: { max_frames: 18000 },
+    };
+    render(<RunOptionsEditor node={node} onChange={onChange} />);
+
+    const combobox = screen.getByRole("combobox") as HTMLSelectElement;
+    expect(combobox.value).toBe("idle");
+
+    fireEvent.change(combobox, { target: { value: "actions_settled" } });
+    expect(onChange).toHaveBeenCalledWith({
+      max_frames: 18000,
+      end_condition: "actions_settled",
+    });
+  });
 });
 
 describe("按键轨迹编辑器", () => {

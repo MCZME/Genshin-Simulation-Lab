@@ -358,7 +358,11 @@ def test_simulation_input_parses_run_options_seed():
 
     assert config.run_options.max_frames == 100
     assert config.run_options.seed == 42
-    assert config.to_dict()["run_options"] == {"max_frames": 100, "seed": 42}
+    assert config.to_dict()["run_options"] == {
+        "max_frames": 100,
+        "seed": 42,
+        "end_condition": "idle",
+    }
 
 
 def test_simulation_input_run_options_seed_defaults_to_zero():
@@ -379,4 +383,52 @@ def test_simulation_input_rejects_non_integer_run_options_seed(seed):
     payload["run_options"] = {"seed": seed}
 
     with pytest.raises(ConfigError, match="run_options\\.seed 必须是整数"):
+        SimulationInput.from_mapping(payload)
+
+
+def test_simulation_input_run_options_end_condition_defaults_to_idle():
+    payload = _minimal_input_payload()
+
+    config = SimulationInput.from_mapping(payload)
+
+    assert config.run_options.end_condition == "idle"
+
+
+@pytest.mark.parametrize(
+    "end_condition",
+    ["idle", "actions_settled"],
+)
+def test_simulation_input_parses_run_options_end_condition(end_condition):
+    payload = _minimal_input_payload()
+    payload["run_options"] = {"end_condition": end_condition}
+
+    config = SimulationInput.from_mapping(payload)
+
+    assert config.run_options.end_condition == end_condition
+    assert config.to_dict()["run_options"]["end_condition"] == end_condition
+
+
+@pytest.mark.parametrize(
+    "end_condition",
+    ["damage_settled", "last_action", ""],
+    ids=("unsupported-value", "unknown-value", "empty-string"),
+)
+def test_simulation_input_rejects_invalid_run_options_end_condition(end_condition):
+    payload = _minimal_input_payload()
+    payload["run_options"] = {"end_condition": end_condition}
+
+    with pytest.raises(ConfigError, match="run_options\\.end_condition"):
+        SimulationInput.from_mapping(payload)
+
+
+@pytest.mark.parametrize(
+    "end_condition",
+    [42, None, {"value": "idle"}],
+    ids=("int", "null", "mapping"),
+)
+def test_simulation_input_rejects_non_string_run_options_end_condition(end_condition):
+    payload = _minimal_input_payload()
+    payload["run_options"] = {"end_condition": end_condition}
+
+    with pytest.raises(ConfigError, match="run_options\\.end_condition 必须是非空字符串"):
         SimulationInput.from_mapping(payload)

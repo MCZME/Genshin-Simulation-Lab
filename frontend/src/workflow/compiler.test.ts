@@ -168,6 +168,29 @@ describe("compileConfigurationRegion", () => {
     });
   });
 
+  it("运行选项节点结束条件非默认值时编译产物包含 end_condition", () => {
+    const runNode = makeNode("run", "run_options", {
+      max_frames: 60,
+      end_condition: "actions_settled",
+    });
+    const edges = [
+      makeEdge("e1", "run", "out", "region-1", "out"),
+      makeEdge("e2", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition(
+      [makeRegion()],
+      [runNode, makeNode("sim", "simulation", {}, null)],
+      edges,
+    );
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members[0].input.run_options).toEqual({
+      max_frames: 60,
+      end_condition: "actions_settled",
+    });
+  });
+
   it("随机种子未设置时编译产物不含 seed 字段", () => {
     const runNode = makeNode("run", "run_options", { max_frames: 60 });
     const edges = [

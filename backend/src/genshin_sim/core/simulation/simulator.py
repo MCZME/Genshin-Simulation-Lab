@@ -1,19 +1,16 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from enum import Enum, auto
 
 from genshin_sim.core.events import EmptyPayload, EventType, GameEvent, SimulationEndedPayload
 from genshin_sim.core.protocols import RuntimeWorld
 from genshin_sim.core.simulation.context import SimulationContext
+from genshin_sim.core.simulation.stop_conditions import (
+    IdleStopCondition,
+    SimulationStopCondition,
+    SimulationStopReason,
+)
 from genshin_sim.core.snapshots.runtime import SnapshotExportingWorld
-
-
-class SimulationStopReason(Enum):
-    """仿真停止原因。"""
-
-    COMPLETED = auto()
-    MAX_FRAMES_REACHED = auto()
 
 
 @dataclass(frozen=True, slots=True)
@@ -40,6 +37,7 @@ class Simulator:
         *,
         runtime_world: RuntimeWorld | None = None,
         max_frames: int = 18000,
+        stop_condition: SimulationStopCondition | None = None,
     ) -> None:
         if max_frames < 0:
             msg = "max_frames 不能为负数"
@@ -48,6 +46,7 @@ class Simulator:
         self.context = context
         self.runtime_world = runtime_world
         self.max_frames = max_frames
+        self.stop_condition = stop_condition or IdleStopCondition(runtime_world)
 
     def run(self) -> SimulationResult:
         start_frame = self.context.current_frame
@@ -61,9 +60,10 @@ class Simulator:
             self._export_snapshot(frame)
             self._publish_frame_ended(frame)
 
-            if self._is_finished():
+            stop_reason = self.stop_condition.check()
+            if stop_reason is not None:
                 result = SimulationResult(
-                    stop_reason=SimulationStopReason.COMPLETED,
+                    stop_reason=stop_reason,
                     end_frame=self.context.current_frame,
                     frames_run=self.context.current_frame - start_frame,
                 )
@@ -131,7 +131,3 @@ class Simulator:
                 payload=EmptyPayload(),
             )
         )
-
-    def _is_finished(self) -> bool:
-        world_idle = self.runtime_world is None or self.runtime_world.is_idle()
-        return world_idle

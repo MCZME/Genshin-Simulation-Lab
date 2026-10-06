@@ -57,9 +57,16 @@ from genshin_sim.content.characters.snezhnaya.alyosha import (
     ALYOSHA_PASSIVE_P5_HANDLER_KEY,
     ALYOSHA_PASSIVE_P6_HANDLER_KEY,
     ALYOSHA_PASSIVE_P8_HANDLER_KEY,
+    create_alyosha_constellation_c1,
+    create_alyosha_constellation_c2,
     create_alyosha_constellation_c3,
+    create_alyosha_constellation_c4,
     create_alyosha_constellation_c5,
+    create_alyosha_constellation_c6,
     create_alyosha_content_unit,
+    create_alyosha_passive_p4,
+    create_alyosha_passive_p5,
+    create_alyosha_passive_p6,
 )
 from genshin_sim.content.characters.snezhnaya.odette import (
     ODETTE_CHARACTER_HANDLER_KEY,
@@ -362,24 +369,22 @@ def create_default_content_unit_registry(
     ):
         registry.register_effect_factory(handler_key, factory)
     registry.register_empty_effect_handler(ODETTE_PASSIVE_P8_HANDLER_KEY)
-    # 阿罗夏：C3/C5（天赋等级提升）为骨架阶段实现的效果行；P4/P5/P6 与
-    # C1/C2/C4/C6 的行为工厂随核心机制切片接入（规划文档 §7-4），当前注册
-    # 空效果 handler 占位；P8 树梢察伺（探索天赋）无仿真效果，空实现为终态。
+    # 阿罗夏：P4/P5/P6 与 C1–C6 全部效果行走行为工厂（P4/C4/C2/C6 的机器
+    # 数值由角色内容单元消费）；P8 树梢察伺（探索天赋）无仿真效果，空实现
+    # 为终态。
     for handler_key, factory in (
+        (ALYOSHA_PASSIVE_P4_HANDLER_KEY, create_alyosha_passive_p4),
+        (ALYOSHA_PASSIVE_P5_HANDLER_KEY, create_alyosha_passive_p5),
+        (ALYOSHA_PASSIVE_P6_HANDLER_KEY, create_alyosha_passive_p6),
+        (ALYOSHA_CONSTELLATION_C1_HANDLER_KEY, create_alyosha_constellation_c1),
+        (ALYOSHA_CONSTELLATION_C2_HANDLER_KEY, create_alyosha_constellation_c2),
         (ALYOSHA_CONSTELLATION_C3_HANDLER_KEY, create_alyosha_constellation_c3),
+        (ALYOSHA_CONSTELLATION_C4_HANDLER_KEY, create_alyosha_constellation_c4),
         (ALYOSHA_CONSTELLATION_C5_HANDLER_KEY, create_alyosha_constellation_c5),
+        (ALYOSHA_CONSTELLATION_C6_HANDLER_KEY, create_alyosha_constellation_c6),
     ):
         registry.register_effect_factory(handler_key, factory)
-    for handler_key in (
-        ALYOSHA_PASSIVE_P4_HANDLER_KEY,
-        ALYOSHA_PASSIVE_P5_HANDLER_KEY,
-        ALYOSHA_PASSIVE_P6_HANDLER_KEY,
-        ALYOSHA_PASSIVE_P8_HANDLER_KEY,
-        ALYOSHA_CONSTELLATION_C1_HANDLER_KEY,
-        ALYOSHA_CONSTELLATION_C2_HANDLER_KEY,
-        ALYOSHA_CONSTELLATION_C4_HANDLER_KEY,
-        ALYOSHA_CONSTELLATION_C6_HANDLER_KEY,
-    ):
+    for handler_key in (ALYOSHA_PASSIVE_P8_HANDLER_KEY,):
         registry.register_empty_effect_handler(handler_key)
     for handler_key in BUILTIN_NOOP_CONTENT_HANDLER_KEYS:
         registry.register_noop_handler(handler_key)

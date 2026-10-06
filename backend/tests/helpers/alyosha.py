@@ -11,9 +11,23 @@ from pathlib import Path
 from genshin_sim.assets.models import EffectPayload, TalentScalingEntry
 from genshin_sim.content.characters.snezhnaya.alyosha.data import (
     ALYOSHA_CHARACTER_HANDLER_KEY,
+    ALYOSHA_FULGURITE_OBJECT_KEY,
+    ALYOSHA_HUNTERS_MARK_BUFF_DEFINITION_KEY,
+    ALYOSHA_HUNTERS_PRECISION_BUFF_DEFINITION_KEY,
+    ALYOSHA_HUNTERS_PRECISION_MASTERY_BUFF_DEFINITION_KEY,
+    ALYOSHA_TEAM_SCOPE,
 )
-from genshin_sim.core.attributes import AttributeSubjectRef
+from genshin_sim.core.attributes import (
+    STAT_ATK_TOTAL,
+    AttributeQuery,
+    AttributeResolver,
+    AttributeSubjectRef,
+)
+from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.events import EventType
+from genshin_sim.core.impacts import ElementalApplicationSpec, ImpactKind, ImpactRequest
+from genshin_sim.core.systems.aura import AuraStrength
+from genshin_sim.core.systems.buff import BuffRuntime
 from genshin_sim.infrastructure.assets_sqlite import (
     ASSET_SCHEMA_VERSION,
     SQLiteAssetDataWriter,
@@ -86,6 +100,103 @@ def alyosha_damage_events(assembled) -> list:
     return events
 
 
+def apply_aura(assembled, element: Element, *, entity_id: str = "target:target_1") -> None:
+    """仿真前经元素结算协调器种入元素附着（供反应触发类用例）。"""
+
+    from genshin_sim.core.coordination.elemental_reaction.settlement_coordinator import (
+        ElementalSettlementCoordinator,
+    )
+
+    coordinator = assembled.context.get_system(ElementalSettlementCoordinator)
+    assert isinstance(coordinator, ElementalSettlementCoordinator)
+    request_id = f"test:alyosha:aura:{element.value}"
+    coordinator.settle_aura_impact(
+        assembled.context,
+        ImpactRequest(
+            frame=0,
+            kind=ImpactKind.APPLY_AURA,
+            impact_key=f"test.alyosha.aura_application.{element.value}",
+            owner_slot=1,
+            request_id=request_id,
+            target_refs=(entity_id,),
+            elemental_application_spec=ElementalApplicationSpec(
+                impact_ref=f"{request_id}:spec",
+                element=element,
+                elemental_strength=AuraStrength.WEAK,
+                elemental_amount=AuraAmount.one(),
+            ),
+        ),
+    )
+
+
+def mark_records(assembled, *, frame: int, entity_id: str = "target:target_1") -> tuple:
+    """读取目标身上的弋猎印记活动记录。"""
+
+    buff_runtime = assembled.context.get_system(BuffRuntime)
+    assert isinstance(buff_runtime, BuffRuntime)
+    return buff_runtime.reader.active(
+        frame,
+        target_ref=AttributeSubjectRef.target(entity_id),
+        definition_key=ALYOSHA_HUNTERS_MARK_BUFF_DEFINITION_KEY,
+    )
+
+
+def precision_records(assembled, *, frame: int) -> tuple:
+    """读取前台主体（ACTIVE_CHARACTER）上的猎者之准活动记录。"""
+
+    buff_runtime = assembled.context.get_system(BuffRuntime)
+    assert isinstance(buff_runtime, BuffRuntime)
+    return buff_runtime.reader.active(
+        frame,
+        target_ref=AttributeSubjectRef.active_character(ALYOSHA_TEAM_SCOPE),
+        definition_key=ALYOSHA_HUNTERS_PRECISION_BUFF_DEFINITION_KEY,
+    )
+
+
+def mastery_records(assembled, *, frame: int) -> tuple:
+    """读取前台主体上的 C6 叠满精通伴生 Buff 活动记录。"""
+
+    buff_runtime = assembled.context.get_system(BuffRuntime)
+    assert isinstance(buff_runtime, BuffRuntime)
+    return buff_runtime.reader.active(
+        frame,
+        target_ref=AttributeSubjectRef.active_character(ALYOSHA_TEAM_SCOPE),
+        definition_key=ALYOSHA_HUNTERS_PRECISION_MASTERY_BUFF_DEFINITION_KEY,
+    )
+
+
+def resolved_atk(assembled, *, frame: int = 1) -> float:
+    """解析阿罗夏当前面板攻击力（供相对断言折算）。"""
+
+    resolver = assembled.context.get_system(AttributeResolver)
+    assert isinstance(resolver, AttributeResolver)
+    resolution = resolver.resolve(
+        AttributeQuery(
+            subject_ref=ALYOSHA_REF,
+            attribute_key=STAT_ATK_TOTAL,
+            frame=frame,
+        )
+    )
+    return float(resolution.final_value)
+
+
+def fulgurite_objects(assembled) -> tuple:
+    """返回轰霆猎场创建实体运行态（类型键过滤）。"""
+
+    runtime = assembled.space_runtime.created_object_runtime
+    return tuple(obj for obj in runtime.objects if obj.type_key == ALYOSHA_FULGURITE_OBJECT_KEY)
+
+
+def current_energy(assembled, *, frame: int = 0) -> float:
+    """读取阿罗夏当前元素能量。"""
+
+    from genshin_sim.core.systems.energy import EnergyRuntime
+
+    runtime = assembled.context.get_system(EnergyRuntime)
+    assert isinstance(runtime, EnergyRuntime)
+    return runtime.get_current_energy(ALYOSHA_REF)
+
+
 def write_alyosha_asset_database(db_path: Path) -> Path:
     """写入阿罗夏单人最小合成资产库（倍率数值默认全部为 1.0）。"""
 
@@ -136,9 +247,9 @@ def write_alyosha_asset_database(db_path: Path) -> Path:
 def minimal_alyosha_scaling_entries() -> tuple[TalentScalingEntry, ...]:
     """返回阿罗夏 content 工厂接线所需的最小倍率行。
 
-    倍率条目全部取 1.0、冷却条目取资产行同款定值（E 15s / Q 18s），只保证
-    结构（label、分量数与等级区间）满足工厂编译；三段伤害带两个分量对应
-    3A/3B 双判定。
+    倍率条目全部取 1.0、定值条目取与资产行同构的合成定值（E/Q 冷却 15s/18s、
+    印记与猎者之准持续 15s、Q 场域持续 14s），只保证结构（label、分量数与
+    等级区间）满足工厂编译；三段伤害带两个分量对应 3A/3B 双判定。
     """
 
     specs = (
@@ -148,6 +259,24 @@ def minimal_alyosha_scaling_entries() -> tuple[TalentScalingEntry, ...]:
         ("na_4", "normal_attack", "四段伤害", ("plain_ratio",), None),
         ("es_press", "elemental_skill", "点按伤害", ("plain_ratio",), None),
         ("es_cooldown", "elemental_skill", "冷却时间", ("plain_value",), 15.0),
+        ("es_mark_duration", "elemental_skill", "弋猎印记持续时间", ("plain_value",), 15.0),
+        (
+            "es_precision_atk",
+            "elemental_skill",
+            "猎者之准攻击力提升",
+            ("plain_ratio",),
+            None,
+        ),
+        (
+            "es_precision_duration",
+            "elemental_skill",
+            "猎者之准持续时间",
+            ("plain_value",),
+            15.0,
+        ),
+        ("eb_field", "elemental_burst", "轰霆猎场伤害", ("plain_ratio",), None),
+        ("eb_tugarin", "elemental_burst", "图加林伤害", ("plain_ratio",), None),
+        ("eb_duration", "elemental_burst", "持续时间", ("plain_value",), 14.0),
         ("eb_cooldown", "elemental_burst", "冷却时间", ("plain_value",), 18.0),
     )
     return tuple(
@@ -179,14 +308,28 @@ def minimal_alyosha_scaling_entries() -> tuple[TalentScalingEntry, ...]:
 def minimal_alyosha_effect_payloads() -> tuple[EffectPayload, ...]:
     """返回被动/命座集成测试需要的合成效果行。
 
-    C3/C5 携带天赋提升分量（[0] 提升级数 3、[1] 等级上限 15，与真实资产布局
-    一致）；其余效果行随空占位 handler 接入，仅保留名称供审计。
+    分量布局与真实资产行同构（内部引用位置用占位数 999.0，机器数值取便于
+    断言的合成值）：C3/C5 携带天赋提升、P4/C4 携带回血比例、P5 携带充能
+    效率折算三元组、P6 携带每层星超导增伤、C1 携带回能与冷却、C2 携带延长
+    秒数、C6 携带层数上限与精通。
     """
 
     specs = (
-        ("passive:4", "character.alyosha.passive.p4", "passive", "惊醒沉睡的林线", ()),
-        ("passive:5", "character.alyosha.passive.p5", "passive", "告别冬麦与残叶", ()),
-        ("passive:6", "character.alyosha.passive.p6", "passive", "星赴险域", ()),
+        ("passive:4", "character.alyosha.passive.p4", "passive", "惊醒沉睡的林线", (999.0, 1.2)),
+        (
+            "passive:5",
+            "character.alyosha.passive.p5",
+            "passive",
+            "告别冬麦与残叶",
+            (0.01, 0.0035, 0.7),
+        ),
+        (
+            "passive:6",
+            "character.alyosha.passive.p6",
+            "passive",
+            "星赴险域",
+            (999.0, 999.0, 0.2),
+        ),
         (
             "passive_exploration:8",
             "character.alyosha.passive.p8",
@@ -194,8 +337,20 @@ def minimal_alyosha_effect_payloads() -> tuple[EffectPayload, ...]:
             "树梢察伺",
             (),
         ),
-        ("constellation:c1", "character.alyosha.constellation.c1", "constellation", "寒谷轰雷", ()),
-        ("constellation:c2", "character.alyosha.constellation.c2", "constellation", "长嗥远讯", ()),
+        (
+            "constellation:c1",
+            "character.alyosha.constellation.c1",
+            "constellation",
+            "寒谷轰雷",
+            (15.0, 18.0),
+        ),
+        (
+            "constellation:c2",
+            "character.alyosha.constellation.c2",
+            "constellation",
+            "长嗥远讯",
+            (6.0, 999.0, 999.0),
+        ),
         (
             "constellation:c3",
             "character.alyosha.constellation.c3",
@@ -208,7 +363,7 @@ def minimal_alyosha_effect_payloads() -> tuple[EffectPayload, ...]:
             "character.alyosha.constellation.c4",
             "constellation",
             "衔取猎品",
-            (),
+            (999.0, 0.6),
         ),
         (
             "constellation:c5",
@@ -222,7 +377,7 @@ def minimal_alyosha_effect_payloads() -> tuple[EffectPayload, ...]:
             "character.alyosha.constellation.c6",
             "constellation",
             "复夺旌幡",
-            (),
+            (999.0, 2.0, 2.0, 100.0),
         ),
     )
     return tuple(

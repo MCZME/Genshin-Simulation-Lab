@@ -16,6 +16,21 @@ from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.impacts import StrikeType
 from genshin_sim.core.space import Vector3
 from genshin_sim.core.systems.aura import AuraStrength
+from genshin_sim.core.systems.reaction.mechanics.electro_charged.mechanic import (
+    ELECTRO_CHARGED_REACTION_KEY,
+)
+from genshin_sim.core.systems.reaction.mechanics.lunar_electro_charged.keys import (
+    LUNAR_ELECTRO_CHARGED_REACTION_KEY,
+)
+from genshin_sim.core.systems.reaction.mechanics.overloaded.mechanic import (
+    OVERLOADED_REACTION_KEY,
+)
+from genshin_sim.core.systems.reaction.mechanics.stellar_conduct.keys import (
+    STELLAR_CONDUCT_REACTION_KEY,
+)
+from genshin_sim.core.systems.reaction.mechanics.superconduct.mechanic import (
+    SUPERCONDUCT_REACTION_KEY,
+)
 
 ALYOSHA_CHARACTER_HANDLER_KEY = "character.alyosha"
 ALYOSHA_CONTENT_VERSION = "dev-skeleton"
@@ -58,6 +73,9 @@ ALYOSHA_ELEMENTAL_SKILL_PRESS_IMPACT_KEY = f"{ALYOSHA_ELEMENTAL_SKILL_ACTION_KEY
 ALYOSHA_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY = (
     f"{ALYOSHA_ELEMENTAL_BURST_ACTION_KEY}.spend_energy"
 )
+# Q 施放影响点：展开为轰霆猎场创建实体请求（场域首拍/图加林首咬全部锚定
+# 施放帧，见规划文档 §3.1 已定案口径）。
+ALYOSHA_ELEMENTAL_BURST_SUMMON_IMPACT_KEY = f"{ALYOSHA_ELEMENTAL_BURST_ACTION_KEY}.summon"
 
 ALYOSHA_HIT_IMPACT_KEYS = (
     ALYOSHA_NORMAL_ATTACK_1_IMPACT_KEY,
@@ -311,6 +329,10 @@ ALYOSHA_ACTION_TABLE: dict[str, TimedActionSpec] = {
                 impact_key=ALYOSHA_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY,
                 frame=1,
             ),
+            TimedImpactPointSpec(
+                impact_key=ALYOSHA_ELEMENTAL_BURST_SUMMON_IMPACT_KEY,
+                frame=1,
+            ),
         ),
         cooldown_start_frame=1,
         cooldown_ability_key=ALYOSHA_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
@@ -328,3 +350,86 @@ ALYOSHA_NORMAL_ATTACK_ACTION_KEYS = (
     ALYOSHA_NORMAL_ATTACK_3_ACTION_KEY,
     ALYOSHA_NORMAL_ATTACK_4_ACTION_KEY,
 )
+
+# ---------------------------------------------------------------------------
+# 弋猎印记 / 猎者之准（Buff 定义键与词条键；定义在 buffs.py 构造）。
+# 印记持续时间与猎者之准攻击力/持续时间取资产倍率表条目（见 content.py 编译），
+# 不在代码里另存常量。
+# ---------------------------------------------------------------------------
+ALYOSHA_HUNTERS_MARK_BUFF_DEFINITION_KEY = "buff.alyosha.hunters_mark"
+ALYOSHA_HUNTERS_MARK_MECHANIC_KEY = "character.alyosha.hunters_mark"
+ALYOSHA_HUNTERS_MARK_CONFLICT_KEY = "buff_conflict.alyosha.hunters_mark"
+
+ALYOSHA_HUNTERS_PRECISION_BUFF_DEFINITION_KEY = "buff.alyosha.hunters_precision"
+ALYOSHA_HUNTERS_PRECISION_MECHANIC_KEY = "character.alyosha.hunters_precision"
+ALYOSHA_HUNTERS_PRECISION_CONFLICT_KEY = "buff_conflict.alyosha.hunters_precision"
+ALYOSHA_HUNTERS_PRECISION_ATK_TERM_KEY = "alyosha.hunters_precision.atk_bonus"
+
+# C6 叠满伴生的元素精通 Buff（叠满时 +100 精通，随猎者之准同帧刷新/到期）。
+ALYOSHA_HUNTERS_PRECISION_MASTERY_BUFF_DEFINITION_KEY = "buff.alyosha.hunters_precision_mastery"
+ALYOSHA_HUNTERS_PRECISION_MASTERY_MECHANIC_KEY = "character.alyosha.hunters_precision_mastery"
+ALYOSHA_HUNTERS_PRECISION_MASTERY_CONFLICT_KEY = "buff_conflict.alyosha.hunters_precision_mastery"
+ALYOSHA_HUNTERS_PRECISION_MASTERY_TERM_KEY = "alyosha.hunters_precision.mastery_bonus"
+
+# ---------------------------------------------------------------------------
+# Q 轰霆猎场创建实体（单一实体、双攻击通道：轰霆猎场 AoE tick + 图加林撕咬）。
+# 帧位来自实测录制（规划文档 §3.1 已定案）：全部锚定施放帧——轰霆猎场首拍
+# 施放后 81 帧、图加林首咬施放后 127 帧，此后固定 120 帧间隔推进；「出现/
+# 完全形成」帧位仅作演出参考，不参与时序。
+# ---------------------------------------------------------------------------
+ALYOSHA_FULGURITE_OBJECT_KEY = "alyosha.fulgurite_hunting_field"
+ALYOSHA_FIELD_TICK_SCHEDULE_KEY = "field_tick"
+ALYOSHA_TUGARIN_BITE_SCHEDULE_KEY = "tugarin_bite"
+ALYOSHA_FIELD_FIRST_TICK_FRAME_OFFSET = 81
+ALYOSHA_TUGARIN_FIRST_BITE_FRAME_OFFSET = 127
+ALYOSHA_FIELD_TICK_PERIOD_FRAMES = 120
+ALYOSHA_TUGARIN_BITE_PERIOD_FRAMES = 120
+
+ALYOSHA_BURST_FIELD_TICK_IMPACT_KEY = f"{ALYOSHA_ELEMENTAL_BURST_ACTION_KEY}.field_tick"
+ALYOSHA_BURST_TUGARIN_BITE_IMPACT_KEY = f"{ALYOSHA_ELEMENTAL_BURST_ACTION_KEY}.tugarin_bite"
+
+# 轰霆猎场伤害 AOE：圆柱 6.0,3.0 / 0,-0.5,0（资料表 元素爆发 轰霆猎场行）；
+# 图加林伤害 AOE：圆柱 1.0,3.0 / 0,-0.5,0。高度分量不参与 X/Z 查询。
+ALYOSHA_FIELD_TICK_AOE_RADIUS = 6.0
+ALYOSHA_FIELD_TICK_AOE_OFFSET = Vector3(0.0, -0.5, 0.0)
+ALYOSHA_TUGARIN_BITE_AOE_RADIUS = 1.0
+ALYOSHA_TUGARIN_BITE_AOE_OFFSET = Vector3(0.0, -0.5, 0.0)
+
+# 图加林索敌（资料表：圆柱 15,8 就近，中心是轰霆猎场、范围远大于伤害范围；
+# 2026-10-06 定案：范围内有弋猎印记取其中最近者，否则全范围最近者）。
+ALYOSHA_TUGARIN_SEARCH_RADIUS = 15.0
+
+ALYOSHA_BURST_ICD_TAG_KEY = "元素爆发"
+
+# ---------------------------------------------------------------------------
+# P4/C4（图加林攻击动作触发的周期回血）。回复比例取资产效果行 components
+# （P4 120% / C4 60%，见 content.py 编译），此处只定承载键。
+# ---------------------------------------------------------------------------
+ALYOSHA_P4_HEAL_COMPONENT_KEY = "alyosha.passive.p4.heal"
+ALYOSHA_C4_HEAL_COMPONENT_KEY = "alyosha.constellation.c4.heal"
+ALYOSHA_P4_EFFECT_UNLOCK_KEY = "passive:4"
+ALYOSHA_C4_UNLOCK_KEY = "constellation:c4"
+ALYOSHA_C1_UNLOCK_KEY = "constellation:c1"
+ALYOSHA_C2_UNLOCK_KEY = "constellation:c2"
+ALYOSHA_C6_UNLOCK_KEY = "constellation:c6"
+ALYOSHA_P5_EFFECT_UNLOCK_KEY = "passive:5"
+ALYOSHA_P6_EFFECT_UNLOCK_KEY = "passive:6"
+
+# ---------------------------------------------------------------------------
+# C1 寒谷轰雷：雷元素相关反应触发判定。reaction_key 恒涉雷的集合 +
+# direction_key 携带雷方向（雷扩散/雷结晶/原激化等按方向分流的反应族）。
+# ---------------------------------------------------------------------------
+ALYOSHA_C1_ELECTRO_REACTION_KEYS = frozenset(
+    {
+        ELECTRO_CHARGED_REACTION_KEY,
+        OVERLOADED_REACTION_KEY,
+        SUPERCONDUCT_REACTION_KEY,
+        STELLAR_CONDUCT_REACTION_KEY,
+        LUNAR_ELECTRO_CHARGED_REACTION_KEY,
+    }
+)
+ALYOSHA_C1_ELECTRO_DIRECTION_MARKER = "electro"
+
+# 队伍作用域稳定 id（单人队伍，与 stellar_conduct/dendro_core 等域内常量同值；
+# ACTIVE_CHARACTER 主体记录挂在该作用域上，前台门控由属性投影语义承担）。
+ALYOSHA_TEAM_SCOPE = "player_team"

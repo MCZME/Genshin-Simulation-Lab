@@ -8,15 +8,22 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from genshin_sim.assets.models import TalentScalingEntry
 from genshin_sim.content.characters.snezhnaya.alyosha.data import (
+    ALYOSHA_BURST_FIELD_TICK_IMPACT_KEY,
+    ALYOSHA_BURST_ICD_SEQUENCE_KEY,
+    ALYOSHA_BURST_ICD_TAG_KEY,
+    ALYOSHA_BURST_TUGARIN_BITE_IMPACT_KEY,
     ALYOSHA_CHARACTER_HANDLER_KEY,
     ALYOSHA_DAMAGE_ELEMENT,
     ALYOSHA_DAMAGE_ELEMENTAL_AMOUNT,
     ALYOSHA_DAMAGE_ELEMENTAL_STRENGTH,
     ALYOSHA_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY,
+    ALYOSHA_ELEMENTAL_BURST_MAIN_ATTACK_TAG,
+    ALYOSHA_ELEMENTAL_BURST_RANGE_TYPE,
+    ALYOSHA_ELEMENTAL_BURST_SUMMON_IMPACT_KEY,
     ALYOSHA_ELEMENTAL_SKILL_AOE_LENGTH,
     ALYOSHA_ELEMENTAL_SKILL_AOE_OFFSET,
     ALYOSHA_ELEMENTAL_SKILL_AOE_SHAPE,
@@ -25,7 +32,10 @@ from genshin_sim.content.characters.snezhnaya.alyosha.data import (
     ALYOSHA_ELEMENTAL_SKILL_PRESS_IMPACT_KEY,
     ALYOSHA_ELEMENTAL_SKILL_RANGE_TYPE,
     ALYOSHA_ELEMENTAL_SKILL_STRIKE_TYPE,
+    ALYOSHA_FIELD_TICK_AOE_OFFSET,
+    ALYOSHA_FIELD_TICK_AOE_RADIUS,
     ALYOSHA_MARK_ADDITIONAL_TAGS,
+    ALYOSHA_MARK_LOCK_ADDITIONAL_TAG,
     ALYOSHA_MELEE_ELEMENT,
     ALYOSHA_NORMAL_ATTACK_1_IMPACT_KEY,
     ALYOSHA_NORMAL_ATTACK_2_IMPACT_KEY,
@@ -35,6 +45,8 @@ from genshin_sim.content.characters.snezhnaya.alyosha.data import (
     ALYOSHA_NORMAL_ATTACK_DAMAGE_DATA,
     ALYOSHA_NORMAL_ATTACK_ICD_SEQUENCE_KEY,
     ALYOSHA_NORMAL_ATTACK_ICD_TAG_KEY,
+    ALYOSHA_TUGARIN_BITE_AOE_OFFSET,
+    ALYOSHA_TUGARIN_BITE_AOE_RADIUS,
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.generic.talents import ScalingCompiler
@@ -47,7 +59,7 @@ from genshin_sim.core.impacts import (
     ImpactRequest,
     StrikeType,
 )
-from genshin_sim.core.space import ImpactAreaSpec, Vector3
+from genshin_sim.core.space import ACTIVE_CHARACTER_ENTITY_ID, ImpactAreaSpec, Vector3
 from genshin_sim.core.systems.damage import DamageScalingTerm
 
 _ALYOSHA_NORMAL_ATTACK_DAMAGE_LABELS = {
@@ -58,6 +70,33 @@ _ALYOSHA_NORMAL_ATTACK_DAMAGE_LABELS = {
     ALYOSHA_NORMAL_ATTACK_4_IMPACT_KEY: ("四段伤害", 0),
 }
 _ALYOSHA_ELEMENTAL_SKILL_DAMAGE_LABEL = "点按伤害"
+_ALYOSHA_BURST_FIELD_DAMAGE_LABEL = "轰霆猎场伤害"
+_ALYOSHA_BURST_TUGARIN_DAMAGE_LABEL = "图加林伤害"
+
+
+@dataclass(frozen=True, slots=True)
+class AlyoshaBurstSummonPlan:
+    """Q 召唤影响点的轰霆猎场创建计划（工厂展开参数）。
+
+    时序全部锚定施放帧（规划文档 §3.1 已定案）：首拍/首咬偏移由工厂在展开
+    时换算为绝对帧写进创建 config，创建实体晚到也不改变 tick 节奏。
+    """
+
+    type_key: str
+    duration_frames: int
+    field_first_tick_frame_offset: int
+    tugarin_first_bite_frame_offset: int
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.type_key, str) or not self.type_key.strip():
+            raise ContentUnitValidationError("轰霆猎场创建计划 type_key 必须是非空字符串")
+        for value, name in (
+            (self.duration_frames, "duration_frames"),
+            (self.field_first_tick_frame_offset, "field_first_tick_frame_offset"),
+            (self.tugarin_first_bite_frame_offset, "tugarin_first_bite_frame_offset"),
+        ):
+            if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+                raise ContentUnitValidationError(f"轰霆猎场创建计划 {name} 必须是正整数")
 
 
 def _compile_damage_spec(
@@ -212,16 +251,77 @@ def compile_elemental_skill_damage_specs(
     }
 
 
+def compile_burst_damage_specs(
+    character_key: str,
+    entries_by_key: dict[tuple[str, str, str], TalentScalingEntry],
+    talent_level: int,
+) -> dict[str, DamageImpactSpec]:
+    """编译 Q 双攻击通道的伤害契约（轰霆猎场 AoE tick + 图加林撕咬）。
+
+    两个伤害源独立并行、均属「元素爆发」标签；共享专属 ICD 序列
+    「阿罗夏元素爆发」（资料：重置 1.6s、序列 [1,0]，实例按 defender 分窗）。
+    AOE 锚定在轰霆猎场实体上（tick 时以实体位置/朝向投影），偏移 0,-0.5,0
+    的 Y 分量不参与查询。
+    """
+
+    specs: dict[str, DamageImpactSpec] = {}
+    plans = (
+        (
+            ALYOSHA_BURST_FIELD_TICK_IMPACT_KEY,
+            _ALYOSHA_BURST_FIELD_DAMAGE_LABEL,
+            ALYOSHA_FIELD_TICK_AOE_RADIUS,
+            ALYOSHA_FIELD_TICK_AOE_OFFSET,
+            (),
+        ),
+        (
+            ALYOSHA_BURST_TUGARIN_BITE_IMPACT_KEY,
+            _ALYOSHA_BURST_TUGARIN_DAMAGE_LABEL,
+            ALYOSHA_TUGARIN_BITE_AOE_RADIUS,
+            ALYOSHA_TUGARIN_BITE_AOE_OFFSET,
+            (ALYOSHA_MARK_LOCK_ADDITIONAL_TAG,),
+        ),
+    )
+    for impact_key, label, aoe_radius, aoe_offset, additional_tags in plans:
+        entry = entries_by_key.get((character_key, "elemental_burst", label))
+        if entry is None:
+            raise ContentUnitValidationError(f"阿罗夏元素爆发缺少资产倍率条目：{label}")
+        specs[impact_key] = _compile_damage_spec(
+            impact_key,
+            talent_level,
+            entry=entry,
+            component_index=0,
+            main_attack_tag=ALYOSHA_ELEMENTAL_BURST_MAIN_ATTACK_TAG,
+            strike_type=StrikeType.DEFAULT,
+            range_type=ALYOSHA_ELEMENTAL_BURST_RANGE_TYPE,
+            element=ALYOSHA_DAMAGE_ELEMENT,
+            elemental_amount=1,
+            icd_tag_key=ALYOSHA_BURST_ICD_TAG_KEY,
+            icd_sequence_key=ALYOSHA_BURST_ICD_SEQUENCE_KEY,
+            additional_attack_tags=additional_tags,
+            display_name=label,
+            aoe_shape="圆柱",
+            aoe_radius=aoe_radius,
+            aoe_offset=aoe_offset,
+        )
+    return specs
+
+
 class AlyoshaActionImpactFactory:
     """把阿罗夏动作影响点展开为带伤害契约的 DAMAGE/ENERGY 请求。
 
     ``damage_specs`` 由内容编译期按资产倍率表生成，按 impact_key 索引；未
-    登记契约的影响点（Q 能量消耗）展开为对应类型请求。Q 的轰霆猎场/图加林
-    伤害随创建实体接入后由其影响工厂承载。
+    登记契约的影响点（Q 能量消耗、Q 召唤）展开为对应类型请求。轰霆猎场/
+    图加林的伤害由创建实体类型在 tick 时产出（``fulgurite.py``）。
     """
 
-    def __init__(self, damage_specs: Mapping[str, DamageImpactSpec]) -> None:
+    def __init__(
+        self,
+        damage_specs: Mapping[str, DamageImpactSpec],
+        *,
+        burst_summon: AlyoshaBurstSummonPlan | None = None,
+    ) -> None:
         self._damage_specs = dict(damage_specs)
+        self._burst_summon = burst_summon
 
     def create_requests(self, context: ActionImpactContext) -> tuple[ImpactRequest, ...]:
         params: dict[str, object] = {
@@ -252,6 +352,8 @@ class AlyoshaActionImpactFactory:
                     },
                 ),
             )
+        if context.impact_key == ALYOSHA_ELEMENTAL_BURST_SUMMON_IMPACT_KEY:
+            return (self._summon_create_request(context, params),)
         damage_spec = self._damage_specs.get(context.impact_key)
         if damage_spec is not None:
             damage_spec = replace(
@@ -270,4 +372,52 @@ class AlyoshaActionImpactFactory:
                 params=params,
                 damage_spec=damage_spec,
             ),
+        )
+
+    def _summon_create_request(
+        self,
+        context: ActionImpactContext,
+        params: dict[str, object],
+    ) -> ImpactRequest:
+        """展开轰霆猎场创建实体请求（单一实体、双攻击通道）。
+
+        实体生成在当前场上角色位置（资料未给定落点，取角色原位；伤害范围即
+        实体大小，见规划文档 §3-发现8）；首拍/首咬锚定施放帧（``config``
+        携带绝对帧），缺仿真上下文时回退原点并依赖 config 的施放帧锚定。
+        """
+
+        plan = self._burst_summon
+        if plan is None:
+            raise ContentUnitValidationError("Q 召唤影响点缺少轰霆猎场创建计划")
+        position = Vector3()
+        facing = Vector3(0.0, 0.0, 1.0)
+        simulation = context.simulation
+        if simulation is not None and simulation.space_runtime is not None:
+            entity = simulation.space_runtime.get_entity(ACTIVE_CHARACTER_ENTITY_ID)
+            if entity is not None:
+                position = entity.position
+                facing = entity.facing
+        return ImpactRequest(
+            frame=context.frame,
+            kind=ImpactKind.CREATE_ENTITY,
+            impact_key=context.impact_key,
+            owner_slot=context.owner.slot,
+            action_key=context.action_key,
+            source_impact_point_id=context.impact_point_id,
+            target_refs=(),
+            params={
+                **params,
+                "type_key": plan.type_key,
+                "duration_frames": plan.duration_frames,
+                "position": {"x": position.x, "y": position.y, "z": position.z},
+                "facing": {"x": facing.x, "y": facing.y, "z": facing.z},
+                "owner_key": f"character:slot_{context.owner.slot}",
+                "tags": (plan.type_key,),
+                "config": {
+                    "field_first_tick_frame": (context.frame + plan.field_first_tick_frame_offset),
+                    "tugarin_first_bite_frame": (
+                        context.frame + plan.tugarin_first_bite_frame_offset
+                    ),
+                },
+            },
         )

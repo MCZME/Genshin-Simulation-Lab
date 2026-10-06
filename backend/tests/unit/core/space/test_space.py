@@ -9,6 +9,7 @@ from genshin_sim.core.entity_states import CharacterRuntimeState, EntityLifecycl
 from genshin_sim.core.simulation import BasicRuntimeWorld, SimulationContext, TeamRuntimeState
 from genshin_sim.core.space import (
     CircleArea,
+    CircleSectorArea,
     CollisionBox,
     ImpactAreaSpec,
     OrientedBoxArea,
@@ -140,6 +141,64 @@ def test_impact_area_spec_resolve_rejects_zero_direction_and_unknown_shape():
         ImpactAreaSpec(shape="球", radius=1.0).resolve(Vector3(), Vector3(0, 3, 0))
     with pytest.raises(ValueError, match="未支持的伤害 AOE 形状"):
         ImpactAreaSpec(shape="锥", radius=1.0).resolve(Vector3(), Vector3(0, 0, 1))
+
+
+def test_impact_area_spec_rejects_arc_on_non_cylinder_or_out_of_range():
+    with pytest.raises(ValueError, match="仅圆柱支持 arc_degrees 张角"):
+        ImpactAreaSpec(shape="球", radius=1.0, arc_degrees=150.0)
+    with pytest.raises(ValueError, match="仅圆柱支持 arc_degrees 张角"):
+        ImpactAreaSpec(shape="攻击盒", radius=0.0, length=4.0, width=2.0, arc_degrees=150.0)
+    with pytest.raises(ValueError, match="arc_degrees 必须在 0 到 360 之间"):
+        ImpactAreaSpec(shape="圆柱", radius=1.0, arc_degrees=0.0)
+    with pytest.raises(ValueError, match="arc_degrees 必须在 0 到 360 之间"):
+        ImpactAreaSpec(shape="圆柱", radius=1.0, arc_degrees=360.0)
+    with pytest.raises(ValueError, match="arc_degrees 必须在 0 到 360 之间"):
+        ImpactAreaSpec(shape="圆柱", radius=1.0, arc_degrees=True)
+
+
+def test_impact_area_spec_resolve_projects_cylinder_with_arc_to_sector():
+    spec = ImpactAreaSpec(shape="圆柱", radius=10.0, arc_degrees=150.0)
+
+    area = spec.resolve(Vector3(1, 2, 3), Vector3(0, 0, 2))
+
+    assert isinstance(area, CircleSectorArea)
+    assert area == CircleSectorArea(
+        center=Vector3(1, 2, 3),
+        facing=Vector3(0.0, 0.0, 1.0),
+        radius=10.0,
+        half_angle_degrees=75.0,
+    )
+
+
+def test_impact_area_spec_resolved_cylinder_sector_contains_front_wedge_only():
+    # 攻击方向 +Z、张角 150°（半角 75°）：正面楔形内命中，侧后方不命中。
+    spec = ImpactAreaSpec(shape="圆柱", radius=10.0, arc_degrees=150.0)
+
+    area = spec.resolve(Vector3(), Vector3(0, 0, 1))
+
+    assert isinstance(area, CircleSectorArea)
+    assert area.contains(Vector3(0, 0, 10))
+    assert area.contains(Vector3(7.794, 0, 4.5))  # 半径 9、偏轴 60°，在半角 75° 内
+    assert not area.contains(Vector3(8.863, 0, 1.563))  # 半径 9、偏轴 80°，超出半角
+    assert not area.contains(Vector3(0, 0, -5))
+
+
+def test_impact_area_spec_resolved_cylinder_sector_rotates_offset_into_attack_frame():
+    # 攻击方向 +X：本地 forward(+z) 偏移 0.6 落到世界 +x，扇形随方向朝 +X。
+    spec = ImpactAreaSpec(
+        shape="圆柱",
+        radius=1.0,
+        local_offset_xz=Vector3(0, 0, 0.6),
+        arc_degrees=150.0,
+    )
+
+    area = spec.resolve(Vector3(), Vector3(1, 0, 0))
+
+    assert isinstance(area, CircleSectorArea)
+    assert area.center == Vector3(0.6, 0.0, 0.0)
+    assert area.facing == Vector3(1.0, 0.0, 0.0)
+    assert area.contains(Vector3(1.2, 0, 0))
+    assert not area.contains(Vector3(0, 0, 0))  # 位于扇心正后方，角度 180°
 
 
 def test_oriented_box_area_along_ray_spans_forward_from_origin():

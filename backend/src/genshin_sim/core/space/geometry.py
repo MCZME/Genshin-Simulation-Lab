@@ -177,6 +177,11 @@ class ImpactAreaSpec:
     随攻击方向旋转的 OrientedBox，``length`` 是前后完整边长、``width`` 是左右
     完整边长，资料第三分量（高度）不参与查询。``local_offset_xz`` 是相对锚点
     的本地偏移，投影时随攻击方向旋转到世界系，Y 轴分量保留但不参与查询。
+
+    ``arc_degrees`` 是圆柱的可选张角分量（扇形柱，资料原始形状文本仍为
+    “圆柱”）：缺省 ``None`` 表示完整圆（投影行为不变），给出张角时圆柱投影
+    为以攻击方向为中轴的 ``CircleSectorArea``，``half_angle_degrees`` 取张角的
+    一半。张角分量只对圆柱开放，其他形状携带张角在构造期报错。
     """
 
     shape: str
@@ -184,6 +189,7 @@ class ImpactAreaSpec:
     local_offset_xz: Vector3 = field(default_factory=Vector3)
     length: float = 0.0
     width: float = 0.0
+    arc_degrees: float | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.shape, str) or not self.shape.strip():
@@ -201,16 +207,26 @@ class ImpactAreaSpec:
                 raise ValueError(f"ImpactAreaSpec.{name} 必须为非负数")
         if self.shape == "攻击盒" and (self.length <= 0 or self.width <= 0):
             raise ValueError("ImpactAreaSpec 形状为攻击盒时 length 与 width 必须为正数")
+        if self.arc_degrees is not None:
+            if (
+                isinstance(self.arc_degrees, bool)
+                or not isinstance(self.arc_degrees, int | float)
+                or not 0 < self.arc_degrees < 360
+            ):
+                raise ValueError("ImpactAreaSpec.arc_degrees 必须在 0 到 360 之间")
+            if self.shape != "圆柱":
+                raise ValueError("ImpactAreaSpec 仅圆柱支持 arc_degrees 张角")
 
     def resolve(
         self,
         anchor_position: Vector3,
         attack_direction: Vector3,
-    ) -> CircleArea | OrientedBoxArea:
+    ) -> CircleArea | CircleSectorArea | OrientedBoxArea:
         """把规格投影到锚点位置，得到可查询的具体范围。
 
         本地偏移先随攻击方向旋转到世界系，再叠加到锚点位置：球与圆柱投影为
-        同半径 Circle（高度忽略），攻击盒投影为朝向攻击方向的 OrientedBox。
+        同半径 Circle（高度忽略），携带张角的圆柱投影为以攻击方向为中轴的
+        CircleSectorArea，攻击盒投影为朝向攻击方向的 OrientedBox。
         ``attack_direction`` 只取 X/Z 分量并归一化，零向量报错。
         """
 
@@ -230,6 +246,13 @@ class ImpactAreaSpec:
             )
         if self.shape not in {"球", "圆", "圆柱"}:
             raise ValueError(f"未支持的伤害 AOE 形状：{self.shape}")
+        if self.arc_degrees is not None:
+            return CircleSectorArea(
+                center=center,
+                facing=Vector3(x=forward_x, y=0.0, z=forward_z),
+                radius=self.radius,
+                half_angle_degrees=self.arc_degrees / 2,
+            )
         return CircleArea(center=center, radius=self.radius)
 
 

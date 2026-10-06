@@ -59,6 +59,7 @@ from genshin_sim.content.characters.snezhnaya.alyosha.impacts import (
     compile_charged_attack_damage_specs,
     compile_elemental_skill_damage_specs,
     compile_normal_attack_damage_specs,
+    compile_plunge_damage_specs,
 )
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
@@ -151,13 +152,14 @@ def create_alyosha_content_unit(
 ) -> ContentUnit:
     """阿罗夏内容单元工厂（动作状态机 + 全量命中契约 + Q 创建实体 + 印记链）。
 
-    机制装配：普攻四段（N3 双判定）、E 点按/长按与重击（突进段）直伤经标准
-    影响管线接入（长按无独立索敌，扇区伤害 AOE 以施放者为锚展开）；Q 施放
-    展开轰霆猎场创建实体（单一实体、轰霆猎场 AoE tick 与图加林撕咬双通道，
-    时序锚定施放帧）；弋猎印记随 E/NA4 命中施加（DAMAGE_RESOLVED hook）、
-    图加林攻击激活并经 BUFF_REMOVED hook 授予猎者之准（前台主体、C6 可叠
-    2 层伴生精通）；E 命中产球经产球 hook；P4/C4 随撕咬 tick 周期回血；
-    P5/P6 伤害修饰与 C1 回能由各效果单元承载。
+    机制装配：普攻四段（N3 双判定）、E 点按/长按、重击（突进段）与下落攻击
+    （碰撞 + 低空/高空坠地冲击）直伤经标准影响管线接入（长按无独立索敌，
+    扇区伤害 AOE 以施放者为锚展开；下落攻击两个影响点同样以施放者为锚且
+    无独立索敌）；Q 施放展开轰霆猎场创建实体（单一实体、轰霆猎场 AoE tick
+    与图加林撕咬双通道，时序锚定施放帧）；弋猎印记随 E/NA4 命中施加
+    （DAMAGE_RESOLVED hook）、图加林攻击激活并经 BUFF_REMOVED hook 授予
+    猎者之准（前台主体、C6 可叠 2 层伴生精通）；E 命中产球经产球 hook；
+    P4/C4 随撕咬 tick 周期回血；P5/P6 伤害修饰与 C1 回能由各效果单元承载。
     """
 
     talent_levels = {key: request.talent_levels.get(key, 1) for key in _TALENT_KEYS}
@@ -186,6 +188,14 @@ def create_alyosha_content_unit(
     )
     damage_specs.update(
         compile_charged_attack_damage_specs(
+            request.character_key,
+            entries_by_key,
+            talent_level,
+        )
+    )
+    # 下落攻击取普攻天赋等级（游戏内下落倍率挂在普攻天赋区）。
+    damage_specs.update(
+        compile_plunge_damage_specs(
             request.character_key,
             entries_by_key,
             talent_level,

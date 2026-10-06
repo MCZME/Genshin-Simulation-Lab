@@ -2,14 +2,16 @@
 
 命中判定数据与帧表来自维护者提供的 V7.0 命中资料表与 2026-10-06 实测录制
 （帧位口径见 `docs/工程/阿罗夏接入规划.md` §3/§3.1：数值来自实测资料、不作
-断言目标）。攻击标签、打击类型等游戏数据字符串按资料保真保留中文原文；
-代码标识符使用官方英文名 Alyosha。
+断言目标）；下落攻击的命中数据取按武器类型的通用资料
+（`content/generic/plunge.py`，阿罗夏为长柄武器）。攻击标签、打击类型等游戏
+数据字符串按资料保真保留中文原文；代码标识符使用官方英文名 Alyosha。
 """
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 
+from genshin_sim.content.generic.plunge import PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE
 from genshin_sim.content.generic.timed_action import TimedActionSpec, TimedImpactPointSpec
 from genshin_sim.core.actions import SearchAreaSpec, TargetingSpec
 from genshin_sim.core.elements import AuraAmount, Element
@@ -63,6 +65,7 @@ ALYOSHA_ELEMENTAL_SKILL_ACTION_KEY = "character.alyosha.elemental_skill"
 ALYOSHA_ELEMENTAL_SKILL_HOLD_ACTION_KEY = "character.alyosha.elemental_skill_hold"
 ALYOSHA_ELEMENTAL_BURST_ACTION_KEY = "character.alyosha.elemental_burst"
 ALYOSHA_CHARGED_ATTACK_ACTION_KEY = "character.alyosha.charged_attack"
+ALYOSHA_PLUNGE_ACTION_KEY = "character.alyosha.plunge"
 
 ALYOSHA_NORMAL_ATTACK_1_IMPACT_KEY = f"{ALYOSHA_NORMAL_ATTACK_1_ACTION_KEY}.hit"
 ALYOSHA_NORMAL_ATTACK_2_IMPACT_KEY = f"{ALYOSHA_NORMAL_ATTACK_2_ACTION_KEY}.hit"
@@ -81,6 +84,10 @@ ALYOSHA_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY = (
 ALYOSHA_ELEMENTAL_BURST_SUMMON_IMPACT_KEY = f"{ALYOSHA_ELEMENTAL_BURST_ACTION_KEY}.summon"
 # 重击突进段命中影响点（重击链前段复用一段普攻影响点，见动作表 重击条目）。
 ALYOSHA_CHARGED_ATTACK_IMPACT_KEY = f"{ALYOSHA_CHARGED_ATTACK_ACTION_KEY}.hit"
+# 下落攻击两个影响点：下坠碰撞（每个下落过程一次）与坠地冲击（落地帧）。
+# 二者由通用 FallPlungeAction 在位移设施事实帧当场发出（动作不预排影响帧）。
+ALYOSHA_PLUNGE_COLLISION_IMPACT_KEY = f"{ALYOSHA_PLUNGE_ACTION_KEY}.collision"
+ALYOSHA_PLUNGE_LANDING_IMPACT_KEY = f"{ALYOSHA_PLUNGE_ACTION_KEY}.landing"
 
 ALYOSHA_HIT_IMPACT_KEYS = (
     ALYOSHA_NORMAL_ATTACK_1_IMPACT_KEY,
@@ -91,12 +98,20 @@ ALYOSHA_HIT_IMPACT_KEYS = (
     ALYOSHA_ELEMENTAL_SKILL_PRESS_IMPACT_KEY,
     ALYOSHA_ELEMENTAL_SKILL_HOLD_IMPACT_KEY,
     ALYOSHA_CHARGED_ATTACK_IMPACT_KEY,
+    ALYOSHA_PLUNGE_COLLISION_IMPACT_KEY,
+    ALYOSHA_PLUNGE_LANDING_IMPACT_KEY,
 )
 
 NORMAL_ATTACK_INPUT = "normal_attack"
 ELEMENTAL_SKILL_INPUT = "elemental_skill"
 ELEMENTAL_BURST_INPUT = "elemental_burst"
 
+# 左键普攻（按住达输入分界按重击解释）、E 点按/长按、Q。空中状态下左键由
+# 解释器改判为下落攻击（不占独立按键，见 actions.py）。
+# 不声明跳跃输入：`keyboard.space` 虽是按键契约里的跳跃按钮，但跳跃初速度是
+# 原神侧规则、不属于位移设施（`docs/契约/动作系统契约.md` §12），内容侧没有
+# 任何地方能把角色抬离地面，声明跳跃动作只会多出一个无仿真效果的输入，故
+# 本内容包只接下落攻击本身，空中状态由位移设施产生。
 INPUT_KIND_BY_KEY = {
     "mouse.left": NORMAL_ATTACK_INPUT,
     "keyboard.e": ELEMENTAL_SKILL_INPUT,
@@ -272,6 +287,12 @@ ALYOSHA_CHARGED_ATTACK_AOE_OFFSET = Vector3(0.0, 0.0, 0.0)
 ALYOSHA_CHARGED_ICD_SEQUENCE_KEY = "突进攻击"
 ALYOSHA_CHARGED_ICD_TAG_KEY = "重击"
 
+# 下落攻击（资料：通用资料按武器类型维护）。阿罗夏为长柄武器，取长柄通用行：
+# 下坠期间球 1.0 切割近战、坠地圆柱低空 3.0 / 高空 5.0 钝击近战、攻击标签
+# 「下落攻击」（`content/generic/plunge.py`）。低空/高空阈值与重力时序同为
+# 跨角色临时数据（统一资料确认后替换），本内容包不另存副本。
+ALYOSHA_PLUNGE_ATTACK_DATA = PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE["polearm"]
+
 # ---------------------------------------------------------------------------
 # E 长按与重击的输入语义帧位（规划文档 §3.1，实测录制）。
 #
@@ -444,6 +465,16 @@ ALYOSHA_ACTION_TABLE: dict[str, TimedActionSpec] = {
             ELEMENTAL_SKILL_INPUT: 149,
             ELEMENTAL_BURST_INPUT: 149,
         },
+    ),
+    # 下落攻击：不使用固定时间线，也不由动作写位移（`docs/架构/动作系统设计.md`
+    # §7.4）——动作时长由位移设施的碰撞/落地事实决定，因此本条目只占位声明
+    # 动作键与衔接表；`create_alyosha_actions` 会把它替换为通用
+    # `FallPlungeAction`。落地后高度归零，解释器据此把连段状态重置（见
+    # actions.py），故 transitions 留空不影响后续输入。
+    ALYOSHA_PLUNGE_ACTION_KEY: TimedActionSpec(
+        action_key=ALYOSHA_PLUNGE_ACTION_KEY,
+        duration_frames=1,
+        transitions={},
     ),
 }
 

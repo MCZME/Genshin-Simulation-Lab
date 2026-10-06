@@ -1,8 +1,9 @@
 """阿罗夏影响契约编译与影响点展开。
 
 本文件负责"资产数据 -> 伤害契约 -> ImpactRequest"的链路。覆盖普攻四段
-（N3 双判定）、E 点按/长按、重击（突进段）直伤；Q 的伤害随轰霆猎场创建
-实体在 tick 时产出（``fulgurite.py``），本文件只编译其契约。
+（N3 双判定）、E 点按/长按、重击（突进段）与下落攻击（碰撞 + 低空/高空坠地
+冲击）直伤；Q 的伤害随轰霆猎场创建实体在 tick 时产出（``fulgurite.py``），
+本文件只编译其契约。
 """
 
 from __future__ import annotations
@@ -57,6 +58,9 @@ from genshin_sim.content.characters.snezhnaya.alyosha.data import (
     ALYOSHA_NORMAL_ATTACK_DAMAGE_DATA,
     ALYOSHA_NORMAL_ATTACK_ICD_SEQUENCE_KEY,
     ALYOSHA_NORMAL_ATTACK_ICD_TAG_KEY,
+    ALYOSHA_PLUNGE_ATTACK_DATA,
+    ALYOSHA_PLUNGE_COLLISION_IMPACT_KEY,
+    ALYOSHA_PLUNGE_LANDING_IMPACT_KEY,
     ALYOSHA_TUGARIN_BITE_AOE_OFFSET,
     ALYOSHA_TUGARIN_BITE_AOE_RADIUS,
 )
@@ -84,6 +88,8 @@ _ALYOSHA_NORMAL_ATTACK_DAMAGE_LABELS = {
 _ALYOSHA_ELEMENTAL_SKILL_DAMAGE_LABEL = "点按伤害"
 _ALYOSHA_ELEMENTAL_SKILL_HOLD_DAMAGE_LABEL = "长按伤害"
 _ALYOSHA_CHARGED_ATTACK_DAMAGE_LABEL = "重击伤害"
+_ALYOSHA_PLUNGE_COLLISION_DAMAGE_LABEL = "下坠期间伤害"
+_ALYOSHA_PLUNGE_LANDING_DAMAGE_LABEL = "低空/高空坠地冲击伤害"
 _ALYOSHA_BURST_FIELD_DAMAGE_LABEL = "轰霆猎场伤害"
 _ALYOSHA_BURST_TUGARIN_DAMAGE_LABEL = "图加林伤害"
 
@@ -339,6 +345,93 @@ def compile_charged_attack_damage_specs(
     }
 
 
+def compile_plunge_damage_specs(
+    character_key: str,
+    entries_by_key: dict[tuple[str, str, str], TalentScalingEntry],
+    talent_level: int,
+) -> dict[str, DamageImpactSpec]:
+    """编译下落攻击碰撞与低空/高空坠地冲击伤害契约。
+
+    下落攻击走 generic 按武器类型的通用资料（阿罗夏长柄武器：下坠期间切割、
+    坠地钝击）；未获转化时为物理——通用资料的「元素量」仅在攻击具元素时生效，
+    契约不携带附着证据，ICD 标签同奥黛塔口径为空。落地伤害按 ICD 数据分低空
+    /高空两个分量，规格分键存放（``.low`` / ``.high``），由工厂在展开期按
+    ``plunge_variant`` 参数取用。
+    """
+
+    collision_entry = entries_by_key.get(
+        (character_key, "normal_attack", _ALYOSHA_PLUNGE_COLLISION_DAMAGE_LABEL)
+    )
+    if collision_entry is None:
+        raise ContentUnitValidationError(
+            f"阿罗夏下落攻击缺少资产倍率条目：{_ALYOSHA_PLUNGE_COLLISION_DAMAGE_LABEL}"
+        )
+    landing_entry = entries_by_key.get(
+        (character_key, "normal_attack", _ALYOSHA_PLUNGE_LANDING_DAMAGE_LABEL)
+    )
+    if landing_entry is None:
+        raise ContentUnitValidationError(
+            f"阿罗夏下落攻击缺少资产倍率条目：{_ALYOSHA_PLUNGE_LANDING_DAMAGE_LABEL}"
+        )
+    landing_compiled = ScalingCompiler.compile_entry(landing_entry, talent_level)
+    if len(landing_compiled.components) < 2:
+        raise ContentUnitValidationError(
+            f"阿罗夏下落攻击落地倍率需要低空/高空两个分量：{len(landing_compiled.components)}"
+        )
+    collision_data = ALYOSHA_PLUNGE_ATTACK_DATA.collision
+    landing_data = ALYOSHA_PLUNGE_ATTACK_DATA.landing
+    return {
+        ALYOSHA_PLUNGE_COLLISION_IMPACT_KEY: _compile_damage_spec(
+            ALYOSHA_PLUNGE_COLLISION_IMPACT_KEY,
+            talent_level,
+            entry=collision_entry,
+            component_index=0,
+            main_attack_tag=ALYOSHA_PLUNGE_ATTACK_DATA.main_attack_tag,
+            strike_type=collision_data.strike_type,
+            range_type=collision_data.range_type,
+            element=ALYOSHA_MELEE_ELEMENT,
+            elemental_amount=0,
+            icd_tag_key=None,
+            display_name=_ALYOSHA_PLUNGE_COLLISION_DAMAGE_LABEL,
+            aoe_shape=collision_data.aoe_shape,
+            aoe_radius=collision_data.aoe_radius,
+            aoe_offset=collision_data.aoe_offset,
+        ),
+        f"{ALYOSHA_PLUNGE_LANDING_IMPACT_KEY}.low": _compile_damage_spec(
+            ALYOSHA_PLUNGE_LANDING_IMPACT_KEY,
+            talent_level,
+            entry=landing_entry,
+            component_index=0,
+            main_attack_tag=ALYOSHA_PLUNGE_ATTACK_DATA.main_attack_tag,
+            strike_type=landing_data.strike_type,
+            range_type=landing_data.range_type,
+            element=ALYOSHA_MELEE_ELEMENT,
+            elemental_amount=0,
+            icd_tag_key=None,
+            display_name="低空坠地冲击伤害",
+            aoe_shape=landing_data.aoe_shape,
+            aoe_radius=landing_data.low_aoe_radius,
+            aoe_offset=landing_data.aoe_offset,
+        ),
+        f"{ALYOSHA_PLUNGE_LANDING_IMPACT_KEY}.high": _compile_damage_spec(
+            ALYOSHA_PLUNGE_LANDING_IMPACT_KEY,
+            talent_level,
+            entry=landing_entry,
+            component_index=1,
+            main_attack_tag=ALYOSHA_PLUNGE_ATTACK_DATA.main_attack_tag,
+            strike_type=landing_data.strike_type,
+            range_type=landing_data.range_type,
+            element=ALYOSHA_MELEE_ELEMENT,
+            elemental_amount=0,
+            icd_tag_key=None,
+            display_name="高空坠地冲击伤害",
+            aoe_shape=landing_data.aoe_shape,
+            aoe_radius=landing_data.high_aoe_radius,
+            aoe_offset=landing_data.aoe_offset,
+        ),
+    }
+
+
 def compile_burst_damage_specs(
     character_key: str,
     entries_by_key: dict[tuple[str, str, str], TalentScalingEntry],
@@ -445,6 +538,12 @@ class AlyoshaActionImpactFactory:
         if context.impact_key == ALYOSHA_ELEMENTAL_SKILL_HOLD_IMPACT_KEY:
             return (self._hold_damage_request(context, params),)
         damage_spec = self._damage_specs.get(context.impact_key)
+        if damage_spec is None and context.impact_key == ALYOSHA_PLUNGE_LANDING_IMPACT_KEY:
+            # 落地伤害按低空/高空分档：变体由解释器在起手时按起落高度写入
+            # 动作参数（`plunge_variant`），落地帧经影响点参数带到这里。
+            variant = context.params.get("plunge_variant")
+            if isinstance(variant, str):
+                damage_spec = self._damage_specs.get(f"{context.impact_key}.{variant}")
         if damage_spec is not None:
             damage_spec = replace(
                 damage_spec,
@@ -459,6 +558,17 @@ class AlyoshaActionImpactFactory:
                 action_key=context.action_key,
                 source_impact_point_id=context.impact_point_id,
                 target_refs=tuple(target.target_id for target in context.target_refs),
+                # 下落攻击无独立索敌：两个影响点的伤害 AOE 以当前场上角色为锚
+                # 展开（碰撞球随角色位置、落地圆柱随角色位置）。
+                anchor_entity_id=(
+                    ACTIVE_CHARACTER_ENTITY_ID
+                    if context.impact_key
+                    in {
+                        ALYOSHA_PLUNGE_COLLISION_IMPACT_KEY,
+                        ALYOSHA_PLUNGE_LANDING_IMPACT_KEY,
+                    }
+                    else None
+                ),
                 params=params,
                 damage_spec=damage_spec,
             ),

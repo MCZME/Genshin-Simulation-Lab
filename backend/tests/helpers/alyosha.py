@@ -26,6 +26,7 @@ from genshin_sim.core.attributes import (
 from genshin_sim.core.elements import AuraAmount, Element
 from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import ElementalApplicationSpec, ImpactKind, ImpactRequest
+from genshin_sim.core.space import ACTIVE_CHARACTER_ENTITY_ID, Vector3
 from genshin_sim.core.systems.aura import AuraStrength
 from genshin_sim.core.systems.buff import BuffRuntime
 from genshin_sim.infrastructure.assets_sqlite import (
@@ -98,6 +99,21 @@ def alyosha_damage_events(assembled) -> list:
     events: list = []
     assembled.context.events.subscribe(EventType.DAMAGE_RESOLVED, events.append)
     return events
+
+
+def place_alyosha_airborne(assembled, *, height: float) -> None:
+    """把阿罗夏置于指定离地高度（下落攻击用例的空中初始条件）。
+
+    内容包不声明跳跃输入——起跳初速度属原神侧规则、位移设施不承载
+    （`docs/契约/动作系统契约.md` §12），因此空中状态只能由位移设施产生：
+    这里经它的位置写入口把角色放到空中，第 1 帧起由
+    `MovementRuntime` 的「自然下落（初速度 0）」路径接管。`player:active`
+    的 `position.y` 是空中事实的唯一真值（解释器据此分派下落攻击）。
+    """
+
+    assembled.space_runtime.apply_displacement(
+        ACTIVE_CHARACTER_ENTITY_ID, Vector3(0.0, height, 0.0)
+    )
 
 
 def apply_aura(assembled, element: Element, *, entity_id: str = "target:target_1") -> None:
@@ -249,7 +265,8 @@ def minimal_alyosha_scaling_entries() -> tuple[TalentScalingEntry, ...]:
 
     倍率条目全部取 1.0、定值条目取与资产行同构的合成定值（E/Q 冷却 15s/18s、
     印记与猎者之准持续 15s、Q 场域持续 14s），只保证结构（label、分量数与
-    等级区间）满足工厂编译；三段伤害带两个分量对应 3A/3B 双判定。
+    等级区间）满足工厂编译；三段伤害带两个分量对应 3A/3B 双判定，下落落地
+    冲击带两个分量对应低空/高空两档。
     """
 
     specs = (
@@ -258,6 +275,14 @@ def minimal_alyosha_scaling_entries() -> tuple[TalentScalingEntry, ...]:
         ("na_3", "normal_attack", "三段伤害", ("plain_ratio", "plain_ratio"), None),
         ("na_4", "normal_attack", "四段伤害", ("plain_ratio",), None),
         ("na_charged", "normal_attack", "重击伤害", ("plain_ratio",), None),
+        ("na_plunge_collision", "normal_attack", "下坠期间伤害", ("plain_ratio",), None),
+        (
+            "na_plunge_landing",
+            "normal_attack",
+            "低空/高空坠地冲击伤害",
+            ("plain_ratio", "plain_ratio"),
+            None,
+        ),
         ("es_press", "elemental_skill", "点按伤害", ("plain_ratio",), None),
         ("es_hold", "elemental_skill", "长按伤害", ("plain_ratio",), None),
         ("es_cooldown", "elemental_skill", "冷却时间", ("plain_value",), 15.0),

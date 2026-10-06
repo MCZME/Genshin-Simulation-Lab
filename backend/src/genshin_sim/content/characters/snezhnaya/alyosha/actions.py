@@ -1,11 +1,14 @@
 """阿罗夏动作解释器：角色唯一动作表 + 唯一动作解释器。
 
-阿罗夏的全部已接入动作（普攻四段、E 点按、E 长按、重击、Q 施放）统一声明
-在 ``data.py`` 的 ``ALYOSHA_ACTION_TABLE``，由本解释器独占消费；普攻 N1→N4
-循环推进与跨输入衔接按表内 transitions 实现。左键与 keyboard.e 均为点按/
-长按双语义输入：按住阶段（瞄准/蓄势）无仿真效果，解释器在松开帧按按住
-时长分派——未达输入分界按点按/普攻解释，达到分界按 E 长按释放阶段/重击链
-起手；E 持续按住越过实测上限（250 帧）在 HOLD 触发器上自动起手释放阶段。
+阿罗夏的全部已接入动作（普攻四段、E 点按、E 长按、重击、Q 施放、下落攻击）
+统一声明在 ``data.py`` 的 ``ALYOSHA_ACTION_TABLE``，由本解释器独占消费；
+普攻 N1→N4 循环推进与跨输入衔接按表内 transitions 实现。左键与 keyboard.e
+均为点按/长按双语义输入：按住阶段（瞄准/蓄势）无仿真效果，解释器在松开帧
+按按住时长分派——未达输入分界按点按/普攻解释，达到分界按 E 长按释放阶段/
+重击链起手；E 持续按住越过实测上限（250 帧）在 HOLD 触发器上自动起手释放
+阶段。
+左键另有空中语义：实体基座高度达到通用资料的空中阈值时改判下落攻击（游戏
+内空中不可重击，故先于按住分界判定），由通用 ``FallPlungeAction`` 接管。
 """
 
 from __future__ import annotations
@@ -26,6 +29,9 @@ from genshin_sim.content.characters.snezhnaya.alyosha.data import (
     ALYOSHA_ELEMENTAL_SKILL_HOLD_MAX_FRAMES,
     ALYOSHA_HOLD_INPUT_MIN_FRAMES,
     ALYOSHA_NORMAL_ATTACK_ACTION_KEYS,
+    ALYOSHA_PLUNGE_ACTION_KEY,
+    ALYOSHA_PLUNGE_COLLISION_IMPACT_KEY,
+    ALYOSHA_PLUNGE_LANDING_IMPACT_KEY,
     ELEMENTAL_BURST_INPUT,
     ELEMENTAL_SKILL_INPUT,
     INPUT_KIND_BY_KEY,
@@ -34,6 +40,10 @@ from genshin_sim.content.characters.snezhnaya.alyosha.data import (
 from genshin_sim.content.generic.chain_state import (
     CHAIN_STATE_LAST_ACTION_KEY,
     CHAIN_STATE_LAST_START_FRAME,
+)
+from genshin_sim.content.generic.plunge import (
+    PLUNGE_HIGH_AIR_HEIGHT,
+    PLUNGE_LOW_AIR_HEIGHT,
 )
 from genshin_sim.content.generic.timed_action import (
     TimedActionSpec,
@@ -50,6 +60,7 @@ from genshin_sim.core.actions import (
     ActionInterpretationResult,
     ActionInterpretationTrigger,
     ActionOwnerRef,
+    FallPlungeAction,
     InputSessionView,
     PreparedAction,
     TimedImpactAction,
@@ -61,6 +72,8 @@ from genshin_sim.core.coordination.character_ability_condition.models import (
 )
 from genshin_sim.core.simulation.context import SimulationContext
 from genshin_sim.core.simulation.intent_queue import IntentQueue
+from genshin_sim.core.space.entities import SpatialEntity
+from genshin_sim.core.space.space import ACTIVE_CHARACTER_ENTITY_ID
 from genshin_sim.core.systems.cooldown import CooldownDurationTerm
 
 
@@ -100,6 +113,7 @@ class AlyoshaActionInterpreter:
             return ActionInterpretationResult.reject("阿罗夏动作需要角色归属槽位")
 
         slot = session.owner.slot
+        height = self._current_height(context.simulation)
         if input_kind == ELEMENTAL_SKILL_INPUT:
             rejection = self._elemental_skill_rejection(
                 context,
@@ -122,6 +136,11 @@ class AlyoshaActionInterpreter:
             slot,
         )
         self._validate_known_state(last_action_key)
+        # 下落动作以落地结束，落地即高度归零；此时连段状态里的下落键不再代表
+        # 空中，重置为空串，使下一次输入按正常连段判定（否则会因下落动作没有
+        # 衔接表而被判「缺少衔接数据」）。
+        if last_action_key == ALYOSHA_PLUNGE_ACTION_KEY and height <= 0:
+            last_action_key = ""
         rejection = self._transition_rejection(
             input_kind,
             session.release_frame,
@@ -131,7 +150,7 @@ class AlyoshaActionInterpreter:
         if rejection is not None:
             return ActionInterpretationResult.reject(rejection)
 
-        action = self._select_action(input_kind, last_action_key, session.held_frames)
+        action = self._select_action(input_kind, last_action_key, session.held_frames, height)
         owner_ref = f"character:slot_{slot}"
         self._queue_state_patch(
             context.simulation,
@@ -141,7 +160,7 @@ class AlyoshaActionInterpreter:
             action=action,
             start_frame=session.release_frame,
         )
-        return self._start_result(action, slot, session)
+        return self._start_result(action, slot, session, height=height)
 
     def _interpret_hold(
         self,
@@ -190,27 +209,54 @@ class AlyoshaActionInterpreter:
             action=action,
             start_frame=session.current_frame,
         )
-        return self._start_result(action, slot, session)
+        return self._start_result(
+            action,
+            slot,
+            session,
+            height=self._current_height(context.simulation),
+        )
 
     def _start_result(
         self,
         action: TimedActionSpec,
         slot: int,
         session: InputSessionView,
+        *,
+        height: float,
     ) -> ActionInterpretationResult:
         return ActionInterpretationResult.start(
             PreparedAction(
                 action_key=action.action_key,
                 owner=ActionOwnerRef.character(slot),
                 requested_start_frame=session.current_frame,
-                params={
-                    "content_handler_key": ALYOSHA_CHARACTER_HANDLER_KEY,
-                    "alyosha_action_kind": INPUT_KIND_BY_KEY.get(session.key),
-                    "alyosha_hit_frame": action.hit_frame,
-                },
+                params=self._action_params(action, session.key, height),
                 source_session_id=session.session_id,
             )
         )
+
+    def _action_params(
+        self,
+        action: TimedActionSpec,
+        input_key: str,
+        height: float,
+    ) -> dict[str, object]:
+        """构造动作参数；下落攻击额外携带起落高度与低空/高空分档。"""
+
+        params: dict[str, object] = {
+            "content_handler_key": ALYOSHA_CHARACTER_HANDLER_KEY,
+            "alyosha_action_kind": INPUT_KIND_BY_KEY.get(input_key),
+            "alyosha_hit_frame": action.hit_frame,
+        }
+        if action.action_key != ALYOSHA_PLUNGE_ACTION_KEY:
+            return params
+        params.update(
+            {
+                "alyosha_action_kind": "plunge",
+                "plunge_start_height": height,
+                "plunge_variant": ("high" if height >= PLUNGE_HIGH_AIR_HEIGHT else "low"),
+            }
+        )
+        return params
 
     def _elemental_skill_rejection(
         self,
@@ -277,6 +323,23 @@ class AlyoshaActionInterpreter:
         )
         return last_key, last_start
 
+    def _current_height(self, context: SimulationContext) -> float:
+        """空中事实以 ``player:active.position.y`` 为唯一真值。
+
+        离地与否由位移设施独占判定（内容不自行推断高度场），解释器只读实体
+        基座高度，用于分派下落攻击与低空/高空分档。
+        """
+
+        entity = self._active_entity(context)
+        if entity is None:
+            return 0.0
+        return float(entity.position.y)
+
+    def _active_entity(self, context: SimulationContext) -> SpatialEntity | None:
+        if context.space_runtime is None:
+            return None
+        return context.space_runtime.get_entity(ACTIVE_CHARACTER_ENTITY_ID)
+
     def _validate_known_state(self, last_action_key: str) -> None:
         """状态损坏时确定性报错，不允许静默重启。"""
 
@@ -341,8 +404,13 @@ class AlyoshaActionInterpreter:
         input_kind: str,
         last_action_key: str,
         held_frames: int,
+        height: float,
     ) -> TimedActionSpec:
         if input_kind == NORMAL_ATTACK_INPUT:
+            # 空中左键改判下落攻击（游戏内空中不可重击，故先于按住分界判定）；
+            # 已在下落中不重复起手——回落过程由同一次下落动作承载。
+            if height >= PLUNGE_LOW_AIR_HEIGHT and last_action_key != ALYOSHA_PLUNGE_ACTION_KEY:
+                return self._action_table[ALYOSHA_PLUNGE_ACTION_KEY]
             return self._select_normal_attack_action(last_action_key, held_frames)
         if input_kind == ELEMENTAL_SKILL_INPUT:
             return self._select_elemental_skill_action(held_frames)
@@ -383,7 +451,12 @@ def create_alyosha_actions(
     *,
     cooldown_duration_terms: (Mapping[str, tuple[CooldownDurationTerm, ...]] | None) = None,
 ) -> tuple[Action, ...]:
-    """把角色唯一动作表编译为可注册的定时动作。"""
+    """把角色唯一动作表编译为可注册的定时动作。
+
+    下落攻击不使用固定时间线（时长由位移设施的碰撞/落地事实决定），因此把
+    表内占位条目替换为通用 ``FallPlungeAction``：碰撞事实发出下坠碰撞影响点、
+    落地事实发出落地影响点并结束动作。
+    """
 
     table = dict(action_table or ALYOSHA_ACTION_TABLE)
     terms_by_ability = dict(cooldown_duration_terms or {})
@@ -398,6 +471,13 @@ def create_alyosha_actions(
         keys = ", ".join(sorted(unmatched))
         raise ValueError(f"冷却时长 term 没有对应的定时动作冷却能力：{keys}")
     for index, action in enumerate(actions):
+        if action.action_key == ALYOSHA_PLUNGE_ACTION_KEY:
+            actions[index] = FallPlungeAction(
+                action_key=ALYOSHA_PLUNGE_ACTION_KEY,
+                collision_impact_key=ALYOSHA_PLUNGE_COLLISION_IMPACT_KEY,
+                landing_impact_key=ALYOSHA_PLUNGE_LANDING_IMPACT_KEY,
+            )
+            continue
         if not isinstance(action, TimedImpactAction):
             continue
         ability_key = action.cooldown_ability_key

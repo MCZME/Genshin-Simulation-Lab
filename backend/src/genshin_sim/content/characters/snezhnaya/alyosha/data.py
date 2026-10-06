@@ -60,7 +60,9 @@ ALYOSHA_NORMAL_ATTACK_2_ACTION_KEY = "character.alyosha.normal_attack.2"
 ALYOSHA_NORMAL_ATTACK_3_ACTION_KEY = "character.alyosha.normal_attack.3"
 ALYOSHA_NORMAL_ATTACK_4_ACTION_KEY = "character.alyosha.normal_attack.4"
 ALYOSHA_ELEMENTAL_SKILL_ACTION_KEY = "character.alyosha.elemental_skill"
+ALYOSHA_ELEMENTAL_SKILL_HOLD_ACTION_KEY = "character.alyosha.elemental_skill_hold"
 ALYOSHA_ELEMENTAL_BURST_ACTION_KEY = "character.alyosha.elemental_burst"
+ALYOSHA_CHARGED_ATTACK_ACTION_KEY = "character.alyosha.charged_attack"
 
 ALYOSHA_NORMAL_ATTACK_1_IMPACT_KEY = f"{ALYOSHA_NORMAL_ATTACK_1_ACTION_KEY}.hit"
 ALYOSHA_NORMAL_ATTACK_2_IMPACT_KEY = f"{ALYOSHA_NORMAL_ATTACK_2_ACTION_KEY}.hit"
@@ -70,12 +72,15 @@ ALYOSHA_NORMAL_ATTACK_3A_IMPACT_KEY = f"{ALYOSHA_NORMAL_ATTACK_3_ACTION_KEY}.hit
 ALYOSHA_NORMAL_ATTACK_3B_IMPACT_KEY = f"{ALYOSHA_NORMAL_ATTACK_3_ACTION_KEY}.hit_b"
 ALYOSHA_NORMAL_ATTACK_4_IMPACT_KEY = f"{ALYOSHA_NORMAL_ATTACK_4_ACTION_KEY}.hit"
 ALYOSHA_ELEMENTAL_SKILL_PRESS_IMPACT_KEY = f"{ALYOSHA_ELEMENTAL_SKILL_ACTION_KEY}.hit"
+ALYOSHA_ELEMENTAL_SKILL_HOLD_IMPACT_KEY = f"{ALYOSHA_ELEMENTAL_SKILL_HOLD_ACTION_KEY}.hit"
 ALYOSHA_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY = (
     f"{ALYOSHA_ELEMENTAL_BURST_ACTION_KEY}.spend_energy"
 )
 # Q 施放影响点：展开为轰霆猎场创建实体请求（场域首拍/图加林首咬全部锚定
 # 施放帧，见规划文档 §3.1 已定案口径）。
 ALYOSHA_ELEMENTAL_BURST_SUMMON_IMPACT_KEY = f"{ALYOSHA_ELEMENTAL_BURST_ACTION_KEY}.summon"
+# 重击突进段命中影响点（重击链前段复用一段普攻影响点，见动作表 重击条目）。
+ALYOSHA_CHARGED_ATTACK_IMPACT_KEY = f"{ALYOSHA_CHARGED_ATTACK_ACTION_KEY}.hit"
 
 ALYOSHA_HIT_IMPACT_KEYS = (
     ALYOSHA_NORMAL_ATTACK_1_IMPACT_KEY,
@@ -84,6 +89,8 @@ ALYOSHA_HIT_IMPACT_KEYS = (
     ALYOSHA_NORMAL_ATTACK_3B_IMPACT_KEY,
     ALYOSHA_NORMAL_ATTACK_4_IMPACT_KEY,
     ALYOSHA_ELEMENTAL_SKILL_PRESS_IMPACT_KEY,
+    ALYOSHA_ELEMENTAL_SKILL_HOLD_IMPACT_KEY,
+    ALYOSHA_CHARGED_ATTACK_IMPACT_KEY,
 )
 
 NORMAL_ATTACK_INPUT = "normal_attack"
@@ -144,6 +151,11 @@ ALYOSHA_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY = "elemental_skill"
 ALYOSHA_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY = "elemental_burst"
 
 FRAMES_PER_SECOND = 60
+
+# 一段普攻帧位（录制二/五：完整动画 74 帧、命中 +21）；重击链前段引用同一
+# 数据（规划文档 §3.1 重击实现口径），动作表两处共用本常量。
+ALYOSHA_NORMAL_ATTACK_1_DURATION_FRAMES = 74
+ALYOSHA_NORMAL_ATTACK_1_HIT_FRAME_OFFSET = 21
 
 
 @dataclass(frozen=True, slots=True)
@@ -234,8 +246,50 @@ ALYOSHA_ELEMENTAL_SKILL_AOE_LENGTH = 2.5
 ALYOSHA_ELEMENTAL_SKILL_AOE_WIDTH = 3.5
 ALYOSHA_ELEMENTAL_SKILL_AOE_OFFSET = Vector3(0.0, 1.5, 0.0)
 
+# E 长按伤害 AOE：圆柱 15,7.0,150° / 0,-3.0,0（资料表 元素战技 长按行）：
+# 150° 张角、朝向 = 角色朝向（攻击方向），无独立索敌——命中区域即伤害 AOE，
+# 以施放者为锚（工厂经 anchor_entity_id 交给伤害展开器解析）；高度与偏移
+# Y 分量不参与 X/Z 查询。按住期间范围随时间增长、实测约 99 帧达到最大
+# （单点数据、增长曲线无资料），仿真按最大范围结算。
+ALYOSHA_ELEMENTAL_SKILL_HOLD_AOE_RADIUS = 15.0
+ALYOSHA_ELEMENTAL_SKILL_HOLD_AOE_ARC_DEGREES = 150.0
+ALYOSHA_ELEMENTAL_SKILL_HOLD_AOE_OFFSET = Vector3(0.0, -3.0, 0.0)
+
 ALYOSHA_ELEMENTAL_BURST_MAIN_ATTACK_TAG = "元素爆发"
 ALYOSHA_ELEMENTAL_BURST_RANGE_TYPE = "远程"
+
+# 重击（资料表 重击行）：突进段球 0.8 / 0,0,0，近战突刺，专属衰减
+# 「突进攻击/重击」。「突进攻击」组的重置时限与元素量序列未实测，参数在
+# content.py 注册时按核心「默认」标准组承载，待资料补充后修正。
+ALYOSHA_CHARGED_ATTACK_MAIN_ATTACK_TAG = "重击"
+ALYOSHA_CHARGED_ATTACK_STRIKE_TYPE = StrikeType.THRUST
+ALYOSHA_CHARGED_ATTACK_RANGE_TYPE = "近战"
+ALYOSHA_CHARGED_ATTACK_AOE_SHAPE = "球"
+ALYOSHA_CHARGED_ATTACK_AOE_RADIUS = 0.8
+ALYOSHA_CHARGED_ATTACK_AOE_OFFSET = Vector3(0.0, 0.0, 0.0)
+ALYOSHA_CHARGED_ICD_SEQUENCE_KEY = "突进攻击"
+ALYOSHA_CHARGED_ICD_TAG_KEY = "重击"
+
+# ---------------------------------------------------------------------------
+# E 长按与重击的输入语义帧位（规划文档 §3.1，实测录制）。
+#
+# - E 长按：按住阶段（瞄准）无仿真效果，实测最长按住 250 帧（录制三 +250 /
+#   录制七 +249），持续按住越过上限由解释器自动进入释放阶段；释放阶段固定
+#   146 帧（实测 161/131 均值，用户认可 ±15 帧误差；提前释放在释放时刻进入
+#   同一段固定释放动画），伤害在释放后 +26 帧（录制七）。
+# - 重击：记录段即重击时序（段长 55 帧、命中自段起点 +28，录制八参考口径），
+#   在前拼接第一段普攻（帧位取 N1：时长 74、命中 +21）构成完整重击链。
+# - 点按/长按输入分界：游戏内实际判定阈值未实测，本值仅作仿真输入语义分界
+#   （按住达到该帧数按长按/重击解释），非游戏行为断言，待实测后修正。
+# ---------------------------------------------------------------------------
+ALYOSHA_ELEMENTAL_SKILL_HOLD_MAX_FRAMES = 250
+ALYOSHA_ELEMENTAL_SKILL_HOLD_RELEASE_FRAMES = 146
+ALYOSHA_ELEMENTAL_SKILL_HOLD_HIT_FRAME_OFFSET = 26
+ALYOSHA_HOLD_INPUT_MIN_FRAMES = 6
+ALYOSHA_CHARGED_PREFIX_FRAMES = ALYOSHA_NORMAL_ATTACK_1_DURATION_FRAMES
+ALYOSHA_CHARGED_PREFIX_HIT_FRAME_OFFSET = ALYOSHA_NORMAL_ATTACK_1_HIT_FRAME_OFFSET
+ALYOSHA_CHARGED_THRUST_SEGMENT_FRAMES = 55
+ALYOSHA_CHARGED_THRUST_HIT_FRAME_OFFSET = 28
 
 # ---------------------------------------------------------------------------
 # 动作帧表（实测录制，帧制 60 帧/秒；口径见规划文档 §3.1）。
@@ -248,12 +302,13 @@ ALYOSHA_ELEMENTAL_BURST_RANGE_TYPE = "远程"
 #   N3→N4 72 / N4→N1 60，连续攻击下段间实测仅隔 1 帧）；E→Q 取实测打断点 55
 #   （录制四/六，点按 E 命中后可被 Q 取消）；未实测的衔接以 duration+1 兜底
 #   （动作完整播放后才可衔接），待补充实测后修正。
+# - E 长按与重击的帧位口径见「E 长按与重击的输入语义帧位」常量段注释。
 # ---------------------------------------------------------------------------
 ALYOSHA_ACTION_TABLE: dict[str, TimedActionSpec] = {
     ALYOSHA_NORMAL_ATTACK_1_ACTION_KEY: TimedActionSpec(
         action_key=ALYOSHA_NORMAL_ATTACK_1_ACTION_KEY,
-        duration_frames=74,
-        hit_frame=21,
+        duration_frames=ALYOSHA_NORMAL_ATTACK_1_DURATION_FRAMES,
+        hit_frame=ALYOSHA_NORMAL_ATTACK_1_HIT_FRAME_OFFSET,
         impact_key=ALYOSHA_NORMAL_ATTACK_1_IMPACT_KEY,
         targeting=ALYOSHA_TARGETING_NORMAL_ATTACK,
         transitions={
@@ -319,6 +374,52 @@ ALYOSHA_ACTION_TABLE: dict[str, TimedActionSpec] = {
             NORMAL_ATTACK_INPUT: 153,
             ELEMENTAL_SKILL_INPUT: 153,
             ELEMENTAL_BURST_INPUT: 55,
+        },
+    ),
+    # E 长按（按住阶段 → 释放阶段）：动作从释放时刻起手，只承载释放阶段
+    # （146 帧固定释放动画、伤害 +26）；按住阶段无仿真效果，由解释器在按住
+    # 上限（250 帧）自动起手本动作。无独立索敌——命中目标由 150° 扇区伤害
+    # AOE 以施放者为锚展开（见 impacts.py 工厂长按分支）。
+    ALYOSHA_ELEMENTAL_SKILL_HOLD_ACTION_KEY: TimedActionSpec(
+        action_key=ALYOSHA_ELEMENTAL_SKILL_HOLD_ACTION_KEY,
+        duration_frames=ALYOSHA_ELEMENTAL_SKILL_HOLD_RELEASE_FRAMES,
+        hit_frame=ALYOSHA_ELEMENTAL_SKILL_HOLD_HIT_FRAME_OFFSET,
+        impact_key=ALYOSHA_ELEMENTAL_SKILL_HOLD_IMPACT_KEY,
+        cooldown_start_frame=1,
+        cooldown_ability_key=ALYOSHA_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
+        transitions={
+            NORMAL_ATTACK_INPUT: ALYOSHA_ELEMENTAL_SKILL_HOLD_RELEASE_FRAMES + 1,
+            ELEMENTAL_SKILL_INPUT: ALYOSHA_ELEMENTAL_SKILL_HOLD_RELEASE_FRAMES + 1,
+            ELEMENTAL_BURST_INPUT: ALYOSHA_ELEMENTAL_SKILL_HOLD_RELEASE_FRAMES + 1,
+        },
+    ),
+    # 重击（前置一段普攻 + 突进段）：完整重击链 = N1（命中 +21）+ 记录段
+    # （55 帧，命中自段起点 +28），衔接帧未实测按 duration+1 兜底。
+    ALYOSHA_CHARGED_ATTACK_ACTION_KEY: TimedActionSpec(
+        action_key=ALYOSHA_CHARGED_ATTACK_ACTION_KEY,
+        duration_frames=ALYOSHA_CHARGED_PREFIX_FRAMES + ALYOSHA_CHARGED_THRUST_SEGMENT_FRAMES,
+        impact_points=(
+            TimedImpactPointSpec(
+                impact_key=ALYOSHA_NORMAL_ATTACK_1_IMPACT_KEY,
+                frame=ALYOSHA_CHARGED_PREFIX_HIT_FRAME_OFFSET,
+                targeting=ALYOSHA_TARGETING_NORMAL_ATTACK,
+            ),
+            TimedImpactPointSpec(
+                impact_key=ALYOSHA_CHARGED_ATTACK_IMPACT_KEY,
+                frame=(ALYOSHA_CHARGED_PREFIX_FRAMES + ALYOSHA_CHARGED_THRUST_HIT_FRAME_OFFSET),
+                targeting=ALYOSHA_TARGETING_NORMAL_ATTACK,
+            ),
+        ),
+        transitions={
+            NORMAL_ATTACK_INPUT: (
+                ALYOSHA_CHARGED_PREFIX_FRAMES + ALYOSHA_CHARGED_THRUST_SEGMENT_FRAMES + 1
+            ),
+            ELEMENTAL_SKILL_INPUT: (
+                ALYOSHA_CHARGED_PREFIX_FRAMES + ALYOSHA_CHARGED_THRUST_SEGMENT_FRAMES + 1
+            ),
+            ELEMENTAL_BURST_INPUT: (
+                ALYOSHA_CHARGED_PREFIX_FRAMES + ALYOSHA_CHARGED_THRUST_SEGMENT_FRAMES + 1
+            ),
         },
     ),
     ALYOSHA_ELEMENTAL_BURST_ACTION_KEY: TimedActionSpec(
@@ -433,3 +534,19 @@ ALYOSHA_C1_ELECTRO_DIRECTION_MARKER = "electro"
 # 队伍作用域稳定 id（单人队伍，与 stellar_conduct/dendro_core 等域内常量同值；
 # ACTIVE_CHARACTER 主体记录挂在该作用域上，前台门控由属性投影语义承担）。
 ALYOSHA_TEAM_SCOPE = "player_team"
+
+# ---------------------------------------------------------------------------
+# 产球（规划文档 §3-发现7）：E 点按/长按伤害命中触发，5 颗雷微粒、概率
+# 100%、判定冷却 0.5s（30 帧）；图加林/轰霆猎场不产微粒（2026-10-06 资料
+# 确认）。概率 100% 无需概率字段；飞行帧沿用通用占位 30 帧（奥黛塔/桑多涅
+# 同款）。触发匹配按伤害结果 request_id 内嵌的 impact_key 识别。
+# ---------------------------------------------------------------------------
+ALYOSHA_PARTICLE_TRIGGER_IMPACT_KEYS = (
+    ALYOSHA_ELEMENTAL_SKILL_PRESS_IMPACT_KEY,
+    ALYOSHA_ELEMENTAL_SKILL_HOLD_IMPACT_KEY,
+)
+ALYOSHA_PARTICLE_SPAWN_IMPACT_KEY = "character.alyosha.particle.spawn"
+ALYOSHA_PARTICLE_ELEMENT = Element.ELECTRO
+ALYOSHA_PARTICLE_COUNT = 5
+ALYOSHA_PARTICLE_COOLDOWN_FRAMES = 30
+ALYOSHA_PARTICLE_TRAVEL_FRAMES = 30

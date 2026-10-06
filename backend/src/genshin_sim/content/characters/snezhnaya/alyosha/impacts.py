@@ -1,8 +1,8 @@
 """阿罗夏影响契约编译与影响点展开。
 
-本文件负责"资产数据 -> 伤害契约 -> ImpactRequest"的链路。骨架阶段覆盖
-普攻四段（N3 双判定）与 E 点按直伤；Q 的伤害随轰霆猎场创建实体接入（规划
-文档 §7-4），本阶段 Q 动作只展开能量消耗请求。
+本文件负责"资产数据 -> 伤害契约 -> ImpactRequest"的链路。覆盖普攻四段
+（N3 双判定）、E 点按/长按、重击（突进段）直伤；Q 的伤害随轰霆猎场创建
+实体在 tick 时产出（``fulgurite.py``），本文件只编译其契约。
 """
 
 from __future__ import annotations
@@ -17,6 +17,14 @@ from genshin_sim.content.characters.snezhnaya.alyosha.data import (
     ALYOSHA_BURST_ICD_TAG_KEY,
     ALYOSHA_BURST_TUGARIN_BITE_IMPACT_KEY,
     ALYOSHA_CHARACTER_HANDLER_KEY,
+    ALYOSHA_CHARGED_ATTACK_AOE_RADIUS,
+    ALYOSHA_CHARGED_ATTACK_AOE_SHAPE,
+    ALYOSHA_CHARGED_ATTACK_IMPACT_KEY,
+    ALYOSHA_CHARGED_ATTACK_MAIN_ATTACK_TAG,
+    ALYOSHA_CHARGED_ATTACK_RANGE_TYPE,
+    ALYOSHA_CHARGED_ATTACK_STRIKE_TYPE,
+    ALYOSHA_CHARGED_ICD_SEQUENCE_KEY,
+    ALYOSHA_CHARGED_ICD_TAG_KEY,
     ALYOSHA_DAMAGE_ELEMENT,
     ALYOSHA_DAMAGE_ELEMENTAL_AMOUNT,
     ALYOSHA_DAMAGE_ELEMENTAL_STRENGTH,
@@ -28,6 +36,10 @@ from genshin_sim.content.characters.snezhnaya.alyosha.data import (
     ALYOSHA_ELEMENTAL_SKILL_AOE_OFFSET,
     ALYOSHA_ELEMENTAL_SKILL_AOE_SHAPE,
     ALYOSHA_ELEMENTAL_SKILL_AOE_WIDTH,
+    ALYOSHA_ELEMENTAL_SKILL_HOLD_AOE_ARC_DEGREES,
+    ALYOSHA_ELEMENTAL_SKILL_HOLD_AOE_OFFSET,
+    ALYOSHA_ELEMENTAL_SKILL_HOLD_AOE_RADIUS,
+    ALYOSHA_ELEMENTAL_SKILL_HOLD_IMPACT_KEY,
     ALYOSHA_ELEMENTAL_SKILL_MAIN_ATTACK_TAG,
     ALYOSHA_ELEMENTAL_SKILL_PRESS_IMPACT_KEY,
     ALYOSHA_ELEMENTAL_SKILL_RANGE_TYPE,
@@ -70,6 +82,8 @@ _ALYOSHA_NORMAL_ATTACK_DAMAGE_LABELS = {
     ALYOSHA_NORMAL_ATTACK_4_IMPACT_KEY: ("四段伤害", 0),
 }
 _ALYOSHA_ELEMENTAL_SKILL_DAMAGE_LABEL = "点按伤害"
+_ALYOSHA_ELEMENTAL_SKILL_HOLD_DAMAGE_LABEL = "长按伤害"
+_ALYOSHA_CHARGED_ATTACK_DAMAGE_LABEL = "重击伤害"
 _ALYOSHA_BURST_FIELD_DAMAGE_LABEL = "轰霆猎场伤害"
 _ALYOSHA_BURST_TUGARIN_DAMAGE_LABEL = "图加林伤害"
 
@@ -119,6 +133,7 @@ def _compile_damage_spec(
     aoe_offset: Vector3,
     aoe_length: float = 0.0,
     aoe_width: float = 0.0,
+    aoe_arc_degrees: float | None = None,
 ) -> DamageImpactSpec:
     """把单个资产倍率分量编译为伤害契约（``aoe_shape=None`` 表示单体）。"""
 
@@ -160,6 +175,7 @@ def _compile_damage_spec(
                 local_offset_xz=aoe_offset,
                 length=aoe_length,
                 width=aoe_width,
+                arc_degrees=aoe_arc_degrees,
             )
             if aoe_shape is not None
             else None
@@ -218,18 +234,50 @@ def compile_elemental_skill_damage_specs(
     entries_by_key: dict[tuple[str, str, str], TalentScalingEntry],
     talent_level: int,
 ) -> dict[str, DamageImpactSpec]:
-    """编译 E 点按（伏袭霆击）的伤害契约：雷元素、无 ICD（单次判定）。"""
+    """编译 E 点按/长按（伏袭霆击）的伤害契约：雷元素、无 ICD（单次判定）。
 
-    entry = entries_by_key.get(
-        (character_key, "elemental_skill", _ALYOSHA_ELEMENTAL_SKILL_DAMAGE_LABEL)
-    )
-    if entry is None:
-        raise ContentUnitValidationError(
-            f"阿罗夏元素战技缺少资产倍率条目：{_ALYOSHA_ELEMENTAL_SKILL_DAMAGE_LABEL}"
-        )
-    return {
-        ALYOSHA_ELEMENTAL_SKILL_PRESS_IMPACT_KEY: _compile_damage_spec(
+    点按带独立索敌、伤害 AOE 以选中目标为锚展开；长按无独立索敌（资料表），
+    命中区域即 150° 扇区伤害 AOE，由工厂以施放者为锚展开（见工厂长按分支）。
+    """
+
+    specs: dict[str, DamageImpactSpec] = {}
+    plans = (
+        (
             ALYOSHA_ELEMENTAL_SKILL_PRESS_IMPACT_KEY,
+            _ALYOSHA_ELEMENTAL_SKILL_DAMAGE_LABEL,
+            ALYOSHA_ELEMENTAL_SKILL_AOE_SHAPE,
+            0.0,
+            ALYOSHA_ELEMENTAL_SKILL_AOE_OFFSET,
+            None,
+            ALYOSHA_ELEMENTAL_SKILL_AOE_LENGTH,
+            ALYOSHA_ELEMENTAL_SKILL_AOE_WIDTH,
+        ),
+        (
+            ALYOSHA_ELEMENTAL_SKILL_HOLD_IMPACT_KEY,
+            _ALYOSHA_ELEMENTAL_SKILL_HOLD_DAMAGE_LABEL,
+            "圆柱",
+            ALYOSHA_ELEMENTAL_SKILL_HOLD_AOE_RADIUS,
+            ALYOSHA_ELEMENTAL_SKILL_HOLD_AOE_OFFSET,
+            ALYOSHA_ELEMENTAL_SKILL_HOLD_AOE_ARC_DEGREES,
+            0.0,
+            0.0,
+        ),
+    )
+    for (
+        impact_key,
+        label,
+        aoe_shape,
+        aoe_radius,
+        aoe_offset,
+        aoe_arc_degrees,
+        aoe_length,
+        aoe_width,
+    ) in plans:
+        entry = entries_by_key.get((character_key, "elemental_skill", label))
+        if entry is None:
+            raise ContentUnitValidationError(f"阿罗夏元素战技缺少资产倍率条目：{label}")
+        specs[impact_key] = _compile_damage_spec(
+            impact_key,
             talent_level,
             entry=entry,
             component_index=0,
@@ -241,12 +289,52 @@ def compile_elemental_skill_damage_specs(
             # 资料表「-（无 ICD）」：不携带衰减约束，命中即施加附着。
             icd_tag_key=None,
             additional_attack_tags=ALYOSHA_MARK_ADDITIONAL_TAGS,
-            display_name=_ALYOSHA_ELEMENTAL_SKILL_DAMAGE_LABEL,
-            aoe_shape=ALYOSHA_ELEMENTAL_SKILL_AOE_SHAPE,
-            aoe_radius=0.0,
-            aoe_offset=ALYOSHA_ELEMENTAL_SKILL_AOE_OFFSET,
-            aoe_length=ALYOSHA_ELEMENTAL_SKILL_AOE_LENGTH,
-            aoe_width=ALYOSHA_ELEMENTAL_SKILL_AOE_WIDTH,
+            display_name=label,
+            aoe_shape=aoe_shape,
+            aoe_radius=aoe_radius,
+            aoe_offset=aoe_offset,
+            aoe_length=aoe_length,
+            aoe_width=aoe_width,
+            aoe_arc_degrees=aoe_arc_degrees,
+        )
+    return specs
+
+
+def compile_charged_attack_damage_specs(
+    character_key: str,
+    entries_by_key: dict[tuple[str, str, str], TalentScalingEntry],
+    talent_level: int,
+) -> dict[str, DamageImpactSpec]:
+    """编译重击突进段的伤害契约：物理近战、球 0.8、专属衰减「突进攻击/重击」。
+
+    重击链前段是第一段普攻，动作表直接复用一段普攻影响点（其契约来自
+    ``compile_normal_attack_damage_specs``），本函数只编译突进段命中点。
+    """
+
+    entry = entries_by_key.get(
+        (character_key, "normal_attack", _ALYOSHA_CHARGED_ATTACK_DAMAGE_LABEL)
+    )
+    if entry is None:
+        raise ContentUnitValidationError(
+            f"阿罗夏普攻缺少资产倍率条目：{_ALYOSHA_CHARGED_ATTACK_DAMAGE_LABEL}"
+        )
+    return {
+        ALYOSHA_CHARGED_ATTACK_IMPACT_KEY: _compile_damage_spec(
+            ALYOSHA_CHARGED_ATTACK_IMPACT_KEY,
+            talent_level,
+            entry=entry,
+            component_index=0,
+            main_attack_tag=ALYOSHA_CHARGED_ATTACK_MAIN_ATTACK_TAG,
+            strike_type=ALYOSHA_CHARGED_ATTACK_STRIKE_TYPE,
+            range_type=ALYOSHA_CHARGED_ATTACK_RANGE_TYPE,
+            element=ALYOSHA_MELEE_ELEMENT,
+            elemental_amount=0,
+            icd_tag_key=ALYOSHA_CHARGED_ICD_TAG_KEY,
+            icd_sequence_key=ALYOSHA_CHARGED_ICD_SEQUENCE_KEY,
+            display_name=_ALYOSHA_CHARGED_ATTACK_DAMAGE_LABEL,
+            aoe_shape=ALYOSHA_CHARGED_ATTACK_AOE_SHAPE,
+            aoe_radius=ALYOSHA_CHARGED_ATTACK_AOE_RADIUS,
+            aoe_offset=Vector3(0.0, 0.0, 0.0),
         ),
     }
 
@@ -354,6 +442,8 @@ class AlyoshaActionImpactFactory:
             )
         if context.impact_key == ALYOSHA_ELEMENTAL_BURST_SUMMON_IMPACT_KEY:
             return (self._summon_create_request(context, params),)
+        if context.impact_key == ALYOSHA_ELEMENTAL_SKILL_HOLD_IMPACT_KEY:
+            return (self._hold_damage_request(context, params),)
         damage_spec = self._damage_specs.get(context.impact_key)
         if damage_spec is not None:
             damage_spec = replace(
@@ -372,6 +462,34 @@ class AlyoshaActionImpactFactory:
                 params=params,
                 damage_spec=damage_spec,
             ),
+        )
+
+    def _hold_damage_request(
+        self,
+        context: ActionImpactContext,
+        params: dict[str, object],
+    ) -> ImpactRequest:
+        """长按命中：150° 扇区以施放者为锚，交由伤害 AOE 展开器解析命中。
+
+        长按无独立索敌（资料表）：影响点不携带索敌规格，请求以当前场上角色
+        为锚（``anchor_entity_id``），展开器按角色位置与朝向投影扇区并查询
+        命中实体；缺锚点或扇区内无敌人时请求无目标，伤害自然不结算。
+        """
+
+        spec = self._damage_specs.get(context.impact_key)
+        if spec is None:
+            raise ContentUnitValidationError(f"长按命中缺少伤害契约：{context.impact_key}")
+        return ImpactRequest(
+            frame=context.frame,
+            kind=ImpactKind.DAMAGE,
+            impact_key=context.impact_key,
+            owner_slot=context.owner.slot,
+            action_key=context.action_key,
+            source_impact_point_id=context.impact_point_id,
+            target_refs=(),
+            anchor_entity_id=ACTIVE_CHARACTER_ENTITY_ID,
+            params=params,
+            damage_spec=replace(spec, impact_ref=f"{context.impact_point_id}:damage"),
         )
 
     def _summon_create_request(

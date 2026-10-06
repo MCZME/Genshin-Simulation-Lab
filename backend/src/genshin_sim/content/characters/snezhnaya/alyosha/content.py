@@ -24,6 +24,7 @@ from genshin_sim.content.characters.snezhnaya.alyosha.data import (
     ALYOSHA_C4_UNLOCK_KEY,
     ALYOSHA_C6_UNLOCK_KEY,
     ALYOSHA_CHARACTER_HANDLER_KEY,
+    ALYOSHA_CHARGED_ICD_SEQUENCE_KEY,
     ALYOSHA_CONTENT_VERSION,
     ALYOSHA_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
     ALYOSHA_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY,
@@ -49,12 +50,14 @@ from genshin_sim.content.characters.snezhnaya.alyosha.fulgurite import (
 )
 from genshin_sim.content.characters.snezhnaya.alyosha.hooks import (
     AlyoshaMarkApplicationHook,
+    AlyoshaParticleHook,
     AlyoshaPrecisionGrantHook,
 )
 from genshin_sim.content.characters.snezhnaya.alyosha.impacts import (
     AlyoshaActionImpactFactory,
     AlyoshaBurstSummonPlan,
     compile_burst_damage_specs,
+    compile_charged_attack_damage_specs,
     compile_elemental_skill_damage_specs,
     compile_normal_attack_damage_specs,
 )
@@ -72,6 +75,7 @@ from genshin_sim.content.generic.talents import (
 from genshin_sim.content.registries import CharacterContentUnitRequest
 from genshin_sim.core.elements import AuraAmount
 from genshin_sim.core.systems.aura_icd import IcdDefinition
+from genshin_sim.core.systems.aura_icd.runtime import default_sequence_definition
 from genshin_sim.core.systems.cooldown import (
     AbilityKind,
     CooldownDefinition,
@@ -149,12 +153,13 @@ def create_alyosha_content_unit(
 ) -> ContentUnit:
     """阿罗夏内容单元工厂（动作状态机 + 全量命中契约 + Q 创建实体 + 印记链）。
 
-    机制装配：普攻四段（N3 双判定）与 E 点按直伤经标准影响管线接入；Q 施放
+    机制装配：普攻四段（N3 双判定）、E 点按/长按与重击（突进段）直伤经标准
+    影响管线接入（长按无独立索敌，扇区伤害 AOE 以施放者为锚展开）；Q 施放
     展开轰霆猎场创建实体（单一实体、轰霆猎场 AoE tick 与图加林撕咬双通道，
     时序锚定施放帧）；弋猎印记随 E/NA4 命中施加（DAMAGE_RESOLVED hook）、
     图加林攻击激活并经 BUFF_REMOVED hook 授予猎者之准（前台主体、C6 可叠
-    2 层伴生精通）；P4/C4 随撕咬 tick 周期回血；P5/P6 伤害修饰与 C1 回能
-    由各效果单元承载。
+    2 层伴生精通）；E 命中产球经产球 hook；P4/C4 随撕咬 tick 周期回血；
+    P5/P6 伤害修饰与 C1 回能由各效果单元承载。
     """
 
     talent_levels = {key: request.talent_levels.get(key, 1) for key in _TALENT_KEYS}
@@ -179,6 +184,13 @@ def create_alyosha_content_unit(
             request.character_key,
             entries_by_key,
             skill_talent_level,
+        )
+    )
+    damage_specs.update(
+        compile_charged_attack_damage_specs(
+            request.character_key,
+            entries_by_key,
+            talent_level,
         )
     )
     damage_specs.update(
@@ -298,6 +310,7 @@ def create_alyosha_content_unit(
         precision_max_stacks=precision_max_stacks,
         mastery_bonus=mastery_bonus,
     )
+    particle_hook = AlyoshaParticleHook(owner_ref=owner_ref, slot=request.slot)
     fulgurite_type = AlyoshaFulguriteFieldType(
         slot=request.slot,
         field_spec=damage_specs[ALYOSHA_BURST_FIELD_TICK_IMPACT_KEY],
@@ -372,17 +385,24 @@ def create_alyosha_content_unit(
                 ALYOSHA_ELEMENTAL_BURST_SUMMON_IMPACT_KEY,
             )
         },
-        event_hooks=(mark_hook, precision_hook),
+        event_hooks=(mark_hook, precision_hook, particle_hook),
         buff_definitions=tuple(buff_definitions),
         created_object_types={ALYOSHA_FULGURITE_OBJECT_KEY: fulgurite_type},
         cooldown_definitions=(skill_cooldown_definition, burst_cooldown_definition),
         # Q 专属 ICD 序列「阿罗夏元素爆发」（资料：重置 1.6s、序列 [1,0]、每窗口
         # 首下附着）；轰霆猎场与图加林共享该组，按 defender 分窗共用同一实例。
+        # 重击专属 ICD 序列「突进攻击」（资料表 重击行）：组的重置时限与元素量
+        # 序列未实测，暂按核心「默认」标准组参数承载，待资料补充后修正。
         aura_icd_definitions=(
             IcdDefinition(
                 sequence_key=ALYOSHA_BURST_ICD_SEQUENCE_KEY,
                 reset_interval_frames=ALYOSHA_BURST_ICD_RESET_FRAMES,
                 application_sequence=(AuraAmount.one(), AuraAmount.zero()),
+            ),
+            IcdDefinition(
+                sequence_key=ALYOSHA_CHARGED_ICD_SEQUENCE_KEY,
+                reset_interval_frames=default_sequence_definition().reset_interval_frames,
+                application_sequence=default_sequence_definition().application_sequence,
             ),
         ),
         metadata={"purpose": "alyosha_content_package"},

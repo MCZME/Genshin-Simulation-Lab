@@ -257,7 +257,9 @@ def minimal_alyosha_scaling_entries() -> tuple[TalentScalingEntry, ...]:
         ("na_2", "normal_attack", "二段伤害", ("plain_ratio",), None),
         ("na_3", "normal_attack", "三段伤害", ("plain_ratio", "plain_ratio"), None),
         ("na_4", "normal_attack", "四段伤害", ("plain_ratio",), None),
+        ("na_charged", "normal_attack", "重击伤害", ("plain_ratio",), None),
         ("es_press", "elemental_skill", "点按伤害", ("plain_ratio",), None),
+        ("es_hold", "elemental_skill", "长按伤害", ("plain_ratio",), None),
         ("es_cooldown", "elemental_skill", "冷却时间", ("plain_value",), 15.0),
         ("es_mark_duration", "elemental_skill", "弋猎印记持续时间", ("plain_value",), 15.0),
         (

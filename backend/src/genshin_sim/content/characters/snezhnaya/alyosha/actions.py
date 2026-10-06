@@ -1,9 +1,11 @@
 """阿罗夏动作解释器：角色唯一动作表 + 唯一动作解释器。
 
-阿罗夏的全部已接入动作（普攻四段、E 点按、Q 施放）统一声明在 ``data.py``
-的 ``ALYOSHA_ACTION_TABLE``，由本解释器独占消费；普攻 N1→N4 循环推进与
-跨输入衔接按表内 transitions 实现。E 长按（按住/释放阶段）与重击的输入
-语义待后续切片接入，当前 keyboard.e 统一按点按在松开帧起手。
+阿罗夏的全部已接入动作（普攻四段、E 点按、E 长按、重击、Q 施放）统一声明
+在 ``data.py`` 的 ``ALYOSHA_ACTION_TABLE``，由本解释器独占消费；普攻 N1→N4
+循环推进与跨输入衔接按表内 transitions 实现。左键与 keyboard.e 均为点按/
+长按双语义输入：按住阶段（瞄准/蓄势）无仿真效果，解释器在松开帧按按住
+时长分派——未达输入分界按点按/普攻解释，达到分界按 E 长按释放阶段/重击链
+起手；E 持续按住越过实测上限（250 帧）在 HOLD 触发器上自动起手释放阶段。
 """
 
 from __future__ import annotations
@@ -15,10 +17,14 @@ from typing import cast
 from genshin_sim.content.characters.snezhnaya.alyosha.data import (
     ALYOSHA_ACTION_TABLE,
     ALYOSHA_CHARACTER_HANDLER_KEY,
+    ALYOSHA_CHARGED_ATTACK_ACTION_KEY,
     ALYOSHA_ELEMENTAL_BURST_ACTION_KEY,
     ALYOSHA_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
     ALYOSHA_ELEMENTAL_SKILL_ACTION_KEY,
     ALYOSHA_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
+    ALYOSHA_ELEMENTAL_SKILL_HOLD_ACTION_KEY,
+    ALYOSHA_ELEMENTAL_SKILL_HOLD_MAX_FRAMES,
+    ALYOSHA_HOLD_INPUT_MIN_FRAMES,
     ALYOSHA_NORMAL_ATTACK_ACTION_KEYS,
     ELEMENTAL_BURST_INPUT,
     ELEMENTAL_SKILL_INPUT,
@@ -82,6 +88,8 @@ class AlyoshaActionInterpreter:
         session: InputSessionView,
     ) -> ActionInterpretationResult:
         input_kind = INPUT_KIND_BY_KEY.get(session.key)
+        if session.trigger is ActionInterpretationTrigger.HOLD:
+            return self._interpret_hold(context, session, input_kind)
         if session.trigger is not ActionInterpretationTrigger.RELEASE:
             return ActionInterpretationResult.wait()
         if session.release_frame is None:
@@ -123,7 +131,7 @@ class AlyoshaActionInterpreter:
         if rejection is not None:
             return ActionInterpretationResult.reject(rejection)
 
-        action = self._select_action(input_kind, last_action_key)
+        action = self._select_action(input_kind, last_action_key, session.held_frames)
         owner_ref = f"character:slot_{slot}"
         self._queue_state_patch(
             context.simulation,
@@ -133,6 +141,63 @@ class AlyoshaActionInterpreter:
             action=action,
             start_frame=session.release_frame,
         )
+        return self._start_result(action, slot, session)
+
+    def _interpret_hold(
+        self,
+        context: ActionInterpretationContext,
+        session: InputSessionView,
+        input_kind: str | None,
+    ) -> ActionInterpretationResult:
+        """按住触发：E 越过实测最长按住上限时自动进入释放阶段。
+
+        长按的按住阶段（瞄准）无仿真效果，伤害发生在释放阶段；玩家持续按住
+        越过 250 帧上限时由本路径起手 E 长按动作（起手帧 = 按下 + 上限帧），
+        起手成功即脱离会话，后续物理松开不再重复解释。冷却或衔接条件未就绪
+        时保持等待（下一帧重试，物理松开仍可正常解释）。
+        """
+
+        if input_kind != ELEMENTAL_SKILL_INPUT:
+            return ActionInterpretationResult.wait()
+        if session.held_frames < ALYOSHA_ELEMENTAL_SKILL_HOLD_MAX_FRAMES:
+            return ActionInterpretationResult.wait()
+        if session.owner.slot is None:
+            return ActionInterpretationResult.reject("阿罗夏动作需要角色归属槽位")
+        slot = session.owner.slot
+        if self._elemental_skill_rejection(context, slot, session.current_frame) is not None:
+            return ActionInterpretationResult.wait()
+        last_action_key, last_action_start_frame = self._read_state(
+            context.simulation,
+            slot,
+        )
+        self._validate_known_state(last_action_key)
+        if (
+            self._transition_rejection(
+                ELEMENTAL_SKILL_INPUT,
+                session.current_frame,
+                last_action_key,
+                last_action_start_frame,
+            )
+            is not None
+        ):
+            return ActionInterpretationResult.wait()
+        action = self._action_table[ALYOSHA_ELEMENTAL_SKILL_HOLD_ACTION_KEY]
+        self._queue_state_patch(
+            context.simulation,
+            owner_ref=f"character:slot_{slot}",
+            frame=session.current_frame,
+            session_id=session.session_id,
+            action=action,
+            start_frame=session.current_frame,
+        )
+        return self._start_result(action, slot, session)
+
+    def _start_result(
+        self,
+        action: TimedActionSpec,
+        slot: int,
+        session: InputSessionView,
+    ) -> ActionInterpretationResult:
         return ActionInterpretationResult.start(
             PreparedAction(
                 action_key=action.action_key,
@@ -140,7 +205,7 @@ class AlyoshaActionInterpreter:
                 requested_start_frame=session.current_frame,
                 params={
                     "content_handler_key": ALYOSHA_CHARACTER_HANDLER_KEY,
-                    "alyosha_action_kind": input_kind,
+                    "alyosha_action_kind": INPUT_KIND_BY_KEY.get(session.key),
                     "alyosha_hit_frame": action.hit_frame,
                 },
                 source_session_id=session.session_id,
@@ -275,17 +340,37 @@ class AlyoshaActionInterpreter:
         self,
         input_kind: str,
         last_action_key: str,
+        held_frames: int,
     ) -> TimedActionSpec:
         if input_kind == NORMAL_ATTACK_INPUT:
-            return self._select_normal_attack_action(last_action_key)
+            return self._select_normal_attack_action(last_action_key, held_frames)
         if input_kind == ELEMENTAL_SKILL_INPUT:
-            return self._action_table[ALYOSHA_ELEMENTAL_SKILL_ACTION_KEY]
+            return self._select_elemental_skill_action(held_frames)
         if input_kind == ELEMENTAL_BURST_INPUT:
             return self._action_table[ALYOSHA_ELEMENTAL_BURST_ACTION_KEY]
         msg = f"未知阿罗夏输入类型：{input_kind}"
         raise KeyError(msg)
 
-    def _select_normal_attack_action(self, last_action_key: str) -> TimedActionSpec:
+    def _select_elemental_skill_action(self, held_frames: int) -> TimedActionSpec:
+        """E 点按/长按按按住时长分派：达到输入分界按长按释放阶段起手。"""
+
+        if held_frames >= ALYOSHA_HOLD_INPUT_MIN_FRAMES:
+            return self._action_table[ALYOSHA_ELEMENTAL_SKILL_HOLD_ACTION_KEY]
+        return self._action_table[ALYOSHA_ELEMENTAL_SKILL_ACTION_KEY]
+
+    def _select_normal_attack_action(
+        self,
+        last_action_key: str,
+        held_frames: int,
+    ) -> TimedActionSpec:
+        """左键点按/长按双语义：达到输入分界按重击链起手（不接普攻连段）。
+
+        重击链自带一段普攻前段；重击不改变普攻连段位置，重击后下一次点按
+        从一段普攻重新起手（``last_action_key`` 为重击键时不在普攻序列内）。
+        """
+
+        if held_frames >= ALYOSHA_HOLD_INPUT_MIN_FRAMES:
+            return self._action_table[ALYOSHA_CHARGED_ATTACK_ACTION_KEY]
         if last_action_key not in ALYOSHA_NORMAL_ATTACK_ACTION_KEYS:
             return self._action_table[ALYOSHA_NORMAL_ATTACK_ACTION_KEYS[0]]
         last_index = ALYOSHA_NORMAL_ATTACK_ACTION_KEYS.index(last_action_key)

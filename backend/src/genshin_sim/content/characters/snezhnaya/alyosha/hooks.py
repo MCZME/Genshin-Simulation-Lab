@@ -1,14 +1,16 @@
-"""阿罗夏内容 hook：印记施加、猎者之准授予与 C1 回能。
+"""阿罗夏内容 hook：印记施加、猎者之准授予、C1 回能与产球。
 
-事件顺序口径（规划文档 §5-1/§4）：
+事件顺序口径（规划文档 §5-1/§4/§3-发现7）：
 
-- 弋猎印记随 E 点按/NA4 的**实际命中**施加（订阅 ``DAMAGE_RESOLVED``，
+- 弋猎印记随 E 点按/长按/NA4 的**实际命中**施加（订阅 ``DAMAGE_RESOLVED``，
   按影响键匹配触发来源，受击敌人逐个施加）。
 - 猎者之准在印记被**激活（清除）**时授予（订阅 ``BUFF_REMOVED``，只认
   ``CONSUMED`` 原因），挂 ``ACTIVE_CHARACTER`` 位置级主体——全队持有、
   仅前台经属性投影生效；C6 解锁时层数到达 2 层同帧伴生 +100 元素精通。
 - C1 订阅 ``REACTION_OCCURRED``，队伍触发雷元素相关反应为阿罗夏回复能量
   （可后台触发；满能量时回能被吞、触发照常进入冷却——按实际建模不加豁免）。
+- 产球订阅 ``DAMAGE_RESOLVED``，E 点按/长按命中产 5 颗雷微粒（共用 0.5s
+  判定冷却；轰霆猎场/图加林不产微粒）。
 """
 
 from __future__ import annotations
@@ -17,6 +19,7 @@ from genshin_sim.content.characters.snezhnaya.alyosha.data import (
     ALYOSHA_C1_ELECTRO_DIRECTION_MARKER,
     ALYOSHA_C1_ELECTRO_REACTION_KEYS,
     ALYOSHA_CHARACTER_HANDLER_KEY,
+    ALYOSHA_ELEMENTAL_SKILL_HOLD_IMPACT_KEY,
     ALYOSHA_ELEMENTAL_SKILL_PRESS_IMPACT_KEY,
     ALYOSHA_HUNTERS_MARK_BUFF_DEFINITION_KEY,
     ALYOSHA_HUNTERS_PRECISION_ATK_TERM_KEY,
@@ -25,6 +28,12 @@ from genshin_sim.content.characters.snezhnaya.alyosha.data import (
     ALYOSHA_HUNTERS_PRECISION_MASTERY_TERM_KEY,
     ALYOSHA_HUNTERS_PRECISION_MECHANIC_KEY,
     ALYOSHA_NORMAL_ATTACK_4_IMPACT_KEY,
+    ALYOSHA_PARTICLE_COOLDOWN_FRAMES,
+    ALYOSHA_PARTICLE_COUNT,
+    ALYOSHA_PARTICLE_ELEMENT,
+    ALYOSHA_PARTICLE_SPAWN_IMPACT_KEY,
+    ALYOSHA_PARTICLE_TRAVEL_FRAMES,
+    ALYOSHA_PARTICLE_TRIGGER_IMPACT_KEYS,
     ALYOSHA_TEAM_SCOPE,
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
@@ -42,11 +51,12 @@ from genshin_sim.core.systems.buff.enums import BuffRemovalReason
 from genshin_sim.core.systems.buff.protocols import TargetBuffPresenceReadPort
 
 # 印记施加的触发影响键：NA4（官方文本：最后一击命中的敌人施加弋猎印记）与
-# E 点按（命中判定资料：附加「施加印记」标签）。命中判定按伤害事实实际命中
-# 的敌人施加，AOE 展开与衰减不在此重复。
+# E 点按/长按（命中判定资料：附加「施加印记」标签）。命中判定按伤害事实实际
+# 命中的敌人施加，AOE 展开与衰减不在此重复。
 _MARK_APPLY_IMPACT_KEYS = (
     ALYOSHA_NORMAL_ATTACK_4_IMPACT_KEY,
     ALYOSHA_ELEMENTAL_SKILL_PRESS_IMPACT_KEY,
+    ALYOSHA_ELEMENTAL_SKILL_HOLD_IMPACT_KEY,
 )
 
 _ENEMY_TARGET_PREFIX = "target:"
@@ -340,4 +350,82 @@ class AlyoshaC1EnergyHook:
         direction_key = getattr(occurrence, "direction_key", None)
         return isinstance(direction_key, str) and ALYOSHA_C1_ELECTRO_DIRECTION_MARKER in (
             direction_key
+        )
+
+
+class AlyoshaParticleHook:
+    """产球：E 点按/长按伤害命中产 5 颗雷微粒，共用 0.5s 判定冷却。
+
+    订阅 ``DAMAGE_RESOLVED``，按伤害实际结算帧判定；触发影响点按伤害结果
+    ``request_id`` 内嵌的 impact_key 匹配（动作影响点 id 形如
+    ``action:{instance_id}:{impact_key}``）。概率 100% 无需概率判定；冷却
+    游标在 hook 实例，同帧多条命中事实即时去重。产球经 ``ImpactKind.ENERGY``
+    的 ``spawn_pickup`` 出口，归属施放的阿罗夏（雷属性微粒）；轰霆猎场/
+    图加林不产微粒（规划文档 §3-发现7）。
+    """
+
+    def __init__(self, *, owner_ref: str, slot: int) -> None:
+        if not isinstance(owner_ref, str) or not owner_ref.strip():
+            raise ContentUnitValidationError("产球 hook owner_ref 必须是非空字符串")
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot <= 0:
+            raise ContentUnitValidationError("产球 hook 必须绑定正整数队伍槽位")
+        self._owner_ref = owner_ref
+        self._owner_subject_ref = AttributeSubjectRef.character(owner_ref)
+        self._slot = slot
+        self._last_proc_frame: int | None = None
+        self.hook_key = f"alyosha.particle:{owner_ref}"
+        self.state_key = ALYOSHA_CHARACTER_HANDLER_KEY
+        self.subscriptions = ("DAMAGE_RESOLVED",)
+        self.priority = 0
+
+    @property
+    def owner_ref(self) -> str:
+        return self._owner_ref
+
+    def handle(self, event: object, context: object) -> HookResult:
+        del context  # 冷却游标在 hook 实例。
+        if getattr(event, "event_type", None) is not EventType.DAMAGE_RESOLVED:
+            return HookResult()
+        result = getattr(getattr(event, "payload", None), "result", None)
+        if result is None:
+            return HookResult()
+        if getattr(result, "source_ref", None) != self._owner_subject_ref:
+            return HookResult()
+        target_id = getattr(getattr(result, "target_ref", None), "entity_id", None)
+        if not isinstance(target_id, str) or not target_id.startswith(_ENEMY_TARGET_PREFIX):
+            return HookResult()
+        request_id = getattr(result, "request_id", None)
+        if not isinstance(request_id, str) or not any(
+            key in request_id for key in ALYOSHA_PARTICLE_TRIGGER_IMPACT_KEYS
+        ):
+            return HookResult()
+
+        frame = getattr(event, "frame", 0)
+        if (
+            self._last_proc_frame is not None
+            and frame - self._last_proc_frame < ALYOSHA_PARTICLE_COOLDOWN_FRAMES
+        ):
+            return HookResult()
+        self._last_proc_frame = frame
+        return HookResult(
+            impact_requests=(
+                ImpactRequest(
+                    frame=frame,
+                    kind=ImpactKind.ENERGY,
+                    impact_key=ALYOSHA_PARTICLE_SPAWN_IMPACT_KEY,
+                    owner_slot=self._slot,
+                    request_id=f"hook:{self.hook_key}:{frame}",
+                    params={
+                        "energy": {
+                            "schema_version": 1,
+                            "operation": "spawn_pickup",
+                            "pickup_kind": "particle",
+                            "element": ALYOSHA_PARTICLE_ELEMENT.value,
+                            "count": ALYOSHA_PARTICLE_COUNT,
+                            "travel_frames": ALYOSHA_PARTICLE_TRAVEL_FRAMES,
+                            "tags": (),
+                        }
+                    },
+                ),
+            ),
         )

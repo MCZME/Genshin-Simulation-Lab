@@ -172,6 +172,7 @@ from genshin_sim.core.systems.aura import (
 from genshin_sim.core.systems.aura_icd import (
     AuraIcdRuntime,
     IcdDefinitionRegistry,
+    charge_attack_icd_definition,
     default_sequence_definition,
     no_cooldown_definition,
     standard_icd_definition,
@@ -673,6 +674,7 @@ class RuntimeAssembler:
                     standard_icd_definition(),
                     default_sequence_definition(),
                     no_cooldown_definition(),
+                    charge_attack_icd_definition(),
                     *content_bundle.aura_icd_definitions,
                 )
             )

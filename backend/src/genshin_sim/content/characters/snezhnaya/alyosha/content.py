@@ -24,7 +24,6 @@ from genshin_sim.content.characters.snezhnaya.alyosha.data import (
     ALYOSHA_C4_UNLOCK_KEY,
     ALYOSHA_C6_UNLOCK_KEY,
     ALYOSHA_CHARACTER_HANDLER_KEY,
-    ALYOSHA_CHARGED_ICD_SEQUENCE_KEY,
     ALYOSHA_CONTENT_VERSION,
     ALYOSHA_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
     ALYOSHA_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY,
@@ -75,7 +74,6 @@ from genshin_sim.content.generic.talents import (
 from genshin_sim.content.registries import CharacterContentUnitRequest
 from genshin_sim.core.elements import AuraAmount
 from genshin_sim.core.systems.aura_icd import IcdDefinition
-from genshin_sim.core.systems.aura_icd.runtime import default_sequence_definition
 from genshin_sim.core.systems.cooldown import (
     AbilityKind,
     CooldownDefinition,
@@ -391,18 +389,16 @@ def create_alyosha_content_unit(
         cooldown_definitions=(skill_cooldown_definition, burst_cooldown_definition),
         # Q 专属 ICD 序列「阿罗夏元素爆发」（资料：重置 1.6s、序列 [1,0]、每窗口
         # 首下附着）；轰霆猎场与图加林共享该组，按 defender 分窗共用同一实例。
-        # 重击专属 ICD 序列「突进攻击」（资料表 重击行）：组的重置时限与元素量
-        # 序列未实测，暂按核心「默认」标准组参数承载，待资料补充后修正。
+        # 重击的衰减组「突进攻击/重击」是游戏标准组，已由 core 作为内置默认
+        # Definition 提供（`core/systems/aura_icd/runtime.py` 的
+        # `charge_attack_icd_definition`：重置 30 帧、窗口内仅第 1 下附着）；
+        # 内容侧只按 key 绑定（`ALYOSHA_CHARGED_ICD_SEQUENCE_KEY`），不在此
+        # 重复声明——重复声明会被 Definition 注册表判重。
         aura_icd_definitions=(
             IcdDefinition(
                 sequence_key=ALYOSHA_BURST_ICD_SEQUENCE_KEY,
                 reset_interval_frames=ALYOSHA_BURST_ICD_RESET_FRAMES,
                 application_sequence=(AuraAmount.one(), AuraAmount.zero()),
-            ),
-            IcdDefinition(
-                sequence_key=ALYOSHA_CHARGED_ICD_SEQUENCE_KEY,
-                reset_interval_frames=default_sequence_definition().reset_interval_frames,
-                application_sequence=default_sequence_definition().application_sequence,
             ),
         ),
         metadata={"purpose": "alyosha_content_package"},

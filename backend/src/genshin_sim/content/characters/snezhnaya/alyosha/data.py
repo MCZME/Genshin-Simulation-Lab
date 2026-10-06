@@ -258,9 +258,11 @@ ALYOSHA_ELEMENTAL_SKILL_HOLD_AOE_OFFSET = Vector3(0.0, -3.0, 0.0)
 ALYOSHA_ELEMENTAL_BURST_MAIN_ATTACK_TAG = "元素爆发"
 ALYOSHA_ELEMENTAL_BURST_RANGE_TYPE = "远程"
 
-# 重击（资料表 重击行）：突进段球 0.8 / 0,0,0，近战突刺，专属衰减
-# 「突进攻击/重击」。「突进攻击」组的重置时限与元素量序列未实测，参数在
-# content.py 注册时按核心「默认」标准组承载，待资料补充后修正。
+# 重击（资料表 重击行）：突进段球 0.8 / 0,0,0，近战突刺，衰减
+# 「突进攻击/重击」。「突进攻击」是游戏标准组（资料：重置 0.5s、序列
+# 1,0,...,0，每次重置前仅第 1 下计数提供附着），已作为 core 内置默认
+# Definition 提供（`core/systems/aura_icd/runtime.py`），此处只保留绑定
+# 用的 key；内容侧不重复声明该组。
 ALYOSHA_CHARGED_ATTACK_MAIN_ATTACK_TAG = "重击"
 ALYOSHA_CHARGED_ATTACK_STRIKE_TYPE = StrikeType.THRUST
 ALYOSHA_CHARGED_ATTACK_RANGE_TYPE = "近战"

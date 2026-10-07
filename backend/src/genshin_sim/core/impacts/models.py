@@ -42,6 +42,7 @@ class StrikeType(StrEnum):
     BLUNT = "钝击"
     SLASH = "切割"
     PIERCE = "穿刺"
+    THRUST = "突刺"
 
 
 @dataclass(frozen=True, slots=True)

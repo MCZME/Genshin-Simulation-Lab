@@ -45,6 +45,29 @@ from genshin_sim.content.characters.mondstadt.barbara import (
     create_barbara_content_unit,
     create_barbara_encore_effect,
 )
+from genshin_sim.content.characters.snezhnaya.alyosha import (
+    ALYOSHA_CHARACTER_HANDLER_KEY,
+    ALYOSHA_CONSTELLATION_C1_HANDLER_KEY,
+    ALYOSHA_CONSTELLATION_C2_HANDLER_KEY,
+    ALYOSHA_CONSTELLATION_C3_HANDLER_KEY,
+    ALYOSHA_CONSTELLATION_C4_HANDLER_KEY,
+    ALYOSHA_CONSTELLATION_C5_HANDLER_KEY,
+    ALYOSHA_CONSTELLATION_C6_HANDLER_KEY,
+    ALYOSHA_PASSIVE_P4_HANDLER_KEY,
+    ALYOSHA_PASSIVE_P5_HANDLER_KEY,
+    ALYOSHA_PASSIVE_P6_HANDLER_KEY,
+    ALYOSHA_PASSIVE_P8_HANDLER_KEY,
+    create_alyosha_constellation_c1,
+    create_alyosha_constellation_c2,
+    create_alyosha_constellation_c3,
+    create_alyosha_constellation_c4,
+    create_alyosha_constellation_c5,
+    create_alyosha_constellation_c6,
+    create_alyosha_content_unit,
+    create_alyosha_passive_p4,
+    create_alyosha_passive_p5,
+    create_alyosha_passive_p6,
+)
 from genshin_sim.content.characters.snezhnaya.odette import (
     ODETTE_CHARACTER_HANDLER_KEY,
     ODETTE_CONSTELLATION_C1_HANDLER_KEY,
@@ -192,6 +215,10 @@ def create_default_content_unit_registry(
     registry.register_character_factory(
         ODETTE_CHARACTER_HANDLER_KEY,
         create_odette_content_unit,
+    )
+    registry.register_character_factory(
+        ALYOSHA_CHARACTER_HANDLER_KEY,
+        create_alyosha_content_unit,
     )
     if developer_mode:
         from genshin_sim.content.test import register_test_content_units
@@ -342,6 +369,20 @@ def create_default_content_unit_registry(
     ):
         registry.register_effect_factory(handler_key, factory)
     registry.register_empty_effect_handler(ODETTE_PASSIVE_P8_HANDLER_KEY)
+    for handler_key, factory in (
+        (ALYOSHA_PASSIVE_P4_HANDLER_KEY, create_alyosha_passive_p4),
+        (ALYOSHA_PASSIVE_P5_HANDLER_KEY, create_alyosha_passive_p5),
+        (ALYOSHA_PASSIVE_P6_HANDLER_KEY, create_alyosha_passive_p6),
+        (ALYOSHA_CONSTELLATION_C1_HANDLER_KEY, create_alyosha_constellation_c1),
+        (ALYOSHA_CONSTELLATION_C2_HANDLER_KEY, create_alyosha_constellation_c2),
+        (ALYOSHA_CONSTELLATION_C3_HANDLER_KEY, create_alyosha_constellation_c3),
+        (ALYOSHA_CONSTELLATION_C4_HANDLER_KEY, create_alyosha_constellation_c4),
+        (ALYOSHA_CONSTELLATION_C5_HANDLER_KEY, create_alyosha_constellation_c5),
+        (ALYOSHA_CONSTELLATION_C6_HANDLER_KEY, create_alyosha_constellation_c6),
+    ):
+        registry.register_effect_factory(handler_key, factory)
+    for handler_key in (ALYOSHA_PASSIVE_P8_HANDLER_KEY,):
+        registry.register_empty_effect_handler(handler_key)
     for handler_key in BUILTIN_NOOP_CONTENT_HANDLER_KEYS:
         registry.register_noop_handler(handler_key)
     return registry

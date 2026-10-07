@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
 from decimal import Decimal
 from typing import Any, cast
 
@@ -177,6 +178,33 @@ def test_gate_static_slices_clears_locked_static_contributions_but_keeps_unit():
     assert gated.talent_level_boosts == {}
     assert gated.cooldown_duration_terms == {}
     assert gated.attribute_providers == ()
+    assert len(gated.effects) == 1
+    assert gated.handler_key == unit.handler_key
+
+
+def test_gate_static_slices_clears_ascension_locked_damage_modifier_providers():
+    # ASCENSION 门槛（如充能效率转伤类被动）：突破不足时伤害修饰 provider
+    # 在编译期剥离，单元本身保留。
+    unit = replace(
+        _unit(threshold=2),
+        effects=(
+            EffectSpec(
+                effect_key="character:test:passive:p5",
+                kind=EffectKind.PASSIVE,
+                unlock=UnlockSpec(kind=UnlockKind.ASCENSION, threshold=4),
+            ),
+        ),
+        damage_modifier_providers=(cast(Any, object()),),
+    )
+
+    gated = ContentCompiler._gate_static_slices(
+        unit,
+        cast(Any, _FakeBundle()),
+        cast(Any, _FakeSlotConfig(constellation=6)),
+    )
+
+    assert gated.damage_modifier_providers == ()
+    assert gated.talent_level_boosts == {}
     assert len(gated.effects) == 1
     assert gated.handler_key == unit.handler_key
 

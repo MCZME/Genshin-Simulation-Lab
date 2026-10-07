@@ -68,6 +68,7 @@ application_sequence: tuple[AuraAmount, ...]
 
 - `icd.standard` / `默认`：同一套 150 帧标准序列，有限 `1, 0, 0` 重复；有限序列结束后保持末尾 `0`，直到窗口重置。内容可按资料“衰减序列”直接使用 `默认` 作为 key。
 - `icd.none`：可显式绑定的无冷却 Definition。
+- `突进攻击`：武器标准重击组的 30 帧窗口序列 `1, 0, …, 0`（24 项），窗口内仅第 1 下提供附着。属跨内容的游戏标准组，由 core 内置提供，内容按 key 直接绑定，不在各自内容单元里重复声明。
 - 无 Binding：直接返回系数 `1` 和 `NO_COOLDOWN`，不创建 Record。
 
 ## 4. Binding 与共享身份

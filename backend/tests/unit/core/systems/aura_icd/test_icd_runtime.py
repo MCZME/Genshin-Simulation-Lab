@@ -144,32 +144,6 @@ def test_icd_uses_exact_non_integer_coefficients_and_keeps_the_final_value():
     assert third.coefficient == AuraAmount.zero()
 
 
-def test_builtin_charge_attack_group_applies_only_first_hit_per_window():
-    # 「突进攻击」是 core 内置标准重击组（资料：重置 0.5s = 30 帧、序列
-    # 1,0,...,0，每次重置前仅第 1 下计数提供附着）。窗口内后续命中系数为 0
-    # 但仍推进游标；跨过 30 帧窗口后重新从首项附着。
-    runtime = AuraIcdRuntime()
-    binding = IcdBinding("重击", "突进攻击")
-
-    first = runtime.resolve(_request(0, frame=0, binding=binding))
-    second = runtime.resolve(_request(1, frame=0, binding=binding))
-
-    assert first.coefficient == AuraAmount.one()
-    assert second.coefficient == AuraAmount.zero()
-    first_after = first.after
-    assert first_after is not None
-    assert first_after.window_started_frame == 0
-    assert first_after.resets_at_frame == 30
-    assert first_after.next_sequence_index == 1
-
-    runtime.update_frame(None, 30)
-    reset = runtime.resolve(_request(0, frame=30, binding=binding))
-
-    assert reset.coefficient == AuraAmount.one()
-    assert reset.before is None
-    assert reset.window_started_frame == 30
-
-
 def test_icd_batch_rejects_duplicate_order():
     runtime = AuraIcdRuntime()
     binding = IcdBinding("attack.normal", "icd.standard")

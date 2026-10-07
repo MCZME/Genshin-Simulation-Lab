@@ -1,17 +1,4 @@
-"""阿罗夏内容 hook：印记施加、猎者之准授予、C1 回能与产球。
-
-事件顺序口径（规划文档 §5-1/§4/§3-发现7）：
-
-- 弋猎印记随 E 点按/长按/NA4 的**实际命中**施加（订阅 ``DAMAGE_RESOLVED``，
-  按影响键匹配触发来源，受击敌人逐个施加）。
-- 猎者之准在印记被**激活（清除）**时授予（订阅 ``BUFF_REMOVED``，只认
-  ``CONSUMED`` 原因），挂 ``ACTIVE_CHARACTER`` 位置级主体——全队持有、
-  仅前台经属性投影生效；C6 解锁时层数到达 2 层同帧伴生 +100 元素精通。
-- C1 订阅 ``REACTION_OCCURRED``，队伍触发雷元素相关反应为阿罗夏回复能量
-  （可后台触发；满能量时回能被吞、触发照常进入冷却——按实际建模不加豁免）。
-- 产球订阅 ``DAMAGE_RESOLVED``，E 点按/长按命中产 5 颗雷微粒（共用 0.5s
-  判定冷却；轰霆猎场/图加林不产微粒）。
-"""
+"""阿罗夏内容 hook：印记施加、猎者之准授予、C1 回能与产球。"""
 
 from __future__ import annotations
 
@@ -361,7 +348,7 @@ class AlyoshaParticleHook:
     ``action:{instance_id}:{impact_key}``）。概率 100% 无需概率判定；冷却
     游标在 hook 实例，同帧多条命中事实即时去重。产球经 ``ImpactKind.ENERGY``
     的 ``spawn_pickup`` 出口，归属施放的阿罗夏（雷属性微粒）；轰霆猎场/
-    图加林不产微粒（规划文档 §3-发现7）。
+    图加林不产微粒。
     """
 
     def __init__(self, *, owner_ref: str, slot: int) -> None:

@@ -1,10 +1,4 @@
-"""阿罗夏效果行工厂：被动 P4/P5/P6 与命座 C1/C2/C3/C4/C5/C6。
-
-数值与名称一律取自资产效果行（``request.effect_params``），内容代码不留第二份
-常量；已解锁却缺少效果行/分量时在组装期报错，不静默回落。P4/C4/C2/C6 的
-机器数值由角色内容单元消费（回血通道、Q 时长延长与印记施加、猎者之准层数
-与精通伴生），对应效果行在此只做存在性与分量校验。
-"""
+"""阿罗夏效果行工厂：被动 P4/P5/P6 与命座 C1/C2/C3/C4/C5/C6。"""
 
 from __future__ import annotations
 
@@ -231,8 +225,8 @@ def create_alyosha_passive_p5(request: EffectContentUnitRequest) -> ContentUnit:
 def create_alyosha_passive_p6(request: EffectContentUnitRequest) -> ContentUnit:
     """P6 Into the Fray（星赴险域）：猎者之准使场上角色星超导增伤按层提升。
 
-    资产分量：[0]/[1] 为内部引用（极星辉域/猎者之准，按维护者口径丢弃，
-    门控走辉映证据与猎者之准层数端口，见规划文档 §5-4）；[2] 每层增伤 20%。
+    资产分量：[0]/[1] 为内部引用（极星辉域/猎者之准，不消费直接丢弃，
+    门控走辉映证据与猎者之准层数端口）；[2] 每层增伤 20%。
     """
 
     slot = _validate_owner(request, ALYOSHA_PASSIVE_P6_HANDLER_KEY)

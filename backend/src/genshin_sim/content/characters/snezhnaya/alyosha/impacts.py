@@ -1,10 +1,4 @@
-"""阿罗夏影响契约编译与影响点展开。
-
-本文件负责"资产数据 -> 伤害契约 -> ImpactRequest"的链路。覆盖普攻四段
-（N3 双判定）、E 点按/长按、重击（突进段）与下落攻击（碰撞 + 低空/高空坠地
-冲击）直伤；Q 的伤害随轰霆猎场创建实体在 tick 时产出（``fulgurite.py``），
-本文件只编译其契约。
-"""
+"""阿罗夏影响契约编译与影响点展开。"""
 
 from __future__ import annotations
 
@@ -27,8 +21,6 @@ from genshin_sim.content.characters.snezhnaya.alyosha.data import (
     ALYOSHA_CHARGED_ICD_SEQUENCE_KEY,
     ALYOSHA_CHARGED_ICD_TAG_KEY,
     ALYOSHA_DAMAGE_ELEMENT,
-    ALYOSHA_DAMAGE_ELEMENTAL_AMOUNT,
-    ALYOSHA_DAMAGE_ELEMENTAL_STRENGTH,
     ALYOSHA_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY,
     ALYOSHA_ELEMENTAL_BURST_MAIN_ATTACK_TAG,
     ALYOSHA_ELEMENTAL_BURST_RANGE_TYPE,
@@ -76,6 +68,7 @@ from genshin_sim.core.impacts import (
     StrikeType,
 )
 from genshin_sim.core.space import ACTIVE_CHARACTER_ENTITY_ID, ImpactAreaSpec, Vector3
+from genshin_sim.core.systems.aura import AuraStrength
 from genshin_sim.core.systems.damage import DamageScalingTerm
 
 _ALYOSHA_NORMAL_ATTACK_DAMAGE_LABELS = {
@@ -98,7 +91,7 @@ _ALYOSHA_BURST_TUGARIN_DAMAGE_LABEL = "图加林伤害"
 class AlyoshaBurstSummonPlan:
     """Q 召唤影响点的轰霆猎场创建计划（工厂展开参数）。
 
-    时序全部锚定施放帧（规划文档 §3.1 已定案）：首拍/首咬偏移由工厂在展开
+    时序全部锚定施放帧：首拍/首咬偏移由工厂在展开
     时换算为绝对帧写进创建 config，创建实体晚到也不改变 tick 节奏。
     """
 
@@ -165,8 +158,8 @@ def _compile_damage_spec(
         additional_attack_tags=tuple(additional_attack_tags),
         strike_type=strike_type,
         range_type=range_type,
-        elemental_strength=(ALYOSHA_DAMAGE_ELEMENTAL_STRENGTH if has_element else None),
-        elemental_amount=(ALYOSHA_DAMAGE_ELEMENTAL_AMOUNT if has_element else AuraAmount.zero()),
+        elemental_strength=(AuraStrength.WEAK if has_element else None),
+        elemental_amount=(AuraAmount.one() if has_element else AuraAmount.zero()),
         icd_tag_key=icd_tag_key,
         icd_sequence_key=(
             (icd_sequence_key or ALYOSHA_NORMAL_ATTACK_ICD_SEQUENCE_KEY)
@@ -609,22 +602,17 @@ class AlyoshaActionImpactFactory:
     ) -> ImpactRequest:
         """展开轰霆猎场创建实体请求（单一实体、双攻击通道）。
 
-        实体生成在当前场上角色位置（资料未给定落点，取角色原位；伤害范围即
-        实体大小，见规划文档 §3-发现8）；首拍/首咬锚定施放帧（``config``
-        携带绝对帧），缺仿真上下文时回退原点并依赖 config 的施放帧锚定。
+        落点 = 召唤索敌（圆柱 15,10 分数）选中的最近目标位置；范围内无目标
+        时回退当前场上角色原位，缺仿真上下文时回退原点。朝向始终取施放者
+        （场域伤害 AOE 为
+        圆柱、索敌按半径查询，朝向不参与任何查询。首拍/首咬锚定施放帧
+        （``config`` 携带绝对帧），创建实体晚到也不改变 tick 节奏。
         """
 
         plan = self._burst_summon
         if plan is None:
             raise ContentUnitValidationError("Q 召唤影响点缺少轰霆猎场创建计划")
-        position = Vector3()
-        facing = Vector3(0.0, 0.0, 1.0)
-        simulation = context.simulation
-        if simulation is not None and simulation.space_runtime is not None:
-            entity = simulation.space_runtime.get_entity(ACTIVE_CHARACTER_ENTITY_ID)
-            if entity is not None:
-                position = entity.position
-                facing = entity.facing
+        position, facing = self._resolve_summon_placement(context)
         return ImpactRequest(
             frame=context.frame,
             kind=ImpactKind.CREATE_ENTITY,
@@ -649,3 +637,31 @@ class AlyoshaActionImpactFactory:
                 },
             },
         )
+
+    def _resolve_summon_placement(
+        self,
+        context: ActionImpactContext,
+    ) -> tuple[Vector3, Vector3]:
+        """召唤落点：就近目标位置优先，无目标回退场上角色原位。
+
+        索敌候选由影响点规格（``ALYOSHA_TARGETING_ELEMENTAL_BURST``）经标准
+        「分数」策略解析，``target_refs`` 至多一个就近目标；缺仿真上下文时
+        回退原点，时序不受影响（首拍/首咬锚定施放帧）。
+        """
+
+        simulation = context.simulation
+        space_runtime = simulation.space_runtime if simulation is not None else None
+        character = (
+            space_runtime.get_entity(ACTIVE_CHARACTER_ENTITY_ID)
+            if space_runtime is not None
+            else None
+        )
+        facing = character.facing if character is not None else Vector3(0.0, 0.0, 1.0)
+        if space_runtime is not None:
+            for candidate in context.target_refs:
+                entity = space_runtime.get_entity(candidate.spatial_entity_id)
+                if entity is not None:
+                    return entity.position, facing
+        if character is not None:
+            return character.position, facing
+        return Vector3(), facing

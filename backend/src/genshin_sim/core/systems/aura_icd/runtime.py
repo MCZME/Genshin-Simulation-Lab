@@ -255,10 +255,10 @@ def _standard_sequence() -> tuple[AuraAmount, ...]:
 def charge_attack_icd_definition() -> IcdDefinition:
     """返回标准重击组「突进攻击」的有限窗口序列。
 
-    资料（V7.0 命中判定表 重击行）：重置时限 0.5s（30 帧）、元素量序列
-    ``1, 0, 0, ...``（24 项）——每次重置前仅第 1 下计数提供附着。该组是
-    跨内容的游戏标准组，因此与 ``默认`` 一样作为内置 Definition 提供，
-    内容按 key 直接绑定，不在各自内容单元里重复声明。
+    重置时限 0.5s（30 帧）、元素量序列``1, 0, 0, ...``（24 项）
+    ——每次重置前仅第 1 下计数提供附着。该组是跨内容的游戏标准组，
+    因此与 ``默认`` 一样作为内置 Definition 提供，内容按 key 直接绑定，
+    不在各自内容单元里重复声明。
     """
 
     return IcdDefinition("突进攻击", 30, _charge_attack_sequence())

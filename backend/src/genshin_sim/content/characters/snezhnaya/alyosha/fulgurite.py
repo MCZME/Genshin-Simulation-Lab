@@ -1,12 +1,11 @@
 """轰霆猎场创建实体：单一实体、双攻击通道（轰霆猎场 AoE tick + 图加林撕咬）。
 
-实体模型口径（规划文档 §3-发现8，2026-10-06 维护者澄清）：轰霆猎场是空间中
-的一个实体，其范围就是它的大小；该实体发起两个独立攻击——轰霆猎场 AoE tick
-（范围内所有敌人）与图加林撕咬（单体），「图加林移动撕咬」是演出表现不建模。
+轰霆猎场是空间中的一个实体，其范围就是它的大小；该实体发起两个独立攻击——
+轰霆猎场 AoE tick（范围内所有敌人）与图加林撕咬（单体）。
 时序全部锚定施放帧：首拍/首咬偏移由创建请求 config 携带（绝对帧），此后固定
 120 帧间隔推进；无敌人时图加林仍按期执行攻击动作（咬空气），调度无条件推进。
 
-图加林索敌（2026-10-06 定案）：范围内有弋猎印记的敌人则优先攻击（多个取其中
+图加林索敌：范围内有弋猎印记的敌人则优先攻击（多个取其中
 最近者），没有则直接取全范围最近者——印记前置筛选 + 组内就近；激活（清除）
 印记并触发猎者之准由 REMOVE_STATUS 影响请求 + ``BUFF_REMOVED`` hook 编排。
 
@@ -209,7 +208,7 @@ class AlyoshaFulguriteFieldType:
                 ),
             )
             # 攻击激活（清除）印记；CONSUMED 原因由 BUFF_REMOVED hook 转授
-            # 猎者之准。C2 施加的印记随本次攻击一并激活（事件顺序见 §4 C2 行）。
+            # 猎者之准。C2 施加的印记随本次攻击一并激活（先施加 → 攻击激活）。
             requests.append(self._mark_consume_request(frame, bite_entity_id))
         # P4/C4 与攻击动作同步：无目标（咬空气）也固定产出。
         if self._p4_heal is not None:
@@ -287,7 +286,7 @@ class AlyoshaFulguriteFieldType:
         state: CreatedObjectRuntimeState,
         frame: int,
     ) -> _BiteCandidate | None:
-        """印记前置筛选 + 组内就近（2026-10-06 定案口径）。"""
+        """印记前置筛选 + 组内就近。"""
 
         space_runtime = _space_runtime(context)
         if space_runtime is None:

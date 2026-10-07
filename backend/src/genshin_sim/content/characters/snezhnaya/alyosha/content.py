@@ -19,10 +19,7 @@ from genshin_sim.content.characters.snezhnaya.alyosha.data import (
     ALYOSHA_BURST_ICD_RESET_FRAMES,
     ALYOSHA_BURST_ICD_SEQUENCE_KEY,
     ALYOSHA_BURST_TUGARIN_BITE_IMPACT_KEY,
-    ALYOSHA_C2_UNLOCK_KEY,
     ALYOSHA_C4_HEAL_COMPONENT_KEY,
-    ALYOSHA_C4_UNLOCK_KEY,
-    ALYOSHA_C6_UNLOCK_KEY,
     ALYOSHA_CHARACTER_HANDLER_KEY,
     ALYOSHA_CONTENT_VERSION,
     ALYOSHA_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
@@ -32,7 +29,6 @@ from genshin_sim.content.characters.snezhnaya.alyosha.data import (
     ALYOSHA_FIELD_FIRST_TICK_FRAME_OFFSET,
     ALYOSHA_FULGURITE_OBJECT_KEY,
     ALYOSHA_HIT_IMPACT_KEYS,
-    ALYOSHA_P4_EFFECT_UNLOCK_KEY,
     ALYOSHA_P4_HEAL_COMPONENT_KEY,
     ALYOSHA_TUGARIN_FIRST_BITE_FRAME_OFFSET,
     FRAMES_PER_SECOND,
@@ -138,29 +134,19 @@ def _talent_value(
 def _required_effect_params(
     request: CharacterContentUnitRequest,
     unlock_key: str,
-    *,
-    label: str,
 ) -> Mapping[str, object]:
+    """取角色名下指定 unlock_key 的资产效果行参数，缺失即组装期报错。"""
+
     params = request.effect_params.get(unlock_key)
     if params is None:
-        raise ContentUnitValidationError(f"阿罗夏已解锁但缺少资产效果行：{label}")
+        raise ContentUnitValidationError(f"阿罗夏已解锁但缺少资产效果行：{unlock_key}")
     return params
 
 
 def create_alyosha_content_unit(
     request: CharacterContentUnitRequest,
 ) -> ContentUnit:
-    """阿罗夏内容单元工厂（动作状态机 + 全量命中契约 + Q 创建实体 + 印记链）。
-
-    机制装配：普攻四段（N3 双判定）、E 点按/长按、重击（突进段）与下落攻击
-    （碰撞 + 低空/高空坠地冲击）直伤经标准影响管线接入（长按无独立索敌，
-    扇区伤害 AOE 以施放者为锚展开；下落攻击两个影响点同样以施放者为锚且
-    无独立索敌）；Q 施放展开轰霆猎场创建实体（单一实体、轰霆猎场 AoE tick
-    与图加林撕咬双通道，时序锚定施放帧）；弋猎印记随 E/NA4 命中施加
-    （DAMAGE_RESOLVED hook）、图加林攻击激活并经 BUFF_REMOVED hook 授予
-    猎者之准（前台主体、C6 可叠 2 层伴生精通）；E 命中产球经产球 hook；
-    P4/C4 随撕咬 tick 周期回血；P5/P6 伤害修饰与 C1 回能由各效果单元承载。
-    """
+    """阿罗夏内容单元工厂（动作状态机 + 全量命中契约 + Q 创建实体 + 印记链）。"""
 
     talent_levels = {key: request.talent_levels.get(key, 1) for key in _TALENT_KEYS}
     resolved = TalentLevelResolver.resolve(
@@ -259,7 +245,7 @@ def create_alyosha_content_unit(
     # C2：Q 持续延长 + 图加林攻击前施加印记（不激活已有）。
     c2_apply_mark = False
     if constellation >= 2:
-        c2_params = _required_effect_params(request, ALYOSHA_C2_UNLOCK_KEY, label="c2")
+        c2_params = _required_effect_params(request, "c2")
         field_duration_frames += _frames_from_seconds(
             read_c2_extension_seconds(c2_params),
             purpose="C2 元素爆发延长",
@@ -270,7 +256,7 @@ def create_alyosha_content_unit(
     precision_max_stacks = 1
     mastery_bonus: float | None = None
     if constellation >= 6:
-        c6_params = _required_effect_params(request, ALYOSHA_C6_UNLOCK_KEY, label="c6")
+        c6_params = _required_effect_params(request, "c6")
         c6_values = read_c6_asset_values(c6_params)
         precision_max_stacks = c6_values.max_stacks
         mastery_bonus = c6_values.mastery_bonus
@@ -278,11 +264,7 @@ def create_alyosha_content_unit(
     # P4/C4：与图加林攻击动作同步的周期回血通道（数值取资产效果行）。
     p4_heal: FulguriteHealChannel | None = None
     if request.ascension_phase >= 1:
-        p4_params = _required_effect_params(
-            request,
-            ALYOSHA_P4_EFFECT_UNLOCK_KEY,
-            label="passive:4",
-        )
+        p4_params = _required_effect_params(request, "passive:4")
         p4_heal = FulguriteHealChannel(
             impact_key="alyosha.p4_heal",
             component_key=ALYOSHA_P4_HEAL_COMPONENT_KEY,
@@ -290,7 +272,7 @@ def create_alyosha_content_unit(
         )
     c4_heal: FulguriteHealChannel | None = None
     if constellation >= 4:
-        c4_params = _required_effect_params(request, ALYOSHA_C4_UNLOCK_KEY, label="c4")
+        c4_params = _required_effect_params(request, "c4")
         c4_heal = FulguriteHealChannel(
             impact_key="alyosha.c4_heal",
             component_key=ALYOSHA_C4_HEAL_COMPONENT_KEY,
@@ -397,13 +379,6 @@ def create_alyosha_content_unit(
         buff_definitions=tuple(buff_definitions),
         created_object_types={ALYOSHA_FULGURITE_OBJECT_KEY: fulgurite_type},
         cooldown_definitions=(skill_cooldown_definition, burst_cooldown_definition),
-        # Q 专属 ICD 序列「阿罗夏元素爆发」（资料：重置 1.6s、序列 [1,0]、每窗口
-        # 首下附着）；轰霆猎场与图加林共享该组，按 defender 分窗共用同一实例。
-        # 重击的衰减组「突进攻击/重击」是游戏标准组，已由 core 作为内置默认
-        # Definition 提供（`core/systems/aura_icd/runtime.py` 的
-        # `charge_attack_icd_definition`：重置 30 帧、窗口内仅第 1 下附着）；
-        # 内容侧只按 key 绑定（`ALYOSHA_CHARGED_ICD_SEQUENCE_KEY`），不在此
-        # 重复声明——重复声明会被 Definition 注册表判重。
         aura_icd_definitions=(
             IcdDefinition(
                 sequence_key=ALYOSHA_BURST_ICD_SEQUENCE_KEY,

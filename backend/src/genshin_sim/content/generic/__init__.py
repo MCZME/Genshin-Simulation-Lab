@@ -65,6 +65,11 @@ from genshin_sim.content.generic.timed_action import (
     TimedActionSpecValidationError,
     build_timed_actions,
 )
+from genshin_sim.content.generic.transitions import (
+    TransitionVerdict,
+    TransitionVerdictKind,
+    evaluate_transition,
+)
 
 __all__ = [
     "CHAIN_STATE_LAST_ACTION_KEY",
@@ -94,6 +99,8 @@ __all__ = [
     "TimedActionSpec",
     "TimedActionSpecError",
     "TimedActionSpecValidationError",
+    "TransitionVerdict",
+    "TransitionVerdictKind",
     "WINDFALL_PARTICLE_COUNT",
     "WINDFALL_PICKUP_ELEMENT",
     "WINDFALL_PICKUP_KIND",
@@ -103,6 +110,7 @@ __all__ = [
     "any_of",
     "build_timed_actions",
     "chain_state_schema",
+    "evaluate_transition",
     "field_equals",
     "has_buff",
     "hp_ratio_above",

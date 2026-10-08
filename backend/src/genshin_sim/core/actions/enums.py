@@ -31,6 +31,7 @@ class ActionInterpretationTrigger(StrEnum):
 class ActionInterpretationKind(StrEnum):
     WAIT = "wait"
     REJECT = "reject"
+    DEFER = "defer"
     START_ACTION = "start_action"
     CONTROL_ACTION = "control_action"
 

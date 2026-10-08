@@ -15,9 +15,12 @@ from genshin_sim.core.actions import (
     ActionInterpretationResult,
     ActionInterpretationTrigger,
     ActionInterpreterRegistry,
+    ActionInterruptPolicy,
     ActionManager,
+    ActionOwnerRef,
     ActionRegistry,
     ActiveCharacterInterpreterSelector,
+    InputControlState,
     InputSessionView,
     PreparedAction,
     SearchAreaSpec,
@@ -28,7 +31,13 @@ from genshin_sim.core.actions import (
     TimedImpactAction,
 )
 from genshin_sim.core.entity_states import CharacterRuntimeState
-from genshin_sim.core.events import EventType, TeamSwitchedPayload
+from genshin_sim.core.events import (
+    EventType,
+    InputSessionBoundaryPayload,
+    InputSessionDeferredPayload,
+    InputSessionResolvedPayload,
+    TeamSwitchedPayload,
+)
 from genshin_sim.core.simulation import (
     InputTraceCompiler,
     KeyEvent,
@@ -123,6 +132,23 @@ def _manager(
     )
 
 
+def _buffering_manager(
+    frames: list[KeyInputFrame],
+    interpreter,
+    actions: tuple[TimedImpactAction, ...],
+) -> ActionManager:
+    """用同一解释器注册 keyboard.e 与 mouse.left 的管理器（缓冲用例共用）。"""
+
+    registry = ActionInterpreterRegistry()
+    registry.register("keyboard.e", ActiveCharacterInterpreterSelector({1: interpreter}))
+    registry.register("mouse.left", ActiveCharacterInterpreterSelector({1: interpreter}))
+    return ActionManager(
+        input_trace=InputTraceCompiler().compile(frames),
+        interpreter_registry=registry,
+        action_registry=ActionRegistry(actions),
+    )
+
+
 def test_action_manager_starts_action_on_release_and_does_not_expose_future_release():
     interpreter = ReleaseStartInterpreter({"keyboard.e": "character.test.skill"})
     manager = _manager(
@@ -209,6 +235,7 @@ def test_action_manager_publishes_input_fact_and_boundary_events():
         EventType.INPUT_KEY_RECEIVED,
         EventType.INPUT_SESSION_BOUNDARY_REACHED,
         EventType.ACTION_STARTED,
+        EventType.INPUT_SESSION_RESOLVED,
     ]
     assert context.events.frame_events[1].payload.to_dict() == {
         "session_id": 1,
@@ -225,6 +252,15 @@ def test_action_manager_publishes_input_fact_and_boundary_events():
         "binding_scope": "active_character",
         "will_interpret": True,
         "skip_reason": None,
+    }
+    assert context.events.frame_events[3].payload.to_dict() == {
+        "session_id": 1,
+        "key": "keyboard.e",
+        "outcome": "consumed",
+        "frame": 3,
+        "buffered_at_frame": None,
+        "reason": None,
+        "instance_id": 1,
     }
 
 
@@ -589,3 +625,461 @@ class _ResonanceCooldownPort:
                 value=Decimal("0.95"),
             ),
         )
+
+
+# ---------------------------------------------------------------------------
+# 输入缓冲（预输入）用例：defer 判定、缓冲重评、FIFO、锁挂起与可观测性。
+# ---------------------------------------------------------------------------
+
+
+@dataclass(slots=True)
+class BufferingInterpreter:
+    """到最早帧前 ``defer``、之后 ``start`` 的合成解释器。"""
+
+    action_by_key: dict[str, str]
+    earliest_by_key: dict[str, int]
+    views: list[InputSessionView] = field(default_factory=list)
+
+    @property
+    def supported_action_keys(self) -> tuple[str, ...]:
+        return tuple(self.action_by_key.values())
+
+    def interpret(self, context, session: InputSessionView) -> ActionInterpretationResult:
+        del context
+        self.views.append(session)
+        if session.trigger is not ActionInterpretationTrigger.RELEASE:
+            return ActionInterpretationResult.wait()
+        earliest = self.earliest_by_key[session.key]
+        if session.current_frame < earliest:
+            return ActionInterpretationResult.defer(f"最早第 {earliest} 帧衔接")
+        return ActionInterpretationResult.start(
+            PreparedAction(
+                action_key=self.action_by_key[session.key],
+                owner=session.owner,
+                requested_start_frame=session.current_frame,
+                source_session_id=session.session_id,
+            )
+        )
+
+
+@dataclass(slots=True)
+class PressStartInterpreter:
+    """PRESS 即起手的合成解释器（用于管理器锁挂起用例）。"""
+
+    action_by_key: dict[str, str]
+
+    @property
+    def supported_action_keys(self) -> tuple[str, ...]:
+        return tuple(self.action_by_key.values())
+
+    def interpret(self, context, session: InputSessionView) -> ActionInterpretationResult:
+        del context
+        if session.trigger is not ActionInterpretationTrigger.PRESS:
+            return ActionInterpretationResult.wait()
+        return ActionInterpretationResult.start(
+            PreparedAction(
+                action_key=self.action_by_key[session.key],
+                owner=session.owner,
+                requested_start_frame=session.current_frame,
+                source_session_id=session.session_id,
+            )
+        )
+
+
+@dataclass(slots=True)
+class RejectingInterpreter:
+    """RELEASE 一律终局拒绝的合成解释器（冷却/缺少衔接数据等硬拒绝）。"""
+
+    reason: str
+    supported_action_keys: tuple[str, ...] = ()
+
+    def interpret(self, context, session: InputSessionView) -> ActionInterpretationResult:
+        del context
+        if session.trigger is not ActionInterpretationTrigger.RELEASE:
+            return ActionInterpretationResult.wait()
+        return ActionInterpretationResult.reject(self.reason)
+
+
+def test_deferred_session_starts_action_at_earliest_frame():
+    interpreter = BufferingInterpreter(
+        {"keyboard.e": "character.test.skill"},
+        {"keyboard.e": 6},
+    )
+    manager = _buffering_manager(
+        [
+            KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
+            KeyInputFrame(2, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
+        ],
+        interpreter,
+        (TimedImpactAction(action_key="character.test.skill", duration_frames=3),),
+    )
+    context = _context()
+    started: list[int] = []
+    deferred_events: list[tuple[int, str]] = []
+    resolved_events: list[dict] = []
+    context.events.subscribe(EventType.ACTION_STARTED, lambda event: started.append(event.frame))
+    context.events.subscribe(
+        EventType.INPUT_SESSION_DEFERRED,
+        lambda event: deferred_events.append(
+            (event.frame, cast(InputSessionDeferredPayload, event.payload).reason)
+        ),
+    )
+    context.events.subscribe(
+        EventType.INPUT_SESSION_RESOLVED,
+        lambda event: resolved_events.append(
+            cast(InputSessionResolvedPayload, event.payload).to_dict()
+        ),
+    )
+
+    for frame in range(1, 6):
+        manager.update_frame(context, frame)
+
+    assert manager.deferred_session_ids == (1,)
+    assert manager.sessions[0].control_state is InputControlState.LISTENING
+    assert manager.instances == ()
+    assert started == []
+    assert deferred_events == [(2, "最早第 6 帧衔接")]
+    assert resolved_events == []
+
+    manager.update_frame(context, 6)
+
+    assert manager.deferred_session_ids == ()
+    assert started == [6]
+    assert manager.instances[0].action_key == "character.test.skill"
+    assert manager.instances[0].start_frame == 6
+    assert resolved_events == [
+        {
+            "session_id": 1,
+            "key": "keyboard.e",
+            "outcome": "consumed",
+            "frame": 6,
+            "buffered_at_frame": 2,
+            "reason": None,
+            "instance_id": 1,
+        }
+    ]
+
+
+def test_deferred_sessions_resolve_in_session_id_order():
+    interpreter = BufferingInterpreter(
+        {"keyboard.e": "character.test.skill", "mouse.left": "character.test.attack"},
+        {"keyboard.e": 4, "mouse.left": 5},
+    )
+    manager = _buffering_manager(
+        [
+            KeyInputFrame(
+                1,
+                (
+                    KeyEvent("keyboard.e", KeyPhase.PRESS),
+                    KeyEvent("mouse.left", KeyPhase.PRESS),
+                ),
+            ),
+            KeyInputFrame(
+                2,
+                (
+                    KeyEvent("keyboard.e", KeyPhase.RELEASE),
+                    KeyEvent("mouse.left", KeyPhase.RELEASE),
+                ),
+            ),
+        ],
+        interpreter,
+        (
+            TimedImpactAction(action_key="character.test.skill", duration_frames=2),
+            TimedImpactAction(action_key="character.test.attack", duration_frames=2),
+        ),
+    )
+    context = _context()
+    started: list[int] = []
+    context.events.subscribe(EventType.ACTION_STARTED, lambda event: started.append(event.frame))
+
+    for frame in range(1, 6):
+        manager.update_frame(context, frame)
+
+    assert started == [4, 5]
+    assert [instance.action_key for instance in manager.instances] == [
+        "character.test.skill",
+        "character.test.attack",
+    ]
+    assert manager.deferred_session_ids == ()
+
+
+def test_deferred_review_freezes_held_frames_to_physical_release():
+    interpreter = BufferingInterpreter(
+        {"keyboard.e": "character.test.skill"},
+        {"keyboard.e": 10},
+    )
+    manager = _buffering_manager(
+        [
+            KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
+            KeyInputFrame(3, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
+        ],
+        interpreter,
+        (TimedImpactAction(action_key="character.test.skill", duration_frames=2),),
+    )
+    context = _context()
+
+    for frame in range(1, 11):
+        manager.update_frame(context, frame)
+
+    review = interpreter.views[-1]
+    assert review.trigger is ActionInterpretationTrigger.RELEASE
+    assert review.current_frame == 10
+    # held_frames 冻结为物理事实（3 - 1 = 2），不随重评帧膨胀。
+    assert review.held_frames == 2
+    assert review.release_frame == 3
+
+
+@pytest.mark.parametrize(
+    "reason",
+    [
+        "阿罗夏动作缺少 character.alyosha.normal_attack.1 -> jump 的衔接数据",
+        "阿罗夏元素战技冷却未就绪",
+    ],
+)
+def test_rejected_session_is_not_buffered_and_records_terminal_reason(reason: str):
+    interpreter = RejectingInterpreter(reason)
+    manager = _buffering_manager(
+        [
+            KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
+            KeyInputFrame(2, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
+        ],
+        interpreter,
+        (TimedImpactAction(action_key="character.test.skill"),),
+    )
+    context = _context()
+    resolved: list[dict] = []
+    context.events.subscribe(
+        EventType.INPUT_SESSION_RESOLVED,
+        lambda event: resolved.append(event.payload.to_dict()),
+    )
+
+    manager.update_frame(context, 1)
+    manager.update_frame(context, 2)
+
+    assert manager.deferred_session_ids == ()
+    session = manager.sessions[0]
+    assert session.control_state is InputControlState.DETACHED
+    assert session.terminal_reason == reason
+    assert resolved == [
+        {
+            "session_id": 1,
+            "key": "keyboard.e",
+            "outcome": "rejected",
+            "frame": 2,
+            "buffered_at_frame": None,
+            "reason": reason,
+            "instance_id": None,
+        }
+    ]
+
+
+def test_deferred_session_release_boundary_is_not_reinterpreted():
+    lock_policy = ActionAdmissionPolicy(
+        required_locks=("character:1.control",),
+        interrupt_policy=ActionInterruptPolicy(cancel_policy="queue_new"),
+    )
+    interpreter = PressStartInterpreter(
+        {"keyboard.e": "character.test.locked", "mouse.left": "character.test.locked"}
+    )
+    manager = _buffering_manager(
+        [
+            KeyInputFrame(
+                1,
+                (
+                    KeyEvent("keyboard.e", KeyPhase.PRESS),
+                    KeyEvent("mouse.left", KeyPhase.PRESS),
+                ),
+            ),
+            KeyInputFrame(
+                3,
+                (
+                    KeyEvent("keyboard.e", KeyPhase.RELEASE),
+                    KeyEvent("mouse.left", KeyPhase.RELEASE),
+                ),
+            ),
+        ],
+        interpreter,
+        (
+            TimedImpactAction(
+                action_key="character.test.locked",
+                duration_frames=10,
+                admission_policy=lock_policy,
+            ),
+        ),
+    )
+    context = _context()
+
+    manager.update_frame(context, 1)
+    assert manager.deferred_session_ids == (2,)
+
+    context.events.clear_frame_events()
+    manager.update_frame(context, 3)
+
+    boundaries = [
+        cast(InputSessionBoundaryPayload, event.payload)
+        for event in context.events.frame_events
+        if event.event_type is EventType.INPUT_SESSION_BOUNDARY_REACHED
+        and cast(InputSessionBoundaryPayload, event.payload).session_id == 2
+    ]
+    assert len(boundaries) == 1
+    assert boundaries[0].will_interpret is False
+    assert boundaries[0].skip_reason == "deferred"
+    assert manager.deferred_session_ids == (2,)
+
+
+def test_canceling_owner_clears_deferred_session():
+    interpreter = BufferingInterpreter(
+        {"keyboard.e": "character.test.skill"},
+        {"keyboard.e": 50},
+    )
+    manager = _buffering_manager(
+        [
+            KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
+            KeyInputFrame(2, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
+        ],
+        interpreter,
+        (TimedImpactAction(action_key="character.test.skill"),),
+    )
+    context = _context()
+    resolved: list[dict] = []
+    context.events.subscribe(
+        EventType.INPUT_SESSION_RESOLVED,
+        lambda event: resolved.append(event.payload.to_dict()),
+    )
+
+    manager.update_frame(context, 1)
+    manager.update_frame(context, 2)
+    assert manager.deferred_session_ids == (1,)
+
+    manager.cancel_sessions_for_owner(
+        ActionOwnerRef.character(1),
+        reason="character_switch",
+        context=context,
+        frame=3,
+    )
+
+    assert manager.deferred_session_ids == ()
+    assert manager.sessions[0].control_state is InputControlState.CANCELED
+    assert resolved == [
+        {
+            "session_id": 1,
+            "key": "keyboard.e",
+            "outcome": "canceled",
+            "frame": 3,
+            "buffered_at_frame": 2,
+            "reason": "character_switch",
+            "instance_id": None,
+        }
+    ]
+
+
+def test_team_switch_second_press_queues_until_first_completes():
+    context = _context(team_size=3, active_slot=1)
+    input_trace = InputTraceCompiler().compile(
+        [
+            KeyInputFrame(
+                1,
+                (
+                    KeyEvent("keyboard.2", KeyPhase.PRESS),
+                    KeyEvent("keyboard.3", KeyPhase.PRESS),
+                ),
+            ),
+            KeyInputFrame(
+                3,
+                (
+                    KeyEvent("keyboard.2", KeyPhase.RELEASE),
+                    KeyEvent("keyboard.3", KeyPhase.RELEASE),
+                ),
+            ),
+        ]
+    )
+    registry = ActionInterpreterRegistry()
+    registry.register("keyboard.2", TeamInterpreterSelector(TeamActionInterpreter()))
+    registry.register("keyboard.3", TeamInterpreterSelector(TeamActionInterpreter()))
+    manager = ActionManager(
+        input_trace=input_trace,
+        interpreter_registry=registry,
+        action_registry=ActionRegistry((TeamSwitchAction(),)),
+    )
+    started: list[int] = []
+    context.events.subscribe(EventType.ACTION_STARTED, lambda event: started.append(event.frame))
+
+    for frame in range(1, 5):
+        manager.update_frame(context, frame)
+
+    assert started == [1, 3]
+    assert [instance.params[TEAM_SWITCH_TARGET_SLOT_PARAM] for instance in manager.instances] == [
+        2,
+        3,
+    ]
+    assert manager.deferred_session_ids == ()
+
+
+def test_manager_is_not_idle_while_session_deferred():
+    interpreter = BufferingInterpreter(
+        {"keyboard.e": "character.test.skill"},
+        {"keyboard.e": 6},
+    )
+    manager = _buffering_manager(
+        [
+            KeyInputFrame(1, (KeyEvent("keyboard.e", KeyPhase.PRESS),)),
+            KeyInputFrame(2, (KeyEvent("keyboard.e", KeyPhase.RELEASE),)),
+        ],
+        interpreter,
+        (TimedImpactAction(action_key="character.test.skill", duration_frames=2),),
+    )
+    context = _context()
+
+    for frame in range(1, 6):
+        manager.update_frame(context, frame)
+    assert manager.is_idle() is False
+
+    for frame in range(6, 12):
+        manager.update_frame(context, frame)
+    assert manager.is_idle() is True
+
+
+def test_buffering_is_reproducible_for_same_input():
+    def run() -> tuple[list[int], list[str]]:
+        interpreter = BufferingInterpreter(
+            {"keyboard.e": "character.test.skill", "mouse.left": "character.test.attack"},
+            {"keyboard.e": 4, "mouse.left": 5},
+        )
+        manager = _buffering_manager(
+            [
+                KeyInputFrame(
+                    1,
+                    (
+                        KeyEvent("keyboard.e", KeyPhase.PRESS),
+                        KeyEvent("mouse.left", KeyPhase.PRESS),
+                    ),
+                ),
+                KeyInputFrame(
+                    2,
+                    (
+                        KeyEvent("keyboard.e", KeyPhase.RELEASE),
+                        KeyEvent("mouse.left", KeyPhase.RELEASE),
+                    ),
+                ),
+            ],
+            interpreter,
+            (
+                TimedImpactAction(action_key="character.test.skill", duration_frames=2),
+                TimedImpactAction(action_key="character.test.attack", duration_frames=2),
+            ),
+        )
+        context = _context()
+        started: list[int] = []
+        outcomes: list[str] = []
+        context.events.subscribe(
+            EventType.ACTION_STARTED, lambda event: started.append(event.frame)
+        )
+        context.events.subscribe(
+            EventType.INPUT_SESSION_RESOLVED,
+            lambda event: outcomes.append(cast(InputSessionResolvedPayload, event.payload).outcome),
+        )
+        for frame in range(1, 8):
+            manager.update_frame(context, frame)
+        return started, outcomes
+
+    assert run() == run()

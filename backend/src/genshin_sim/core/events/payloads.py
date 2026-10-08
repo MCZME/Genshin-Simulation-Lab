@@ -153,6 +153,59 @@ class InputSessionBoundaryPayload:
 
 
 @dataclass(frozen=True, slots=True)
+class InputSessionDeferredPayload:
+    """一次输入会话被推迟（进入缓冲）的事件载荷。
+
+    ``frame`` 为缓冲进入帧；``trigger`` 为重评时使用的原触发；``reason``
+    为推迟原因（衔接文案或 ``lock_conflict_queued``）。
+    """
+
+    session_id: int
+    key: str
+    trigger: str
+    frame: int
+    reason: str
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "session_id": self.session_id,
+            "key": self.key,
+            "trigger": self.trigger,
+            "frame": self.frame,
+            "reason": self.reason,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class InputSessionResolvedPayload:
+    """一次输入会话终结（消耗 / 拒绝 / 取消）的事件载荷。
+
+    ``frame`` 为终结帧；``buffered_at_frame`` 仅对缓冲过的会话携带；
+    ``outcome`` 取 ``consumed`` / ``rejected`` / ``canceled``；``reason``
+    为拒绝或取消文案；``instance_id`` 仅对消耗型终结携带。
+    """
+
+    session_id: int
+    key: str
+    outcome: str
+    frame: int
+    buffered_at_frame: int | None = None
+    reason: str | None = None
+    instance_id: int | None = None
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "session_id": self.session_id,
+            "key": self.key,
+            "outcome": self.outcome,
+            "frame": self.frame,
+            "buffered_at_frame": self.buffered_at_frame,
+            "reason": self.reason,
+            "instance_id": self.instance_id,
+        }
+
+
+@dataclass(frozen=True, slots=True)
 class DamageResolvedPayload:
     """一次伤害数值已经完成结算的事实载荷。"""
 

@@ -18,6 +18,7 @@ from genshin_sim.core.actions.models import (
     ActionImpactPoint,
     ActionInterpretationContext,
     ActionInterpretationResult,
+    ActionInterruptPolicy,
     ActionOwnerRef,
     ControlActionRequest,
     InputSessionView,
@@ -278,12 +279,19 @@ class FallPlungeAction:
 
 @dataclass(frozen=True, slots=True)
 class TeamSwitchAction:
-    """队伍切人动作实现。"""
+    """队伍切人动作实现。
+
+    准入策略声明 ``cancel_policy=queue_new``：切人锁冲突且不可中断时把新请求
+    挂起排队（连按两次切人键，第二次在第一次完成后自动起手）。
+    """
 
     action_key: str = TEAM_SWITCH_ACTION_KEY
     duration_frames: int = 1
     admission_policy: ActionAdmissionPolicy = field(
-        default_factory=lambda: ActionAdmissionPolicy(required_locks=("team.control",))
+        default_factory=lambda: ActionAdmissionPolicy(
+            required_locks=("team.control",),
+            interrupt_policy=ActionInterruptPolicy(cancel_policy="queue_new"),
+        )
     )
 
     def create_initial_state(self, params: Mapping[str, object]) -> Mapping[str, object]:

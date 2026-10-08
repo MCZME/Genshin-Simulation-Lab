@@ -235,6 +235,19 @@ class ActionInterpretationResult:
         )
 
     @classmethod
+    def defer(cls, reason: str) -> ActionInterpretationResult:
+        """本触发暂不可起手但未终局：动作请求已产生，交由管理器缓冲重评。
+
+        ``defer`` 只允许表达时间结构类条件（如衔接帧未到）；资源类条件必须
+        ``reject``。会话由管理器接管，不使用 ``session_policy``。
+        """
+
+        if not isinstance(reason, str) or not reason.strip():
+            msg = "defer 必须携带非空 reason"
+            raise ValueError(msg)
+        return cls(ActionInterpretationKind.DEFER, reason=reason)
+
+    @classmethod
     def start(
         cls,
         prepared_action: PreparedAction,
@@ -301,6 +314,11 @@ class RuntimeInputSession:
     bound_instance_id: int | None = None
     cancel_reason: str | None = None
     released_frame: int | None = None
+    # 会话被推迟（进入缓冲）的帧与原触发；由管理器逐帧重放原触发重评。
+    deferred_since_frame: int | None = None
+    deferred_trigger: ActionInterpretationTrigger | None = None
+    # 会话终结（消耗 / 拒绝 / 取消）的统一原因文案，供 `INPUT_SESSION_RESOLVED` 记录。
+    terminal_reason: str | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -388,6 +406,9 @@ class ActionDecision:
     reject_reason: ActionDecisionRejectReason | None = None
     created_instance_id: int | None = None
     interrupted_instance_ids: tuple[int, ...] = ()
+    # 锁冲突且所有冲突实例都允许排队时的挂起标记：请求未终局，由管理器把
+    # 会话放入缓冲等待重评（见动作系统契约「输入缓冲」）。
+    queued: bool = False
 
 
 @dataclass(frozen=True, slots=True)

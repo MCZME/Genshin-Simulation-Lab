@@ -29,6 +29,8 @@ from genshin_sim.core.events.payloads import (
     InfusionRemovedPayload,
     InputKeyReceivedPayload,
     InputSessionBoundaryPayload,
+    InputSessionDeferredPayload,
+    InputSessionResolvedPayload,
     MoonsignBonusAppliedPayload,
     MoonsignBonusExpiredPayload,
     MoonsignLevelSetPayload,
@@ -121,6 +123,14 @@ EVENT_SPECS: dict[EventType, EventSpec] = {
     EventType.INPUT_SESSION_BOUNDARY_REACHED: EventSpec(
         category=EventCategory.INTENT,
         payload_type=InputSessionBoundaryPayload,
+    ),
+    EventType.INPUT_SESSION_DEFERRED: EventSpec(
+        category=EventCategory.INTENT,
+        payload_type=InputSessionDeferredPayload,
+    ),
+    EventType.INPUT_SESSION_RESOLVED: EventSpec(
+        category=EventCategory.INTENT,
+        payload_type=InputSessionResolvedPayload,
     ),
     EventType.DAMAGE_RESOLVED: EventSpec(
         category=EventCategory.FACT,

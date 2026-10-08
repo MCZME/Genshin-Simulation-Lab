@@ -42,6 +42,8 @@ from genshin_sim.core.events import (
     GameEvent,
     InputKeyReceivedPayload,
     InputSessionBoundaryPayload,
+    InputSessionDeferredPayload,
+    InputSessionResolvedPayload,
 )
 from genshin_sim.core.protocols import FrameUpdatable
 from genshin_sim.core.simulation.input import InputSessionBoundary, InputSessionTrace, KeyPhase
@@ -76,10 +78,18 @@ class ActionManager(FrameUpdatable):
         self._next_instance_id = 1
         self._next_request_id = 1
         self._started_this_frame: set[int] = set()
+        # 被推迟会话的缓冲队列：按进入缓冲的时间顺序（即 session_id 升序）。
+        self._deferred_session_ids: list[int] = []
 
     @property
     def sessions(self) -> tuple[RuntimeInputSession, ...]:
         return tuple(sorted(self._sessions.values(), key=lambda item: item.session_id))
+
+    @property
+    def deferred_session_ids(self) -> tuple[int, ...]:
+        """当前仍处于缓冲、等待逐帧重评的会话 id（只读，供测试与诊断）。"""
+
+        return tuple(self._deferred_session_ids)
 
     @property
     def instances(self) -> tuple[ActionInstance, ...]:
@@ -119,6 +129,7 @@ class ActionManager(FrameUpdatable):
             released_sessions.add(boundary.session_id)
             self._handle_release(context, boundary, frame)
         self._handle_holds(context, frame, pressed_sessions | released_sessions)
+        self._retry_deferred_sessions(context, frame)
         self._update_running_instances(context, frame)
 
     def is_idle(self) -> bool:
@@ -193,17 +204,27 @@ class ActionManager(FrameUpdatable):
         session = self._sessions[boundary.session_id]
         session.physical_state = InputPhysicalState.RELEASED
         session.released_frame = frame
-        will_interpret = session.control_state is InputControlState.LISTENING
+        deferred = session.session_id in self._deferred_session_ids
+        # 被推迟会话的物理松开是对物理事实的补充，不解释、不强制 detach；
+        # 其重评在缓冲重评步按进入缓冲时的原触发进行。
+        will_interpret = session.control_state is InputControlState.LISTENING and not deferred
+        if deferred:
+            skip_reason: str | None = "deferred"
+        else:
+            skip_reason = None if will_interpret else session.control_state.value
         self._publish_input_session_boundary(
             context,
             session,
             boundary,
             will_interpret=will_interpret,
-            skip_reason=None if will_interpret else session.control_state.value,
+            skip_reason=skip_reason,
         )
         if will_interpret:
             self._interpret(context, session, ActionInterpretationTrigger.RELEASE, frame)
-        if session.control_state is InputControlState.LISTENING:
+        if (
+            session.control_state is InputControlState.LISTENING
+            and session.session_id not in self._deferred_session_ids
+        ):
             session.control_state = InputControlState.DETACHED
 
     def _publish_input_key_received(
@@ -268,11 +289,44 @@ class ActionManager(FrameUpdatable):
         for session in self.sessions:
             if session.session_id in skipped_session_ids:
                 continue
+            if session.session_id in self._deferred_session_ids:
+                continue
             if session.physical_state is not InputPhysicalState.HELD:
                 continue
             if session.control_state is not InputControlState.LISTENING:
                 continue
             self._interpret(context, session, ActionInterpretationTrigger.HOLD, frame)
+
+    def _retry_deferred_sessions(self, context: SimulationContext, frame: int) -> None:
+        """按 session_id 顺序重评被推迟会话（缓冲重评环）。
+
+        重评不是物理边界：用进入缓冲时的原触发重放解释，不发布
+        ``INPUT_SESSION_BOUNDARY_REACHED``。重评后仍为 ``listening`` 的会话
+        留在缓冲；一旦终结（起手 / 拒绝 / 取消）即出清。同一帧至多放行一次
+        「动作起手」——被推迟动作的起手判据来自链状态，而链状态在本帧结算
+        阶段才更新，同帧继续重评会读到尚未刷新的链状态而重复起手。
+        """
+
+        if not self._deferred_session_ids:
+            return
+        for session_id in tuple(self._deferred_session_ids):
+            session = self._sessions.get(session_id)
+            if session is None:
+                self._remove_deferred(session_id)
+                continue
+            if session.control_state is not InputControlState.LISTENING:
+                # 已被切人等外部终结：出清缓冲（终结事件由终结方发布）。
+                self._remove_deferred(session_id)
+                continue
+            trigger = session.deferred_trigger or ActionInterpretationTrigger.RELEASE
+            decision_count = len(self._decisions)
+            self._interpret(context, session, trigger, frame)
+            if session.control_state is InputControlState.LISTENING:
+                if session_id not in self._deferred_session_ids:
+                    self._deferred_session_ids.append(session_id)
+                continue
+            if any(decision.accepted for decision in self._decisions[decision_count:]):
+                break
 
     def _interpret(
         self,
@@ -290,7 +344,7 @@ class ActionManager(FrameUpdatable):
             ),
             view,
         )
-        self._apply_interpretation(context, session, result, frame)
+        self._apply_interpretation(context, session, result, frame, trigger)
 
     def _session_view(
         self,
@@ -298,13 +352,23 @@ class ActionManager(FrameUpdatable):
         trigger: ActionInterpretationTrigger,
         frame: int,
     ) -> InputSessionView:
+        # 已释放会话的 held_frames 冻结为物理事实（released_frame - press_frame）：
+        # 缓冲重评时若按重评帧计算，点按会在重评帧上越过点按/长按分界被误判成
+        # 重击或长按。正常释放路径重评帧即释放帧，两者相等，行为不变。
+        if (
+            session.physical_state is InputPhysicalState.RELEASED
+            and session.released_frame is not None
+        ):
+            held_frames = session.released_frame - session.press_frame
+        else:
+            held_frames = frame - session.press_frame
         return InputSessionView(
             session_id=session.session_id,
             key=session.key,
             trigger=trigger,
             press_frame=session.press_frame,
             current_frame=frame,
-            held_frames=frame - session.press_frame,
+            held_frames=held_frames,
             physical_state=session.physical_state,
             owner=session.owner,
             bound_instance=self._instance_by_id(session.bound_instance_id)
@@ -321,27 +385,172 @@ class ActionManager(FrameUpdatable):
         session: RuntimeInputSession,
         result: ActionInterpretationResult,
         frame: int,
+        trigger: ActionInterpretationTrigger,
     ) -> None:
         if result.kind is ActionInterpretationKind.WAIT:
             return
+        if result.kind is ActionInterpretationKind.DEFER:
+            self._defer_session(
+                context,
+                session,
+                trigger=trigger,
+                frame=frame,
+                reason=result.reason or "",
+            )
+            return
         if result.kind is ActionInterpretationKind.REJECT:
-            self._apply_session_policy(session, result.session_policy, result.reason)
+            self._finalize_session(
+                context,
+                session,
+                result.session_policy,
+                result.reason,
+                frame,
+                outcome="rejected",
+            )
             return
         if result.kind is ActionInterpretationKind.START_ACTION:
             if result.prepared_action is None:
-                self._apply_session_policy(session, InputSessionPolicy.DETACH, "missing_action")
+                self._finalize_session(
+                    context,
+                    session,
+                    InputSessionPolicy.DETACH,
+                    "missing_action",
+                    frame,
+                    outcome="rejected",
+                )
                 return
             decision = self._start_prepared_action(context, result.prepared_action, frame)
+            if decision.queued:
+                # 锁冲突且所有冲突实例允许排队：会话转入缓冲，无视 continue_on_reject。
+                self._defer_session(
+                    context,
+                    session,
+                    trigger=trigger,
+                    frame=frame,
+                    reason="lock_conflict_queued",
+                )
+                return
             if decision.accepted and result.prepared_action.bind_session_on_accept:
                 session.bound_instance_id = decision.created_instance_id
             if decision.accepted or not result.prepared_action.continue_on_reject:
-                self._apply_session_policy(session, result.session_policy, result.reason)
+                self._finalize_session(
+                    context,
+                    session,
+                    result.session_policy,
+                    result.reason,
+                    frame,
+                    outcome="consumed" if decision.accepted else "rejected",
+                    instance_id=decision.created_instance_id if decision.accepted else None,
+                )
             return
         if result.control_request is None:
-            self._apply_session_policy(session, InputSessionPolicy.DETACH, "missing_control")
+            self._finalize_session(
+                context,
+                session,
+                InputSessionPolicy.DETACH,
+                "missing_control",
+                frame,
+                outcome="rejected",
+            )
             return
         self._control_action(context, result.control_request, frame)
-        self._apply_session_policy(session, result.session_policy, result.reason)
+        self._finalize_session(
+            context,
+            session,
+            result.session_policy,
+            result.reason,
+            frame,
+            outcome="consumed",
+        )
+
+    def _defer_session(
+        self,
+        context: SimulationContext,
+        session: RuntimeInputSession,
+        *,
+        trigger: ActionInterpretationTrigger,
+        frame: int,
+        reason: str,
+    ) -> None:
+        """把会话放入缓冲；首次进入时记录缓冲帧与原触发并发事件。"""
+
+        if session.session_id not in self._deferred_session_ids:
+            self._deferred_session_ids.append(session.session_id)
+        if session.deferred_since_frame is not None:
+            return
+        session.deferred_since_frame = frame
+        session.deferred_trigger = trigger
+        context.events.publish(
+            GameEvent(
+                EventType.INPUT_SESSION_DEFERRED,
+                frame=frame,
+                source=self,
+                payload=InputSessionDeferredPayload(
+                    session_id=session.session_id,
+                    key=session.key,
+                    trigger=trigger.value,
+                    frame=frame,
+                    reason=reason,
+                ),
+            )
+        )
+
+    def _finalize_session(
+        self,
+        context: SimulationContext,
+        session: RuntimeInputSession,
+        policy: InputSessionPolicy,
+        reason: str | None,
+        frame: int,
+        *,
+        outcome: str,
+        instance_id: int | None = None,
+    ) -> None:
+        """应用会话策略；若会话终结则出清缓冲并发布 ``INPUT_SESSION_RESOLVED``。"""
+
+        self._apply_session_policy(session, policy, reason)
+        if session.control_state is InputControlState.LISTENING:
+            return
+        self._remove_deferred(session.session_id)
+        self._publish_session_resolved(
+            context,
+            session,
+            outcome=outcome,
+            frame=frame,
+            reason=reason,
+            instance_id=instance_id,
+        )
+
+    def _remove_deferred(self, session_id: int) -> None:
+        if session_id in self._deferred_session_ids:
+            self._deferred_session_ids.remove(session_id)
+
+    def _publish_session_resolved(
+        self,
+        context: SimulationContext,
+        session: RuntimeInputSession,
+        *,
+        outcome: str,
+        frame: int,
+        reason: str | None,
+        instance_id: int | None = None,
+    ) -> None:
+        context.events.publish(
+            GameEvent(
+                EventType.INPUT_SESSION_RESOLVED,
+                frame=frame,
+                source=self,
+                payload=InputSessionResolvedPayload(
+                    session_id=session.session_id,
+                    key=session.key,
+                    outcome=outcome,
+                    frame=frame,
+                    buffered_at_frame=session.deferred_since_frame,
+                    reason=reason,
+                    instance_id=instance_id,
+                ),
+            )
+        )
 
     def _start_prepared_action(
         self,
@@ -381,6 +590,13 @@ class ActionManager(FrameUpdatable):
                 self._can_interrupt(instance, prepared.interrupt_kind, frame)
                 for instance in conflicts
             ):
+                # 冲突不可中断：仅当所有冲突实例都声明 cancel_policy=queue_new
+                # 时把请求标记为挂起（由调用方放入缓冲等待重评）；混合策略按
+                # 保守处理，维持现状拒绝。
+                all_queue_new = all(
+                    instance.action.admission_policy.interrupt_policy.cancel_policy == "queue_new"
+                    for instance in conflicts
+                )
                 return self._record_decision(
                     ActionDecision(
                         request_id=request_id,
@@ -389,6 +605,7 @@ class ActionManager(FrameUpdatable):
                         frame=frame,
                         action_key=prepared.action_key,
                         reject_reason=ActionDecisionRejectReason.LOCK_CONFLICT,
+                        queued=all_queue_new,
                     )
                 )
             for instance in conflicts:
@@ -530,6 +747,8 @@ class ActionManager(FrameUpdatable):
                     self.cancel_sessions_for_owner(
                         ActionOwnerRef.character(previous_slot),
                         reason="character_switch",
+                        context=context,
+                        frame=frame,
                     )
         if result.lifecycle_directive is ActionLifecycleDirective.FINISH:
             finish_result = instance.action.on_finish(
@@ -579,7 +798,20 @@ class ActionManager(FrameUpdatable):
                 )
             )
 
-    def cancel_sessions_for_owner(self, owner: ActionOwnerRef, *, reason: str) -> None:
+    def cancel_sessions_for_owner(
+        self,
+        owner: ActionOwnerRef,
+        *,
+        reason: str,
+        context: SimulationContext | None = None,
+        frame: int | None = None,
+    ) -> None:
+        """取消归属该 owner 的监听中会话（切人等场景）。
+
+        提供 ``context`` / ``frame`` 时同步发布 ``INPUT_SESSION_RESOLVED``
+        （``outcome=canceled``）；被推迟会话一并出清缓冲。
+        """
+
         for session in self._sessions.values():
             if session.owner != owner:
                 continue
@@ -587,6 +819,16 @@ class ActionManager(FrameUpdatable):
                 continue
             session.control_state = InputControlState.CANCELED
             session.cancel_reason = reason
+            session.terminal_reason = reason
+            self._remove_deferred(session.session_id)
+            if context is not None and frame is not None:
+                self._publish_session_resolved(
+                    context,
+                    session,
+                    outcome="canceled",
+                    frame=frame,
+                    reason=reason,
+                )
 
     def _apply_session_policy(
         self,
@@ -596,6 +838,8 @@ class ActionManager(FrameUpdatable):
     ) -> None:
         if policy is InputSessionPolicy.KEEP_LISTENING:
             return
+        # 终局原因统一落会话字段：DETACH 与 CANCEL 都记录文案，供事件与诊断复盘。
+        session.terminal_reason = reason
         if policy is InputSessionPolicy.DETACH:
             session.control_state = InputControlState.DETACHED
             return

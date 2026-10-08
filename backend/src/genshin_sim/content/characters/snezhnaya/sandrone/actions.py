@@ -63,6 +63,10 @@ from genshin_sim.content.generic.timed_action import (
     TimedActionSpec,
     build_timed_actions,
 )
+from genshin_sim.content.generic.transitions import (
+    TransitionVerdict,
+    evaluate_transition,
+)
 from genshin_sim.content.state_container import (
     StateContainerNotFoundError,
     StatePatchRequest,
@@ -101,8 +105,7 @@ class SandroneInterpreterError(RuntimeError):
 
 
 class SandroneActionInterpreter:
-    """按已确认帧表解释桑多涅动作输入。
-    """
+    """按已确认帧表解释桑多涅动作输入。"""
 
     def __init__(
         self,
@@ -178,14 +181,18 @@ class SandroneActionInterpreter:
             if rejection is not None:
                 return ActionInterpretationResult.reject(rejection)
 
-        rejection = self._transition_rejection(
+        # 衔接判定用当前解释帧（重评路径即为重评帧）：未到最早衔接帧由解释器
+        # 交管理器缓冲，查无衔接数据仍为终局拒绝。
+        verdict = self._transition_verdict(
             input_kind,
-            session.release_frame,
+            session.current_frame,
             last_action_key,
             last_action_start_frame,
         )
-        if rejection is not None:
-            return ActionInterpretationResult.reject(rejection)
+        if verdict.before_earliest:
+            return ActionInterpretationResult.defer(verdict.reject_message())
+        if verdict.missing_data:
+            return ActionInterpretationResult.reject(verdict.reject_message())
 
         action = self._select_action(input_kind, last_action_key, height)
         owner_ref = f"character:slot_{slot}"
@@ -215,7 +222,7 @@ class SandroneActionInterpreter:
             frame=session.current_frame,
             session_id=session.session_id,
             action=action,
-            start_frame=session.release_frame,
+            start_frame=session.current_frame,
         )
         return ActionInterpretationResult.start(
             PreparedAction(
@@ -571,8 +578,7 @@ class SandroneActionInterpreter:
         frame: int,
         session_id: int,
     ) -> int:
-        """辉映下施放爆发：消费改进战术并返回被清除的层数（P4）。
-        """
+        """辉映下施放爆发：消费改进战术并返回被清除的层数（P4）。"""
 
         if self._p4 is None or self._tactics_definition_key is None:
             raise SandroneInterpreterError("P4 未解锁时不应消费改进战术")
@@ -670,26 +676,23 @@ class SandroneActionInterpreter:
             )
         )
 
-    def _transition_rejection(
+    def _transition_verdict(
         self,
         input_kind: str,
         frame: int,
         last_action_key: str,
         last_action_start_frame: int,
-    ) -> str | None:
-        if not last_action_key:
-            return None
-        previous = self._action_table[last_action_key]
-        transition_frame = previous.transitions.get(input_kind)
-        if transition_frame is None:
-            return f"桑多涅动作缺少 {previous.action_key} -> {input_kind} 的衔接数据"
-        earliest_frame = last_action_start_frame + transition_frame
-        if frame < earliest_frame:
-            return (
-                f"桑多涅动作 {previous.action_key} -> {input_kind} "
-                f"最早可在第 {earliest_frame} 帧衔接"
-            )
-        return None
+    ) -> TransitionVerdict:
+        """按桑多涅动作表判定衔接三态（共享 generic 判定）。"""
+
+        return evaluate_transition(
+            action_table=self._action_table,
+            display_name="桑多涅",
+            prev_action_key=last_action_key,
+            input_kind=input_kind,
+            frame=frame,
+            prev_start_frame=last_action_start_frame,
+        )
 
     def _select_action(
         self,

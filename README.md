@@ -39,7 +39,7 @@ CLI 入口为 `genshin-sim`，所有能力通过 `application/` 公开。典型�
 
 ```powershell
 uv run genshin-sim project init
-uv run genshin-sim assets build --manifest data/assets/manifests/project_amber_yatta_full.json
+uv run genshin-sim assets build --manifest data/assets/manifests/project_amber_yatta.json
 uv run genshin-sim input validate data/inputs/barbara_demo.json
 uv run genshin-sim run data/inputs/barbara_demo.json
 uv run genshin-sim results list

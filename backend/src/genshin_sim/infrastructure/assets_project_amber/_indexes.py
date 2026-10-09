@@ -38,6 +38,10 @@ def _build_characters(
             if talent.get("type") != 1:
                 continue
             cost = talent.get("cost")
+            if cost is None:
+                # 源站对不消耗元素能量的爆发（如玛薇卡、丝柯克）写作 null 或省略该字段，按 0 处理。
+                costs.append(0.0)
+                continue
             if isinstance(cost, bool) or not isinstance(cost, int | float):
                 raise AssetValidationError(
                     f"avatar/{source_id}.talent[{talent_key}].cost 必须是数值"

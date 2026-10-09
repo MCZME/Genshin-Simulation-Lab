@@ -198,6 +198,24 @@ def test_build_asset_manifest_rejects_characters_without_burst_cost_source(tmp_p
         build_asset_manifest_from_project_amber_cache(cache_dir, manifest_path)
 
 
+def test_build_asset_manifest_treats_null_burst_cost_as_zero(tmp_path):
+    cache_dir = tmp_path / "cache"
+    manifest_path = tmp_path / "manifest.json"
+    _write_project_amber_cache(cache_dir, include_details=True)
+
+    detail_path = cache_dir / "avatar" / "10000002.json"
+    payload = json.loads(detail_path.read_text(encoding="utf-8"))
+    for talent in payload["data"]["talent"].values():
+        if talent.get("type") == 1:
+            talent["cost"] = None
+    detail_path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+
+    build_asset_manifest_from_project_amber_cache(cache_dir, manifest_path)
+
+    manifest = load_asset_manifest(manifest_path)
+    assert manifest.characters[0].burst_energy_cost == 0.0
+
+
 def test_build_asset_manifest_reports_missing_baseline(tmp_path):
     cache_dir = tmp_path / "cache"
     manifest_path = tmp_path / "manifest.json"

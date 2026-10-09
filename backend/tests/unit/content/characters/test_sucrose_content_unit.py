@@ -1,8 +1,8 @@
 """砂糖内容单元装配单元的接线校验。
 
 不做仿真的部分在此锁定：内容单元身份、动作集合形状、下落攻击的通用接管、
-影响工厂覆盖面、宿主状态 schema 与 S2 的冷却 / 产球切片。倍率数值取合成值，
-只验证接线。
+影响工厂覆盖面、宿主状态 schema 与 S2 / S3 的冷却 / 产球 / 创建物切片。
+倍率数值取合成值，只验证接线。
 """
 
 from __future__ import annotations
@@ -18,6 +18,8 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_CHARACTER_HANDLER_KEY,
     SUCROSE_CHARGED_ATTACK_ACTION_KEY,
     SUCROSE_CONTENT_VERSION,
+    SUCROSE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
+    SUCROSE_ELEMENTAL_BURST_COOLDOWN_FRAMES,
     SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
     SUCROSE_ELEMENTAL_SKILL_COOLDOWN_FRAMES,
     SUCROSE_HIT_IMPACT_KEYS,
@@ -26,16 +28,18 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_PLUNGE_ACTION_KEY,
     SUCROSE_PLUNGE_COLLISION_IMPACT_KEY,
     SUCROSE_PLUNGE_LANDING_IMPACT_KEY,
+    SUCROSE_SPIRIT_OBJECT_KEY,
     SUCROSE_STATE_LAST_PARTICLE_FRAME,
 )
 from genshin_sim.content.characters.mondstadt.sucrose.hooks import SucroseParticleHook
+from genshin_sim.content.characters.mondstadt.sucrose.spirit import SucroseSpiritType
 from genshin_sim.content.generic.chain_state import (
     CHAIN_STATE_LAST_ACTION_KEY,
     CHAIN_STATE_LAST_START_FRAME,
 )
 from genshin_sim.content.registries import CharacterContentUnitRequest
 from genshin_sim.core.actions import FallPlungeAction
-from genshin_sim.core.systems.cooldown import CooldownSubjectRef
+from genshin_sim.core.systems.cooldown import AbilityKind, CooldownSubjectRef
 from tests.helpers import sucrose as sucrose_helpers
 
 
@@ -49,6 +53,16 @@ def _content_unit():
             talent_scalings=sucrose_helpers.minimal_sucrose_scaling_entries(),
         )
     )
+
+
+def _cooldown_definition(unit, ability_key: str):
+    matched = [
+        definition
+        for definition in unit.cooldown_definitions
+        if definition.key.ability_key == ability_key
+    ]
+    assert len(matched) == 1, ability_key
+    return matched[0]
 
 
 def test_content_unit_identity_and_version():
@@ -98,21 +112,32 @@ def test_impact_factories_cover_all_sucrose_hit_keys():
 
 
 def test_content_unit_declares_skill_cooldown_and_particle_hook():
-    """S2 切片：元素战技冷却定义（15s / 900 帧）+ 产球钩子；ICD / 创建物仍为空。
-
-    ICD 与创建物随 S3（元素爆发 + 染色）接入。
-    """
+    """S2 切片：元素战技冷却定义（15s / 900 帧）+ 产球钩子；ICD 仍为空。"""
 
     unit = _content_unit()
-    assert len(unit.cooldown_definitions) == 1
-    definition = unit.cooldown_definitions[0]
+    definition = _cooldown_definition(unit, SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY)
     assert definition.key.subject == CooldownSubjectRef.character("character:slot_1")
-    assert definition.key.ability_key == SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY
     assert definition.base_duration_frames == SUCROSE_ELEMENTAL_SKILL_COOLDOWN_FRAMES
     assert definition.max_charges == 1
     assert unit.aura_icd_definitions == ()
-    assert unit.created_object_types == {}
     assert len(unit.event_hooks) == 1
     hook = unit.event_hooks[0]
     assert isinstance(hook, SucroseParticleHook)
     assert hook.owner_ref == "character:slot_1"
+
+
+def test_content_unit_declares_burst_cooldown_and_spirit_object_type():
+    """S3 切片：元素爆发冷却定义（20s / 1200 帧）+ 大型风灵创建实体类型注册。"""
+
+    unit = _content_unit()
+    assert len(unit.cooldown_definitions) == 2
+    definition = _cooldown_definition(unit, SUCROSE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY)
+    assert definition.key.subject == CooldownSubjectRef.character("character:slot_1")
+    assert definition.base_duration_frames == SUCROSE_ELEMENTAL_BURST_COOLDOWN_FRAMES
+    assert definition.ability_kind is AbilityKind.ELEMENTAL_BURST
+    assert definition.max_charges == 1
+
+    assert set(unit.created_object_types) == {SUCROSE_SPIRIT_OBJECT_KEY}
+    spirit_type = unit.created_object_types[SUCROSE_SPIRIT_OBJECT_KEY]
+    assert isinstance(spirit_type, SucroseSpiritType)
+    assert spirit_type.type_key == SUCROSE_SPIRIT_OBJECT_KEY

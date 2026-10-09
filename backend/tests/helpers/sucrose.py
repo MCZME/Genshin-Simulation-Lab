@@ -32,8 +32,8 @@ SUCROSE_BASE_HP = 10_000.0
 SUCROSE_BASE_ATK = 200.0
 SUCROSE_BASE_DEF = 600.0
 
-# 各能力的合成倍率：普攻四段互不相同，用于逐段接线校验；重击/下落/战技各取
-# 一个独立的合成值，用于验证「资产倍率行 -> 命中契约」的接线。
+# 各能力的合成倍率：普攻四段互不相同，用于逐段接线校验；重击/下落/战技/爆发
+# 各取一个独立的合成值，用于验证「资产倍率行 -> 命中契约」的接线。
 SUCROSE_FIXTURE_RATIOS = {
     "一段伤害": 1.0,
     "二段伤害": 2.0,
@@ -43,6 +43,8 @@ SUCROSE_FIXTURE_RATIOS = {
     "下坠期间伤害": 6.0,
     "低空/高空坠地冲击伤害": 7.0,
     "技能伤害": 8.0,
+    "持续伤害": 9.0,
+    "附加元素伤害": 10.0,
 }
 
 
@@ -89,8 +91,8 @@ def write_sucrose_asset_database(db_path: Path) -> Path:
 def minimal_sucrose_scaling_entries() -> tuple[TalentScalingEntry, ...]:
     """返回砂糖内容工厂接线所需的最小倍率行。
 
-    分量形状与真实资产一致（普攻四段/重击/战技/下坠各 1 分量、落地冲击 2 分量），
-    数值取合成倍率表；等级区间取 1–15 覆盖天赋等级解析。
+    分量形状与真实资产一致（普攻四段/重击/战技/爆发两行各 1 分量、落地冲击
+    2 分量），数值取合成倍率表；等级区间取 1–15 覆盖天赋等级解析。
     """
 
     specs = (
@@ -106,6 +108,8 @@ def minimal_sucrose_scaling_entries() -> tuple[TalentScalingEntry, ...]:
             (SUCROSE_FIXTURE_RATIOS["低空/高空坠地冲击伤害"],) * 2,
         ),
         ("elemental_skill", "技能伤害", (SUCROSE_FIXTURE_RATIOS["技能伤害"],)),
+        ("elemental_burst", "持续伤害", (SUCROSE_FIXTURE_RATIOS["持续伤害"],)),
+        ("elemental_burst", "附加元素伤害", (SUCROSE_FIXTURE_RATIOS["附加元素伤害"],)),
     )
     return tuple(
         TalentScalingEntry(
@@ -153,8 +157,13 @@ def sucrose_input_payload(
     input_trace: list[dict[str, object]] | None = None,
     max_frames: int = 60,
     targets: tuple[dict[str, object], ...] | None = None,
+    full_energy: bool = False,
 ) -> dict[str, object]:
-    """砂糖单人集成测试配置。缺省为一次普攻一段。"""
+    """砂糖单人集成测试配置。缺省为一次普攻一段。
+
+    ``full_energy`` 打开 ``start_with_full_energy`` 规则：元素爆发有 80 点爆发
+    能量门槛，缺省零能量下施放会被公共条件端口拒绝。
+    """
 
     if input_trace is None:
         input_trace = [
@@ -183,7 +192,7 @@ def sucrose_input_payload(
         ],
         "scene": {"targets": list(targets)} if targets else single_target_scene(),
         "input_trace": input_trace,
-        "rules": {"active": []},
+        "rules": {"active": ["start_with_full_energy"] if full_energy else []},
         "run_options": {"max_frames": max_frames},
     }
 

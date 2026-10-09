@@ -11,6 +11,10 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_DAMAGE_ELEMENT,
     SUCROSE_DAMAGE_ICD_SEQUENCE_KEY,
     SUCROSE_DAMAGE_ICD_TAG_KEY,
+    SUCROSE_ELEMENTAL_BURST_AOE_OFFSET,
+    SUCROSE_ELEMENTAL_BURST_AOE_RADIUS,
+    SUCROSE_ELEMENTAL_BURST_AOE_SHAPE,
+    SUCROSE_ELEMENTAL_BURST_MAIN_ATTACK_TAG,
     SUCROSE_ELEMENTAL_SKILL_AOE_OFFSET,
     SUCROSE_ELEMENTAL_SKILL_AOE_RADIUS,
     SUCROSE_ELEMENTAL_SKILL_AOE_SHAPE,
@@ -20,12 +24,16 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_NORMAL_ATTACK_ACTION_KEYS,
     SUCROSE_PLUNGE_COLLISION_IMPACT_KEY,
     SUCROSE_PLUNGE_LANDING_IMPACT_KEY,
+    SUCROSE_SPIRIT_ABSORBED_TICK_IMPACT_KEY,
+    SUCROSE_SPIRIT_ANEMO_TICK_IMPACT_KEY,
 )
 from genshin_sim.content.characters.mondstadt.sucrose.impacts import (
     compile_charged_attack_damage_spec,
     compile_elemental_skill_damage_spec,
     compile_normal_attack_damage_specs,
     compile_plunge_damage_specs,
+    compile_spirit_absorbed_damage_channel,
+    compile_spirit_anemo_damage_spec,
 )
 from genshin_sim.content.generic.plunge import PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE
 from genshin_sim.content.generic.talents import index_talent_scalings
@@ -92,6 +100,44 @@ def test_elemental_skill_spec_uses_cylinder_and_no_icd():
     assert spec.area.shape == SUCROSE_ELEMENTAL_SKILL_AOE_SHAPE
     assert spec.area.radius == SUCROSE_ELEMENTAL_SKILL_AOE_RADIUS
     assert spec.area.local_offset_xz == SUCROSE_ELEMENTAL_SKILL_AOE_OFFSET
+
+
+def test_spirit_anemo_spec_uses_burst_cylinder_and_no_icd():
+    """大型风灵风伤契约：爆发圆柱 r=8、攻击标签「元素爆发」、无 ICD。"""
+
+    spec = compile_spirit_anemo_damage_spec(_character_key(), _entries(), 1)
+    assert spec.impact_ref.startswith(SUCROSE_SPIRIT_ANEMO_TICK_IMPACT_KEY)
+    assert spec.main_attack_tag == SUCROSE_ELEMENTAL_BURST_MAIN_ATTACK_TAG
+    assert spec.element is SUCROSE_DAMAGE_ELEMENT
+    assert not spec.elemental_amount.is_zero
+    assert spec.icd_tag_key is None
+    assert spec.icd_sequence_key is None
+    assert spec.display_name == "持续伤害"
+    assert spec.area is not None
+    assert spec.area.shape == SUCROSE_ELEMENTAL_BURST_AOE_SHAPE
+    assert spec.area.radius == SUCROSE_ELEMENTAL_BURST_AOE_RADIUS
+    assert spec.area.local_offset_xz == SUCROSE_ELEMENTAL_BURST_AOE_OFFSET
+
+
+def test_spirit_absorbed_channel_builds_element_at_runtime():
+    """染色通道：元素由运行期补全，其余（区域 / 标签 / 附着口径）与风伤一致。"""
+
+    channel = compile_spirit_absorbed_damage_channel(_character_key(), _entries(), 1)
+    assert channel.impact_key == SUCROSE_SPIRIT_ABSORBED_TICK_IMPACT_KEY
+    assert channel.main_attack_tag == SUCROSE_ELEMENTAL_BURST_MAIN_ATTACK_TAG
+    assert channel.display_name == "附加元素伤害"
+
+    anemo = compile_spirit_anemo_damage_spec(_character_key(), _entries(), 1)
+    spec = channel.build(Element.PYRO, impact_ref="tick:1:139:absorbed:damage")
+    assert spec.element is Element.PYRO
+    assert spec.main_attack_tag == anemo.main_attack_tag
+    assert spec.area == anemo.area
+    assert spec.icd_tag_key is None
+    assert spec.icd_sequence_key is None
+    assert (
+        spec.scaling_terms[0].coefficient
+        == (sucrose_helpers.SUCROSE_FIXTURE_RATIOS["附加元素伤害"])
+    )
 
 
 def test_plunge_specs_are_physical_and_follow_catalyst_generic_data():

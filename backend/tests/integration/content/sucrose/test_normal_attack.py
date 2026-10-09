@@ -74,16 +74,19 @@ def test_normal_attack_combo_restarts_at_first_segment_after_last(sucrose_assemb
     ]
 
 
-def test_unmapped_input_key_starts_nothing(sucrose_assembled):
-    """S2 已开放普攻 / 重击 / 元素战技 / 跳跃：元素爆发输入键尚未映射，不产生任何动作。
+def test_unsupported_input_key_starts_nothing(sucrose_assembled):
+    """砂糖输入映射以外的按键（切人键 keyboard.1）不产生任何砂糖动作。
 
-    本条是分期边界保护——S3 接入元素爆发输入映射时，本用例需要随期更新。
+    输入映射是封闭集合：S3 起砂糖已开放普攻 / 重击 / 元素战技 / 元素爆发 / 跳跃，
+    其余按键（如队伍切换键）在解释器入口即被拒绝。S2 期本用例用 ``keyboard.q``
+    占位（当时元素爆发尚未映射），S3 接入后改用切人键，分期边界不变。
     """
 
     assembled = sucrose_assembled(
-        input_trace=sucrose_helpers.press_release(1, "keyboard.q"),
+        input_trace=sucrose_helpers.press_release(1, "keyboard.1"),
         max_frames=60,
     )
     assembled.simulator.run()
 
     assert assembled.damage_handler.records == ()
+    assert assembled.impact_runtime.created_object_records == ()

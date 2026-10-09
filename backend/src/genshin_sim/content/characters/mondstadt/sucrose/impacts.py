@@ -6,13 +6,14 @@
 
 S1 覆盖普攻四段、重击与下落攻击（下落攻击数据走武器类型通用资料表
 ``generic/plunge.py`` 的 catalyst 档，实施规划 §8 第 7 项）；S2 追加元素战技
-单次范围风伤（圆柱 r=6、无 ICD）。
+单次范围风伤（圆柱 r=6、无 ICD）；S3 追加元素爆发的创建 / 能量花费展开与
+大型风灵的两个伤害通道（持续风伤 + 染色伤害）。
 """
 
 from __future__ import annotations
 
 from collections.abc import Mapping
-from dataclasses import replace
+from dataclasses import dataclass, replace
 
 from genshin_sim.assets.models import TalentScalingEntry
 from genshin_sim.content.characters.mondstadt.sucrose.data import (
@@ -33,6 +34,11 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_DAMAGE_ICD_TAG_KEY,
     SUCROSE_DAMAGE_RANGE_TYPE,
     SUCROSE_DAMAGE_STRIKE_TYPE,
+    SUCROSE_ELEMENTAL_BURST_AOE_OFFSET,
+    SUCROSE_ELEMENTAL_BURST_AOE_RADIUS,
+    SUCROSE_ELEMENTAL_BURST_AOE_SHAPE,
+    SUCROSE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY,
+    SUCROSE_ELEMENTAL_BURST_MAIN_ATTACK_TAG,
     SUCROSE_ELEMENTAL_SKILL_AOE_OFFSET,
     SUCROSE_ELEMENTAL_SKILL_AOE_RADIUS,
     SUCROSE_ELEMENTAL_SKILL_AOE_SHAPE,
@@ -42,6 +48,11 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_NORMAL_ATTACK_DAMAGE_DATA,
     SUCROSE_PLUNGE_COLLISION_IMPACT_KEY,
     SUCROSE_PLUNGE_LANDING_IMPACT_KEY,
+    SUCROSE_SPIRIT_ABSORBED_TICK_IMPACT_KEY,
+    SUCROSE_SPIRIT_ANEMO_TICK_IMPACT_KEY,
+    SUCROSE_SPIRIT_CREATE_IMPACT_KEY,
+    SUCROSE_SPIRIT_DURATION_FRAMES,
+    SUCROSE_SPIRIT_OBJECT_KEY,
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.generic.plunge import PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE
@@ -57,6 +68,7 @@ from genshin_sim.core.impacts import (
 )
 from genshin_sim.core.space import ImpactAreaSpec, Vector3
 from genshin_sim.core.space.space import ACTIVE_CHARACTER_ENTITY_ID
+from genshin_sim.core.systems.aura import AuraStrength
 from genshin_sim.core.systems.damage import DamageScalingTerm
 
 _SUCROSE_NORMAL_ATTACK_DAMAGE_LABELS = (
@@ -67,8 +79,25 @@ _SUCROSE_NORMAL_ATTACK_DAMAGE_LABELS = (
 )
 _SUCROSE_CHARGED_ATTACK_DAMAGE_LABEL = "重击伤害"
 _SUCROSE_SKILL_DAMAGE_LABEL = "技能伤害"
+_SUCROSE_BURST_ANEMO_DAMAGE_LABEL = "持续伤害"
+_SUCROSE_BURST_ABSORBED_DAMAGE_LABEL = "附加元素伤害"
 _SUCROSE_PLUNGE_COLLISION_DAMAGE_LABEL = "下坠期间伤害"
 _SUCROSE_PLUNGE_LANDING_DAMAGE_LABEL = "低空/高空坠地冲击伤害"
+
+
+def _scaling_term(
+    entry: TalentScalingEntry,
+    talent_level: int,
+) -> DamageScalingTerm:
+    """把资产倍率条目的第一分量编译为攻击力系数项。"""
+
+    compiled = ScalingCompiler.compile_entry(entry, talent_level)
+    component = compiled.components[0]
+    return DamageScalingTerm(
+        component_key=component.component_key,
+        attribute_key=STAT_ATK_TOTAL,
+        coefficient=component.value,
+    )
 
 
 def compile_normal_attack_damage_specs(
@@ -209,6 +238,114 @@ def compile_elemental_skill_damage_spec(
     )
 
 
+@dataclass(frozen=True, slots=True)
+class SucroseAbsorbedDamageChannel:
+    """染色伤害通道：除元素外的伤害契约字段在编译期固化。
+
+    染色伤害的元素只能在运行期由大型风灵的染色判定决定（实施规划 §11.3），故
+    不在编译期固化；本通道承载不变量（倍率、区域、攻击标签、附着与打击口径），
+    供创建实体类型在出伤帧构造 ``DamageImpactSpec``。染色伤害与风伤同帧、复用
+    爆发的圆柱区域与目标集合（不单独索敌）。
+    """
+
+    impact_key: str
+    main_attack_tag: str
+    display_name: str
+    scaling_term: DamageScalingTerm
+    area: ImpactAreaSpec
+    strike_type: StrikeType
+    range_type: str
+    elemental_strength: AuraStrength
+    elemental_amount: AuraAmount
+
+    def build(self, element: Element, *, impact_ref: str) -> DamageImpactSpec:
+        """按已固定的吸收元素构造一段染色伤害契约。"""
+
+        if not isinstance(element, Element):
+            raise ContentUnitValidationError("染色伤害元素必须是 Element")
+        return DamageImpactSpec(
+            impact_ref=impact_ref,
+            main_attack_tag=self.main_attack_tag,
+            element=element,
+            scaling_terms=(self.scaling_term,),
+            can_crit=True,
+            additional_attack_tags=SUCROSE_DAMAGE_ADDITIONAL_ATTACK_TAGS,
+            strike_type=self.strike_type,
+            range_type=self.range_type,
+            elemental_strength=self.elemental_strength,
+            elemental_amount=self.elemental_amount,
+            display_name=self.display_name,
+            area=self.area,
+        )
+
+
+def _burst_aoe_area() -> ImpactAreaSpec:
+    """元素爆发两行共用的区域（命中表 §6.2：圆柱 r=8、偏移 (0, -2.5, 0)）。"""
+
+    return ImpactAreaSpec(
+        shape=SUCROSE_ELEMENTAL_BURST_AOE_SHAPE,
+        radius=SUCROSE_ELEMENTAL_BURST_AOE_RADIUS,
+        local_offset_xz=SUCROSE_ELEMENTAL_BURST_AOE_OFFSET,
+    )
+
+
+def compile_spirit_anemo_damage_spec(
+    character_key: str,
+    entries_by_key: dict[tuple[str, str, str], TalentScalingEntry],
+    talent_level: int,
+) -> DamageImpactSpec:
+    """编译大型风灵持续风伤契约（圆柱 r=8、无 ICD）。"""
+
+    entry = entries_by_key.get(
+        (character_key, "elemental_burst", _SUCROSE_BURST_ANEMO_DAMAGE_LABEL)
+    )
+    if entry is None:
+        raise ContentUnitValidationError(
+            f"砂糖元素爆发缺少资产倍率条目：{_SUCROSE_BURST_ANEMO_DAMAGE_LABEL}"
+        )
+    return DamageImpactSpec(
+        impact_ref=f"{SUCROSE_SPIRIT_ANEMO_TICK_IMPACT_KEY}:{talent_level}",
+        main_attack_tag=SUCROSE_ELEMENTAL_BURST_MAIN_ATTACK_TAG,
+        element=SUCROSE_DAMAGE_ELEMENT,
+        scaling_terms=(_scaling_term(entry, talent_level),),
+        can_crit=True,
+        additional_attack_tags=SUCROSE_DAMAGE_ADDITIONAL_ATTACK_TAGS,
+        strike_type=SUCROSE_DAMAGE_STRIKE_TYPE,
+        range_type=SUCROSE_DAMAGE_RANGE_TYPE,
+        elemental_strength=SUCROSE_DAMAGE_ELEMENTAL_STRENGTH,
+        elemental_amount=SUCROSE_DAMAGE_ELEMENTAL_AMOUNT,
+        display_name=_SUCROSE_BURST_ANEMO_DAMAGE_LABEL,
+        area=_burst_aoe_area(),
+    )
+
+
+def compile_spirit_absorbed_damage_channel(
+    character_key: str,
+    entries_by_key: dict[tuple[str, str, str], TalentScalingEntry],
+    talent_level: int,
+) -> SucroseAbsorbedDamageChannel:
+    """编译染色伤害通道（附加元素伤害行；元素由运行期染色判定补全）。"""
+
+    entry = entries_by_key.get(
+        (character_key, "elemental_burst", _SUCROSE_BURST_ABSORBED_DAMAGE_LABEL)
+    )
+    if entry is None:
+        raise ContentUnitValidationError(
+            f"砂糖元素爆发缺少资产倍率条目：{_SUCROSE_BURST_ABSORBED_DAMAGE_LABEL}"
+        )
+    return SucroseAbsorbedDamageChannel(
+        impact_key=SUCROSE_SPIRIT_ABSORBED_TICK_IMPACT_KEY,
+        main_attack_tag=SUCROSE_ELEMENTAL_BURST_MAIN_ATTACK_TAG,
+        display_name=_SUCROSE_BURST_ABSORBED_DAMAGE_LABEL,
+        scaling_term=_scaling_term(entry, talent_level),
+        area=_burst_aoe_area(),
+        strike_type=SUCROSE_DAMAGE_STRIKE_TYPE,
+        range_type=SUCROSE_DAMAGE_RANGE_TYPE,
+        elemental_strength=SUCROSE_DAMAGE_ELEMENTAL_STRENGTH,
+        elemental_amount=SUCROSE_DAMAGE_ELEMENTAL_AMOUNT,
+    )
+
+
 def _compile_plunge_damage_spec(
     impact_key: str,
     component_key: str,
@@ -332,10 +469,12 @@ def compile_plunge_damage_specs(
 
 
 class SucroseActionImpactFactory:
-    """把砂糖动作影响点展开为带伤害契约的 DAMAGE 请求。
+    """把砂糖动作影响点展开为带伤害契约的 DAMAGE / CREATE / ENERGY 请求。
 
     ``damage_specs`` 由内容编译期按资产倍率表生成、按 impact_key 索引；
-    未登记契约的影响点仍展开为无伤害请求（不结算）。
+    未登记契约的影响点仍展开为无伤害请求（不结算）。元素爆发的两个影响点
+    不经伤害分支：创建影响点展开为大型风灵的 ``CREATE_ENTITY``，能量花费点
+    展开为 ``ENERGY`` 的 ``spend_burst``。
     """
 
     def __init__(self, damage_specs: Mapping[str, DamageImpactSpec]) -> None:
@@ -347,6 +486,10 @@ class SucroseActionImpactFactory:
             "handler_key": SUCROSE_CHARACTER_HANDLER_KEY,
             "source_impact_key": context.impact_key,
         }
+        if context.impact_key == SUCROSE_SPIRIT_CREATE_IMPACT_KEY:
+            return (self._spirit_create_request(context, params),)
+        if context.impact_key == SUCROSE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY:
+            return (self._burst_energy_spend_request(context, params),)
         damage_spec = self._damage_specs.get(context.impact_key)
         if damage_spec is None and context.impact_key == SUCROSE_PLUNGE_LANDING_IMPACT_KEY:
             variant = context.params.get("plunge_variant")
@@ -378,4 +521,74 @@ class SucroseActionImpactFactory:
                 params=params,
                 damage_spec=damage_spec,
             ),
+        )
+
+    def _spirit_create_request(
+        self,
+        context: ActionImpactContext,
+        params: Mapping[str, object],
+    ) -> ImpactRequest:
+        """展开大型风灵创建请求（CREATE_ENTITY）。
+
+        风灵在**施放时的角色位置**生成，此后固定在场、不跟随角色（切人 / 离场
+        后继续按拍输出，实施规划 §11.3）；没有空间运行时时落在原点。按拍节奏
+        与染色节奏由类型接管（``spirit.py`` 的 ``build_state`` 声明初始调度）。
+        """
+
+        owner_key = f"character:slot_{context.owner.slot}"
+        position = Vector3()
+        simulation = context.simulation
+        if simulation is not None and simulation.space_runtime is not None:
+            entity = simulation.space_runtime.get_entity(ACTIVE_CHARACTER_ENTITY_ID)
+            if entity is not None:
+                position = entity.position
+        return ImpactRequest(
+            frame=context.frame,
+            kind=ImpactKind.CREATE_ENTITY,
+            impact_key=context.impact_key,
+            owner_slot=context.owner.slot,
+            action_key=context.action_key,
+            source_impact_point_id=context.impact_point_id,
+            target_refs=(),
+            params={
+                **params,
+                "type_key": SUCROSE_SPIRIT_OBJECT_KEY,
+                "duration_frames": SUCROSE_SPIRIT_DURATION_FRAMES,
+                "position": {"x": position.x, "y": position.y, "z": position.z},
+                "owner_key": owner_key,
+                "tags": (SUCROSE_SPIRIT_OBJECT_KEY,),
+                "config": {"entry": context.action_key},
+            },
+        )
+
+    @staticmethod
+    def _burst_energy_spend_request(
+        context: ActionImpactContext,
+        params: Mapping[str, object],
+    ) -> ImpactRequest:
+        """展开元素爆发的能量花费请求（ENERGY spend_burst）。
+
+        花费量不在内容侧维护：由角色资产的爆发能量花费承担（砂糖为 80）。
+        """
+
+        owner_slot = context.owner.slot
+        if owner_slot is None:
+            raise ContentUnitValidationError("砂糖元素爆发缺少角色归属槽位，无法花费能量")
+        return ImpactRequest(
+            frame=context.frame,
+            kind=ImpactKind.ENERGY,
+            impact_key=context.impact_key,
+            owner_slot=owner_slot,
+            action_key=context.action_key,
+            source_impact_point_id=context.impact_point_id,
+            target_refs=(f"character:slot_{owner_slot}",),
+            params={
+                **params,
+                "energy": {
+                    "schema_version": 1,
+                    "operation": "spend_burst",
+                    "action_instance_id": f"action:{context.source_instance_id}",
+                    "tags": (),
+                },
+            },
         )

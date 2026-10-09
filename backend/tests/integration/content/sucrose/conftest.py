@@ -27,6 +27,7 @@ def sucrose_assembled(
         input_trace: list[dict[str, object]] | None = None,
         max_frames: int = 60,
         targets: tuple[dict[str, object], ...] | None = None,
+        full_energy: bool = False,
         payload: dict[str, object] | None = None,
     ) -> AssembledSimulation:
         if payload is None:
@@ -34,6 +35,7 @@ def sucrose_assembled(
                 input_trace=input_trace,
                 max_frames=max_frames,
                 targets=targets,
+                full_energy=full_energy,
             )
         return SimulationAssembler(SQLiteAssetRepository(sucrose_asset_db)).assemble(
             SimulationInput.from_mapping(payload)

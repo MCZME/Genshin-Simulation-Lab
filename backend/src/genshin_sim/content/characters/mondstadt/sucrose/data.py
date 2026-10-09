@@ -2,8 +2,9 @@
 
 数据与解释逻辑分离：``actions.py`` 只保留解释器与动作编译，``content.py``
 只负责内容单元编译。本文件统一承载角色身份键（handler/action/impact）、
-输入映射、帧表与动作表、普攻/重击/战技伤害数据与冷却/产球常量；倍率仍来自
-资产库倍率表，不在本文件维护。
+输入映射、帧表与动作表、普攻/重击/战技/爆发伤害数据、冷却/能量/产球常量，
+以及大型风灵（创建物）与染色机制的实现基线常量；倍率仍来自资产库倍率表，
+不在本文件维护。
 
 **命名口径**：稳定键沿用官方英文名称（资料站 meropide.cn/en/characters/Sucrose）：
 
@@ -24,9 +25,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from genshin_sim.content.generic.timed_action import TimedActionSpec
+from genshin_sim.content.generic.timed_action import TimedActionSpec, TimedImpactPointSpec
 from genshin_sim.core.actions import SearchAreaSpec, TargetingSpec
-from genshin_sim.core.elements import AuraAmount, Element
+from genshin_sim.core.elements import AuraAmount, AuraKind, Element
 from genshin_sim.core.impacts import StrikeType
 from genshin_sim.core.space import Vector3
 from genshin_sim.core.systems.aura import AuraStrength
@@ -65,10 +66,22 @@ SUCROSE_NORMAL_ATTACK_3_IMPACT_KEY = f"{SUCROSE_NORMAL_ATTACK_3_ACTION_KEY}.hit"
 SUCROSE_NORMAL_ATTACK_4_IMPACT_KEY = f"{SUCROSE_NORMAL_ATTACK_4_ACTION_KEY}.hit"
 SUCROSE_CHARGED_ATTACK_IMPACT_KEY = f"{SUCROSE_CHARGED_ATTACK_ACTION_KEY}.hit"
 SUCROSE_ELEMENTAL_SKILL_IMPACT_KEY = f"{SUCROSE_ELEMENTAL_SKILL_ACTION_KEY}.hit"
-SUCROSE_ELEMENTAL_BURST_IMPACT_KEY = f"{SUCROSE_ELEMENTAL_BURST_ACTION_KEY}.hit"
 SUCROSE_JUMP_IMPACT_KEY = f"{SUCROSE_JUMP_ACTION_KEY}.hit"
 SUCROSE_PLUNGE_COLLISION_IMPACT_KEY = f"{SUCROSE_PLUNGE_ACTION_KEY}.collision"
 SUCROSE_PLUNGE_LANDING_IMPACT_KEY = f"{SUCROSE_PLUNGE_ACTION_KEY}.landing"
+
+# 元素爆发本体不产生角色侧命中点（伤害由大型风灵独立按拍产出），故爆发在动作
+# 表上只有两个非伤害影响点：大型风灵创建（创建帧）与能量花费帧。
+SUCROSE_SPIRIT_CREATE_IMPACT_KEY = f"{SUCROSE_CHARACTER_HANDLER_KEY}.spirit.create"
+SUCROSE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY = (
+    f"{SUCROSE_ELEMENTAL_BURST_ACTION_KEY}.energy_spend"
+)
+
+# 大型风灵产出的两个伤害通道影响键：请求由创建物 tick 产出（非动作影响点），
+# 键用于请求识别与审计（奥黛塔舞步同款）。染色通道的风元素伤与染色伤害同帧、
+# 共用同一目标集合。
+SUCROSE_SPIRIT_ANEMO_TICK_IMPACT_KEY = f"{SUCROSE_CHARACTER_HANDLER_KEY}.spirit.anemo_tick"
+SUCROSE_SPIRIT_ABSORBED_TICK_IMPACT_KEY = f"{SUCROSE_CHARACTER_HANDLER_KEY}.spirit.absorbed_tick"
 
 # 产球请求的影响键：请求不是动作影响点产出，而是由产球 hook 产出；键用于
 # 请求识别与审计匹配（奥黛塔同款）。
@@ -84,6 +97,8 @@ SUCROSE_HIT_IMPACT_KEYS = (
     SUCROSE_JUMP_IMPACT_KEY,
     SUCROSE_PLUNGE_COLLISION_IMPACT_KEY,
     SUCROSE_PLUNGE_LANDING_IMPACT_KEY,
+    SUCROSE_SPIRIT_CREATE_IMPACT_KEY,
+    SUCROSE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY,
 )
 
 # --- 输入映射 -------------------------------------------------------------
@@ -94,11 +109,12 @@ ELEMENTAL_SKILL_INPUT = "elemental_skill"
 ELEMENTAL_BURST_INPUT = "elemental_burst"
 JUMP_INPUT = "jump"
 
-# S1 开放普攻 / 重击 / 跳跃；S2 加入元素战技；元素爆发输入在 S3 接入后加入。
+# S1 开放普攻 / 重击 / 跳跃；S2 加入元素战技；S3 加入元素爆发。
 SUCROSE_INPUT_KIND_BY_KEY = {
     "mouse.left": NORMAL_ATTACK_INPUT,
     "mouse.right": CHARGED_ATTACK_INPUT,
     "keyboard.e": ELEMENTAL_SKILL_INPUT,
+    "keyboard.q": ELEMENTAL_BURST_INPUT,
     "keyboard.space": JUMP_INPUT,
 }
 
@@ -185,6 +201,74 @@ SUCROSE_PARTICLE_TRAVEL_FRAMES = 30
 SUCROSE_STATE_LAST_PARTICLE_FRAME = "sucrose_last_particle_frame"
 
 
+# --- 元素爆发伤害数据（维护者命中判定表，实施规划 §6.2 爆发两行） ----------
+#
+# 元素爆发本体不产生角色侧命中点：伤害由大型风灵创建物独立按拍产出
+# （实施规划 §11.3）。两行（元素爆发 / 元素爆发染色）共用同一区域与攻击标签，
+# 染色行不单独索敌（复用风伤的目标集合）。
+
+SUCROSE_ELEMENTAL_BURST_CREATE_FRAME = 17
+SUCROSE_ELEMENTAL_BURST_ENERGY_SPEND_FRAME = 21
+SUCROSE_ELEMENTAL_BURST_MAIN_ATTACK_TAG = "元素爆发"
+SUCROSE_ELEMENTAL_BURST_AOE_SHAPE = "圆柱"
+SUCROSE_ELEMENTAL_BURST_AOE_RADIUS = 8.0
+SUCROSE_ELEMENTAL_BURST_AOE_OFFSET = Vector3(0.0, -2.5, 0.0)
+
+# --- 冷却（元素爆发） ------------------------------------------------------
+#
+# 冷却秒数取资产倍率条目「冷却时间」20s = 1200 帧；CD 起始帧取帧表「CD」列
+# （§4.4）= 18，能量花费帧取「Energy」列 = 21。能量花费量（80）不在内容侧
+# 维护，由角色资产的爆发能量花费承担。
+
+SUCROSE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY = "elemental_burst"
+SUCROSE_ELEMENTAL_BURST_COOLDOWN_FRAMES = 1200
+SUCROSE_ELEMENTAL_BURST_COOLDOWN_START_FRAME = 18
+
+# --- 大型风灵（元素爆发创建物） --------------------------------------------
+#
+# 时序（实施规划 §11.3）：创建帧 17、每 120 帧一拍、共 3 拍（137 / 257 / 377）。
+# 窗口时长取资产倍率条目「持续时间」6s = 360 帧（60fps）；创建物过期判据为
+# ``frame < 创建帧 + 生命周期``（不含端点帧），而第三拍恰好落在窗口端点
+# （创建帧 + 360），故生命周期取窗口 + 1 帧以容纳该拍——这是项目端点判据与
+# 「第三拍落在窗末」的组合结果，不是新的时长取值。风灵与角色解耦：切人 /
+# 离场后继续按拍输出。
+
+SUCROSE_SPIRIT_OBJECT_KEY = "sucrose.large_wind_spirit"
+SUCROSE_SPIRIT_ATTACK_SCHEDULE_KEY = "attack"
+SUCROSE_SPIRIT_PROBE_SCHEDULE_KEY = "probe"
+SUCROSE_SPIRIT_TICK_PERIOD_FRAMES = 120
+SUCROSE_SPIRIT_TICK_COUNT = 3
+SUCROSE_SPIRIT_WINDOW_FRAMES = 360
+SUCROSE_SPIRIT_DURATION_FRAMES = SUCROSE_SPIRIT_WINDOW_FRAMES + 1
+
+# --- 染色机制（判定区 / 节奏 / 优先级） ------------------------------------
+#
+# 判定区为长方体，尺寸按维护者数据的 ``(x, y, z) = (左右, 上下, 前后)`` 口径
+# 接入：项目 X/Z 模型取「左右→width、前后→length」，上下分量被忽略（与攻击盒
+# 命中行同口径）。判定区以风灵自身为原点、跟随风灵。
+#
+# 节奏：风灵存在期间每 18 帧（0.3s）重复探测，首次探到即固定（此后不再探测，
+# 探测调度停机）。判定对象为判定区内**敌人**的元素附着；按 火 > 水 > 雷 > 冰
+# 取靠前者，第 4 档兼容 CRYO 与 FROZEN 两种附着（均对应冰元素伤害）；不实现
+# 资料给出的「抗火」探测逻辑（项目无抗元素），始终未探到则保持纯风伤。
+
+SUCROSE_SPIRIT_PROBE_INTERVAL_FRAMES = 18
+SUCROSE_SPIRIT_PROBE_BOX_LATERAL = 2.5  # x：左右
+SUCROSE_SPIRIT_PROBE_BOX_VERTICAL = 5.0  # y：上下（X/Z 模型忽略）
+SUCROSE_SPIRIT_PROBE_BOX_DEPTH = 2.5  # z：前后
+SUCROSE_SPIRIT_PROBE_BOX_SHAPE = "攻击盒"
+# 攻击盒不使用半径（投影为有向盒），按 D-076 区划口径取 0.0 占位。
+SUCROSE_SPIRIT_PROBE_BOX_RADIUS = 0.0
+
+SUCROSE_SPIRIT_ABSORPTION_PRIORITY = (
+    (AuraKind.PYRO, Element.PYRO),
+    (AuraKind.HYDRO, Element.HYDRO),
+    (AuraKind.ELECTRO, Element.ELECTRO),
+    (AuraKind.CRYO, Element.CRYO),
+    (AuraKind.FROZEN, Element.CRYO),
+)
+
+
 # --- 动作表（帧表来源：实施规划 §4.4） ------------------------------------
 #
 # duration_frames 取该行「普攻」列（动作自然结束帧）；transitions 取各输入列
@@ -252,6 +336,30 @@ SUCROSE_ACTION_TABLE: dict[str, TimedActionSpec] = {
             ELEMENTAL_SKILL_INPUT: 56,
             ELEMENTAL_BURST_INPUT: 57,
             JUMP_INPUT: 11,
+        },
+    ),
+    SUCROSE_ELEMENTAL_BURST_ACTION_KEY: TimedActionSpec(
+        action_key=SUCROSE_ELEMENTAL_BURST_ACTION_KEY,
+        duration_frames=49,
+        impact_points=(
+            # 创建帧 17 生成大型风灵；能量花费帧 21 走 ENERGY spend_burst。
+            # 两者都不索敌（非伤害影响点），伤害由风灵独立按拍产出。
+            TimedImpactPointSpec(
+                impact_key=SUCROSE_SPIRIT_CREATE_IMPACT_KEY,
+                frame=SUCROSE_ELEMENTAL_BURST_CREATE_FRAME,
+            ),
+            TimedImpactPointSpec(
+                impact_key=SUCROSE_ELEMENTAL_BURST_ENERGY_SPEND_IMPACT_KEY,
+                frame=SUCROSE_ELEMENTAL_BURST_ENERGY_SPEND_FRAME,
+            ),
+        ),
+        cooldown_start_frame=SUCROSE_ELEMENTAL_BURST_COOLDOWN_START_FRAME,
+        cooldown_ability_key=SUCROSE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
+        transitions={
+            NORMAL_ATTACK_INPUT: 49,
+            CHARGED_ATTACK_INPUT: 48,
+            ELEMENTAL_SKILL_INPUT: 48,
+            JUMP_INPUT: 47,
         },
     ),
     SUCROSE_JUMP_ACTION_KEY: TimedActionSpec(

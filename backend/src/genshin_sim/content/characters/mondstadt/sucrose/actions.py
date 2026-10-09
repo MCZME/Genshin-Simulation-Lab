@@ -1,13 +1,13 @@
 """砂糖动作解释器：角色唯一动作表 + 唯一动作解释器。
 
-砂糖的全部动作（普攻四段、重击、元素战技、跳跃、下落攻击）统一声明在
-``data.py`` 的 ``SUCROSE_ACTION_TABLE``，由本解释器独占消费；普攻推进与跨
-输入衔接按表内 transitions 实现。帧表数据使用 generic ``TimedActionSpec``，
+砂糖的全部动作（普攻四段、重击、元素战技、元素爆发、跳跃、下落攻击）统一
+声明在 ``data.py`` 的 ``SUCROSE_ACTION_TABLE``，由本解释器独占消费；普攻推进
+与跨输入衔接按表内 transitions 实现。帧表数据使用 generic ``TimedActionSpec``，
 动作编译复用 ``build_timed_actions``，宿主状态使用 generic 连段状态 schema。
 
 分期口径（实施规划 §10）：S1 开放普攻 / 重击 / 跳跃；S2 追加元素战技输入与
-冷却门槛；元素爆发的输入映射与冷却 / 能量门槛在 S3 接入，动作键已在
-``data.py`` 固定。
+冷却门槛；S3 追加元素爆发输入与冷却 / 能量门槛（门槛统一走公共条件端口，爆发
+的能量门槛由端口按冷却定义的 ``ELEMENTAL_BURST`` 能力类型自动带出）。
 """
 
 from __future__ import annotations
@@ -18,12 +18,15 @@ from typing import cast
 
 from genshin_sim.content.characters.mondstadt.sucrose.data import (
     CHARGED_ATTACK_INPUT,
+    ELEMENTAL_BURST_INPUT,
     ELEMENTAL_SKILL_INPUT,
     JUMP_INPUT,
     NORMAL_ATTACK_INPUT,
     SUCROSE_ACTION_TABLE,
     SUCROSE_CHARACTER_HANDLER_KEY,
     SUCROSE_CHARGED_ATTACK_ACTION_KEY,
+    SUCROSE_ELEMENTAL_BURST_ACTION_KEY,
+    SUCROSE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
     SUCROSE_ELEMENTAL_SKILL_ACTION_KEY,
     SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
     SUCROSE_INPUT_KIND_BY_KEY,
@@ -128,10 +131,22 @@ class SucroseActionInterpreter:
             last_action_key = ""
 
         if input_kind == ELEMENTAL_SKILL_INPUT:
-            rejection = self._elemental_skill_rejection(
+            rejection = self._ability_rejection(
                 context,
                 slot,
                 session.current_frame,
+                ability_key=SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
+                blocked_message="砂糖元素战技冷却未就绪",
+            )
+            if rejection is not None:
+                return ActionInterpretationResult.reject(rejection)
+        if input_kind == ELEMENTAL_BURST_INPUT:
+            rejection = self._ability_rejection(
+                context,
+                slot,
+                session.current_frame,
+                ability_key=SUCROSE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
+                blocked_message="砂糖元素爆发冷却或能量未就绪",
             )
             if rejection is not None:
                 return ActionInterpretationResult.reject(rejection)
@@ -171,13 +186,20 @@ class SucroseActionInterpreter:
             )
         )
 
-    def _elemental_skill_rejection(
+    def _ability_rejection(
         self,
         context: ActionInterpretationContext,
         slot: int,
         frame: int,
+        *,
+        ability_key: str,
+        blocked_message: str,
     ) -> str | None:
-        """元素战技冷却门槛：公共条件端口未接线时不阻断，真实装配必须提供端口。"""
+        """能力门槛（冷却 / 爆发能量）：公共条件端口未接线时不阻断，真实装配必须提供端口。
+
+        爆发能量门槛由端口按冷却定义的 ``ELEMENTAL_BURST`` 能力类型自动带出，
+        内容侧只声明能力键与失败文案。
+        """
 
         port = context.ability_condition_port
         if port is None:
@@ -186,12 +208,12 @@ class SucroseActionInterpreter:
             CharacterAbilityConditionQuery(
                 frame=frame,
                 character_id=f"character:slot_{slot}",
-                ability_key=SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
+                ability_key=ability_key,
             )
         )
         if result.shared_conditions_satisfied:
             return None
-        return "砂糖元素战技冷却未就绪"
+        return blocked_message
 
     def _read_state(
         self,
@@ -320,6 +342,8 @@ class SucroseActionInterpreter:
             return self._action_table[SUCROSE_CHARGED_ATTACK_ACTION_KEY]
         if input_kind == ELEMENTAL_SKILL_INPUT:
             return self._action_table[SUCROSE_ELEMENTAL_SKILL_ACTION_KEY]
+        if input_kind == ELEMENTAL_BURST_INPUT:
+            return self._action_table[SUCROSE_ELEMENTAL_BURST_ACTION_KEY]
         if input_kind == JUMP_INPUT:
             return self._action_table[SUCROSE_JUMP_ACTION_KEY]
         msg = f"未知砂糖输入类型：{input_kind}"
@@ -340,8 +364,8 @@ def create_sucrose_actions(
 ) -> tuple[Action, ...]:
     """把角色唯一动作表编译为可注册的定时动作。
 
-    ``cooldown_duration_terms`` 在 S1 恒为空（无冷却能力动作），保留形参以便
-    S2 / S3 接入元素战技与元素爆发时无需改动函数签名。
+    ``cooldown_duration_terms`` 按能力键（``elemental_skill`` / ``elemental_burst``）
+    挂到对应定时动作上；没有对应定时动作的能力键在此确定性失败。
     """
 
     table = dict(action_table or SUCROSE_ACTION_TABLE)

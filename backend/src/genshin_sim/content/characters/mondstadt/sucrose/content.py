@@ -2,8 +2,9 @@
 
 本文件只负责内容单元编排：读取资产倍率，调用 ``impacts.py`` 的影响契约
 编译函数，最后组装 ``ContentUnit``。S1 覆盖普攻四段、重击与下落攻击；S2
-追加元素战技（单次范围风伤 + 15s 冷却 + 战技命中产 4 风微粒），并声明
-冷却定义与产球钩子；元素爆发与染色机制随 S3 接入。
+追加元素战技（单次范围风伤、15s 冷却、战技命中产 4 风微粒），并声明冷却
+定义与产球钩子；S3 追加元素爆发（大型风灵创建物、持续风伤、染色伤害、
+20s 冷却、能量花费）。
 """
 
 from __future__ import annotations
@@ -18,10 +19,13 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_CHARACTER_HANDLER_KEY,
     SUCROSE_CHARGED_ATTACK_IMPACT_KEY,
     SUCROSE_CONTENT_VERSION,
+    SUCROSE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
+    SUCROSE_ELEMENTAL_BURST_COOLDOWN_FRAMES,
     SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
     SUCROSE_ELEMENTAL_SKILL_COOLDOWN_FRAMES,
     SUCROSE_ELEMENTAL_SKILL_IMPACT_KEY,
     SUCROSE_HIT_IMPACT_KEYS,
+    SUCROSE_SPIRIT_OBJECT_KEY,
     SUCROSE_STATE_LAST_PARTICLE_FRAME,
 )
 from genshin_sim.content.characters.mondstadt.sucrose.hooks import SucroseParticleHook
@@ -31,7 +35,10 @@ from genshin_sim.content.characters.mondstadt.sucrose.impacts import (
     compile_elemental_skill_damage_spec,
     compile_normal_attack_damage_specs,
     compile_plunge_damage_specs,
+    compile_spirit_absorbed_damage_channel,
+    compile_spirit_anemo_damage_spec,
 )
+from genshin_sim.content.characters.mondstadt.sucrose.spirit import SucroseSpiritType
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
@@ -91,6 +98,7 @@ def create_sucrose_content_unit(
     )
     talent_level = resolved.levels["normal_attack"]
     skill_talent_level = resolved.levels["elemental_skill"]
+    burst_talent_level = resolved.levels["elemental_burst"]
     entries_by_key = index_talent_scalings(
         request.character_key,
         request.talent_scalings,
@@ -131,6 +139,33 @@ def create_sucrose_content_unit(
         source_ref=SUCROSE_CHARACTER_HANDLER_KEY,
         tags=("elemental_skill",),
     )
+    burst_cooldown_definition = CooldownDefinition(
+        key=CooldownKey(
+            CooldownSubjectRef.character(owner_ref),
+            SUCROSE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
+        ),
+        ability_kind=AbilityKind.ELEMENTAL_BURST,
+        base_duration_frames=SUCROSE_ELEMENTAL_BURST_COOLDOWN_FRAMES,
+        max_charges=1,
+        duration_mode=CooldownDurationMode.FIXED,
+        source_ref=SUCROSE_CHARACTER_HANDLER_KEY,
+        tags=("elemental_burst",),
+    )
+    # 大型风灵的伤害由创建物 tick 产出（不是动作影响点），故两个伤害契约直接
+    # 交给创建实体类型持有，不进影响工厂的 damage_specs。
+    spirit_type = SucroseSpiritType(
+        slot=request.slot,
+        anemo_spec=compile_spirit_anemo_damage_spec(
+            request.character_key,
+            entries_by_key,
+            burst_talent_level,
+        ),
+        absorbed_channel=compile_spirit_absorbed_damage_channel(
+            request.character_key,
+            entries_by_key,
+            burst_talent_level,
+        ),
+    )
     return ContentUnit(
         owner_type=ContentUnitOwnerType.CHARACTER,
         owner_key=request.character_key,
@@ -144,7 +179,8 @@ def create_sucrose_content_unit(
         state_schema=sucrose_state_schema(owner_ref),
         impact_factories={impact_key: impact_factory for impact_key in SUCROSE_HIT_IMPACT_KEYS},
         event_hooks=(SucroseParticleHook(owner_ref=owner_ref, slot=request.slot),),
-        cooldown_definitions=(skill_cooldown_definition,),
+        created_object_types={SUCROSE_SPIRIT_OBJECT_KEY: spirit_type},
+        cooldown_definitions=(skill_cooldown_definition, burst_cooldown_definition),
         metadata={"purpose": "sucrose_action_state_machine"},
     )
 
@@ -154,12 +190,15 @@ def _cooldown_terms_for_actions(
 ) -> Mapping[str, tuple[CooldownDurationTerm, ...]]:
     """把内容贡献的冷却时长 term 按能力键分组并校验归属。
 
-    S2 只有元素战技一条冷却能力；未登记的冷却能力键在此直接失败，避免静默
-    丢弃（S3 接入元素爆发后需同步扩充支持集合）。
+    S2 / S3 各有一条冷却能力（元素战技、元素爆发）；未登记的冷却能力键在此
+    直接失败，避免静默丢弃。
     """
 
     owner_ref = f"character:slot_{request.slot}"
-    supported = {SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY}
+    supported = {
+        SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
+        SUCROSE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
+    }
     grouped: dict[str, list[CooldownDurationTerm]] = {}
     for key, terms in request.cooldown_duration_terms.items():
         if key.subject.subject_id != owner_ref:

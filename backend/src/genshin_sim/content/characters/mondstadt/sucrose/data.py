@@ -335,6 +335,76 @@ SUCROSE_A4_TRIGGER_MAIN_ATTACK_TAGS = frozenset(
 )
 
 
+# --- 魔女的前夜礼（passive:9，实施规划 §11.7） ------------------------------
+#
+# 机制为跨角色**队伍级**（源站「魔女的前夜礼」系列 ≥12 名角色）：魔导资格由
+# 角色内容单元声明、装配期收集为名录（``content/team/witches_eve.py``），
+# 队伍魔导角色数 ≥2 时「魔导·秘仪」激活，两档效果才开始生效。
+#
+# 源站原文（``passive:9`` 的 source_template）：
+#   完成「魔女的课业·仙境花之题」后，砂糖将成为魔导角色。队伍中编入至少 2 名
+#   魔导角色时，将获得「魔导·秘仪」效果，使魔导角色获得强化。
+#     魔导·秘仪
+#     · 召唤小型风灵后的 15 秒内，队伍中附近的角色的普通攻击、重击、下落攻击、
+#       元素战技和元素爆发造成的伤害提升 5.71428%。
+#     · 召唤大型风灵后的 20 秒内，队伍中附近的魔导角色的同五类伤害提升 7.14285%。
+#
+# 「魔导·秘仪」小标题直接统领两档，故两档都以「≥2 名魔导角色」为生效前提。
+#
+# **数值来源**：四档数值与门槛取资产 ``passive:9`` 效果行的 ``components``
+# （[2, 15, 5.71428%, 20, 7.14285%]，依次为门槛人数 / 小型档秒数 / 小型档比例 /
+# 大型档秒数 / 大型档比例）；下列常量只作 hook 构造的默认值与测试基准，
+# 内容侧不复制一份平行常量（与 §11.5 的 A1 / A4 同口径）。
+#
+# **生效面**：五类伤害标签集合见 ``content/team/witches_eve.py`` 的
+# ``WITCHES_EVE_DAMAGE_TAGS``。
+#
+# **触发时点**（§11.7 裁决 2 / 3）：
+# - 小型风灵 = **E 的施放帧**（``ACTION_STARTED`` + ``elemental_skill``）；
+# - 大型风灵 = **Q 的创建帧 17**（大型风灵创建物登记到空间时的事实）。
+#
+# **计时模型**：两档独立计时、**覆盖刷新**（重召唤刷新时长、不叠数值）。
+
+SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY = "sucrose.passive.witches_eve_rite"
+
+# 资产 components 的门槛分量（number_1 = 2）：魔导·秘仪激活所需魔导角色数。
+SUCROSE_WITCHES_EVE_MIN_MAGE_COUNT = 2
+
+# 小型风灵档（元素战技施放帧 → 15s，全队五类伤害）。
+SUCROSE_WITCHES_EVE_SMALL_DURATION_FRAMES = 15 * SUCROSE_TALENT_FRAMES_PER_SECOND
+SUCROSE_WITCHES_EVE_SMALL_BONUS = 0.0571428
+SUCROSE_WITCHES_EVE_SMALL_MECHANIC_KEY = f"{SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY}.small"
+SUCROSE_WITCHES_EVE_SMALL_BUFF_DEFINITION_KEY = f"{SUCROSE_WITCHES_EVE_SMALL_MECHANIC_KEY}.buff"
+SUCROSE_WITCHES_EVE_SMALL_CONFLICT_KEY = f"{SUCROSE_WITCHES_EVE_SMALL_MECHANIC_KEY}.conflict"
+# 触发面：元素战技的施放帧，按动作事实的 ability_key 判定。
+SUCROSE_WITCHES_EVE_SMALL_TRIGGER_ABILITY_KEY = SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY
+
+# 大型风灵档（Q 创建帧 17 → 20s，魔导角色五类伤害）。
+SUCROSE_WITCHES_EVE_LARGE_DURATION_FRAMES = 20 * SUCROSE_TALENT_FRAMES_PER_SECOND
+SUCROSE_WITCHES_EVE_LARGE_BONUS = 0.0714285
+SUCROSE_WITCHES_EVE_LARGE_MECHANIC_KEY = f"{SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY}.large"
+SUCROSE_WITCHES_EVE_LARGE_BUFF_DEFINITION_KEY = f"{SUCROSE_WITCHES_EVE_LARGE_MECHANIC_KEY}.buff"
+SUCROSE_WITCHES_EVE_LARGE_CONFLICT_KEY = f"{SUCROSE_WITCHES_EVE_LARGE_MECHANIC_KEY}.conflict"
+# 触发面：大型风灵创建物登记到空间时发布的事实（创建帧 17），按创建物的
+# 归属与标签判定，避免命中其他角色的创建物。
+SUCROSE_WITCHES_EVE_LARGE_TRIGGER_OBJECT_KEY = SUCROSE_SPIRIT_OBJECT_KEY
+
+# 审计标签（进入伤害 provider 产出的词条审计）。
+SUCROSE_WITCHES_EVE_AUDIT_TAG = "sucrose_witches_eve_rite"
+
+# --- C6 魔导增强（源站 descriptionBuff，实施规划 §11.6 / §11.7 裁决 6 / 7） ---
+#
+# 源站砂糖 C6 的 ``descriptionBuff`` 在 20% 之外另含一句「并使队伍中附近的
+# 魔导角色额外获得 8.57142% 的对应元素伤害加成」。该句**不在资产库内**
+# （源站 ``descriptionBuff`` 不导入，属原数据问题、项目不处理），故数值在
+# 内容侧以常量定义并使用，并按裁决 7 **不做分数化简**（与 5.71428% /
+# 7.14285% 同为 1/70 的整数倍，分数化简会丢失源站口径）。
+SUCROSE_C6_MAGE_ENHANCEMENT_BONUS = 0.0857142
+SUCROSE_C6_MAGE_ENHANCEMENT_MECHANIC_KEY = "sucrose.constellation.c6.mage_enhancement"
+SUCROSE_C6_MAGE_ENHANCEMENT_BUFF_DEFINITION_KEY = f"{SUCROSE_C6_MAGE_ENHANCEMENT_MECHANIC_KEY}.buff"
+SUCROSE_C6_MAGE_ENHANCEMENT_CONFLICT_KEY = f"{SUCROSE_C6_MAGE_ENHANCEMENT_MECHANIC_KEY}.conflict"
+
+
 # --- 动作表（帧表来源：实施规划 §4.4） ------------------------------------
 #
 # duration_frames 取该行「普攻」列（动作自然结束帧）；transitions 取各输入列

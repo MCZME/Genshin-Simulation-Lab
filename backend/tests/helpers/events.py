@@ -86,12 +86,16 @@ def make_damage_resolved_event(
 def make_action_started_event(
     frame: int,
     slot: int,
-    ability: str,
+    ability: str | None,
     *,
     instance_id: int = 1,
     action_key: str = "character.test.skill",
 ) -> GameEvent:
-    """构造动作开始事实。"""
+    """构造动作开始事实。
+
+    ``ability`` 允许为 ``None``：``ActionStartedPayload.ability_key`` 本身可空，
+    没有冷却技能的动作（例如普通攻击）携带空 ability_key，内容侧判据此区分。
+    """
 
     return GameEvent(
         EventType.ACTION_STARTED,

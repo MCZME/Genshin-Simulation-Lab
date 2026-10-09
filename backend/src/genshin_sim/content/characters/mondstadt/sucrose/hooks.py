@@ -19,6 +19,19 @@
   比例折算，向队伍中所有角色（不含砂糖自己）投放（覆盖刷新 8s）。快照在伤害
   结算之后读取，因而晚于同一 proc 内通过 Buff 施加的精通来源（如圣遗物套装
   的精通加成），与实施规划 §11.5「同一 proc 内晚于教官四件套」的口径一致。
+
+魔女的前夜礼（实施规划 §11.7）：
+
+- 两档都以**魔导·秘仪激活**（队伍魔导角色数 ≥2）为前提——源站原文里
+  「魔导·秘仪」小标题直接统领两档效果。魔导名录由装配期收集、注册为仿真
+  系统（``content/team/witches_eve.py`` 的 ``MageRoster``），hook 只读取，
+  不自行数人头：本期只有砂糖一名魔导角色时条件自然不满足，属预期行为。
+- 小型风灵档订阅 ``ACTION_STARTED``，按「宿主槽位 ∧ ability_key 为元素战技」
+  判定**施放帧**，向队伍中**全部角色**投放 15s 标记 Buff。
+- 大型风灵档订阅 ``SPACE_ENTITY_CREATED``，按创建物的标签与归属判定
+  「砂糖的大型风灵已登记」，向队伍中的**魔导角色**投放 20s 标记 Buff。
+- 两档 Buff 都只承载「窗口开着」这一事实（``marker_only``），数值由
+  ``modifiers.py`` 的伤害 provider 贡献——作用面是五类**伤害**，不是属性。
 """
 
 from __future__ import annotations
@@ -44,11 +57,20 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_PARTICLE_TRAVEL_FRAMES,
     SUCROSE_PARTICLE_TRIGGER_IMPACT_KEYS,
     SUCROSE_STATE_LAST_PARTICLE_FRAME,
+    SUCROSE_WITCHES_EVE_LARGE_BUFF_DEFINITION_KEY,
+    SUCROSE_WITCHES_EVE_LARGE_DURATION_FRAMES,
+    SUCROSE_WITCHES_EVE_LARGE_MECHANIC_KEY,
+    SUCROSE_WITCHES_EVE_LARGE_TRIGGER_OBJECT_KEY,
+    SUCROSE_WITCHES_EVE_SMALL_BUFF_DEFINITION_KEY,
+    SUCROSE_WITCHES_EVE_SMALL_DURATION_FRAMES,
+    SUCROSE_WITCHES_EVE_SMALL_MECHANIC_KEY,
+    SUCROSE_WITCHES_EVE_SMALL_TRIGGER_ABILITY_KEY,
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.hooks import HookContext
 from genshin_sim.content.models import HookResult
 from genshin_sim.content.state_container import StatePatchRequest
+from genshin_sim.content.team.witches_eve import MageRoster
 from genshin_sim.core.attributes import (
     STAT_ELEMENTAL_MASTERY,
     AttributeQuery,
@@ -170,19 +192,29 @@ def _team_characters(context: object) -> tuple[CharacterRuntimeState, ...]:
 def _team_subject_refs(
     context: object,
     *,
-    excluding_slot: int,
+    excluding_slot: int | None = None,
 ) -> tuple[AttributeSubjectRef, ...]:
-    """队伍角色主体（按槽位升序，排除指定槽位）。
+    """队伍角色主体（按槽位升序，可选排除一个槽位）。
 
     目标为**角色主体**而非队伍作用域：A1 需要按元素逐个筛选，A4 需要排除砂糖
     自己；主体逐个投放也让两支天赋的作用范围与「除砂糖自己」的文本口径逐字对应。
+    前夜礼小型档不排除任何槽位（源站是「队伍中附近的角色」，含砂糖自己）。
     """
 
     return tuple(
         AttributeSubjectRef.character(character.combat_entity_id)
         for character in _team_characters(context)
-        if character.slot != excluding_slot
+        if excluding_slot is None or character.slot != excluding_slot
     )
+
+
+def _mage_roster(context: object) -> MageRoster | None:
+    """装配期收集的魔导名录；未注册时返回 None（按未生效处理）。"""
+
+    if not isinstance(context, HookContext):
+        return None
+    roster = context.simulation.get_system(MageRoster)
+    return roster if isinstance(roster, MageRoster) else None
 
 
 def _team_element_map(context: object) -> dict[int, Element]:
@@ -388,3 +420,153 @@ class SucroseMollisFavoniusHook:
             )
         )
         return float(resolution.final_value)
+
+
+class SucroseWitchesEveSmallSpiritHook:
+    """前夜礼小型风灵档：E 施放帧起 15s，队伍全部角色五类伤害提升。
+
+    触发面为 ``ACTION_STARTED``：``owner_slot`` 命中宿主且 ``ability_key`` 为
+    元素战技——即「施放帧」（§11.7 裁决 2），与冷却起始帧 / 命中帧无关。
+    目标为**队伍全部角色**（含砂糖自己）：源站是「队伍中附近的角色」，没有
+    A1 / A4 那样的「不包括砂糖自己」限定。
+    """
+
+    def __init__(
+        self,
+        *,
+        owner_ref: str,
+        slot: int,
+        duration_frames: int = SUCROSE_WITCHES_EVE_SMALL_DURATION_FRAMES,
+    ) -> None:
+        if not isinstance(owner_ref, str) or not owner_ref.strip():
+            raise ContentUnitValidationError("前夜礼小型风灵 hook owner_ref 必须是非空字符串")
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot <= 0:
+            raise ContentUnitValidationError("前夜礼小型风灵 hook 必须绑定正整数队伍槽位")
+        self._owner_ref = owner_ref
+        self._slot = slot
+        self._duration_frames = _require_positive_frames(
+            duration_frames, "前夜礼小型风灵窗口持续时间"
+        )
+        self._source_context = RuntimeSourceRef(
+            RuntimeSourceKind.MECHANIC,
+            SUCROSE_WITCHES_EVE_SMALL_MECHANIC_KEY,
+        )
+        self.hook_key = f"sucrose.passive.witches_eve.small:{owner_ref}"
+        self.state_key = SUCROSE_CHARACTER_HANDLER_KEY
+        self.subscriptions = ("ACTION_STARTED",)
+        self.priority = 0
+
+    @property
+    def owner_ref(self) -> str:
+        """宿主角色引用：状态段归属校验按此匹配。"""
+
+        return self._owner_ref
+
+    def handle(self, event: object, context: object) -> HookResult:
+        if getattr(event, "event_type", None) is not EventType.ACTION_STARTED:
+            return HookResult()
+        payload = getattr(event, "payload", None)
+        if payload is None:
+            return HookResult()
+        if getattr(payload, "owner_slot", None) != self._slot:
+            return HookResult()
+        if getattr(payload, "ability_key", None) != SUCROSE_WITCHES_EVE_SMALL_TRIGGER_ABILITY_KEY:
+            return HookResult()
+        roster = _mage_roster(context)
+        if roster is None or not roster.is_active:
+            return HookResult()
+        refs = _team_subject_refs(context)
+        if not refs:
+            return HookResult()
+        frame = getattr(event, "frame", 0)
+        return HookResult(
+            buff_requests=tuple(
+                ApplyBuffRequest(
+                    request_id=f"{self.hook_key}:{frame}:{ref.entity_id}",
+                    frame=frame,
+                    order=index,
+                    definition_key=SUCROSE_WITCHES_EVE_SMALL_BUFF_DEFINITION_KEY,
+                    target_ref=ref,
+                    source_context=self._source_context,
+                    duration_frames=self._duration_frames,
+                )
+                for index, ref in enumerate(refs)
+            ),
+        )
+
+
+class SucroseWitchesEveLargeSpiritHook:
+    """前夜礼大型风灵档：Q 创建帧起 20s，队伍中的魔导角色五类伤害提升。
+
+    触发面为 ``SPACE_ENTITY_CREATED``：创建物的标签含大型风灵键且归属为宿主
+    角色——即「Q 的创建帧 17」（§11.7 裁决 3）。走创建事实而不是动作事实，是
+    因为爆发本体的动作影响点里没有角色侧命中点，创建帧只能由创建物登记观测。
+    目标为**魔导角色**（含砂糖自己：她是魔导角色）。
+    """
+
+    def __init__(
+        self,
+        *,
+        owner_ref: str,
+        slot: int,
+        duration_frames: int = SUCROSE_WITCHES_EVE_LARGE_DURATION_FRAMES,
+    ) -> None:
+        if not isinstance(owner_ref, str) or not owner_ref.strip():
+            raise ContentUnitValidationError("前夜礼大型风灵 hook owner_ref 必须是非空字符串")
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot <= 0:
+            raise ContentUnitValidationError("前夜礼大型风灵 hook 必须绑定正整数队伍槽位")
+        self._owner_ref = owner_ref
+        self._slot = slot
+        self._duration_frames = _require_positive_frames(
+            duration_frames, "前夜礼大型风灵窗口持续时间"
+        )
+        self._source_context = RuntimeSourceRef(
+            RuntimeSourceKind.MECHANIC,
+            SUCROSE_WITCHES_EVE_LARGE_MECHANIC_KEY,
+        )
+        self.hook_key = f"sucrose.passive.witches_eve.large:{owner_ref}"
+        self.state_key = SUCROSE_CHARACTER_HANDLER_KEY
+        self.subscriptions = ("SPACE_ENTITY_CREATED",)
+        self.priority = 0
+
+    @property
+    def owner_ref(self) -> str:
+        """宿主角色引用：状态段归属校验按此匹配。"""
+
+        return self._owner_ref
+
+    def handle(self, event: object, context: object) -> HookResult:
+        if getattr(event, "event_type", None) is not EventType.SPACE_ENTITY_CREATED:
+            return HookResult()
+        entity = getattr(getattr(event, "payload", None), "entity", None)
+        if entity is None:
+            return HookResult()
+        if SUCROSE_WITCHES_EVE_LARGE_TRIGGER_OBJECT_KEY not in getattr(entity, "tags", ()):
+            return HookResult()
+        if getattr(entity, "owner_key", None) != self._owner_ref:
+            return HookResult()
+        roster = _mage_roster(context)
+        if roster is None or not roster.is_active:
+            return HookResult()
+        refs = tuple(
+            AttributeSubjectRef.character(character.combat_entity_id)
+            for character in _team_characters(context)
+            if roster.contains_slot(character.slot)
+        )
+        if not refs:
+            return HookResult()
+        frame = getattr(event, "frame", 0)
+        return HookResult(
+            buff_requests=tuple(
+                ApplyBuffRequest(
+                    request_id=f"{self.hook_key}:{frame}:{ref.entity_id}",
+                    frame=frame,
+                    order=index,
+                    definition_key=SUCROSE_WITCHES_EVE_LARGE_BUFF_DEFINITION_KEY,
+                    target_ref=ref,
+                    source_context=self._source_context,
+                    duration_frames=self._duration_frames,
+                )
+                for index, ref in enumerate(refs)
+            ),
+        )

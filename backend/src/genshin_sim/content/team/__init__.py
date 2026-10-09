@@ -25,6 +25,13 @@ from genshin_sim.content.team.resonance import (
     create_resonance_buff_definitions,
     create_resonance_definitions,
 )
+from genshin_sim.content.team.witches_eve import (
+    MAGE_ACTIVATION_THRESHOLD,
+    MAGE_MARKER_KEY,
+    WITCHES_EVE_DAMAGE_TAGS,
+    MageRoster,
+    build_mage_roster,
+)
 
 __all__ = [
     "RESONANCE_ANEMO",
@@ -48,4 +55,9 @@ __all__ = [
     "MOONSIGN_BONUS_CAP",
     "MOONSIGN_BONUS_DURATION_FRAMES",
     "MOONSIGN_SCALING_BY_ELEMENT",
+    "MAGE_ACTIVATION_THRESHOLD",
+    "MAGE_MARKER_KEY",
+    "WITCHES_EVE_DAMAGE_TAGS",
+    "MageRoster",
+    "build_mage_roster",
 ]

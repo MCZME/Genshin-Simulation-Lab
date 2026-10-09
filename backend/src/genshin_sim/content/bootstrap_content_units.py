@@ -49,9 +49,11 @@ from genshin_sim.content.characters.mondstadt.sucrose import (
     SUCROSE_CHARACTER_HANDLER_KEY,
     SUCROSE_PASSIVE_A1_HANDLER_KEY,
     SUCROSE_PASSIVE_A4_HANDLER_KEY,
+    SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY,
     create_sucrose_content_unit,
     create_sucrose_passive_a1,
     create_sucrose_passive_a4,
+    create_sucrose_passive_witches_eve,
 )
 from genshin_sim.content.characters.snezhnaya.alyosha import (
     ALYOSHA_CHARACTER_HANDLER_KEY,
@@ -243,6 +245,7 @@ def create_default_content_unit_registry(
     for handler_key, factory in (
         (SUCROSE_PASSIVE_A1_HANDLER_KEY, create_sucrose_passive_a1),
         (SUCROSE_PASSIVE_A4_HANDLER_KEY, create_sucrose_passive_a4),
+        (SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY, create_sucrose_passive_witches_eve),
     ):
         registry.register_effect_factory(handler_key, factory)
     registry.register_weapon_factory(

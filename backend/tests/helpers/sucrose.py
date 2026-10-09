@@ -9,6 +9,12 @@
 ① ``effect_payloads`` 形态的 A1 / A4 效果行（参数形状与真实资产一致，
 数值为合成值）；② 一个零行为队友夹具角色（动作解释器恒等待），供需要
 「同元素 / 异元素队友」的集成用例装配队伍。
+
+「魔女的前夜礼」（``passive:9``）是**队伍级**机制，需要队伍里至少两名魔导
+角色才激活，而本期只有砂糖一名角色会声明魔导标记，因此再提供：
+③ 同一形状、但带魔导标记的**魔导队友夹具**（``mage_teammate_slots`` 指定哪些
+槽位用魔导夹具）；④ ``passive:9`` 的合成效果行。生产环境只有一名魔导角色
+时不激活属预期行为，不额外造特例。
 """
 
 from __future__ import annotations
@@ -29,6 +35,12 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_CHARACTER_HANDLER_KEY,
     SUCROSE_PASSIVE_A1_HANDLER_KEY,
     SUCROSE_PASSIVE_A4_HANDLER_KEY,
+    SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY,
+    SUCROSE_WITCHES_EVE_LARGE_BONUS,
+    SUCROSE_WITCHES_EVE_LARGE_DURATION_FRAMES,
+    SUCROSE_WITCHES_EVE_MIN_MAGE_COUNT,
+    SUCROSE_WITCHES_EVE_SMALL_BONUS,
+    SUCROSE_WITCHES_EVE_SMALL_DURATION_FRAMES,
 )
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
@@ -38,6 +50,7 @@ from genshin_sim.content.registries import (
     CharacterContentUnitRequest,
     ContentUnitRegistry,
 )
+from genshin_sim.content.team.witches_eve import MAGE_MARKER_KEY
 from genshin_sim.core.actions import (
     ActionInterpretationContext,
     ActionInterpretationResult,
@@ -68,6 +81,9 @@ SUCROSE_CHARACTER_KEY = SUCROSE_ASSET_KEY
 # 队友夹具角色的稳定 handler_key：内容包不声明资产身份（见 D-079），夹具只提供
 # 槽位身份与等待型动作解释器；集成用例需把它注册进内容单元注册表。
 SUCROSE_TEAMMATE_HANDLER_KEY = "character.testing.sucrose_teammate_noop"
+# 魔导队友夹具：与普通队友夹具同形，只是内容单元多声明一个魔导标记，供
+# 「队伍魔导角色数 ≥2」的激活判定使用。
+SUCROSE_MAGE_TEAMMATE_HANDLER_KEY = "character.testing.sucrose_mage_teammate_noop"
 
 
 def sucrose_teammate_asset_key(slot: int, element: str) -> str:
@@ -106,6 +122,22 @@ def create_sucrose_teammate_content_unit(
     )
 
 
+def create_sucrose_mage_teammate_content_unit(
+    request: CharacterContentUnitRequest,
+) -> ContentUnit:
+    """魔导队友夹具：零行为，只在 metadata 上声明魔导资格标记。"""
+
+    return ContentUnit(
+        owner_type=ContentUnitOwnerType.CHARACTER,
+        owner_key=request.character_key,
+        handler_key=request.handler_key,
+        version="dev-test",
+        slot=request.slot,
+        action_interpreter=SucroseTeammateActionInterpreter(),
+        metadata={"purpose": "sucrose_mage_teammate_fixture", MAGE_MARKER_KEY: True},
+    )
+
+
 def sucrose_test_registry() -> ContentUnitRegistry:
     """默认内容注册表 + 队友夹具工厂（需要队友的集成用例共用入口）。"""
 
@@ -113,6 +145,10 @@ def sucrose_test_registry() -> ContentUnitRegistry:
     registry.register_character_factory(
         SUCROSE_TEAMMATE_HANDLER_KEY,
         create_sucrose_teammate_content_unit,
+    )
+    registry.register_character_factory(
+        SUCROSE_MAGE_TEAMMATE_HANDLER_KEY,
+        create_sucrose_mage_teammate_content_unit,
     )
     return registry
 
@@ -143,6 +179,7 @@ def write_sucrose_asset_database(
     *,
     teammate_elements: tuple[str, ...] = (),
     sucrose_ascension_phase: int = 6,
+    mage_teammate_slots: tuple[int, ...] = (),
 ) -> Path:
     """写入砂糖最小合成资产库（可附带队友夹具角色）。
 
@@ -150,6 +187,11 @@ def write_sucrose_asset_database(
     handler_key 是 ``SUCROSE_TEAMMATE_HANDLER_KEY``，装配时需用
     ``sucrose_test_registry()`` 提供工厂。A1 / A4 的效果行随资产一并写入，
     因此单元资产库自身就能挂出两支固有天赋。
+
+    ``mage_teammate_slots`` 指定哪些队友槽位改用**魔导**队友夹具
+    （``SUCROSE_MAGE_TEAMMATE_HANDLER_KEY``）：该夹具只是多声明一个魔导标记，
+    用来凑够「魔导·秘仪」的 ≥2 名门槛。不指定时队伍只有砂糖一名魔导角色，
+    前夜礼按预期不激活。
 
     ``sucrose_ascension_phase`` 用于「突破阶段不足则不挂固有天赋」的接线验收：
     解锁判据读的就是等级属性行的突破阶段（见内容编译期 ``UnlockValues``）。
@@ -181,6 +223,11 @@ def write_sucrose_asset_database(
     ]
     for slot, element in enumerate(teammate_elements, start=2):
         asset_key = sucrose_teammate_asset_key(slot, element)
+        handler_key = (
+            SUCROSE_MAGE_TEAMMATE_HANDLER_KEY
+            if slot in mage_teammate_slots
+            else SUCROSE_TEAMMATE_HANDLER_KEY
+        )
         characters.append(
             CharacterAsset(
                 asset_key=asset_key,
@@ -190,7 +237,7 @@ def write_sucrose_asset_database(
                 weapon_type="sword",
                 rarity=4,
                 burst_energy_cost=60.0,
-                handler_key=SUCROSE_TEAMMATE_HANDLER_KEY,
+                handler_key=handler_key,
             )
         )
         character_level_stats.append(
@@ -220,12 +267,15 @@ def write_sucrose_asset_database(
 
 
 def minimal_sucrose_effect_payloads() -> tuple[EffectPayload, ...]:
-    """A1 / A4 的合成效果行（参数形状与真实资产一致，数值为合成值）。
+    """A1 / A4 / 前夜礼的合成效果行（参数形状与真实资产一致，数值为合成值）。
 
-    绑定键取真实资产的 ``character:10000043:passive:4`` / ``passive:5``，
-    与本地资产库
+    绑定键取真实资产的 ``character:10000043:passive:4`` / ``passive:5`` /
+    ``passive:9``，与本地资产库
     （``assets set-handler --kind effect --key character:10000043:passive:4``）
     的接线逐字一致，用例因此能覆盖「资产效果行 -> 效果工厂」这一环。
+
+    前夜礼一行的五个分量依次是：魔导·秘仪门槛人数、小型风灵档秒数与比例、
+    大型风灵档秒数与比例（与真实 ``passive:9`` 的 components 同序同形）。
     """
 
     return (
@@ -246,6 +296,26 @@ def minimal_sucrose_effect_payloads() -> tuple[EffectPayload, ...]:
             unlock_key="passive:5",
             handler_key=SUCROSE_PASSIVE_A4_HANDLER_KEY,
             params=_effect_params("小小的慧风", (SUCROSE_A4_MASTERY_RATIO, 8.0)),
+        ),
+        EffectPayload(
+            effect_key=f"{SUCROSE_CHARACTER_KEY}:passive:9",
+            owner_type="character",
+            owner_key=SUCROSE_CHARACTER_KEY,
+            # 真实资产的 effect_kind 是 passive_exploration；内容侧与 A1 / A4
+            # 同口径按 PASSIVE 声明，故这里仍写 passive。
+            effect_kind="passive",
+            unlock_key="passive:9",
+            handler_key=SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY,
+            params=_effect_params(
+                "魔女的前夜礼·七循之理",
+                (
+                    float(SUCROSE_WITCHES_EVE_MIN_MAGE_COUNT),
+                    SUCROSE_WITCHES_EVE_SMALL_DURATION_FRAMES / 60,
+                    SUCROSE_WITCHES_EVE_SMALL_BONUS,
+                    SUCROSE_WITCHES_EVE_LARGE_DURATION_FRAMES / 60,
+                    SUCROSE_WITCHES_EVE_LARGE_BONUS,
+                ),
+            ),
         ),
     )
 

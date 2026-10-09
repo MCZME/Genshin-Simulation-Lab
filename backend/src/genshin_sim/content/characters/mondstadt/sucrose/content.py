@@ -4,7 +4,8 @@
 编译函数，最后组装 ``ContentUnit``。S1 覆盖普攻四段、重击与下落攻击；S2
 追加元素战技（单次范围风伤、15s 冷却、战技命中产 4 风微粒），并声明冷却
 定义与产球钩子；S3 追加元素爆发（大型风灵创建物、持续风伤、染色伤害、
-20s 冷却、能量花费）。
+20s 冷却、能量花费）；S7 在单元 metadata 上声明魔导资格标记（装配期收集为
+魔导名录，供「魔女的前夜礼」判定激活）。
 """
 
 from __future__ import annotations
@@ -50,6 +51,7 @@ from genshin_sim.content.generic.talents import (
     index_talent_scalings,
 )
 from genshin_sim.content.registries import CharacterContentUnitRequest
+from genshin_sim.content.team.witches_eve import MAGE_MARKER_KEY
 from genshin_sim.core.contracts.state_schema import (
     StateField,
     StateFieldType,
@@ -181,7 +183,13 @@ def create_sucrose_content_unit(
         event_hooks=(SucroseParticleHook(owner_ref=owner_ref, slot=request.slot),),
         created_object_types={SUCROSE_SPIRIT_OBJECT_KEY: spirit_type},
         cooldown_definitions=(skill_cooldown_definition, burst_cooldown_definition),
-        metadata={"purpose": "sucrose_action_state_machine"},
+        metadata={
+            "purpose": "sucrose_action_state_machine",
+            # 魔导资格：完成「魔女的课业·仙境花之题」后砂糖成为魔导角色。本期
+            # 裁定默认已完成、不作为仿真输入项，故标记为角色的静态属性；
+            # 装配期收集为魔导名录（content/team/witches_eve.py）。
+            MAGE_MARKER_KEY: True,
+        },
     )
 
 

@@ -13,10 +13,12 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_CHARACTER_HANDLER_KEY,
     SUCROSE_PASSIVE_A1_HANDLER_KEY,
     SUCROSE_PASSIVE_A4_HANDLER_KEY,
+    SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY,
 )
 from genshin_sim.content.characters.mondstadt.sucrose.effects import (
     create_sucrose_passive_a1,
     create_sucrose_passive_a4,
+    create_sucrose_passive_witches_eve,
 )
 
 __all__ = [
@@ -24,7 +26,9 @@ __all__ = [
     "SUCROSE_CHARACTER_HANDLER_KEY",
     "SUCROSE_PASSIVE_A1_HANDLER_KEY",
     "SUCROSE_PASSIVE_A4_HANDLER_KEY",
+    "SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY",
     "create_sucrose_content_unit",
     "create_sucrose_passive_a1",
     "create_sucrose_passive_a4",
+    "create_sucrose_passive_witches_eve",
 ]

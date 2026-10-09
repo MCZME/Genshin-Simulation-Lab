@@ -45,6 +45,10 @@ from genshin_sim.content.characters.mondstadt.barbara import (
     create_barbara_content_unit,
     create_barbara_encore_effect,
 )
+from genshin_sim.content.characters.mondstadt.sucrose import (
+    SUCROSE_CHARACTER_HANDLER_KEY,
+    create_sucrose_content_unit,
+)
 from genshin_sim.content.characters.snezhnaya.alyosha import (
     ALYOSHA_CHARACTER_HANDLER_KEY,
     ALYOSHA_CONSTELLATION_C1_HANDLER_KEY,
@@ -207,6 +211,10 @@ def create_default_content_unit_registry(
     registry.register_character_factory(
         BARBARA_CHARACTER_HANDLER_KEY,
         create_barbara_content_unit,
+    )
+    registry.register_character_factory(
+        SUCROSE_CHARACTER_HANDLER_KEY,
+        create_sucrose_content_unit,
     )
     registry.register_character_factory(
         SANDRONE_CHARACTER_HANDLER_KEY,

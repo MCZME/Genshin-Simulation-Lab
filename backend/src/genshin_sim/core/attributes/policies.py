@@ -13,6 +13,7 @@ from genshin_sim.core.attributes.models import (
     BaseAttributeContribution,
     ModifierStage,
     ModifierTerm,
+    PolicyResolution,
     normalize_zero,
     validate_finite_float,
 )
@@ -29,7 +30,7 @@ class ResolutionPolicy:
         base_contributions: tuple[BaseAttributeContribution, ...],
         terms: tuple[ModifierTerm, ...],
         dependencies: tuple[AttributeResolution, ...],
-    ) -> tuple[float, float]:
+    ) -> PolicyResolution:
         raise NotImplementedError
 
     def apply_bounds(self, definition: AttributeDefinition, value: float) -> float:
@@ -51,11 +52,18 @@ class BaseSumPolicy(ResolutionPolicy):
         base_contributions: tuple[BaseAttributeContribution, ...],
         terms: tuple[ModifierTerm, ...],
         dependencies: tuple[AttributeResolution, ...],
-    ) -> tuple[float, float]:
+    ) -> PolicyResolution:
         del dependencies
         base_value = _resolve_base_value(definition, base_contributions)
         result = math.fsum((base_value, *(term.value for term in terms)))
-        return base_value, self.apply_bounds(definition, result)
+        return PolicyResolution(
+            base_value=base_value,
+            final_value=self.apply_bounds(definition, result),
+            # 基础值不参与「不可被二次转化」标记，一律计入可被转化桶。
+            reconvertible_value=normalize_zero(
+                math.fsum((base_value, *(term.value for term in terms if term.reconvertible)))
+            ),
+        )
 
 
 class TotalStatPolicy(ResolutionPolicy):
@@ -77,7 +85,7 @@ class TotalStatPolicy(ResolutionPolicy):
         base_contributions: tuple[BaseAttributeContribution, ...],
         terms: tuple[ModifierTerm, ...],
         dependencies: tuple[AttributeResolution, ...],
-    ) -> tuple[float, float]:
+    ) -> PolicyResolution:
         del base_contributions
         if len(dependencies) != 1:
             raise ValueError(f"total_stat 属性 {definition.key} 必须有且只有一个依赖")
@@ -86,10 +94,30 @@ class TotalStatPolicy(ResolutionPolicy):
         percent = math.fsum(term.value for term in terms if term.stage is ModifierStage.PERCENT_ADD)
         flat = math.fsum(term.value for term in terms if term.stage is ModifierStage.FLAT_ADD)
         result = math.fsum((base_value * (1.0 + percent), flat))
+        # 可被二次转化桶：只计入可被转化的 percent / flat，基础值全额计入。
+        reconvertible_percent = math.fsum(
+            term.value
+            for term in terms
+            if term.stage is ModifierStage.PERCENT_ADD and term.reconvertible
+        )
+        reconvertible_flat = math.fsum(
+            term.value
+            for term in terms
+            if term.stage is ModifierStage.FLAT_ADD and term.reconvertible
+        )
+        reconvertible = math.fsum((base_value * (1.0 + reconvertible_percent), reconvertible_flat))
+        # final_multiplier 不参与两桶划分：按同一乘数对两桶等权生效。
+        multipliers = 1.0
         for term in terms:
             if term.stage is ModifierStage.FINAL_MULTIPLIER:
-                result *= 1.0 + term.value
-        return base_value, self.apply_bounds(definition, result)
+                factor = 1.0 + term.value
+                result *= factor
+                multipliers *= factor
+        return PolicyResolution(
+            base_value=base_value,
+            final_value=self.apply_bounds(definition, result),
+            reconvertible_value=normalize_zero(reconvertible * multipliers),
+        )
 
 
 class AdditivePolicy(ResolutionPolicy):
@@ -102,11 +130,17 @@ class AdditivePolicy(ResolutionPolicy):
         base_contributions: tuple[BaseAttributeContribution, ...],
         terms: tuple[ModifierTerm, ...],
         dependencies: tuple[AttributeResolution, ...],
-    ) -> tuple[float, float]:
+    ) -> PolicyResolution:
         del dependencies
         base_value = _resolve_base_value(definition, base_contributions)
         result = math.fsum((base_value, *(term.value for term in terms)))
-        return base_value, self.apply_bounds(definition, result)
+        return PolicyResolution(
+            base_value=base_value,
+            final_value=self.apply_bounds(definition, result),
+            reconvertible_value=normalize_zero(
+                math.fsum((base_value, *(term.value for term in terms if term.reconvertible)))
+            ),
+        )
 
 
 POLICIES = {

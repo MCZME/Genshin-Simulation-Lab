@@ -88,6 +88,7 @@ from genshin_sim.core.elements import (
     Element,
     ElementalSourceRef,
     ElementalSubjectRef,
+    aura_kind_for_element,
 )
 from genshin_sim.core.events import (
     AuraAppliedPayload,
@@ -644,7 +645,11 @@ class ElementalInteractionCoordinator:
                 continue
             if reaction.establishment_gate_blocked:
                 continue
-            if incoming_element is not None:
+            # 无反应附着分支只为「能形成持久 Aura 的元素」准备附着。风、岩与物理
+            # 不形成持久 Aura（aura_kind_for_element 返回 None），其正元素预算只
+            # 参与同一次反应判定；风/岩的后续行为由扩散、结晶等 occurrence 的
+            # 派生 Effect 承担。
+            if incoming_element is not None and aura_kind_for_element(incoming_element) is not None:
                 assert intent.elemental_strength is not None
                 aura_planner.apply(
                     AuraApplicationRequest(

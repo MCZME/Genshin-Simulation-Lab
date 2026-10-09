@@ -10,6 +10,7 @@ from genshin_sim.core.systems.cooldown.enums import (
     CooldownConditionReason,
     CooldownFactKind,
     CooldownMutationReason,
+    CooldownRecoveryMode,
 )
 from genshin_sim.core.systems.cooldown.errors import (
     CooldownFrameRegressionError,
@@ -20,6 +21,7 @@ from genshin_sim.core.systems.cooldown.errors import (
 from genshin_sim.core.systems.cooldown.models import (
     ActiveRecovery,
     CooldownConditionResult,
+    CooldownDefinition,
     CooldownFact,
     CooldownKey,
     CooldownMutationBatchPlan,
@@ -43,6 +45,20 @@ from genshin_sim.core.systems.cooldown.snapshots import (
     CooldownSnapshot,
 )
 from genshin_sim.core.systems.cooldown.store import CooldownStore
+
+
+def _without_recovery(
+    recoveries: tuple[ActiveRecovery, ...], target: ActiveRecovery
+) -> tuple[ActiveRecovery, ...]:
+    """按对象身份移除一个在途恢复项；同一时刻可能同时存在取值相等的两个项。"""
+    return tuple(item for item in recoveries if item is not target)
+
+
+def _replace_recovery(
+    recoveries: tuple[ActiveRecovery, ...], target: ActiveRecovery, replacement: ActiveRecovery
+) -> tuple[ActiveRecovery, ...]:
+    """按对象身份替换一个在途恢复项。"""
+    return tuple(replacement if item is target else item for item in recoveries)
 
 
 class CooldownConditionReadPort(Protocol):
@@ -70,7 +86,7 @@ class CooldownRuntime:
         return self.normalize(frame)
 
     def is_idle(self) -> bool:
-        return all(record.active_recovery is None for record in self.store.records)
+        return all(not record.recoveries for record in self.store.records)
 
     def normalize(self, frame: int) -> NormalizeCooldownsResult:
         self._assert_not_regressed(frame)
@@ -108,6 +124,8 @@ class CooldownRuntime:
             queued_recoveries=record.queued_recoveries,
             chain_id=None if active is None else active.chain_id,
             revision=record.revision,
+            pending_recoveries=record.pending_recoveries,
+            recovery_mode=record.recovery_mode,
         )
         satisfied = record.available_charges > 0
         return CooldownConditionResult(
@@ -130,6 +148,10 @@ class CooldownRuntime:
             condition = self.query_condition(CooldownQuery(request.key, request.frame))
             if not condition.satisfied:
                 return PrepareStartCooldownResult(condition, None)
+            if before.recovery_mode is CooldownRecoveryMode.INDEPENDENT:
+                return PrepareStartCooldownResult(
+                    condition, self._plan_independent_start(request, before, definition)
+                )
             if before.active_recovery is None:
                 resolution = self.resolver.resolve(
                     definition, request.requested_base_duration_frames, request.duration_terms
@@ -146,14 +168,14 @@ class CooldownRuntime:
                 after = replace(
                     before,
                     available_charges=before.available_charges - 1,
-                    active_recovery=active,
+                    recoveries=(active,),
                     revision=before.revision + 1,
                     last_changed_frame=request.frame,
                 )
-                facts = [self._fact(CooldownFactKind.STARTED, request, before, after, resolution)]
+                facts = [self._fact(CooldownFactKind.STARTED, request, before, after, active)]
                 if active.interval_frames == 0:
-                    after, recovery_facts = self._complete_active(
-                        after, request.frame, request, False
+                    after, recovery_facts = self._complete_recovery(
+                        after, active, request.frame, request, False
                     )
                     facts.extend(recovery_facts)
                 plan = CooldownMutationPlan(
@@ -169,6 +191,7 @@ class CooldownRuntime:
                 )
             else:
                 active = before.active_recovery
+                assert active is not None
                 after = replace(
                     before,
                     available_charges=before.available_charges - 1,
@@ -183,15 +206,54 @@ class CooldownRuntime:
                     before.revision,
                     before,
                     after,
-                    (
-                        self._fact(
-                            CooldownFactKind.STARTED, request, before, after, active.duration_audit
-                        ),
-                    ),
+                    (self._fact(CooldownFactKind.STARTED, request, before, after, active),),
                     active.duration_audit,
                     True,
                 )
             return PrepareStartCooldownResult(condition, plan)
+
+    def _plan_independent_start(
+        self,
+        request: StartCooldownRequest,
+        before: CooldownRecord,
+        definition: CooldownDefinition,
+    ) -> CooldownMutationPlan:
+        """独立恢复：每次消费各自创建一条单元素恢复链，不排队、不复用 interval。"""
+        resolution = self.resolver.resolve(
+            definition, request.requested_base_duration_frames, request.duration_terms
+        )
+        recovery = ActiveRecovery(
+            started_frame=request.frame,
+            ready_frame=request.frame + resolution.resolved_duration_frames,
+            interval_frames=resolution.resolved_duration_frames,
+            chain_id=f"cooldown-chain:{request.request_id}",
+            start_source_ref=request.source_ref,
+            duration_audit=resolution,
+        )
+        after = replace(
+            before,
+            available_charges=before.available_charges - 1,
+            recoveries=(*before.recoveries, recovery),
+            revision=before.revision + 1,
+            last_changed_frame=request.frame,
+        )
+        facts = [self._fact(CooldownFactKind.STARTED, request, before, after, recovery)]
+        if recovery.interval_frames == 0:
+            after, recovery_facts = self._complete_recovery(
+                after, recovery, request.frame, request, False
+            )
+            facts.extend(recovery_facts)
+        return CooldownMutationPlan(
+            request.request_id,
+            request.key,
+            self.store.version,
+            before.revision,
+            before,
+            after,
+            tuple(facts),
+            resolution,
+            False,
+        )
 
     def start(self, request: StartCooldownRequest) -> CooldownMutationResult | None:
         prepared = self.prepare_start(request)
@@ -279,7 +341,7 @@ class CooldownRuntime:
     def snapshot(self, frame: int) -> CooldownSnapshot:
         self._require_normalized(frame)
         return CooldownSnapshot(
-            schema_version=1,
+            schema_version=2,
             frame=frame,
             normalized_through_frame=self.normalized_through_frame,
             records=tuple(CooldownRecordSnapshot.from_record(item) for item in self.store.records),
@@ -377,14 +439,16 @@ class CooldownRuntime:
             )
             intermediate = replace(
                 before,
-                active_recovery=changed_active,
+                recoveries=_replace_recovery(before.recoveries, active, changed_active),
                 revision=before.revision + 1,
                 last_changed_frame=request.frame,
             )
-            facts = [self._fact(fact_kind, request, before, intermediate, active.duration_audit)]
+            facts = [self._fact(fact_kind, request, before, intermediate, changed_active)]
             after = intermediate
             if ready_frame == request.frame:
-                after, recovery_facts = self._complete_active(after, request.frame, request, True)
+                after, recovery_facts = self._complete_recovery(
+                    after, changed_active, request.frame, request, True
+                )
                 facts.extend(recovery_facts)
             return CooldownMutationPlan(
                 request.request_id,
@@ -419,15 +483,21 @@ class CooldownRuntime:
     ) -> tuple[CooldownRecord, list[CooldownFact]]:
         current = before
         facts: list[CooldownFact] = []
-        while current.active_recovery is not None and current.active_recovery.ready_frame <= frame:
-            ready_frame = current.active_recovery.ready_frame
-            current, recovered = self._complete_active(current, ready_frame, operation_id, False)
+        while True:
+            due = [item for item in current.recoveries if item.ready_frame <= frame]
+            if not due:
+                break
+            target = min(due, key=lambda item: item.sort_key)
+            current, recovered = self._complete_recovery(
+                current, target, target.ready_frame, operation_id, False
+            )
             facts.extend(recovered)
         return current, facts
 
-    def _complete_active(
+    def _complete_recovery(
         self,
         before: CooldownRecord,
+        target: ActiveRecovery,
         frame: int,
         source: StartCooldownRequest
         | ReduceRemainingCooldownRequest
@@ -435,67 +505,85 @@ class CooldownRuntime:
         | str,
         restart_at_current_frame: bool,
     ) -> tuple[CooldownRecord, list[CooldownFact]]:
-        active = before.active_recovery
-        assert active is not None
         source_ref = source if isinstance(source, str) else source.source_ref
         operation_id = source if isinstance(source, str) else source.request_id
-        start = frame if restart_at_current_frame else active.ready_frame
-        if before.queued_recoveries:
-            next_interval = active.duration_audit.resolved_duration_frames
+        if before.recovery_mode is CooldownRecoveryMode.SERIAL and before.queued_recoveries:
+            start = frame if restart_at_current_frame else target.ready_frame
+            next_interval = target.duration_audit.resolved_duration_frames
             next_active = ActiveRecovery(
                 started_frame=start,
                 ready_frame=start + next_interval,
                 interval_frames=next_interval,
-                chain_id=active.chain_id,
-                start_source_ref=active.start_source_ref,
-                duration_audit=active.duration_audit,
+                chain_id=target.chain_id,
+                start_source_ref=target.start_source_ref,
+                duration_audit=target.duration_audit,
             )
             after = replace(
                 before,
                 available_charges=before.available_charges + 1,
-                active_recovery=next_active,
+                recoveries=(next_active,),
                 queued_recoveries=before.queued_recoveries - 1,
                 revision=before.revision + 1,
                 last_changed_frame=frame,
             )
             return after, [
-                self._fact(
-                    CooldownFactKind.CHARGE_RECOVERED, source, before, after, active.duration_audit
-                )
+                self._fact(CooldownFactKind.CHARGE_RECOVERED, source, before, after, target)
             ]
         after = replace(
             before,
             available_charges=before.available_charges + 1,
-            active_recovery=None,
+            recoveries=_without_recovery(before.recoveries, target),
             revision=before.revision + 1,
             last_changed_frame=frame,
         )
-        return after, [
-            self._fact(
-                CooldownFactKind.CHARGE_RECOVERED, source, before, after, active.duration_audit
-            ),
-            CooldownFact(
-                fact_id=(
-                    f"{operation_id}:{before.key.subject.subject_id}:"
-                    f"{before.key.ability_key}:{before.revision}:chain_completed"
-                ),
-                fact_kind=CooldownFactKind.CHAIN_COMPLETED,
-                frame=frame,
-                key=before.key,
-                operation_id=operation_id,
-                chain_id=active.chain_id,
-                before_available_charges=before.available_charges,
-                after_available_charges=after.available_charges,
-                active_ready_frame=None,
-                queued_recoveries=after.queued_recoveries,
-                source_ref=source_ref,
-                duration_audit=active.duration_audit,
-                before_record=before,
-                after_record=after,
-            ),
-        ]
+        facts = [self._fact(CooldownFactKind.CHARGE_RECOVERED, source, before, after, target)]
+        if before.recovery_mode is CooldownRecoveryMode.INDEPENDENT or not after.queued_recoveries:
+            facts.append(
+                self._chain_completed_fact(operation_id, source_ref, before, after, target, frame)
+            )
+        return after, facts
 
-    def _fact(self, kind, source, before, after, resolution) -> CooldownFact:
+    def _chain_completed_fact(
+        self,
+        operation_id: str,
+        source_ref: str,
+        before: CooldownRecord,
+        after: CooldownRecord,
+        target: ActiveRecovery,
+        frame: int,
+    ) -> CooldownFact:
+        active = after.active_recovery
+        return CooldownFact(
+            fact_id=(
+                f"{operation_id}:{before.key.subject.subject_id}:"
+                f"{before.key.ability_key}:{before.revision}:chain_completed"
+            ),
+            fact_kind=CooldownFactKind.CHAIN_COMPLETED,
+            frame=frame,
+            key=before.key,
+            operation_id=operation_id,
+            chain_id=target.chain_id,
+            before_available_charges=before.available_charges,
+            after_available_charges=after.available_charges,
+            active_ready_frame=None if active is None else active.ready_frame,
+            queued_recoveries=after.queued_recoveries,
+            source_ref=source_ref,
+            duration_audit=target.duration_audit,
+            before_record=before,
+            after_record=after,
+        )
+
+    def _fact(
+        self,
+        kind: CooldownFactKind,
+        source: StartCooldownRequest
+        | ReduceRemainingCooldownRequest
+        | ResetActiveCooldownRequest
+        | str,
+        before: CooldownRecord,
+        after: CooldownRecord,
+        recovery: ActiveRecovery,
+    ) -> CooldownFact:
         operation_id = source if isinstance(source, str) else source.request_id
         source_ref = source if isinstance(source, str) else source.source_ref
         active = after.active_recovery
@@ -508,16 +596,30 @@ class CooldownRuntime:
             frame=after.last_changed_frame,
             key=after.key,
             operation_id=operation_id,
-            chain_id=None if active is None else active.chain_id,
+            chain_id=self._fact_chain_id(before, after, recovery),
             before_available_charges=before.available_charges,
             after_available_charges=after.available_charges,
             active_ready_frame=None if active is None else active.ready_frame,
             queued_recoveries=after.queued_recoveries,
             source_ref=source_ref,
-            duration_audit=resolution,
+            duration_audit=recovery.duration_audit,
             before_record=before,
             after_record=after,
         )
+
+    @staticmethod
+    def _fact_chain_id(
+        before: CooldownRecord, after: CooldownRecord, recovery: ActiveRecovery
+    ) -> str | None:
+        """事实的 `chain_id`：串行模式取操作后在途项的链（链清空则为空）。
+
+        独立模式取本次操作针对项的链——每个在途项各自成链，操作后仍可能有其他在途项，
+        因此不能沿用「在途项投影」。
+        """
+        if before.recovery_mode is CooldownRecoveryMode.INDEPENDENT:
+            return recovery.chain_id
+        active = after.active_recovery
+        return None if active is None else active.chain_id
 
     @staticmethod
     def _result(plan: CooldownMutationPlan) -> CooldownMutationResult:

@@ -12,6 +12,7 @@ from genshin_sim.core.systems.cooldown.enums import (
     CooldownDurationStage,
     CooldownFactKind,
     CooldownMutationReason,
+    CooldownRecoveryMode,
     CooldownSubjectType,
 )
 from genshin_sim.core.systems.cooldown.errors import (
@@ -87,12 +88,15 @@ class CooldownDefinition:
     duration_mode: CooldownDurationMode
     source_ref: str
     tags: tuple[str, ...] = ()
+    recovery_mode: CooldownRecoveryMode = CooldownRecoveryMode.SERIAL
 
     def __post_init__(self) -> None:
         if not isinstance(self.key, CooldownKey) or not isinstance(self.ability_kind, AbilityKind):
             raise CooldownValidationError("冷却定义 key 或 ability_kind 非法")
         if not isinstance(self.duration_mode, CooldownDurationMode):
             raise CooldownValidationError("duration_mode 非法")
+        if not isinstance(self.recovery_mode, CooldownRecoveryMode):
+            raise CooldownValidationError("recovery_mode 非法")
         validate_non_negative_int(self.base_duration_frames, "base_duration_frames")
         if (
             isinstance(self.max_charges, bool)
@@ -165,6 +169,11 @@ class ActiveRecovery:
         validate_text(self.chain_id, "chain_id")
         validate_text(self.start_source_ref, "start_source_ref")
 
+    @property
+    def sort_key(self) -> tuple[int, int, str]:
+        """稳定排序键：先按到期帧，再按起始帧，最后按来源链身份。"""
+        return (self.ready_frame, self.started_frame, self.chain_id)
+
 
 @dataclass(frozen=True, slots=True)
 class CooldownRecord:
@@ -172,7 +181,8 @@ class CooldownRecord:
     ability_kind: AbilityKind
     max_charges: int
     available_charges: int
-    active_recovery: ActiveRecovery | None = None
+    recovery_mode: CooldownRecoveryMode = CooldownRecoveryMode.SERIAL
+    recoveries: tuple[ActiveRecovery, ...] = ()
     queued_recoveries: int = 0
     revision: int = 0
     last_changed_frame: int = 0
@@ -180,16 +190,41 @@ class CooldownRecord:
     def __post_init__(self) -> None:
         if not isinstance(self.key, CooldownKey) or not isinstance(self.ability_kind, AbilityKind):
             raise CooldownInvariantError("冷却记录 key 或 ability_kind 非法")
+        if not isinstance(self.recovery_mode, CooldownRecoveryMode):
+            raise CooldownInvariantError("冷却记录 recovery_mode 非法")
         for name in ("max_charges", "available_charges", "queued_recoveries", "revision"):
             validate_non_negative_int(getattr(self, name), name)
         validate_frame(self.last_changed_frame, "last_changed_frame")
+        recoveries = tuple(self.recoveries)
+        for recovery in recoveries:
+            if not isinstance(recovery, ActiveRecovery):
+                raise CooldownInvariantError("在途恢复项必须是 ActiveRecovery")
+        object.__setattr__(
+            self, "recoveries", tuple(sorted(recoveries, key=lambda item: item.sort_key))
+        )
         if self.max_charges <= 0 or self.available_charges > self.max_charges:
             raise CooldownInvariantError("available_charges 越界")
+        if len(self.recoveries) > self.max_charges:
+            raise CooldownInvariantError("在途恢复项数量超过 max_charges")
+        if self.recovery_mode is CooldownRecoveryMode.SERIAL and len(self.recoveries) > 1:
+            raise CooldownInvariantError("串行恢复模式同一时刻至多一个在途恢复项")
+        if self.recovery_mode is CooldownRecoveryMode.INDEPENDENT and self.queued_recoveries:
+            raise CooldownInvariantError("独立恢复模式不存在排队次数")
         if (
-            self.available_charges + self.queued_recoveries + int(self.active_recovery is not None)
+            self.available_charges + len(self.recoveries) + self.queued_recoveries
             != self.max_charges
         ):
             raise CooldownInvariantError("冷却次数不守恒")
+
+    @property
+    def active_recovery(self) -> ActiveRecovery | None:
+        """最早到期的在途恢复项投影；串行模式下即为唯一在途项。"""
+        return self.recoveries[0] if self.recoveries else None
+
+    @property
+    def pending_recoveries(self) -> int:
+        """在途恢复项数量（串行模式下为 0 或 1）。"""
+        return len(self.recoveries)
 
 
 @dataclass(frozen=True, slots=True)
@@ -212,6 +247,8 @@ class CooldownView:
     queued_recoveries: int
     chain_id: str | None
     revision: int
+    pending_recoveries: int = 0
+    recovery_mode: CooldownRecoveryMode = CooldownRecoveryMode.SERIAL
 
 
 @dataclass(frozen=True, slots=True)

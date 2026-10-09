@@ -11,6 +11,11 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_DAMAGE_ELEMENT,
     SUCROSE_DAMAGE_ICD_SEQUENCE_KEY,
     SUCROSE_DAMAGE_ICD_TAG_KEY,
+    SUCROSE_ELEMENTAL_SKILL_AOE_OFFSET,
+    SUCROSE_ELEMENTAL_SKILL_AOE_RADIUS,
+    SUCROSE_ELEMENTAL_SKILL_AOE_SHAPE,
+    SUCROSE_ELEMENTAL_SKILL_IMPACT_KEY,
+    SUCROSE_ELEMENTAL_SKILL_MAIN_ATTACK_TAG,
     SUCROSE_NORMAL_ATTACK_1_IMPACT_KEY,
     SUCROSE_NORMAL_ATTACK_ACTION_KEYS,
     SUCROSE_PLUNGE_COLLISION_IMPACT_KEY,
@@ -18,6 +23,7 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
 )
 from genshin_sim.content.characters.mondstadt.sucrose.impacts import (
     compile_charged_attack_damage_spec,
+    compile_elemental_skill_damage_spec,
     compile_normal_attack_damage_specs,
     compile_plunge_damage_specs,
 )
@@ -73,6 +79,21 @@ def test_charged_attack_spec_uses_oriented_box_and_no_icd():
     assert spec.area.length > 0 and spec.area.width > 0
 
 
+def test_elemental_skill_spec_uses_cylinder_and_no_icd():
+    spec = compile_elemental_skill_damage_spec(_character_key(), _entries(), 1)
+    assert spec.impact_ref.startswith(SUCROSE_ELEMENTAL_SKILL_IMPACT_KEY)
+    assert spec.main_attack_tag == SUCROSE_ELEMENTAL_SKILL_MAIN_ATTACK_TAG
+    assert spec.element is SUCROSE_DAMAGE_ELEMENT
+    assert not spec.elemental_amount.is_zero
+    assert spec.icd_tag_key is None
+    assert spec.icd_sequence_key is None
+    assert spec.display_name == "技能伤害"
+    assert spec.area is not None
+    assert spec.area.shape == SUCROSE_ELEMENTAL_SKILL_AOE_SHAPE
+    assert spec.area.radius == SUCROSE_ELEMENTAL_SKILL_AOE_RADIUS
+    assert spec.area.local_offset_xz == SUCROSE_ELEMENTAL_SKILL_AOE_OFFSET
+
+
 def test_plunge_specs_are_physical_and_follow_catalyst_generic_data():
     specs = compile_plunge_damage_specs(_character_key(), _entries(), 1)
     assert set(specs) == {
@@ -108,6 +129,9 @@ def test_damage_bearing_hit_keys_all_have_compiled_specs():
         SUCROSE_CHARGED_ATTACK_IMPACT_KEY: compile_charged_attack_damage_spec(
             _character_key(), _entries(), 1
         ),
+        SUCROSE_ELEMENTAL_SKILL_IMPACT_KEY: compile_elemental_skill_damage_spec(
+            _character_key(), _entries(), 1
+        ),
         **compile_plunge_damage_specs(_character_key(), _entries(), 1),
     }
     damage_bearing_keys = [
@@ -116,6 +140,7 @@ def test_damage_bearing_hit_keys_all_have_compiled_specs():
         f"{SUCROSE_NORMAL_ATTACK_ACTION_KEYS[2]}.hit",
         f"{SUCROSE_NORMAL_ATTACK_ACTION_KEYS[3]}.hit",
         SUCROSE_CHARGED_ATTACK_IMPACT_KEY,
+        SUCROSE_ELEMENTAL_SKILL_IMPACT_KEY,
         SUCROSE_PLUNGE_COLLISION_IMPACT_KEY,
     ]
     for impact_key in damage_bearing_keys:

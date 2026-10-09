@@ -1,7 +1,8 @@
 """砂糖内容单元装配单元的接线校验。
 
 不做仿真的部分在此锁定：内容单元身份、动作集合形状、下落攻击的通用接管、
-影响工厂覆盖面与宿主状态 schema。倍率数值取合成值，只验证接线。
+影响工厂覆盖面、宿主状态 schema 与 S2 的冷却 / 产球切片。倍率数值取合成值，
+只验证接线。
 """
 
 from __future__ import annotations
@@ -17,19 +18,24 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_CHARACTER_HANDLER_KEY,
     SUCROSE_CHARGED_ATTACK_ACTION_KEY,
     SUCROSE_CONTENT_VERSION,
+    SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
+    SUCROSE_ELEMENTAL_SKILL_COOLDOWN_FRAMES,
     SUCROSE_HIT_IMPACT_KEYS,
     SUCROSE_JUMP_ACTION_KEY,
     SUCROSE_NORMAL_ATTACK_ACTION_KEYS,
     SUCROSE_PLUNGE_ACTION_KEY,
     SUCROSE_PLUNGE_COLLISION_IMPACT_KEY,
     SUCROSE_PLUNGE_LANDING_IMPACT_KEY,
+    SUCROSE_STATE_LAST_PARTICLE_FRAME,
 )
+from genshin_sim.content.characters.mondstadt.sucrose.hooks import SucroseParticleHook
 from genshin_sim.content.generic.chain_state import (
     CHAIN_STATE_LAST_ACTION_KEY,
     CHAIN_STATE_LAST_START_FRAME,
 )
 from genshin_sim.content.registries import CharacterContentUnitRequest
 from genshin_sim.core.actions import FallPlungeAction
+from genshin_sim.core.systems.cooldown import CooldownSubjectRef
 from tests.helpers import sucrose as sucrose_helpers
 
 
@@ -61,6 +67,8 @@ def test_content_unit_declares_state_schema_and_interpreter():
     field_names = tuple(field.name for field in unit.state_schema.fields)
     assert CHAIN_STATE_LAST_ACTION_KEY in field_names
     assert CHAIN_STATE_LAST_START_FRAME in field_names
+    # S2 产球审计字段并入连段状态 schema。
+    assert SUCROSE_STATE_LAST_PARTICLE_FRAME in field_names
 
 
 def test_content_unit_actions_cover_action_table():
@@ -89,11 +97,22 @@ def test_impact_factories_cover_all_sucrose_hit_keys():
     assert set(unit.impact_factories) == set(SUCROSE_HIT_IMPACT_KEYS)
 
 
-def test_content_unit_declares_no_cooldown_or_icd_slices_in_s1():
-    """S1 不含冷却 / ICD 切片；这两类切片随 S2 / S3 接入。"""
+def test_content_unit_declares_skill_cooldown_and_particle_hook():
+    """S2 切片：元素战技冷却定义（15s / 900 帧）+ 产球钩子；ICD / 创建物仍为空。
+
+    ICD 与创建物随 S3（元素爆发 + 染色）接入。
+    """
 
     unit = _content_unit()
-    assert unit.cooldown_definitions == ()
+    assert len(unit.cooldown_definitions) == 1
+    definition = unit.cooldown_definitions[0]
+    assert definition.key.subject == CooldownSubjectRef.character("character:slot_1")
+    assert definition.key.ability_key == SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY
+    assert definition.base_duration_frames == SUCROSE_ELEMENTAL_SKILL_COOLDOWN_FRAMES
+    assert definition.max_charges == 1
     assert unit.aura_icd_definitions == ()
     assert unit.created_object_types == {}
-    assert unit.event_hooks == ()
+    assert len(unit.event_hooks) == 1
+    hook = unit.event_hooks[0]
+    assert isinstance(hook, SucroseParticleHook)
+    assert hook.owner_ref == "character:slot_1"

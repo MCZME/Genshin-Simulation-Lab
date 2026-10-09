@@ -75,13 +75,13 @@ def test_normal_attack_combo_restarts_at_first_segment_after_last(sucrose_assemb
 
 
 def test_unmapped_input_key_starts_nothing(sucrose_assembled):
-    """S1 只开放普攻 / 重击 / 跳跃：元素战技输入键尚未映射，不产生任何动作。
+    """S2 已开放普攻 / 重击 / 元素战技 / 跳跃：元素爆发输入键尚未映射，不产生任何动作。
 
-    本条是分期边界保护——S2 接入元素战技输入映射时，本用例需要随期更新。
+    本条是分期边界保护——S3 接入元素爆发输入映射时，本用例需要随期更新。
     """
 
     assembled = sucrose_assembled(
-        input_trace=sucrose_helpers.press_release(1, "keyboard.e"),
+        input_trace=sucrose_helpers.press_release(1, "keyboard.q"),
         max_frames=60,
     )
     assembled.simulator.run()

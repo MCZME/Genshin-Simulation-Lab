@@ -32,7 +32,8 @@ SUCROSE_BASE_HP = 10_000.0
 SUCROSE_BASE_ATK = 200.0
 SUCROSE_BASE_DEF = 600.0
 
-# 四段普攻的合成倍率：互不相同，用于逐段接线校验。
+# 各能力的合成倍率：普攻四段互不相同，用于逐段接线校验；重击/下落/战技各取
+# 一个独立的合成值，用于验证「资产倍率行 -> 命中契约」的接线。
 SUCROSE_FIXTURE_RATIOS = {
     "一段伤害": 1.0,
     "二段伤害": 2.0,
@@ -41,6 +42,7 @@ SUCROSE_FIXTURE_RATIOS = {
     "重击伤害": 5.0,
     "下坠期间伤害": 6.0,
     "低空/高空坠地冲击伤害": 7.0,
+    "技能伤害": 8.0,
 }
 
 
@@ -87,7 +89,7 @@ def write_sucrose_asset_database(db_path: Path) -> Path:
 def minimal_sucrose_scaling_entries() -> tuple[TalentScalingEntry, ...]:
     """返回砂糖内容工厂接线所需的最小倍率行。
 
-    分量形状与真实资产一致（普攻四段/重击/下坠各 1 分量、落地冲击 2 分量），
+    分量形状与真实资产一致（普攻四段/重击/战技/下坠各 1 分量、落地冲击 2 分量），
     数值取合成倍率表；等级区间取 1–15 覆盖天赋等级解析。
     """
 
@@ -103,6 +105,7 @@ def minimal_sucrose_scaling_entries() -> tuple[TalentScalingEntry, ...]:
             "低空/高空坠地冲击伤害",
             (SUCROSE_FIXTURE_RATIOS["低空/高空坠地冲击伤害"],) * 2,
         ),
+        ("elemental_skill", "技能伤害", (SUCROSE_FIXTURE_RATIOS["技能伤害"],)),
     )
     return tuple(
         TalentScalingEntry(

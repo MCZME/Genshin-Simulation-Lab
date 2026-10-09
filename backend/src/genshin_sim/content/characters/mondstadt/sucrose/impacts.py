@@ -5,7 +5,8 @@
 把动作影响点展开为 ``ImpactRequest``。
 
 S1 覆盖普攻四段、重击与下落攻击（下落攻击数据走武器类型通用资料表
-``generic/plunge.py`` 的 catalyst 档，实施规划 §8 第 7 项）。
+``generic/plunge.py`` 的 catalyst 档，实施规划 §8 第 7 项）；S2 追加元素战技
+单次范围风伤（圆柱 r=6、无 ICD）。
 """
 
 from __future__ import annotations
@@ -32,6 +33,11 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_DAMAGE_ICD_TAG_KEY,
     SUCROSE_DAMAGE_RANGE_TYPE,
     SUCROSE_DAMAGE_STRIKE_TYPE,
+    SUCROSE_ELEMENTAL_SKILL_AOE_OFFSET,
+    SUCROSE_ELEMENTAL_SKILL_AOE_RADIUS,
+    SUCROSE_ELEMENTAL_SKILL_AOE_SHAPE,
+    SUCROSE_ELEMENTAL_SKILL_IMPACT_KEY,
+    SUCROSE_ELEMENTAL_SKILL_MAIN_ATTACK_TAG,
     SUCROSE_NORMAL_ATTACK_ACTION_KEYS,
     SUCROSE_NORMAL_ATTACK_DAMAGE_DATA,
     SUCROSE_PLUNGE_COLLISION_IMPACT_KEY,
@@ -60,6 +66,7 @@ _SUCROSE_NORMAL_ATTACK_DAMAGE_LABELS = (
     "四段伤害",
 )
 _SUCROSE_CHARGED_ATTACK_DAMAGE_LABEL = "重击伤害"
+_SUCROSE_SKILL_DAMAGE_LABEL = "技能伤害"
 _SUCROSE_PLUNGE_COLLISION_DAMAGE_LABEL = "下坠期间伤害"
 _SUCROSE_PLUNGE_LANDING_DAMAGE_LABEL = "低空/高空坠地冲击伤害"
 
@@ -153,6 +160,51 @@ def compile_charged_attack_damage_spec(
             length=SUCROSE_CHARGED_ATTACK_AOE_LENGTH,
             width=SUCROSE_CHARGED_ATTACK_AOE_WIDTH,
             local_offset_xz=SUCROSE_CHARGED_ATTACK_AOE_OFFSET,
+        ),
+    )
+
+
+def compile_elemental_skill_damage_spec(
+    character_key: str,
+    entries_by_key: dict[tuple[str, str, str], TalentScalingEntry],
+    talent_level: int,
+) -> DamageImpactSpec:
+    """编译元素战技伤害契约（圆柱区域 r=6、无 ICD）。
+
+    战技退化为单次范围风伤（实施规划 §11.2）：区域锚定砂糖自身 XZ、偏移
+    ``(0, -3, 0)``；元素量 1U、攻击标签「元素战技」、打击/远近均取默认值；
+    衰减列为「—」→ 不携带 ICD 键，即逐次独立附着。
+    """
+
+    entry = entries_by_key.get((character_key, "elemental_skill", _SUCROSE_SKILL_DAMAGE_LABEL))
+    if entry is None:
+        raise ContentUnitValidationError(
+            f"砂糖元素战技缺少资产倍率条目：{_SUCROSE_SKILL_DAMAGE_LABEL}"
+        )
+    compiled = ScalingCompiler.compile_entry(entry, talent_level)
+    component = compiled.components[0]
+    return DamageImpactSpec(
+        impact_ref=f"{SUCROSE_ELEMENTAL_SKILL_IMPACT_KEY}:{talent_level}",
+        main_attack_tag=SUCROSE_ELEMENTAL_SKILL_MAIN_ATTACK_TAG,
+        element=SUCROSE_DAMAGE_ELEMENT,
+        scaling_terms=(
+            DamageScalingTerm(
+                component_key=component.component_key,
+                attribute_key=STAT_ATK_TOTAL,
+                coefficient=component.value,
+            ),
+        ),
+        can_crit=True,
+        additional_attack_tags=SUCROSE_DAMAGE_ADDITIONAL_ATTACK_TAGS,
+        strike_type=SUCROSE_DAMAGE_STRIKE_TYPE,
+        range_type=SUCROSE_DAMAGE_RANGE_TYPE,
+        elemental_strength=SUCROSE_DAMAGE_ELEMENTAL_STRENGTH,
+        elemental_amount=SUCROSE_DAMAGE_ELEMENTAL_AMOUNT,
+        display_name=_SUCROSE_SKILL_DAMAGE_LABEL,
+        area=ImpactAreaSpec(
+            shape=SUCROSE_ELEMENTAL_SKILL_AOE_SHAPE,
+            radius=SUCROSE_ELEMENTAL_SKILL_AOE_RADIUS,
+            local_offset_xz=SUCROSE_ELEMENTAL_SKILL_AOE_OFFSET,
         ),
     )
 

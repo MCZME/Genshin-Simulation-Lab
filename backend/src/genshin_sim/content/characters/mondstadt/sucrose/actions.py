@@ -1,12 +1,13 @@
 """砂糖动作解释器：角色唯一动作表 + 唯一动作解释器。
 
-砂糖的全部动作（普攻四段、重击、跳跃、下落攻击）统一声明在 ``data.py`` 的
-``SUCROSE_ACTION_TABLE``，由本解释器独占消费；普攻推进与跨输入衔接按表内
-transitions 实现。帧表数据使用 generic ``TimedActionSpec``，动作编译复用
-``build_timed_actions``，宿主状态使用 generic 连段状态 schema。
+砂糖的全部动作（普攻四段、重击、元素战技、跳跃、下落攻击）统一声明在
+``data.py`` 的 ``SUCROSE_ACTION_TABLE``，由本解释器独占消费；普攻推进与跨
+输入衔接按表内 transitions 实现。帧表数据使用 generic ``TimedActionSpec``，
+动作编译复用 ``build_timed_actions``，宿主状态使用 generic 连段状态 schema。
 
-分期口径（实施规划 §10）：S1 只开放普攻 / 重击 / 跳跃；元素战技与元素爆发
-的输入映射与冷却门槛在 S2 / S3 接入，动作键已在 ``data.py`` 固定。
+分期口径（实施规划 §10）：S1 开放普攻 / 重击 / 跳跃；S2 追加元素战技输入与
+冷却门槛；元素爆发的输入映射与冷却 / 能量门槛在 S3 接入，动作键已在
+``data.py`` 固定。
 """
 
 from __future__ import annotations
@@ -17,11 +18,14 @@ from typing import cast
 
 from genshin_sim.content.characters.mondstadt.sucrose.data import (
     CHARGED_ATTACK_INPUT,
+    ELEMENTAL_SKILL_INPUT,
     JUMP_INPUT,
     NORMAL_ATTACK_INPUT,
     SUCROSE_ACTION_TABLE,
     SUCROSE_CHARACTER_HANDLER_KEY,
     SUCROSE_CHARGED_ATTACK_ACTION_KEY,
+    SUCROSE_ELEMENTAL_SKILL_ACTION_KEY,
+    SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
     SUCROSE_INPUT_KIND_BY_KEY,
     SUCROSE_JUMP_ACTION_KEY,
     SUCROSE_NORMAL_ATTACK_ACTION_KEYS,
@@ -63,6 +67,9 @@ from genshin_sim.core.actions import (
 )
 from genshin_sim.core.contracts.intents import IntentEnvelope, IntentKind
 from genshin_sim.core.contracts.phases import FramePhase
+from genshin_sim.core.coordination.character_ability_condition.models import (
+    CharacterAbilityConditionQuery,
+)
 from genshin_sim.core.simulation.context import SimulationContext
 from genshin_sim.core.simulation.intent_queue import IntentQueue
 from genshin_sim.core.space.entities import SpatialEntity
@@ -120,6 +127,15 @@ class SucroseActionInterpreter:
         if last_action_key == SUCROSE_PLUNGE_ACTION_KEY and height <= 0:
             last_action_key = ""
 
+        if input_kind == ELEMENTAL_SKILL_INPUT:
+            rejection = self._elemental_skill_rejection(
+                context,
+                slot,
+                session.current_frame,
+            )
+            if rejection is not None:
+                return ActionInterpretationResult.reject(rejection)
+
         # 衔接判定用当前解释帧（重评路径即为重评帧）：未到最早衔接帧由解释器
         # 交管理器缓冲，查无衔接数据仍为终局拒绝。
         verdict = self._transition_verdict(
@@ -154,6 +170,28 @@ class SucroseActionInterpreter:
                 source_session_id=session.session_id,
             )
         )
+
+    def _elemental_skill_rejection(
+        self,
+        context: ActionInterpretationContext,
+        slot: int,
+        frame: int,
+    ) -> str | None:
+        """元素战技冷却门槛：公共条件端口未接线时不阻断，真实装配必须提供端口。"""
+
+        port = context.ability_condition_port
+        if port is None:
+            return None
+        result = port.evaluate(
+            CharacterAbilityConditionQuery(
+                frame=frame,
+                character_id=f"character:slot_{slot}",
+                ability_key=SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
+            )
+        )
+        if result.shared_conditions_satisfied:
+            return None
+        return "砂糖元素战技冷却未就绪"
 
     def _read_state(
         self,
@@ -280,6 +318,8 @@ class SucroseActionInterpreter:
             return self._select_normal_attack_action(last_action_key)
         if input_kind == CHARGED_ATTACK_INPUT:
             return self._action_table[SUCROSE_CHARGED_ATTACK_ACTION_KEY]
+        if input_kind == ELEMENTAL_SKILL_INPUT:
+            return self._action_table[SUCROSE_ELEMENTAL_SKILL_ACTION_KEY]
         if input_kind == JUMP_INPUT:
             return self._action_table[SUCROSE_JUMP_ACTION_KEY]
         msg = f"未知砂糖输入类型：{input_kind}"

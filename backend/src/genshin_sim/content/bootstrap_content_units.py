@@ -47,7 +47,11 @@ from genshin_sim.content.characters.mondstadt.barbara import (
 )
 from genshin_sim.content.characters.mondstadt.sucrose import (
     SUCROSE_CHARACTER_HANDLER_KEY,
+    SUCROSE_PASSIVE_A1_HANDLER_KEY,
+    SUCROSE_PASSIVE_A4_HANDLER_KEY,
     create_sucrose_content_unit,
+    create_sucrose_passive_a1,
+    create_sucrose_passive_a4,
 )
 from genshin_sim.content.characters.snezhnaya.alyosha import (
     ALYOSHA_CHARACTER_HANDLER_KEY,
@@ -236,6 +240,11 @@ def create_default_content_unit_registry(
         BARBARA_ENCORE_EFFECT_HANDLER_KEY,
         create_barbara_encore_effect,
     )
+    for handler_key, factory in (
+        (SUCROSE_PASSIVE_A1_HANDLER_KEY, create_sucrose_passive_a1),
+        (SUCROSE_PASSIVE_A4_HANDLER_KEY, create_sucrose_passive_a4),
+    ):
+        registry.register_effect_factory(handler_key, factory)
     registry.register_weapon_factory(
         DULL_BLADE_HANDLER_KEY,
         create_dull_blade_content_unit,

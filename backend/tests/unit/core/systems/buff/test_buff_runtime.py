@@ -389,6 +389,46 @@ def test_attribute_provider_filters_tags_scales_stacks_and_preserves_audit_sourc
     assert resolution.rejected_terms[0].provider_key == provider.provider_spec.provider_key
 
 
+def test_reconvertible_template_flag_flows_into_terms_and_buckets():
+    """`reconvertible` 随模板透传进 ModifierTerm，并驱动属性侧二次转化分桶。"""
+
+    with pytest.raises(BuffSystemError, match="reconvertible"):
+        BuffAttributeModifierTemplate(
+            term_key="atk_bonus",
+            target_key=STAT_ATK_TOTAL,
+            stage=ModifierStage.PERCENT_ADD,
+            reconvertible=1,  # type: ignore[arg-type]
+        )
+
+    default_template = _definition().attribute_modifiers[0]
+    assert default_template.reconvertible is True
+    assert default_template.to_dict()["reconvertible"] is True
+
+    converted = _definition(definition_key="buff.converted", reconvertible=False)
+    assert converted.attribute_modifiers[0].to_dict()["reconvertible"] is False
+    runtime = _runtime(converted)
+    runtime.apply(_request("converted:1", converted, value=0.2))
+    provider = BuffAttributeModifierProvider(converted, BuffStoreReader(runtime.buff_store))
+
+    registry = create_public_attribute_registry()
+    query = AttributeQuery(CHARACTER, STAT_ATK_TOTAL, frame=0)
+    term = provider.contribute(query, object())[0]
+    assert term.reconvertible is False
+
+    resolver = AttributeResolver(
+        definitions=registry,
+        base_attributes=BaseAttributeSet(
+            ((CHARACTER, BaseAttributeContribution(STAT_ATK_BASE, 100.0, ASSET_SOURCE)),)
+        ),
+        modifier_index=ModifierProviderIndex((provider,), registry=registry),
+    )
+    resolution = resolver.resolve(query)
+    assert resolution.final_value == pytest.approx(120.0)
+    # 转化产物整份落进不可转化桶（口径见属性系统契约 §11.4）。
+    assert resolution.reconvertible_value == pytest.approx(100.0)
+    assert resolution.non_reconvertible_value == pytest.approx(20.0)
+
+
 def test_apply_status_impact_contract_and_multi_target_atomicity():
     definition = _definition(
         target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
@@ -556,6 +596,7 @@ def _definition(
     required_tags: frozenset[str] = frozenset(),
     excluded_tags: frozenset[str] = frozenset(),
     stacking_group: str | None = None,
+    reconvertible: bool = True,
 ) -> BuffDefinition:
     modifiers = ()
     if not marker_only:
@@ -569,6 +610,7 @@ def _definition(
                 required_query_tags=required_tags,
                 excluded_query_tags=excluded_tags,
                 audit_tags=("test",),
+                reconvertible=reconvertible,
             ),
         )
     return BuffDefinition(

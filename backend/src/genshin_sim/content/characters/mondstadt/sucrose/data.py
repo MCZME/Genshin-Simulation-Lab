@@ -2,9 +2,9 @@
 
 数据与解释逻辑分离：``actions.py`` 只保留解释器与动作编译，``content.py``
 只负责内容单元编译。本文件统一承载角色身份键（handler/action/impact）、
-输入映射、帧表与动作表、普攻/重击/战技/爆发伤害数据、冷却/能量/产球常量，
-以及大型风灵（创建物）与染色机制的实现基线常量；倍率仍来自资产库倍率表，
-不在本文件维护。
+输入映射、帧表与动作表、普攻/重击/战技/爆发伤害数据、冷却/能量/产球常量、
+大型风灵（创建物）与染色机制的实现基线常量，以及固有天赋（A1 / A4）的触发面
+与 buff 常量；倍率仍来自资产库倍率表，不在本文件维护。
 
 **命名口径**：稳定键沿用官方英文名称（资料站 meropide.cn/en/characters/Sucrose）：
 
@@ -31,10 +31,14 @@ from genshin_sim.core.elements import AuraAmount, AuraKind, Element
 from genshin_sim.core.impacts import StrikeType
 from genshin_sim.core.space import Vector3
 from genshin_sim.core.systems.aura import AuraStrength
+from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
+    STELLAR_SWIRL_REACTION_KEY,
+)
+from genshin_sim.core.systems.reaction.mechanics.swirl import SWIRL_REACTION_KEY
 
 SUCROSE_CHARACTER_HANDLER_KEY = "character.sucrose"
 SUCROSE_ASSET_KEY = "character:10000043"
-SUCROSE_CONTENT_VERSION = "dev-elemental-skill"
+SUCROSE_CONTENT_VERSION = "dev-passives"
 
 SUCROSE_JUMP_ACTION_KEY = "character.sucrose.jump"
 SUCROSE_PLUNGE_ACTION_KEY = "character.sucrose.plunge"
@@ -266,6 +270,68 @@ SUCROSE_SPIRIT_ABSORPTION_PRIORITY = (
     (AuraKind.ELECTRO, Element.ELECTRO),
     (AuraKind.CRYO, Element.CRYO),
     (AuraKind.FROZEN, Element.CRYO),
+)
+
+
+# --- 固有天赋（实施规划 §11.5） --------------------------------------------
+#
+# A1「触媒置换术」：砂糖触发扩散 / 星扩散反应时，队伍中与被扩散元素同元素的
+# 角色（不包括砂糖自己）元素精通 +50、持续 8s；按属性面板精通加成处理（作为
+# 面板精通词条），数值取资产 ``passive:4`` 效果行 components（50 / 8）。
+#
+# A4「小小的慧风」：风灵作成·陆叁零捌（E）或禁·风灵作成·柒伍同构贰型（Q）
+# 命中敌人时，基于**快照的**砂糖元素精通的 20%，为队伍中所有角色（不包括砂糖
+# 自己）提供元素精通加成、持续 8s；数值取资产 ``passive:5`` 效果行 components
+# （20% / 8）。A4 的产物是「基于属性折算」的转化效果，故产出修饰标
+# ``reconvertible=False``（不可被二次转化，见属性系统契约 §11.4）。
+#
+# 两档 buff 均为覆盖刷新（重触发刷新时长、不叠数值），目标为**角色主体**逐个
+# 投放（元素匹配在投放侧判定），因此不受队伍人数变化影响。
+
+SUCROSE_PASSIVE_A1_HANDLER_KEY = "sucrose.passive.catalyst_conversion"
+SUCROSE_PASSIVE_A4_HANDLER_KEY = "sucrose.passive.mollis_favonius"
+
+SUCROSE_TALENT_FRAMES_PER_SECOND = 60
+
+SUCROSE_A1_MASTERY_FLAT = 50.0
+SUCROSE_A1_DURATION_FRAMES = 8 * SUCROSE_TALENT_FRAMES_PER_SECOND
+SUCROSE_A1_MECHANIC_KEY = f"{SUCROSE_PASSIVE_A1_HANDLER_KEY}.mastery"
+SUCROSE_A1_BUFF_DEFINITION_KEY = f"{SUCROSE_PASSIVE_A1_HANDLER_KEY}.mastery.buff"
+SUCROSE_A1_CONFLICT_KEY = f"{SUCROSE_PASSIVE_A1_HANDLER_KEY}.mastery.conflict"
+SUCROSE_A1_MASTERY_TERM_KEY = f"{SUCROSE_PASSIVE_A1_HANDLER_KEY}.mastery.term"
+
+# A1 触发面：普通扩散与星扩散（实施规划 §8 第 3 项：含星扩散）。
+SUCROSE_A1_TRIGGER_REACTION_KEYS = frozenset(
+    {
+        SWIRL_REACTION_KEY,
+        STELLAR_SWIRL_REACTION_KEY,
+    }
+)
+
+# 被扩散附着到元素伤害元素的映射：风元素不形成持久附着，故只覆盖四种可扩散
+# 附着；FROZEN 与 S3 染色判定的第 4 档同口径，映射为冰元素。
+SUCROSE_AURA_ELEMENT_MAP = {
+    AuraKind.PYRO: Element.PYRO,
+    AuraKind.HYDRO: Element.HYDRO,
+    AuraKind.ELECTRO: Element.ELECTRO,
+    AuraKind.CRYO: Element.CRYO,
+    AuraKind.FROZEN: Element.CRYO,
+}
+
+SUCROSE_A4_MASTERY_RATIO = 0.2
+SUCROSE_A4_DURATION_FRAMES = 8 * SUCROSE_TALENT_FRAMES_PER_SECOND
+SUCROSE_A4_MECHANIC_KEY = f"{SUCROSE_PASSIVE_A4_HANDLER_KEY}.mastery"
+SUCROSE_A4_BUFF_DEFINITION_KEY = f"{SUCROSE_PASSIVE_A4_HANDLER_KEY}.mastery.buff"
+SUCROSE_A4_CONFLICT_KEY = f"{SUCROSE_PASSIVE_A4_HANDLER_KEY}.mastery.conflict"
+SUCROSE_A4_MASTERY_TERM_KEY = f"{SUCROSE_PASSIVE_A4_HANDLER_KEY}.mastery.term"
+
+# A4 触发面：命中敌人且攻击标签为元素战技 / 元素爆发（不区分哪一拍、哪一次命中；
+# 爆发染色伤害同为「元素爆发」标签，风灵按拍输出故每拍覆盖刷新）。
+SUCROSE_A4_TRIGGER_MAIN_ATTACK_TAGS = frozenset(
+    {
+        SUCROSE_ELEMENTAL_SKILL_MAIN_ATTACK_TAG,
+        SUCROSE_ELEMENTAL_BURST_MAIN_ATTACK_TAG,
+    }
 )
 
 

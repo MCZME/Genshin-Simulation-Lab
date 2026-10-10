@@ -1,5 +1,4 @@
-"""游戏规则默认面板的基础属性值。
-"""
+"""游戏规则默认面板的基础属性值。"""
 
 from __future__ import annotations
 

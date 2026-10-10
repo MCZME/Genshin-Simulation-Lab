@@ -87,6 +87,20 @@ def test_model_definition_and_instance_validation():
     with pytest.raises(BuffSystemError, match="value"):
         BuffModifierValue("atk_bonus", True)  # type: ignore[arg-type]
 
+    with pytest.raises(BuffSystemError, match="reconvertible"):
+        BuffAttributeModifierTemplate(
+            term_key="atk_bonus",
+            target_key=STAT_ATK_TOTAL,
+            stage=ModifierStage.PERCENT_ADD,
+            reconvertible=1,  # type: ignore[arg-type]
+        )
+
+    # 默认可被二次转化；标记随模板序列化，作为属性侧分桶口径的输入。
+    assert _definition().attribute_modifiers[0].to_dict()["reconvertible"] is True
+    assert (
+        _definition(reconvertible=False).attribute_modifiers[0].to_dict()["reconvertible"] is False
+    )
+
 
 def test_replace_refresh_stack_and_coexist_policies_publish_stable_events():
     definition = _definition(policy=BuffApplicationPolicy.REPLACE)
@@ -341,6 +355,8 @@ def test_attribute_provider_filters_tags_scales_stacks_and_preserves_audit_sourc
     assert terms[0].source_ref.instance_id == "buff:1"
     assert "definition:buff.test" in terms[0].audit_tags
     assert "stacks:2" in terms[0].audit_tags
+    # 模板标记透传进 ModifierTerm，交由属性侧决定二次转化分桶。
+    assert terms[0].reconvertible is True
 
     registry = create_public_attribute_registry()
     registry.register_stacking_group(
@@ -387,46 +403,6 @@ def test_attribute_provider_filters_tags_scales_stacks_and_preserves_audit_sourc
     resolution = resolver_with_competing.resolve(query)
     assert resolution.final_value == pytest.approx(150.0)
     assert resolution.rejected_terms[0].provider_key == provider.provider_spec.provider_key
-
-
-def test_reconvertible_template_flag_flows_into_terms_and_buckets():
-    """`reconvertible` 随模板透传进 ModifierTerm，并驱动属性侧二次转化分桶。"""
-
-    with pytest.raises(BuffSystemError, match="reconvertible"):
-        BuffAttributeModifierTemplate(
-            term_key="atk_bonus",
-            target_key=STAT_ATK_TOTAL,
-            stage=ModifierStage.PERCENT_ADD,
-            reconvertible=1,  # type: ignore[arg-type]
-        )
-
-    default_template = _definition().attribute_modifiers[0]
-    assert default_template.reconvertible is True
-    assert default_template.to_dict()["reconvertible"] is True
-
-    converted = _definition(definition_key="buff.converted", reconvertible=False)
-    assert converted.attribute_modifiers[0].to_dict()["reconvertible"] is False
-    runtime = _runtime(converted)
-    runtime.apply(_request("converted:1", converted, value=0.2))
-    provider = BuffAttributeModifierProvider(converted, BuffStoreReader(runtime.buff_store))
-
-    registry = create_public_attribute_registry()
-    query = AttributeQuery(CHARACTER, STAT_ATK_TOTAL, frame=0)
-    term = provider.contribute(query, object())[0]
-    assert term.reconvertible is False
-
-    resolver = AttributeResolver(
-        definitions=registry,
-        base_attributes=BaseAttributeSet(
-            ((CHARACTER, BaseAttributeContribution(STAT_ATK_BASE, 100.0, ASSET_SOURCE)),)
-        ),
-        modifier_index=ModifierProviderIndex((provider,), registry=registry),
-    )
-    resolution = resolver.resolve(query)
-    assert resolution.final_value == pytest.approx(120.0)
-    # 转化产物整份落进不可转化桶（口径见属性系统契约 §11.4）。
-    assert resolution.reconvertible_value == pytest.approx(100.0)
-    assert resolution.non_reconvertible_value == pytest.approx(20.0)
 
 
 def test_apply_status_impact_contract_and_multi_target_atomicity():

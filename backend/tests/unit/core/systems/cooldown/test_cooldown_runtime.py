@@ -156,11 +156,30 @@ def test_multi_charge_uses_serial_recovery_and_snapshots_first_duration_resoluti
     assert second.after.active_recovery.ready_frame == 610
     assert second.after.queued_recoveries == 1
 
-    runtime.normalize(610)
+    # 串行只维护一条在途链：新充能排队，不新开链。
+    record = runtime.store.get_record(_key())
+    assert record.recovery_mode is CooldownRecoveryMode.SERIAL
+    assert (record.pending_recoveries, record.queued_recoveries) == (1, 1)
+    view = runtime.query_condition(runtime_query(_key(), 120)).view
+    assert view.recovery_mode is CooldownRecoveryMode.SERIAL
+    assert (view.pending_recoveries, view.queued_recoveries) == (1, 1)
+
+    normalized_chain = runtime.normalize(610)
     record = runtime.store.get_record(_key())
     assert record.available_charges == 1
     assert record.active_recovery is not None and record.active_recovery.ready_frame == 1120
-    runtime.normalize(1120)
+    # 到期充能回收，续转的充能继承首链 id 与新的就绪帧。
+    assert [fact.fact_kind.value for fact in normalized_chain.facts] == ["charge_recovered"]
+    assert normalized_chain.facts[0].chain_id == "cooldown-chain:start:first"
+    assert normalized_chain.facts[0].active_ready_frame == 1120
+
+    drained = runtime.normalize(1120)
+    assert [fact.fact_kind.value for fact in drained.facts] == [
+        "charge_recovered",
+        "chain_completed",
+    ]
+    assert drained.facts[0].chain_id is None
+    assert drained.facts[1].chain_id == "cooldown-chain:start:first"
     assert runtime.store.get_record(_key()).available_charges == 2
 
 
@@ -261,85 +280,7 @@ def test_duration_audit_terms_use_the_same_stage_order_as_resolution():
     ]
 
 
-def test_serial_mode_keeps_single_chain_and_legacy_fact_chain_projection():
-    runtime = _runtime(duration=900, charges=2)
-    runtime.normalize(100)
-    first = _start(runtime, "start:first", 100)
-    runtime.normalize(200)
-    second = _start(runtime, "start:second", 200)
-
-    assert first is not None and first.applied
-    assert second is not None and second.reused_chain_resolution
-    record = runtime.store.get_record(_key())
-    assert record.recovery_mode is CooldownRecoveryMode.SERIAL
-    assert record.pending_recoveries == 1
-    assert record.queued_recoveries == 1
-    assert record.active_recovery is not None and record.active_recovery.ready_frame == 1000
-
-    view = runtime.query_condition(runtime_query(_key(), 200)).view
-    assert view.recovery_mode is CooldownRecoveryMode.SERIAL
-    assert view.pending_recoveries == 1
-    assert view.queued_recoveries == 1
-
-    chained = runtime.normalize(1000)
-    assert [fact.fact_kind.value for fact in chained.facts] == ["charge_recovered"]
-    assert chained.facts[0].chain_id == "cooldown-chain:start:first"
-    assert chained.facts[0].active_ready_frame == 1900
-
-    drained = runtime.normalize(1900)
-    assert [fact.fact_kind.value for fact in drained.facts] == [
-        "charge_recovered",
-        "chain_completed",
-    ]
-    assert drained.facts[0].chain_id is None
-    assert drained.facts[1].chain_id == "cooldown-chain:start:first"
-    assert drained.facts[1].active_ready_frame is None
-    assert runtime.store.get_record(_key()).available_charges == 2
-
-
-def test_independent_recovery_runs_each_charge_on_its_own_timer():
-    runtime = _runtime(duration=900, charges=2, recovery_mode=CooldownRecoveryMode.INDEPENDENT)
-    runtime.normalize(100)
-    first = _start(runtime, "start:first", 100)
-    runtime.normalize(200)
-    second = _start(runtime, "start:second", 200)
-
-    assert first is not None and first.applied
-    assert second is not None and second.applied and not second.reused_chain_resolution
-    record = runtime.store.get_record(_key())
-    assert [item.ready_frame for item in record.recoveries] == [1000, 1100]
-    assert record.queued_recoveries == 0
-    assert record.available_charges == 0
-
-    view = runtime.query_condition(runtime_query(_key(), 200)).view
-    assert view.recovery_mode is CooldownRecoveryMode.INDEPENDENT
-    assert view.pending_recoveries == 2
-    assert view.queued_recoveries == 0
-    assert view.active_ready_frame == 1000
-    assert view.remaining_frames == 800
-
-    at_1000 = runtime.normalize(1000)
-    assert [fact.fact_kind.value for fact in at_1000.facts] == [
-        "charge_recovered",
-        "chain_completed",
-    ]
-    assert {fact.chain_id for fact in at_1000.facts} == {"cooldown-chain:start:first"}
-    after_first = runtime.store.get_record(_key())
-    assert after_first.available_charges == 1
-    assert [item.ready_frame for item in after_first.recoveries] == [1100]
-
-    at_1100 = runtime.normalize(1100)
-    assert [fact.fact_kind.value for fact in at_1100.facts] == [
-        "charge_recovered",
-        "chain_completed",
-    ]
-    assert {fact.chain_id for fact in at_1100.facts} == {"cooldown-chain:start:second"}
-    final = runtime.store.get_record(_key())
-    assert final.available_charges == 2
-    assert final.recoveries == ()
-
-
-def test_independent_start_resolves_its_own_duration_terms():
+def test_independent_recovery_runs_each_charge_on_its_own_timer_and_duration():
     runtime = _runtime(duration=900, charges=2, recovery_mode=CooldownRecoveryMode.INDEPENDENT)
     halve = CooldownDurationTerm(
         "halve",
@@ -353,12 +294,42 @@ def test_independent_start_resolves_its_own_duration_terms():
     runtime.normalize(200)
     second = _start(runtime, "start:second", 200)
 
+    # 独立模式不共享链：每次施放各自解析时长，各自计时。
     assert first is not None and first.resolution is not None
     assert first.resolution.resolved_duration_frames == 450
-    assert second is not None and second.resolution is not None
-    assert second.resolution.resolved_duration_frames == 900
-    assert not second.reused_chain_resolution
-    assert [item.ready_frame for item in runtime.store.get_record(_key()).recoveries] == [550, 1100]
+    assert second is not None and second.applied and not second.reused_chain_resolution
+    assert second.resolution is not None and second.resolution.resolved_duration_frames == 900
+    record = runtime.store.get_record(_key())
+    assert [item.ready_frame for item in record.recoveries] == [550, 1100]
+    assert [item.interval_frames for item in record.recoveries] == [450, 900]
+    assert record.queued_recoveries == 0
+    assert record.available_charges == 0
+
+    view = runtime.query_condition(runtime_query(_key(), 200)).view
+    assert view.recovery_mode is CooldownRecoveryMode.INDEPENDENT
+    assert (view.pending_recoveries, view.queued_recoveries) == (2, 0)
+    assert view.active_ready_frame == 550
+    assert view.remaining_frames == 350
+
+    at_550 = runtime.normalize(550)
+    assert [fact.fact_kind.value for fact in at_550.facts] == [
+        "charge_recovered",
+        "chain_completed",
+    ]
+    assert {fact.chain_id for fact in at_550.facts} == {"cooldown-chain:start:first"}
+    after_first = runtime.store.get_record(_key())
+    assert after_first.available_charges == 1
+    assert [item.ready_frame for item in after_first.recoveries] == [1100]
+
+    at_1100 = runtime.normalize(1100)
+    assert [fact.fact_kind.value for fact in at_1100.facts] == [
+        "charge_recovered",
+        "chain_completed",
+    ]
+    assert {fact.chain_id for fact in at_1100.facts} == {"cooldown-chain:start:second"}
+    final = runtime.store.get_record(_key())
+    assert final.available_charges == 2
+    assert final.recoveries == ()
 
 
 def test_independent_reduce_and_reset_target_the_earliest_pending_recovery():
@@ -389,19 +360,12 @@ def test_independent_reduce_and_reset_target_the_earliest_pending_recovery():
     assert final.available_charges == 2
     assert final.recoveries == ()
 
-
-def test_independent_reduce_without_pending_recovery_is_ignored():
-    runtime = _runtime(duration=100, charges=2, recovery_mode=CooldownRecoveryMode.INDEPENDENT)
-    runtime.normalize(0)
-    _start(runtime, "start:first", 0)
-    runtime.normalize(100)
-
-    result = runtime.reduce_remaining(
-        ReduceRemainingCooldownRequest("reduce", _key(), 100, 60, "test:reduction")
+    # 无在途恢复项时 reduce 是空操作：不改状态、不产出事实。
+    ignored = runtime.reduce_remaining(
+        ReduceRemainingCooldownRequest("reduce:noop", _key(), 700, 60, "test:reduction")
     )
-
-    assert not result.applied
-    assert [fact.fact_kind.value for fact in result.facts] == []
+    assert not ignored.applied
+    assert [fact.fact_kind.value for fact in ignored.facts] == []
     assert runtime.store.get_record(_key()).available_charges == 2
 
 

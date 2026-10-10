@@ -45,6 +45,28 @@ from genshin_sim.content.characters.mondstadt.barbara import (
     create_barbara_content_unit,
     create_barbara_encore_effect,
 )
+from genshin_sim.content.characters.mondstadt.sucrose import (
+    SUCROSE_CHARACTER_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C1_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C2_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C3_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C4_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C5_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C6_HANDLER_KEY,
+    SUCROSE_PASSIVE_A1_HANDLER_KEY,
+    SUCROSE_PASSIVE_A4_HANDLER_KEY,
+    SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY,
+    create_sucrose_constellation_c1,
+    create_sucrose_constellation_c2,
+    create_sucrose_constellation_c3,
+    create_sucrose_constellation_c4,
+    create_sucrose_constellation_c5,
+    create_sucrose_constellation_c6,
+    create_sucrose_content_unit,
+    create_sucrose_passive_a1,
+    create_sucrose_passive_a4,
+    create_sucrose_passive_witches_eve,
+)
 from genshin_sim.content.characters.snezhnaya.alyosha import (
     ALYOSHA_CHARACTER_HANDLER_KEY,
     ALYOSHA_CONSTELLATION_C1_HANDLER_KEY,
@@ -209,6 +231,10 @@ def create_default_content_unit_registry(
         create_barbara_content_unit,
     )
     registry.register_character_factory(
+        SUCROSE_CHARACTER_HANDLER_KEY,
+        create_sucrose_content_unit,
+    )
+    registry.register_character_factory(
         SANDRONE_CHARACTER_HANDLER_KEY,
         create_sandrone_content_unit,
     )
@@ -228,6 +254,18 @@ def create_default_content_unit_registry(
         BARBARA_ENCORE_EFFECT_HANDLER_KEY,
         create_barbara_encore_effect,
     )
+    for handler_key, factory in (
+        (SUCROSE_PASSIVE_A1_HANDLER_KEY, create_sucrose_passive_a1),
+        (SUCROSE_PASSIVE_A4_HANDLER_KEY, create_sucrose_passive_a4),
+        (SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY, create_sucrose_passive_witches_eve),
+        (SUCROSE_CONSTELLATION_C1_HANDLER_KEY, create_sucrose_constellation_c1),
+        (SUCROSE_CONSTELLATION_C2_HANDLER_KEY, create_sucrose_constellation_c2),
+        (SUCROSE_CONSTELLATION_C3_HANDLER_KEY, create_sucrose_constellation_c3),
+        (SUCROSE_CONSTELLATION_C4_HANDLER_KEY, create_sucrose_constellation_c4),
+        (SUCROSE_CONSTELLATION_C5_HANDLER_KEY, create_sucrose_constellation_c5),
+        (SUCROSE_CONSTELLATION_C6_HANDLER_KEY, create_sucrose_constellation_c6),
+    ):
+        registry.register_effect_factory(handler_key, factory)
     registry.register_weapon_factory(
         DULL_BLADE_HANDLER_KEY,
         create_dull_blade_content_unit,

@@ -47,6 +47,7 @@ from genshin_sim.content import (
 )
 from genshin_sim.content.hooks import HookDispatcher, build_hook_unlock_specs
 from genshin_sim.content.state_container import StatePatchIntentHandler
+from genshin_sim.content.team.mage import build_mage_roster
 from genshin_sim.core.actions import (
     ActionInterpreterRegistry,
     ActionManager,
@@ -150,6 +151,7 @@ from genshin_sim.core.simulation import (
 )
 from genshin_sim.core.simulation.intent_handlers import (
     BuffIntentHandler,
+    CooldownIntentHandler,
     ImpactIntentHandler,
 )
 from genshin_sim.core.simulation.intent_queue import IntentQueue
@@ -360,6 +362,8 @@ class RuntimeAssembler:
             event_engine=context.events,
         )
         context.register_system(moonsign_bundle.runtime)
+        mage_roster = build_mage_roster(content_bundle.content_units)
+        context.register_system(mage_roster)
         mounts_by_owner: dict[str, dict[str, ContentStateMount]] = {}
         for mount in content_bundle.content_state_mounts:
             mounts_by_owner.setdefault(mount.owner, {})[mount.state_key] = mount
@@ -825,6 +829,10 @@ class RuntimeAssembler:
             ImpactIntentHandler(impact_request_dispatcher),
         )
         settlement_runtime.register(IntentKind.BUFF, BuffIntentHandler(buff_max_hp_coordinator))
+        settlement_runtime.register(
+            IntentKind.COOLDOWN,
+            CooldownIntentHandler(cooldown_runtime),
+        )
         settlement_runtime.register(
             IntentKind.STATE_PATCH,
             StatePatchIntentHandler(team_state),

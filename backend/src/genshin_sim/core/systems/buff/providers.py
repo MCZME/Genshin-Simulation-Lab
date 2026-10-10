@@ -87,6 +87,7 @@ class BuffAttributeModifierProvider:
                             record.instance_ref.to_key(),
                         ),
                         stacking_group=template.stacking_group,
+                        reconvertible=template.reconvertible,
                         audit_tags=(
                             *template.audit_tags,
                             "buff",

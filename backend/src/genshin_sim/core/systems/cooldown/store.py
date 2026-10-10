@@ -56,6 +56,7 @@ class CooldownStore:
                 ability_kind=definition.ability_kind,
                 max_charges=definition.max_charges,
                 available_charges=definition.max_charges,
+                recovery_mode=definition.recovery_mode,
             )
             for definition in self.definitions.definitions
         }

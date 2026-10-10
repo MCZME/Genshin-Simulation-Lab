@@ -76,6 +76,7 @@ def _term(
     *,
     provider_key: str = "provider:test",
     group: str | None = None,
+    reconvertible: bool = True,
 ) -> ModifierTerm:
     return ModifierTerm(
         target_key=target_key,
@@ -84,6 +85,7 @@ def _term(
         provider_key=provider_key,
         source_ref=CONFIG_SOURCE,
         stacking_group=group,
+        reconvertible=reconvertible,
     )
 
 
@@ -102,6 +104,7 @@ def _static_provider(
             source_ref=term.source_ref,
             stacking_group=term.stacking_group,
             audit_tags=term.audit_tags,
+            reconvertible=term.reconvertible,
         )
         for term in terms
     )
@@ -218,12 +221,13 @@ def test_missing_value_policy_uses_default_or_raises():
 
 
 def test_base_sum_total_stat_and_additive_policies():
+    # 标记只影响二次转化分桶，不参与终值计算：以下断言同时冻结终值与两桶口径。
     provider = _static_provider(
         "provider:stats",
         (
-            _term(STAT_ATK_BASE, ModifierStage.BASE_ADD, 10.0),
+            _term(STAT_ATK_BASE, ModifierStage.BASE_ADD, 10.0, reconvertible=False),
             _term(STAT_ATK_TOTAL, ModifierStage.PERCENT_ADD, 0.2),
-            _term(STAT_ATK_TOTAL, ModifierStage.FLAT_ADD, 100.0),
+            _term(STAT_ATK_TOTAL, ModifierStage.FLAT_ADD, 100.0, reconvertible=False),
             _term(STAT_ATK_TOTAL, ModifierStage.FINAL_MULTIPLIER, 0.5),
             _term(STAT_ATK_TOTAL, ModifierStage.FINAL_MULTIPLIER, 0.1),
             _term(STAT_CRIT_RATE, ModifierStage.FLAT_ADD, 0.2),
@@ -238,11 +242,29 @@ def test_base_sum_total_stat_and_additive_policies():
         providers=(provider,),
     )
 
-    assert resolver.resolve(AttributeQuery(CHARACTER, STAT_ATK_BASE, frame=1)).final_value == 1510
-    assert (
-        resolver.resolve(AttributeQuery(CHARACTER, STAT_ATK_TOTAL, frame=1)).final_value == 3154.8
-    )
-    assert resolver.resolve(AttributeQuery(CHARACTER, STAT_CRIT_RATE, frame=1)).final_value == 0.25
+    atk_base = resolver.resolve(AttributeQuery(CHARACTER, STAT_ATK_BASE, frame=1))
+    assert atk_base.final_value == 1510
+    # base_sum：基础值一律计入可被转化桶，只有被标记的修饰项落入不可转化桶。
+    assert atk_base.reconvertible_value == pytest.approx(1500.0)
+    assert atk_base.non_reconvertible_value == pytest.approx(10.0)
+
+    atk_total = resolver.resolve(AttributeQuery(CHARACTER, STAT_ATK_TOTAL, frame=1))
+    assert atk_total.final_value == 3154.8
+    # total_stat：可转化 = 基础 * (1 + 可转化 percent) + 可转化 flat，
+    # 再被 final_multiplier 等权缩放。
+    assert atk_total.reconvertible_value == pytest.approx(1812.0 * 1.5 * 1.1)
+    assert atk_total.non_reconvertible_value == pytest.approx(100.0 * 1.5 * 1.1)
+
+    crit_rate = resolver.resolve(AttributeQuery(CHARACTER, STAT_CRIT_RATE, frame=1))
+    assert crit_rate.final_value == 0.25
+    # 默认标记（全部可转化）下整份值进入可被转化桶，不可转化桶为 0。
+    assert crit_rate.reconvertible_value == crit_rate.final_value
+    assert crit_rate.non_reconvertible_value == 0.0
+
+    for resolution in (atk_base, atk_total, crit_rate):
+        assert resolution.reconvertible_value + resolution.non_reconvertible_value == pytest.approx(
+            resolution.final_value
+        )
 
 
 def test_stacking_group_highest_and_lowest_rejects_losers():
@@ -305,25 +327,37 @@ def test_override_forbidden_single_and_conflict():
             namespace_owner="character.test",
         )
     )
-    single_provider = _static_provider(
-        "provider:override.single",
-        (
-            ModifierTerm(
-                private_key,
-                ModifierStage.OVERRIDE,
-                2.0,
-                "provider:override.single",
-                CONFIG_SOURCE,
+
+    def _resolve_single(reconvertible: bool) -> AttributeResolution:
+        provider = _static_provider(
+            "provider:override.single",
+            (
+                ModifierTerm(
+                    private_key,
+                    ModifierStage.OVERRIDE,
+                    2.0,
+                    "provider:override.single",
+                    CONFIG_SOURCE,
+                    reconvertible=reconvertible,
+                ),
             ),
-        ),
-        private_namespace="character.test",
-    )
-    assert (
-        _resolver(providers=(single_provider,), registry=registry)
-        .resolve(AttributeQuery(CHARACTER, private_key, frame=1))
-        .final_value
-        == 1.0
-    )
+            private_namespace="character.test",
+        )
+        return _resolver(providers=(provider,), registry=registry).resolve(
+            AttributeQuery(CHARACTER, private_key, frame=1)
+        )
+
+    # override 是整体替换：两桶按该 override 项自己的标记整体归属；2.0 被
+    # upper_bound 收敛到 1.0 后，不可转化桶取残差，不变式仍成立。
+    marked = _resolve_single(True)
+    assert marked.final_value == 1.0
+    assert marked.reconvertible_value == 1.0
+    assert marked.non_reconvertible_value == 0.0
+
+    unmarked = _resolve_single(False)
+    assert unmarked.final_value == 1.0
+    assert unmarked.reconvertible_value == 0.0
+    assert unmarked.non_reconvertible_value == 1.0
 
     conflict_provider = _static_provider(
         "provider:override.conflict",
@@ -612,6 +646,15 @@ def test_rejects_non_finite_values_normalizes_negative_zero_and_uses_fsum():
             "provider:nan",
             CONFIG_SOURCE,
         )
+    with pytest.raises(AttributeValidationError, match="reconvertible"):
+        ModifierTerm(
+            STAT_CRIT_RATE,
+            ModifierStage.FLAT_ADD,
+            0.1,
+            "provider:bad_flag",
+            CONFIG_SOURCE,
+            reconvertible=cast(Any, 1),
+        )
     with pytest.raises(AttributeValidationError):
         BaseAttributeContribution(STAT_HP_BASE, math.inf, ASSET_SOURCE)
 
@@ -642,6 +685,8 @@ def test_attribute_resolution_to_dict_recurses_dependencies_completely():
         subject_ref=subject,
         final_value=100.0,
         base_value=100.0,
+        reconvertible_value=100.0,
+        non_reconvertible_value=0.0,
         applied_terms=(),
         rejected_terms=(),
         dependency_resolutions=(),
@@ -652,6 +697,8 @@ def test_attribute_resolution_to_dict_recurses_dependencies_completely():
         subject_ref=subject,
         final_value=180.0,
         base_value=100.0,
+        reconvertible_value=180.0,
+        non_reconvertible_value=0.0,
         applied_terms=(
             ModifierTerm(
                 STAT_ATK_TOTAL,
@@ -669,7 +716,10 @@ def test_attribute_resolution_to_dict_recurses_dependencies_completely():
     payload = cast(dict[str, Any], resolution.to_dict())
     assert payload["attribute_key"] == STAT_ATK_TOTAL.value
     assert payload["subject_ref"] == {"kind": "character", "entity_id": "character:slot_1"}
+    assert payload["reconvertible_value"] == 180.0
+    assert payload["non_reconvertible_value"] == 0.0
     assert payload["applied_terms"][0]["provider_key"] == "provider.test"
+    assert payload["applied_terms"][0]["reconvertible"] is True
     assert payload["dependency_resolutions"][0]["attribute_key"] == STAT_ATK_BASE.value
     assert payload["dependency_resolutions"][0]["dependency_resolutions"] == ()
     assert payload["policy_key"] == "policy.default"

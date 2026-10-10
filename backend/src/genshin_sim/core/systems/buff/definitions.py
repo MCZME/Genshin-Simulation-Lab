@@ -51,6 +51,9 @@ class BuffAttributeModifierTemplate:
     required_query_tags: frozenset[str] = frozenset()
     excluded_query_tags: frozenset[str] = frozenset()
     audit_tags: tuple[str, ...] = ()
+    # 是否可被二次转化：随模板透传到产出的 ModifierTerm，供属性系统分桶求和
+    # （口径见属性系统契约 §11.4）。默认可以，转化效果的产物由内容侧标 False。
+    reconvertible: bool = True
 
     def __post_init__(self) -> None:
         validate_non_empty_text(self.term_key, "term_key")
@@ -71,6 +74,8 @@ class BuffAttributeModifierTemplate:
         for tag in self.audit_tags:
             validate_non_empty_text(tag, "audit_tags")
         object.__setattr__(self, "audit_tags", tuple(self.audit_tags))
+        if not isinstance(self.reconvertible, bool):
+            raise BuffValidationError("modifier reconvertible 必须是布尔值")
 
     def matches_tags(self, query_tags: frozenset[str]) -> bool:
         return self.required_query_tags.issubset(
@@ -87,6 +92,7 @@ class BuffAttributeModifierTemplate:
             "required_query_tags": tuple(sorted(self.required_query_tags)),
             "excluded_query_tags": tuple(sorted(self.excluded_query_tags)),
             "audit_tags": self.audit_tags,
+            "reconvertible": self.reconvertible,
         }
 
 

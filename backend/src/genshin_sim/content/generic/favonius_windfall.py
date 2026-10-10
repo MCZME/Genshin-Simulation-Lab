@@ -40,7 +40,7 @@ WINDFALL_TRAVEL_FRAMES_MAX = 50
 
 # 本部件对资产效果参数的位置约定：components[0] 是触发概率，components[1] 是
 # 间隔秒数，两者的 values 都按精炼顺序给出取值。资产参数的整体形态由资产侧决定，
-# 装配层不承诺也不校验它（见 D-080），因此这里的解析规则是本部件的实现细节。
+# 装配层不承诺也不校验它（见 D-079），因此这里的解析规则是本部件的实现细节。
 _PROBABILITY_INDEX = 0
 _INTERVAL_SECONDS_INDEX = 1
 _REQUIRED_COMPONENT_COUNT = 2

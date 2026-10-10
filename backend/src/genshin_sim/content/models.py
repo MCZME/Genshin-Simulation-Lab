@@ -39,6 +39,10 @@ class HookResult:
     modifier_commands: Sequence[object] = field(default_factory=tuple)
     state_patches: Sequence[object] = field(default_factory=tuple)
     buff_requests: Sequence[object] = field(default_factory=tuple)
+    # 冷却变更意图：载荷为 CooldownMutationBatchRequest（冷却运行时只接批量口），
+    # 供「命中减冷却 / 重置冷却」这类**运行期**冷却变更走统一意图队列，而不是
+    # 让 hook 直接写冷却存储（hook 保持只读、只产出下一轮意图）。
+    cooldown_requests: Sequence[object] = field(default_factory=tuple)
     audit_notes: Sequence[str] = field(default_factory=tuple)
 
     def __post_init__(self) -> None:
@@ -46,6 +50,7 @@ class HookResult:
         object.__setattr__(self, "modifier_commands", tuple(self.modifier_commands))
         object.__setattr__(self, "state_patches", tuple(self.state_patches))
         object.__setattr__(self, "buff_requests", tuple(self.buff_requests))
+        object.__setattr__(self, "cooldown_requests", tuple(self.cooldown_requests))
         object.__setattr__(self, "audit_notes", tuple(self.audit_notes))
 
 

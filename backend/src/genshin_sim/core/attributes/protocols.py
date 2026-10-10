@@ -12,6 +12,7 @@ from genshin_sim.core.attributes.models import (
     BaseAttributeContribution,
     ModifierProviderSpec,
     ModifierTerm,
+    PolicyResolution,
 )
 
 
@@ -64,4 +65,4 @@ class ResolutionPolicy(Protocol):
         base_contributions: tuple[BaseAttributeContribution, ...],
         terms: tuple[ModifierTerm, ...],
         dependencies: tuple[AttributeResolution, ...],
-    ) -> tuple[float, float]: ...
+    ) -> PolicyResolution: ...

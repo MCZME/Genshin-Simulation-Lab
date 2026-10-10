@@ -1,5 +1,11 @@
 """队伍级规则的具体内容定义。"""
 
+from genshin_sim.content.team.mage import (
+    MAGE_ACTIVATION_THRESHOLD,
+    MAGE_MARKER_KEY,
+    MageRoster,
+    build_mage_roster,
+)
 from genshin_sim.content.team.moonsign import (
     MOONSIGN_BONUS_CAP,
     MOONSIGN_BONUS_DURATION_FRAMES,
@@ -48,4 +54,8 @@ __all__ = [
     "MOONSIGN_BONUS_CAP",
     "MOONSIGN_BONUS_DURATION_FRAMES",
     "MOONSIGN_SCALING_BY_ELEMENT",
+    "MAGE_ACTIVATION_THRESHOLD",
+    "MAGE_MARKER_KEY",
+    "MageRoster",
+    "build_mage_roster",
 ]

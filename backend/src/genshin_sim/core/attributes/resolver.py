@@ -114,26 +114,36 @@ class AttributeResolver:
             non_override_terms = tuple(
                 term for term in applied_terms if term.stage is not ModifierStage.OVERRIDE
             )
-            base_value, final_value = policy.resolve(
+            policy_result = policy.resolve(
                 definition,
                 base_contributions,
                 non_override_terms,
                 dependency_resolutions,
             )
+            base_value = policy_result.base_value
+            final_value = policy_result.final_value
+            reconvertible_value = policy_result.reconvertible_value
             override_terms = [
                 term for term in applied_terms if term.stage is ModifierStage.OVERRIDE
             ]
             if override_terms:
                 if len(override_terms) > 1:
                     raise ConflictingOverrideError(f"属性 {query.attribute_key} 存在多个 override")
-                final_value = normalize_zero(
-                    policy.apply_bounds(definition, override_terms[0].value)
-                )
+                # override 是整体替换：两桶按该 override 项的标记整体归属
+                # （其余修饰项在最终值里已被替换掉，不再参与分桶）。
+                override_term = override_terms[0]
+                final_value = normalize_zero(policy.apply_bounds(definition, override_term.value))
+                reconvertible_value = final_value if override_term.reconvertible else 0.0
+            reconvertible_value = normalize_zero(reconvertible_value)
             resolution = AttributeResolution(
                 attribute_key=query.attribute_key,
                 subject_ref=query.subject_ref,
                 final_value=final_value,
                 base_value=base_value,
+                reconvertible_value=reconvertible_value,
+                # 不可被转化桶取残差，保证「可被转化 + 不可被转化 == final_value」
+                # 恒成立（含 bounds 生效与 override 路径）。
+                non_reconvertible_value=normalize_zero(final_value - reconvertible_value),
                 applied_terms=applied_terms,
                 rejected_terms=rejected_terms,
                 dependency_resolutions=dependency_resolutions,
@@ -297,6 +307,8 @@ def _project_resolution(
         subject_ref=resolution.subject_ref,
         final_value=resolution.final_value,
         base_value=resolution.base_value,
+        reconvertible_value=resolution.reconvertible_value,
+        non_reconvertible_value=resolution.non_reconvertible_value,
         applied_terms=applied_terms,
         rejected_terms=(),
         dependency_resolutions=dependency_resolutions,

@@ -2,7 +2,35 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from genshin_sim.core.systems.cooldown.models import CooldownRecord
+from genshin_sim.core.systems.cooldown.models import ActiveRecovery, CooldownRecord
+
+
+@dataclass(frozen=True, slots=True)
+class CooldownRecoverySnapshot:
+    started_frame: int
+    ready_frame: int
+    interval_frames: int
+    chain_id: str
+    start_source_ref: str
+
+    @classmethod
+    def from_recovery(cls, recovery: ActiveRecovery) -> CooldownRecoverySnapshot:
+        return cls(
+            started_frame=recovery.started_frame,
+            ready_frame=recovery.ready_frame,
+            interval_frames=recovery.interval_frames,
+            chain_id=recovery.chain_id,
+            start_source_ref=recovery.start_source_ref,
+        )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "started_frame": self.started_frame,
+            "ready_frame": self.ready_frame,
+            "interval_frames": self.interval_frames,
+            "chain_id": self.chain_id,
+            "start_source_ref": self.start_source_ref,
+        }
 
 
 @dataclass(frozen=True, slots=True)
@@ -19,6 +47,8 @@ class CooldownRecordSnapshot:
     queued_recoveries: int
     chain_id: str | None
     revision: int
+    recovery_mode: str = "serial"
+    recoveries: tuple[CooldownRecoverySnapshot, ...] = ()
 
     @classmethod
     def from_record(cls, record: CooldownRecord) -> CooldownRecordSnapshot:
@@ -36,6 +66,10 @@ class CooldownRecordSnapshot:
             queued_recoveries=record.queued_recoveries,
             chain_id=None if active is None else active.chain_id,
             revision=record.revision,
+            recovery_mode=record.recovery_mode.value,
+            recoveries=tuple(
+                CooldownRecoverySnapshot.from_recovery(item) for item in record.recoveries
+            ),
         )
 
     def to_dict(self) -> dict[str, object]:
@@ -52,6 +86,8 @@ class CooldownRecordSnapshot:
             "queued_recoveries": self.queued_recoveries,
             "chain_id": self.chain_id,
             "revision": self.revision,
+            "recovery_mode": self.recovery_mode,
+            "recoveries": [item.to_dict() for item in self.recoveries],
         }
 
 

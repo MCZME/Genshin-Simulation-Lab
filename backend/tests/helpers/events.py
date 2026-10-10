@@ -5,7 +5,7 @@ from __future__ import annotations
 from types import SimpleNamespace
 
 from genshin_sim.core.attributes import AttributeSubjectRef
-from genshin_sim.core.elements import ElementalSourceRef
+from genshin_sim.core.elements import AuraKind, ElementalSourceRef
 from genshin_sim.core.events import (
     ActionStartedPayload,
     EventType,
@@ -35,17 +35,24 @@ def make_reaction_occurrence_event(
     occurrence_ref: str,
     *,
     source_key: str = "character:slot_1",
+    aura_kind: AuraKind | None = None,
 ) -> SimpleNamespace:
-    """构造反应发生事实替身。"""
+    """构造反应发生事实替身。
 
-    del frame
+    ``aura_kind`` 非空时补上 ``transition.aura_kind``：扩散类内容的「被扩散
+    元素」判据只读该字段（反应事实本体由反应系统产出，此处仅补最小形状）。
+    """
+
+    transition = None if aura_kind is None else SimpleNamespace(aura_kind=aura_kind)
     return SimpleNamespace(
+        frame=frame,
         event_type=EventType.REACTION_OCCURRED,
         payload=SimpleNamespace(
             occurrence=SimpleNamespace(
                 reaction_key=reaction_key,
                 occurrence_ref=occurrence_ref,
                 source_ref=ElementalSourceRef(source_key),
+                transition=transition,
             )
         ),
     )
@@ -79,12 +86,16 @@ def make_damage_resolved_event(
 def make_action_started_event(
     frame: int,
     slot: int,
-    ability: str,
+    ability: str | None,
     *,
     instance_id: int = 1,
     action_key: str = "character.test.skill",
 ) -> GameEvent:
-    """构造动作开始事实。"""
+    """构造动作开始事实。
+
+    ``ability`` 允许为 ``None``：``ActionStartedPayload.ability_key`` 本身可空，
+    没有冷却技能的动作（例如普通攻击）携带空 ability_key，内容侧判据此区分。
+    """
 
     return GameEvent(
         EventType.ACTION_STARTED,

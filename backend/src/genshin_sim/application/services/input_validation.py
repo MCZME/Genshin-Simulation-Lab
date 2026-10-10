@@ -150,7 +150,7 @@ class BatchInputValidationService:
             prefix = f"team[{team_index}]"
             try:
                 character = repository.get_character(slot.character.asset_key)
-            except (AssetError, LookupError):
+            except AssetError, LookupError:
                 details.append(
                     _asset_diagnostic(
                         item_id,
@@ -190,7 +190,7 @@ class BatchInputValidationService:
             for talent_key in slot.character.talents:
                 try:
                     repository.get_talent_scalings(character.asset_key, talent_key)
-                except (AssetError, LookupError):
+                except AssetError, LookupError:
                     details.append(
                         _asset_diagnostic(
                             item_id,
@@ -204,7 +204,7 @@ class BatchInputValidationService:
                 weapon_path = f"{prefix}.weapon.asset_key"
                 try:
                     weapon = repository.get_weapon(slot.weapon.asset_key)
-                except (AssetError, LookupError):
+                except AssetError, LookupError:
                     details.append(_asset_diagnostic(item_id, weapon_path, "武器资产不存在"))
                 else:
                     if weapon.handler_key is not None and not registry.has_weapon_handler(
@@ -223,7 +223,7 @@ class BatchInputValidationService:
                             weapon.asset_key,
                             slot.weapon.level,
                         )
-                    except (AssetError, LookupError):
+                    except AssetError, LookupError:
                         details.append(
                             _asset_diagnostic(
                                 item_id,
@@ -245,7 +245,7 @@ class BatchInputValidationService:
                 artifact_path = f"{prefix}.artifacts.sets[{artifact_index}].asset_key"
                 try:
                     artifact_set = repository.get_artifact_set(artifact_config.asset_key)
-                except (AssetError, LookupError):
+                except AssetError, LookupError:
                     details.append(
                         _asset_diagnostic(item_id, artifact_path, "圣遗物套装资产不存在")
                     )
@@ -267,7 +267,7 @@ class BatchInputValidationService:
                         artifact_set.asset_key,
                         artifact_config.pieces,
                     )
-                except (AssetError, LookupError):
+                except AssetError, LookupError:
                     details.append(
                         _asset_diagnostic(
                             item_id,
@@ -325,7 +325,7 @@ class BatchInputValidationService:
                 repository,
                 content_unit_registry=registry,
             ).assemble(config)
-        except (AssemblyError, LookupError, ValueError):
+        except AssemblyError, LookupError, ValueError:
             details.append(
                 BatchDiagnostic(
                     code="NOT_RUNNABLE",
@@ -346,7 +346,7 @@ class BatchInputValidationService:
     ) -> None:
         try:
             repository.get_character_level_stats(character_key, slot.character.level)
-        except (AssetError, LookupError):
+        except AssetError, LookupError:
             details.append(
                 _asset_diagnostic(
                     item_id,
@@ -367,7 +367,7 @@ class BatchInputValidationService:
     ) -> None:
         try:
             effects = repository.get_effect_payloads(owner_key)
-        except (AssetError, LookupError):
+        except AssetError, LookupError:
             details.append(
                 _asset_diagnostic(item_id, path, "效果数据不可用", code="ASSET_UNAVAILABLE")
             )

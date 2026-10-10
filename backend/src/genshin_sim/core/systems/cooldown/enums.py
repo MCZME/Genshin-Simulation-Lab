@@ -15,6 +15,17 @@ class CooldownDurationMode(StrEnum):
     REQUEST_PROVIDED = "request_provided"
 
 
+class CooldownRecoveryMode(StrEnum):
+    """多充能恢复语义。
+
+    `SERIAL` 为既有默认：同一时刻只有一项在计时，其余已消费次数排队等待。
+    `INDEPENDENT` 为新增能力：每次消费各自独立计时，互不影响。
+    """
+
+    SERIAL = "serial"
+    INDEPENDENT = "independent"
+
+
 class CooldownDurationStage(StrEnum):
     BASE = "base"
     OWNER_ADJUSTMENT = "owner_adjustment"

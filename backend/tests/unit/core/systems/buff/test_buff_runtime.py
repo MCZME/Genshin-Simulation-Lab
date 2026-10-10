@@ -87,6 +87,20 @@ def test_model_definition_and_instance_validation():
     with pytest.raises(BuffSystemError, match="value"):
         BuffModifierValue("atk_bonus", True)  # type: ignore[arg-type]
 
+    with pytest.raises(BuffSystemError, match="reconvertible"):
+        BuffAttributeModifierTemplate(
+            term_key="atk_bonus",
+            target_key=STAT_ATK_TOTAL,
+            stage=ModifierStage.PERCENT_ADD,
+            reconvertible=1,  # type: ignore[arg-type]
+        )
+
+    # 默认可被二次转化；标记随模板序列化，作为属性侧分桶口径的输入。
+    assert _definition().attribute_modifiers[0].to_dict()["reconvertible"] is True
+    assert (
+        _definition(reconvertible=False).attribute_modifiers[0].to_dict()["reconvertible"] is False
+    )
+
 
 def test_replace_refresh_stack_and_coexist_policies_publish_stable_events():
     definition = _definition(policy=BuffApplicationPolicy.REPLACE)
@@ -341,6 +355,8 @@ def test_attribute_provider_filters_tags_scales_stacks_and_preserves_audit_sourc
     assert terms[0].source_ref.instance_id == "buff:1"
     assert "definition:buff.test" in terms[0].audit_tags
     assert "stacks:2" in terms[0].audit_tags
+    # 模板标记透传进 ModifierTerm，交由属性侧决定二次转化分桶。
+    assert terms[0].reconvertible is True
 
     registry = create_public_attribute_registry()
     registry.register_stacking_group(
@@ -556,6 +572,7 @@ def _definition(
     required_tags: frozenset[str] = frozenset(),
     excluded_tags: frozenset[str] = frozenset(),
     stacking_group: str | None = None,
+    reconvertible: bool = True,
 ) -> BuffDefinition:
     modifiers = ()
     if not marker_only:
@@ -569,6 +586,7 @@ def _definition(
                 required_query_tags=required_tags,
                 excluded_query_tags=excluded_tags,
                 audit_tags=("test",),
+                reconvertible=reconvertible,
             ),
         )
     return BuffDefinition(

@@ -179,6 +179,10 @@ class ModifierTerm:
     audit_tags: tuple[str, ...] = ()
     # provider 显示名：由收集器从 ModifierProviderSpec.display_name 注入，内容未提供时为 None。
     provider_display_name: str | None = None
+    # 是否可被二次转化：标记本条修饰能否进入下游转化效果的读入桶。默认可以
+    # （未标记的既有修饰行为逐位不变）；转化效果的产物由内容侧显式标 False。
+    # 属性系统只按该标记分桶求和，不判断修饰来源。
+    reconvertible: bool = True
 
     def __post_init__(self) -> None:
         if not isinstance(self.stage, ModifierStage):
@@ -192,6 +196,8 @@ class ModifierTerm:
             if not isinstance(tag, str) or not tag.strip():
                 raise AttributeValidationError("audit_tags 必须是非空字符串")
         object.__setattr__(self, "audit_tags", tuple(self.audit_tags))
+        if not isinstance(self.reconvertible, bool):
+            raise AttributeValidationError("modifier reconvertible 必须是布尔值")
 
     def to_dict(self) -> dict[str, object]:
         return {
@@ -203,6 +209,7 @@ class ModifierTerm:
             "source_ref": self.source_ref.to_dict(),
             "stacking_group": self.stacking_group,
             "audit_tags": tuple(self.audit_tags),
+            "reconvertible": self.reconvertible,
         }
 
 
@@ -240,11 +247,48 @@ class ModifierProviderSpec:
 
 
 @dataclass(frozen=True, slots=True)
+class PolicyResolution:
+    """单条 ResolutionPolicy 的求值输出。
+
+    ``reconvertible_value`` 是「可被二次转化值」：只把 ``reconvertible`` 为
+    真的修饰项与基础值计入的重算结果（``final_multiplier`` 项对两桶等权生效、
+    不参与划分）；「不可被二次转化值」由解析器取 ``final_value`` 的残差，保证
+    ``reconvertible_value + non_reconvertible_value == final_value`` 恒成立。
+    """
+
+    base_value: float
+    final_value: float
+    reconvertible_value: float
+
+    def __post_init__(self) -> None:
+        object.__setattr__(
+            self,
+            "base_value",
+            validate_finite_float(self.base_value, "policy base_value"),
+        )
+        object.__setattr__(
+            self,
+            "final_value",
+            validate_finite_float(self.final_value, "policy final_value"),
+        )
+        object.__setattr__(
+            self,
+            "reconvertible_value",
+            validate_finite_float(self.reconvertible_value, "policy reconvertible_value"),
+        )
+
+
+@dataclass(frozen=True, slots=True)
 class AttributeResolution:
     attribute_key: AttributeKey
     subject_ref: AttributeSubjectRef
     final_value: float
     base_value: float
+    # 双桶结果（二次转化口径）：可被二次转化值 + 不可被二次转化值 == final_value。
+    # 消费方按自身情形取值——非转化效果与「列表2」效果取 final_value（全量），
+    # 转化效果取 reconvertible_value。
+    reconvertible_value: float
+    non_reconvertible_value: float
     applied_terms: tuple[ModifierTerm, ...]
     rejected_terms: tuple[ModifierTerm, ...]
     dependency_resolutions: tuple[AttributeResolution, ...]
@@ -258,6 +302,16 @@ class AttributeResolution:
             validate_finite_float(self.final_value, "final_value"),
         )
         object.__setattr__(self, "base_value", validate_finite_float(self.base_value, "base_value"))
+        object.__setattr__(
+            self,
+            "reconvertible_value",
+            validate_finite_float(self.reconvertible_value, "reconvertible_value"),
+        )
+        object.__setattr__(
+            self,
+            "non_reconvertible_value",
+            validate_finite_float(self.non_reconvertible_value, "non_reconvertible_value"),
+        )
         object.__setattr__(self, "applied_terms", tuple(self.applied_terms))
         object.__setattr__(self, "rejected_terms", tuple(self.rejected_terms))
         object.__setattr__(self, "dependency_resolutions", tuple(self.dependency_resolutions))
@@ -271,6 +325,8 @@ class AttributeResolution:
             "subject_ref": self.subject_ref.to_dict(),
             "final_value": self.final_value,
             "base_value": self.base_value,
+            "reconvertible_value": self.reconvertible_value,
+            "non_reconvertible_value": self.non_reconvertible_value,
             "applied_terms": tuple(term.to_dict() for term in self.applied_terms),
             "rejected_terms": tuple(term.to_dict() for term in self.rejected_terms),
             "dependency_resolutions": tuple(

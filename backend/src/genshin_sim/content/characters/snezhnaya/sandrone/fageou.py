@@ -512,8 +512,7 @@ class SandroneFageouHook:
         origin: Vector3,
         direction: Vector3,
     ) -> tuple[str, float] | None:
-        """子弹直线求交：沿 facing 射线的首个命中（单一实例）。
-        """
+        """子弹直线求交：沿 facing 射线的首个命中（单一实例）。"""
 
         simulation = context.simulation
         if simulation is None:

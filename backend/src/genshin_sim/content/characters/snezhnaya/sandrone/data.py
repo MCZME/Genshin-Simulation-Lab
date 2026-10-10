@@ -1,5 +1,4 @@
-"""桑多涅内容数据：稳定键、动作数据表与伤害数据。
-"""
+"""桑多涅内容数据：稳定键、动作数据表与伤害数据。"""
 
 from __future__ import annotations
 
@@ -71,6 +70,7 @@ class SandroneP4AssetValues:
     tactics_max_stacks: int
     tactics_duration_frames: int
     beam_bonus_per_stack: float
+
 
 # 法洁欧请求级事实 key。写入只发生在发射时刻（hook 自身），伤害系统只读。
 FAGEOU_RAY_INDEX_FACT_KEY = "sandrone.fageou.ray_index"

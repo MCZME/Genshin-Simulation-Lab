@@ -1,12 +1,4 @@
-"""砂糖内容单元编译入口。
-
-本文件只负责内容单元编排：读取资产倍率，调用 ``impacts.py`` 的影响契约
-编译函数，最后组装 ``ContentUnit``。S1 覆盖普攻四段、重击与下落攻击；S2
-追加元素战技（单次范围风伤、15s 冷却、战技命中产 4 风微粒），并声明冷却
-定义与产球钩子；S3 追加元素爆发（大型风灵创建物、持续风伤、染色伤害、
-20s 冷却、能量花费）；S7 在单元 metadata 上声明魔导资格标记（装配期收集为
-魔导名录，供「魔女的前夜礼」判定激活）。
-"""
+"""砂糖内容单元编译入口。"""
 
 from __future__ import annotations
 
@@ -22,6 +14,7 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_CONTENT_VERSION,
     SUCROSE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
     SUCROSE_ELEMENTAL_BURST_COOLDOWN_FRAMES,
+    SUCROSE_ELEMENTAL_SKILL_BASE_CHARGES,
     SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
     SUCROSE_ELEMENTAL_SKILL_COOLDOWN_FRAMES,
     SUCROSE_ELEMENTAL_SKILL_IMPACT_KEY,
@@ -136,13 +129,14 @@ def create_sucrose_content_unit(
     )
     # C1 堆叠真空域：E 的可使用次数 +1（资产 c1 的 number_1）。充能数只能由
     # 冷却定义承载（内容侧没有「充能 term」这类动态通道），故按命座在编译期
-    # 取值；独立恢复模式是 S6 新增的能力，串行仍是其余角色的默认。
+    # 取值。
     extra_charges = _constellation_value(
         request,
         threshold=1,
         unlock_key="c1",
         purpose="C1 堆叠真空域",
     )
+    skill_charges, skill_recovery_mode = _skill_charge_profile(extra_charges)
     # C2 不羁型贝特：爆发窗口延长 2 秒（资产 c2 的 number_1）；窗口 / 生命周期
     # / 拍数三者由 resolve_spirit_timing 同源派生，避免「窗口 8s 却只打 3 拍」。
     burst_extra_seconds = _constellation_value(
@@ -168,11 +162,9 @@ def create_sucrose_content_unit(
         ),
         ability_kind=AbilityKind.ELEMENTAL_SKILL,
         base_duration_frames=SUCROSE_ELEMENTAL_SKILL_COOLDOWN_FRAMES,
-        max_charges=1 + extra_charges,
+        max_charges=skill_charges,
         duration_mode=CooldownDurationMode.FIXED,
-        recovery_mode=(
-            CooldownRecoveryMode.INDEPENDENT if extra_charges else CooldownRecoveryMode.SERIAL
-        ),
+        recovery_mode=skill_recovery_mode,
         source_ref=SUCROSE_CHARACTER_HANDLER_KEY,
         tags=("elemental_skill",),
     )
@@ -222,9 +214,6 @@ def create_sucrose_content_unit(
         cooldown_definitions=(skill_cooldown_definition, burst_cooldown_definition),
         metadata={
             "purpose": "sucrose_action_state_machine",
-            # 魔导资格：完成「魔女的课业·仙境花之题」后砂糖成为魔导角色。本期
-            # 裁定默认已完成、不作为仿真输入项，故标记为角色的静态属性；
-            # 装配期收集为魔导名录（content/team/mage.py）。
             MAGE_MARKER_KEY: True,
         },
     )
@@ -249,12 +238,28 @@ def _constellation_value(
     if params is None:
         raise ContentUnitValidationError(f"{purpose} 已解锁但缺少资产效果行：{unlock_key}")
     values = read_constellation_components(params, purpose=purpose)
-    if not values:
-        raise ContentUnitValidationError(f"{purpose} 资产效果行缺少数值分量")
     value = round(values[0])
     if value <= 0:
         raise ContentUnitValidationError(f"{purpose} 资产数值必须为正数")
     return value
+
+
+def _skill_charge_profile(
+    extra_charges: int,
+) -> tuple[int, CooldownRecoveryMode]:
+    """E 的充能数与恢复模式：C1 的**成对**落点。
+
+    充能数与恢复模式是并列的两个落点，在此成对给出，而不是让
+    「恢复模式」由「充能数 > 1」推导出来——两者是独立维度，将来若出现只加
+    充能而不改恢复模式（或反之）的来源，只需改这里，不会牵连。
+    """
+
+    if extra_charges:
+        return (
+            SUCROSE_ELEMENTAL_SKILL_BASE_CHARGES + extra_charges,
+            CooldownRecoveryMode.INDEPENDENT,
+        )
+    return SUCROSE_ELEMENTAL_SKILL_BASE_CHARGES, CooldownRecoveryMode.SERIAL
 
 
 def _cooldown_terms_for_actions(
@@ -262,8 +267,8 @@ def _cooldown_terms_for_actions(
 ) -> Mapping[str, tuple[CooldownDurationTerm, ...]]:
     """把内容贡献的冷却时长 term 按能力键分组并校验归属。
 
-    S2 / S3 各有一条冷却能力（元素战技、元素爆发）；未登记的冷却能力键在此
-    直接失败，避免静默丢弃。
+    元素战技与元素爆发各有一条冷却能力；未登记的冷却能力键在此直接失败，
+    避免静默丢弃。
     """
 
     owner_ref = f"character:slot_{request.slot}"

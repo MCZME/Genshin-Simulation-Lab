@@ -1,29 +1,11 @@
-"""砂糖固有天赋效果单元工厂（A1 / A4 / 魔女的前夜礼）。
-
-效果工厂只负责组装：把资产 ``passive:4`` / ``passive:5`` / ``passive:9`` 效果
-行的数值读入、校验并编译为 ContentUnit 的行为切片（``event_hooks``、
-``buff_definitions`` 与 ``damage_modifier_providers``）。行为实现见
-``hooks.py``（触发判定与投放）与 ``modifiers.py``（Buff 定义与伤害 provider）。
-
-数值口径：加成数值与持续时间取**资产效果行**（``components``），内容侧不复制
-一份平行常量；``data.py`` 的常量只在资产缺行时作为 hook 构造的默认值与测试
-基准使用。A4 的折算比例只允许落在 (0, 1] 区间——组件错位（文本序号、持续秒数
-混入比例位）会在此处失败，而不是静默折算出近零精通加成。
-
-``passive:9``「魔女的前夜礼·七循之理」的 components 为
-``[2, 15, 5.71428%, 20, 7.14285%]``，依次为魔导·秘仪门槛人数、小型风灵档
-秒数与比例、大型风灵档秒数与比例。**门槛人数（``number_1``）不在此建模**：
-「魔导·秘仪」是否激活由 ``content/team/mage.py`` 的 ``MageRoster`` 按共享
-常量判定，属**资格**而非砂糖的效果，效果包不替它建模——故按位置消费掉第 1 个
-分量后丢弃，不读入也不校验。本工厂只取后四个分量（两档秒数 / 两档比例）。
-"""
+"""砂糖固有天赋效果单元工厂。"""
 
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
+from typing import TypeGuard
 
 from genshin_sim.content.characters.mondstadt.sucrose.data import (
-    SUCROSE_ASSET_KEY,
     SUCROSE_C2_EXTRA_SECONDS,
     SUCROSE_C6_BUFF_DEFINITION_KEY,
     SUCROSE_C6_MAGE_ENHANCEMENT_BONUS,
@@ -39,6 +21,7 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_PASSIVE_A4_HANDLER_KEY,
     SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY,
     SUCROSE_TALENT_FRAMES_PER_SECOND,
+    SUCROSE_TALENT_LEVEL_CAP,
 )
 from genshin_sim.content.characters.mondstadt.sucrose.hooks import (
     SucroseC4HitCounterHook,
@@ -75,32 +58,52 @@ from genshin_sim.core.contracts.json import JSONValue
 from genshin_sim.core.systems.buff import BuffDefinition
 
 
-def _components(params: Mapping[str, object], *, purpose: str) -> tuple[float, ...]:
-    """读取资产效果行的 ``components`` 数值序列（每个分量取 ``values[0]``）。"""
+def _is_value_sequence(value: object) -> TypeGuard[Sequence[object]]:
+    """非字符串 / 字节的序列：分量序列与分量的 ``values`` 共用同一判据。"""
+
+    return isinstance(value, Sequence) and not isinstance(value, (str, bytes, bytearray))
+
+
+def _component_value(component: object, *, index: int, purpose: str) -> float:
+    """取单个分量的首值（``values[0]``）；结构不符或非数字时失败。"""
+
+    if not isinstance(component, Mapping):
+        raise ContentUnitValidationError(f"{purpose} components[{index}] 必须是对象")
+    raw_values = component.get("values")
+    if not _is_value_sequence(raw_values) or not raw_values:
+        raise ContentUnitValidationError(f"{purpose} components[{index}] 缺少 values")
+    value = raw_values[0]
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ContentUnitValidationError(f"{purpose} components[{index}] 数值必须是数字")
+    return float(value)
+
+
+def _components(
+    params: Mapping[str, object],
+    *,
+    purpose: str,
+    count: int | None = None,
+    skipped: int = 0,
+) -> tuple[float, ...]:
+    """读取资产效果行的 ``components`` 数值序列（每个分量取 ``values[0]``）。
+
+    ``count`` 给定时要求分量数**恰好**为该值——位置到含义的映射才不至于是隐式的；
+    ``skipped`` 是开头按位置消费却不取值的分量数，这些分量只参与计数，形状与数值
+    都不校验（例如前夜礼的门槛人数由 ``MageRoster`` 判定，效果包不替它建模）。
+    """
 
     components = params.get("components")
-    if (
-        not isinstance(components, Sequence)
-        or isinstance(components, (str, bytes, bytearray))
-        or not components
-    ):
+    if not _is_value_sequence(components) or not components:
         raise ContentUnitValidationError(f"{purpose} 缺少 components 参数")
-    values: list[float] = []
-    for index, component in enumerate(components):
-        if not isinstance(component, Mapping):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 必须是对象")
-        raw_values = component.get("values")
-        if (
-            not isinstance(raw_values, Sequence)
-            or isinstance(raw_values, (str, bytes, bytearray))
-            or not raw_values
-        ):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 缺少 values")
-        value = raw_values[0]
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 数值必须是数字")
-        values.append(float(value))
-    return tuple(values)
+    if count is not None and len(components) != count:
+        raise ContentUnitValidationError(
+            f"{purpose} 分量数不符：需要 {count} 个，实得 {len(components)}"
+        )
+    return tuple(
+        _component_value(component, index=index, purpose=purpose)
+        for index, component in enumerate(components)
+        if index >= skipped
+    )
 
 
 def _effect_name(params: Mapping[str, object], *, purpose: str) -> str:
@@ -111,9 +114,11 @@ def _effect_name(params: Mapping[str, object], *, purpose: str) -> str:
 
 
 def _validate_owner(request: EffectContentUnitRequest, handler_key: str) -> int:
-    if request.owner_key != SUCROSE_ASSET_KEY:
+    """身份判断按 handler_key（代码实现绑定入口）：请求路由到本工厂的键必须一致。"""
+
+    if request.handler_key != handler_key:
         raise ContentUnitValidationError(
-            f"{handler_key} 效果 handler 只接受砂糖资产：{request.owner_key}"
+            f"{handler_key} 收到 handler 键不符的效果请求：{request.handler_key}"
         )
     if request.slot is None:
         raise ContentUnitValidationError(f"{handler_key} 效果缺少角色槽位")
@@ -204,12 +209,14 @@ def read_witches_eve_asset_values(
     分量依次为 ``[门槛人数, 小型档秒数, 小型档比例, 大型档秒数, 大型档比例]``。
     **门槛人数不在此读入**——「魔导·秘仪」是否激活由 ``content/team/mage.py`` 的
     ``MageRoster`` 按共享常量判定，属**资格**而非砂糖的效果，效果包不替它建模；
-    这里只按位置消费掉第 1 个分量（保持「必须 5 个分量」的结构约束）。两档比例
-    必须在 (0, 1] 区间、两个秒数必须为正数。
+    故第 1 个分量按位置消费后即丢弃，其形状与数值都不校验。两档比例必须在
+    (0, 1] 区间、两个秒数必须为正数。
     """
 
     purpose = "天赋「魔女的前夜礼·七循之理」"
-    _, small_seconds, small_ratio, large_seconds, large_ratio = _components(params, purpose=purpose)
+    small_seconds, small_ratio, large_seconds, large_ratio = _components(
+        params, purpose=purpose, count=5, skipped=1
+    )
     if not 0.0 < small_ratio <= 1.0:
         raise ContentUnitValidationError(f"{purpose} 小型风灵档增伤比例必须在 (0, 1] 区间")
     if not 0.0 < large_ratio <= 1.0:
@@ -256,7 +263,7 @@ def create_sucrose_constellation_c1(request: EffectContentUnitRequest) -> Conten
     可用次数只能由**冷却定义**承载（``max_charges`` + 独立恢复），内容侧没有
     「充能」动态通道，故本单元只负责读资产行、校验数值并登记编译参数；真正的
     切片由角色单元在编译期按命座产出（见 ``content.py``）。留一条单元是为了让
-    这条资产行有明确归属（不再是 ``unimplemented_constellation``）。
+    这条资产行有明确归属。
     """
 
     _validate_owner(request, SUCROSE_CONSTELLATION_C1_HANDLER_KEY)
@@ -316,8 +323,8 @@ def create_sucrose_constellation_c3(request: EffectContentUnitRequest) -> Conten
 def create_sucrose_constellation_c4(request: EffectContentUnitRequest) -> ContentUnit:
     """C4 炼金的偏执：普攻 / 重击累计命中敌人 7 次 → 战技冷却随机减 1–7 秒。
 
-    资产 ``c4 = [7, 1, -7, 0.1]``：命中次数、减少秒数下限、上限（源站以负值
-    表示「减少」，故取绝对值）、计次间隔秒数。计次与减冷却都由 hook 承担：
+    资产 ``c4 = [7, 1, -7, 0.1]``：命中次数、减少秒数下限、上限（以负值表示
+    「减少」，故取绝对值）、计次间隔秒数。计次与减冷却都由 hook 承担：
     减冷却走**运行期冷却意图**（``CooldownMutationBatchRequest``），不是编译期
     时长 term——随机值只能在触发帧决定。
     """
@@ -368,12 +375,12 @@ def create_sucrose_constellation_c5(request: EffectContentUnitRequest) -> Conten
 def create_sucrose_constellation_c6(request: EffectContentUnitRequest) -> ContentUnit:
     """C6 混元熵增论：爆发发生元素转化 → 全队（含砂糖）对应元素伤害加成。
 
-    持续时间为**爆发持续时间**（§8 第 2 项）：C2 延长后随之变为 8s，故按归属
-    上下文里的命座数取延长秒数、经 ``resolve_spirit_timing`` 得到生命周期，
-    与本体的窗口保持同一真值。
+    持续时间为**爆发持续时间**：C2 延长后随之变为 8s，故按归属上下文里的命座
+    数取延长秒数、经 ``resolve_spirit_timing`` 得到生命周期，与本体的窗口保持
+    同一真值。
 
-    同时登记**魔导增强**的 Buff 定义（S7 已建、此前无单元持有）：魔导·秘仪
-    激活时由本 hook 对魔导角色额外投放 +8.57142%。
+    同时登记**魔导增强**的 Buff 定义：魔导·秘仪激活时由本 hook 对魔导角色额外
+    投放 +8.57142%。
     """
 
     slot = _validate_owner(request, SUCROSE_CONSTELLATION_C6_HANDLER_KEY)
@@ -414,8 +421,6 @@ def _read_single_int(params: Mapping[str, object], *, purpose: str) -> int:
     """取命座行的单个正整数分量（``c1`` / ``c2``）。"""
 
     values = read_constellation_components(params, purpose=purpose)
-    if len(values) < 1:
-        raise ContentUnitValidationError(f"{purpose} 资产效果行缺少数值分量")
     value = round(values[0])
     if value <= 0:
         raise ContentUnitValidationError(f"{purpose} 数值必须为正整数")
@@ -426,8 +431,6 @@ def _read_single_ratio(params: Mapping[str, object], *, purpose: str) -> float:
     """取命座行的单个比例分量（``c6``，落在 (0, 1]）。"""
 
     values = read_constellation_components(params, purpose=purpose)
-    if len(values) < 1:
-        raise ContentUnitValidationError(f"{purpose} 资产效果行缺少数值分量")
     ratio = values[0]
     if not 0.0 < ratio <= 1.0:
         raise ContentUnitValidationError(f"{purpose} 增伤比例必须在 (0, 1] 区间")
@@ -435,7 +438,11 @@ def _read_single_ratio(params: Mapping[str, object], *, purpose: str) -> float:
 
 
 def _read_talent_level_boost(params: Mapping[str, object], *, purpose: str) -> tuple[int, int]:
-    """取命座行的「等级提升 / 上限」两个分量（``c3`` / ``c5``）。"""
+    """取命座行的「等级提升 / 上限」两个分量（``c3`` / ``c5``）。
+
+    上限分量与框架的 ``TalentLevelResolver`` 默认 ``max_level``（=15）核对：
+    不一致时由内容侧显式失败，而不是静默按框架值截断。
+    """
 
     values = read_constellation_components(params, purpose=purpose)
     if len(values) < 2:
@@ -446,14 +453,18 @@ def _read_talent_level_boost(params: Mapping[str, object], *, purpose: str) -> t
         raise ContentUnitValidationError(f"{purpose} 等级提升必须为正整数")
     if cap < boost:
         raise ContentUnitValidationError(f"{purpose} 等级上限不得低于提升值")
+    if cap != SUCROSE_TALENT_LEVEL_CAP:
+        raise ContentUnitValidationError(
+            f"{purpose} 天赋等级上限 {cap} 与框架上限 {SUCROSE_TALENT_LEVEL_CAP} 不一致"
+        )
     return boost, cap
 
 
 def _read_c4_values(params: Mapping[str, object]) -> tuple[int, int, int, int]:
     """取 ``c4`` 的四个分量：命中次数 / 减冷却秒数区间 / 计次间隔帧数。
 
-    源站以负数表示「减少」（``1 / -7``），故上限取绝对值；计次间隔源站给的是
-    秒数（0.1），这里换算为帧。
+    以负数表示「减少」（``1 / -7``），故上限取绝对值；计次间隔给的是秒数
+    （0.1），这里换算为帧。
     """
 
     purpose = "命之座第4层"
@@ -549,8 +560,8 @@ def create_sucrose_passive_witches_eve(request: EffectContentUnitRequest) -> Con
     标记 Buff（小型档投全队、大型档投魔导角色），数值由两个伤害 provider 按
     标记存在性贡献——作用面是五类**伤害**，不经过属性系统。
 
-    解锁按 ``ALWAYS``：源站的解锁条件是「完成魔女的课业」，本期裁定默认已完成
-    且不作为仿真输入项（§11.7 裁决 1）；是否生效由队伍魔导角色数在运行期判断。
+    解锁按 ``ALWAYS``：「完成魔女的课业」视为默认已完成、不作为仿真输入项；
+    是否生效由队伍魔导角色数在运行期判断。
     """
 
     slot = _validate_owner(request, SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY)

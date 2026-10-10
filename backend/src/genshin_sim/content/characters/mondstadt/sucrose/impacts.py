@@ -1,14 +1,4 @@
-"""砂糖影响契约编译与影响点展开。
-
-本文件负责「资产数据 -> 伤害契约 -> ImpactRequest」的链路：内容编译期把
-资产倍率编译为 ``DamageImpactSpec``，运行期由 ``SucroseActionImpactFactory``
-把动作影响点展开为 ``ImpactRequest``。
-
-S1 覆盖普攻四段、重击与下落攻击（下落攻击数据走武器类型通用资料表
-``generic/plunge.py`` 的 catalyst 档，实施规划 §8 第 7 项）；S2 追加元素战技
-单次范围风伤（圆柱 r=6、无 ICD）；S3 追加元素爆发的创建 / 能量花费展开与
-大型风灵的两个伤害通道（持续风伤 + 染色伤害）。
-"""
+"""砂糖影响契约编译与影响点展开。"""
 
 from __future__ import annotations
 
@@ -200,9 +190,9 @@ def compile_elemental_skill_damage_spec(
 ) -> DamageImpactSpec:
     """编译元素战技伤害契约（圆柱区域 r=6、无 ICD）。
 
-    战技退化为单次范围风伤（实施规划 §11.2）：区域锚定砂糖自身 XZ、偏移
-    ``(0, -3, 0)``；元素量 1U、攻击标签「元素战技」、打击/远近均取默认值；
-    衰减列为「—」→ 不携带 ICD 键，即逐次独立附着。
+    战技退化为单次范围风伤：区域锚定砂糖自身 XZ、偏移 ``(0, -3, 0)``；元素量
+    1U、攻击标签「元素战技」、打击/远近均取默认值；不携带 ICD 键（逐次独立
+    附着）。
     """
 
     entry = entries_by_key.get((character_key, "elemental_skill", _SUCROSE_SKILL_DAMAGE_LABEL))
@@ -242,10 +232,10 @@ def compile_elemental_skill_damage_spec(
 class SucroseAbsorbedDamageChannel:
     """染色伤害通道：除元素外的伤害契约字段在编译期固化。
 
-    染色伤害的元素只能在运行期由大型风灵的染色判定决定（实施规划 §11.3），故
-    不在编译期固化；本通道承载不变量（倍率、区域、攻击标签、附着与打击口径），
-    供创建实体类型在出伤帧构造 ``DamageImpactSpec``。染色伤害与风伤同帧、复用
-    爆发的圆柱区域与目标集合（不单独索敌）。
+    染色伤害的元素只能在运行期由大型风灵的染色判定决定，故不在编译期固化；
+    本通道承载不变量（倍率、区域、攻击标签、附着与打击口径），供创建实体类型
+    在出伤帧构造 ``DamageImpactSpec``。染色伤害与风伤同帧、复用爆发的圆柱区域
+    与目标集合（不单独索敌）。
     """
 
     impact_key: str
@@ -280,7 +270,7 @@ class SucroseAbsorbedDamageChannel:
 
 
 def _burst_aoe_area() -> ImpactAreaSpec:
-    """元素爆发两行共用的区域（命中表 §6.2：圆柱 r=8、偏移 (0, -2.5, 0)）。"""
+    """元素爆发两路共用的区域（圆柱 r=8、偏移 (0, -2.5, 0)）。"""
 
     return ImpactAreaSpec(
         shape=SUCROSE_ELEMENTAL_BURST_AOE_SHAPE,
@@ -363,9 +353,8 @@ def _compile_plunge_damage_spec(
     """编译一段下落攻击伤害契约（武器类型通用资料数据）。
 
     法器下落未获附魔 / 转化时为**物理**：通用资料给出的「元素量」（下坠 0、
-    坠地 1）只在攻击具元素时生效，本规格不携带附着证据（与桑多涅下落同口径，
-    见其 ``compile_plunge_damage_specs`` 文档串）；未来接入附魔 / 转化时由
-    infusion 适配器按武器类型补全。
+    坠地 1）只在攻击具元素时生效，本规格不携带附着证据；未来接入附魔 / 转化时
+    由 infusion 适配器按武器类型补全。
     """
 
     return DamageImpactSpec(
@@ -543,7 +532,7 @@ class SucroseActionImpactFactory:
         """展开大型风灵创建请求（CREATE_ENTITY）。
 
         风灵在**施放时的角色位置**生成，此后固定在场、不跟随角色（切人 / 离场
-        后继续按拍输出，实施规划 §11.3）；没有空间运行时时落在原点。按拍节奏
+        后继续按拍输出）；没有空间运行时时落在原点。按拍节奏
         与染色节奏由类型接管（``spirit.py`` 的 ``build_state`` 声明初始调度）。
         """
 

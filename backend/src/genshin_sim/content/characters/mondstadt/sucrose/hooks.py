@@ -1,38 +1,4 @@
-"""砂糖内容事件钩子：产球与固有天赋 A1 / A4。
-
-产球（维护者提供的角色产球表，实施规划 §6.5）：战技技能伤害命中产 4 风微粒
-（100% 概率、判定冷却 0.4s = 24 帧）。概率 100% 无分布可选，不消费
-``RandomSource``。触发面为战技命中的影响点（「元素战技（对己方非角色单位）」
-行本期不实现，见 §6.3，不涉及产球）；触发影响点按伤害结果 ``request_id`` 内嵌
-的 impact_key 匹配；判定冷却游标在 hook 实例，最近产球帧同步写入内容状态
-``sucrose_last_particle_frame`` 供审计（0 表示尚未产球）。产球经
-``ImpactKind.ENERGY`` 的 ``spawn_pickup`` 出口，归属宿主砂糖（风属性微粒）。
-
-固有天赋（实施规划 §11.5）：
-
-- A1「触媒置换术」订阅 ``REACTION_OCCURRED``，按「砂糖触发的扩散 / 星扩散」
-  取被扩散附着元素，向队伍中与之一致、且不含砂糖自己的角色投放 +50 精通
-  （覆盖刷新 8s）。队伍「槽位 → 元素」映射取自能量系统的角色档案——角色资产
-  元素是能量档案的一部分，是运行期唯一可读的槽位元素来源。
-- A4「小小的慧风」订阅 ``DAMAGE_RESOLVED``，按「伤害归属砂糖 ∧ 主攻击标签为
-  元素战技 / 元素爆发 ∧ 命中敌人」触发，触发帧解析砂糖的**快照**元素精通并按
-  比例折算，向队伍中所有角色（不含砂糖自己）投放（覆盖刷新 8s）。快照在伤害
-  结算之后读取，因而晚于同一 proc 内通过 Buff 施加的精通来源（如圣遗物套装
-  的精通加成），与实施规划 §11.5「同一 proc 内晚于教官四件套」的口径一致。
-
-魔女的前夜礼（实施规划 §11.7）：
-
-- 两档都以**魔导·秘仪激活**（队伍魔导角色数 ≥2）为前提——源站原文里
-  「魔导·秘仪」小标题直接统领两档效果。魔导名录由装配期收集、注册为仿真
-  系统（``content/team/mage.py`` 的 ``MageRoster``），hook 只读取，
-  不自行数人头：本期只有砂糖一名魔导角色时条件自然不满足，属预期行为。
-- 小型风灵档订阅 ``ACTION_STARTED``，按「宿主槽位 ∧ ability_key 为元素战技」
-  判定**施放帧**，向队伍中**全部角色**投放 15s 标记 Buff。
-- 大型风灵档订阅 ``SPACE_ENTITY_CREATED``，按创建物的标签与归属判定
-  「砂糖的大型风灵已登记」，向队伍中的**魔导角色**投放 20s 标记 Buff。
-- 两档 Buff 都只承载「窗口开着」这一事实（``marker_only``），数值由
-  ``modifiers.py`` 的伤害 provider 贡献——作用面是五类**伤害**，不是属性。
-"""
+"""砂糖内容事件钩子：产球与固有天赋"""
 
 from __future__ import annotations
 
@@ -112,7 +78,7 @@ from genshin_sim.core.systems.cooldown import (
 )
 from genshin_sim.core.systems.energy import EnergyRuntime
 
-# 敌方目标判据按 entity_id 前缀区分（与奥黛塔产球 hook 同口径）。
+# 敌方目标判据按 entity_id 前缀区分。
 _ENEMY_TARGET_PREFIX = "target:"
 
 
@@ -236,7 +202,7 @@ def _team_subject_refs(
 
     目标为**角色主体**而非队伍作用域：A1 需要按元素逐个筛选，A4 需要排除砂糖
     自己；主体逐个投放也让两支天赋的作用范围与「除砂糖自己」的文本口径逐字对应。
-    前夜礼小型档不排除任何槽位（源站是「队伍中附近的角色」，含砂糖自己）。
+    前夜礼小型档不排除任何槽位（含砂糖自己）。
     """
 
     return tuple(
@@ -280,6 +246,19 @@ def _team_element_map(context: object) -> dict[int, Element]:
         except ValueError:
             continue
     return elements
+
+
+def _fact_scoped_request_id(hook_key: str, frame: int, fact_id: str, entity_id: str) -> str:
+    """投放申请标识：``hook:帧:触发事实:目标``。
+
+    同帧同目标可以有多条**彼此独立**的触发事实——爆发的本体风伤与染色伤害
+    同帧落地（``impacts.py`` 的染色通道）、一次结算里也可能出现两次扩散。
+    两条事实各自都是一次投放，故标识必须由触发事实唯一确定；只用帧号会
+    把两条事实折叠成同一条申请，被 ``BuffStore.validate`` 判为重复提交并抛
+    ``BuffPlanConflictError``。
+    """
+
+    return f"{hook_key}:{frame}:{fact_id}:{entity_id}"
 
 
 class SucroseCatalystConversionHook:
@@ -328,6 +307,9 @@ class SucroseCatalystConversionHook:
         occurrence = getattr(getattr(event, "payload", None), "occurrence", None)
         if occurrence is None:
             return HookResult()
+        fact_id = getattr(occurrence, "occurrence_ref", None)
+        if not isinstance(fact_id, str) or not fact_id.strip():
+            return HookResult()
         if getattr(occurrence, "reaction_key", None) not in SUCROSE_A1_TRIGGER_REACTION_KEYS:
             return HookResult()
         if getattr(getattr(occurrence, "source_ref", None), "source_key", None) != self._owner_ref:
@@ -349,7 +331,9 @@ class SucroseCatalystConversionHook:
         return HookResult(
             buff_requests=tuple(
                 ApplyBuffRequest(
-                    request_id=f"{self.hook_key}:{frame}:{ref.entity_id}",
+                    request_id=_fact_scoped_request_id(
+                        self.hook_key, frame, fact_id, ref.entity_id
+                    ),
                     frame=frame,
                     order=index,
                     definition_key=SUCROSE_A1_BUFF_DEFINITION_KEY,
@@ -376,7 +360,11 @@ class SucroseMollisFavoniusHook:
 
     A4 本身是**转化效果**（读其他属性再折算），故快照只取**可被二次转化桶**
     （``reconvertible_value``）——不把砂糖精通里属于其他转化产物的部分再折算
-    一次，避免二次转化链（属性系统契约 §14「二次转化效果取 reconvertible_value」）。
+    一次，避免二次转化链。
+
+    投放语义上每拍都是覆盖刷新，但**申请标识**按触发事实区分：同帧的风伤与
+    染色伤害是两条独立事实，各投一次，标识若只用帧号会被判成重复提交
+    （见 ``_fact_scoped_request_id``）。
     """
 
     def __init__(
@@ -424,6 +412,9 @@ class SucroseMollisFavoniusHook:
         target_id = getattr(getattr(result, "target_ref", None), "entity_id", None)
         if not isinstance(target_id, str) or not target_id.startswith(_ENEMY_TARGET_PREFIX):
             return HookResult()
+        fact_id = getattr(result, "request_id", None)
+        if not isinstance(fact_id, str) or not fact_id.strip():
+            return HookResult()
 
         frame = getattr(event, "frame", 0)
         value = self._snapshot_mastery(context, frame) * self._ratio
@@ -435,7 +426,9 @@ class SucroseMollisFavoniusHook:
         return HookResult(
             buff_requests=tuple(
                 ApplyBuffRequest(
-                    request_id=f"{self.hook_key}:{frame}:{ref.entity_id}",
+                    request_id=_fact_scoped_request_id(
+                        self.hook_key, frame, fact_id, ref.entity_id
+                    ),
                     frame=frame,
                     order=index,
                     definition_key=SUCROSE_A4_BUFF_DEFINITION_KEY,
@@ -462,7 +455,7 @@ class SucroseMollisFavoniusHook:
             )
         )
         # A4 是「转化效果」：只读入**可被二次转化**的部分（`reconvertible_value`），
-        # 不把其他转化产物再折算一次（契约 §14「二次转化效果取 reconvertible_value」）。
+        # 不把其他转化产物再折算一次。
         return float(resolution.reconvertible_value)
 
 
@@ -470,8 +463,8 @@ class SucroseWitchesEveSmallSpiritHook:
     """前夜礼小型风灵档：E 施放帧起 15s，队伍全部角色五类伤害提升。
 
     触发面为 ``ACTION_STARTED``：``owner_slot`` 命中宿主且 ``ability_key`` 为
-    元素战技——即「施放帧」（§11.7 裁决 2），与冷却起始帧 / 命中帧无关。
-    目标为**队伍全部角色**（含砂糖自己）：源站是「队伍中附近的角色」，没有
+    元素战技——即「施放帧」，与冷却起始帧 / 命中帧无关。
+    目标为**队伍全部角色**（含砂糖自己）：没有
     A1 / A4 那样的「不包括砂糖自己」限定。
     """
 
@@ -543,7 +536,7 @@ class SucroseWitchesEveLargeSpiritHook:
     """前夜礼大型风灵档：Q 创建帧起 20s，队伍中的魔导角色五类伤害提升。
 
     触发面为 ``SPACE_ENTITY_CREATED``：创建物的标签含大型风灵键且归属为宿主
-    角色——即「Q 的创建帧 17」（§11.7 裁决 3）。走创建事实而不是动作事实，是
+    角色——即「Q 的创建帧 17」。走创建事实而不是动作事实，是
     因为爆发本体的动作影响点里没有角色侧命中点，创建帧只能由创建物登记观测。
     目标为**魔导角色**（含砂糖自己：她是魔导角色）。
     """
@@ -623,9 +616,9 @@ class SucroseC4HitCounterHook:
     命中敌人三者同时成立即计一次；**计次与 E 是否在冷却无关**（照常累加）。
     计次受 0.1 秒（6 帧）间隔限流，与产球 hook 同形态（时间窗去重）。
 
-    满 ``hit_count`` 次时抽一次随机秒数并**清空计数**（§11.6 裁决 2）：E 已就绪
+    满 ``hit_count`` 次时抽一次随机秒数并**清空计数**：E 已就绪
     / 无在途恢复时冷却运行时会把该请求判为 ``NO_ACTIVE_RECOVERY`` 忽略——减冷却
-    落空、不补发、不保留计数；这就是裁决里「丢弃」的落地方式，hook 不去做
+    落空、不补发、不保留计数；这就是「丢弃」的落地方式，hook 不去做
     「先查冷却再决定要不要抽」的预备判断（那会让随机源消费与否随冷却状态漂移，
     破坏同种子同结果）。
 
@@ -751,13 +744,13 @@ class SucroseC6AbsorbedBonusHook:
 
     触发面为 ``DAMAGE_RESOLVED`` 里的**染色伤害**那一段（创建物染色请求内嵌的
     impact_key）：「发生元素转化」在运行时只能由染色伤害观测到，元素取该段伤害
-    的元素（即风灵固定的染色元素）。持续时间为**爆发持续时间**（§8 第 2 项），
+    的元素（即风灵固定的染色元素）。持续时间为**爆发持续时间**，
     C2 延长后随之为 8s，由工厂按命座编译进本 hook。
 
     投放两条 Buff：
 
-    - 本体 +20%：队伍中**所有角色**（含砂糖自己，§11.6 裁决 3）；
-    - 魔导增强 +8.57142%：魔导·秘仪激活时对**魔导角色**额外投放（S7 已建定义）。
+    - 本体 +20%：队伍中**所有角色**（含砂糖自己）；
+    - 魔导增强 +8.57142%：魔导·秘仪激活时对**魔导角色**额外投放。
     """
 
     def __init__(
@@ -806,9 +799,9 @@ class SucroseC6AbsorbedBonusHook:
             return HookResult()
         if getattr(result, "source_ref", None) != self._owner_subject_ref:
             return HookResult()
-        request_id = getattr(result, "request_id", None)
-        if not isinstance(request_id, str) or not any(
-            key in request_id for key in SUCROSE_C6_TRIGGER_IMPACT_KEYS
+        fact_id = getattr(result, "request_id", None)
+        if not isinstance(fact_id, str) or not any(
+            key in fact_id for key in SUCROSE_C6_TRIGGER_IMPACT_KEYS
         ):
             return HookResult()
         element = getattr(result, "element", None)
@@ -817,7 +810,7 @@ class SucroseC6AbsorbedBonusHook:
         frame = getattr(event, "frame", 0)
         requests = [
             ApplyBuffRequest(
-                request_id=f"{self.hook_key}:{frame}:{ref.entity_id}",
+                request_id=_fact_scoped_request_id(self.hook_key, frame, fact_id, ref.entity_id),
                 frame=frame,
                 order=index,
                 definition_key=SUCROSE_C6_BUFF_DEFINITION_KEY,
@@ -832,7 +825,9 @@ class SucroseC6AbsorbedBonusHook:
         if roster is not None and roster.is_active:
             requests.extend(
                 ApplyBuffRequest(
-                    request_id=f"{self.hook_key}:mage:{frame}:{ref.entity_id}",
+                    request_id=_fact_scoped_request_id(
+                        f"{self.hook_key}:mage", frame, fact_id, ref.entity_id
+                    ),
                     frame=frame,
                     order=index,
                     definition_key=SUCROSE_C6_MAGE_ENHANCEMENT_BUFF_DEFINITION_KEY,

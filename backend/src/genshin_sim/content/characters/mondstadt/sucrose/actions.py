@@ -1,14 +1,4 @@
-"""砂糖动作解释器：角色唯一动作表 + 唯一动作解释器。
-
-砂糖的全部动作（普攻四段、重击、元素战技、元素爆发、跳跃、下落攻击）统一
-声明在 ``data.py`` 的 ``SUCROSE_ACTION_TABLE``，由本解释器独占消费；普攻推进
-与跨输入衔接按表内 transitions 实现。帧表数据使用 generic ``TimedActionSpec``，
-动作编译复用 ``build_timed_actions``，宿主状态使用 generic 连段状态 schema。
-
-分期口径（实施规划 §10）：S1 开放普攻 / 重击 / 跳跃；S2 追加元素战技输入与
-冷却门槛；S3 追加元素爆发输入与冷却 / 能量门槛（门槛统一走公共条件端口，爆发
-的能量门槛由端口按冷却定义的 ``ELEMENTAL_BURST`` 能力类型自动带出）。
-"""
+"""砂糖动作解释器：角色唯一动作表 + 唯一动作解释器。"""
 
 from __future__ import annotations
 
@@ -29,6 +19,7 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
     SUCROSE_ELEMENTAL_SKILL_ACTION_KEY,
     SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
+    SUCROSE_HOLD_INPUT_MIN_FRAMES,
     SUCROSE_INPUT_KIND_BY_KEY,
     SUCROSE_JUMP_ACTION_KEY,
     SUCROSE_NORMAL_ATTACK_ACTION_KEYS,
@@ -85,7 +76,7 @@ class SucroseInterpreterError(RuntimeError):
 
 
 class SucroseActionInterpreter:
-    """按已确认帧表解释砂糖动作输入。
+    """按动作表解释砂糖的动作输入。
 
     解释器无实例可变字段；上次动作与起始帧从宿主状态容器读取，推进结果经
     ``state_patch`` 意图提交。
@@ -129,6 +120,21 @@ class SucroseActionInterpreter:
         self._validate_known_state(last_action_key)
         if last_action_key == SUCROSE_PLUNGE_ACTION_KEY and height <= 0:
             last_action_key = ""
+        # 衔接判定的前置动作只在「上一个动作仍在进行」时成立；连段索引仍用原值。
+        gate_action_key = self._live_action_key(
+            last_action_key,
+            last_action_start_frame,
+            session.current_frame,
+        )
+
+        # 左键点按/长按双语义：按住时长达到长按分界即改判重击，据此改走动作表的
+        # 「重击」衔接列。空中左键是下落攻击（游戏内空中不可重击），故下落判定
+        # 先于分界判定。
+        input_kind = self._resolve_attack_input_kind(
+            input_kind,
+            session.held_frames,
+            plunge=self._is_airborne_plunge(last_action_key, height),
+        )
 
         if input_kind == ELEMENTAL_SKILL_INPUT:
             rejection = self._ability_rejection(
@@ -156,7 +162,7 @@ class SucroseActionInterpreter:
         verdict = self._transition_verdict(
             input_kind,
             session.current_frame,
-            last_action_key,
+            gate_action_key,
             last_action_start_frame,
         )
         if verdict.before_earliest:
@@ -335,7 +341,7 @@ class SucroseActionInterpreter:
         height: float,
     ) -> TimedActionSpec:
         if input_kind == NORMAL_ATTACK_INPUT:
-            if height >= PLUNGE_LOW_AIR_HEIGHT and last_action_key != SUCROSE_PLUNGE_ACTION_KEY:
+            if self._is_airborne_plunge(last_action_key, height):
                 return self._action_table[SUCROSE_PLUNGE_ACTION_KEY]
             return self._select_normal_attack_action(last_action_key)
         if input_kind == CHARGED_ATTACK_INPUT:
@@ -355,6 +361,60 @@ class SucroseActionInterpreter:
         last_index = SUCROSE_NORMAL_ATTACK_ACTION_KEYS.index(last_action_key)
         next_index = (last_index + 1) % len(SUCROSE_NORMAL_ATTACK_ACTION_KEYS)
         return self._action_table[SUCROSE_NORMAL_ATTACK_ACTION_KEYS[next_index]]
+
+    def _live_action_key(
+        self,
+        last_action_key: str,
+        last_action_start_frame: int,
+        frame: int,
+    ) -> str:
+        """连段状态里的动作键只在动作仍在进行时代表「在进行的动作」。
+
+        动作一旦结束（``frame >= 起手帧 + duration_frames``），它不再代表任何
+        在进行的动作，衔接判定按「无前置动作」处理。否则拿已结束的动作查衔接表
+        时，凡是该行没有对应列的输入都会被判「缺少衔接数据」而**终局拒绝**：
+        普攻四段行没有战技/爆发列，跳跃行整张衔接表为空，于是「普攻后按 E/Q」
+        与「跳跃后任何输入」都会永久失效——连段状态在动作结束后并不会被清空。
+
+        只用于衔接判定；普攻连段索引仍要读状态里的原值（否则连段会退回第一段）。
+        """
+
+        if not last_action_key:
+            return ""
+        if last_action_key == SUCROSE_PLUNGE_ACTION_KEY:
+            # 下落动作由 ``FallPlungeAction`` 承担，动作表里的 ``duration_frames``
+            # 是占位值，存活判据是高度而非帧数（落地由上面的重置处理）。
+            return last_action_key
+        spec = self._action_table[last_action_key]
+        if frame >= last_action_start_frame + spec.duration_frames:
+            return ""
+        return last_action_key
+
+    def _resolve_attack_input_kind(
+        self,
+        input_kind: str,
+        held_frames: int,
+        *,
+        plunge: bool,
+    ) -> str:
+        """左键点按/长按双语义：长按改判重击，点按保持普攻。
+
+        重击不是独立按键——游戏内由左键按住后释放触发，故物理键只映射普攻，
+        重击在此按按住时长派生。空中左键为下落攻击（``plunge``），不再进入
+        分界判定。
+        """
+
+        if plunge or input_kind != NORMAL_ATTACK_INPUT:
+            return input_kind
+        if held_frames >= SUCROSE_HOLD_INPUT_MIN_FRAMES:
+            return CHARGED_ATTACK_INPUT
+        return input_kind
+
+    @staticmethod
+    def _is_airborne_plunge(last_action_key: str, height: float) -> bool:
+        """空中左键改判下落攻击；已在下落中不重复起手，回落由同一次下落承载。"""
+
+        return height >= PLUNGE_LOW_AIR_HEIGHT and last_action_key != SUCROSE_PLUNGE_ACTION_KEY
 
 
 def create_sucrose_actions(

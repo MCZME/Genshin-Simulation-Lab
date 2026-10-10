@@ -1,22 +1,7 @@
 """砂糖大型风灵（元素爆发创建物）实体类型：按拍风伤 + 染色探测。
 
 大型风灵注册为类型化创建实体（``type_key = sucrose.large_wind_spirit``），
-承载元素爆发的持续输出与染色机制（实施规划 §11.3）。两条 tick 调度各司其职：
-
-- ``attack``（周期 120f）：创建帧 +120 起拍、共 3 拍（137 / 257 / 377，相对
-  施放帧）。到期先按索敌圆柱 15 +「分数」就近取锚点，再以锚点展开爆发圆柱
-  AOE（r=8、偏移 (0, -2.5, 0)）解析命中集合后产出风伤请求；若染色已固定，
-  同帧追加一段染色伤害请求并**复用同一目标集合**（染色行不单独索敌）；
-- ``probe``（周期 18f）：创建帧 +18 起探，对判定区（攻击盒：前后 2.5 × 左右
-  2.5，上下分量按项目 X/Z 模型忽略）内的敌人读元素附着，按 火 > 水 > 雷 > 冰
-  取最高优先级附着元素并固定（第 4 档兼容 CRYO 与 FROZEN，均对应冰元素伤害）；
-  命中即把本调度置 ``None`` 停机（首次探到即固定），始终未探到则保持纯风伤。
-
-调度存储由创建物运行时基座持有，到期驱动、过期门控与追赶补发亦然；本类型
-只负责「是什么与怎么再来」——配置解析、初始调度声明、请求产出与下一拍推进。
-风灵与角色解耦：创建位置取自施放瞬间的当前场上角色，此后不跟随角色（切人 /
-离场后继续按拍输出）。刷新（冷却结束后再次施放元素爆发）按新建语义重置节奏
-与染色，不继承旧态。
+承载元素爆发的持续输出与染色机制。
 """
 
 from __future__ import annotations
@@ -89,18 +74,7 @@ class SucroseSpiritRuntimeState(CreatedObjectRuntimeState):
 
 
 def resolve_spirit_timing(extra_seconds: int = 0) -> tuple[int, int, int]:
-    """按「窗口延长秒数」解出 ``(窗口帧数, 生命周期帧数, 拍数)``。
-
-    C2 把爆发窗口延长 2 秒（6s → 8s），拍数随之由 3 拍变 4 拍（137 / 257 /
-    377 / 497）；窗口、生命周期与拍数三者必须同源，否则会出现「窗口 8s 却只
-    打 3 拍」或「打出第 5 拍」这类漂移，故统一由本函数派生：
-
-    - 窗口帧数 = 基础窗口 + 延长秒数 × 60；
-    - 拍数 = 窗口帧数 ÷ 拍周期（整除，基础 360 / 120 = 3、延长后 480 / 120 = 4）；
-    - 生命周期 = 窗口 + 1（末拍正好落在窗口端点，过期判据不含端点帧）。
-
-    ``SucroseSpiritType`` 构造时还会按这三者再校验一次（``_validate_tick_budget``）。
-    """
+    """按「窗口延长秒数」解出 ``(窗口帧数, 生命周期帧数, 拍数)``。"""
 
     if isinstance(extra_seconds, bool) or not isinstance(extra_seconds, int) or extra_seconds < 0:
         raise ContentUnitValidationError("大型风灵窗口延长秒数必须为非负整数")
@@ -109,6 +83,20 @@ def resolve_spirit_timing(extra_seconds: int = 0) -> tuple[int, int, int]:
     if tick_count <= 0:
         raise ContentUnitValidationError("大型风灵窗口过短：不足一拍")
     return window_frames, window_frames + 1, tick_count
+
+
+def _first_probe_offset_frames() -> int:
+    """首个探测帧相对创建帧的偏移：**第一个严格晚于首拍的探测节奏边界**。
+
+    大型风灵「可被染色的时间在第一次攻击结束后」，首拍因此**不含**染色伤害
+    ——风灵共出 4 拍风伤（C2 延长后）时染色伤害至多 3 段，正是这一条的直接结果。
+    探测节奏本身以创建帧为锚（每 18 帧一个边界），这里只是把首探推到首拍之后：
+    首拍偏移 120 落在第 6 个边界（108）与第 7 个边界（126）之间，故首个边界取
+    126（晚于首拍 6 帧）。
+    """
+
+    boundaries = SUCROSE_SPIRIT_TICK_PERIOD_FRAMES // SUCROSE_SPIRIT_PROBE_INTERVAL_FRAMES
+    return (boundaries + 1) * SUCROSE_SPIRIT_PROBE_INTERVAL_FRAMES
 
 
 class SucroseSpiritType:
@@ -217,7 +205,8 @@ class SucroseSpiritType:
                 ),
                 CreatedObjectTickState(
                     schedule_key=SUCROSE_SPIRIT_PROBE_SCHEDULE_KEY,
-                    next_tick_frame=frame + SUCROSE_SPIRIT_PROBE_INTERVAL_FRAMES,
+                    # 染色窗口在首拍结束后才开：首探落在首拍之后的首个节奏边界。
+                    next_tick_frame=frame + _first_probe_offset_frames(),
                 ),
             ),
             owner_slot=self._slot,
@@ -296,9 +285,9 @@ class SucroseSpiritType:
     ) -> tuple[str, ...]:
         """索敌 + AOE：圆柱 15 就近取锚点，锚点处展开爆发圆柱 AOE（r=8）。
 
-        「就近」由项目「分数」策略承载（X/Z 就近、并列取 ``entity_id`` 较小者，
-        奥黛塔舞步 / 桑多涅棱晶弹先例）；AOE 展开语义与动作影响点一致（以选中
-        目标为锚点、随风灵朝向旋转本地偏移），锚点只取一个。
+        「就近」由项目「分数」策略承载（X/Z 就近、并列取 ``entity_id`` 较小者）；
+        AOE 展开语义与动作影响点一致（以选中目标为锚点、随风灵朝向旋转本地
+        偏移），锚点只取一个。
         """
 
         space_runtime = context.space_runtime

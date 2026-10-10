@@ -54,9 +54,16 @@ from genshin_sim.core.attributes import (
     AttributeResolveOptions,
     AttributeSubjectKind,
     AttributeSubjectRef,
+    BaseAttributeContribution,
+    BaseAttributeSet,
+    ModifierProviderIndex,
+    ModifierProviderSpec,
     ModifierStage,
+    ModifierTerm,
     RuntimeSourceKind,
     RuntimeSourceRef,
+    StaticModifierProvider,
+    create_public_attribute_registry,
 )
 from genshin_sim.core.attributes.resolver import AttributeResolver
 from genshin_sim.core.elements import AuraKind
@@ -157,13 +164,20 @@ def _context(
     elements: tuple[str | None, ...],
     *,
     sucrose_mastery: float | None = None,
+    resolver: AttributeResolver | None = None,
 ) -> HookContext:
-    """构造 hook 求值上下文：队伍运行态 + 能量运行期（+ 可选属性解析器）。"""
+    """构造 hook 求值上下文：队伍运行态 + 能量运行期（+ 可选属性解析器）。
+
+    传入 ``resolver`` 时直接注册该解析器（用于构造带分桶的精通环境）；
+    否则按 ``sucrose_mastery`` 搭 ``make_attribute_resolver`` 的合成环境。
+    """
 
     team, energy_runtime = _team(elements)
     simulation = SimulationContext()
     simulation.register_system(energy_runtime)
-    if sucrose_mastery is not None:
+    if resolver is not None:
+        simulation.register_system(resolver)
+    elif sucrose_mastery is not None:
         simulation.register_system(
             make_attribute_resolver(
                 (AttributeSubjectRef.character(OWNER_REF),),
@@ -390,6 +404,53 @@ def test_a4_hook_reads_mastery_through_the_registered_resolver():
         )
     )
     assert resolution.final_value == pytest.approx(120.0)
+    assert resolution.reconvertible_value == pytest.approx(120.0)
+
+
+def test_a4_reads_only_the_reconvertible_mastery_bucket():
+    """A4 是转化效果：快照取可被二次转化桶，排除其他转化产物（契约 §14）。"""
+
+    registry = create_public_attribute_registry()
+    owner = AttributeSubjectRef.character(OWNER_REF)
+    provider = StaticModifierProvider(
+        ModifierProviderSpec(
+            provider_key="provider:sucrose_a4_read_bucket",
+            writes=frozenset({STAT_ELEMENTAL_MASTERY}),
+        ),
+        (
+            ModifierTerm(
+                target_key=STAT_ELEMENTAL_MASTERY,
+                stage=ModifierStage.FLAT_ADD,
+                value=50.0,
+                provider_key="provider:sucrose_a4_read_bucket",
+                source_ref=SOURCE_CONTEXT,
+                reconvertible=False,
+            ),
+        ),
+    )
+    resolver = AttributeResolver(
+        definitions=registry,
+        base_attributes=BaseAttributeSet(
+            (
+                (
+                    owner,
+                    BaseAttributeContribution(STAT_ELEMENTAL_MASTERY, 200.0, SOURCE_CONTEXT),
+                ),
+            )
+        ),
+        modifier_index=ModifierProviderIndex((provider,), registry=registry),
+    )
+    resolution = resolver.resolve(AttributeQuery(owner, STAT_ELEMENTAL_MASTERY, frame=0))
+    # 全量 250 = 基础 200（可转化）+ 转化产物 50（不可转化）。
+    assert resolution.final_value == pytest.approx(250.0)
+    assert resolution.reconvertible_value == pytest.approx(200.0)
+    assert resolution.non_reconvertible_value == pytest.approx(50.0)
+
+    hook = _a4_hook()
+    context = _context(("anemo", "pyro"), resolver=resolver)
+    requests = _buff_requests(hook.handle(_skill_hit(), context))
+    # 以可转化桶 200 折算（200 × 0.2 = 40），不读入不可转化的 50。
+    assert requests[0].modifier_values[0].value == pytest.approx(40.0)
 
 
 # --- 效果工厂：资产效果行读数与切片 ------------------------------------------

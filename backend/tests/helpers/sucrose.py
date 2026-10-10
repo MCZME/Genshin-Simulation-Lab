@@ -33,6 +33,12 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_A4_MASTERY_RATIO,
     SUCROSE_ASSET_KEY,
     SUCROSE_CHARACTER_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C1_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C2_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C3_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C4_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C5_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C6_HANDLER_KEY,
     SUCROSE_PASSIVE_A1_HANDLER_KEY,
     SUCROSE_PASSIVE_A4_HANDLER_KEY,
     SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY,
@@ -317,6 +323,37 @@ def minimal_sucrose_effect_payloads() -> tuple[EffectPayload, ...]:
                 ),
             ),
         ),
+        *_constellation_payloads(),
+    )
+
+
+def _constellation_payloads() -> tuple[EffectPayload, ...]:
+    """命座 c1–c6 的合成效果行（参数形状与真实资产一致，数值为合成值）。
+
+    各层分量与真实资产同序：``c1 = [次数]``、``c2 = [秒]``、``c3 / c5 =
+    [等级, 上限]``、``c4 = [次数, 下限, 上限, 计次秒]``（源站以负值表示减少）、
+    ``c6 = [比例]``。
+    """
+
+    rows = (
+        ("c1", SUCROSE_CONSTELLATION_C1_HANDLER_KEY, "堆叠真空域", (1.0,)),
+        ("c2", SUCROSE_CONSTELLATION_C2_HANDLER_KEY, "不羁型贝特", (2.0,)),
+        ("c3", SUCROSE_CONSTELLATION_C3_HANDLER_KEY, "零失误少女", (3.0, 15.0)),
+        ("c4", SUCROSE_CONSTELLATION_C4_HANDLER_KEY, "炼金的偏执", (7.0, 1.0, -7.0, 0.1)),
+        ("c5", SUCROSE_CONSTELLATION_C5_HANDLER_KEY, "认真普通瓶", (3.0, 15.0)),
+        ("c6", SUCROSE_CONSTELLATION_C6_HANDLER_KEY, "混元熵增论", (0.2,)),
+    )
+    return tuple(
+        EffectPayload(
+            effect_key=f"{SUCROSE_CHARACTER_KEY}:constellation:{unlock_key}",
+            owner_type="character",
+            owner_key=SUCROSE_CHARACTER_KEY,
+            effect_kind="constellation",
+            unlock_key=unlock_key,
+            handler_key=handler_key,
+            params=_effect_params(name, values),
+        )
+        for unlock_key, handler_key, name, values in rows
     )
 
 
@@ -439,6 +476,7 @@ def sucrose_input_payload(
     full_energy: bool = False,
     teammate_elements: tuple[str, ...] = (),
     mastery: float = 0.0,
+    constellation: int = 0,
 ) -> dict[str, object]:
     """砂糖单人集成测试配置。缺省为一次普攻一段。
 
@@ -448,6 +486,9 @@ def sucrose_input_payload(
     ``teammate_elements`` 与 ``write_sucrose_asset_database`` 的参数一一对应
     （槽位 2 / 3 / 4）。``mastery`` 给砂糖挂一份合成元素精通词条（圣遗物
     面板词条），A4 的「按砂糖快照精通折算」由此可观测。队友不需要精通来源。
+
+    ``constellation`` 为砂糖的命座层数：命座单元的解锁判据读的就是它，C1 / C2
+    的静态切片（充能数、爆发时长）也由它门控。
     """
 
     if input_trace is None:
@@ -461,7 +502,7 @@ def sucrose_input_payload(
             "character": {
                 "asset_key": SUCROSE_CHARACTER_KEY,
                 "level": 90,
-                "constellation": 0,
+                "constellation": constellation,
                 "talents": {
                     "normal_attack": 1,
                     "elemental_skill": 1,

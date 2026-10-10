@@ -49,14 +49,29 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_A4_MECHANIC_KEY,
     SUCROSE_A4_TRIGGER_MAIN_ATTACK_TAGS,
     SUCROSE_AURA_ELEMENT_MAP,
+    SUCROSE_C4_COUNT_INTERVAL_FRAMES,
+    SUCROSE_C4_MAX_REDUCTION_SECONDS,
+    SUCROSE_C4_MIN_REDUCTION_SECONDS,
+    SUCROSE_C4_TRIGGER_HIT_COUNT,
+    SUCROSE_C4_TRIGGER_MAIN_ATTACK_TAGS,
+    SUCROSE_C6_BUFF_DEFINITION_KEY,
+    SUCROSE_C6_DAMAGE_BONUS,
+    SUCROSE_C6_MAGE_ENHANCEMENT_BONUS,
+    SUCROSE_C6_MAGE_ENHANCEMENT_BUFF_DEFINITION_KEY,
+    SUCROSE_C6_MAGE_ENHANCEMENT_MECHANIC_KEY,
+    SUCROSE_C6_MECHANIC_KEY,
+    SUCROSE_C6_TRIGGER_IMPACT_KEYS,
     SUCROSE_CHARACTER_HANDLER_KEY,
+    SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
     SUCROSE_PARTICLE_COOLDOWN_FRAMES,
     SUCROSE_PARTICLE_COUNT,
     SUCROSE_PARTICLE_ELEMENT,
     SUCROSE_PARTICLE_SPAWN_IMPACT_KEY,
     SUCROSE_PARTICLE_TRAVEL_FRAMES,
     SUCROSE_PARTICLE_TRIGGER_IMPACT_KEYS,
+    SUCROSE_SPIRIT_DURATION_FRAMES,
     SUCROSE_STATE_LAST_PARTICLE_FRAME,
+    SUCROSE_TALENT_FRAMES_PER_SECOND,
     SUCROSE_WITCHES_EVE_LARGE_BUFF_DEFINITION_KEY,
     SUCROSE_WITCHES_EVE_LARGE_DURATION_FRAMES,
     SUCROSE_WITCHES_EVE_LARGE_MECHANIC_KEY,
@@ -65,6 +80,10 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_WITCHES_EVE_SMALL_DURATION_FRAMES,
     SUCROSE_WITCHES_EVE_SMALL_MECHANIC_KEY,
     SUCROSE_WITCHES_EVE_SMALL_TRIGGER_ABILITY_KEY,
+)
+from genshin_sim.content.characters.mondstadt.sucrose.modifiers import (
+    c6_damage_bonus_modifier_values,
+    mage_enhancement_modifier_values,
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.hooks import HookContext
@@ -83,7 +102,14 @@ from genshin_sim.core.elements import Element
 from genshin_sim.core.entity_states import CharacterRuntimeState
 from genshin_sim.core.events import EventType
 from genshin_sim.core.impacts import ImpactKind, ImpactRequest
+from genshin_sim.core.simulation.random_source import RandomSource
 from genshin_sim.core.systems.buff import ApplyBuffRequest, BuffModifierValue
+from genshin_sim.core.systems.cooldown import (
+    CooldownKey,
+    CooldownMutationBatchRequest,
+    CooldownSubjectRef,
+    ReduceRemainingCooldownRequest,
+)
 from genshin_sim.core.systems.energy import EnergyRuntime
 
 # 敌方目标判据按 entity_id 前缀区分（与奥黛塔产球 hook 同口径）。
@@ -179,6 +205,18 @@ def _require_positive_number(value: float, label: str) -> float:
     if isinstance(value, bool) or not isinstance(value, int | float) or value <= 0.0:
         raise ContentUnitValidationError(f"{label} 必须为正数")
     return float(value)
+
+
+def _require_positive_int(value: int, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value <= 0:
+        raise ContentUnitValidationError(f"{label} 必须为正整数")
+    return value
+
+
+def _require_non_negative_frames(value: int, label: str) -> int:
+    if isinstance(value, bool) or not isinstance(value, int) or value < 0:
+        raise ContentUnitValidationError(f"{label} 必须为非负整数帧数")
+    return value
 
 
 def _team_characters(context: object) -> tuple[CharacterRuntimeState, ...]:
@@ -570,3 +608,239 @@ class SucroseWitchesEveLargeSpiritHook:
                 for index, ref in enumerate(refs)
             ),
         )
+
+
+class SucroseC4HitCounterHook:
+    """C4 炼金的偏执：普攻 / 重击累计命中敌人 7 次 → 战技冷却随机减 1–7 秒。
+
+    触发面为 ``DAMAGE_RESOLVED``：伤害归属砂糖、主攻击标签为普通攻击四段或重击、
+    命中敌人三者同时成立即计一次；**计次与 E 是否在冷却无关**（照常累加）。
+    计次受 0.1 秒（6 帧）间隔限流，与产球 hook 同形态（时间窗去重）。
+
+    满 ``hit_count`` 次时抽一次随机秒数并**清空计数**（§11.6 裁决 2）：E 已就绪
+    / 无在途恢复时冷却运行时会把该请求判为 ``NO_ACTIVE_RECOVERY`` 忽略——减冷却
+    落空、不补发、不保留计数；这就是裁决里「丢弃」的落地方式，hook 不去做
+    「先查冷却再决定要不要抽」的预备判断（那会让随机源消费与否随冷却状态漂移，
+    破坏同种子同结果）。
+
+    随机口径：``RandomSource.next()`` 取 [0, 1) 均匀实数，按七等分映射到
+    1–7 整数秒（各 1/7），再换算为整帧；随机源缺失时按最小档 1 秒回落（不静默
+    丢弃这次触发，避免「不减但计数已清」的错位）。
+    """
+
+    def __init__(
+        self,
+        *,
+        owner_ref: str,
+        slot: int,
+        hit_count: int = SUCROSE_C4_TRIGGER_HIT_COUNT,
+        min_reduction_seconds: int = SUCROSE_C4_MIN_REDUCTION_SECONDS,
+        max_reduction_seconds: int = SUCROSE_C4_MAX_REDUCTION_SECONDS,
+        count_interval_frames: int = SUCROSE_C4_COUNT_INTERVAL_FRAMES,
+        cooldown_ability_key: str = SUCROSE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
+    ) -> None:
+        if not isinstance(owner_ref, str) or not owner_ref.strip():
+            raise ContentUnitValidationError("C4 炼金的偏执 hook owner_ref 必须是非空字符串")
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot <= 0:
+            raise ContentUnitValidationError("C4 炼金的偏执 hook 必须绑定正整数队伍槽位")
+        if isinstance(hit_count, bool) or not isinstance(hit_count, int) or hit_count <= 0:
+            raise ContentUnitValidationError("C4 命中次数门槛必须是正整数")
+        low = _require_positive_int(min_reduction_seconds, "C4 减冷却秒数下限")
+        high = _require_positive_int(max_reduction_seconds, "C4 减冷却秒数上限")
+        if low > high:
+            raise ContentUnitValidationError("C4 减冷却秒数区间非法（下限大于上限）")
+        self._owner_ref = owner_ref
+        self._owner_subject_ref = AttributeSubjectRef.character(owner_ref)
+        self._slot = slot
+        self._hit_count = hit_count
+        self._min_seconds = low
+        self._max_seconds = high
+        self._span = high - low + 1
+        self._count_interval_frames = _require_non_negative_frames(
+            count_interval_frames, "C4 计次间隔"
+        )
+        if not isinstance(cooldown_ability_key, str) or not cooldown_ability_key.strip():
+            raise ContentUnitValidationError("C4 冷却能力键必须是非空字符串")
+        self._cooldown_key = CooldownKey(
+            CooldownSubjectRef.character(owner_ref),
+            cooldown_ability_key,
+        )
+        self._hits = 0
+        self._last_count_frame: int | None = None
+        self.hook_key = f"sucrose.constellation.c4:{owner_ref}"
+        self.state_key = SUCROSE_CHARACTER_HANDLER_KEY
+        self.subscriptions = ("DAMAGE_RESOLVED",)
+        self.priority = 0
+
+    @property
+    def owner_ref(self) -> str:
+        """宿主角色引用：状态段归属校验按此匹配。"""
+
+        return self._owner_ref
+
+    @property
+    def hit_count(self) -> int:
+        """当前累计命中次数（审计与测试可读）。"""
+
+        return self._hits
+
+    def handle(self, event: object, context: object) -> HookResult:
+        if getattr(event, "event_type", None) is not EventType.DAMAGE_RESOLVED:
+            return HookResult()
+        result = getattr(getattr(event, "payload", None), "result", None)
+        if result is None:
+            return HookResult()
+        if getattr(result, "source_ref", None) != self._owner_subject_ref:
+            return HookResult()
+        if getattr(result, "main_attack_tag", None) not in SUCROSE_C4_TRIGGER_MAIN_ATTACK_TAGS:
+            return HookResult()
+        target_id = getattr(getattr(result, "target_ref", None), "entity_id", None)
+        if not isinstance(target_id, str) or not target_id.startswith(_ENEMY_TARGET_PREFIX):
+            return HookResult()
+
+        frame = getattr(event, "frame", 0)
+        if (
+            self._last_count_frame is not None
+            and frame - self._last_count_frame < self._count_interval_frames
+        ):
+            return HookResult()
+        self._last_count_frame = frame
+        self._hits += 1
+        if self._hits < self._hit_count:
+            return HookResult()
+        self._hits = 0
+        reduction_frames = self._roll_reduction_frames(context) * SUCROSE_TALENT_FRAMES_PER_SECOND
+        return HookResult(
+            cooldown_requests=(
+                CooldownMutationBatchRequest(
+                    batch_id=f"{self.hook_key}:{frame}",
+                    frame=frame,
+                    requests=(
+                        ReduceRemainingCooldownRequest(
+                            request_id=f"{self.hook_key}:{frame}:reduce",
+                            key=self._cooldown_key,
+                            frame=frame,
+                            reduction_frames=reduction_frames,
+                            source_ref=self.hook_key,
+                        ),
+                    ),
+                ),
+            ),
+        )
+
+    def _roll_reduction_frames(self, context: object) -> int:
+        """抽 1–7 整数秒（七点等概率）；随机源缺失时按下限回落。"""
+
+        source = getattr(getattr(context, "simulation", None), "random_source", None)
+        if not isinstance(source, RandomSource):
+            return self._min_seconds
+        roll = float(source.next())
+        if not 0.0 <= roll < 1.0:
+            return self._min_seconds
+        return self._min_seconds + int(roll * self._span)
+
+
+class SucroseC6AbsorbedBonusHook:
+    """C6 混元熵增论：爆发发生元素转化 → 全队（含砂糖）对应元素伤害加成。
+
+    触发面为 ``DAMAGE_RESOLVED`` 里的**染色伤害**那一段（创建物染色请求内嵌的
+    impact_key）：「发生元素转化」在运行时只能由染色伤害观测到，元素取该段伤害
+    的元素（即风灵固定的染色元素）。持续时间为**爆发持续时间**（§8 第 2 项），
+    C2 延长后随之为 8s，由工厂按命座编译进本 hook。
+
+    投放两条 Buff：
+
+    - 本体 +20%：队伍中**所有角色**（含砂糖自己，§11.6 裁决 3）；
+    - 魔导增强 +8.57142%：魔导·秘仪激活时对**魔导角色**额外投放（S7 已建定义）。
+    """
+
+    def __init__(
+        self,
+        *,
+        owner_ref: str,
+        slot: int,
+        damage_bonus: float = SUCROSE_C6_DAMAGE_BONUS,
+        mage_bonus: float = SUCROSE_C6_MAGE_ENHANCEMENT_BONUS,
+        duration_frames: int = SUCROSE_SPIRIT_DURATION_FRAMES,
+    ) -> None:
+        if not isinstance(owner_ref, str) or not owner_ref.strip():
+            raise ContentUnitValidationError("C6 混元熵增论 hook owner_ref 必须是非空字符串")
+        if isinstance(slot, bool) or not isinstance(slot, int) or slot <= 0:
+            raise ContentUnitValidationError("C6 混元熵增论 hook 必须绑定正整数队伍槽位")
+        self._owner_ref = owner_ref
+        self._owner_subject_ref = AttributeSubjectRef.character(owner_ref)
+        self._slot = slot
+        self._damage_bonus = _require_positive_number(damage_bonus, "C6 元素伤害加成")
+        self._mage_bonus = _require_positive_number(mage_bonus, "C6 魔导增强元素伤害加成")
+        self._duration_frames = _require_positive_frames(duration_frames, "C6 增伤持续时间")
+        self._source_context = RuntimeSourceRef(
+            RuntimeSourceKind.MECHANIC,
+            SUCROSE_C6_MECHANIC_KEY,
+        )
+        self._mage_source_context = RuntimeSourceRef(
+            RuntimeSourceKind.MECHANIC,
+            SUCROSE_C6_MAGE_ENHANCEMENT_MECHANIC_KEY,
+        )
+        self.hook_key = f"sucrose.constellation.c6:{owner_ref}"
+        self.state_key = SUCROSE_CHARACTER_HANDLER_KEY
+        self.subscriptions = ("DAMAGE_RESOLVED",)
+        self.priority = 0
+
+    @property
+    def owner_ref(self) -> str:
+        """宿主角色引用：状态段归属校验按此匹配。"""
+
+        return self._owner_ref
+
+    def handle(self, event: object, context: object) -> HookResult:
+        if getattr(event, "event_type", None) is not EventType.DAMAGE_RESOLVED:
+            return HookResult()
+        result = getattr(getattr(event, "payload", None), "result", None)
+        if result is None:
+            return HookResult()
+        if getattr(result, "source_ref", None) != self._owner_subject_ref:
+            return HookResult()
+        request_id = getattr(result, "request_id", None)
+        if not isinstance(request_id, str) or not any(
+            key in request_id for key in SUCROSE_C6_TRIGGER_IMPACT_KEYS
+        ):
+            return HookResult()
+        element = getattr(result, "element", None)
+        if not isinstance(element, Element):
+            return HookResult()
+        frame = getattr(event, "frame", 0)
+        requests = [
+            ApplyBuffRequest(
+                request_id=f"{self.hook_key}:{frame}:{ref.entity_id}",
+                frame=frame,
+                order=index,
+                definition_key=SUCROSE_C6_BUFF_DEFINITION_KEY,
+                target_ref=ref,
+                source_context=self._source_context,
+                duration_frames=self._duration_frames,
+                modifier_values=c6_damage_bonus_modifier_values(element, self._damage_bonus),
+            )
+            for index, ref in enumerate(_team_subject_refs(context))
+        ]
+        roster = _mage_roster(context)
+        if roster is not None and roster.is_active:
+            requests.extend(
+                ApplyBuffRequest(
+                    request_id=f"{self.hook_key}:mage:{frame}:{ref.entity_id}",
+                    frame=frame,
+                    order=index,
+                    definition_key=SUCROSE_C6_MAGE_ENHANCEMENT_BUFF_DEFINITION_KEY,
+                    target_ref=ref,
+                    source_context=self._mage_source_context,
+                    duration_frames=self._duration_frames,
+                    modifier_values=mage_enhancement_modifier_values(element, self._mage_bonus),
+                )
+                for index, ref in enumerate(
+                    AttributeSubjectRef.character(character.combat_entity_id)
+                    for character in _team_characters(context)
+                    if roster.contains_slot(character.slot)
+                )
+            )
+        if not requests:
+            return HookResult()
+        return HookResult(buff_requests=tuple(requests))

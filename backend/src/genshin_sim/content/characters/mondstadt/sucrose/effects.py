@@ -22,6 +22,16 @@ from collections.abc import Mapping, Sequence
 
 from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_ASSET_KEY,
+    SUCROSE_C2_EXTRA_SECONDS,
+    SUCROSE_C6_BUFF_DEFINITION_KEY,
+    SUCROSE_C6_MAGE_ENHANCEMENT_BONUS,
+    SUCROSE_C6_MAGE_ENHANCEMENT_BUFF_DEFINITION_KEY,
+    SUCROSE_CONSTELLATION_C1_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C2_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C3_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C4_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C5_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C6_HANDLER_KEY,
     SUCROSE_CONTENT_VERSION,
     SUCROSE_PASSIVE_A1_HANDLER_KEY,
     SUCROSE_PASSIVE_A4_HANDLER_KEY,
@@ -29,6 +39,8 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_TALENT_FRAMES_PER_SECOND,
 )
 from genshin_sim.content.characters.mondstadt.sucrose.hooks import (
+    SucroseC4HitCounterHook,
+    SucroseC6AbsorbedBonusHook,
     SucroseCatalystConversionHook,
     SucroseMollisFavoniusHook,
     SucroseWitchesEveLargeSpiritHook,
@@ -38,9 +50,12 @@ from genshin_sim.content.characters.mondstadt.sucrose.modifiers import (
     SucroseWitchesEveDamageBonusProvider,
     build_a1_mastery_buff_definition,
     build_a4_mastery_buff_definition,
+    build_c6_damage_bonus_buff_definition,
+    build_c6_mage_enhancement_buff_definition,
     build_witches_eve_large_buff_definition,
     build_witches_eve_small_buff_definition,
 )
+from genshin_sim.content.characters.mondstadt.sucrose.spirit import resolve_spirit_timing
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
@@ -110,10 +125,12 @@ def _effect_unit(
     handler_key: str,
     unlock: UnlockSpec,
     purpose: str,
+    kind: EffectKind,
     event_hooks: tuple[EventHook, ...],
     buff_definitions: tuple[BuffDefinition, ...],
     compiled_params: Mapping[str, JSONValue],
     damage_modifier_providers: tuple[SucroseWitchesEveDamageBonusProvider, ...] = (),
+    talent_level_boosts: Mapping[str, int] | None = None,
 ) -> ContentUnit:
     return ContentUnit(
         owner_type=ContentUnitOwnerType.CHARACTER,
@@ -124,11 +141,12 @@ def _effect_unit(
         effects=(
             EffectSpec(
                 effect_key=request.effect_key,
-                kind=EffectKind.PASSIVE,
+                kind=kind,
                 unlock=unlock,
                 params=dict(request.params),
             ),
         ),
+        talent_level_boosts=dict(talent_level_boosts or {}),
         event_hooks=event_hooks,
         buff_definitions=buff_definitions,
         damage_modifier_providers=damage_modifier_providers,
@@ -159,6 +177,22 @@ def read_a4_asset_values(params: Mapping[str, object]) -> tuple[float, int]:
     if duration_seconds <= 0.0:
         raise ContentUnitValidationError(f"{purpose} 持续时间必须为正数")
     return ratio, round(duration_seconds * SUCROSE_TALENT_FRAMES_PER_SECOND)
+
+
+def read_constellation_components(
+    params: Mapping[str, object],
+    *,
+    purpose: str,
+) -> tuple[float, ...]:
+    """读取命座效果行的 ``components`` 数值序列。
+
+    命座行的分量含义逐层不同（``c1 = [次数]``、``c2 = [秒]``、``c3 / c5 =
+    [等级, 上限]``、``c4 = [次数, 下限, 上限, 计次秒]``、``c6 = [比例]``），
+    故这里只做「取数」，各层的语义校验在该层的读取函数里做。角色单元也用它
+    按命座取静态切片值（C1 充能数、C2 延长秒数）。
+    """
+
+    return _components(params, purpose=purpose)
 
 
 def read_witches_eve_asset_values(
@@ -197,6 +231,260 @@ def read_witches_eve_asset_values(
     )
 
 
+def _constellation_effect_unit(
+    *,
+    request: EffectContentUnitRequest,
+    handler_key: str,
+    threshold: int,
+    purpose: str,
+    compiled_params: Mapping[str, JSONValue],
+    event_hooks: tuple[EventHook, ...] = (),
+    buff_definitions: tuple[BuffDefinition, ...] = (),
+    talent_level_boosts: Mapping[str, int] | None = None,
+) -> ContentUnit:
+    """命座效果单元骨架：解锁阈值为层号，其余与被动同形。"""
+
+    return _effect_unit(
+        request=request,
+        handler_key=handler_key,
+        kind=EffectKind.CONSTELLATION,
+        unlock=UnlockSpec(kind=UnlockKind.CONSTELLATION, threshold=threshold),
+        purpose=purpose,
+        event_hooks=event_hooks,
+        buff_definitions=buff_definitions,
+        compiled_params=compiled_params,
+        talent_level_boosts=talent_level_boosts,
+    )
+
+
+def create_sucrose_constellation_c1(request: EffectContentUnitRequest) -> ContentUnit:
+    """C1 堆叠真空域：元素战技的可使用次数 +1。
+
+    可用次数只能由**冷却定义**承载（``max_charges`` + 独立恢复），内容侧没有
+    「充能」动态通道，故本单元只负责读资产行、校验数值并登记编译参数；真正的
+    切片由角色单元在编译期按命座产出（见 ``content.py``）。留一条单元是为了让
+    这条资产行有明确归属（不再是 ``unimplemented_constellation``）。
+    """
+
+    _validate_owner(request, SUCROSE_CONSTELLATION_C1_HANDLER_KEY)
+    name = _effect_name(request.params, purpose="命之座第1层")
+    extra_charges = _read_single_int(request.params, purpose="命之座第1层")
+    return _constellation_effect_unit(
+        request=request,
+        handler_key=SUCROSE_CONSTELLATION_C1_HANDLER_KEY,
+        threshold=1,
+        purpose="sucrose_constellation_c1_extra_charge",
+        compiled_params={"name": name, "extra_charges": extra_charges},
+    )
+
+
+def create_sucrose_constellation_c2(request: EffectContentUnitRequest) -> ContentUnit:
+    """C2 不羁型贝特：元素爆发的技能持续时间延长 2 秒（6s → 8s，3 拍 → 4 拍）。
+
+    与 C1 同理：创建物时长是编译期静态切片，由角色单元按命座产出；本单元读
+    资产行并登记秒数（拍数与生命周期由 ``resolve_spirit_timing`` 同源派生）。
+    """
+
+    _validate_owner(request, SUCROSE_CONSTELLATION_C2_HANDLER_KEY)
+    name = _effect_name(request.params, purpose="命之座第2层")
+    extra_seconds = _read_single_int(request.params, purpose="命之座第2层")
+    window, duration, ticks = resolve_spirit_timing(extra_seconds)
+    return _constellation_effect_unit(
+        request=request,
+        handler_key=SUCROSE_CONSTELLATION_C2_HANDLER_KEY,
+        threshold=2,
+        purpose="sucrose_constellation_c2_burst_duration",
+        compiled_params={
+            "name": name,
+            "extra_seconds": extra_seconds,
+            "window_frames": window,
+            "duration_frames": duration,
+            "tick_count": ticks,
+        },
+    )
+
+
+def create_sucrose_constellation_c3(request: EffectContentUnitRequest) -> ContentUnit:
+    """C3 零失误少女：元素战技天赋等级 +3（至多 15 级）。"""
+
+    _validate_owner(request, SUCROSE_CONSTELLATION_C3_HANDLER_KEY)
+    name = _effect_name(request.params, purpose="命之座第3层")
+    boost, cap = _read_talent_level_boost(request.params, purpose="命之座第3层")
+    return _constellation_effect_unit(
+        request=request,
+        handler_key=SUCROSE_CONSTELLATION_C3_HANDLER_KEY,
+        threshold=3,
+        purpose="sucrose_constellation_c3_talent_boost",
+        compiled_params={"name": name, "boost": boost, "cap": cap},
+        talent_level_boosts={"elemental_skill": boost},
+    )
+
+
+def create_sucrose_constellation_c4(request: EffectContentUnitRequest) -> ContentUnit:
+    """C4 炼金的偏执：普攻 / 重击累计命中敌人 7 次 → 战技冷却随机减 1–7 秒。
+
+    资产 ``c4 = [7, 1, -7, 0.1]``：命中次数、减少秒数下限、上限（源站以负值
+    表示「减少」，故取绝对值）、计次间隔秒数。计次与减冷却都由 hook 承担：
+    减冷却走**运行期冷却意图**（``CooldownMutationBatchRequest``），不是编译期
+    时长 term——随机值只能在触发帧决定。
+    """
+
+    slot = _validate_owner(request, SUCROSE_CONSTELLATION_C4_HANDLER_KEY)
+    name = _effect_name(request.params, purpose="命之座第4层")
+    hit_count, min_seconds, max_seconds, interval_frames = _read_c4_values(request.params)
+    hook = SucroseC4HitCounterHook(
+        owner_ref=f"character:slot_{slot}",
+        slot=slot,
+        hit_count=hit_count,
+        min_reduction_seconds=min_seconds,
+        max_reduction_seconds=max_seconds,
+        count_interval_frames=interval_frames,
+    )
+    return _constellation_effect_unit(
+        request=request,
+        handler_key=SUCROSE_CONSTELLATION_C4_HANDLER_KEY,
+        threshold=4,
+        purpose="sucrose_constellation_c4_cooldown_reduction",
+        event_hooks=(hook,),
+        compiled_params={
+            "name": name,
+            "hit_count": hit_count,
+            "min_reduction_seconds": min_seconds,
+            "max_reduction_seconds": max_seconds,
+            "count_interval_frames": interval_frames,
+        },
+    )
+
+
+def create_sucrose_constellation_c5(request: EffectContentUnitRequest) -> ContentUnit:
+    """C5 认真普通瓶：元素爆发天赋等级 +3（至多 15 级）。"""
+
+    _validate_owner(request, SUCROSE_CONSTELLATION_C5_HANDLER_KEY)
+    name = _effect_name(request.params, purpose="命之座第5层")
+    boost, cap = _read_talent_level_boost(request.params, purpose="命之座第5层")
+    return _constellation_effect_unit(
+        request=request,
+        handler_key=SUCROSE_CONSTELLATION_C5_HANDLER_KEY,
+        threshold=5,
+        purpose="sucrose_constellation_c5_talent_boost",
+        compiled_params={"name": name, "boost": boost, "cap": cap},
+        talent_level_boosts={"elemental_burst": boost},
+    )
+
+
+def create_sucrose_constellation_c6(request: EffectContentUnitRequest) -> ContentUnit:
+    """C6 混元熵增论：爆发发生元素转化 → 全队（含砂糖）对应元素伤害加成。
+
+    持续时间为**爆发持续时间**（§8 第 2 项）：C2 延长后随之变为 8s，故按归属
+    上下文里的命座数取延长秒数、经 ``resolve_spirit_timing`` 得到生命周期，
+    与本体的窗口保持同一真值。
+
+    同时登记**魔导增强**的 Buff 定义（S7 已建、此前无单元持有）：魔导·秘仪
+    激活时由本 hook 对魔导角色额外投放 +8.57142%。
+    """
+
+    slot = _validate_owner(request, SUCROSE_CONSTELLATION_C6_HANDLER_KEY)
+    name = _effect_name(request.params, purpose="命之座第6层")
+    bonus = _read_single_ratio(request.params, purpose="命之座第6层")
+    extra_seconds = 0
+    if request.owner_context.constellation >= 2:
+        extra_seconds = SUCROSE_C2_EXTRA_SECONDS
+    duration_frames = resolve_spirit_timing(extra_seconds)[1]
+    hook = SucroseC6AbsorbedBonusHook(
+        owner_ref=f"character:slot_{slot}",
+        slot=slot,
+        damage_bonus=bonus,
+        duration_frames=duration_frames,
+    )
+    return _constellation_effect_unit(
+        request=request,
+        handler_key=SUCROSE_CONSTELLATION_C6_HANDLER_KEY,
+        threshold=6,
+        purpose="sucrose_constellation_c6_elemental_damage_bonus",
+        event_hooks=(hook,),
+        buff_definitions=(
+            build_c6_damage_bonus_buff_definition(),
+            build_c6_mage_enhancement_buff_definition(),
+        ),
+        compiled_params={
+            "name": name,
+            "damage_bonus": bonus,
+            "duration_frames": duration_frames,
+            "mage_enhancement_bonus": SUCROSE_C6_MAGE_ENHANCEMENT_BONUS,
+            "buff_definition_key": SUCROSE_C6_BUFF_DEFINITION_KEY,
+            "mage_enhancement_definition_key": (SUCROSE_C6_MAGE_ENHANCEMENT_BUFF_DEFINITION_KEY),
+        },
+    )
+
+
+def _read_single_int(params: Mapping[str, object], *, purpose: str) -> int:
+    """取命座行的单个正整数分量（``c1`` / ``c2``）。"""
+
+    values = read_constellation_components(params, purpose=purpose)
+    if len(values) < 1:
+        raise ContentUnitValidationError(f"{purpose} 资产效果行缺少数值分量")
+    value = round(values[0])
+    if value <= 0:
+        raise ContentUnitValidationError(f"{purpose} 数值必须为正整数")
+    return value
+
+
+def _read_single_ratio(params: Mapping[str, object], *, purpose: str) -> float:
+    """取命座行的单个比例分量（``c6``，落在 (0, 1]）。"""
+
+    values = read_constellation_components(params, purpose=purpose)
+    if len(values) < 1:
+        raise ContentUnitValidationError(f"{purpose} 资产效果行缺少数值分量")
+    ratio = values[0]
+    if not 0.0 < ratio <= 1.0:
+        raise ContentUnitValidationError(f"{purpose} 增伤比例必须在 (0, 1] 区间")
+    return ratio
+
+
+def _read_talent_level_boost(params: Mapping[str, object], *, purpose: str) -> tuple[int, int]:
+    """取命座行的「等级提升 / 上限」两个分量（``c3`` / ``c5``）。"""
+
+    values = read_constellation_components(params, purpose=purpose)
+    if len(values) < 2:
+        raise ContentUnitValidationError(f"{purpose} 资产效果行缺少等级上限分量")
+    boost = round(values[0])
+    cap = round(values[1])
+    if boost <= 0:
+        raise ContentUnitValidationError(f"{purpose} 等级提升必须为正整数")
+    if cap < boost:
+        raise ContentUnitValidationError(f"{purpose} 等级上限不得低于提升值")
+    return boost, cap
+
+
+def _read_c4_values(params: Mapping[str, object]) -> tuple[int, int, int, int]:
+    """取 ``c4`` 的四个分量：命中次数 / 减冷却秒数区间 / 计次间隔帧数。
+
+    源站以负数表示「减少」（``1 / -7``），故上限取绝对值；计次间隔源站给的是
+    秒数（0.1），这里换算为帧。
+    """
+
+    purpose = "命之座第4层"
+    values = read_constellation_components(params, purpose=purpose)
+    if len(values) < 4:
+        raise ContentUnitValidationError(f"{purpose} 资产效果行缺少计次间隔分量")
+    hit_count = round(values[0])
+    min_seconds = round(values[1])
+    max_seconds = round(abs(values[2]))
+    interval_seconds = values[3]
+    if hit_count <= 0:
+        raise ContentUnitValidationError(f"{purpose} 命中次数必须为正整数")
+    if min_seconds <= 0 or max_seconds <= 0 or min_seconds > max_seconds:
+        raise ContentUnitValidationError(f"{purpose} 减冷却秒数区间非法")
+    if interval_seconds < 0:
+        raise ContentUnitValidationError(f"{purpose} 计次间隔秒数必须非负")
+    return (
+        hit_count,
+        min_seconds,
+        max_seconds,
+        round(interval_seconds * SUCROSE_TALENT_FRAMES_PER_SECOND),
+    )
+
+
 def create_sucrose_passive_a1(request: EffectContentUnitRequest) -> ContentUnit:
     """A1 触媒置换术：扩散 / 星扩散触发，与被扩散元素同元素的队友 +50 精通 8s。"""
 
@@ -214,6 +502,7 @@ def create_sucrose_passive_a1(request: EffectContentUnitRequest) -> ContentUnit:
     return _effect_unit(
         request=request,
         handler_key=SUCROSE_PASSIVE_A1_HANDLER_KEY,
+        kind=EffectKind.PASSIVE,
         # 突破 1 阶解锁。
         unlock=UnlockSpec(kind=UnlockKind.ASCENSION, threshold=1),
         purpose="sucrose_passive_a1_catalyst_conversion",
@@ -245,6 +534,7 @@ def create_sucrose_passive_a4(request: EffectContentUnitRequest) -> ContentUnit:
     return _effect_unit(
         request=request,
         handler_key=SUCROSE_PASSIVE_A4_HANDLER_KEY,
+        kind=EffectKind.PASSIVE,
         # 突破 4 阶解锁。
         unlock=UnlockSpec(kind=UnlockKind.ASCENSION, threshold=4),
         purpose="sucrose_passive_a4_mollis_favonius",
@@ -295,6 +585,7 @@ def create_sucrose_passive_witches_eve(request: EffectContentUnitRequest) -> Con
     return _effect_unit(
         request=request,
         handler_key=SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY,
+        kind=EffectKind.PASSIVE,
         unlock=UnlockSpec(kind=UnlockKind.ALWAYS, threshold=0),
         purpose="sucrose_passive_witches_eve_rite",
         event_hooks=(small_hook, large_hook),

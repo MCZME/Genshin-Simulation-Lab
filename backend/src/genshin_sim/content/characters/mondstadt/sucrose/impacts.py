@@ -477,8 +477,20 @@ class SucroseActionImpactFactory:
     展开为 ``ENERGY`` 的 ``spend_burst``。
     """
 
-    def __init__(self, damage_specs: Mapping[str, DamageImpactSpec]) -> None:
+    def __init__(
+        self,
+        damage_specs: Mapping[str, DamageImpactSpec],
+        *,
+        spirit_duration_frames: int = SUCROSE_SPIRIT_DURATION_FRAMES,
+    ) -> None:
         self._damage_specs = dict(damage_specs)
+        if (
+            isinstance(spirit_duration_frames, bool)
+            or not isinstance(spirit_duration_frames, int)
+            or spirit_duration_frames <= 0
+        ):
+            raise ContentUnitValidationError("大型风灵生命周期必须为正帧数")
+        self._spirit_duration_frames = spirit_duration_frames
 
     def create_requests(self, context: ActionImpactContext) -> tuple[ImpactRequest, ...]:
         params = dict(context.params)
@@ -553,7 +565,8 @@ class SucroseActionImpactFactory:
             params={
                 **params,
                 "type_key": SUCROSE_SPIRIT_OBJECT_KEY,
-                "duration_frames": SUCROSE_SPIRIT_DURATION_FRAMES,
+                # 生命周期随 C2 延长（6s → 8s），由编译期按命座给出。
+                "duration_frames": self._spirit_duration_frames,
                 "position": {"x": position.x, "y": position.y, "z": position.z},
                 "owner_key": owner_key,
                 "tags": (SUCROSE_SPIRIT_OBJECT_KEY,),

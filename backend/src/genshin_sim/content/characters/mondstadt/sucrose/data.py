@@ -405,6 +405,64 @@ SUCROSE_C6_MAGE_ENHANCEMENT_BUFF_DEFINITION_KEY = f"{SUCROSE_C6_MAGE_ENHANCEMENT
 SUCROSE_C6_MAGE_ENHANCEMENT_CONFLICT_KEY = f"{SUCROSE_C6_MAGE_ENHANCEMENT_MECHANIC_KEY}.conflict"
 
 
+# --- 命座（实施规划 §11.6） ------------------------------------------------
+#
+# 六层的稳定键与常量。数值一律读资产 ``c1`` … ``c6`` 效果行（本段常量只在
+# 资产缺行时作为默认值与测试基准）：
+#
+# - C1 堆叠真空域：E 可使用次数 +1（资产 ``c1 = [1]``）→ 战技冷却
+#   ``max_charges = 2`` 且恢复模式改为**独立**（S6 的能力）。
+# - C2 不羁型贝特：Q 技能持续时间 +2 秒（资产 ``c2 = [2]``）→ 大型风灵窗口
+#   6s → 8s、拍数 3 → 4（137 / 257 / 377 / 497）。
+# - C3 / C5：E / Q 技能等级 +3（资产 ``[3, 15]``，至多 15 级）。
+# - C4 炼金的偏执：普攻 / 重击命中敌人累计 7 次 → E 冷却随机减少 1–7 秒；
+#   资产 ``[7, 1, -7, 0.1]`` 依次为命中次数、减少秒数下限、上限（源站以负值
+#   表示「减少」）、计次间隔秒数。
+# - C6 混元熵增论：Q 发生元素转化 → 队伍中**所有角色（含砂糖自己）**在技能
+#   持续时间内获得 20% 对应元素伤害加成（资产 ``[20%]``）；魔导·秘仪激活时
+#   魔导角色额外 +8.57142%（见上段常量）。
+
+SUCROSE_CONSTELLATION_C1_HANDLER_KEY = "character.sucrose.constellation.c1"
+SUCROSE_CONSTELLATION_C2_HANDLER_KEY = "character.sucrose.constellation.c2"
+SUCROSE_CONSTELLATION_C3_HANDLER_KEY = "character.sucrose.constellation.c3"
+SUCROSE_CONSTELLATION_C4_HANDLER_KEY = "character.sucrose.constellation.c4"
+SUCROSE_CONSTELLATION_C5_HANDLER_KEY = "character.sucrose.constellation.c5"
+SUCROSE_CONSTELLATION_C6_HANDLER_KEY = "character.sucrose.constellation.c6"
+
+# C1：额外可使用次数（资产 number_1）。
+SUCROSE_C1_EXTRA_CHARGES = 1
+# C2：爆发窗口延长秒数（资产 number_1）。
+SUCROSE_C2_EXTRA_SECONDS = 2
+# C3 / C5：天赋等级提升与上限（资产 number_1 / number_2）。
+SUCROSE_C3_TALENT_BOOST = 3
+SUCROSE_C3_TALENT_CAP = 15
+SUCROSE_C5_TALENT_BOOST = 3
+SUCROSE_C5_TALENT_CAP = 15
+# C4：命中次数门槛、随机减冷却的秒数区间与计次间隔（资产 number_1..number_4）。
+SUCROSE_C4_TRIGGER_HIT_COUNT = 7
+SUCROSE_C4_MIN_REDUCTION_SECONDS = 1
+SUCROSE_C4_MAX_REDUCTION_SECONDS = 7
+SUCROSE_C4_COUNT_INTERVAL_FRAMES = 6  # 0.1 秒（60 帧/秒）
+# 触发面：普通攻击四段与重击（资产文本「普通攻击或重击命中敌人」，不含下落）。
+SUCROSE_C4_TRIGGER_MAIN_ATTACK_TAGS = (
+    "普通攻击1",
+    "普通攻击2",
+    "普通攻击3",
+    "普通攻击4",
+    "重击",
+)
+# C6：染色后全队对应元素伤害加成（资产 number_1）。
+SUCROSE_C6_DAMAGE_BONUS = 0.2
+# 触发面：大型风灵的染色伤害那一段（创建物染色请求内嵌的 impact_key）——
+# 「发生元素转化」在运行期只能由这段伤害观测到。
+SUCROSE_C6_TRIGGER_IMPACT_KEYS = (SUCROSE_SPIRIT_ABSORBED_TICK_IMPACT_KEY,)
+SUCROSE_C6_MECHANIC_KEY = "sucrose.constellation.c6.elemental_damage_bonus"
+SUCROSE_C6_BUFF_DEFINITION_KEY = f"{SUCROSE_C6_MECHANIC_KEY}.buff"
+SUCROSE_C6_CONFLICT_KEY = f"{SUCROSE_C6_MECHANIC_KEY}.conflict"
+# 审计标签（进入 C6 Buff 词条的属性审计）。
+SUCROSE_C6_AUDIT_TAG = "sucrose_constellation_c6"
+
+
 # --- 动作表（帧表来源：实施规划 §4.4） ------------------------------------
 #
 # duration_frames 取该行「普攻」列（动作自然结束帧）；transitions 取各输入列

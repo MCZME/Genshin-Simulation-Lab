@@ -47,9 +47,21 @@ from genshin_sim.content.characters.mondstadt.barbara import (
 )
 from genshin_sim.content.characters.mondstadt.sucrose import (
     SUCROSE_CHARACTER_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C1_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C2_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C3_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C4_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C5_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C6_HANDLER_KEY,
     SUCROSE_PASSIVE_A1_HANDLER_KEY,
     SUCROSE_PASSIVE_A4_HANDLER_KEY,
     SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY,
+    create_sucrose_constellation_c1,
+    create_sucrose_constellation_c2,
+    create_sucrose_constellation_c3,
+    create_sucrose_constellation_c4,
+    create_sucrose_constellation_c5,
+    create_sucrose_constellation_c6,
     create_sucrose_content_unit,
     create_sucrose_passive_a1,
     create_sucrose_passive_a4,
@@ -246,6 +258,12 @@ def create_default_content_unit_registry(
         (SUCROSE_PASSIVE_A1_HANDLER_KEY, create_sucrose_passive_a1),
         (SUCROSE_PASSIVE_A4_HANDLER_KEY, create_sucrose_passive_a4),
         (SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY, create_sucrose_passive_witches_eve),
+        (SUCROSE_CONSTELLATION_C1_HANDLER_KEY, create_sucrose_constellation_c1),
+        (SUCROSE_CONSTELLATION_C2_HANDLER_KEY, create_sucrose_constellation_c2),
+        (SUCROSE_CONSTELLATION_C3_HANDLER_KEY, create_sucrose_constellation_c3),
+        (SUCROSE_CONSTELLATION_C4_HANDLER_KEY, create_sucrose_constellation_c4),
+        (SUCROSE_CONSTELLATION_C5_HANDLER_KEY, create_sucrose_constellation_c5),
+        (SUCROSE_CONSTELLATION_C6_HANDLER_KEY, create_sucrose_constellation_c6),
     ):
         registry.register_effect_factory(handler_key, factory)
     registry.register_weapon_factory(

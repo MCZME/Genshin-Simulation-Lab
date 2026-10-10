@@ -40,6 +40,8 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_SPIRIT_PROBE_SCHEDULE_KEY,
     SUCROSE_SPIRIT_TICK_COUNT,
     SUCROSE_SPIRIT_TICK_PERIOD_FRAMES,
+    SUCROSE_SPIRIT_WINDOW_FRAMES,
+    SUCROSE_TALENT_FRAMES_PER_SECOND,
     SUCROSE_TARGETING,
 )
 from genshin_sim.content.characters.mondstadt.sucrose.impacts import (
@@ -86,6 +88,29 @@ class SucroseSpiritRuntimeState(CreatedObjectRuntimeState):
         self.absorbed_element: Element | None = None
 
 
+def resolve_spirit_timing(extra_seconds: int = 0) -> tuple[int, int, int]:
+    """按「窗口延长秒数」解出 ``(窗口帧数, 生命周期帧数, 拍数)``。
+
+    C2 把爆发窗口延长 2 秒（6s → 8s），拍数随之由 3 拍变 4 拍（137 / 257 /
+    377 / 497）；窗口、生命周期与拍数三者必须同源，否则会出现「窗口 8s 却只
+    打 3 拍」或「打出第 5 拍」这类漂移，故统一由本函数派生：
+
+    - 窗口帧数 = 基础窗口 + 延长秒数 × 60；
+    - 拍数 = 窗口帧数 ÷ 拍周期（整除，基础 360 / 120 = 3、延长后 480 / 120 = 4）；
+    - 生命周期 = 窗口 + 1（末拍正好落在窗口端点，过期判据不含端点帧）。
+
+    ``SucroseSpiritType`` 构造时还会按这三者再校验一次（``_validate_tick_budget``）。
+    """
+
+    if isinstance(extra_seconds, bool) or not isinstance(extra_seconds, int) or extra_seconds < 0:
+        raise ContentUnitValidationError("大型风灵窗口延长秒数必须为非负整数")
+    window_frames = SUCROSE_SPIRIT_WINDOW_FRAMES + extra_seconds * SUCROSE_TALENT_FRAMES_PER_SECOND
+    tick_count = window_frames // SUCROSE_SPIRIT_TICK_PERIOD_FRAMES
+    if tick_count <= 0:
+        raise ContentUnitValidationError("大型风灵窗口过短：不足一拍")
+    return window_frames, window_frames + 1, tick_count
+
+
 class SucroseSpiritType:
     """大型风灵创建实体类型：双调度（按拍风伤 / 染色探测）。
 
@@ -101,6 +126,8 @@ class SucroseSpiritType:
         slot: int,
         anemo_spec: DamageImpactSpec,
         absorbed_channel: SucroseAbsorbedDamageChannel,
+        duration_frames: int = SUCROSE_SPIRIT_DURATION_FRAMES,
+        tick_count: int = SUCROSE_SPIRIT_TICK_COUNT,
     ) -> None:
         if isinstance(slot, bool) or not isinstance(slot, int) or slot <= 0:
             raise ContentUnitValidationError("大型风灵实体类型必须绑定正整数队伍槽位")
@@ -113,8 +140,10 @@ class SucroseSpiritType:
         search_area = SUCROSE_TARGETING.search_area
         if search_area is None:
             raise ContentUnitValidationError("砂糖索敌规格缺少搜索区域")
-        self._validate_tick_budget()
+        self._validate_tick_budget(duration_frames, tick_count)
         self._slot = slot
+        self._duration_frames = duration_frames
+        self._tick_count = tick_count
         self._anemo_spec = anemo_spec
         self._anemo_area = anemo_spec.area
         self._absorbed_channel = absorbed_channel
@@ -128,22 +157,43 @@ class SucroseSpiritType:
         )
 
     @staticmethod
-    def _validate_tick_budget() -> None:
+    def _validate_tick_budget(duration_frames: int, tick_count: int) -> None:
         """校验「按拍数 × 周期 × 生命周期」三者自洽（声明即约束）。
 
         第 k 拍落在创建帧 + k × 周期：末拍须早于过期帧（``frame < 创建帧 +
         生命周期``，否则被过期门控丢弃），且再下一拍须不早于过期帧（否则会多
         出一拍）。三者任一处漂移都会在这里确定性失败，避免静默变成 2 拍 / 4 拍。
+
+        C2 把窗口延长 2 秒后这组数值整体变化（480 / 481 / 4 拍），故三者都按
+        实例取值校验，不再读模块常量。
         """
 
-        last_tick = SUCROSE_SPIRIT_TICK_COUNT * SUCROSE_SPIRIT_TICK_PERIOD_FRAMES
+        if isinstance(duration_frames, bool) or not isinstance(duration_frames, int):
+            raise ContentUnitValidationError("大型风灵生命周期必须是整数帧数")
+        if duration_frames <= 0:
+            raise ContentUnitValidationError("大型风灵生命周期必须为正帧数")
+        if isinstance(tick_count, bool) or not isinstance(tick_count, int) or tick_count <= 0:
+            raise ContentUnitValidationError("大型风灵按拍数必须为正整数")
+        last_tick = tick_count * SUCROSE_SPIRIT_TICK_PERIOD_FRAMES
         next_tick = last_tick + SUCROSE_SPIRIT_TICK_PERIOD_FRAMES
-        if not last_tick < SUCROSE_SPIRIT_DURATION_FRAMES <= next_tick:
+        if not last_tick < duration_frames <= next_tick:
             raise ContentUnitValidationError(
                 "大型风灵按拍预算与生命周期不自洽："
-                f"{SUCROSE_SPIRIT_TICK_COUNT} 拍 × {SUCROSE_SPIRIT_TICK_PERIOD_FRAMES} 帧 "
-                f"对不上生命周期 {SUCROSE_SPIRIT_DURATION_FRAMES} 帧"
+                f"{tick_count} 拍 × {SUCROSE_SPIRIT_TICK_PERIOD_FRAMES} 帧 "
+                f"对不上生命周期 {duration_frames} 帧"
             )
+
+    @property
+    def duration_frames(self) -> int:
+        """生命周期帧数（C2 延长后为 8s 窗口 + 1）。"""
+
+        return self._duration_frames
+
+    @property
+    def tick_count(self) -> int:
+        """按拍数（C2 延长后为 4 拍）。"""
+
+        return self._tick_count
 
     def build_state(
         self,
@@ -219,7 +269,10 @@ class SucroseSpiritType:
         ]
         absorbed_element = state.absorbed_element
         if absorbed_element is not None:
-            absorbed_id = f"{request_id}:absorbed"
+            # request_id 内嵌染色通道的 impact_key（与动作影响点的请求同惯例）：
+            # 「爆发发生了元素转化」在运行期只能由这段伤害观测到（C6 的触发
+            # 判据读的就是它），故身份里必须带通道键，不能只有 tick 序号。
+            absorbed_id = f"{request_id}:{self._absorbed_channel.impact_key}"
             requests.append(
                 ImpactRequest(
                     frame=frame,

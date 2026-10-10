@@ -29,6 +29,9 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_SPIRIT_OBJECT_KEY,
     SUCROSE_STATE_LAST_PARTICLE_FRAME,
 )
+from genshin_sim.content.characters.mondstadt.sucrose.effects import (
+    read_constellation_components,
+)
 from genshin_sim.content.characters.mondstadt.sucrose.hooks import SucroseParticleHook
 from genshin_sim.content.characters.mondstadt.sucrose.impacts import (
     SucroseActionImpactFactory,
@@ -39,7 +42,10 @@ from genshin_sim.content.characters.mondstadt.sucrose.impacts import (
     compile_spirit_absorbed_damage_channel,
     compile_spirit_anemo_damage_spec,
 )
-from genshin_sim.content.characters.mondstadt.sucrose.spirit import SucroseSpiritType
+from genshin_sim.content.characters.mondstadt.sucrose.spirit import (
+    SucroseSpiritType,
+    resolve_spirit_timing,
+)
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
@@ -63,6 +69,7 @@ from genshin_sim.core.systems.cooldown import (
     CooldownDurationMode,
     CooldownDurationTerm,
     CooldownKey,
+    CooldownRecoveryMode,
     CooldownSubjectRef,
 )
 
@@ -127,7 +134,32 @@ def create_sucrose_content_unit(
             talent_level,
         )
     )
-    impact_factory = SucroseActionImpactFactory(damage_specs)
+    # C1 堆叠真空域：E 的可使用次数 +1（资产 c1 的 number_1）。充能数只能由
+    # 冷却定义承载（内容侧没有「充能 term」这类动态通道），故按命座在编译期
+    # 取值；独立恢复模式是 S6 新增的能力，串行仍是其余角色的默认。
+    extra_charges = _constellation_value(
+        request,
+        threshold=1,
+        unlock_key="c1",
+        purpose="C1 堆叠真空域",
+    )
+    # C2 不羁型贝特：爆发窗口延长 2 秒（资产 c2 的 number_1）；窗口 / 生命周期
+    # / 拍数三者由 resolve_spirit_timing 同源派生，避免「窗口 8s 却只打 3 拍」。
+    burst_extra_seconds = _constellation_value(
+        request,
+        threshold=2,
+        unlock_key="c2",
+        purpose="C2 不羁型贝特",
+    )
+    (
+        _spirit_window_frames,
+        spirit_duration_frames,
+        spirit_tick_count,
+    ) = resolve_spirit_timing(burst_extra_seconds)
+    impact_factory = SucroseActionImpactFactory(
+        damage_specs,
+        spirit_duration_frames=spirit_duration_frames,
+    )
     owner_ref = f"character:slot_{request.slot}"
     skill_cooldown_definition = CooldownDefinition(
         key=CooldownKey(
@@ -136,8 +168,11 @@ def create_sucrose_content_unit(
         ),
         ability_kind=AbilityKind.ELEMENTAL_SKILL,
         base_duration_frames=SUCROSE_ELEMENTAL_SKILL_COOLDOWN_FRAMES,
-        max_charges=1,
+        max_charges=1 + extra_charges,
         duration_mode=CooldownDurationMode.FIXED,
+        recovery_mode=(
+            CooldownRecoveryMode.INDEPENDENT if extra_charges else CooldownRecoveryMode.SERIAL
+        ),
         source_ref=SUCROSE_CHARACTER_HANDLER_KEY,
         tags=("elemental_skill",),
     )
@@ -167,6 +202,8 @@ def create_sucrose_content_unit(
             entries_by_key,
             burst_talent_level,
         ),
+        duration_frames=spirit_duration_frames,
+        tick_count=spirit_tick_count,
     )
     return ContentUnit(
         owner_type=ContentUnitOwnerType.CHARACTER,
@@ -191,6 +228,33 @@ def create_sucrose_content_unit(
             MAGE_MARKER_KEY: True,
         },
     )
+
+
+def _constellation_value(
+    request: CharacterContentUnitRequest,
+    *,
+    threshold: int,
+    unlock_key: str,
+    purpose: str,
+) -> int:
+    """按命座取该层的资产数值（未解锁时为 0；已解锁却缺效果行则直接失败）。
+
+    C1 的充能数与 C2 的延长秒数都作用在**角色单元编译出的静态切片**上（冷却
+    定义与创建物时长），没有动态通道可走，只能在这里按命座读资产行取值。
+    """
+
+    if request.constellation < threshold:
+        return 0
+    params = request.effect_params.get(unlock_key)
+    if params is None:
+        raise ContentUnitValidationError(f"{purpose} 已解锁但缺少资产效果行：{unlock_key}")
+    values = read_constellation_components(params, purpose=purpose)
+    if not values:
+        raise ContentUnitValidationError(f"{purpose} 资产效果行缺少数值分量")
+    value = round(values[0])
+    if value <= 0:
+        raise ContentUnitValidationError(f"{purpose} 资产数值必须为正数")
+    return value
 
 
 def _cooldown_terms_for_actions(

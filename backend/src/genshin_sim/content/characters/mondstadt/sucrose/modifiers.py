@@ -24,6 +24,10 @@
   结果决定，而 Buff 定义的词条集合是静态的，因此定义一次声明八条元素词条、
   投放时只给对应元素那一条填数值、其余填 ``0.0``（框架要求
   ``modifier_values`` 与模板逐条匹配，不能省略）。
+
+- **C6 染色增伤（+20%，命座第六层本体）**：与魔导增强同形态（属性面、八条
+  元素词条、投放时只填对应元素），区别只在数值来源与投放范围——数值取资产
+  ``c6`` 效果行、投放给**队伍中所有角色（含砂糖自己）**。
 """
 
 from __future__ import annotations
@@ -37,10 +41,15 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_A4_CONFLICT_KEY,
     SUCROSE_A4_MASTERY_TERM_KEY,
     SUCROSE_A4_MECHANIC_KEY,
+    SUCROSE_C6_AUDIT_TAG,
+    SUCROSE_C6_BUFF_DEFINITION_KEY,
+    SUCROSE_C6_CONFLICT_KEY,
     SUCROSE_C6_MAGE_ENHANCEMENT_BUFF_DEFINITION_KEY,
     SUCROSE_C6_MAGE_ENHANCEMENT_CONFLICT_KEY,
     SUCROSE_C6_MAGE_ENHANCEMENT_MECHANIC_KEY,
+    SUCROSE_C6_MECHANIC_KEY,
     SUCROSE_CHARACTER_HANDLER_KEY,
+    SUCROSE_CONSTELLATION_C6_HANDLER_KEY,
     SUCROSE_PASSIVE_A1_HANDLER_KEY,
     SUCROSE_PASSIVE_A4_HANDLER_KEY,
     SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY,
@@ -209,7 +218,9 @@ def build_c6_mage_enhancement_buff_definition() -> BuffDefinition:
     return BuffDefinition(
         definition_key=SUCROSE_C6_MAGE_ENHANCEMENT_BUFF_DEFINITION_KEY,
         mechanic_key=SUCROSE_C6_MAGE_ENHANCEMENT_MECHANIC_KEY,
-        handler_key=SUCROSE_CHARACTER_HANDLER_KEY,
+        # 归属 C6 命座单元：Buff 定义的 handler_key 必须与贡献它的内容单元一致
+        # （装配期按此校验归属），故取命座 handler 而非角色 handler。
+        handler_key=SUCROSE_CONSTELLATION_C6_HANDLER_KEY,
         conflict_key=SUCROSE_C6_MAGE_ENHANCEMENT_CONFLICT_KEY,
         target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
         application_policy=BuffApplicationPolicy.REFRESH,
@@ -238,6 +249,58 @@ def mage_enhancement_modifier_values(
     return tuple(
         BuffModifierValue(
             mage_enhancement_term_key(candidate),
+            bonus if candidate is element else 0.0,
+        )
+        for candidate in MAGE_ENHANCEMENT_ELEMENTS
+    )
+
+
+def c6_damage_bonus_term_key(element: Element) -> str:
+    """C6 染色增伤内某元素对应的词条键（与魔导增强各自独立的一套）。"""
+
+    return f"{SUCROSE_C6_MECHANIC_KEY}.bonus.{element.value}"
+
+
+def build_c6_damage_bonus_buff_definition() -> BuffDefinition:
+    """C6 混元熵增论本体：全队（含砂糖）对应元素伤害加成（覆盖刷新）。
+
+    与魔导增强同形态：作用面是属性（``BONUS_DAMAGE_<element>``），一次声明八条
+    元素词条，投放时只给染色元素那一条填数值、其余 ``0.0``。两者用不同的
+    定义键与冲突键，因此互不覆盖、可并存（魔导增强是**额外**加成）。
+    """
+
+    return BuffDefinition(
+        definition_key=SUCROSE_C6_BUFF_DEFINITION_KEY,
+        mechanic_key=SUCROSE_C6_MECHANIC_KEY,
+        handler_key=SUCROSE_CONSTELLATION_C6_HANDLER_KEY,
+        conflict_key=SUCROSE_C6_CONFLICT_KEY,
+        target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
+        application_policy=BuffApplicationPolicy.REFRESH,
+        value_refresh_policy=BuffValueRefreshPolicy.REPLACE_LATEST,
+        max_stacks=1,
+        attribute_modifiers=tuple(
+            BuffAttributeModifierTemplate(
+                term_key=c6_damage_bonus_term_key(element),
+                target_key=ELEMENT_TO_DAMAGE_BONUS_KEY[element.value],
+                stage=ModifierStage.FLAT_ADD,
+                audit_tags=(SUCROSE_C6_AUDIT_TAG,),
+            )
+            for element in MAGE_ENHANCEMENT_ELEMENTS
+        ),
+        tags=frozenset({SUCROSE_CHARACTER_HANDLER_KEY, SUCROSE_CONSTELLATION_C6_HANDLER_KEY}),
+        display_name="混元熵增论·对应元素伤害加成",
+    )
+
+
+def c6_damage_bonus_modifier_values(
+    element: Element,
+    bonus: float,
+) -> tuple[BuffModifierValue, ...]:
+    """按染色元素组装 C6 本体增伤的 ``modifier_values``（其余元素填 0）。"""
+
+    return tuple(
+        BuffModifierValue(
+            c6_damage_bonus_term_key(candidate),
             bonus if candidate is element else 0.0,
         )
         for candidate in MAGE_ENHANCEMENT_ELEMENTS

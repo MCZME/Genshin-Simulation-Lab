@@ -151,6 +151,7 @@ from genshin_sim.core.simulation import (
 )
 from genshin_sim.core.simulation.intent_handlers import (
     BuffIntentHandler,
+    CooldownIntentHandler,
     ImpactIntentHandler,
 )
 from genshin_sim.core.simulation.intent_queue import IntentQueue
@@ -831,6 +832,10 @@ class RuntimeAssembler:
             ImpactIntentHandler(impact_request_dispatcher),
         )
         settlement_runtime.register(IntentKind.BUFF, BuffIntentHandler(buff_max_hp_coordinator))
+        settlement_runtime.register(
+            IntentKind.COOLDOWN,
+            CooldownIntentHandler(cooldown_runtime),
+        )
         settlement_runtime.register(
             IntentKind.STATE_PATCH,
             StatePatchIntentHandler(team_state),

@@ -628,7 +628,7 @@ function slotMergedValue(slots: Record<string, unknown>[], slotKey: string): num
 
 /**
  * 复合模式的逐参与者组分账本：顶层 `applied_terms` 为空，
- * 账单落在各组分审计内（决策 D-047）。每个组分列出基础区、乘区、
+ * 账单落在各组分审计内（决策 D-082）。每个组分列出基础区、乘区、
  * 组分伤害、权重与该组分自己的词条，使组分内的乘法链可以逐项对账；
  * 顶层扁平字段只取排名第一的组分，无法代表全部参与者。
  */
@@ -1065,7 +1065,7 @@ function buildBaseZone(
     }
   }
 
-  // 复合模式（月曜/星烁）的顶层账单为空，账本落在各组分审计内（决策 D-047）。
+  // 复合模式（月曜/星烁）的顶层账单为空，账本落在各组分审计内（决策 D-082）。
   for (const ledger of compositeComponentLedgers(summary, resolveRef)) {
     pushDrawer(drawers, ledger.id, ledger.title, ledger.total, ledger.rows);
   }

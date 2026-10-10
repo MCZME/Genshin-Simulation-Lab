@@ -57,7 +57,7 @@ from genshin_sim.content.generic.talents import (
     index_talent_scalings,
 )
 from genshin_sim.content.registries import CharacterContentUnitRequest
-from genshin_sim.content.team.witches_eve import MAGE_MARKER_KEY
+from genshin_sim.content.team.mage import MAGE_MARKER_KEY
 from genshin_sim.core.contracts.state_schema import (
     StateField,
     StateFieldType,
@@ -224,7 +224,7 @@ def create_sucrose_content_unit(
             "purpose": "sucrose_action_state_machine",
             # 魔导资格：完成「魔女的课业·仙境花之题」后砂糖成为魔导角色。本期
             # 裁定默认已完成、不作为仿真输入项，故标记为角色的静态属性；
-            # 装配期收集为魔导名录（content/team/witches_eve.py）。
+            # 装配期收集为魔导名录（content/team/mage.py）。
             MAGE_MARKER_KEY: True,
         },
     )

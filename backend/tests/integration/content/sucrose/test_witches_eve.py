@@ -30,7 +30,7 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_WITCHES_EVE_SMALL_BUFF_DEFINITION_KEY,
     SUCROSE_WITCHES_EVE_SMALL_DURATION_FRAMES,
 )
-from genshin_sim.content.team.witches_eve import MageRoster
+from genshin_sim.content.team.mage import MageRoster
 from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.events import (
     ActionStartedPayload,

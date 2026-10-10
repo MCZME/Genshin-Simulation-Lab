@@ -56,7 +56,7 @@ from genshin_sim.content.registries import (
     CharacterContentUnitRequest,
     ContentUnitRegistry,
 )
-from genshin_sim.content.team.witches_eve import MAGE_MARKER_KEY
+from genshin_sim.content.team.mage import MAGE_MARKER_KEY
 from genshin_sim.core.actions import (
     ActionInterpretationContext,
     ActionInterpretationResult,

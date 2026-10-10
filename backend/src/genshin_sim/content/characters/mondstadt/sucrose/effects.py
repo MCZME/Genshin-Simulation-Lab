@@ -12,8 +12,10 @@
 
 ``passive:9``「魔女的前夜礼·七循之理」的 components 为
 ``[2, 15, 5.71428%, 20, 7.14285%]``，依次为魔导·秘仪门槛人数、小型风灵档
-秒数与比例、大型风灵档秒数与比例；门槛人数与判定口径一致时以资产为准
-（名录判定仍走 ``content/team/witches_eve.py`` 的常量，两处不一致会在此报错）。
+秒数与比例、大型风灵档秒数与比例。**门槛人数（``number_1``）不在此建模**：
+「魔导·秘仪」是否激活由 ``content/team/mage.py`` 的 ``MageRoster`` 按共享
+常量判定，属**资格**而非砂糖的效果，效果包不替它建模——故按位置消费掉第 1 个
+分量后丢弃，不读入也不校验。本工厂只取后四个分量（两档秒数 / 两档比例）。
 """
 
 from __future__ import annotations
@@ -69,7 +71,6 @@ from genshin_sim.content.definitions.effects import (
 )
 from genshin_sim.content.models import EventHook
 from genshin_sim.content.registries import EffectContentUnitRequest
-from genshin_sim.content.team.witches_eve import MAGE_ACTIVATION_THRESHOLD
 from genshin_sim.core.contracts.json import JSONValue
 from genshin_sim.core.systems.buff import BuffDefinition
 
@@ -197,25 +198,18 @@ def read_constellation_components(
 
 def read_witches_eve_asset_values(
     params: Mapping[str, object],
-) -> tuple[int, int, float, int, float]:
-    """解析 ``passive:9`` 效果行：门槛人数 / 小型档秒数与比例 / 大型档秒数与比例。
+) -> tuple[int, float, int, float]:
+    """解析 ``passive:9`` 效果行：两档秒数与比例（``number_2`` … ``number_5``）。
 
-    五个分量依次对应 ``number_1`` … ``number_5``（``[2, 15, 5.71428%, 20,
-    7.14285%]``）。两档比例必须为正数、两个秒数必须为正数、门槛必须 ≥2；
-    资产门槛与内容侧名录判定的门槛不一致时直接失败，避免「激活判据两套真值」。
+    分量依次为 ``[门槛人数, 小型档秒数, 小型档比例, 大型档秒数, 大型档比例]``。
+    **门槛人数不在此读入**——「魔导·秘仪」是否激活由 ``content/team/mage.py`` 的
+    ``MageRoster`` 按共享常量判定，属**资格**而非砂糖的效果，效果包不替它建模；
+    这里只按位置消费掉第 1 个分量（保持「必须 5 个分量」的结构约束）。两档比例
+    必须在 (0, 1] 区间、两个秒数必须为正数。
     """
 
     purpose = "天赋「魔女的前夜礼·七循之理」"
-    min_mage_count, small_seconds, small_ratio, large_seconds, large_ratio = _components(
-        params, purpose=purpose
-    )
-    if min_mage_count < 2.0:
-        raise ContentUnitValidationError(f"{purpose} 魔导·秘仪门槛人数必须不少于 2")
-    if min_mage_count != float(MAGE_ACTIVATION_THRESHOLD):
-        raise ContentUnitValidationError(
-            f"{purpose} 魔导·秘仪门槛人数（{min_mage_count:g}）与名录判定门槛"
-            f"（{MAGE_ACTIVATION_THRESHOLD}）不一致"
-        )
+    _, small_seconds, small_ratio, large_seconds, large_ratio = _components(params, purpose=purpose)
     if not 0.0 < small_ratio <= 1.0:
         raise ContentUnitValidationError(f"{purpose} 小型风灵档增伤比例必须在 (0, 1] 区间")
     if not 0.0 < large_ratio <= 1.0:
@@ -223,7 +217,6 @@ def read_witches_eve_asset_values(
     if small_seconds <= 0.0 or large_seconds <= 0.0:
         raise ContentUnitValidationError(f"{purpose} 两档持续时间都必须为正数")
     return (
-        round(min_mage_count),
         round(small_seconds * SUCROSE_TALENT_FRAMES_PER_SECOND),
         small_ratio,
         round(large_seconds * SUCROSE_TALENT_FRAMES_PER_SECOND),
@@ -563,7 +556,6 @@ def create_sucrose_passive_witches_eve(request: EffectContentUnitRequest) -> Con
     slot = _validate_owner(request, SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY)
     name = _effect_name(request.params, purpose="天赋「魔女的前夜礼·七循之理」")
     (
-        min_mage_count,
         small_duration_frames,
         small_bonus,
         large_duration_frames,
@@ -608,7 +600,6 @@ def create_sucrose_passive_witches_eve(request: EffectContentUnitRequest) -> Con
         ),
         compiled_params={
             "name": name,
-            "min_mage_count": min_mage_count,
             "small_duration_frames": small_duration_frames,
             "small_bonus": small_bonus,
             "large_duration_frames": large_duration_frames,

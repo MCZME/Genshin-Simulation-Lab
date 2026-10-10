@@ -24,7 +24,7 @@
 
 - 两档都以**魔导·秘仪激活**（队伍魔导角色数 ≥2）为前提——源站原文里
   「魔导·秘仪」小标题直接统领两档效果。魔导名录由装配期收集、注册为仿真
-  系统（``content/team/witches_eve.py`` 的 ``MageRoster``），hook 只读取，
+  系统（``content/team/mage.py`` 的 ``MageRoster``），hook 只读取，
   不自行数人头：本期只有砂糖一名魔导角色时条件自然不满足，属预期行为。
 - 小型风灵档订阅 ``ACTION_STARTED``，按「宿主槽位 ∧ ability_key 为元素战技」
   判定**施放帧**，向队伍中**全部角色**投放 15s 标记 Buff。
@@ -89,7 +89,7 @@ from genshin_sim.content.definitions.content_unit import ContentUnitValidationEr
 from genshin_sim.content.hooks import HookContext
 from genshin_sim.content.models import HookResult
 from genshin_sim.content.state_container import StatePatchRequest
-from genshin_sim.content.team.witches_eve import MageRoster
+from genshin_sim.content.team.mage import MageRoster
 from genshin_sim.core.attributes import (
     STAT_ELEMENTAL_MASTERY,
     AttributeQuery,
@@ -373,6 +373,10 @@ class SucroseMollisFavoniusHook:
     风灵按拍输出故每拍覆盖刷新。加成值为**触发帧的快照**：在伤害结算之后解析
     砂糖的元素精通并按比例折算，之后砂糖精通变化不影响已投放的数值；
     属性解析器未接线时视为未生效，不投放。
+
+    A4 本身是**转化效果**（读其他属性再折算），故快照只取**可被二次转化桶**
+    （``reconvertible_value``）——不把砂糖精通里属于其他转化产物的部分再折算
+    一次，避免二次转化链（属性系统契约 §14「二次转化效果取 reconvertible_value」）。
     """
 
     def __init__(
@@ -457,7 +461,9 @@ class SucroseMollisFavoniusHook:
                 frame=frame,
             )
         )
-        return float(resolution.final_value)
+        # A4 是「转化效果」：只读入**可被二次转化**的部分（`reconvertible_value`），
+        # 不把其他转化产物再折算一次（契约 §14「二次转化效果取 reconvertible_value」）。
+        return float(resolution.reconvertible_value)
 
 
 class SucroseWitchesEveSmallSpiritHook:

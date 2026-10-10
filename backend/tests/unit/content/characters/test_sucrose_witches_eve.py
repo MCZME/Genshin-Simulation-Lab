@@ -22,6 +22,7 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_C6_MAGE_ENHANCEMENT_BONUS,
     SUCROSE_C6_MAGE_ENHANCEMENT_BUFF_DEFINITION_KEY,
     SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY,
+    SUCROSE_WITCHES_EVE_DAMAGE_TAGS,
     SUCROSE_WITCHES_EVE_LARGE_BUFF_DEFINITION_KEY,
     SUCROSE_WITCHES_EVE_LARGE_DURATION_FRAMES,
     SUCROSE_WITCHES_EVE_LARGE_MECHANIC_KEY,
@@ -49,10 +50,9 @@ from genshin_sim.content.definitions.content_unit import ContentUnitValidationEr
 from genshin_sim.content.definitions.effects import EffectKind, UnlockKind
 from genshin_sim.content.hooks import HookContext
 from genshin_sim.content.registries import EffectContentUnitRequest
-from genshin_sim.content.team.witches_eve import (
+from genshin_sim.content.team.mage import (
     MAGE_ACTIVATION_THRESHOLD,
     MAGE_MARKER_KEY,
-    WITCHES_EVE_DAMAGE_TAGS,
     MageRoster,
     build_mage_roster,
 )
@@ -157,11 +157,6 @@ def test_mage_roster_normalizes_and_exposes_slots():
     roster = MageRoster((3, 1, 2, 2))
 
     assert roster.slots == (1, 2, 3)
-    assert roster.refs == (
-        AttributeSubjectRef.character("character:slot_1"),
-        AttributeSubjectRef.character("character:slot_2"),
-        AttributeSubjectRef.character("character:slot_3"),
-    )
     assert roster.contains_slot(2) is True
     assert roster.contains_slot(4) is False
 
@@ -440,7 +435,7 @@ def test_provider_filters_tags_and_formula():
     provider.bind_runtime_ports(target_status_port=port)
 
     # 五类标签全部命中。
-    for tag in sorted(WITCHES_EVE_DAMAGE_TAGS):
+    for tag in sorted(SUCROSE_WITCHES_EVE_DAMAGE_TAGS):
         assert len(provider.contribute(_query(tag=tag), scope=_NO_SCOPE)) == 1
     # 反应标签与非通用公式都不命中（DAMAGE_BONUS_ADD 只在通用公式放行）。
     assert provider.contribute(_query(tag="超导"), scope=_NO_SCOPE) == ()
@@ -521,12 +516,28 @@ def _request(params: dict[str, object], *, slot: int | None = 1) -> EffectConten
 _ASSET_COMPONENTS = (2.0, 15.0, 0.0571428, 20.0, 0.0714285)
 
 
-def test_read_witches_eve_asset_values_maps_all_five_components():
-    min_mage_count, small_frames, small_bonus, large_frames, large_bonus = (
-        read_witches_eve_asset_values(_effect_params(_ASSET_COMPONENTS))
+def test_read_witches_eve_asset_values_maps_durations_and_ratios():
+    small_frames, small_bonus, large_frames, large_bonus = read_witches_eve_asset_values(
+        _effect_params(_ASSET_COMPONENTS)
     )
 
-    assert min_mage_count == 2
+    assert small_frames == 900
+    assert small_bonus == pytest.approx(0.0571428)
+    assert large_frames == 1200
+    assert large_bonus == pytest.approx(0.0714285)
+
+
+def test_read_witches_eve_asset_values_ignores_mage_threshold_component():
+    """门槛人数（``number_1``）不在此建模：资产写多少都不读入、不校验。
+
+    「魔导·秘仪」是否激活是 ``MageRoster`` 的事（按共享常量判定），效果包不替它
+    建模——故门槛分量被按位置消费后丢弃（这里用 3 证明它不再触发任何报错）。
+    """
+
+    small_frames, small_bonus, large_frames, large_bonus = read_witches_eve_asset_values(
+        _effect_params((3.0, 15.0, 0.0571428, 20.0, 0.0714285))
+    )
+
     assert small_frames == 900
     assert small_bonus == pytest.approx(0.0571428)
     assert large_frames == 1200
@@ -534,12 +545,15 @@ def test_read_witches_eve_asset_values_maps_all_five_components():
 
 
 def test_read_witches_eve_asset_values_rejects_bad_components():
+    # 小型 / 大型档比例越界。
     with pytest.raises(ContentUnitValidationError):
         read_witches_eve_asset_values(_effect_params((2.0, 15.0, 0.0, 20.0, 0.07)))
     with pytest.raises(ContentUnitValidationError):
-        read_witches_eve_asset_values(_effect_params((2.0, 0.0, 0.05, 20.0, 0.07)))
+        read_witches_eve_asset_values(_effect_params((2.0, 15.0, 0.05, 20.0, 1.1)))
+    # 秒数非正。
     with pytest.raises(ContentUnitValidationError):
-        read_witches_eve_asset_values(_effect_params((1.0, 15.0, 0.05, 20.0, 0.07)))
+        read_witches_eve_asset_values(_effect_params((2.0, 0.0, 0.05, 20.0, 0.07)))
+    # components 缺失。
     with pytest.raises(ContentUnitValidationError):
         read_witches_eve_asset_values({"schema_version": 1, "name": "x"})
 
@@ -571,7 +585,8 @@ def test_factory_mounts_hooks_definitions_and_providers():
     assert len({provider.provider_spec.provider_key for provider in providers}) == 2
     assert unit.compiled_params["small_duration_frames"] == 900
     assert unit.compiled_params["large_duration_frames"] == 1200
-    assert unit.compiled_params["min_mage_count"] == 2
+    # 门槛人数不在效果包里建模（激活由 MageRoster 判定），故不进 compiled_params。
+    assert "min_mage_count" not in unit.compiled_params
 
 
 def test_factory_rejects_foreign_owner_and_missing_slot():

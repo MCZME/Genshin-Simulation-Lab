@@ -66,7 +66,7 @@ from genshin_sim.content.registries import (
     CharacterContentUnitRequest,
     EffectContentUnitRequest,
 )
-from genshin_sim.content.team.witches_eve import MAGE_ACTIVATION_THRESHOLD, MageRoster
+from genshin_sim.content.team.mage import MageRoster
 from genshin_sim.core.attributes import AttributeSubjectRef
 from genshin_sim.core.elements import Element
 from genshin_sim.core.entity_states import CharacterRuntimeState
@@ -626,9 +626,3 @@ def test_character_unit_requires_asset_row_when_constellation_unlocked():
         _character_unit(1, {})
     with pytest.raises(ContentUnitValidationError):
         _character_unit(2, {"c1": _effect_params((1.0,))})
-
-
-def test_mage_activation_threshold_matches_asset_row():
-    """资产门槛与名录判定门槛同源（两处不一致会在效果工厂报错）。"""
-
-    assert MAGE_ACTIVATION_THRESHOLD == 2

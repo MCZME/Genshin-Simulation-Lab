@@ -47,7 +47,7 @@ from genshin_sim.content import (
 )
 from genshin_sim.content.hooks import HookDispatcher, build_hook_unlock_specs
 from genshin_sim.content.state_container import StatePatchIntentHandler
-from genshin_sim.content.team.witches_eve import build_mage_roster
+from genshin_sim.content.team.mage import build_mage_roster
 from genshin_sim.core.actions import (
     ActionInterpreterRegistry,
     ActionManager,
@@ -362,9 +362,6 @@ class RuntimeAssembler:
             event_engine=context.events,
         )
         context.register_system(moonsign_bundle.runtime)
-        # 魔导名录：按角色内容单元的魔导标记收集槽位，注册为只读系统供「魔女的
-        # 前夜礼」类效果在触发时判定激活与投放范围。本期是内容级最小闭环，
-        # 不新建 core/systems 模块（依据 D-010）。
         mage_roster = build_mage_roster(content_bundle.content_units)
         context.register_system(mage_roster)
         mounts_by_owner: dict[str, dict[str, ContentStateMount]] = {}

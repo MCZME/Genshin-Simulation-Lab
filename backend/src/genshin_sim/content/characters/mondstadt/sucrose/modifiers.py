@@ -54,6 +54,7 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_PASSIVE_A4_HANDLER_KEY,
     SUCROSE_PASSIVE_WITCHES_EVE_HANDLER_KEY,
     SUCROSE_WITCHES_EVE_AUDIT_TAG,
+    SUCROSE_WITCHES_EVE_DAMAGE_TAGS,
     SUCROSE_WITCHES_EVE_LARGE_BUFF_DEFINITION_KEY,
     SUCROSE_WITCHES_EVE_LARGE_CONFLICT_KEY,
     SUCROSE_WITCHES_EVE_LARGE_MECHANIC_KEY,
@@ -62,7 +63,6 @@ from genshin_sim.content.characters.mondstadt.sucrose.data import (
     SUCROSE_WITCHES_EVE_SMALL_MECHANIC_KEY,
 )
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
-from genshin_sim.content.team.witches_eve import WITCHES_EVE_DAMAGE_TAGS
 from genshin_sim.core.attributes import (
     ELEMENT_TO_DAMAGE_BONUS_KEY,
     STAT_ELEMENTAL_MASTERY,
@@ -373,7 +373,7 @@ class SucroseWitchesEveDamageBonusProvider:
         request = query.request
         if request.formula_key != FORMULA_KEY_GENERAL:
             return ()
-        if request.main_attack_tag not in WITCHES_EVE_DAMAGE_TAGS:
+        if request.main_attack_tag not in SUCROSE_WITCHES_EVE_DAMAGE_TAGS:
             return ()
         if request.source_ref.kind is not AttributeSubjectKind.CHARACTER:
             return ()

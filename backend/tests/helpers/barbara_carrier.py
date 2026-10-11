@@ -1,15 +1,14 @@
-"""芭芭拉测试共享构造器：配置、效果请求与仿真编排辅助。
+"""以芭芭拉为合成载体的测试夹具（窄范围）。
 
-输入配置与效果 payload 均为合成数据，仅驱动代码行为验证，
-不固定真实资产库数值。
+只服务于把芭芭拉当作伤害载体的**非芭芭拉特性**测试（西风长枪 golden、
+运行结束条件等）；芭芭拉内容包自身的测试不随本模块维护。资产与参数均为
+合成数据，仅驱动代码行为验证，不固定真实资产库数值。
 """
 
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any
 
-from genshin_sim.application.assembly import AssembledSimulation
 from genshin_sim.assets.models import (
     CharacterAsset,
     CharacterLevelStats,
@@ -28,36 +27,16 @@ from genshin_sim.content.characters.mondstadt.barbara.data import (
     BARBARA_CONSTELLATION_C2_HANDLER_KEY,
     BARBARA_CONSTELLATION_C4_HANDLER_KEY,
 )
-from genshin_sim.content.definitions.content_unit import (
-    ContentUnit,
-    ContentUnitOwnerType,
-)
-from genshin_sim.content.registries import (
-    CharacterContentUnitRequest,
-    EffectContentUnitRequest,
-)
 from genshin_sim.content.weapons.polearm.favonius_lance import (
     FAVONIUS_LANCE_HANDLER_KEY,
     FAVONIUS_LANCE_PASSIVE_EFFECT_HANDLER_KEY,
-)
-from genshin_sim.core.actions import (
-    ActionInterpretationContext,
-    ActionInterpretationResult,
-    InputSessionView,
-)
-from genshin_sim.core.systems.energy import (
-    EnergyElement,
-    EnergyPickupKind,
-    SpawnEnergyPickupRequest,
 )
 from genshin_sim.infrastructure.assets_sqlite import (
     ASSET_SCHEMA_VERSION,
     SQLiteAssetDataWriter,
 )
-from tests.helpers.fixture_assets import FIXTURE_CHARACTER_ASSET_KEY
 
 BARBARA_CHARACTER_KEY = BARBARA_ASSET_KEY
-BARBARA_SWITCH_FIXTURE_HANDLER_KEY = "character.testing.barbara_switch_noop"
 
 # 西风长枪夹具数值全部为测试自造的合成值，不复制任何真实资产数值：真实数值的
 # 正确性由资产构建与校验链路承担，测试只验证接线所需的最小形状（见测试规范 §3.2）。
@@ -74,70 +53,21 @@ FAVONIUS_LANCE_FIXTURE_PROBABILITIES = (0.25, 0.4, 0.5, 0.75, 1.0)
 FAVONIUS_LANCE_FIXTURE_INTERVAL_SECONDS = (3.0, 4.0, 5.0, 6.0, 8.0)
 
 
-class SwitchFixtureActionInterpreter:
-    """测试本地切人夹具的动作解释器：始终等待，不触发任何动作。"""
-
-    supported_action_keys: tuple[str, ...] = ()
-
-    def interpret(
-        self,
-        context: ActionInterpretationContext,
-        session: InputSessionView,
-    ) -> ActionInterpretationResult:
-        del context, session
-        return ActionInterpretationResult.wait()
-
-
-def create_switch_fixture_content_unit(
-    request: CharacterContentUnitRequest,
-) -> ContentUnit:
-    """切人夹具角色的内容单元工厂：只提供槽位身份与等待型动作解释器。"""
-
-    return ContentUnit(
-        owner_type=ContentUnitOwnerType.CHARACTER,
-        owner_key=request.character_key,
-        handler_key=request.handler_key,
-        version="dev-test",
-        slot=request.slot,
-        action_interpreter=SwitchFixtureActionInterpreter(),
-        metadata={"purpose": "barbara_switch_fixture"},
-    )
-
-
 def write_barbara_asset_database(db_path: Path) -> Path:
     """写入芭芭拉单人最小合成资产库（不携带真实资产数值）。"""
 
-    return _write_barbara_minimal_asset_database(
-        db_path,
-        include_switch_fixture=False,
-        include_favonius_lance=False,
-    )
+    return _write_barbara_minimal_asset_database(db_path, include_favonius_lance=False)
 
 
 def write_barbara_favonius_lance_asset_database(db_path: Path) -> Path:
     """写入芭芭拉 + 西风长枪的最小合成资产库（顺风而行装配与触发时序验收用）。"""
 
-    return _write_barbara_minimal_asset_database(
-        db_path,
-        include_switch_fixture=False,
-        include_favonius_lance=True,
-    )
-
-
-def write_barbara_switch_asset_database(db_path: Path) -> Path:
-    """写入芭芭拉 + 测试本地切人夹具角色的最小合成资产库。"""
-
-    return _write_barbara_minimal_asset_database(
-        db_path,
-        include_switch_fixture=True,
-        include_favonius_lance=False,
-    )
+    return _write_barbara_minimal_asset_database(db_path, include_favonius_lance=True)
 
 
 def _write_barbara_minimal_asset_database(
     db_path: Path,
     *,
-    include_switch_fixture: bool,
     include_favonius_lance: bool,
 ) -> Path:
     characters = [
@@ -164,29 +94,6 @@ def _write_barbara_minimal_asset_database(
             ascension_value=0.0,
         ),
     ]
-    if include_switch_fixture:
-        characters.append(
-            CharacterAsset(
-                asset_key=FIXTURE_CHARACTER_ASSET_KEY,
-                source_id=FIXTURE_CHARACTER_ASSET_KEY.removeprefix("character:"),
-                name="Switch Fixture",
-                element="hydro",
-                weapon_type="sword",
-                rarity=5,
-                burst_energy_cost=60.0,
-                handler_key=BARBARA_SWITCH_FIXTURE_HANDLER_KEY,
-            ),
-        )
-        character_level_stats.append(
-            CharacterLevelStats(
-                character_key=FIXTURE_CHARACTER_ASSET_KEY,
-                level=90,
-                ascension_phase=6,
-                base_hp=10_000.0,
-                base_atk=200.0,
-                base_def=600.0,
-            ),
-        )
     weapons = ()
     weapon_level_stats = ()
     if include_favonius_lance:
@@ -312,7 +219,7 @@ def _minimal_barbara_scaling_entries() -> tuple[TalentScalingEntry, ...]:
 
 
 def _minimal_barbara_effect_payloads() -> tuple[EffectPayload, ...]:
-    """返回命座/被动测试需要的合成效果行（不含真实效果参数）。"""
+    """返回命座/被动接线所需的合成效果行（不含真实效果参数）。"""
 
     return (
         EffectPayload(
@@ -401,22 +308,16 @@ def single_target_scene() -> dict[str, object]:
 def barbara_input_payload(
     *,
     input_key: str = "mouse.left",
-    press_frame: int = 1,
-    release_frame: int = 2,
     max_frames: int = 20,
     constellation: int = 0,
     targets: tuple[dict[str, object], ...] | None = None,
 ) -> dict[str, object]:
-    """芭芭拉单人集成测试配置。
-
-    左键重击为点按/长按双语义：``release_frame - press_frame`` 达到长按分界
-    （``BARBARA_HOLD_INPUT_MIN_FRAMES``）按重击解释，否则按点按普攻解释。
-    """
+    """芭芭拉单人仿真输入配置。"""
 
     return {
         "schema_version": 2,
         "kind": "simulation_input",
-        "meta": {"name": "barbara damage integration", "description": ""},
+        "meta": {"name": "barbara carrier integration", "description": ""},
         "team": [
             {
                 "slot": 1,
@@ -435,57 +336,8 @@ def barbara_input_payload(
         ],
         "scene": {"targets": list(targets)} if targets else single_target_scene(),
         "input_trace": [
-            {"frame": press_frame, "events": [{"key": input_key, "phase": "press"}]},
-            {"frame": release_frame, "events": [{"key": input_key, "phase": "release"}]},
-        ],
-        "rules": {"active": []},
-        "run_options": {"max_frames": max_frames},
-    }
-
-
-def barbara_switch_input_payload(
-    *,
-    constellation: int = 0,
-    max_frames: int = 140,
-    input_trace: list[dict[str, object]] | None = None,
-) -> dict[str, object]:
-    """芭芭拉双人队伍配置：槽位 1 为被测角色，槽位 2 用于切人验证。"""
-
-    return {
-        "schema_version": 2,
-        "kind": "simulation_input",
-        "meta": {"name": "barbara switch integration", "description": ""},
-        "team": [
-            {
-                "slot": 1,
-                "character": {
-                    "asset_key": "character:10000014",
-                    "level": 90,
-                    "constellation": constellation,
-                    "talents": {
-                        "normal_attack": 1,
-                        "elemental_skill": 1,
-                        "elemental_burst": 1,
-                    },
-                },
-                "artifacts": {"sets": [], "stats": {}},
-            },
-            {
-                "slot": 2,
-                "character": {
-                    "asset_key": FIXTURE_CHARACTER_ASSET_KEY,
-                    "level": 90,
-                    "constellation": 0,
-                    "talents": {"normal_attack": 1},
-                },
-                "artifacts": {"sets": [], "stats": {}},
-            },
-        ],
-        "scene": {"targets": []},
-        "input_trace": input_trace
-        or [
-            {"frame": 1, "events": [{"key": "keyboard.e", "phase": "press"}]},
-            {"frame": 2, "events": [{"key": "keyboard.e", "phase": "release"}]},
+            {"frame": 1, "events": [{"key": input_key, "phase": "press"}]},
+            {"frame": 2, "events": [{"key": input_key, "phase": "release"}]},
         ],
         "rules": {"active": []},
         "run_options": {"max_frames": max_frames},
@@ -549,111 +401,3 @@ def barbara_favonius_lance_input_payload(
         "rules": {"active": [{"rule": "crit_mode", "params": {"mode": "random"}}]},
         "run_options": {"max_frames": max_frames, "seed": seed},
     }
-
-
-def spawn_barbara_pickup(
-    assembled: AssembledSimulation,
-    *,
-    request_id: str,
-    settle_frame: int,
-    count: int,
-) -> None:
-    """向已装配仿真注入一次芭芭拉水元素能量微粒拾取。"""
-
-    assembled.energy_runtime.spawn_pickup(
-        SpawnEnergyPickupRequest(
-            request_id=request_id,
-            frame=0,
-            pickup_kind=EnergyPickupKind.PARTICLE,
-            element=EnergyElement.HYDRO,
-            count=count,
-            travel_frames=settle_frame,
-        )
-    )
-
-
-def effect_request(
-    handler_key: str,
-    *,
-    effect_key: str,
-    effect_kind: str = "constellation",
-    params: dict[str, Any] | None = None,
-    unlock_key: str | None = None,
-    owner_key: str = BARBARA_CHARACTER_KEY,
-    slot: int = 1,
-    **overrides: Any,
-) -> EffectContentUnitRequest:
-    """构造芭芭拉效果内容单元请求，支持覆盖任意 payload 字段。"""
-
-    payload: dict[str, Any] = {
-        "handler_key": handler_key,
-        "effect_key": effect_key,
-        "effect_kind": effect_kind,
-        "owner_type": "character",
-        "owner_key": owner_key,
-        "slot": slot,
-        "params": params
-        or {
-            "components": [
-                {"kind": "numeric", "values": [1.0]},
-                {"kind": "numeric", "values": [1.0]},
-            ]
-        },
-        "unlock_key": unlock_key or effect_key.rsplit(":", 1)[-1],
-    }
-    payload.update(overrides)
-    return EffectContentUnitRequest(**payload)
-
-
-def encore_request(**overrides: Any) -> EffectContentUnitRequest:
-    """构造芭芭拉安可被动效果请求。"""
-
-    params = overrides.pop("params", None)
-    return effect_request(
-        BARBARA_ENCORE_EFFECT_HANDLER_KEY,
-        effect_key="character:10000014:passive:5",
-        effect_kind="passive",
-        params=params
-        or {
-            "components": [
-                {"kind": "numeric", "values": [1.0]},
-                {"kind": "numeric", "values": [5.0]},
-            ]
-        },
-        unlock_key="passive:5",
-        **overrides,
-    )
-
-
-def c1_request(**overrides: Any) -> EffectContentUnitRequest:
-    """构造芭芭拉 C1 命座效果请求。"""
-
-    params = overrides.pop("params", None)
-    return effect_request(
-        "character.barbara.constellation.c1",
-        effect_key="character:10000014:constellation:c1",
-        params=params
-        or {
-            "components": [
-                {"kind": "numeric", "values": [10.0]},
-                {"kind": "numeric", "values": [1.0]},
-            ]
-        },
-        **overrides,
-    )
-
-
-def c4_request(**overrides: Any) -> EffectContentUnitRequest:
-    """构造芭芭拉 C4 命座效果请求。"""
-
-    return effect_request(
-        "character.barbara.constellation.c4",
-        effect_key="character:10000014:constellation:c4",
-        params={
-            "components": [
-                {"kind": "numeric", "values": [1.0]},
-                {"kind": "numeric", "values": [5.0]},
-            ]
-        },
-        **overrides,
-    )

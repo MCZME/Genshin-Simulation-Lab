@@ -126,9 +126,6 @@ class OdetteActionInterpreter:
         if last_action_key == ODETTE_PLUNGE_ACTION_KEY and height <= 0:
             last_action_key = ""
 
-        # 左键点按/长按双语义：按住时长达到长按分界即改判重击，据此改走动作表的
-        # 「重击」衔接列。空中左键是下落攻击（游戏内空中不可重击），故下落判定
-        # 先于分界判定。
         input_kind = self._resolve_attack_input_kind(
             input_kind,
             session.held_frames,
@@ -379,12 +376,7 @@ class OdetteActionInterpreter:
         *,
         plunge: bool,
     ) -> str:
-        """左键点按/长按双语义：长按改判重击，点按保持普攻。
-
-        重击不是独立按键——游戏内由左键按住后释放触发，故物理键只映射普攻，
-        重击在此按按住时长派生。空中左键为下落攻击（``plunge``），不再进入
-        分界判定。
-        """
+        """左键点按/长按双语义：长按改判重击，点按保持普攻。"""
 
         if plunge or input_kind != NORMAL_ATTACK_INPUT:
             return input_kind

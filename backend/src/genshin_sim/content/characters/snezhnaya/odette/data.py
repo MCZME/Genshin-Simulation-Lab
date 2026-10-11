@@ -128,14 +128,8 @@ ELEMENTAL_SKILL_INPUT = "elemental_skill"
 ELEMENTAL_BURST_INPUT = "elemental_burst"
 JUMP_INPUT = "jump"
 
-# 左键点按/长按分界（帧）：按住时长达到该值按重击解释，未达到按点按普攻解释。
-# 游戏内实际判定阈值未实测；按维护者口径（2026-10-11），无具体数据来源时统一
-# 取 30F，仅作仿真输入语义分界，非游戏行为断言，实测后修正。
 ODETTE_HOLD_INPUT_MIN_FRAMES = 30
 
-# 重击是左键的点按/长按双语义（解释器按分界派生），不占独立按键；「右键」是
-# 冲刺位（按键输入契约），本项目冲刺未接入，故不映射。特殊战技不占独立输入
-# ——施放后 6 秒内 E 键被替换为柔板·破晓终奏（见 actions.py 窗口分派）。
 INPUT_KIND_BY_KEY = {
     "mouse.left": NORMAL_ATTACK_INPUT,
     "keyboard.e": ELEMENTAL_SKILL_INPUT,

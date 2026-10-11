@@ -30,13 +30,16 @@
 
 from __future__ import annotations
 
-import math
-from collections.abc import Mapping, Sequence
-
+from genshin_sim.content.artifacts._common import (
+    content_source_ref,
+    parse_component_values,
+    require_piece_count,
+    require_set_row,
+    slot_owner_ref,
+)
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
-    ContentUnitValidationError,
 )
 from genshin_sim.content.registries import ArtifactContentUnitRequest
 from genshin_sim.core.attributes import (
@@ -46,8 +49,6 @@ from genshin_sim.core.attributes import (
     ModifierProviderSpec,
     ModifierStage,
     ModifierTerm,
-    RuntimeSourceKind,
-    RuntimeSourceRef,
     StaticModifierProvider,
 )
 from genshin_sim.core.coordination.elemental_reaction.status import (
@@ -89,7 +90,7 @@ def create_disenchantment_in_deep_shadow_identity_unit(
 ) -> ContentUnit:
     """影中沉凝的幻灭套装身份单元：表明这个套装是什么，并拥有它的件数效果单元。"""
 
-    _require_set_row(request, handler_key=DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY)
+    require_set_row(request, handler_key=DISENCHANTMENT_IN_DEEP_SHADOW_HANDLER_KEY)
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
@@ -105,17 +106,17 @@ def create_disenchantment_in_deep_shadow_two_piece_unit(
 ) -> ContentUnit:
     """影中沉凝的幻灭 2 件套：攻击力提高 18%。"""
 
-    _require_piece_count(
+    require_piece_count(
         request,
         expected=2,
         handler_key=DISENCHANTMENT_IN_DEEP_SHADOW_2P_HANDLER_KEY,
     )
-    (atk_percent,) = _parse_component_values(
+    (atk_percent,) = parse_component_values(
         request.params,
         count=1,
         purpose="2 件套攻击力加成",
     )
-    subject_ref = AttributeSubjectRef.character(_owner_ref(request.slot))
+    subject_ref = AttributeSubjectRef.character(slot_owner_ref(request.slot))
     provider_key = f"{DISENCHANTMENT_IN_DEEP_SHADOW_KEY_PREFIX}.2p.atk_percent.slot:{request.slot}"
     provider = StaticModifierProvider(
         ModifierProviderSpec(
@@ -130,7 +131,9 @@ def create_disenchantment_in_deep_shadow_two_piece_unit(
                 stage=ModifierStage.PERCENT_ADD,
                 value=atk_percent,
                 provider_key=provider_key,
-                source_ref=_source_ref("2p", request.slot),
+                source_ref=content_source_ref(
+                    DISENCHANTMENT_IN_DEEP_SHADOW_KEY_PREFIX, "2p", request.slot
+                ),
                 audit_tags=(DISENCHANTMENT_IN_DEEP_SHADOW_2P_AUDIT_TAG,),
             ),
         ),
@@ -152,17 +155,17 @@ def create_disenchantment_in_deep_shadow_four_piece_unit(
 ) -> ContentUnit:
     """影中沉凝的幻灭 4 件套：超导/星超导增伤与条件暴击率。"""
 
-    _require_piece_count(
+    require_piece_count(
         request,
         expected=4,
         handler_key=DISENCHANTMENT_IN_DEEP_SHADOW_4P_HANDLER_KEY,
     )
-    superconduct_bonus, stellar_conduct_bonus, crit_rate = _parse_component_values(
+    superconduct_bonus, stellar_conduct_bonus, crit_rate = parse_component_values(
         request.params,
         count=3,
         purpose="4 件套超导增伤/星超导增伤/条件暴击率",
     )
-    owner_ref = _owner_ref(request.slot)
+    owner_ref = slot_owner_ref(request.slot)
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
@@ -202,40 +205,6 @@ def create_disenchantment_in_deep_shadow_four_piece_unit(
     )
 
 
-def _require_piece_count(
-    request: ArtifactContentUnitRequest,
-    *,
-    expected: int,
-    handler_key: str,
-) -> None:
-    """件数效果键必须绑定到对应件数的效果行。"""
-
-    if request.piece_count != expected:
-        raise ContentUnitValidationError(
-            f"{handler_key} 只绑定 {expected} 件套效果，收到 {request.piece_count} 件"
-        )
-
-
-def _require_set_row(request: ArtifactContentUnitRequest, *, handler_key: str) -> None:
-    """套装索引行单元键只能绑定套装索引行，不能绑定件数效果行。"""
-
-    if request.piece_count is not None:
-        raise ContentUnitValidationError(
-            f"{handler_key} 只绑定套装索引行，收到 {request.piece_count} 件套效果行"
-        )
-
-
-def _owner_ref(slot: int) -> str:
-    return f"character:slot_{slot}"
-
-
-def _source_ref(scope: str, slot: int) -> RuntimeSourceRef:
-    return RuntimeSourceRef(
-        RuntimeSourceKind.CONTENT,
-        f"{DISENCHANTMENT_IN_DEEP_SHADOW_KEY_PREFIX}:{scope}:slot:{slot}",
-    )
-
-
 class DisenchantmentInDeepShadowReactionBonusProvider:
     """4 件套 C1 / C2：装备者造成的指定反应伤害提升。
 
@@ -262,7 +231,9 @@ class DisenchantmentInDeepShadowReactionBonusProvider:
         self._main_attack_tags = frozenset(main_attack_tags)
         self._bonus = bonus
         self._provider_key = f"{DISENCHANTMENT_IN_DEEP_SHADOW_KEY_PREFIX}.4p.{scope}.slot:{slot}"
-        self._source_ref = _source_ref(f"4p:{scope}", slot)
+        self._source_ref = content_source_ref(
+            DISENCHANTMENT_IN_DEEP_SHADOW_KEY_PREFIX, f"4p:{scope}", slot
+        )
         self.provider_spec = DamageModifierProviderSpec(
             provider_key=self._provider_key,
             writes=frozenset({stage}),
@@ -309,7 +280,9 @@ class DisenchantmentInDeepShadowCritRateProvider:
         self._owner_ref = AttributeSubjectRef.character(owner_ref)
         self._crit_rate = crit_rate
         self._provider_key = f"{DISENCHANTMENT_IN_DEEP_SHADOW_KEY_PREFIX}.4p.crit_rate.slot:{slot}"
-        self._source_ref = _source_ref("4p:crit_rate", slot)
+        self._source_ref = content_source_ref(
+            DISENCHANTMENT_IN_DEEP_SHADOW_KEY_PREFIX, "4p:crit_rate", slot
+        )
         self.provider_spec = DamageModifierProviderSpec(
             provider_key=self._provider_key,
             writes=frozenset({DamageModifierStage.CRIT_RATE_ADD}),
@@ -358,40 +331,3 @@ class DisenchantmentInDeepShadowCritRateProvider:
                 audit_tags=(DISENCHANTMENT_IN_DEEP_SHADOW_4P_AUDIT_TAG,),
             ),
         )
-
-
-def _parse_component_values(
-    params: Mapping[str, object],
-    *,
-    count: int,
-    purpose: str,
-) -> tuple[float, ...]:
-    """从套装效果 params 读取数值列表（与正式内容 components 约定一致）。"""
-
-    components = params.get("components")
-    if (
-        not isinstance(components, Sequence)
-        or isinstance(components, (str, bytes))
-        or len(components) < count
-    ):
-        raise ContentUnitValidationError(f"{purpose} 缺少 components 参数")
-    values: list[float] = []
-    for index in range(count):
-        component = components[index]
-        if not isinstance(component, Mapping):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 必须是对象")
-        raw_values = component.get("values")
-        if (
-            not isinstance(raw_values, Sequence)
-            or isinstance(raw_values, (str, bytes))
-            or not raw_values
-        ):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 缺少 values")
-        value = raw_values[0]
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 数值必须是数字")
-        number = float(value)
-        if not math.isfinite(number) or number <= 0:
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 数值必须为正数")
-        values.append(number)
-    return tuple(values)

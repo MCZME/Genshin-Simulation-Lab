@@ -20,8 +20,15 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
 
+from genshin_sim.content.artifacts._common import (
+    FRAMES_PER_SECOND,
+    content_source_ref,
+    parse_component_values,
+    require_piece_count,
+    require_set_row,
+    slot_owner_ref,
+)
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
@@ -58,8 +65,6 @@ INSTRUCTOR_CONTENT_VERSION = "release"
 INSTRUCTOR_2P_AUDIT_TAG = "instructor_2p"
 INSTRUCTOR_4P_AUDIT_TAG = "instructor_4p"
 
-FRAMES_PER_SECOND = 60
-
 INSTRUCTOR_4P_TERM_KEY = f"{INSTRUCTOR_KEY_PREFIX}.4p.elemental_mastery"
 
 
@@ -80,7 +85,7 @@ def create_instructor_identity_unit(
 ) -> ContentUnit:
     """教官套装身份单元：表明这个套装是什么，并拥有它的件数效果单元。"""
 
-    _require_set_row(request, handler_key=INSTRUCTOR_HANDLER_KEY)
+    require_set_row(request, handler_key=INSTRUCTOR_HANDLER_KEY)
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
@@ -96,17 +101,17 @@ def create_instructor_two_piece_unit(
 ) -> ContentUnit:
     """教官 2 件套：元素精通提高。"""
 
-    _require_piece_count(
+    require_piece_count(
         request,
         expected=2,
         handler_key=INSTRUCTOR_2P_HANDLER_KEY,
     )
-    (mastery_flat,) = _parse_component_values(
+    (mastery_flat,) = parse_component_values(
         request.params,
         count=1,
         purpose="2 件套元素精通加成",
     )
-    subject_ref = AttributeSubjectRef.character(_owner_ref(request.slot))
+    subject_ref = AttributeSubjectRef.character(slot_owner_ref(request.slot))
     provider_key = f"{INSTRUCTOR_KEY_PREFIX}.2p.mastery.slot:{request.slot}"
     provider = StaticModifierProvider(
         ModifierProviderSpec(
@@ -121,7 +126,7 @@ def create_instructor_two_piece_unit(
                 stage=ModifierStage.FLAT_ADD,
                 value=mastery_flat,
                 provider_key=provider_key,
-                source_ref=_source_ref("2p", request.slot),
+                source_ref=content_source_ref(INSTRUCTOR_KEY_PREFIX, "2p", request.slot),
                 audit_tags=(INSTRUCTOR_2P_AUDIT_TAG,),
             ),
         ),
@@ -143,12 +148,12 @@ def create_instructor_four_piece_unit(
 ) -> ContentUnit:
     """教官 4 件套：触发元素反应后全队元素精通提升。"""
 
-    _require_piece_count(
+    require_piece_count(
         request,
         expected=4,
         handler_key=INSTRUCTOR_4P_HANDLER_KEY,
     )
-    mastery_flat, duration_seconds = _parse_component_values(
+    mastery_flat, duration_seconds = parse_component_values(
         request.params,
         count=2,
         purpose="4 件套元素精通加成/持续时间",
@@ -156,7 +161,7 @@ def create_instructor_four_piece_unit(
     duration_frames = round(duration_seconds * FRAMES_PER_SECOND)
     if duration_frames <= 0:
         raise ContentUnitValidationError("4 件套持续时间必须折算为正帧数")
-    owner_ref = _owner_ref(request.slot)
+    owner_ref = slot_owner_ref(request.slot)
     definition_key = instructor_4p_definition_key(request.slot)
     hook = InstructorReactionHook(
         owner_ref=owner_ref,
@@ -277,74 +282,3 @@ class InstructorReactionHook:
             for index, character in enumerate(characters)
         )
         return HookResult(buff_requests=requests)
-
-
-def _require_piece_count(
-    request: ArtifactContentUnitRequest,
-    *,
-    expected: int,
-    handler_key: str,
-) -> None:
-    """件数效果键必须绑定到对应件数的效果行。"""
-
-    if request.piece_count != expected:
-        raise ContentUnitValidationError(
-            f"{handler_key} 只绑定 {expected} 件套效果，收到 {request.piece_count} 件"
-        )
-
-
-def _require_set_row(request: ArtifactContentUnitRequest, *, handler_key: str) -> None:
-    """套装索引行单元键只能绑定套装索引行，不能绑定件数效果行。"""
-
-    if request.piece_count is not None:
-        raise ContentUnitValidationError(
-            f"{handler_key} 只绑定套装索引行，收到 {request.piece_count} 件套效果行"
-        )
-
-
-def _owner_ref(slot: int) -> str:
-    return f"character:slot_{slot}"
-
-
-def _source_ref(scope: str, slot: int) -> RuntimeSourceRef:
-    return RuntimeSourceRef(
-        RuntimeSourceKind.CONTENT,
-        f"{INSTRUCTOR_KEY_PREFIX}:{scope}:slot:{slot}",
-    )
-
-
-def _parse_component_values(
-    params: Mapping[str, object],
-    *,
-    count: int,
-    purpose: str,
-) -> tuple[float, ...]:
-    """从套装效果 params 读取数值列表（与正式内容 components 约定一致）。"""
-
-    components = params.get("components")
-    if (
-        not isinstance(components, Sequence)
-        or isinstance(components, (str, bytes))
-        or len(components) < count
-    ):
-        raise ContentUnitValidationError(f"{purpose} 缺少 components 参数")
-    values: list[float] = []
-    for index in range(count):
-        component = components[index]
-        if not isinstance(component, Mapping):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 必须是对象")
-        raw_values = component.get("values")
-        if (
-            not isinstance(raw_values, Sequence)
-            or isinstance(raw_values, (str, bytes))
-            or not raw_values
-        ):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 缺少 values")
-        value = raw_values[0]
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 数值必须是数字")
-        number = float(value)
-        if not math.isfinite(number) or number <= 0:
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 数值必须为正数")
-        values.append(number)
-    return tuple(values)

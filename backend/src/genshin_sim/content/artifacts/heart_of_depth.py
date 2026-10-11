@@ -23,9 +23,16 @@
 
 from __future__ import annotations
 
-import math
-from collections.abc import Mapping, Sequence
-
+from genshin_sim.content.artifacts._common import (
+    CHARGED_ATTACK_MAIN_ATTACK_TAG,
+    FRAMES_PER_SECOND,
+    NORMAL_ATTACK_TAG_PREFIX,
+    content_source_ref,
+    parse_component_values,
+    require_piece_count,
+    require_set_row,
+    slot_owner_ref,
+)
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
@@ -69,11 +76,6 @@ HEART_OF_DEPTH_CONTENT_VERSION = "release"
 HEART_OF_DEPTH_2P_AUDIT_TAG = "heart_of_depth_2p"
 HEART_OF_DEPTH_4P_AUDIT_TAG = "heart_of_depth_4p"
 
-FRAMES_PER_SECOND = 60
-
-CHARGED_ATTACK_MAIN_ATTACK_TAG = "重击"
-NORMAL_ATTACK_TAG_PREFIX = "普通攻击"
-
 
 def heart_of_depth_4p_window_definition_key(slot: int) -> str:
     """4 件套按穿戴者槽位区分的窗口标记 Buff 定义键。"""
@@ -92,7 +94,7 @@ def create_heart_of_depth_identity_unit(
 ) -> ContentUnit:
     """沉沦之心套装身份单元：表明这个套装是什么，并拥有它的件数效果单元。"""
 
-    _require_set_row(request, handler_key=HEART_OF_DEPTH_HANDLER_KEY)
+    require_set_row(request, handler_key=HEART_OF_DEPTH_HANDLER_KEY)
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
@@ -108,17 +110,17 @@ def create_heart_of_depth_two_piece_unit(
 ) -> ContentUnit:
     """沉沦之心 2 件套：获得水元素伤害加成。"""
 
-    _require_piece_count(
+    require_piece_count(
         request,
         expected=2,
         handler_key=HEART_OF_DEPTH_2P_HANDLER_KEY,
     )
-    (hydro_bonus,) = _parse_component_values(
+    (hydro_bonus,) = parse_component_values(
         request.params,
         count=1,
         purpose="2 件套水元素伤害加成",
     )
-    subject_ref = AttributeSubjectRef.character(_owner_ref(request.slot))
+    subject_ref = AttributeSubjectRef.character(slot_owner_ref(request.slot))
     provider_key = f"{HEART_OF_DEPTH_KEY_PREFIX}.2p.hydro_bonus.slot:{request.slot}"
     provider = StaticModifierProvider(
         ModifierProviderSpec(
@@ -133,7 +135,7 @@ def create_heart_of_depth_two_piece_unit(
                 stage=ModifierStage.FLAT_ADD,
                 value=hydro_bonus,
                 provider_key=provider_key,
-                source_ref=_source_ref("2p", request.slot),
+                source_ref=content_source_ref(HEART_OF_DEPTH_KEY_PREFIX, "2p", request.slot),
                 audit_tags=(HEART_OF_DEPTH_2P_AUDIT_TAG,),
             ),
         ),
@@ -155,12 +157,12 @@ def create_heart_of_depth_four_piece_unit(
 ) -> ContentUnit:
     """沉沦之心 4 件套：施放战技后普攻/重击增伤窗口。"""
 
-    _require_piece_count(
+    require_piece_count(
         request,
         expected=4,
         handler_key=HEART_OF_DEPTH_4P_HANDLER_KEY,
     )
-    duration_seconds, na_ca_bonus = _parse_component_values(
+    duration_seconds, na_ca_bonus = parse_component_values(
         request.params,
         count=2,
         purpose="4 件套持续时间/普攻重击增伤",
@@ -168,7 +170,7 @@ def create_heart_of_depth_four_piece_unit(
     duration_frames = round(duration_seconds * FRAMES_PER_SECOND)
     if duration_frames <= 0:
         raise ContentUnitValidationError("4 件套持续时间必须折算为正帧数")
-    owner_ref = _owner_ref(request.slot)
+    owner_ref = slot_owner_ref(request.slot)
     definition_key = heart_of_depth_4p_window_definition_key(request.slot)
     hook = HeartOfDepthSkillCastHook(
         owner_ref=owner_ref,
@@ -293,7 +295,7 @@ class HeartOfDepthNaCaBonusProvider:
         self._window_definition_key = window_definition_key
         self._bonus = bonus
         self._provider_key = f"{HEART_OF_DEPTH_KEY_PREFIX}.4p.na_ca_bonus.slot:{slot}"
-        self._source_ref = _source_ref("4p", slot)
+        self._source_ref = content_source_ref(HEART_OF_DEPTH_KEY_PREFIX, "4p", slot)
         self.provider_spec = DamageModifierProviderSpec(
             provider_key=self._provider_key,
             writes=frozenset({DamageModifierStage.DAMAGE_BONUS_ADD}),
@@ -350,74 +352,3 @@ def _is_normal_or_charged_attack(main_attack_tag: str) -> bool:
     if main_attack_tag == CHARGED_ATTACK_MAIN_ATTACK_TAG:
         return True
     return main_attack_tag.startswith(NORMAL_ATTACK_TAG_PREFIX)
-
-
-def _require_piece_count(
-    request: ArtifactContentUnitRequest,
-    *,
-    expected: int,
-    handler_key: str,
-) -> None:
-    """件数效果键必须绑定到对应件数的效果行。"""
-
-    if request.piece_count != expected:
-        raise ContentUnitValidationError(
-            f"{handler_key} 只绑定 {expected} 件套效果，收到 {request.piece_count} 件"
-        )
-
-
-def _require_set_row(request: ArtifactContentUnitRequest, *, handler_key: str) -> None:
-    """套装索引行单元键只能绑定套装索引行，不能绑定件数效果行。"""
-
-    if request.piece_count is not None:
-        raise ContentUnitValidationError(
-            f"{handler_key} 只绑定套装索引行，收到 {request.piece_count} 件套效果行"
-        )
-
-
-def _owner_ref(slot: int) -> str:
-    return f"character:slot_{slot}"
-
-
-def _source_ref(scope: str, slot: int) -> RuntimeSourceRef:
-    return RuntimeSourceRef(
-        RuntimeSourceKind.CONTENT,
-        f"{HEART_OF_DEPTH_KEY_PREFIX}:{scope}:slot:{slot}",
-    )
-
-
-def _parse_component_values(
-    params: Mapping[str, object],
-    *,
-    count: int,
-    purpose: str,
-) -> tuple[float, ...]:
-    """从套装效果 params 读取数值列表（与正式内容 components 约定一致）。"""
-
-    components = params.get("components")
-    if (
-        not isinstance(components, Sequence)
-        or isinstance(components, (str, bytes))
-        or len(components) < count
-    ):
-        raise ContentUnitValidationError(f"{purpose} 缺少 components 参数")
-    values: list[float] = []
-    for index in range(count):
-        component = components[index]
-        if not isinstance(component, Mapping):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 必须是对象")
-        raw_values = component.get("values")
-        if (
-            not isinstance(raw_values, Sequence)
-            or isinstance(raw_values, (str, bytes))
-            or not raw_values
-        ):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 缺少 values")
-        value = raw_values[0]
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 数值必须是数字")
-        number = float(value)
-        if not math.isfinite(number) or number <= 0:
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 数值必须为正数")
-        values.append(number)
-    return tuple(values)

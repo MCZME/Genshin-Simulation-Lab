@@ -19,9 +19,14 @@
 
 from __future__ import annotations
 
-import math
-from collections.abc import Mapping, Sequence
-
+from genshin_sim.content.artifacts._common import (
+    FRAMES_PER_SECOND,
+    content_source_ref,
+    parse_component_values,
+    require_piece_count,
+    require_set_row,
+    slot_owner_ref,
+)
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
@@ -57,8 +62,6 @@ MAIDEN_BELOVED_4P_HANDLER_KEY = f"{MAIDEN_BELOVED_KEY_PREFIX}.4p"
 MAIDEN_BELOVED_CONTENT_VERSION = "release"
 
 MAIDEN_BELOVED_4P_TERM_KEY = f"{MAIDEN_BELOVED_KEY_PREFIX}.4p.incoming_healing"
-
-FRAMES_PER_SECOND = 60
 
 
 def maiden_beloved_4p_definition_key(slot: int) -> str:
@@ -146,7 +149,7 @@ def create_maiden_beloved_identity_unit(
 ) -> ContentUnit:
     """被怜爱的少女套装身份单元：表明这个套装是什么，并拥有它的件数效果单元。"""
 
-    _require_set_row(request, handler_key=MAIDEN_BELOVED_HANDLER_KEY)
+    require_set_row(request, handler_key=MAIDEN_BELOVED_HANDLER_KEY)
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
@@ -162,13 +165,13 @@ def create_maiden_beloved_two_piece_unit(
 ) -> ContentUnit:
     """被怜爱的少女 2 件套：治疗加成提升。"""
 
-    _require_piece_count(request, expected=2, handler_key=MAIDEN_BELOVED_2P_HANDLER_KEY)
-    (healing_bonus,) = _parse_component_values(
+    require_piece_count(request, expected=2, handler_key=MAIDEN_BELOVED_2P_HANDLER_KEY)
+    (healing_bonus,) = parse_component_values(
         request.params,
         count=1,
         purpose="2 件套治疗加成",
     )
-    owner_ref = f"character:slot_{request.slot}"
+    owner_ref = slot_owner_ref(request.slot)
     subject_ref = AttributeSubjectRef.character(owner_ref)
     provider_key = f"{MAIDEN_BELOVED_KEY_PREFIX}.2p.healing_bonus.slot:{request.slot}"
     provider = StaticModifierProvider(
@@ -184,10 +187,7 @@ def create_maiden_beloved_two_piece_unit(
                 stage=ModifierStage.FLAT_ADD,
                 value=healing_bonus,
                 provider_key=provider_key,
-                source_ref=RuntimeSourceRef(
-                    RuntimeSourceKind.CONTENT,
-                    f"{MAIDEN_BELOVED_KEY_PREFIX}:2p:slot:{request.slot}",
-                ),
+                source_ref=content_source_ref(MAIDEN_BELOVED_KEY_PREFIX, "2p", request.slot),
                 audit_tags=("maiden_beloved_2p",),
             ),
         ),
@@ -209,8 +209,8 @@ def create_maiden_beloved_four_piece_unit(
 ) -> ContentUnit:
     """被怜爱的少女 4 件套：施放战技/爆发后全队受治疗加成提升。"""
 
-    _require_piece_count(request, expected=4, handler_key=MAIDEN_BELOVED_4P_HANDLER_KEY)
-    duration_seconds, incoming_bonus = _parse_component_values(
+    require_piece_count(request, expected=4, handler_key=MAIDEN_BELOVED_4P_HANDLER_KEY)
+    duration_seconds, incoming_bonus = parse_component_values(
         request.params,
         count=2,
         purpose="4 件套全队受治疗加成",
@@ -218,7 +218,7 @@ def create_maiden_beloved_four_piece_unit(
     duration_frames = round(duration_seconds * FRAMES_PER_SECOND)
     if duration_frames <= 0:
         raise ContentUnitValidationError("4 件套持续时间必须折算为正帧数")
-    owner_ref = f"character:slot_{request.slot}"
+    owner_ref = slot_owner_ref(request.slot)
     definition_key = maiden_beloved_4p_definition_key(request.slot)
     hook = MaidenBelovedPartyHealingBuffHook(
         owner_ref=owner_ref,
@@ -258,61 +258,3 @@ def create_maiden_beloved_four_piece_unit(
         buff_definitions=(definition,),
         metadata={"piece_count": 4, "purpose": "maiden_beloved_4p"},
     )
-
-
-def _require_piece_count(
-    request: ArtifactContentUnitRequest,
-    *,
-    expected: int,
-    handler_key: str,
-) -> None:
-    """件数效果键必须绑定到对应件数的效果行。"""
-
-    if request.piece_count != expected:
-        raise ContentUnitValidationError(
-            f"{handler_key} 只绑定 {expected} 件套效果，收到 {request.piece_count} 件"
-        )
-
-
-def _require_set_row(request: ArtifactContentUnitRequest, *, handler_key: str) -> None:
-    """套装索引行单元键只能绑定套装索引行，不能绑定件数效果行。"""
-
-    if request.piece_count is not None:
-        raise ContentUnitValidationError(
-            f"{handler_key} 只绑定套装索引行，收到 {request.piece_count} 件套效果行"
-        )
-
-
-def _parse_component_values(
-    params: Mapping[str, object],
-    *,
-    count: int,
-    purpose: str,
-) -> tuple[float, ...]:
-    components = params.get("components")
-    if (
-        not isinstance(components, Sequence)
-        or isinstance(components, (str, bytes))
-        or len(components) < count
-    ):
-        raise ContentUnitValidationError(f"{purpose} 缺少 components 参数")
-    values: list[float] = []
-    for index in range(count):
-        component = components[index]
-        if not isinstance(component, Mapping):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 必须是对象")
-        raw_values = component.get("values")
-        if (
-            not isinstance(raw_values, Sequence)
-            or isinstance(raw_values, (str, bytes))
-            or not raw_values
-        ):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 缺少 values")
-        value = raw_values[0]
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 数值必须是数字")
-        number = float(value)
-        if not math.isfinite(number) or number <= 0:
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 数值必须为正数")
-        values.append(number)
-    return tuple(values)

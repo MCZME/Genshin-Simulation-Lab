@@ -22,8 +22,15 @@
 from __future__ import annotations
 
 import math
-from collections.abc import Mapping, Sequence
 
+from genshin_sim.content.artifacts._common import (
+    FRAMES_PER_SECOND,
+    content_source_ref,
+    parse_component_values,
+    require_piece_count,
+    require_set_row,
+    slot_owner_ref,
+)
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
@@ -65,8 +72,6 @@ NOBLESSE_OBLIGE_CONTENT_VERSION = "release"
 NOBLESSE_OBLIGE_2P_AUDIT_TAG = "noblesse_oblige_2p"
 NOBLESSE_OBLIGE_4P_AUDIT_TAG = "noblesse_oblige_4p"
 
-FRAMES_PER_SECOND = 60
-
 ELEMENTAL_BURST_MAIN_ATTACK_TAG = "元素爆发"
 
 # 4 件套「不可叠加」：定义键与冲突键都不按槽位区分，全队共享一份窗口。
@@ -80,7 +85,7 @@ def create_noblesse_oblige_identity_unit(
 ) -> ContentUnit:
     """昔日宗室之仪套装身份单元：表明这个套装是什么，并拥有它的件数效果单元。"""
 
-    _require_set_row(request, handler_key=NOBLESSE_OBLIGE_HANDLER_KEY)
+    require_set_row(request, handler_key=NOBLESSE_OBLIGE_HANDLER_KEY)
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
@@ -96,17 +101,17 @@ def create_noblesse_oblige_two_piece_unit(
 ) -> ContentUnit:
     """昔日宗室之仪 2 件套：元素爆发造成的伤害提升。"""
 
-    _require_piece_count(
+    require_piece_count(
         request,
         expected=2,
         handler_key=NOBLESSE_OBLIGE_2P_HANDLER_KEY,
     )
-    (burst_bonus,) = _parse_component_values(
+    (burst_bonus,) = parse_component_values(
         request.params,
         count=1,
         purpose="2 件套元素爆发伤害加成",
     )
-    owner_ref = _owner_ref(request.slot)
+    owner_ref = slot_owner_ref(request.slot)
     return ContentUnit(
         owner_type=ContentUnitOwnerType.ARTIFACT,
         owner_key=request.artifact_key,
@@ -129,12 +134,12 @@ def create_noblesse_oblige_four_piece_unit(
 ) -> ContentUnit:
     """昔日宗室之仪 4 件套：施放元素爆发后全队攻击力提升。"""
 
-    _require_piece_count(
+    require_piece_count(
         request,
         expected=4,
         handler_key=NOBLESSE_OBLIGE_4P_HANDLER_KEY,
     )
-    atk_percent, duration_seconds = _parse_component_values(
+    atk_percent, duration_seconds = parse_component_values(
         request.params,
         count=2,
         purpose="4 件套攻击力加成/持续时间",
@@ -142,7 +147,7 @@ def create_noblesse_oblige_four_piece_unit(
     duration_frames = round(duration_seconds * FRAMES_PER_SECOND)
     if duration_frames <= 0:
         raise ContentUnitValidationError("4 件套持续时间必须折算为正帧数")
-    owner_ref = _owner_ref(request.slot)
+    owner_ref = slot_owner_ref(request.slot)
     hook = NoblesseObligeBurstCastHook(
         owner_ref=owner_ref,
         slot=request.slot,
@@ -198,7 +203,7 @@ class NoblesseObligeBurstDamageProvider:
         self._owner_ref = AttributeSubjectRef.character(owner_ref)
         self._bonus = bonus
         self._provider_key = f"{NOBLESSE_OBLIGE_KEY_PREFIX}.2p.burst_damage.slot:{slot}"
-        self._source_ref = _source_ref("2p", slot)
+        self._source_ref = content_source_ref(NOBLESSE_OBLIGE_KEY_PREFIX, "2p", slot)
         self.provider_spec = DamageModifierProviderSpec(
             provider_key=self._provider_key,
             writes=frozenset({DamageModifierStage.DAMAGE_BONUS_ADD}),
@@ -301,74 +306,3 @@ class NoblesseObligeBurstCastHook:
             for index, character in enumerate(characters)
         )
         return HookResult(buff_requests=requests)
-
-
-def _require_piece_count(
-    request: ArtifactContentUnitRequest,
-    *,
-    expected: int,
-    handler_key: str,
-) -> None:
-    """件数效果键必须绑定到对应件数的效果行。"""
-
-    if request.piece_count != expected:
-        raise ContentUnitValidationError(
-            f"{handler_key} 只绑定 {expected} 件套效果，收到 {request.piece_count} 件"
-        )
-
-
-def _require_set_row(request: ArtifactContentUnitRequest, *, handler_key: str) -> None:
-    """套装索引行单元键只能绑定套装索引行，不能绑定件数效果行。"""
-
-    if request.piece_count is not None:
-        raise ContentUnitValidationError(
-            f"{handler_key} 只绑定套装索引行，收到 {request.piece_count} 件套效果行"
-        )
-
-
-def _owner_ref(slot: int) -> str:
-    return f"character:slot_{slot}"
-
-
-def _source_ref(scope: str, slot: int) -> RuntimeSourceRef:
-    return RuntimeSourceRef(
-        RuntimeSourceKind.CONTENT,
-        f"{NOBLESSE_OBLIGE_KEY_PREFIX}:{scope}:slot:{slot}",
-    )
-
-
-def _parse_component_values(
-    params: Mapping[str, object],
-    *,
-    count: int,
-    purpose: str,
-) -> tuple[float, ...]:
-    """从套装效果 params 读取数值列表（与正式内容 components 约定一致）。"""
-
-    components = params.get("components")
-    if (
-        not isinstance(components, Sequence)
-        or isinstance(components, (str, bytes))
-        or len(components) < count
-    ):
-        raise ContentUnitValidationError(f"{purpose} 缺少 components 参数")
-    values: list[float] = []
-    for index in range(count):
-        component = components[index]
-        if not isinstance(component, Mapping):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 必须是对象")
-        raw_values = component.get("values")
-        if (
-            not isinstance(raw_values, Sequence)
-            or isinstance(raw_values, (str, bytes))
-            or not raw_values
-        ):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 缺少 values")
-        value = raw_values[0]
-        if isinstance(value, bool) or not isinstance(value, int | float):
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 数值必须是数字")
-        number = float(value)
-        if not math.isfinite(number) or number <= 0:
-            raise ContentUnitValidationError(f"{purpose} components[{index}] 数值必须为正数")
-        values.append(number)
-    return tuple(values)

@@ -3,7 +3,7 @@
 桑多涅的角色差异有两处，分别经命名挂点接入，其余行为全部由
 ``data.SANDRONE_ACTION_SPEC`` 数据面承载：
 
-- 左键法洁欧蓄力状态机（``_attack_input_override``）：按下即按重击处理——
+- 左键法洁欧蓄力状态机（``_input_override``）：按下即按重击处理——
   待机切入解算（前摇 36F 后开始射击与功率上升）、解算态按下幂等吸收、
   过载态功率达标恢复射击；前摇 36F 内松开改判点按普攻（清除本次按下写入
   的蓄力状态，普攻从松开帧起手），前摇完成后松开退出解算/停火。重击本身
@@ -96,7 +96,7 @@ class SandroneActionInterpreter(GenericCharacterActionInterpreter):
 
     # --- 挂点：左键蓄力状态机 -------------------------------------------------------
 
-    def _attack_input_override(
+    def _input_override(
         self,
         context: ActionInterpretationContext,
         session: InputSessionView,

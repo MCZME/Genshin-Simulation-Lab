@@ -87,6 +87,7 @@ class OdetteActionInterpreter(GenericCharacterActionInterpreter):
         *,
         slot: int,
         frame: int,
+        held_frames: int,
         input_kind: str,
         last_action_key: str,
         height: float,

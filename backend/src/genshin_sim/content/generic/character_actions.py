@@ -118,7 +118,7 @@ class GenericCharacterActionSpec:
     plunge_landing_impact_key: str
     elemental_skill_action_key: str
     elemental_burst_action_key: str
-    jump_action_key: str
+    jump_action_key: str | None = None
     charged_attack_action_key: str | None = None
     hold_input_min_frames: int | None = None
     ability_gates: tuple[GenericAbilityGate, ...] = ()
@@ -151,7 +151,9 @@ class GenericCharacterActionSpec:
             "plunge_action_key": (self.plunge_action_key,),
             "elemental_skill_action_key": (self.elemental_skill_action_key,),
             "elemental_burst_action_key": (self.elemental_burst_action_key,),
-            "jump_action_key": (self.jump_action_key,),
+            "jump_action_key": (
+                () if self.jump_action_key is None else (self.jump_action_key,)
+            ),
             "charged_attack_action_key": (
                 () if self.charged_attack_action_key is None else (self.charged_attack_action_key,)
             ),
@@ -177,14 +179,16 @@ class GenericCharacterActionInterpreter:
 
     子类可覆写的命名挂点（默认全部无操作或直通用途）：
 
-    - ``_attack_input_override``：左键按下/松开双语义的独占接管（桑多涅蓄力
-      状态机）。返回 ``None`` 表示不由本挂点处理，落入通用松开路径。
+    - ``_input_override``：触发前独占接管任意已映射输入的全部触发器（桑多涅
+      蓄力状态机、阿罗夏 E 长按按住上限自动起手）。返回 ``None`` 表示不由本
+      挂点处理，落入通用触发器过滤。
     - ``_ability_gate_override``：按输入种类返回 ``(ability_key, 阻断文案)``
       覆写数据面门槛（奥黛塔特殊战技窗口）。
-    - ``_select_action_override``：覆写动作选择（奥黛塔窗口内切换特殊战技）。
+    - ``_select_action_override``：覆写动作选择（奥黛塔窗口内切换特殊战技、
+      阿罗夏长柄重击骑普攻衔接列改判）。
     - ``_state_patch_extra_fields``：向连段状态补丁追加字段（奥黛塔窗口锚点）。
     - ``_cast_frame_effects``：施放帧效果，返回值并入 ``PreparedAction`` 参数
-      （桑多涅 E 排空 / Q 消费改进战术）。
+      （桑多涅 E 排空 / Q 消费改进战术、芭芭拉爆发治疗目标）。
     - ``_action_kind_value``：覆写动作参数里的动作种类值（奥黛塔特殊战技参数）。
     """
 
@@ -209,9 +213,9 @@ class GenericCharacterActionInterpreter:
         input_kind = self._spec.input_kind_by_session_key.get(session.key)
         slot = session.owner.slot
         if input_kind is not None and slot is not None:
-            # 左键点按/长按双语义等独占接管先于其他输入的 PRESS 等待；
-            # 返回 None 表示不由挂点处理，落入通用路径。
-            override_result = self._attack_input_override(context, session, slot, input_kind)
+            # 触发前独占接管（左键双语义状态机、E 长按自动起手等）先于其他
+            # 输入的 PRESS 等待；返回 None 表示不由挂点处理，落入通用路径。
+            override_result = self._input_override(context, session, slot, input_kind)
             if override_result is not None:
                 return override_result
         if session.trigger is ActionInterpretationTrigger.PRESS:
@@ -274,6 +278,7 @@ class GenericCharacterActionInterpreter:
             context,
             slot=slot,
             frame=session.current_frame,
+            held_frames=session.held_frames,
             input_kind=input_kind,
             last_action_key=last_action_key,
             last_action_start_frame=last_action_start_frame,
@@ -312,14 +317,19 @@ class GenericCharacterActionInterpreter:
 
     # --- 挂点（默认无操作或直通） -------------------------------------------------
 
-    def _attack_input_override(
+    def _input_override(
         self,
         context: ActionInterpretationContext,
         session: InputSessionView,
         slot: int,
         input_kind: str,
     ) -> ActionInterpretationResult | None:
-        """左键按下/松开双语义的独占接管；默认不接管。"""
+        """触发前独占接管；默认不接管。
+
+        覆盖范围是任意已映射输入的全部触发器（按下/长按/松开），用于带会话
+        状态的输入语义（如桑多涅法洁欧蓄力状态机、阿罗夏 E 长按按住上限
+        自动起手）。返回 ``None`` 表示不由本挂点处理，落入通用触发器过滤。
+        """
 
         return None
 
@@ -340,11 +350,16 @@ class GenericCharacterActionInterpreter:
         *,
         slot: int,
         frame: int,
+        held_frames: int,
         input_kind: str,
         last_action_key: str,
         height: float,
     ) -> TimedActionSpec | None:
-        """覆写动作选择；默认不覆写。"""
+        """覆写动作选择；默认不覆写。
+
+        ``held_frames`` 服务点按/长按在选择层改判的形态（如长柄重击骑普攻
+        衔接列：衔接判定继续看普攻输入，长按改判只发生在选择层）。
+        """
 
         return None
 
@@ -566,6 +581,7 @@ class GenericCharacterActionInterpreter:
         *,
         slot: int,
         frame: int,
+        held_frames: int,
         input_kind: str,
         last_action_key: str,
         last_action_start_frame: int,
@@ -575,6 +591,7 @@ class GenericCharacterActionInterpreter:
             context,
             slot=slot,
             frame=frame,
+            held_frames=held_frames,
             input_kind=input_kind,
             last_action_key=last_action_key,
             height=height,
@@ -600,6 +617,10 @@ class GenericCharacterActionInterpreter:
         if input_kind == ELEMENTAL_BURST_INPUT:
             return self._action_table[self._spec.elemental_burst_action_key]
         if input_kind == JUMP_INPUT:
+            if self._spec.jump_action_key is None:
+                raise GenericCharacterActionError(
+                    f"{self._spec.display_name}未声明跳跃动作，输入种类 {input_kind} 不可达"
+                )
             return self._action_table[self._spec.jump_action_key]
         msg = f"未知{self._spec.display_name}输入类型：{input_kind}"
         raise KeyError(msg)

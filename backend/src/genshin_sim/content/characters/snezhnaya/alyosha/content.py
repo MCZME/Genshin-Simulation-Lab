@@ -7,7 +7,6 @@ from collections.abc import Mapping
 from genshin_sim.assets.models import TalentScalingEntry
 from genshin_sim.content.characters.snezhnaya.alyosha.actions import (
     AlyoshaActionInterpreter,
-    create_alyosha_actions,
 )
 from genshin_sim.content.characters.snezhnaya.alyosha.buffs import (
     build_hunters_mark_definition,
@@ -15,6 +14,7 @@ from genshin_sim.content.characters.snezhnaya.alyosha.buffs import (
     build_hunters_precision_mastery_definition,
 )
 from genshin_sim.content.characters.snezhnaya.alyosha.data import (
+    ALYOSHA_ACTION_SPEC,
     ALYOSHA_BURST_FIELD_TICK_IMPACT_KEY,
     ALYOSHA_BURST_ICD_RESET_FRAMES,
     ALYOSHA_BURST_ICD_SEQUENCE_KEY,
@@ -63,6 +63,7 @@ from genshin_sim.content.definitions.content_unit import (
     ContentUnitValidationError,
 )
 from genshin_sim.content.generic.chain_state import chain_state_schema
+from genshin_sim.content.generic.character_actions import compile_character_actions
 from genshin_sim.content.generic.talents import (
     ScalingCompiler,
     TalentLevelResolver,
@@ -363,7 +364,8 @@ def create_alyosha_content_unit(
         version=ALYOSHA_CONTENT_VERSION,
         slot=request.slot,
         action_interpreter=AlyoshaActionInterpreter(),
-        actions=create_alyosha_actions(
+        actions=compile_character_actions(
+            ALYOSHA_ACTION_SPEC,
             cooldown_duration_terms=cooldown_terms_by_ability,
         ),
         state_schema=chain_state_schema(owner_ref),

@@ -169,6 +169,18 @@ from genshin_sim.content.weapons.claymore.favonius_greatsword import (
     create_favonius_greatsword_identity_unit,
     create_favonius_greatsword_passive_unit,
 )
+from genshin_sim.content.weapons.claymore.mailed_flower import (
+    MAILED_FLOWER_HANDLER_KEY,
+    MAILED_FLOWER_PASSIVE_EFFECT_HANDLER_KEY,
+    create_mailed_flower_identity_unit,
+    create_mailed_flower_passive_unit,
+)
+from genshin_sim.content.weapons.claymore.tidal_shadow import (
+    TIDAL_SHADOW_HANDLER_KEY,
+    TIDAL_SHADOW_PASSIVE_EFFECT_HANDLER_KEY,
+    create_tidal_shadow_identity_unit,
+    create_tidal_shadow_passive_unit,
+)
 from genshin_sim.content.weapons.claymore.waster_greatsword import (
     WASTER_GREATSWORD_HANDLER_KEY,
     create_waster_greatsword_content_unit,
@@ -192,6 +204,12 @@ from genshin_sim.content.weapons.sword.favonius_sword import (
     FAVONIUS_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
     create_favonius_sword_identity_unit,
     create_favonius_sword_passive_unit,
+)
+from genshin_sim.content.weapons.sword.freedom_sworn import (
+    FREEDOM_SWORN_HANDLER_KEY,
+    FREEDOM_SWORN_PASSIVE_EFFECT_HANDLER_KEY,
+    create_freedom_sworn_identity_unit,
+    create_freedom_sworn_passive_unit,
 )
 from genshin_sim.content.weapons.sword.whitelake_frostfeather import (
     WHITELAKE_FROSTFEATHER_HANDLER_KEY,
@@ -294,6 +312,18 @@ def create_default_content_unit_registry(
         A_TEASPOON_OF_TRANSCENDENCE_HANDLER_KEY,
         create_a_teaspoon_of_transcendence_identity_unit,
     )
+    registry.register_weapon_factory(
+        FREEDOM_SWORN_HANDLER_KEY,
+        create_freedom_sworn_identity_unit,
+    )
+    registry.register_weapon_factory(
+        MAILED_FLOWER_HANDLER_KEY,
+        create_mailed_flower_identity_unit,
+    )
+    registry.register_weapon_factory(
+        TIDAL_SHADOW_HANDLER_KEY,
+        create_tidal_shadow_identity_unit,
+    )
     # 西风系列五把武器各自一个内容包与一个 handler 键；判定、资产参数解读与钩子
     # 实现是共用部件（``content/generic/favonius_windfall.py``），各包只声明自己的键。
     for handler_key, factory in (
@@ -322,6 +352,18 @@ def create_default_content_unit_registry(
         (
             A_TEASPOON_OF_TRANSCENDENCE_PASSIVE_EFFECT_HANDLER_KEY,
             create_a_teaspoon_of_transcendence_passive_unit,
+        ),
+        (
+            FREEDOM_SWORN_PASSIVE_EFFECT_HANDLER_KEY,
+            create_freedom_sworn_passive_unit,
+        ),
+        (
+            MAILED_FLOWER_PASSIVE_EFFECT_HANDLER_KEY,
+            create_mailed_flower_passive_unit,
+        ),
+        (
+            TIDAL_SHADOW_PASSIVE_EFFECT_HANDLER_KEY,
+            create_tidal_shadow_passive_unit,
         ),
     ):
         registry.register_effect_factory(handler_key, factory)

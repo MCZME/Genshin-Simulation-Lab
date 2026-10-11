@@ -1,7 +1,8 @@
 """铁影阔剑内容数据：稳定键、版本与被动数值口径。
 
 资产来源：Project Amber / Yatta 当前默认数据（``weapon:12301``）。
-被动「不屈」：生命值低于 70% 时，重击不会轻易被打断，并提高重击伤害。
+被动「不屈」：生命值低于阈值（按精炼 70%~90%）时，重击不会轻易被打断，
+并提高重击伤害（按精炼 30%~50%）。
 
 范围边界：被动的「重击不会轻易被打断」条款依赖敌方打断/削韧模型，明确不在
 当前仿真范围（与下落攻击通用部件同一边界），本内容包按 no-op 处理并在此
@@ -29,8 +30,7 @@ FRAMES_PER_SECOND = 60
 HP_GATE_REFRESH_INTERVAL_FRAMES = 10
 MARKER_DURATION_FRAMES = 20
 
-# 生命阈值：低于 70%。资产效果参数不含阈值，由本内容包按文案声明。
-HP_THRESHOLD = 0.7
-
-# 资产效果参数的位置约定：components[0] 重击伤害加成、components[1] 生命阈值。
-CHARGED_BONUS_COMPONENT_INDEX = 0
+# 资产效果参数的位置约定：components[0] 生命阈值（按精炼 0.7~0.9，对应文案
+# highlight_1）、components[1] 重击伤害加成（按精炼 0.3~0.5，对应 highlight_2）。
+HP_THRESHOLD_COMPONENT_INDEX = 0
+CHARGED_BONUS_COMPONENT_INDEX = 1

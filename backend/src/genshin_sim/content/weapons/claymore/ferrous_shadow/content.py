@@ -3,7 +3,7 @@
 索引行单元承载这把武器「是什么」并拥有它的效果单元；被动「不屈」由效果行
 绑定的独立单元实现（``weapon.ferrous_shadow.passive``），精炼等级由拥有者提供。
 
-增伤条款以「生命阈值门控标记 Buff」为载体：生命比例低于 70% 期间维持标记，
+增伤条款以「生命阈值门控标记 Buff」为载体：生命比例低于资产阈值期间维持标记，
 伤害修饰 provider 按标记存在性放行（重击专属）。免打断条款不在仿真范围，
 见 data.py 的范围边界说明。
 """
@@ -28,7 +28,7 @@ from genshin_sim.content.weapons.claymore.ferrous_shadow.data import (
     FERROUS_SHADOW_MARKER_DEFINITION_KEY_TEMPLATE,
     FERROUS_SHADOW_PASSIVE_EFFECT_HANDLER_KEY,
     HP_GATE_REFRESH_INTERVAL_FRAMES,
-    HP_THRESHOLD,
+    HP_THRESHOLD_COMPONENT_INDEX,
     MARKER_DURATION_FRAMES,
 )
 from genshin_sim.content.weapons.claymore.ferrous_shadow.hooks import UnyieldingMarkerHook
@@ -61,7 +61,7 @@ def create_ferrous_shadow_identity_unit(
 def create_ferrous_shadow_passive_unit(
     request: EffectContentUnitRequest,
 ) -> ContentUnit:
-    """铁影阔剑被动「不屈」：生命值低于 70% 时重击伤害提升。"""
+    """铁影阔剑被动「不屈」：生命值低于阈值（按精炼 70%~90%）时重击伤害提升。"""
 
     if isinstance(request.slot, bool) or not isinstance(request.slot, int) or request.slot <= 0:
         raise ContentUnitValidationError("铁影阔剑被动缺少有效的队伍槽位")
@@ -71,6 +71,11 @@ def create_ferrous_shadow_passive_unit(
         request,
         component_index=CHARGED_BONUS_COMPONENT_INDEX,
         label="重击伤害加成",
+    )
+    threshold = _passive_value(
+        request,
+        component_index=HP_THRESHOLD_COMPONENT_INDEX,
+        label="生命阈值",
     )
     definition_key = FERROUS_SHADOW_MARKER_DEFINITION_KEY_TEMPLATE.format(slot=slot)
     source_key = f"{FERROUS_SHADOW_KEY_PREFIX}:slot:{slot}"
@@ -89,7 +94,7 @@ def create_ferrous_shadow_passive_unit(
                 source_key=source_key,
                 duration_frames=MARKER_DURATION_FRAMES,
                 refresh_interval_frames=HP_GATE_REFRESH_INTERVAL_FRAMES,
-                threshold=HP_THRESHOLD,
+                threshold=threshold,
             ),
         ),
         buff_definitions=(_marker_buff_definition(definition_key),),

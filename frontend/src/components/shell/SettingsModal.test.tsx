@@ -33,7 +33,7 @@ describe("SettingsModal", () => {
     fireEvent.click(screen.getByLabelText("开发者模式"));
 
     expect(onChange).toHaveBeenCalledTimes(1);
-    expect(onChange.mock.calls[0][0].developerEnabled).toBe(true);
+    expect(onChange).toHaveBeenCalledWith(expect.objectContaining({ developerEnabled: true }));
   });
 
   it("提示重启后生效", () => {

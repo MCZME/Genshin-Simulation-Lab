@@ -256,7 +256,7 @@ export function defaultPathParamValues(
     } else if (param.param === "target_index") {
       values.target_index = 0;
     } else if (param.options.length > 0) {
-      values.choice = param.options[0].value;
+      values.choice = param.options[0]!.value;
     }
   }
   return values;
@@ -285,7 +285,7 @@ export function resolveScanPath(
         (param) => param.param === "choice",
       );
       return choiceParam !== undefined && choiceParam.options.length > 0
-        ? choiceParam.options[0].value
+        ? choiceParam.options[0]!.value
         : "";
     }
     return name;

@@ -18,7 +18,7 @@ export function toScaled(value: number | string): bigint {
     throw new Error(`非法十进制数：${text}`);
   }
   const sign = match[1] === "-" ? -1n : 1n;
-  const integerPart = BigInt(match[2]);
+  const integerPart = BigInt(match[2] ?? "0");
   const fractionPart = (match[3] ?? "").padEnd(SCALE, "0").slice(0, SCALE);
   return sign * (integerPart * SCALE_BIG + BigInt(fractionPart));
 }

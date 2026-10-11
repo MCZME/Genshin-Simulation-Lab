@@ -71,7 +71,7 @@ const STELLAR_ATTACK_TAG_FAMILIES: Record<string, string> = {
 /** 从 reaction_profile.<family>.* 提取反应族名。 */
 function reactionProfileFamily(profileKey: string): string | null {
   const parts = profileKey.split(".");
-  return parts.length >= 2 ? parts[1] : null;
+  return parts.length >= 2 ? (parts[1] ?? null) : null;
 }
 
 /** 星烁反应族 profile key：按主攻击标签反查；无星烁载荷或标签未知时返回 null。 */
@@ -497,8 +497,11 @@ function ascensionMultiplier(summary: Record<string, unknown>): number {
     const mode = readString(readRecord(lunar, "reaction") ?? {}, "mode");
     if (mode === "character_direct") {
       const components = readRecordList(lunar, "components");
+      const firstComponent = components[0];
       const multiplier =
-        components.length > 0 ? readNumber(components[0], "ascension_multiplier") : null;
+        firstComponent !== undefined
+          ? readNumber(firstComponent, "ascension_multiplier")
+          : null;
       if (multiplier !== null) {
         return multiplier;
       }
@@ -931,10 +934,12 @@ function buildBaseZone(
         ]);
       } else if (lines.length > 0) {
         // 单组件：括号因子直接接在倍率区行尾，基础区保持一条连续公式。
-        lines[lines.length - 1].push(...tokens);
+        lines[lines.length - 1]!.push(...tokens);
       } else {
         const [first, ...rest] = tokens;
-        lines.push(first.kind === "text" && first.text === " × " ? rest : tokens);
+        lines.push(
+          first !== undefined && first.kind === "text" && first.text === " × " ? rest : tokens,
+        );
       }
     }
 

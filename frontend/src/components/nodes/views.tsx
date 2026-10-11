@@ -538,7 +538,9 @@ function MemberTable({
       }
       const next = [...current];
       const [item] = next.splice(from, 1);
-      next.splice(to, 0, item);
+      if (item !== undefined) {
+        next.splice(to, 0, item);
+      }
       return next;
     });
   };
@@ -583,7 +585,8 @@ function MemberTable({
                       ? conditionSort[conditionOrder]?.direction
                       : undefined;
                 const isDataStart =
-                  isData && (index === 0 || !dataSet.has(order[index - 1]));
+                  isData &&
+                  (index === 0 || (index > 0 && !dataSet.has(order[index - 1]!)));
                 const sorted = isData
                   ? dataSort?.column === column
                   : conditionOrder >= 0;
@@ -684,14 +687,15 @@ function MemberTable({
                 >
                   {order.map((column, cellIndex) => {
                     const index = columnIndex.get(column);
-                    const value = index === undefined ? null : row[index];
+                    const value = index === undefined || row === undefined ? null : row[index];
                     const isData = dataSet.has(column);
                     const isNull =
                       value === null ||
                       value === undefined ||
                       (typeof value === "number" && !Number.isFinite(value));
                     const isDataStart =
-                      isData && (cellIndex === 0 || !dataSet.has(order[cellIndex - 1]));
+                      isData &&
+                  (cellIndex === 0 || (cellIndex > 0 && !dataSet.has(order[cellIndex - 1]!)));
                     const highlightClass =
                       dataSet.has(column) &&
                       highlights[column] !== undefined &&
@@ -883,8 +887,8 @@ function thousands(text: string): string {
 
 function formatNumber(text: string): string {
   const parts = text.split(".");
-  const integer = thousands(parts[0]);
-  return parts.length > 1 ? `${integer}.${parts[1]}` : integer;
+  const integer = thousands(parts[0] ?? "");
+  return parts.length > 1 ? `${integer}.${parts[1] ?? ""}` : integer;
 }
 
 function trimFloat(text: string): string {
@@ -924,7 +928,12 @@ export function sortRowIndexes(
       if (index === undefined) {
         continue;
       }
-      const cmp = compareCells(rows[left][index], rows[right][index]);
+            const leftRow = rows[left];
+      const rightRow = rows[right];
+      if (leftRow === undefined || rightRow === undefined) {
+        continue;
+      }
+      const cmp = compareCells(leftRow[index], rightRow[index]);
       if (cmp !== 0) {
         return key.direction === "asc" ? cmp : -cmp;
       }

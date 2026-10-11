@@ -105,7 +105,7 @@ describe("投影节点编辑器（卡片直编）", () => {
     const onChange = vi.fn();
     render(<Harness node={projectNode({})} onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: "＋ 添加列" }));
-    fireEvent.change(screen.getAllByRole("combobox")[0], {
+    fireEvent.change(screen.getAllByRole("combobox")[0]!, {
       target: { value: "element" },
     });
 
@@ -170,7 +170,7 @@ describe("投影节点编辑器（卡片直编）", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.change(screen.getAllByRole("combobox")[0], {
+    fireEvent.change(screen.getAllByRole("combobox")[0]!, {
       target: { value: "element" },
     });
 
@@ -186,7 +186,7 @@ describe("投影节点编辑器（卡片直编）", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.change(screen.getAllByRole("combobox")[0], {
+    fireEvent.change(screen.getAllByRole("combobox")[0]!, {
       target: { value: "element" },
     });
 
@@ -236,7 +236,7 @@ describe("投影节点编辑器（卡片直编）", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getAllByRole("button", { name: "×" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "×" })[0]!);
 
     expect(onChange).toHaveBeenLastCalledWith({ columns: [{ name: "element" }] });
   });

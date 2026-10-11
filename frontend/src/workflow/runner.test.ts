@@ -92,12 +92,12 @@ describe("planWorkflowRun", () => {
     const plan = planWorkflowRun(definition);
     expect(plan.ok).toBe(true);
     expect(plan.batches).toHaveLength(1);
-    expect(plan.batches[0].nodeId).toBe("sim-1");
-    expect(plan.batches[0].name).toBe("主配队");
-    expect(plan.batches[0].members).toHaveLength(1);
-    expect(plan.batches[0].concurrency).toBeNull();
+    expect(plan.batches[0]!.nodeId).toBe("sim-1");
+    expect(plan.batches[0]!.name).toBe("主配队");
+    expect(plan.batches[0]!.members).toHaveLength(1);
+    expect(plan.batches[0]!.concurrency).toBeNull();
     expect(plan.participating).toHaveLength(1);
-    expect(plan.participating[0].methods.map((method) => method.nodeId)).toEqual([
+    expect(plan.participating[0]!.methods.map((method) => method.nodeId)).toEqual([
       "region-1-root",
       "region-1-meta",
     ]);
@@ -123,10 +123,10 @@ describe("planWorkflowRun", () => {
     expect(plan.ok).toBe(true);
     expect(plan.batches).toHaveLength(1);
     // 连线顺序：l1 在前，区域二先行汇入。
-    expect(plan.batches[0].sourceRegionIds).toEqual(["region-2", "region-1"]);
-    expect(plan.batches[0].members).toHaveLength(2);
+    expect(plan.batches[0]!.sourceRegionIds).toEqual(["region-2", "region-1"]);
+    expect(plan.batches[0]!.members).toHaveLength(2);
     // 批次名取所连第一个区域的元信息名称。
-    expect(plan.batches[0].name).toBe("区域二");
+    expect(plan.batches[0]!.name).toBe("区域二");
   });
 
   it("未连接模拟节点的配置区域被跳过，不参与任何批次", () => {
@@ -146,7 +146,7 @@ describe("planWorkflowRun", () => {
     const plan = planWorkflowRun(definition);
     expect(plan.ok).toBe(true);
     expect(plan.skippedRegionIds).toEqual(["region-2"]);
-    expect(plan.batches[0].members).toHaveLength(1);
+    expect(plan.batches[0]!.members).toHaveLength(1);
   });
 
   it("模拟节点未连接配置区域时报构建错误", () => {
@@ -238,10 +238,10 @@ describe("planRegionRun", () => {
     const plan = planRegionRun(definition, "region-1");
     expect(plan.ok).toBe(true);
     expect(plan.batches).toHaveLength(1);
-    expect(plan.batches[0].nodeId).toBe("sim-1");
-    expect(plan.batches[0].sourceRegionIds).toEqual(["region-1"]);
-    expect(plan.batches[0].members).toHaveLength(1);
-    expect(plan.participating[0].methods.map((method) => method.nodeId)).toEqual([
+    expect(plan.batches[0]!.nodeId).toBe("sim-1");
+    expect(plan.batches[0]!.sourceRegionIds).toEqual(["region-1"]);
+    expect(plan.batches[0]!.members).toHaveLength(1);
+    expect(plan.participating[0]!.methods.map((method) => method.nodeId)).toEqual([
       "region-1-root",
       "region-1-meta",
     ]);
@@ -290,8 +290,8 @@ describe("planAnalysisInputRun", () => {
     const plan = planAnalysisInputRun(definition, "analysis-1");
     expect(plan.ok).toBe(true);
     expect(plan.batches).toHaveLength(1);
-    expect(plan.batches[0].nodeId).toBe("sim-1");
-    expect(plan.batches[0].members).toHaveLength(1);
+    expect(plan.batches[0]!.nodeId).toBe("sim-1");
+    expect(plan.batches[0]!.members).toHaveLength(1);
     expect(plan.participating).toHaveLength(1);
   });
 
@@ -404,7 +404,7 @@ describe("planAnalysisInputRun", () => {
     const plan = planAnalysisInputRun(definition, "analysis-1");
     expect(plan.ok).toBe(true);
     expect(plan.batches).toHaveLength(1);
-    expect(plan.batches[0].nodeId).toBe("sim-1");
+    expect(plan.batches[0]!.nodeId).toBe("sim-1");
   });
 
   it("有会话但未连接配置区域时视为就绪", () => {
@@ -468,9 +468,9 @@ describe("planAnalysisInputRun", () => {
           : node,
       ),
     };
-    expect(analysisInputStatus(base, "analysis-1").nodes[0].status).toBe("missing");
-    expect(analysisInputStatus(stale, "analysis-1").nodes[0].status).toBe("stale");
-    expect(analysisInputStatus(ready, "analysis-1").nodes[0].status).toBe("ready");
+    expect(analysisInputStatus(base, "analysis-1").nodes[0]!.status).toBe("missing");
+    expect(analysisInputStatus(stale, "analysis-1").nodes[0]!.status).toBe("stale");
+    expect(analysisInputStatus(ready, "analysis-1").nodes[0]!.status).toBe("ready");
     expect(analysisInputStatus(ready, "analysis-1").needsRun).toBe(false);
   });
 
@@ -669,13 +669,13 @@ describe("withAutoBatchSeed", () => {
 
     const seeded = withAutoBatchSeed(members);
 
-    const seed1 = (seeded[0].input.run_options as Record<string, unknown>).seed;
-    const seed2 = (seeded[1].input.run_options as Record<string, unknown>).seed;
+    const seed1 = (seeded[0]!.input.run_options as Record<string, unknown>).seed;
+    const seed2 = (seeded[1]!.input.run_options as Record<string, unknown>).seed;
     expect(typeof seed1).toBe("number");
     expect(Number.isInteger(seed1)).toBe(true);
     expect(seed2).toBe(seed1);
     // 原成员不被修改。
-    expect(members[0].input.run_options).toEqual({ max_frames: 60 });
+    expect(members[0]!.input.run_options).toEqual({ max_frames: 60 });
   });
 
   it("已设置的种子保持不变，只填充缺失成员", () => {
@@ -686,8 +686,8 @@ describe("withAutoBatchSeed", () => {
 
     const seeded = withAutoBatchSeed(members);
 
-    expect(seeded[0].input.run_options).toEqual({ max_frames: 60, seed: 42 });
-    const seed2 = (seeded[1].input.run_options as Record<string, unknown>).seed;
+    expect(seeded[0]!.input.run_options).toEqual({ max_frames: 60, seed: 42 });
+    const seed2 = (seeded[1]!.input.run_options as Record<string, unknown>).seed;
     expect(typeof seed2).toBe("number");
     expect(seed2).not.toBe(42);
   });
@@ -695,8 +695,8 @@ describe("withAutoBatchSeed", () => {
   it("两次调用生成不同种子", () => {
     const members = [{ item_id: "m-1", input: { run_options: { max_frames: 60 } } }];
 
-    const first = withAutoBatchSeed(members)[0].input.run_options as Record<string, unknown>;
-    const second = withAutoBatchSeed(members)[0].input.run_options as Record<string, unknown>;
+    const first = withAutoBatchSeed(members)[0]!.input.run_options as Record<string, unknown>;
+    const second = withAutoBatchSeed(members)[0]!.input.run_options as Record<string, unknown>;
 
     expect(first.seed).not.toBe(second.seed);
   });

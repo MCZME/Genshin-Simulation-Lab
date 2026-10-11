@@ -133,7 +133,7 @@ describe("计算列节点编辑器", () => {
     withUpstream();
     const onChange = vi.fn();
     render(<Harness node={computeNode({ columns: [{}] })} onChange={onChange} />);
-    fireEvent.change(screen.getAllByRole("combobox")[0], {
+    fireEvent.change(screen.getAllByRole("combobox")[0]!, {
       target: { value: "total_damage" },
     });
 

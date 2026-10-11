@@ -54,7 +54,13 @@ export function SortEditor({ node, onChange }: EditorProps) {
       return;
     }
     const next = [...keys];
-    [next[index], next[target]] = [next[target], next[index]];
+    const current = next[index];
+    const swapWith = next[target];
+    if (current === undefined || swapWith === undefined) {
+      return;
+    }
+    next[index] = swapWith;
+    next[target] = current;
     onChange({ ...node.params, keys: next });
   };
   const errors = sortErrors(keys, shape);
@@ -68,7 +74,7 @@ export function SortEditor({ node, onChange }: EditorProps) {
           shape={shape}
           index={index}
           total={keys.length}
-          error={errors[index]}
+          error={errors[index] ?? null}
           onChange={(patch) => updateKey(index, patch)}
           onRemove={() =>
             onChange({

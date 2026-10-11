@@ -55,7 +55,7 @@ const TRACK_HEIGHT_OPTION = 38;
 
 function toTimelineItem(block: TraceBlock): TraceTimelineItem {
   const data = blockToTimelineItem(block);
-  return { ...data, type: "range" } as TraceTimelineItem;
+  return { ...data, type: "range" };
 }
 
 function timelineHeightFor(blocks: TraceBlock[]): number {

@@ -24,18 +24,21 @@ function tokenize(input: string): { tokens: Token[]; error: string | null } {
   let index = 0;
   while (index < input.length) {
     const char = input[index];
+    if (char === undefined) {
+      break;
+    }
     if (char === " " || char === "\t" || char === "\n" || char === "\r") {
       index += 1;
       continue;
     }
     if (/[0-9]/.test(char) || (char === "." && /[0-9]/.test(input[index + 1] ?? ""))) {
       const start = index;
-      while (index < input.length && /[0-9]/.test(input[index])) {
+      while (index < input.length && /[0-9]/.test(input[index] ?? "")) {
         index += 1;
       }
       if (input[index] === ".") {
         index += 1;
-        while (index < input.length && /[0-9]/.test(input[index])) {
+        while (index < input.length && /[0-9]/.test(input[index] ?? "")) {
           index += 1;
         }
       }
@@ -49,7 +52,7 @@ function tokenize(input: string): { tokens: Token[]; error: string | null } {
     }
     if (/[A-Za-z_\u4e00-\u9fff]/.test(char)) {
       const start = index;
-      while (index < input.length && /[A-Za-z0-9_\u4e00-\u9fff]/.test(input[index])) {
+      while (index < input.length && /[A-Za-z0-9_\u4e00-\u9fff]/.test(input[index] ?? "")) {
         index += 1;
       }
       tokens.push({ kind: "ident", value: input.slice(start, index) });
@@ -180,10 +183,12 @@ export function parseFormula(
   }
   if (index < tokens.length) {
     const rest = tokens[index];
-    return {
-      ast: null,
-      error: `公式结尾有多余内容：${rest.kind === "number" ? rest.text : rest.value}`,
-    };
+    if (rest !== undefined) {
+      return {
+        ast: null,
+        error: `公式结尾有多余内容：${rest.kind === "number" ? rest.text : rest.value}`,
+      };
+    }
   }
   return { ast, error: null };
 }

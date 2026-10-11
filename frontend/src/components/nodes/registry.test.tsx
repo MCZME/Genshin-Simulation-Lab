@@ -24,7 +24,7 @@ describe("节点类别配色", () => {
     ];
     const seen = new Set<string>();
     for (const group of groups) {
-      const color = nodeKindColor(group[0]);
+      const color = nodeKindColor(group[0]!);
       for (const kind of group) {
         expect(nodeKindColor(kind)).toBe(color);
       }

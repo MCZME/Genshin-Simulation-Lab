@@ -110,11 +110,11 @@ describe("过滤节点编辑器（卡片直编）", () => {
     fireEvent.click(screen.getByRole("button", { name: "＋ 添加条件" }));
     const columnSelect = screen.getAllByRole("combobox")[0];
 
-    fireEvent.change(columnSelect, { target: { value: "element" } });
+    fireEvent.change(columnSelect!, { target: { value: "element" } });
     expect(screen.queryByRole("option", { name: "大于" })).toBeNull();
     expect(screen.getByRole("option", { name: "属于" })).not.toBeNull();
 
-    fireEvent.change(columnSelect, { target: { value: "dps" } });
+    fireEvent.change(columnSelect!, { target: { value: "dps" } });
     expect(screen.getByRole("option", { name: "大于等于" })).not.toBeNull();
   });
 
@@ -205,7 +205,7 @@ describe("过滤节点编辑器（卡片直编）", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.change(screen.getAllByRole("combobox")[1], {
+    fireEvent.change(screen.getAllByRole("combobox")[1]!, {
       target: { value: "is_null" },
     });
     expect(screen.queryByRole("textbox")).toBeNull();
@@ -228,7 +228,7 @@ describe("过滤节点编辑器（卡片直编）", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.change(screen.getAllByRole("combobox")[2], {
+    fireEvent.change(screen.getAllByRole("combobox")[2]!, {
       target: { value: "true" },
     });
 
@@ -250,7 +250,7 @@ describe("过滤节点编辑器（卡片直编）", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.change(screen.getAllByRole("combobox")[0], {
+    fireEvent.change(screen.getAllByRole("combobox")[0]!, {
       target: { value: "element" },
     });
 
@@ -258,7 +258,7 @@ describe("过滤节点编辑器（卡片直编）", () => {
       conditions: { column: string; op: string; value?: unknown }[];
     };
     expect(last.conditions[0]).toMatchObject({ column: "element", op: "eq" });
-    expect(last.conditions[0].value).toBeUndefined();
+    expect(last.conditions[0]!.value).toBeUndefined();
   });
 
   it("存量错误类型值行内提示", () => {

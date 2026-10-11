@@ -11,9 +11,9 @@ describe("分析节点注册表", () => {
     const spec = getNodeKindSpec("fetch");
     expect(spec?.region).toBe("analysis");
     expect(spec?.ports.inputs).toHaveLength(1);
-    expect(spec?.ports.inputs[0].dataLanguage).toBe("session_group");
-    expect(spec?.ports.outputs[0].dataLanguage).toBe("table");
-    expect(spec?.ports.outputs[0].cardinality).toBe("single");
+    expect(spec?.ports.inputs[0]!.dataLanguage).toBe("session_group");
+    expect(spec?.ports.outputs[0]!.dataLanguage).toBe("table");
+    expect(spec?.ports.outputs[0]!.cardinality).toBe("single");
   });
 
   it("单输入算子均为结果表入出，连接为双输入", () => {
@@ -30,8 +30,8 @@ describe("分析节点注册表", () => {
     for (const kind of single) {
       const spec = getNodeKindSpec(kind);
       expect(spec?.ports.inputs).toHaveLength(1);
-      expect(spec?.ports.inputs[0].dataLanguage).toBe("table");
-      expect(spec?.ports.outputs[0].dataLanguage).toBe("table");
+      expect(spec?.ports.inputs[0]!.dataLanguage).toBe("table");
+      expect(spec?.ports.outputs[0]!.dataLanguage).toBe("table");
     }
     const join = getNodeKindSpec("join");
     expect(join?.ports.inputs.map((port) => port.id)).toEqual(["left", "right"]);
@@ -39,10 +39,10 @@ describe("分析节点注册表", () => {
 
   it("表格视图与单项详情端口均使用 table 语言", () => {
     const member = getNodeKindSpec("member_table");
-    expect(member?.ports.outputs[0].dataLanguage).toBe("table");
+    expect(member?.ports.outputs[0]!.dataLanguage).toBe("table");
     for (const kind of ["frame_state", "damage_detail", "state_detail", "attribute_detail"]) {
       const spec = getNodeKindSpec(kind);
-      expect(spec?.ports.inputs[0].dataLanguage).toBe("table");
+      expect(spec?.ports.inputs[0]!.dataLanguage).toBe("table");
     }
   });
 
@@ -55,7 +55,7 @@ describe("分析节点注册表", () => {
     const spec = getNodeKindSpec("data_provider");
     expect(spec?.region).toBeNull();
     expect(spec?.ports.inputs).toHaveLength(0);
-    expect(spec?.ports.outputs[0].dataLanguage).toBe("session_group");
+    expect(spec?.ports.outputs[0]!.dataLanguage).toBe("session_group");
     expect(spec?.paramFields).toEqual({ session_ids: { type: "list" } });
     expect(spec?.defaultParams).toEqual({ session_ids: [] });
   });

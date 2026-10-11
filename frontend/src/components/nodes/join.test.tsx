@@ -136,11 +136,11 @@ describe("连接表节点编辑器", () => {
     withInputs(LEFT_SHAPE, RIGHT_SHAPE);
     const onChange = vi.fn();
     render(<Harness node={joinNode({})} onChange={onChange} />);
-    fireEvent.change(screen.getAllByRole("combobox")[0], {
+    fireEvent.change(screen.getAllByRole("combobox")[0]!, {
       target: { value: "session_id" },
     });
     expect(onChange).toHaveBeenLastCalledWith({ left_key: "session_id" });
-    fireEvent.change(screen.getAllByRole("combobox")[1], {
+    fireEvent.change(screen.getAllByRole("combobox")[1]!, {
       target: { value: "session_id" },
     });
     expect(onChange).toHaveBeenLastCalledWith({

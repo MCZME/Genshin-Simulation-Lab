@@ -360,8 +360,8 @@ describe("DamageSheet", () => {
     render(<DamageSheet event={event} />);
     const badges = document.querySelectorAll(".damage-sheet-reaction-badge");
     expect(badges).toHaveLength(2);
-    expect(badges[0].textContent).toBe("扩散");
-    expect(badges[1].textContent).toBe("融化");
+    expect(badges[0]!.textContent).toBe("扩散");
+    expect(badges[1]!.textContent).toBe("融化");
   });
 
   it("未知反应族回退完整 profile key", () => {

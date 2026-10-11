@@ -45,13 +45,13 @@ describe("editor state mutations", () => {
     state = addNode(state, "character", { x: 10, y: 20 }, "region-1");
 
     expect(state.dirty).toBe(true);
-    expect(state.definition.regions[0].id).toBe("region-1");
+    expect(state.definition.regions[0]!.id).toBe("region-1");
     const node = state.definition.nodes[0];
-    expect(node.id).toBe("node-1");
-    expect(node.kind).toBe("character");
-    expect(node.region_id).toBe("region-1");
-    expect(node.params.slot).toBe(1);
-    expect(node.params.level).toBe(90);
+    expect(node!.id).toBe("node-1");
+    expect(node!.kind).toBe("character");
+    expect(node!.region_id).toBe("region-1");
+    expect(node!.params.slot).toBe(1);
+    expect(node!.params.level).toBe(90);
   });
 
   it("未知节点类型不会创建节点", () => {
@@ -64,13 +64,13 @@ describe("editor state mutations", () => {
     let state = createEmptyEditorState();
     state = addRegion(state, "configuration", "主配置", { x: 0, y: 0, width: 800, height: 600 });
     state = addNode(state, "range", { x: 0, y: 0 }, "region-1");
-    const nodeId = state.definition.nodes[0].id;
+    const nodeId = state.definition.nodes[0]!.id;
 
     state = moveNode(state, nodeId, { x: 100, y: 200 });
-    expect(state.definition.nodes[0].position).toEqual({ x: 100, y: 200 });
+    expect(state.definition.nodes[0]!.position).toEqual({ x: 100, y: 200 });
 
     state = setNodeParams(state, nodeId, { path: "a.b", start: 1, end: 5, step: 1 });
-    expect(state.definition.nodes[0].params).toEqual({ path: "a.b", start: 1, end: 5, step: 1 });
+    expect(state.definition.nodes[0]!.params).toEqual({ path: "a.b", start: 1, end: 5, step: 1 });
   });
 
   it("连线去重并生成稳定 id", () => {
@@ -87,7 +87,7 @@ describe("editor state mutations", () => {
     state = addEdge(state, connection);
     state = addEdge(state, connection);
     expect(state.definition.edges).toHaveLength(1);
-    expect(state.definition.edges[0].id).toBe("edge-1");
+    expect(state.definition.edges[0]!.id).toBe("edge-1");
   });
 
   it("删除节点级联删除关联连线", () => {
@@ -130,7 +130,7 @@ describe("editor state mutations", () => {
 
     state = deleteRegion(state, "region-1");
     expect(state.definition.regions).toEqual([]);
-    expect(state.definition.nodes[0].region_id).toBeNull();
+    expect(state.definition.nodes[0]!.region_id).toBeNull();
     expect(state.definition.edges).toEqual([]);
   });
 
@@ -141,17 +141,17 @@ describe("editor state mutations", () => {
 
     state = addRegion(state, "configuration", "主配置", { x: 0, y: 0, width: 800, height: 600 });
     state = renameRegion(state, "region-1", "改名区域");
-    expect(state.definition.regions[0].name).toBe("改名区域");
+    expect(state.definition.regions[0]!.name).toBe("改名区域");
 
     state = updateRegionRect(state, "region-1", { x: 5, y: 6, width: 700, height: 500 });
-    expect(state.definition.regions[0].rect.width).toBe(700);
+    expect(state.definition.regions[0]!.rect.width).toBe(700);
 
     state = addNode(state, "character", { x: 0, y: 0 }, "region-1");
     state = setSelection(state, { nodes: ["node-1"] });
     expect(state.selection.nodes).toEqual(["node-1"]);
 
     state = setNodeRegion(state, "node-1", null);
-    expect(state.definition.nodes[0].region_id).toBeNull();
+    expect(state.definition.nodes[0]!.region_id).toBeNull();
 
     state = markSaved(state);
     expect(state.dirty).toBe(false);
@@ -169,14 +169,14 @@ describe("editor state mutations", () => {
     state = addNode(state, "simulation", { x: 200, y: 300 }, null);
 
     state = moveRegionWithChildren(state, "region-1", { x: 100, y: 50 });
-    expect(state.definition.regions[0].rect).toEqual({
+    expect(state.definition.regions[0]!.rect).toEqual({
       x: 100,
       y: 50,
       width: 800,
       height: 600,
     });
-    expect(state.definition.nodes[0].position).toEqual({ x: 140, y: 110 });
-    expect(state.definition.nodes[1].position).toEqual({ x: 200, y: 300 });
+    expect(state.definition.nodes[0]!.position).toEqual({ x: 140, y: 110 });
+    expect(state.definition.nodes[1]!.position).toEqual({ x: 200, y: 300 });
   });
 
   it("调整区域尺寸不移动内部节点", () => {
@@ -189,13 +189,13 @@ describe("editor state mutations", () => {
     });
     state = addNode(state, "character", { x: 40, y: 60 }, "region-1");
     state = resizeRegion(state, "region-1", { x: 0, y: 0, width: 1000, height: 700 });
-    expect(state.definition.regions[0].rect).toEqual({
+    expect(state.definition.regions[0]!.rect).toEqual({
       x: 0,
       y: 0,
       width: 1000,
       height: 700,
     });
-    expect(state.definition.nodes[0].position).toEqual({ x: 40, y: 60 });
+    expect(state.definition.nodes[0]!.position).toEqual({ x: 40, y: 60 });
   });
 
   it("resizeNode 按轴合并写入节点画布几何", () => {
@@ -203,7 +203,7 @@ describe("editor state mutations", () => {
     state = addNode(state, "member_table", { x: 0, y: 0 }, null);
     state = resizeNode(state, "node-1", { width: 800 });
     state = resizeNode(state, "node-1", { height: 500 });
-    expect(state.definition.nodes[0].size).toEqual({ width: 800, height: 500 });
+    expect(state.definition.nodes[0]!.size).toEqual({ width: 800, height: 500 });
   });
 });
 
@@ -314,8 +314,8 @@ describe("批量删除与微移", () => {
     state = addNode(state, "target", { x: 30, y: 40 }, "region-1");
     state = setSelection(state, { nodes: ["node-1", "node-2"], regions: [], edges: [] });
     state = nudgeSelection(state, 10, 0);
-    expect(state.definition.nodes[0].position).toEqual({ x: 20, y: 20 });
-    expect(state.definition.nodes[1].position).toEqual({ x: 40, y: 40 });
+    expect(state.definition.nodes[0]!.position).toEqual({ x: 20, y: 20 });
+    expect(state.definition.nodes[1]!.position).toEqual({ x: 40, y: 40 });
     expect(state.past).toHaveLength(4);
   });
 
@@ -336,12 +336,12 @@ describe("批量删除与微移", () => {
     });
 
     state = moveNodeWithRegion(state, "node-1", { x: 900, y: 900 }, null);
-    expect(state.definition.nodes[0].region_id).toBeNull();
-    expect(state.definition.nodes[0].position).toEqual({ x: 900, y: 900 });
+    expect(state.definition.nodes[0]!.region_id).toBeNull();
+    expect(state.definition.nodes[0]!.position).toEqual({ x: 900, y: 900 });
     expect(state.definition.edges).toEqual([]);
 
     state = moveNodeWithRegion(state, "node-1", { x: 10, y: 10 }, "region-1");
-    expect(state.definition.nodes[0].region_id).toBe("region-1");
+    expect(state.definition.nodes[0]!.region_id).toBe("region-1");
   });
 
   it("画布级节点拖动后保留连线", () => {
@@ -367,9 +367,9 @@ describe("批量删除与微移", () => {
     });
 
     state = moveNodeWithRegion(state, "node-1", { x: 1200, y: 700 }, null);
-    expect(state.definition.nodes[0].position).toEqual({ x: 1200, y: 700 });
+    expect(state.definition.nodes[0]!.position).toEqual({ x: 1200, y: 700 });
     expect(state.definition.edges).toHaveLength(1);
-    expect(state.definition.edges[0].target_node_id).toBe("node-1");
+    expect(state.definition.edges[0]!.target_node_id).toBe("node-1");
   });
 });
 

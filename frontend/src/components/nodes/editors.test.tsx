@@ -147,7 +147,7 @@ describe("固定路径节点的编辑器", () => {
     fireEvent.blur(slider);
     expect(onChange).toHaveBeenCalledWith(
       expect.objectContaining({
-        talents: expect.objectContaining({ elemental_burst: 9 }),
+        talents: { normal_attack: 1, elemental_skill: 1, elemental_burst: 9 },
       }),
     );
   });
@@ -440,11 +440,11 @@ describe("按键轨迹编辑器", () => {
     dragPaletteTo(container, "E", 96);
 
     expect(onChange).toHaveBeenCalledTimes(1);
-    const params = onChange.mock.calls[0][0] as { items: TraceEventItem[] };
+    const params = onChange.mock.calls[0]![0] as { items: TraceEventItem[] };
     expect(params.items).toHaveLength(2);
-    expect(params.items[0].events[0]).toEqual({ key: "keyboard.e", phase: "press" });
-    expect(params.items[1].events[0]).toEqual({ key: "keyboard.e", phase: "release" });
-    expect(params.items[1].frame - params.items[0].frame).toBe(15);
+    expect(params.items[0]!.events[0]).toEqual({ key: "keyboard.e", phase: "press" });
+    expect(params.items[1]!.events[0]).toEqual({ key: "keyboard.e", phase: "release" });
+    expect(params.items[1]!.frame - params.items[0]!.frame).toBe(15);
   });
 
   it("拖拽时幽灵块跟随指针", () => {

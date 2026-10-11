@@ -134,7 +134,7 @@ function renderView(
   node: WorkflowNode,
   definition: WorkflowDefinition,
   table: AnalysisTableResult,
-  select?: (nodeId: string, item: unknown | null) => void,
+  select?: (nodeId: string, item: unknown) => void,
 ) {
   return render(
     <AnalysisSelectionContext.Provider

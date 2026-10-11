@@ -164,7 +164,7 @@ export function AggregateEditor({ node, onChange }: EditorProps) {
             row={row}
             shape={shape}
             types={types}
-            error={errors[index]}
+            error={errors[index] ?? null}
             onChange={(patch) => updateAggregate(index, patch)}
             onRemove={() =>
               onChange({

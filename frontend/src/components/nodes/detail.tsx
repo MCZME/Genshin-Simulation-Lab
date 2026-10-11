@@ -48,7 +48,7 @@ export function AnalysisDetailBody({
       </div>
     );
   }
-  const item = rowToObject(table, table.rows[0]);
+  const item = rowToObject(table, table.rows[0] ?? []);
   switch (node.kind) {
     case "damage_detail":
       return <DamageDetailView item={item} />;
@@ -76,7 +76,7 @@ export function SingleItemBody({ result }: { result: AnalysisNodeResult | undefi
   if (table === undefined || table.rows.length === 0) {
     return <div className="analysis-view-state">无数据（上游为空）</div>;
   }
-  return <KeyValueView title="第一行" data={rowToObject(table, table.rows[0])} />;
+  return <KeyValueView title="第一行" data={rowToObject(table, table.rows[0] ?? [])} />;
 }
 
 function useUpstreamTable(

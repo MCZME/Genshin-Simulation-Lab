@@ -115,8 +115,8 @@ export function backfillPayloadEventTypes(
     if (node.kind !== "fetch" || node.params.source !== "events") {
       return node;
     }
-    const rows = Array.isArray(node.params.payload_columns)
-      ? node.params.payload_columns
+    const rows: unknown[] = Array.isArray(node.params.payload_columns)
+      ? (node.params.payload_columns as unknown[])
       : [];
     let rowChanged = false;
     const nextRows = rows.map((row) => {
@@ -134,7 +134,7 @@ export function backfillPayloadEventTypes(
         return row;
       }
       rowChanged = true;
-      return { ...record, event_type: matches[0].name };
+      return { ...record, event_type: matches[0]!.name };
     });
     if (!rowChanged) {
       return node;

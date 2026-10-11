@@ -195,7 +195,8 @@ function targetFragment(
   // 编辑器按百分数输入（10 表示 10%）；仿真配置契约按小数比例表达（0.1 表示 10%）。
   const resistanceValues: Record<string, number> = {};
   for (const key of RESISTANCE_ELEMENT_KEYS) {
-    resistanceValues[key] = (asNumber(resistance[key]) ?? DEFAULT_TARGET_RESISTANCE[key]) / 100;
+    resistanceValues[key] =
+      (asNumber(resistance[key]) ?? DEFAULT_TARGET_RESISTANCE[key] ?? 0) / 100;
   }
   return {
     item_id: `node:${node.id}`,

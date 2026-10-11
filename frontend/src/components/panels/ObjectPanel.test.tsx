@@ -20,10 +20,10 @@ describe("ObjectPanel", () => {
     const sections = Array.from(document.querySelectorAll(".panel-section"));
     const configSection = sections[1];
     const labels = Array.from(
-      configSection.querySelectorAll(".panel-action-label"),
+      configSection!.querySelectorAll(".panel-action-label"),
     ).map((item) => item.textContent);
     const subtitles = Array.from(
-      configSection.querySelectorAll(".panel-subtitle"),
+      configSection!.querySelectorAll(".panel-subtitle"),
     ).map((item) => item.textContent);
     expect(subtitles).toEqual([
       "运行设置",
@@ -52,10 +52,10 @@ describe("ObjectPanel", () => {
     const sections = Array.from(document.querySelectorAll(".panel-section"));
     const analysisSection = sections[sections.length - 1];
     const labels = Array.from(
-      analysisSection.querySelectorAll(".panel-action-label"),
+      analysisSection!.querySelectorAll(".panel-action-label"),
     ).map((item) => item.textContent);
     const subtitles = Array.from(
-      analysisSection.querySelectorAll(".panel-subtitle"),
+      analysisSection!.querySelectorAll(".panel-subtitle"),
     ).map((item) => item.textContent);
     expect(subtitles).toEqual([
       "数据获取",

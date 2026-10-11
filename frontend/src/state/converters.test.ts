@@ -44,10 +44,10 @@ describe("converters", () => {
     state = addNode(state, "character", { x: 0, y: 0 }, "region-1");
 
     const clone = cloneEditorState(state);
-    clone.definition.nodes[0].params.asset = "character:other";
+    clone.definition.nodes[0]!.params.asset = "character:other";
     clone.selection.nodes.push("node-1");
 
-    expect(state.definition.nodes[0].params.asset).toBe("");
+    expect(state.definition.nodes[0]!.params.asset).toBe("");
     expect(state.selection.nodes).toEqual([]);
     expect(clone.dirty).toBe(state.dirty);
   });
@@ -60,7 +60,7 @@ describe("converters", () => {
         region_id: null,
         position: { x: 0, y: 0 },
         params,
-      }) as WorkflowNode;
+      });
     const definition: WorkflowDefinition = {
       schema_version: 1,
       meta: { name: "迁移" },
@@ -121,8 +121,8 @@ describe("converters", () => {
 
     const state = definitionToEditorState(definition);
 
-    expect(state.definition.nodes[0].params).not.toHaveProperty("frame_min");
-    expect(state.definition.nodes[0].params).not.toHaveProperty("frame_max");
+    expect(state.definition.nodes[0]!.params).not.toHaveProperty("frame_min");
+    expect(state.definition.nodes[0]!.params).not.toHaveProperty("frame_max");
   });
 
   it("旧 table_config 的 width_mode 参数加载时丢弃", () => {
@@ -145,8 +145,8 @@ describe("converters", () => {
 
     const state = definitionToEditorState(definition);
 
-    expect(state.definition.nodes[0].params).not.toHaveProperty("width_mode");
-    expect(state.definition.nodes[0].params.condition_columns).toEqual(["char_key"]);
+    expect(state.definition.nodes[0]!.params).not.toHaveProperty("width_mode");
+    expect(state.definition.nodes[0]!.params.condition_columns).toEqual(["char_key"]);
   });
 
   it("旧表格 auto 宽度快照随单模式化丢弃，fixed 宽度保留", () => {
@@ -252,12 +252,12 @@ describe("converters", () => {
     ];
 
     const next = backfillPayloadEventTypes(definition, eventTypes);
-    const rows = next.nodes[0].params.payload_columns as Record<string, unknown>[];
+    const rows = next.nodes[0]!.params.payload_columns as Record<string, unknown>[];
 
     expect(next).not.toBe(definition);
-    expect(rows[0].event_type).toBe("DAMAGE_RESOLVED");
-    expect(rows[1].event_type).toBeUndefined();
-    expect(rows[2].event_type).toBeUndefined();
+    expect(rows[0]!.event_type).toBe("DAMAGE_RESOLVED");
+    expect(rows[1]!.event_type).toBeUndefined();
+    expect(rows[2]!.event_type).toBeUndefined();
   });
 
   it("无需回填时返回原定义引用", () => {

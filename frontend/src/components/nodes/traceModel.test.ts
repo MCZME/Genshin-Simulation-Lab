@@ -126,9 +126,9 @@ describe("traceModel 布局与同键约束", () => {
       block({ id: "a", key: "keyboard.e", press: 10, release: 25 }),
       block({ id: "b", key: "keyboard.e", press: 40, release: 55 }),
     ];
-    expect(clampMovePress(others[0], 50, 15, others)).toBe(56);
-    expect(clampTraceRelease(others[0], 10, 50, others)).toBe(39);
-    expect(clampTracePress(others[1], 1, 60, others)).toBe(26);
+    expect(clampMovePress(others[0]!, 50, 15, others)).toBe(56);
+    expect(clampTraceRelease(others[0]!, 10, 50, others)).toBe(39);
+    expect(clampTracePress(others[1]!, 1, 60, others)).toBe(26);
   });
 
   it("open 块整体移动后仍保持未闭合", () => {

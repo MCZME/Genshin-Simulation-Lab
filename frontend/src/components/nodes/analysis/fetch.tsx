@@ -953,10 +953,10 @@ function describeLeaf(leaf: SnapshotLeaf, path: string): string {
   let listPos = 0;
   for (let index = 1; index < leaf.labels.length; index++) {
     const label = leaf.labels[index];
-    if (leaf.listLabels.includes(label)) {
+    if (label !== undefined && leaf.listLabels.includes(label)) {
       parts.push(`${label} 第${indices[listPos] ?? 1}个`);
       listPos += 1;
-    } else {
+    } else if (label !== undefined) {
       parts.push(label);
     }
   }

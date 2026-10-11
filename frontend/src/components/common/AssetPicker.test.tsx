@@ -10,7 +10,7 @@ vi.mock("../../api/client", async (importOriginal) => {
   return {
     ...actual,
     searchAssets: vi.fn(),
-    getAsset: vi.fn().mockResolvedValue(null as never),
+    getAsset: vi.fn().mockResolvedValue(null),
   };
 });
 

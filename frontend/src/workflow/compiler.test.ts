@@ -70,23 +70,23 @@ describe("compileConfigurationRegion", () => {
     expect(result.members).toHaveLength(1);
 
     const member = result.members[0];
-    expect(member.item_id).toBe("node:char+node:weapon+node:target");
-    const input = member.input;
+    expect(member!.item_id).toBe("node:char+node:weapon+node:target");
+    const input = member!.input;
     expect(input.schema_version).toBe(2);
     expect(input.kind).toBe("simulation_input");
     const team = input.team as Array<Record<string, unknown>>;
-    expect(team[0].slot).toBe(1);
-    expect(team[0].character).toEqual({
+    expect(team[0]!.slot).toBe(1);
+    expect(team[0]!.character).toEqual({
       asset_key: "character:barbara",
       level: 90,
       constellation: 0,
       talents: { normal_attack: 1, elemental_skill: 1, elemental_burst: 1 },
     });
-    expect(team[0].weapon).toEqual({ asset_key: "weapon:11512", level: 90, refinement: 1 });
+    expect(team[0]!.weapon).toEqual({ asset_key: "weapon:11512", level: 90, refinement: 1 });
     const targets = (input.scene as Record<string, unknown>).targets as Array<
       Record<string, unknown>
     >;
-    expect(targets[0].level).toBe(90);
+    expect(targets[0]!.level).toBe(90);
   });
 
   it("枚举写入 team 槽位后自动补齐 slot 字段", () => {
@@ -107,8 +107,8 @@ describe("compileConfigurationRegion", () => {
 
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
-    const team = result.members[0].input.team as Array<Record<string, unknown>>;
-    expect(team[1].slot).toBe(2);
+    const team = result.members[0]!.input.team as Array<Record<string, unknown>>;
+    expect(team[1]!.slot).toBe(2);
   });
 
   it("目标节点输出稳定 id、展示名、位置与默认抗性", () => {
@@ -128,7 +128,7 @@ describe("compileConfigurationRegion", () => {
 
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
-    const targets = (result.members[0].input.scene as Record<string, unknown>)
+    const targets = (result.members[0]!.input.scene as Record<string, unknown>)
       .targets as Array<Record<string, unknown>>;
     expect(targets[0]).toEqual({
       id: "target_0",
@@ -162,7 +162,7 @@ describe("compileConfigurationRegion", () => {
 
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
-    expect(result.members[0].input.run_options).toEqual({
+    expect(result.members[0]!.input.run_options).toEqual({
       max_frames: 60,
       seed: 42,
     });
@@ -185,7 +185,7 @@ describe("compileConfigurationRegion", () => {
 
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
-    expect(result.members[0].input.run_options).toEqual({
+    expect(result.members[0]!.input.run_options).toEqual({
       max_frames: 60,
       end_condition: "actions_settled",
     });
@@ -205,7 +205,7 @@ describe("compileConfigurationRegion", () => {
 
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
-    expect(result.members[0].input.run_options).toEqual({ max_frames: 60 });
+    expect(result.members[0]!.input.run_options).toEqual({ max_frames: 60 });
   });
 
   it("规则节点全关时输出空激活列表", () => {
@@ -222,7 +222,7 @@ describe("compileConfigurationRegion", () => {
 
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
-    expect(result.members[0].input.rules).toEqual({ active: [] });
+    expect(result.members[0]!.input.rules).toEqual({ active: [] });
   });
 
   it("规则节点输出开关规则与暴击模式对象项", () => {
@@ -242,7 +242,7 @@ describe("compileConfigurationRegion", () => {
 
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
-    expect(result.members[0].input.rules).toEqual({
+    expect(result.members[0]!.input.rules).toEqual({
       active: [
         "start_with_full_energy",
         { rule: "crit_mode", params: { mode: "random" } },
@@ -267,7 +267,7 @@ describe("compileConfigurationRegion", () => {
 
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
-    expect(result.members[0].input.rules).toEqual({ active: [] });
+    expect(result.members[0]!.input.rules).toEqual({ active: [] });
   });
 
   it("目标抗性按百分数输入换算为小数比例", () => {
@@ -287,9 +287,9 @@ describe("compileConfigurationRegion", () => {
 
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
-    const targets = (result.members[0].input.scene as Record<string, unknown>)
+    const targets = (result.members[0]!.input.scene as Record<string, unknown>)
       .targets as Array<Record<string, unknown>>;
-    expect(targets[0].resistance).toEqual({
+    expect(targets[0]!.resistance).toEqual({
       physical: -0.2,
       pyro: 0.3,
       hydro: 0.1,
@@ -319,8 +319,8 @@ describe("compileConfigurationRegion", () => {
 
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
-    const team = result.members[0].input.team as Array<Record<string, unknown>>;
-    expect(team[0].artifacts).toEqual({
+    const team = result.members[0]!.input.team as Array<Record<string, unknown>>;
+    expect(team[0]!.artifacts).toEqual({
       sets: [],
       stats: { crit_rate: 0.311, flat_atk: 311 },
     });
@@ -344,9 +344,9 @@ describe("compileConfigurationRegion", () => {
 
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
-    const team = result.members[0].input.team as Array<Record<string, unknown>>;
-    expect((team[0].role as Record<string, unknown>).asset_key).toBe("character:barbara");
-    expect(team[0].character).toBeUndefined();
+    const team = result.members[0]!.input.team as Array<Record<string, unknown>>;
+    expect((team[0]!.role as Record<string, unknown>).asset_key).toBe("character:barbara");
+    expect(team[0]!.character).toBeUndefined();
   });
 
   it("维度模式枚举节点按维度推导路径写入取值", () => {
@@ -373,7 +373,7 @@ describe("compileConfigurationRegion", () => {
     expect(result.members).toHaveLength(2);
     const constellations = result.members.map((member) => {
       const team = member.input.team as Array<Record<string, unknown>>;
-      return (team[1].character as Record<string, unknown>).constellation;
+      return (team[1]!.character as Record<string, unknown>).constellation;
     });
     expect(constellations).toEqual([0, 6]);
   });
@@ -396,8 +396,8 @@ describe("compileConfigurationRegion", () => {
 
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
-    const team = result.members[0].input.team as Array<Record<string, unknown>>;
-    expect((team[0].weapon as Record<string, unknown>).asset_key).toBe("weapon:11512");
+    const team = result.members[0]!.input.team as Array<Record<string, unknown>>;
+    expect((team[0]!.weapon as Record<string, unknown>).asset_key).toBe("weapon:11512");
   });
 
   it("资产维度枚举与武器节点串联只替换 asset_key 字段", () => {
@@ -437,13 +437,13 @@ describe("compileConfigurationRegion", () => {
     ).toBe(false);
     for (const member of result.members) {
       const team = member.input.team as Array<Record<string, unknown>>;
-      const weapon = team[0].weapon as Record<string, unknown>;
+      const weapon = team[0]!.weapon as Record<string, unknown>;
       expect(weapon.level).toBe(90);
       expect(weapon.refinement).toBe(3);
     }
     const assetKeys = result.members.map((member) => {
       const team = member.input.team as Array<Record<string, unknown>>;
-      return (team[0].weapon as Record<string, unknown>).asset_key;
+      return (team[0]!.weapon as Record<string, unknown>).asset_key;
     });
     expect(assetKeys).toEqual(["weapon:11512", "weapon:14415"]);
   });
@@ -472,8 +472,8 @@ describe("compileConfigurationRegion", () => {
 
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
-    const team = result.members[0].input.team as Array<Record<string, unknown>>;
-    const character = team[0].character as Record<string, unknown>;
+    const team = result.members[0]!.input.team as Array<Record<string, unknown>>;
+    const character = team[0]!.character as Record<string, unknown>;
     expect(character.asset_key).toBe("character:kaeya");
     expect(character.level).toBe(80);
   });
@@ -503,7 +503,7 @@ describe("compileConfigurationRegion", () => {
       const targets = (member.input.scene as Record<string, unknown>).targets as Array<
         Record<string, unknown>
       >;
-      return (targets[0].resistance as Record<string, unknown>).pyro;
+      return (targets[0]!.resistance as Record<string, unknown>).pyro;
     });
     expect(resistances).toEqual([0, 0.2, 0.4]);
   });
@@ -537,16 +537,16 @@ describe("compileConfigurationRegion", () => {
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
     expect(result.members).toHaveLength(8);
-    expect(result.members[0].item_id).toBe("e-1+range:scene.targets[0].level:1");
-    expect(result.members[1].item_id).toBe("e-1+range:scene.targets[0].level:4");
-    expect(result.members[3].item_id).toBe("e-1+range:scene.targets[0].level:10");
-    expect(result.members[4].item_id).toBe("e-2+range:scene.targets[0].level:1");
+    expect(result.members[0]!.item_id).toBe("e-1+range:scene.targets[0].level:1");
+    expect(result.members[1]!.item_id).toBe("e-1+range:scene.targets[0].level:4");
+    expect(result.members[3]!.item_id).toBe("e-1+range:scene.targets[0].level:10");
+    expect(result.members[4]!.item_id).toBe("e-2+range:scene.targets[0].level:1");
 
     const levels = result.members.slice(0, 4).map((member) => {
       const targets = (member.input.scene as Record<string, unknown>).targets as Array<
         Record<string, unknown>
       >;
-      return targets[0].level;
+      return targets[0]!.level;
     });
     expect(levels).toEqual([1, 4, 7, 10]);
   });
@@ -576,7 +576,7 @@ describe("compileConfigurationRegion", () => {
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
     expect(result.members).toHaveLength(1);
-    expect(result.members[0].item_id).toBe("x-2");
+    expect(result.members[0]!.item_id).toBe("x-2");
     expect(result.diagnostics.map((item) => item.code)).toContain("PATH_OVERRIDE");
   });
 
@@ -608,7 +608,7 @@ describe("compileConfigurationRegion", () => {
       const targets = (member.input.scene as Record<string, unknown>).targets as Array<
         Record<string, unknown>
       >;
-      return targets[0].level;
+      return targets[0]!.level;
     });
     expect(levels).toEqual([0.1, 0.2, 0.3]);
   });
@@ -671,8 +671,8 @@ describe("compileConfigurationRegion", () => {
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
     expect(result.members).toHaveLength(1);
-    expect(result.members[0].item_id).toBe("root");
-    expect(result.members[0].input).toEqual(createSimulationInputSkeleton());
+    expect(result.members[0]!.item_id).toBe("root");
+    expect(result.members[0]!.input).toEqual(createSimulationInputSkeleton());
   });
 
   it("元信息节点写入输入文档名称与描述", () => {
@@ -690,7 +690,7 @@ describe("compileConfigurationRegion", () => {
 
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
-    expect(result.members[0].input.meta).toEqual({
+    expect(result.members[0]!.input.meta).toEqual({
       name: "深渊满星队",
       description: "上半间",
     });
@@ -793,14 +793,14 @@ describe("compileConfigurationRegion", () => {
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
     expect(result.members).toHaveLength(1);
-    expect(result.members[0].item_id).toBe("node:char+node:weapon+node:target");
-    const team = result.members[0].input.team as Array<Record<string, unknown>>;
-    expect(team[0].character).toBeDefined();
-    expect(team[0].weapon).toBeDefined();
-    const targets = (result.members[0].input.scene as Record<string, unknown>).targets as Array<
+    expect(result.members[0]!.item_id).toBe("node:char+node:weapon+node:target");
+    const team = result.members[0]!.input.team as Array<Record<string, unknown>>;
+    expect(team[0]!.character).toBeDefined();
+    expect(team[0]!.weapon).toBeDefined();
+    const targets = (result.members[0]!.input.scene as Record<string, unknown>).targets as Array<
       Record<string, unknown>
     >;
-    expect(targets[0].level).toBe(90);
+    expect(targets[0]!.level).toBe(90);
   });
 
   it("链上枚举与区间按不同路径叉乘", () => {
@@ -833,9 +833,9 @@ describe("compileConfigurationRegion", () => {
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
     expect(result.members).toHaveLength(8);
-    expect(result.members[0].item_id).toContain("range:");
-    expect(result.members[0].item_id).toContain("e-1");
-    expect(result.members[1].item_id).toContain("e-2");
+    expect(result.members[0]!.item_id).toContain("range:");
+    expect(result.members[0]!.item_id).toContain("e-1");
+    expect(result.members[1]!.item_id).toContain("e-2");
   });
 
   it("链上同路径后写入者覆盖并警告", () => {
@@ -858,7 +858,7 @@ describe("compileConfigurationRegion", () => {
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
     expect(result.members).toHaveLength(1);
-    expect(result.members[0].item_id).toBe("e-1");
+    expect(result.members[0]!.item_id).toBe("e-1");
     expect(result.diagnostics.map((item) => item.code)).toContain("PATH_OVERRIDE");
   });
 
@@ -883,12 +883,12 @@ describe("compileConfigurationRegion", () => {
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
     expect(result.members).toHaveLength(1);
-    expect(result.members[0].item_id).toBe("node:char+node:target1+node:target2");
-    const targets = (result.members[0].input.scene as Record<string, unknown>).targets as Array<
+    expect(result.members[0]!.item_id).toBe("node:char+node:target1+node:target2");
+    const targets = (result.members[0]!.input.scene as Record<string, unknown>).targets as Array<
       Record<string, unknown>
     >;
-    expect(targets[0].level).toBe(90);
-    expect(targets[1].level).toBe(80);
+    expect(targets[0]!.level).toBe(90);
+    expect(targets[1]!.level).toBe(80);
   });
 
   it("多输入节点合并不同路径片段", () => {
@@ -912,14 +912,14 @@ describe("compileConfigurationRegion", () => {
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
     expect(result.members).toHaveLength(1);
-    expect(result.members[0].item_id).toBe("node:char+node:weapon+node:target");
-    const team = result.members[0].input.team as Array<Record<string, unknown>>;
-    expect(team[0].character).toBeDefined();
-    expect(team[0].weapon).toBeDefined();
-    const targets = (result.members[0].input.scene as Record<string, unknown>).targets as Array<
+    expect(result.members[0]!.item_id).toBe("node:char+node:weapon+node:target");
+    const team = result.members[0]!.input.team as Array<Record<string, unknown>>;
+    expect(team[0]!.character).toBeDefined();
+    expect(team[0]!.weapon).toBeDefined();
+    const targets = (result.members[0]!.input.scene as Record<string, unknown>).targets as Array<
       Record<string, unknown>
     >;
-    expect(targets[0].level).toBe(90);
+    expect(targets[0]!.level).toBe(90);
   });
 
   it("多输入同路径覆盖并警告", () => {
@@ -954,7 +954,7 @@ describe("compileConfigurationRegion", () => {
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
     expect(result.members).toHaveLength(4);
-    expect(result.members[0].item_id).toBe("x-2+range:scene.targets[0].level:1");
+    expect(result.members[0]!.item_id).toBe("x-2+range:scene.targets[0].level:1");
     expect(result.diagnostics.map((item) => item.code)).toContain("PATH_OVERRIDE");
   });
 
@@ -991,8 +991,8 @@ describe("compileConfigurationRegion", () => {
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
     expect(result.members).toHaveLength(4);
-    expect(result.members[0].item_id).toBe("a-1+b-1+node:run");
-    expect(result.members[3].item_id).toBe("a-2+b-2+node:run");
+    expect(result.members[0]!.item_id).toBe("a-1+b-1+node:run");
+    expect(result.members[3]!.item_id).toBe("a-2+b-2+node:run");
   });
 
   it("成员投影端口只输出对应成员", () => {
@@ -1022,23 +1022,23 @@ describe("compileConfigurationRegion", () => {
     const result = compileConfigurationRegion(definition, "region-1");
     expect(result.ok).toBe(true);
     expect(result.members).toHaveLength(2);
-    expect(result.members[0].item_id).toBe("x-1+node:target1");
-    expect(result.members[1].item_id).toBe("x-2+node:target2");
-    const firstTeam = result.members[0].input.team as Array<Record<string, unknown>>;
-    expect((firstTeam[0].character as Record<string, unknown>).asset_key).toBe(
+    expect(result.members[0]!.item_id).toBe("x-1+node:target1");
+    expect(result.members[1]!.item_id).toBe("x-2+node:target2");
+    const firstTeam = result.members[0]!.input.team as Array<Record<string, unknown>>;
+    expect((firstTeam[0]!.character as Record<string, unknown>).asset_key).toBe(
       "character:barbara",
     );
-    const secondTeam = result.members[1].input.team as Array<Record<string, unknown>>;
-    expect((secondTeam[0].character as Record<string, unknown>).asset_key).toBe(
+    const secondTeam = result.members[1]!.input.team as Array<Record<string, unknown>>;
+    expect((secondTeam[0]!.character as Record<string, unknown>).asset_key).toBe(
       "character:kaeya",
     );
-    const targets1 = (result.members[0].input.scene as Record<string, unknown>).targets as Array<
+    const targets1 = (result.members[0]!.input.scene as Record<string, unknown>).targets as Array<
       Record<string, unknown>
     >;
-    const targets2 = (result.members[1].input.scene as Record<string, unknown>).targets as Array<
+    const targets2 = (result.members[1]!.input.scene as Record<string, unknown>).targets as Array<
       Record<string, unknown>
     >;
-    expect(targets1[0].level).toBe(90);
-    expect(targets2[1].level).toBe(80);
+    expect(targets1[0]!.level).toBe(90);
+    expect(targets2[1]!.level).toBe(80);
   });
 });

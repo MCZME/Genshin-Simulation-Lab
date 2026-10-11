@@ -16,8 +16,8 @@
 R5），圣遗物仅 ``crit_rate`` 拉满；单目标 90 级；``rules.active`` 启用
 ``crit_mode: random``，使暴击由仿真随机源确定性产生；``input_trace`` 为 21 帧间隔的
 持续普攻；``seed = 20260918``，``max_frames = 1200``。装备等级属性与触发概率/间隔
-取自 ``tests/helpers/barbara.py`` 的**合成**夹具值，不代表任何真实资产数值（见测试
-规范 §3.2）。
+取自 ``tests/helpers/barbara_carrier.py`` 的**合成**夹具值，不代表任何真实资产数值
+（见测试规范 §3.2）。
 
 预期输出与允许误差：产球数量与元素按精确匹配（误差 0）。
 
@@ -36,7 +36,7 @@ from genshin_sim.content import create_default_content_unit_registry
 from genshin_sim.core.events import EventType
 from genshin_sim.core.systems.energy import EnergyElement, EnergyPickupKind
 from genshin_sim.infrastructure.assets_sqlite import SQLiteAssetRepository
-from tests.helpers import barbara as barbara_helpers
+from tests.helpers import barbara_carrier as barbara_helpers
 
 SEED = 20260918
 MAX_FRAMES = 1200

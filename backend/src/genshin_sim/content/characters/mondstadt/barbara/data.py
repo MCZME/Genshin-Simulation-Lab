@@ -97,10 +97,10 @@ ELEMENTAL_SKILL_INPUT = "elemental_skill"
 ELEMENTAL_BURST_INPUT = "elemental_burst"
 JUMP_INPUT = "jump"
 
+BARBARA_HOLD_INPUT_MIN_FRAMES = 30
 
 INPUT_KIND_BY_KEY = {
     "mouse.left": NORMAL_ATTACK_INPUT,
-    "mouse.right": CHARGED_ATTACK_INPUT,
     "keyboard.e": ELEMENTAL_SKILL_INPUT,
     "keyboard.q": ELEMENTAL_BURST_INPUT,
     "keyboard.space": JUMP_INPUT,

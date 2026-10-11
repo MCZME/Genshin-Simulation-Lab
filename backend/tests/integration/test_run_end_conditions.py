@@ -17,7 +17,7 @@ from genshin_sim.content.characters.mondstadt.barbara.data import (
 )
 from genshin_sim.core.simulation import SimulationStopReason
 from genshin_sim.infrastructure.assets_sqlite import SQLiteAssetRepository
-from tests.helpers import barbara as barbara_helpers
+from tests.helpers import barbara_carrier as barbara_helpers
 
 _COOLDOWN_END_FRAME = (
     BARBARA_ELEMENTAL_SKILL_COOLDOWN_START_FRAME + BARBARA_ELEMENTAL_SKILL_COOLDOWN_FRAMES

@@ -128,11 +128,10 @@ ELEMENTAL_SKILL_INPUT = "elemental_skill"
 ELEMENTAL_BURST_INPUT = "elemental_burst"
 JUMP_INPUT = "jump"
 
-# 左键普攻、右键重击（barbara 同款输入位）；特殊战技不占独立输入——施放后
-# 6 秒内 E 键被替换为柔板·破晓终奏（见 actions.py 窗口分派）。
+ODETTE_HOLD_INPUT_MIN_FRAMES = 30
+
 INPUT_KIND_BY_KEY = {
     "mouse.left": NORMAL_ATTACK_INPUT,
-    "mouse.right": CHARGED_ATTACK_INPUT,
     "keyboard.e": ELEMENTAL_SKILL_INPUT,
     "keyboard.q": ELEMENTAL_BURST_INPUT,
     "keyboard.space": JUMP_INPUT,

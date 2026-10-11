@@ -1,7 +1,7 @@
 """以理服人内容单元编译入口。
 
 索引行单元承载这把武器「是什么」并拥有它的效果单元；被动「有话直说」由
-效果行绑定的独立单元实现（``weapon.bloodtainted_greatsword.passive``），
+效果行绑定的独立单元实现（``weapon.debate_club.passive``），
 精炼等级由拥有者提供。
 """
 
@@ -16,20 +16,20 @@ from genshin_sim.content.definitions.content_unit import (
     ContentUnitValidationError,
 )
 from genshin_sim.content.registries import EffectContentUnitRequest, WeaponContentUnitRequest
-from genshin_sim.content.weapons.claymore.bloodtainted_greatsword.data import (
-    BLOODTAINTED_CONTENT_VERSION,
-    BLOODTAINTED_HANDLER_KEY,
-    BLOODTAINTED_PASSIVE_EFFECT_HANDLER_KEY,
-    BLOODTAINTED_PROC_ATTACK_TAG,
-    BLOODTAINTED_PROC_DISPLAY_NAME,
-    BLOODTAINTED_PROC_IMPACT_KEY,
+from genshin_sim.content.weapons.claymore.debate_club.data import (
+    DEBATE_CLUB_CONTENT_VERSION,
+    DEBATE_CLUB_HANDLER_KEY,
+    DEBATE_CLUB_PASSIVE_EFFECT_HANDLER_KEY,
+    DEBATE_CLUB_PROC_ATTACK_TAG,
+    DEBATE_CLUB_PROC_DISPLAY_NAME,
+    DEBATE_CLUB_PROC_IMPACT_KEY,
     FRAMES_PER_SECOND,
     MULTIPLIER_COMPONENT_INDEX,
     PROC_ELEMENT,
     PROC_INTERVAL_SECONDS,
     WINDOW_DURATION_SECONDS,
 )
-from genshin_sim.content.weapons.claymore.bloodtainted_greatsword.hooks import (
+from genshin_sim.content.weapons.claymore.debate_club.hooks import (
     StraightTalkWindowHook,
 )
 from genshin_sim.core.attributes import STAT_ATK_TOTAL
@@ -40,7 +40,7 @@ WINDOW_DURATION_FRAMES = round(WINDOW_DURATION_SECONDS * FRAMES_PER_SECOND)
 PROC_INTERVAL_FRAMES = round(PROC_INTERVAL_SECONDS * FRAMES_PER_SECOND)
 
 
-def create_bloodtainted_greatsword_identity_unit(
+def create_debate_club_identity_unit(
     request: WeaponContentUnitRequest,
 ) -> ContentUnit:
     """以理服人索引行单元：表明这把武器是什么，并拥有它的效果单元。"""
@@ -48,14 +48,14 @@ def create_bloodtainted_greatsword_identity_unit(
     return ContentUnit(
         owner_type=ContentUnitOwnerType.WEAPON,
         owner_key=request.weapon_key,
-        handler_key=BLOODTAINTED_HANDLER_KEY,
-        version=BLOODTAINTED_CONTENT_VERSION,
+        handler_key=DEBATE_CLUB_HANDLER_KEY,
+        version=DEBATE_CLUB_CONTENT_VERSION,
         slot=request.slot,
-        metadata={"purpose": "bloodtainted_greatsword_identity"},
+        metadata={"purpose": "debate_club_identity"},
     )
 
 
-def create_bloodtainted_greatsword_passive_unit(
+def create_debate_club_passive_unit(
     request: EffectContentUnitRequest,
 ) -> ContentUnit:
     """以理服人被动「有话直说」：战技窗口内普攻/重击命中小范围追加伤害。"""
@@ -69,22 +69,22 @@ def create_bloodtainted_greatsword_passive_unit(
         component_index=MULTIPLIER_COMPONENT_INDEX,
         label="追加伤害倍率",
     )
-    impact_key = BLOODTAINTED_PROC_IMPACT_KEY
+    impact_key = DEBATE_CLUB_PROC_IMPACT_KEY
     return ContentUnit(
         owner_type=ContentUnitOwnerType.WEAPON,
         owner_key=request.owner_key,
-        handler_key=BLOODTAINTED_PASSIVE_EFFECT_HANDLER_KEY,
-        version=BLOODTAINTED_CONTENT_VERSION,
+        handler_key=DEBATE_CLUB_PASSIVE_EFFECT_HANDLER_KEY,
+        version=DEBATE_CLUB_CONTENT_VERSION,
         slot=slot,
         event_hooks=(
             StraightTalkWindowHook(
-                handler_key=BLOODTAINTED_PASSIVE_EFFECT_HANDLER_KEY,
+                handler_key=DEBATE_CLUB_PASSIVE_EFFECT_HANDLER_KEY,
                 impact_key=impact_key,
                 owner_ref=owner_ref,
                 slot=slot,
                 damage_spec=DamageImpactSpec(
                     impact_ref=impact_key,
-                    main_attack_tag=BLOODTAINTED_PROC_ATTACK_TAG,
+                    main_attack_tag=DEBATE_CLUB_PROC_ATTACK_TAG,
                     element=PROC_ELEMENT,
                     scaling_terms=(
                         DamageScalingTerm(
@@ -93,13 +93,13 @@ def create_bloodtainted_greatsword_passive_unit(
                             coefficient=multiplier,
                         ),
                     ),
-                    display_name=BLOODTAINTED_PROC_DISPLAY_NAME,
+                    display_name=DEBATE_CLUB_PROC_DISPLAY_NAME,
                 ),
                 window_frames=WINDOW_DURATION_FRAMES,
                 interval_frames=PROC_INTERVAL_FRAMES,
             ),
         ),
-        metadata={"purpose": "bloodtainted_greatsword_passive"},
+        metadata={"purpose": "debate_club_passive"},
     )
 
 

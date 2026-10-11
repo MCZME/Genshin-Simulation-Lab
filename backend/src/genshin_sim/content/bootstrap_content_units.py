@@ -181,11 +181,11 @@ from genshin_sim.content.weapons.claymore.a_teaspoon_of_transcendence import (
     create_a_teaspoon_of_transcendence_identity_unit,
     create_a_teaspoon_of_transcendence_passive_unit,
 )
-from genshin_sim.content.weapons.claymore.bloodtainted_greatsword import (
-    BLOODTAINTED_HANDLER_KEY,
-    BLOODTAINTED_PASSIVE_EFFECT_HANDLER_KEY,
-    create_bloodtainted_greatsword_identity_unit,
-    create_bloodtainted_greatsword_passive_unit,
+from genshin_sim.content.weapons.claymore.debate_club import (
+    DEBATE_CLUB_HANDLER_KEY,
+    DEBATE_CLUB_PASSIVE_EFFECT_HANDLER_KEY,
+    create_debate_club_identity_unit,
+    create_debate_club_passive_unit,
 )
 from genshin_sim.content.weapons.claymore.favonius_greatsword import (
     FAVONIUS_GREATSWORD_HANDLER_KEY,
@@ -386,7 +386,7 @@ def create_default_content_unit_registry(
         (DARK_IRON_SWORD_HANDLER_KEY, create_dark_iron_sword_identity_unit),
         (HALBERD_HANDLER_KEY, create_halberd_identity_unit),
         (FILLET_BLADE_HANDLER_KEY, create_fillet_blade_identity_unit),
-        (BLOODTAINTED_HANDLER_KEY, create_bloodtainted_greatsword_identity_unit),
+        (DEBATE_CLUB_HANDLER_KEY, create_debate_club_identity_unit),
         (TRAVELERS_HANDY_SWORD_HANDLER_KEY, create_travelers_handy_sword_identity_unit),
         (OTHERWORLDLY_STORY_HANDLER_KEY, create_otherworldly_story_identity_unit),
     ):
@@ -409,8 +409,8 @@ def create_default_content_unit_registry(
         (HALBERD_PASSIVE_EFFECT_HANDLER_KEY, create_halberd_passive_unit),
         (FILLET_BLADE_PASSIVE_EFFECT_HANDLER_KEY, create_fillet_blade_passive_unit),
         (
-            BLOODTAINTED_PASSIVE_EFFECT_HANDLER_KEY,
-            create_bloodtainted_greatsword_passive_unit,
+            DEBATE_CLUB_PASSIVE_EFFECT_HANDLER_KEY,
+            create_debate_club_passive_unit,
         ),
         (
             TRAVELERS_HANDY_SWORD_PASSIVE_EFFECT_HANDLER_KEY,

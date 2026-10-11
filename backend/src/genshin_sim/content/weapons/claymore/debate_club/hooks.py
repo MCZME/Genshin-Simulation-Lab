@@ -14,8 +14,8 @@ from dataclasses import replace
 
 from genshin_sim.content.definitions.content_unit import ContentUnitValidationError
 from genshin_sim.content.models import HookResult
-from genshin_sim.content.weapons.claymore.bloodtainted_greatsword.data import (
-    BLOODTAINTED_PROC_IMPACT_KEY,
+from genshin_sim.content.weapons.claymore.debate_club.data import (
+    DEBATE_CLUB_PROC_IMPACT_KEY,
     PROC_AOE_RADIUS,
     PROC_AOE_SHAPE,
     TRIGGER_ABILITY_KEY,
@@ -137,7 +137,7 @@ class StraightTalkWindowHook:
                 ImpactRequest(
                     frame=frame,
                     kind=ImpactKind.DAMAGE,
-                    impact_key=BLOODTAINTED_PROC_IMPACT_KEY,
+                    impact_key=DEBATE_CLUB_PROC_IMPACT_KEY,
                     owner_slot=self._slot,
                     request_id=request_id,
                     target_refs=target_ids,

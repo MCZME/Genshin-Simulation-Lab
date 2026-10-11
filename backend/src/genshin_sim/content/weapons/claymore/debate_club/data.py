@@ -1,5 +1,6 @@
 """以理服人内容数据：稳定键、版本与被动数值口径。
 
+官方英文名：Debate Club。
 资产来源：Project Amber / Yatta 当前默认数据（``weapon:12305``）。
 被动「有话直说」：施放元素战技后，普通攻击和重击命中时会在小范围内额外造成
 攻击力伤害。该效果持续 15 秒，伤害每 3 秒只能触发一次。
@@ -12,15 +13,15 @@ from __future__ import annotations
 
 from genshin_sim.core.elements import Element
 
-BLOODTAINTED_KEY_PREFIX = "weapon.bloodtainted_greatsword"
-BLOODTAINTED_HANDLER_KEY = BLOODTAINTED_KEY_PREFIX
-BLOODTAINTED_PASSIVE_EFFECT_HANDLER_KEY = f"{BLOODTAINTED_KEY_PREFIX}.passive"
-BLOODTAINTED_CONTENT_VERSION = "dev-bloodtainted-greatsword"
+DEBATE_CLUB_KEY_PREFIX = "weapon.debate_club"
+DEBATE_CLUB_HANDLER_KEY = DEBATE_CLUB_KEY_PREFIX
+DEBATE_CLUB_PASSIVE_EFFECT_HANDLER_KEY = f"{DEBATE_CLUB_KEY_PREFIX}.passive"
+DEBATE_CLUB_CONTENT_VERSION = "dev-debate-club"
 
 # proc 命中键与主攻击标签：武器追加伤害使用独立标签，不与普攻/战技混叠。
-BLOODTAINTED_PROC_IMPACT_KEY = f"{BLOODTAINTED_KEY_PREFIX}.proc"
-BLOODTAINTED_PROC_ATTACK_TAG = "武器技能"
-BLOODTAINTED_PROC_DISPLAY_NAME = "有话直说"
+DEBATE_CLUB_PROC_IMPACT_KEY = f"{DEBATE_CLUB_KEY_PREFIX}.proc"
+DEBATE_CLUB_PROC_ATTACK_TAG = "武器技能"
+DEBATE_CLUB_PROC_DISPLAY_NAME = "有话直说"
 
 # 帧率基准：资产效果参数以秒记录时间，运行态以帧推进。
 FRAMES_PER_SECOND = 60

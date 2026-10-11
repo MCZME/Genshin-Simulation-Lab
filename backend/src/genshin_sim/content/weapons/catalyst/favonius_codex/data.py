@@ -7,7 +7,7 @@
 from __future__ import annotations
 
 FAVONIUS_CODEX_HANDLER_KEY = "weapon.favonius_codex"
-FAVONIUS_CODEX_CONTENT_VERSION = "dev-favonius-series"
+FAVONIUS_CODEX_CONTENT_VERSION = "release"
 
 # 效果行 ``weapon:14401:passive:114401`` 的绑定键。行为实现落在武器内容单元上
 # （效果通道不携带精炼等级），该效果行因此按空实现注册。

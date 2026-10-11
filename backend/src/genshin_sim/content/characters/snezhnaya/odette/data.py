@@ -22,7 +22,7 @@ from genshin_sim.core.space import Vector3
 from genshin_sim.core.systems.aura import AuraStrength
 
 ODETTE_CHARACTER_HANDLER_KEY = "character.odette"
-ODETTE_CONTENT_VERSION = "dev"
+ODETTE_CONTENT_VERSION = "release"
 
 # 仿真帧制：全仓库统一 60fps，内容侧秒->帧折算的唯一入口。
 FRAMES_PER_SECOND = 60

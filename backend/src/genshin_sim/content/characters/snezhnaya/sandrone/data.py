@@ -21,7 +21,7 @@ from genshin_sim.core.space import Vector3
 from genshin_sim.core.systems.aura import AuraStrength
 
 SANDRONE_CHARACTER_HANDLER_KEY = "character.sandrone"
-SANDRONE_CONTENT_VERSION = "dev-passives-constellations"
+SANDRONE_CONTENT_VERSION = "release"
 
 # ---------------------------------------------------------------------------
 # 被动与命座。效果行 handler 键对齐 barbara 命名；数值来源为资产效果行 components。

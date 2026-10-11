@@ -40,7 +40,7 @@ from genshin_sim.core.systems.reaction.mechanics.superconduct.mechanic import (
 )
 
 ALYOSHA_CHARACTER_HANDLER_KEY = "character.alyosha"
-ALYOSHA_CONTENT_VERSION = "dev-skeleton"
+ALYOSHA_CONTENT_VERSION = "release"
 
 # ---------------------------------------------------------------------------
 # 被动与命座。效果行 handler 键对齐 sandrone 命名。

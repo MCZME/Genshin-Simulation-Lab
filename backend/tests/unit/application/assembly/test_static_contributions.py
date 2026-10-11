@@ -393,6 +393,9 @@ def test_assembler_binds_runtime_damage_provider_ports():
     RuntimeAssembler._bind_content_runtime_ports(
         cast(Any, _FakeContentBundle((unit,))),
         buff_reader=cast(Any, reader),
+        health_runtime=cast(Any, object()),
+        aura_runtime=cast(Any, object()),
+        reaction_runtime=cast(Any, object()),
     )
 
     assert isinstance(provider.bound_port, TargetBuffPresenceReadAdapter)
@@ -426,6 +429,9 @@ def test_assembler_binds_runtime_event_hook_ports():
     RuntimeAssembler._bind_content_runtime_ports(
         cast(Any, _FakeContentBundle((unit,))),
         buff_reader=cast(Any, _FakeBuffReader()),
+        health_runtime=cast(Any, object()),
+        aura_runtime=cast(Any, object()),
+        reaction_runtime=cast(Any, object()),
     )
 
     assert isinstance(hook.bound_port, TargetBuffPresenceReadAdapter)
@@ -496,6 +502,9 @@ def test_assembler_damage_binding_skips_providers_without_binder():
     RuntimeAssembler._bind_content_runtime_ports(
         cast(Any, _FakeContentBundle((unit,))),
         buff_reader=cast(Any, _FakeBuffReader()),
+        health_runtime=cast(Any, object()),
+        aura_runtime=cast(Any, object()),
+        reaction_runtime=cast(Any, object()),
     )
 
 
@@ -518,4 +527,7 @@ def test_assembler_damage_binding_reports_provider_failure():
         RuntimeAssembler._bind_content_runtime_ports(
             cast(Any, _FakeContentBundle((unit,))),
             buff_reader=cast(Any, _FakeBuffReader()),
+            health_runtime=cast(Any, object()),
+            aura_runtime=cast(Any, object()),
+            reaction_runtime=cast(Any, object()),
         )

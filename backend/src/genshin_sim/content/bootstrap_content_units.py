@@ -2,6 +2,22 @@
 
 from __future__ import annotations
 
+from genshin_sim.content.artifacts.berserker import (
+    BERSERKER_2P_HANDLER_KEY,
+    BERSERKER_4P_HANDLER_KEY,
+    BERSERKER_HANDLER_KEY,
+    create_berserker_four_piece_unit,
+    create_berserker_identity_unit,
+    create_berserker_two_piece_unit,
+)
+from genshin_sim.content.artifacts.blizzard_strayer import (
+    BLIZZARD_STRAYER_2P_HANDLER_KEY,
+    BLIZZARD_STRAYER_4P_HANDLER_KEY,
+    BLIZZARD_STRAYER_HANDLER_KEY,
+    create_blizzard_strayer_four_piece_unit,
+    create_blizzard_strayer_identity_unit,
+    create_blizzard_strayer_two_piece_unit,
+)
 from genshin_sim.content.artifacts.disenchantment_in_deep_shadow import (
     DISENCHANTMENT_IN_DEEP_SHADOW_2P_HANDLER_KEY,
     DISENCHANTMENT_IN_DEEP_SHADOW_4P_HANDLER_KEY,
@@ -9,6 +25,14 @@ from genshin_sim.content.artifacts.disenchantment_in_deep_shadow import (
     create_disenchantment_in_deep_shadow_four_piece_unit,
     create_disenchantment_in_deep_shadow_identity_unit,
     create_disenchantment_in_deep_shadow_two_piece_unit,
+)
+from genshin_sim.content.artifacts.heart_of_depth import (
+    HEART_OF_DEPTH_2P_HANDLER_KEY,
+    HEART_OF_DEPTH_4P_HANDLER_KEY,
+    HEART_OF_DEPTH_HANDLER_KEY,
+    create_heart_of_depth_four_piece_unit,
+    create_heart_of_depth_identity_unit,
+    create_heart_of_depth_two_piece_unit,
 )
 from genshin_sim.content.artifacts.heart_of_the_furnace import (
     HEART_OF_THE_FURNACE_2P_HANDLER_KEY,
@@ -18,6 +42,22 @@ from genshin_sim.content.artifacts.heart_of_the_furnace import (
     create_heart_of_the_furnace_identity_unit,
     create_heart_of_the_furnace_two_piece_unit,
 )
+from genshin_sim.content.artifacts.instructor import (
+    INSTRUCTOR_2P_HANDLER_KEY,
+    INSTRUCTOR_4P_HANDLER_KEY,
+    INSTRUCTOR_HANDLER_KEY,
+    create_instructor_four_piece_unit,
+    create_instructor_identity_unit,
+    create_instructor_two_piece_unit,
+)
+from genshin_sim.content.artifacts.lavawalker import (
+    LAVAWALKER_2P_HANDLER_KEY,
+    LAVAWALKER_4P_HANDLER_KEY,
+    LAVAWALKER_HANDLER_KEY,
+    create_lavawalker_four_piece_unit,
+    create_lavawalker_identity_unit,
+    create_lavawalker_two_piece_unit,
+)
 from genshin_sim.content.artifacts.maiden_beloved import (
     MAIDEN_BELOVED_2P_HANDLER_KEY,
     MAIDEN_BELOVED_4P_HANDLER_KEY,
@@ -25,6 +65,38 @@ from genshin_sim.content.artifacts.maiden_beloved import (
     create_maiden_beloved_four_piece_unit,
     create_maiden_beloved_identity_unit,
     create_maiden_beloved_two_piece_unit,
+)
+from genshin_sim.content.artifacts.noblesse_oblige import (
+    NOBLESSE_OBLIGE_2P_HANDLER_KEY,
+    NOBLESSE_OBLIGE_4P_HANDLER_KEY,
+    NOBLESSE_OBLIGE_HANDLER_KEY,
+    create_noblesse_oblige_four_piece_unit,
+    create_noblesse_oblige_identity_unit,
+    create_noblesse_oblige_two_piece_unit,
+)
+from genshin_sim.content.artifacts.resolution_of_sojourner import (
+    RESOLUTION_OF_SOJOURNER_2P_HANDLER_KEY,
+    RESOLUTION_OF_SOJOURNER_4P_HANDLER_KEY,
+    RESOLUTION_OF_SOJOURNER_HANDLER_KEY,
+    create_resolution_of_sojourner_four_piece_unit,
+    create_resolution_of_sojourner_identity_unit,
+    create_resolution_of_sojourner_two_piece_unit,
+)
+from genshin_sim.content.artifacts.tenacity_of_the_millelith import (
+    TENACITY_OF_THE_MILLELITH_2P_HANDLER_KEY,
+    TENACITY_OF_THE_MILLELITH_4P_HANDLER_KEY,
+    TENACITY_OF_THE_MILLELITH_HANDLER_KEY,
+    create_tenacity_of_the_millelith_four_piece_unit,
+    create_tenacity_of_the_millelith_identity_unit,
+    create_tenacity_of_the_millelith_two_piece_unit,
+)
+from genshin_sim.content.artifacts.thundersoother import (
+    THUNDERSOOTHER_2P_HANDLER_KEY,
+    THUNDERSOOTHER_4P_HANDLER_KEY,
+    THUNDERSOOTHER_HANDLER_KEY,
+    create_thundersoother_four_piece_unit,
+    create_thundersoother_identity_unit,
+    create_thundersoother_two_piece_unit,
 )
 from genshin_sim.content.characters.mondstadt.barbara import (
     BARBARA_CHARACTER_HANDLER_KEY,
@@ -389,6 +461,51 @@ def create_default_content_unit_registry(
         ),
         (HEART_OF_THE_FURNACE_2P_HANDLER_KEY, create_heart_of_the_furnace_two_piece_unit),
         (HEART_OF_THE_FURNACE_4P_HANDLER_KEY, create_heart_of_the_furnace_four_piece_unit),
+        (BERSERKER_HANDLER_KEY, create_berserker_identity_unit),
+        (BERSERKER_2P_HANDLER_KEY, create_berserker_two_piece_unit),
+        (BERSERKER_4P_HANDLER_KEY, create_berserker_four_piece_unit),
+        (BLIZZARD_STRAYER_HANDLER_KEY, create_blizzard_strayer_identity_unit),
+        (BLIZZARD_STRAYER_2P_HANDLER_KEY, create_blizzard_strayer_two_piece_unit),
+        (BLIZZARD_STRAYER_4P_HANDLER_KEY, create_blizzard_strayer_four_piece_unit),
+        (HEART_OF_DEPTH_HANDLER_KEY, create_heart_of_depth_identity_unit),
+        (HEART_OF_DEPTH_2P_HANDLER_KEY, create_heart_of_depth_two_piece_unit),
+        (HEART_OF_DEPTH_4P_HANDLER_KEY, create_heart_of_depth_four_piece_unit),
+        (INSTRUCTOR_HANDLER_KEY, create_instructor_identity_unit),
+        (INSTRUCTOR_2P_HANDLER_KEY, create_instructor_two_piece_unit),
+        (INSTRUCTOR_4P_HANDLER_KEY, create_instructor_four_piece_unit),
+        (LAVAWALKER_HANDLER_KEY, create_lavawalker_identity_unit),
+        (LAVAWALKER_2P_HANDLER_KEY, create_lavawalker_two_piece_unit),
+        (LAVAWALKER_4P_HANDLER_KEY, create_lavawalker_four_piece_unit),
+        (NOBLESSE_OBLIGE_HANDLER_KEY, create_noblesse_oblige_identity_unit),
+        (NOBLESSE_OBLIGE_2P_HANDLER_KEY, create_noblesse_oblige_two_piece_unit),
+        (NOBLESSE_OBLIGE_4P_HANDLER_KEY, create_noblesse_oblige_four_piece_unit),
+        (
+            RESOLUTION_OF_SOJOURNER_HANDLER_KEY,
+            create_resolution_of_sojourner_identity_unit,
+        ),
+        (
+            RESOLUTION_OF_SOJOURNER_2P_HANDLER_KEY,
+            create_resolution_of_sojourner_two_piece_unit,
+        ),
+        (
+            RESOLUTION_OF_SOJOURNER_4P_HANDLER_KEY,
+            create_resolution_of_sojourner_four_piece_unit,
+        ),
+        (
+            TENACITY_OF_THE_MILLELITH_HANDLER_KEY,
+            create_tenacity_of_the_millelith_identity_unit,
+        ),
+        (
+            TENACITY_OF_THE_MILLELITH_2P_HANDLER_KEY,
+            create_tenacity_of_the_millelith_two_piece_unit,
+        ),
+        (
+            TENACITY_OF_THE_MILLELITH_4P_HANDLER_KEY,
+            create_tenacity_of_the_millelith_four_piece_unit,
+        ),
+        (THUNDERSOOTHER_HANDLER_KEY, create_thundersoother_identity_unit),
+        (THUNDERSOOTHER_2P_HANDLER_KEY, create_thundersoother_two_piece_unit),
+        (THUNDERSOOTHER_4P_HANDLER_KEY, create_thundersoother_four_piece_unit),
     ):
         registry.register_artifact_factory(handler_key, factory)
     registry.register_effect_factory(

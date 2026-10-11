@@ -25,6 +25,8 @@ def barbara_assembled(
     def _build(
         *,
         input_key: str = "mouse.left",
+        press_frame: int = 1,
+        release_frame: int = 2,
         max_frames: int = 20,
         constellation: int = 0,
         targets: tuple[dict[str, object], ...] | None = None,
@@ -33,6 +35,8 @@ def barbara_assembled(
         if payload is None:
             payload = barbara_helpers.barbara_input_payload(
                 input_key=input_key,
+                press_frame=press_frame,
+                release_frame=release_frame,
                 max_frames=max_frames,
                 constellation=constellation,
                 targets=targets,

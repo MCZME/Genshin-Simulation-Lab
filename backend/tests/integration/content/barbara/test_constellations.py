@@ -143,9 +143,11 @@ def test_barbara_c2_hydro_bonus_follows_active_character_on_switch(tmp_path: Pat
 
 def test_barbara_c4_restores_per_distinct_target_and_caps(barbara_assembled):
     def _c4_restored_with_targets(count: int) -> float:
+        # 重击为左键长按（分界 30F）：按下 1 帧、释放 31 帧，重击命中在 86 帧。
         assembled = barbara_assembled(
-            input_key="mouse.right",
-            max_frames=80,
+            press_frame=1,
+            release_frame=31,
+            max_frames=120,
             constellation=4,
             targets=tuple(
                 {

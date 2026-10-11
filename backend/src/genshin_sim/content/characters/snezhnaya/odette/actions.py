@@ -20,6 +20,7 @@ from genshin_sim.content.characters.snezhnaya.odette.data import (
     ODETTE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
     ODETTE_ELEMENTAL_SKILL_ACTION_KEY,
     ODETTE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
+    ODETTE_HOLD_INPUT_MIN_FRAMES,
     ODETTE_JUMP_ACTION_KEY,
     ODETTE_NORMAL_ATTACK_ACTION_KEYS,
     ODETTE_PLUNGE_ACTION_KEY,
@@ -124,6 +125,15 @@ class OdetteActionInterpreter:
         self._validate_known_state(last_action_key)
         if last_action_key == ODETTE_PLUNGE_ACTION_KEY and height <= 0:
             last_action_key = ""
+
+        # 左键点按/长按双语义：按住时长达到长按分界即改判重击，据此改走动作表的
+        # 「重击」衔接列。空中左键是下落攻击（游戏内空中不可重击），故下落判定
+        # 先于分界判定。
+        input_kind = self._resolve_attack_input_kind(
+            input_kind,
+            session.held_frames,
+            plunge=self._is_airborne_plunge(last_action_key, height),
+        )
 
         special_window_active = False
         if input_kind == ELEMENTAL_SKILL_INPUT:
@@ -362,6 +372,32 @@ class OdetteActionInterpreter:
             prev_start_frame=last_action_start_frame,
         )
 
+    def _resolve_attack_input_kind(
+        self,
+        input_kind: str,
+        held_frames: int,
+        *,
+        plunge: bool,
+    ) -> str:
+        """左键点按/长按双语义：长按改判重击，点按保持普攻。
+
+        重击不是独立按键——游戏内由左键按住后释放触发，故物理键只映射普攻，
+        重击在此按按住时长派生。空中左键为下落攻击（``plunge``），不再进入
+        分界判定。
+        """
+
+        if plunge or input_kind != NORMAL_ATTACK_INPUT:
+            return input_kind
+        if held_frames >= ODETTE_HOLD_INPUT_MIN_FRAMES:
+            return CHARGED_ATTACK_INPUT
+        return input_kind
+
+    @staticmethod
+    def _is_airborne_plunge(last_action_key: str, height: float) -> bool:
+        """空中左键改判下落攻击；已在下落中不重复起手，回落由同一次下落承载。"""
+
+        return height >= PLUNGE_LOW_AIR_HEIGHT and last_action_key != ODETTE_PLUNGE_ACTION_KEY
+
     def _select_action(
         self,
         input_kind: str,
@@ -370,7 +406,7 @@ class OdetteActionInterpreter:
         special_window_active: bool,
     ) -> TimedActionSpec:
         if input_kind == NORMAL_ATTACK_INPUT:
-            if height >= PLUNGE_LOW_AIR_HEIGHT and last_action_key != ODETTE_PLUNGE_ACTION_KEY:
+            if self._is_airborne_plunge(last_action_key, height):
                 return self._action_table[ODETTE_PLUNGE_ACTION_KEY]
             return self._select_normal_attack_action(last_action_key)
         if input_kind == CHARGED_ATTACK_INPUT:

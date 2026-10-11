@@ -401,11 +401,17 @@ def single_target_scene() -> dict[str, object]:
 def barbara_input_payload(
     *,
     input_key: str = "mouse.left",
+    press_frame: int = 1,
+    release_frame: int = 2,
     max_frames: int = 20,
     constellation: int = 0,
     targets: tuple[dict[str, object], ...] | None = None,
 ) -> dict[str, object]:
-    """芭芭拉单人集成测试配置。"""
+    """芭芭拉单人集成测试配置。
+
+    左键重击为点按/长按双语义：``release_frame - press_frame`` 达到长按分界
+    （``BARBARA_HOLD_INPUT_MIN_FRAMES``）按重击解释，否则按点按普攻解释。
+    """
 
     return {
         "schema_version": 2,
@@ -429,8 +435,8 @@ def barbara_input_payload(
         ],
         "scene": {"targets": list(targets)} if targets else single_target_scene(),
         "input_trace": [
-            {"frame": 1, "events": [{"key": input_key, "phase": "press"}]},
-            {"frame": 2, "events": [{"key": input_key, "phase": "release"}]},
+            {"frame": press_frame, "events": [{"key": input_key, "phase": "press"}]},
+            {"frame": release_frame, "events": [{"key": input_key, "phase": "release"}]},
         ],
         "rules": {"active": []},
         "run_options": {"max_frames": max_frames},

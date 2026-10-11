@@ -14,6 +14,9 @@ HALBERD_PASSIVE_EFFECT_HANDLER_KEY = f"{HALBERD_KEY_PREFIX}.passive"
 HALBERD_CONTENT_VERSION = "dev-halberd"
 
 # proc 命中键与主攻击标签：武器追加伤害使用独立标签，不与普攻/战技混叠。
+# 标签口径说明：武器 proc 资料表中本武器的攻击标签为「-」（空），而仿真契约
+# 要求主攻击标签非空，此处按武器 proc 的通用标签「武器技能」统一处理（与
+# 苍翠猎弓、天空之翼等 proc 资料条目同标签），属于工程口径而非源数据。
 HALBERD_PROC_IMPACT_KEY = f"{HALBERD_KEY_PREFIX}.proc"
 HALBERD_PROC_ATTACK_TAG = "武器技能"
 HALBERD_PROC_DISPLAY_NAME = "沉重"

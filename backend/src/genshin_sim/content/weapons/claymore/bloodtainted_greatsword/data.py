@@ -4,8 +4,8 @@
 被动「有话直说」：施放元素战技后，普通攻击和重击命中时会在小范围内额外造成
 攻击力伤害。该效果持续 15 秒，伤害每 3 秒只能触发一次。
 
-工程约定（不作为游戏真值）：资产效果参数不含 AOE 半径，本内容包按
-2.0 米声明「小范围」；半径取值不得进入 golden 预期。
+AOE 形态取自维护者提供的武器 proc 资料表（圆柱 3.0/0.0，见下方常量注）；
+资产效果参数本身不含 AOE 半径。
 """
 
 from __future__ import annotations
@@ -40,8 +40,10 @@ TRIGGER_ATTACK_TAGS = ("普通攻击", "重击")
 # proc 元素：物理（追加物理伤害）。
 PROC_ELEMENT = Element.PHYSICAL
 
-# 「小范围」AOE 半径：工程约定（资产效果参数不含半径），以命中敌人为锚。
-PROC_AOE_RADIUS = 2.0
+# 「小范围」AOE：圆柱，半径 3.0、高 0.0，以命中敌人为锚（偏移 0,0,0）。
+# 来源：维护者提供的武器 proc 资料表（weapon:12305 条目）。
+PROC_AOE_SHAPE = "圆柱"
+PROC_AOE_RADIUS = 3.0
 
 # 资产效果参数的位置约定：components[0] 是追加伤害的攻击力倍率。
 MULTIPLIER_COMPONENT_INDEX = 0

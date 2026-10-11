@@ -17,6 +17,7 @@ from genshin_sim.content.models import HookResult
 from genshin_sim.content.weapons.claymore.bloodtainted_greatsword.data import (
     BLOODTAINTED_PROC_IMPACT_KEY,
     PROC_AOE_RADIUS,
+    PROC_AOE_SHAPE,
     TRIGGER_ABILITY_KEY,
     TRIGGER_ATTACK_TAGS,
 )
@@ -157,7 +158,7 @@ class StraightTalkWindowHook:
         center = space_runtime.get_entity(center_target_id)
         if center is None:
             return (center_target_id,)
-        area = ImpactAreaSpec(shape="圆柱", radius=PROC_AOE_RADIUS).resolve(
+        area = ImpactAreaSpec(shape=PROC_AOE_SHAPE, radius=PROC_AOE_RADIUS).resolve(
             center.position,
             center.facing,
         )

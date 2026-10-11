@@ -25,7 +25,7 @@ from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
 from genshin_sim.core.systems.reaction.mechanics.swirl import SWIRL_REACTION_KEY
 
 SUCROSE_CHARACTER_HANDLER_KEY = "character.sucrose"
-SUCROSE_CONTENT_VERSION = "dev"
+SUCROSE_CONTENT_VERSION = "release"
 
 SUCROSE_JUMP_ACTION_KEY = "character.sucrose.jump"
 SUCROSE_PLUNGE_ACTION_KEY = "character.sucrose.plunge"

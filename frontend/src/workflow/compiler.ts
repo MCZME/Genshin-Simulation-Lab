@@ -26,14 +26,16 @@ interface FragmentVariant {
 }
 
 /**
- * 数据流中的一份“文档”：记录已应用的片段、变体来源与路径写入者。
- * 成员投影端口按 variants 过滤，覆盖警告按 writers 判定。
+ * 数据流中的一份载荷，分两种血缘：
+ * - 文档血缘（根节点可达）：input 携带根数据骨架与已应用写入；
+ * - 方法血缘（无根数据输入）：input 只含自身链的写入结果，不携带根数据骨架。
+ * 成员投影端口按 variants 过滤，覆盖警告与合并重放按 writers 判定。
  */
 interface FlowDoc {
   input: Record<string, unknown>;
   itemIds: string[];
   variants: Map<string, string>;
-  writers: Map<string, { nodeId: string; edgeId: string }>;
+  writers: Map<string, { nodeId: string; edgeId: string; value: unknown }>;
 }
 
 export interface ExpandedRegion {
@@ -118,56 +120,94 @@ export function expandConfigurationRegion(
     incomingByTarget,
   );
   const upstreamIds = new Set(upstream.map((item) => item.node.id));
+  // 血缘分类按拓扑序传播：从根可达的节点承载文档，其余节点是方法（D-093）。
+  const docLineageNodes = new Set<string>();
   const base = [baseDoc()];
-  const nodeDocs = new Map<string, FlowDoc[]>();
   const edgeDocs = new Map<string, FlowDoc[]>();
+  const edgeMethods = new Map<string, FlowDoc[]>();
   const boundarySets: FlowDoc[][] = [];
+  const boundaryMethodSets: FlowDoc[][] = [];
   const warningSeen = new Set<string>();
 
   for (const { node, edgeId } of upstream) {
-    const inputSets = orderedIncomingEdges(node, incomingByTarget, nodeById)
-      .map((edge) => edgeDocs.get(edge.id) ?? [])
-      .filter((set) => set.length > 0);
-    const inputDocs =
-      inputSets.length === 0 ? base : mergeDocSets(inputSets, diagnostics, warningSeen);
+    const docSets: FlowDoc[][] = [];
+    const methodSets: FlowDoc[][] = [];
+    for (const edge of orderedIncomingEdges(node, incomingByTarget, nodeById)) {
+      const sourceIsDoc = docLineageNodes.has(edge.source_node_id);
+      const payload = sourceIsDoc ? edgeDocs.get(edge.id) : edgeMethods.get(edge.id);
+      if (payload === undefined || payload.length === 0) {
+        continue;
+      }
+      (sourceIsDoc ? docSets : methodSets).push(payload);
+    }
+    const isDocLineage = node.kind === "root" || docSets.length > 0;
+    if (isDocLineage) {
+      docLineageNodes.add(node.id);
+    }
     const variants = nodeVariants(node, definition);
 
     let outputDocs: FlowDoc[];
-    if (variants.length === 0) {
-      outputDocs = inputDocs;
+    if (!isDocLineage && docSets.length === 0 && methodSets.length === 0) {
+      // 独立方法节点：载荷只含自身写入，不携带文档状态。
+      outputDocs = applyNodeVariants(
+        [emptyPartialDoc()],
+        node.id,
+        edgeId,
+        variants,
+        diagnostics,
+        warningSeen,
+      );
     } else {
-      const applied: FlowDoc[] = [];
-      for (const doc of inputDocs) {
-        for (const variant of variants) {
-          applied.push(applyVariant(doc, node.id, edgeId, variant, diagnostics, warningSeen));
-        }
-      }
-      outputDocs = dedupeDocs(applied);
+      // 文档载荷在前、方法载荷在后：方法在接触点修改收到的文档（同路径时节点自身片段最后生效）。
+      const seed = docSets.length > 0 ? [...docSets, ...methodSets] : methodSets;
+      const inputDocs =
+        seed.length > 0 ? mergeDocSets(seed, diagnostics, warningSeen) : base;
+      outputDocs = applyNodeVariants(
+        inputDocs,
+        node.id,
+        edgeId,
+        variants,
+        diagnostics,
+        warningSeen,
+      );
     }
-    nodeDocs.set(node.id, outputDocs);
 
     for (const edge of outgoingBySource.get(node.id) ?? []) {
       if (edge.target_node_id === region.id) {
-        boundarySets.push(outputDocs);
+        if (isDocLineage) {
+          boundarySets.push(outputDocs);
+        } else {
+          boundaryMethodSets.push(outputDocs);
+        }
       } else if (upstreamIds.has(edge.target_node_id)) {
+        const store = isDocLineage ? edgeDocs : edgeMethods;
         if (isProjectionPort(node, edge.source_port_id)) {
           const itemId = projectionItemId(edge.source_port_id);
-          edgeDocs.set(
+          store.set(
             edge.id,
             outputDocs.filter((doc) => doc.variants.get(node.id) === itemId),
           );
         } else {
-          edgeDocs.set(edge.id, outputDocs);
+          store.set(edge.id, outputDocs);
         }
       }
     }
   }
 
+  // 边界汇入：文档集在前、方法载荷在后；边界只收到方法时，方法作用于区域隐式初始文档。
+  const effectiveBoundarySets =
+    boundarySets.length === 0 && boundaryMethodSets.length > 0 ? [base] : boundarySets;
   const finalDocs = mergeDocSets(
-    boundarySets.filter((set) => set.length > 0),
+    [...effectiveBoundarySets, ...boundaryMethodSets].filter((set) => set.length > 0),
     diagnostics,
     warningSeen,
   );
+  if (finalDocs.length === 0) {
+    diagnostics.push(
+      compileError("EMPTY_REGION", "配置区域没有产出有效输入文档，阻止运行"),
+    );
+    return fail(diagnostics);
+  }
   if (finalDocs.length > MAX_BATCH_MEMBERS) {
     diagnostics.push(
       compileError(
@@ -228,6 +268,7 @@ export function compileConfigurationRegion(
   };
 }
 
+/** 根数据初始形态：根节点出发的文档与「边界只收到方法」时的隐式初始文档都从这里开始。 */
 function baseDoc(): FlowDoc {
   return {
     input: createSimulationInputSkeleton(),
@@ -237,12 +278,38 @@ function baseDoc(): FlowDoc {
   };
 }
 
+/** 方法载荷的空种子：只承载写入，不携带根数据骨架。 */
+function emptyPartialDoc(): FlowDoc {
+  return { input: {}, itemIds: [], variants: new Map(), writers: new Map() };
+}
+
 function nodeVariants(node: WorkflowNode, definition: WorkflowDefinition): FragmentVariant[] {
   if (node.kind === "enum" || node.kind === "range") {
     return groupFragments(node);
   }
   const single = singleFragment(node, definition);
   return single === null ? [] : [single];
+}
+
+/** 节点自身片段按变体应用到每份输入载荷；无片段时原样透传。 */
+function applyNodeVariants(
+  inputDocs: FlowDoc[],
+  nodeId: string,
+  edgeId: string,
+  variants: FragmentVariant[],
+  diagnostics: Diagnostic[],
+  warningSeen: Set<string>,
+): FlowDoc[] {
+  if (variants.length === 0) {
+    return inputDocs;
+  }
+  const applied: FlowDoc[] = [];
+  for (const doc of inputDocs) {
+    for (const variant of variants) {
+      applied.push(applyVariant(doc, nodeId, edgeId, variant, diagnostics, warningSeen));
+    }
+  }
+  return dedupeDocs(applied);
 }
 
 function applyVariant(
@@ -262,7 +329,7 @@ function applyVariant(
   const input = structuredClone(doc.input);
   setPath(input, variant.path, variant.value);
   const writers = new Map(doc.writers);
-  writers.set(variant.path, { nodeId, edgeId });
+  writers.set(variant.path, { nodeId, edgeId, value: variant.value });
   const itemIds = dropItemIds(doc, overriddenNodes);
   itemIds.push(variant.item_id);
   return {
@@ -289,7 +356,8 @@ function mergeDocSets(
 }
 
 /**
- * 两路输入合并：不同写入者的同路径片段后生效者覆盖（并警告）；
+ * 两路载荷合并：右侧有写入者记录的路径按记录整值重放到左侧（后写入者覆盖并警告）；
+ * 未被写入的骨架状态不参与跨载荷传播，方法载荷因此不会把空默认值带进文档。
  * 同一节点的不同变体视为互斥备选，保持为独立文档而不是互相覆盖。
  */
 function mergeTwo(
@@ -305,31 +373,45 @@ function mergeTwo(
         merged.push(leftDoc, rightDoc);
         continue;
       }
-      const writers = new Map(leftDoc.writers);
-      const overriddenNodes = new Set<string>();
-      for (const [path, writer] of rightDoc.writers) {
-        const previous = writers.get(path);
-        if (previous !== undefined && previous.nodeId !== writer.nodeId) {
-          overriddenNodes.add(previous.nodeId);
-          emitOverride(diagnostics, warningSeen, path, previous, writer);
-        }
-        writers.set(path, writer);
-      }
-      const sharedNodeIds = [...leftDoc.variants.keys()].filter((nodeId) =>
-        rightDoc.variants.has(nodeId),
-      );
-      const rightItemIds = rightDoc.itemIds.filter((itemId) =>
-        sharedNodeIds.every((nodeId) => rightDoc.variants.get(nodeId) !== itemId),
-      );
-      merged.push({
-        input: deepMerge(leftDoc.input, rightDoc.input),
-        itemIds: [...dropItemIds(leftDoc, overriddenNodes), ...rightItemIds],
-        variants: new Map([...leftDoc.variants, ...rightDoc.variants]),
-        writers,
-      });
+      merged.push(mergeWrites(leftDoc, rightDoc, diagnostics, warningSeen));
     }
   }
   return dedupeDocs(merged);
+}
+
+/** 把 right 的全部写入重放到 left 上，产出合并文档；两侧输入均不被修改。 */
+function mergeWrites(
+  left: FlowDoc,
+  right: FlowDoc,
+  diagnostics: Diagnostic[],
+  warningSeen: Set<string>,
+): FlowDoc {
+  const writers = new Map(left.writers);
+  const overriddenNodes = new Set<string>();
+  for (const [path, writer] of right.writers) {
+    const previous = writers.get(path);
+    if (previous !== undefined && previous.nodeId !== writer.nodeId) {
+      overriddenNodes.add(previous.nodeId);
+      emitOverride(diagnostics, warningSeen, path, previous, writer);
+    }
+    writers.set(path, writer);
+  }
+  const input = structuredClone(left.input);
+  for (const [path, writer] of right.writers) {
+    setPath(input, path, writer.value);
+  }
+  const sharedNodeIds = [...left.variants.keys()].filter((nodeId) =>
+    right.variants.has(nodeId),
+  );
+  const rightItemIds = right.itemIds.filter((itemId) =>
+    sharedNodeIds.every((nodeId) => right.variants.get(nodeId) !== itemId),
+  );
+  return {
+    input,
+    itemIds: [...dropItemIds(left, overriddenNodes), ...rightItemIds],
+    variants: new Map([...left.variants, ...right.variants]),
+    writers,
+  };
 }
 
 function dropItemIds(doc: FlowDoc, nodeIds: Set<string>): string[] {
@@ -380,52 +462,6 @@ function emitOverride(
       path,
     ),
   );
-}
-
-function deepMerge(
-  base: Record<string, unknown>,
-  override: Record<string, unknown>,
-): Record<string, unknown> {
-  const result = structuredClone(base);
-  mergeInto(result, override);
-  return result;
-}
-
-function mergeInto(
-  target: Record<string, unknown>,
-  source: Record<string, unknown>,
-): void {
-  for (const [key, value] of Object.entries(source)) {
-    if (isPlainObject(value) && isPlainObject(target[key])) {
-      mergeInto(target[key], value);
-    } else if (Array.isArray(value) && Array.isArray(target[key])) {
-      mergeArrays(target[key] as unknown[], value);
-    } else {
-      target[key] = structuredClone(value);
-    }
-  }
-}
-
-function mergeArrays(target: unknown[], source: unknown[]): void {
-  const length = Math.max(target.length, source.length);
-  for (let index = 0; index < length; index += 1) {
-    const targetValue = target[index];
-    const sourceValue = source[index];
-    if (index >= target.length) {
-      target.push(structuredClone(sourceValue));
-    } else if (sourceValue === undefined) {
-      // 源数组的未写入槽位保留目标槽位（跳号索引写入产生的空洞）。
-      continue;
-    } else if (isPlainObject(targetValue) && isPlainObject(sourceValue)) {
-      mergeInto(targetValue, sourceValue);
-    } else {
-      target[index] = structuredClone(sourceValue);
-    }
-  }
-}
-
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function dedupeDocs(docs: FlowDoc[]): FlowDoc[] {

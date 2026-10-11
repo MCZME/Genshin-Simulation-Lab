@@ -4,6 +4,14 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from genshin_sim.content.generic.character_actions import (
+    ELEMENTAL_BURST_INPUT,
+    ELEMENTAL_SKILL_INPUT,
+    JUMP_INPUT,
+    NORMAL_ATTACK_INPUT,
+    GenericAbilityGate,
+    GenericCharacterActionSpec,
+)
 from genshin_sim.content.generic.plunge import PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE
 from genshin_sim.content.generic.timed_action import TimedActionSpec, TimedImpactPointSpec
 from genshin_sim.core.actions import SearchAreaSpec, TargetingSpec
@@ -156,10 +164,8 @@ SANDRONE_HIT_IMPACT_KEYS = (
     SANDRONE_PLUNGE_LANDING_IMPACT_KEY,
 )
 
-NORMAL_ATTACK_INPUT = "normal_attack"
-ELEMENTAL_SKILL_INPUT = "elemental_skill"
-ELEMENTAL_BURST_INPUT = "elemental_burst"
-JUMP_INPUT = "jump"
+# 输入种类是全部角色动作解释的公共词汇，统一由 generic 定义；本模块按既有
+# 名称再导出，供包内 transitions 与输入映射使用。
 
 # 左键为点按/长按双语义输入：normal_attack 输入种类承载动作衔接表，重击蓄力
 # 语义由解释器叠加——按下即按重击处理（法洁欧前摇切入解算），前摇 36F 内松开
@@ -552,3 +558,36 @@ SANDRONE_ACTION_TABLE: dict[str, TimedActionSpec] = {
         transitions={},
     ),
 }
+
+# --- 通用动作解释器数据面 ---------------------------------------------------
+#
+# 桑多涅无独立重击动作：左键长按语义由法洁欧蓄力状态机承载（按下起蓄、
+# 松开按前摇边界改判），重击不占动作表行，故 charged/hold 均缺省。
+
+SANDRONE_ACTION_SPEC = GenericCharacterActionSpec(
+    display_name="桑多涅",
+    character_handler_key=SANDRONE_CHARACTER_HANDLER_KEY,
+    input_kind_by_session_key=INPUT_KIND_BY_KEY,
+    action_table=SANDRONE_ACTION_TABLE,
+    normal_attack_action_keys=SANDRONE_NORMAL_ATTACK_ACTION_KEYS,
+    plunge_action_key=SANDRONE_PLUNGE_ACTION_KEY,
+    plunge_collision_impact_key=SANDRONE_PLUNGE_COLLISION_IMPACT_KEY,
+    plunge_landing_impact_key=SANDRONE_PLUNGE_LANDING_IMPACT_KEY,
+    elemental_skill_action_key=SANDRONE_ELEMENTAL_SKILL_ACTION_KEY,
+    elemental_burst_action_key=SANDRONE_ELEMENTAL_BURST_ACTION_KEY,
+    jump_action_key=SANDRONE_JUMP_ACTION_KEY,
+    ability_gates=(
+        GenericAbilityGate(
+            input_kind=ELEMENTAL_SKILL_INPUT,
+            ability_key="elemental_skill",
+            blocked_message="桑多涅元素战技冷却未就绪",
+        ),
+        GenericAbilityGate(
+            input_kind=ELEMENTAL_BURST_INPUT,
+            ability_key="elemental_burst",
+            blocked_message="桑多涅元素爆发冷却或能量未就绪",
+        ),
+    ),
+    action_kind_param_name="sandrone_action_kind",
+    hit_frame_param_name="sandrone_hit_frame",
+)

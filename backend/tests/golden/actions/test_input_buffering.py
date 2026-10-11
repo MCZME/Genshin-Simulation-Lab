@@ -16,13 +16,14 @@ from typing import cast
 
 from genshin_sim.content.characters.snezhnaya.alyosha.actions import (
     AlyoshaActionInterpreter,
-    create_alyosha_actions,
 )
 from genshin_sim.content.characters.snezhnaya.alyosha.data import (
+    ALYOSHA_ACTION_SPEC,
     ALYOSHA_CHARACTER_HANDLER_KEY,
     ALYOSHA_NORMAL_ATTACK_ACTION_KEYS,
 )
 from genshin_sim.content.generic.chain_state import chain_state_schema
+from genshin_sim.content.generic.character_actions import compile_character_actions
 from genshin_sim.content.state_container import StatePatchIntentHandler
 from genshin_sim.core.actions import (
     ActionInterpreterRegistry,
@@ -122,7 +123,7 @@ def _build_runtime() -> tuple[ActionManager, SimulationContext, IntentSettlement
     manager = ActionManager(
         input_trace=InputTraceCompiler().compile(_click_frames()),
         interpreter_registry=registry,
-        action_registry=ActionRegistry(create_alyosha_actions()),
+        action_registry=ActionRegistry(compile_character_actions(ALYOSHA_ACTION_SPEC)),
     )
     return manager, context, settlement
 

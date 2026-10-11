@@ -10,6 +10,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from genshin_sim.content.generic.character_actions import (
+    ELEMENTAL_BURST_INPUT,
+    ELEMENTAL_SKILL_INPUT,
+    NORMAL_ATTACK_INPUT,
+    GenericAbilityGate,
+    GenericCharacterActionSpec,
+)
 from genshin_sim.content.generic.plunge import PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE
 from genshin_sim.content.generic.timed_action import TimedActionSpec, TimedImpactPointSpec
 from genshin_sim.core.actions import SearchAreaSpec, TargetingSpec
@@ -98,9 +105,9 @@ ALYOSHA_HIT_IMPACT_KEYS = (
     ALYOSHA_PLUNGE_LANDING_IMPACT_KEY,
 )
 
-NORMAL_ATTACK_INPUT = "normal_attack"
-ELEMENTAL_SKILL_INPUT = "elemental_skill"
-ELEMENTAL_BURST_INPUT = "elemental_burst"
+# 输入种类是全部角色动作解释的公共词汇，统一由 generic 定义；本模块按既有
+# 名称再导出，供包内 transitions 与输入映射使用。阿罗夏不映射跳跃（未接入），
+# 长按改判发生在选择层（长柄重击骑普攻衔接列、E 长按释放阶段），见 actions.py。
 
 INPUT_KIND_BY_KEY = {
     "mouse.left": NORMAL_ATTACK_INPUT,
@@ -539,3 +546,36 @@ ALYOSHA_PARTICLE_ELEMENT = Element.ELECTRO
 ALYOSHA_PARTICLE_COUNT = 5
 ALYOSHA_PARTICLE_COOLDOWN_FRAMES = 30
 ALYOSHA_PARTICLE_TRAVEL_FRAMES = 30
+
+# --- 通用动作解释器数据面 ---------------------------------------------------
+#
+# 阿罗夏不声明独立重击输入语义：长柄重击自带一段普攻前段，衔接判定继续走
+# 普攻衔接列，选择层按按住时长改判重击动作（长柄通用形式，见 actions.py）；
+# E 长按释放阶段动作同理。两者均缺省 charged/hold 字段。跳跃未接入。
+
+ALYOSHA_ACTION_SPEC = GenericCharacterActionSpec(
+    display_name="阿罗夏",
+    character_handler_key=ALYOSHA_CHARACTER_HANDLER_KEY,
+    input_kind_by_session_key=INPUT_KIND_BY_KEY,
+    action_table=ALYOSHA_ACTION_TABLE,
+    normal_attack_action_keys=ALYOSHA_NORMAL_ATTACK_ACTION_KEYS,
+    plunge_action_key=ALYOSHA_PLUNGE_ACTION_KEY,
+    plunge_collision_impact_key=ALYOSHA_PLUNGE_COLLISION_IMPACT_KEY,
+    plunge_landing_impact_key=ALYOSHA_PLUNGE_LANDING_IMPACT_KEY,
+    elemental_skill_action_key=ALYOSHA_ELEMENTAL_SKILL_ACTION_KEY,
+    elemental_burst_action_key=ALYOSHA_ELEMENTAL_BURST_ACTION_KEY,
+    ability_gates=(
+        GenericAbilityGate(
+            input_kind=ELEMENTAL_SKILL_INPUT,
+            ability_key=ALYOSHA_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
+            blocked_message="阿罗夏元素战技冷却未就绪",
+        ),
+        GenericAbilityGate(
+            input_kind=ELEMENTAL_BURST_INPUT,
+            ability_key=ALYOSHA_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
+            blocked_message="阿罗夏元素爆发冷却或能量未就绪",
+        ),
+    ),
+    action_kind_param_name="alyosha_action_kind",
+    hit_frame_param_name="alyosha_hit_frame",
+)

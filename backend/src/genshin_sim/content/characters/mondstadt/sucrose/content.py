@@ -4,11 +4,8 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 
-from genshin_sim.content.characters.mondstadt.sucrose.actions import (
-    SucroseActionInterpreter,
-    create_sucrose_actions,
-)
 from genshin_sim.content.characters.mondstadt.sucrose.data import (
+    SUCROSE_ACTION_SPEC,
     SUCROSE_CHARACTER_HANDLER_KEY,
     SUCROSE_CHARGED_ATTACK_IMPACT_KEY,
     SUCROSE_CONTENT_VERSION,
@@ -45,6 +42,10 @@ from genshin_sim.content.definitions.content_unit import (
     ContentUnitValidationError,
 )
 from genshin_sim.content.generic.chain_state import chain_state_schema
+from genshin_sim.content.generic.character_actions import (
+    GenericCharacterActionInterpreter,
+    compile_character_actions,
+)
 from genshin_sim.content.generic.talents import (
     TalentLevelResolver,
     index_talent_scalings,
@@ -203,8 +204,9 @@ def create_sucrose_content_unit(
         handler_key=request.handler_key,
         version=SUCROSE_CONTENT_VERSION,
         slot=request.slot,
-        action_interpreter=SucroseActionInterpreter(),
-        actions=create_sucrose_actions(
+        action_interpreter=GenericCharacterActionInterpreter(SUCROSE_ACTION_SPEC),
+        actions=compile_character_actions(
+            SUCROSE_ACTION_SPEC,
             cooldown_duration_terms=_cooldown_terms_for_actions(request),
         ),
         state_schema=sucrose_state_schema(owner_ref),

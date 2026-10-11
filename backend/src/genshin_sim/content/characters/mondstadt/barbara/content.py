@@ -10,9 +10,9 @@ from collections.abc import Mapping
 
 from genshin_sim.content.characters.mondstadt.barbara.actions import (
     BarbaraActionInterpreter,
-    create_barbara_actions,
 )
 from genshin_sim.content.characters.mondstadt.barbara.data import (
+    BARBARA_ACTION_SPEC,
     BARBARA_CHARACTER_HANDLER_KEY,
     BARBARA_CHARGED_ATTACK_IMPACT_KEY,
     BARBARA_CONTENT_VERSION,
@@ -52,6 +52,7 @@ from genshin_sim.content.definitions.content_unit import (
     ContentUnitValidationError,
 )
 from genshin_sim.content.generic.chain_state import chain_state_schema
+from genshin_sim.content.generic.character_actions import compile_character_actions
 from genshin_sim.content.generic.talents import (
     TalentLevelResolver,
     index_talent_scalings,
@@ -173,7 +174,8 @@ def create_barbara_content_unit(
         version=BARBARA_CONTENT_VERSION,
         slot=request.slot,
         action_interpreter=BarbaraActionInterpreter(),
-        actions=create_barbara_actions(
+        actions=compile_character_actions(
+            BARBARA_ACTION_SPEC,
             cooldown_duration_terms=cooldown_terms_by_ability,
         ),
         state_schema=chain_state_schema(owner_ref),

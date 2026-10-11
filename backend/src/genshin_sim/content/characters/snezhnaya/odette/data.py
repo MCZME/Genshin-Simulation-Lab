@@ -4,6 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from genshin_sim.content.generic.character_actions import (
+    CHARGED_ATTACK_INPUT,
+    ELEMENTAL_BURST_INPUT,
+    ELEMENTAL_SKILL_INPUT,
+    JUMP_INPUT,
+    NORMAL_ATTACK_INPUT,
+    GenericAbilityGate,
+    GenericCharacterActionSpec,
+)
 from genshin_sim.content.generic.plunge import PLUNGE_ATTACK_DATA_BY_WEAPON_TYPE
 from genshin_sim.content.generic.timed_action import TimedActionSpec, TimedImpactPointSpec
 from genshin_sim.core.actions import SearchAreaSpec, TargetingSpec
@@ -122,11 +131,8 @@ ODETTE_HIT_IMPACT_KEYS = (
     ODETTE_PLUNGE_LANDING_IMPACT_KEY,
 )
 
-NORMAL_ATTACK_INPUT = "normal_attack"
-CHARGED_ATTACK_INPUT = "charged_attack"
-ELEMENTAL_SKILL_INPUT = "elemental_skill"
-ELEMENTAL_BURST_INPUT = "elemental_burst"
-JUMP_INPUT = "jump"
+# 输入种类是全部角色动作解释的公共词汇，统一由 generic 定义；本模块按既有
+# 名称再导出，供包内 transitions 与输入映射使用。
 
 ODETTE_HOLD_INPUT_MIN_FRAMES = 30
 
@@ -780,3 +786,35 @@ ODETTE_ACTION_TABLE: dict[str, TimedActionSpec] = {
         transitions={},
     ),
 }
+
+# --- 通用动作解释器数据面 ---------------------------------------------------
+
+ODETTE_ACTION_SPEC = GenericCharacterActionSpec(
+    display_name="奥黛塔",
+    character_handler_key=ODETTE_CHARACTER_HANDLER_KEY,
+    input_kind_by_session_key=INPUT_KIND_BY_KEY,
+    action_table=ODETTE_ACTION_TABLE,
+    normal_attack_action_keys=ODETTE_NORMAL_ATTACK_ACTION_KEYS,
+    plunge_action_key=ODETTE_PLUNGE_ACTION_KEY,
+    plunge_collision_impact_key=ODETTE_PLUNGE_COLLISION_IMPACT_KEY,
+    plunge_landing_impact_key=ODETTE_PLUNGE_LANDING_IMPACT_KEY,
+    elemental_skill_action_key=ODETTE_ELEMENTAL_SKILL_ACTION_KEY,
+    elemental_burst_action_key=ODETTE_ELEMENTAL_BURST_ACTION_KEY,
+    jump_action_key=ODETTE_JUMP_ACTION_KEY,
+    charged_attack_action_key=ODETTE_CHARGED_ATTACK_ACTION_KEY,
+    hold_input_min_frames=ODETTE_HOLD_INPUT_MIN_FRAMES,
+    ability_gates=(
+        GenericAbilityGate(
+            input_kind=ELEMENTAL_SKILL_INPUT,
+            ability_key=ODETTE_ELEMENTAL_SKILL_COOLDOWN_ABILITY_KEY,
+            blocked_message="奥黛塔元素战技冷却未就绪",
+        ),
+        GenericAbilityGate(
+            input_kind=ELEMENTAL_BURST_INPUT,
+            ability_key=ODETTE_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
+            blocked_message="奥黛塔元素爆发冷却或能量未就绪",
+        ),
+    ),
+    action_kind_param_name="odette_action_kind",
+    hit_frame_param_name="odette_hit_frame",
+)

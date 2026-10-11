@@ -6,12 +6,12 @@ from collections.abc import Mapping
 
 from genshin_sim.content.characters.snezhnaya.sandrone.actions import (
     SandroneActionInterpreter,
-    create_sandrone_actions,
 )
 from genshin_sim.content.characters.snezhnaya.sandrone.data import (
     FAGEOU_POWER_RISE_PER_SECOND,
     FAGEOU_RAY_HIT_POWER_GAIN,
     FAGEOU_RAY_INDEX_FACT_KEY,
+    SANDRONE_ACTION_SPEC,
     SANDRONE_C6_UNLOCK_KEY,
     SANDRONE_CHARACTER_HANDLER_KEY,
     SANDRONE_CHARGED_ATTACK_RAY_IMPACT_KEY,
@@ -61,6 +61,7 @@ from genshin_sim.content.definitions.content_unit import (
     ContentUnitOwnerType,
     ContentUnitValidationError,
 )
+from genshin_sim.content.generic.character_actions import compile_character_actions
 from genshin_sim.content.generic.talents import (
     TalentLevelResolver,
     index_talent_scalings,
@@ -260,7 +261,8 @@ def create_sandrone_content_unit(
             p4=p4_values,
             tactics_definition_key=tactics_definition_key,
         ),
-        actions=create_sandrone_actions(
+        actions=compile_character_actions(
+            SANDRONE_ACTION_SPEC,
             cooldown_duration_terms=cooldown_terms_by_ability,
         ),
         state_schema=sandrone_state_schema(owner_ref),

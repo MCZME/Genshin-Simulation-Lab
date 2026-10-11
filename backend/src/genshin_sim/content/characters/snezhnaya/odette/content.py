@@ -6,10 +6,10 @@ from collections.abc import Mapping
 
 from genshin_sim.content.characters.snezhnaya.odette.actions import (
     OdetteActionInterpreter,
-    create_odette_actions,
 )
 from genshin_sim.content.characters.snezhnaya.odette.dance import OdetteDanceReflectionType
 from genshin_sim.content.characters.snezhnaya.odette.data import (
+    ODETTE_ACTION_SPEC,
     ODETTE_C1_EXTRA_AOE_RADIUS,
     ODETTE_C1_EXTRA_CONDUCT_DISPLAY_NAME,
     ODETTE_C1_EXTRA_IMPACT_KEY,
@@ -79,6 +79,7 @@ from genshin_sim.content.definitions.content_unit import (
     ContentUnitValidationError,
 )
 from genshin_sim.content.generic.chain_state import chain_state_schema
+from genshin_sim.content.generic.character_actions import compile_character_actions
 from genshin_sim.content.generic.talents import (
     TalentLevelResolver,
     index_talent_scalings,
@@ -396,7 +397,8 @@ def create_odette_content_unit(
         version=ODETTE_CONTENT_VERSION,
         slot=request.slot,
         action_interpreter=OdetteActionInterpreter(),
-        actions=create_odette_actions(
+        actions=compile_character_actions(
+            ODETTE_ACTION_SPEC,
             cooldown_duration_terms=cooldown_terms_by_ability,
         ),
         state_schema=odette_state_schema(owner_ref),

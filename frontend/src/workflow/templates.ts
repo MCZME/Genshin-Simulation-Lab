@@ -846,21 +846,6 @@ function orderInputsFor(node: WorkflowNode, edgesInto: WorkflowEdge[]): string[]
   return edgesInto.map((edge) => edge.source_node_id).slice(0, 1);
 }
 
-/** 上游形状查询：列选择器的数据源；无法推导时返回空数组。 */
-export function upstreamShape(
-  shapes: Map<string, TableShape[] | null>,
-  definition: WorkflowDefinition,
-  nodeId: string,
-): TableShape[] {
-  const edge = definition.edges.find(
-    (item) => item.target_node_id === nodeId && item.source_node_id !== nodeId,
-  );
-  if (edge === undefined) {
-    return [];
-  }
-  return shapes.get(edge.source_node_id) ?? [];
-}
-
 /** 视图数据输入形状：多条同结构入线取第一条可推导的形状。 */
 export function viewInputShape(
   shapes: Map<string, TableShape[] | null>,

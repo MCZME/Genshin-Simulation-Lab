@@ -13,13 +13,6 @@ const ROLE_CONFIGS: Record<string, RoleConfig[]> = {
     { role: "condition_columns", required: false, list: true },
     { role: "data_columns", required: false, list: true },
   ],
-  timeline_config: [
-    { role: "track", required: true },
-    { role: "start", required: true },
-    { role: "end", required: false },
-    { role: "value", required: false },
-    { role: "label", required: false },
-  ],
   pie_config: [
     { role: "group", required: true },
     { role: "value", required: true },
@@ -34,9 +27,6 @@ const ROLE_CONFIGS: Record<string, RoleConfig[]> = {
 
 /** 绑定角色的可读名：列名即显示名，角色标签统一用业务语义。 */
 const ROLE_LABELS: Record<string, string> = {
-  track: "轨道",
-  start: "起点",
-  end: "终点",
   value: "值列",
   label: "标签列",
   group: "分组列",
@@ -47,9 +37,6 @@ const ROLE_LABELS: Record<string, string> = {
 
 /** 摘要行字段短名：卡顶一行读出当前绑定，未绑定显示「—」。 */
 const SUMMARY_LABELS: Record<string, string> = {
-  track: "轨道",
-  start: "起点",
-  end: "终点",
   value: "值",
   label: "标签",
   group: "分组",

@@ -160,16 +160,18 @@ export async function deleteWorkflow(workflowId: string): Promise<void> {
 
 export async function validateInputs(
   members: BatchMemberPayload[],
+  options: { signal?: AbortSignal } = {},
 ): Promise<ValidateInputsResponse> {
   return request<ValidateInputsResponse>("/inputs/validate", {
     method: "POST",
     body: JSON.stringify({ members }),
+    signal: options.signal,
   });
 }
 
 export async function submitRun(
   members: BatchMemberPayload[],
-  options: { name?: string; concurrency?: number } = {},
+  options: { name?: string; concurrency?: number; signal?: AbortSignal } = {},
 ): Promise<RunStatusResponse> {
   const body: Record<string, unknown> = {
     name: options.name ?? "",
@@ -181,11 +183,17 @@ export async function submitRun(
   return request<RunStatusResponse>("/runs", {
     method: "POST",
     body: JSON.stringify(body),
+    signal: options.signal,
   });
 }
 
-export async function getRun(runId: string): Promise<RunStatusResponse> {
-  return request<RunStatusResponse>(`/runs/${encodeURIComponent(runId)}`);
+export async function getRun(
+  runId: string,
+  options: { signal?: AbortSignal } = {},
+): Promise<RunStatusResponse> {
+  return request<RunStatusResponse>(`/runs/${encodeURIComponent(runId)}`, {
+    signal: options.signal,
+  });
 }
 
 export async function cancelRun(runId: string): Promise<RunStatusResponse> {

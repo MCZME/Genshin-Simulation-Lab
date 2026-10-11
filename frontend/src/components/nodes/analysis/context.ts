@@ -31,8 +31,6 @@ export function getAnalysisEditorEnvironment(): AnalysisEditorEnvironment | null
   return EditorEnvironmentContext.current;
 }
 
-export const ANALYSIS_EDITOR_CONTEXT = Symbol("analysis-editor-context");
-
 export function useContextEnv(): AnalysisEditorEnvironment {
   return (
     EditorEnvironmentContext.current ?? {

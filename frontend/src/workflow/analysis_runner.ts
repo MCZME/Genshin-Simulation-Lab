@@ -296,17 +296,25 @@ export function buildStageRegionPlan(
   };
 }
 
+/** 节点执行请求选项：signal 用于应用卸载/运行取消时中断在途请求。 */
+export interface AnalysisRequestOptions {
+  signal?: AbortSignal;
+}
+
 export type CreateAnalysisContextFn = (
   sessionIds: string[],
+  options?: AnalysisRequestOptions,
 ) => Promise<CreateAnalysisContextResponse>;
 export type ExecuteAnalysisNodeFn = (
   contextId: string,
   execution: NodeExecutionRequest,
+  options?: AnalysisRequestOptions,
 ) => Promise<StageResponse>;
 export type CloseAnalysisContextFn = (contextId: string) => Promise<void>;
 export type MergeAnalysisStagesFn = (
   contextId: string,
   stageIds: string[],
+  options?: AnalysisRequestOptions,
 ) => Promise<StageResponse>;
 
 export interface RegionStageRun {
@@ -348,7 +356,9 @@ export async function runAnalysisRegionStages(
   createContext: CreateAnalysisContextFn = createAnalysisContext,
   closeContext: CloseAnalysisContextFn = closeAnalysisContext,
   mergeStages: MergeAnalysisStagesFn = mergeAnalysisStages,
+  options: AnalysisRequestOptions = {},
 ): Promise<RegionStageRun> {
+  const signal = options.signal;
   const request = buildStageRegionPlan(definition, regionId);
   const results = new Map<string, AnalysisNodeResult>();
   if (request.nodes.length === 0) {
@@ -356,7 +366,7 @@ export async function runAnalysisRegionStages(
   }
   let contextId: string | null;
   try {
-    const created = await createContext(request.session_ids);
+    const created = await createContext(request.session_ids, { signal });
     contextId = created.context_id;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
@@ -396,21 +406,25 @@ export async function runAnalysisRegionStages(
               stage_id: inputStages[0],
             });
           } else {
-            const merged = await mergeStages(contextId, inputStages);
+            const merged = await mergeStages(contextId, inputStages, { signal });
             results.set(node.id, {
               status: "ready",
               stage_id: merged.stage_id,
             });
           }
         } else {
-          const stage = await executeNode(contextId, {
-            node_id: node.id,
-            kind: node.kind,
-            params: node.params,
-            input_stages: node.inputs
-              .map((inputId) => results.get(inputId)?.stage_id)
-              .filter((stageId): stageId is string => stageId !== undefined),
-          });
+          const stage = await executeNode(
+            contextId,
+            {
+              node_id: node.id,
+              kind: node.kind,
+              params: node.params,
+              input_stages: node.inputs
+                .map((inputId) => results.get(inputId)?.stage_id)
+                .filter((stageId): stageId is string => stageId !== undefined),
+            },
+            { signal },
+          );
           results.set(node.id, {
             status: "ready",
             table: toAnalysisTableResult(stage),
@@ -681,7 +695,7 @@ export function viewInputTable(
     return null;
   }
   return {
-    columns: tables[0].columns,
+    columns: tables[0]?.columns ?? [],
     rows: tables.flatMap((table) => table.rows),
     truncated: tables.some((table) => table.truncated),
   };

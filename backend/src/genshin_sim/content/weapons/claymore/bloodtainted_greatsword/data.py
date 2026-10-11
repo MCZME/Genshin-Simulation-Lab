@@ -1,0 +1,47 @@
+"""以理服人内容数据：稳定键、版本与被动数值口径。
+
+资产来源：Project Amber / Yatta 当前默认数据（``weapon:12305``）。
+被动「有话直说」：施放元素战技后，普通攻击和重击命中时会在小范围内额外造成
+攻击力伤害。该效果持续 15 秒，伤害每 3 秒只能触发一次。
+
+工程约定（不作为游戏真值）：资产效果参数不含 AOE 半径，本内容包按
+2.0 米声明「小范围」；半径取值不得进入 golden 预期。
+"""
+
+from __future__ import annotations
+
+from genshin_sim.core.elements import Element
+
+BLOODTAINTED_KEY_PREFIX = "weapon.bloodtainted_greatsword"
+BLOODTAINTED_HANDLER_KEY = BLOODTAINTED_KEY_PREFIX
+BLOODTAINTED_PASSIVE_EFFECT_HANDLER_KEY = f"{BLOODTAINTED_KEY_PREFIX}.passive"
+BLOODTAINTED_CONTENT_VERSION = "dev-bloodtainted-greatsword"
+
+# proc 命中键与主攻击标签：武器追加伤害使用独立标签，不与普攻/战技混叠。
+BLOODTAINTED_PROC_IMPACT_KEY = f"{BLOODTAINTED_KEY_PREFIX}.proc"
+BLOODTAINTED_PROC_ATTACK_TAG = "武器技能"
+BLOODTAINTED_PROC_DISPLAY_NAME = "有话直说"
+
+# 帧率基准：资产效果参数以秒记录时间，运行态以帧推进。
+FRAMES_PER_SECOND = 60
+
+# 文案常量（取自资产效果文案）：
+# - 窗口持续 15 秒；
+# - proc 每 3 秒至多触发一次。
+WINDOW_DURATION_SECONDS = 15.0
+PROC_INTERVAL_SECONDS = 3.0
+
+# 触发面：
+# - 窗口开启：装备者施放元素战技（ability_key 与圣遗物触发面同源）；
+# - proc：普通攻击与重击命中敌人。
+TRIGGER_ABILITY_KEY = "elemental_skill"
+TRIGGER_ATTACK_TAGS = ("普通攻击", "重击")
+
+# proc 元素：物理（追加物理伤害）。
+PROC_ELEMENT = Element.PHYSICAL
+
+# 「小范围」AOE 半径：工程约定（资产效果参数不含半径），以命中敌人为锚。
+PROC_AOE_RADIUS = 2.0
+
+# 资产效果参数的位置约定：components[0] 是追加伤害的攻击力倍率。
+MULTIPLIER_COMPONENT_INDEX = 0

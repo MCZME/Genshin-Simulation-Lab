@@ -151,11 +151,29 @@ from genshin_sim.content.weapons.catalyst.apprentice_notes import (
     APPRENTICE_NOTES_HANDLER_KEY,
     create_apprentice_notes_content_unit,
 )
+from genshin_sim.content.weapons.catalyst.emerald_orb import (
+    EMERALD_ORB_HANDLER_KEY,
+    EMERALD_ORB_PASSIVE_EFFECT_HANDLER_KEY,
+    create_emerald_orb_identity_unit,
+    create_emerald_orb_passive_unit,
+)
 from genshin_sim.content.weapons.catalyst.favonius_codex import (
     FAVONIUS_CODEX_HANDLER_KEY,
     FAVONIUS_CODEX_PASSIVE_EFFECT_HANDLER_KEY,
     create_favonius_codex_identity_unit,
     create_favonius_codex_passive_unit,
+)
+from genshin_sim.content.weapons.catalyst.otherworldly_story import (
+    OTHERWORLDLY_STORY_HANDLER_KEY,
+    OTHERWORLDLY_STORY_PASSIVE_EFFECT_HANDLER_KEY,
+    create_otherworldly_story_identity_unit,
+    create_otherworldly_story_passive_unit,
+)
+from genshin_sim.content.weapons.catalyst.thrilling_tales_of_dragon_slayers import (
+    THRILLING_TALES_HANDLER_KEY,
+    THRILLING_TALES_PASSIVE_EFFECT_HANDLER_KEY,
+    create_thrilling_tales_identity_unit,
+    create_thrilling_tales_passive_unit,
 )
 from genshin_sim.content.weapons.claymore.a_teaspoon_of_transcendence import (
     A_TEASPOON_OF_TRANSCENDENCE_HANDLER_KEY,
@@ -163,11 +181,29 @@ from genshin_sim.content.weapons.claymore.a_teaspoon_of_transcendence import (
     create_a_teaspoon_of_transcendence_identity_unit,
     create_a_teaspoon_of_transcendence_passive_unit,
 )
+from genshin_sim.content.weapons.claymore.bloodtainted_greatsword import (
+    BLOODTAINTED_HANDLER_KEY,
+    BLOODTAINTED_PASSIVE_EFFECT_HANDLER_KEY,
+    create_bloodtainted_greatsword_identity_unit,
+    create_bloodtainted_greatsword_passive_unit,
+)
 from genshin_sim.content.weapons.claymore.favonius_greatsword import (
     FAVONIUS_GREATSWORD_HANDLER_KEY,
     FAVONIUS_GREATSWORD_PASSIVE_EFFECT_HANDLER_KEY,
     create_favonius_greatsword_identity_unit,
     create_favonius_greatsword_passive_unit,
+)
+from genshin_sim.content.weapons.claymore.ferrous_shadow import (
+    FERROUS_SHADOW_HANDLER_KEY,
+    FERROUS_SHADOW_PASSIVE_EFFECT_HANDLER_KEY,
+    create_ferrous_shadow_identity_unit,
+    create_ferrous_shadow_passive_unit,
+)
+from genshin_sim.content.weapons.claymore.skyrider_greatsword import (
+    SKYRIDER_GREATSWORD_HANDLER_KEY,
+    SKYRIDER_GREATSWORD_PASSIVE_EFFECT_HANDLER_KEY,
+    create_skyrider_greatsword_identity_unit,
+    create_skyrider_greatsword_passive_unit,
 )
 from genshin_sim.content.weapons.claymore.waster_greatsword import (
     WASTER_GREATSWORD_HANDLER_KEY,
@@ -183,6 +219,24 @@ from genshin_sim.content.weapons.polearm.favonius_lance import (
     create_favonius_lance_identity_unit,
     create_favonius_lance_passive_unit,
 )
+from genshin_sim.content.weapons.polearm.halberd import (
+    HALBERD_HANDLER_KEY,
+    HALBERD_PASSIVE_EFFECT_HANDLER_KEY,
+    create_halberd_identity_unit,
+    create_halberd_passive_unit,
+)
+from genshin_sim.content.weapons.polearm.white_tassel import (
+    WHITE_TASSEL_HANDLER_KEY,
+    WHITE_TASSEL_PASSIVE_EFFECT_HANDLER_KEY,
+    create_white_tassel_identity_unit,
+    create_white_tassel_passive_unit,
+)
+from genshin_sim.content.weapons.sword.dark_iron_sword import (
+    DARK_IRON_SWORD_HANDLER_KEY,
+    DARK_IRON_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
+    create_dark_iron_sword_identity_unit,
+    create_dark_iron_sword_passive_unit,
+)
 from genshin_sim.content.weapons.sword.dull_blade import (
     DULL_BLADE_HANDLER_KEY,
     create_dull_blade_content_unit,
@@ -192,6 +246,30 @@ from genshin_sim.content.weapons.sword.favonius_sword import (
     FAVONIUS_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
     create_favonius_sword_identity_unit,
     create_favonius_sword_passive_unit,
+)
+from genshin_sim.content.weapons.sword.fillet_blade import (
+    FILLET_BLADE_HANDLER_KEY,
+    FILLET_BLADE_PASSIVE_EFFECT_HANDLER_KEY,
+    create_fillet_blade_identity_unit,
+    create_fillet_blade_passive_unit,
+)
+from genshin_sim.content.weapons.sword.harbinger_of_dawn import (
+    HARBINGER_OF_DAWN_HANDLER_KEY,
+    HARBINGER_OF_DAWN_PASSIVE_EFFECT_HANDLER_KEY,
+    create_harbinger_of_dawn_identity_unit,
+    create_harbinger_of_dawn_passive_unit,
+)
+from genshin_sim.content.weapons.sword.skyrider_sword import (
+    SKYRIDER_SWORD_HANDLER_KEY,
+    SKYRIDER_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
+    create_skyrider_sword_identity_unit,
+    create_skyrider_sword_passive_unit,
+)
+from genshin_sim.content.weapons.sword.travelers_handy_sword import (
+    TRAVELERS_HANDY_SWORD_HANDLER_KEY,
+    TRAVELERS_HANDY_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
+    create_travelers_handy_sword_identity_unit,
+    create_travelers_handy_sword_passive_unit,
 )
 from genshin_sim.content.weapons.sword.whitelake_frostfeather import (
     WHITELAKE_FROSTFEATHER_HANDLER_KEY,
@@ -294,6 +372,56 @@ def create_default_content_unit_registry(
         A_TEASPOON_OF_TRANSCENDENCE_HANDLER_KEY,
         create_a_teaspoon_of_transcendence_identity_unit,
     )
+    # 低星（1~3 星）武器被动：判定、资产参数解读与钩子的共用部件在
+    # ``content/generic/``（命中追加伤害、反应窗口、能量治疗、生命门控等），
+    # 各包只声明自己的键与触发面。
+    for handler_key, factory in (
+        (WHITE_TASSEL_HANDLER_KEY, create_white_tassel_identity_unit),
+        (HARBINGER_OF_DAWN_HANDLER_KEY, create_harbinger_of_dawn_identity_unit),
+        (FERROUS_SHADOW_HANDLER_KEY, create_ferrous_shadow_identity_unit),
+        (SKYRIDER_GREATSWORD_HANDLER_KEY, create_skyrider_greatsword_identity_unit),
+        (SKYRIDER_SWORD_HANDLER_KEY, create_skyrider_sword_identity_unit),
+        (THRILLING_TALES_HANDLER_KEY, create_thrilling_tales_identity_unit),
+        (EMERALD_ORB_HANDLER_KEY, create_emerald_orb_identity_unit),
+        (DARK_IRON_SWORD_HANDLER_KEY, create_dark_iron_sword_identity_unit),
+        (HALBERD_HANDLER_KEY, create_halberd_identity_unit),
+        (FILLET_BLADE_HANDLER_KEY, create_fillet_blade_identity_unit),
+        (BLOODTAINTED_HANDLER_KEY, create_bloodtainted_greatsword_identity_unit),
+        (TRAVELERS_HANDY_SWORD_HANDLER_KEY, create_travelers_handy_sword_identity_unit),
+        (OTHERWORLDLY_STORY_HANDLER_KEY, create_otherworldly_story_identity_unit),
+    ):
+        registry.register_weapon_factory(handler_key, factory)
+    for handler_key, factory in (
+        (WHITE_TASSEL_PASSIVE_EFFECT_HANDLER_KEY, create_white_tassel_passive_unit),
+        (
+            HARBINGER_OF_DAWN_PASSIVE_EFFECT_HANDLER_KEY,
+            create_harbinger_of_dawn_passive_unit,
+        ),
+        (FERROUS_SHADOW_PASSIVE_EFFECT_HANDLER_KEY, create_ferrous_shadow_passive_unit),
+        (
+            SKYRIDER_GREATSWORD_PASSIVE_EFFECT_HANDLER_KEY,
+            create_skyrider_greatsword_passive_unit,
+        ),
+        (SKYRIDER_SWORD_PASSIVE_EFFECT_HANDLER_KEY, create_skyrider_sword_passive_unit),
+        (THRILLING_TALES_PASSIVE_EFFECT_HANDLER_KEY, create_thrilling_tales_passive_unit),
+        (EMERALD_ORB_PASSIVE_EFFECT_HANDLER_KEY, create_emerald_orb_passive_unit),
+        (DARK_IRON_SWORD_PASSIVE_EFFECT_HANDLER_KEY, create_dark_iron_sword_passive_unit),
+        (HALBERD_PASSIVE_EFFECT_HANDLER_KEY, create_halberd_passive_unit),
+        (FILLET_BLADE_PASSIVE_EFFECT_HANDLER_KEY, create_fillet_blade_passive_unit),
+        (
+            BLOODTAINTED_PASSIVE_EFFECT_HANDLER_KEY,
+            create_bloodtainted_greatsword_passive_unit,
+        ),
+        (
+            TRAVELERS_HANDY_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
+            create_travelers_handy_sword_passive_unit,
+        ),
+        (
+            OTHERWORLDLY_STORY_PASSIVE_EFFECT_HANDLER_KEY,
+            create_otherworldly_story_passive_unit,
+        ),
+    ):
+        registry.register_effect_factory(handler_key, factory)
     # 西风系列五把武器各自一个内容包与一个 handler 键；判定、资产参数解读与钩子
     # 实现是共用部件（``content/generic/favonius_windfall.py``），各包只声明自己的键。
     for handler_key, factory in (

@@ -1041,4 +1041,200 @@ describe("compileConfigurationRegion", () => {
     expect(targets1[0]!.level).toBe(90);
     expect(targets2[1]!.level).toBe(80);
   });
+
+  it("方法输入不携带文档状态：圣遗物直连角色不覆盖根链写入", () => {
+    // 复现「奥黛塔测试」工作流缺陷：圣遗物节点无入边直连角色，
+    // 方法载荷不得把骨架默认值（meta.name="" 等）带进文档合并。
+    const nodes = [
+      makeNode("root", "root"),
+      makeNode("meta", "meta", { name: "奥黛塔测试", description: "" }),
+      makeNode("char", "character", { slot: 1, asset: "character:odette" }),
+      makeNode("artifact", "artifact", {
+        slot: 1,
+        sets: [{ asset_key: "artifact_set:15046", pieces: 1 }],
+        stats: { elemental_mastery: 100 },
+      }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const edges = [
+      makeEdge("e1", "root", "out", "meta", "in"),
+      makeEdge("e2", "meta", "out", "char", "in"),
+      makeEdge("e3", "artifact", "out", "char", "in"),
+      makeEdge("e4", "char", "out", "region-1", "out"),
+      makeEdge("e5", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(1);
+    expect(result.diagnostics.map((item) => item.code)).not.toContain("PATH_OVERRIDE");
+    const member = result.members[0]!;
+    expect(member.item_id).toBe("node:meta+node:artifact+node:char");
+    expect(member.input.meta).toEqual({ name: "奥黛塔测试", description: "" });
+    const team = member.input.team as Array<Record<string, unknown>>;
+    expect(team[0]!.character).toBeDefined();
+    expect(team[0]!.artifacts).toEqual({
+      sets: [{ asset_key: "artifact_set:15046", pieces: 1 }],
+      stats: { elemental_mastery: 100 },
+    });
+  });
+
+  it("多条根血缘汇入时骨架默认值不覆盖已写入路径", () => {
+    const nodes = [
+      makeNode("root", "root"),
+      makeNode("meta", "meta", { name: "深渊满星队", description: "" }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const edges = [
+      makeEdge("e1", "root", "out", "meta", "in"),
+      makeEdge("e2", "meta", "out", "region-1", "out"),
+      makeEdge("e3", "root", "out", "region-1", "out"),
+      makeEdge("e4", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(1);
+    expect(result.members[0]!.input.meta).toEqual({ name: "深渊满星队", description: "" });
+  });
+
+  it("同路径文档汇合按写入重放覆盖并警告", () => {
+    const nodes = [
+      makeNode("root", "root"),
+      makeNode("meta-a", "meta", { name: "名称甲", description: "" }),
+      makeNode("meta-b", "meta", { name: "名称乙", description: "备注" }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const edges = [
+      makeEdge("e1", "root", "out", "meta-a", "in"),
+      makeEdge("e2", "meta-a", "out", "region-1", "out"),
+      makeEdge("e3", "root", "out", "meta-b", "in"),
+      makeEdge("e4", "meta-b", "out", "region-1", "out"),
+      makeEdge("e5", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(1);
+    expect(result.members[0]!.item_id).toBe("node:meta-b");
+    expect(result.members[0]!.input.meta).toEqual({ name: "名称乙", description: "备注" });
+    expect(result.diagnostics.map((item) => item.code)).toContain("PATH_OVERRIDE");
+  });
+
+  it("方法链复合后作用于接触文档", () => {
+    const nodes = [
+      makeNode("root", "root"),
+      makeNode("char", "character", { slot: 1, asset: "character:odette" }),
+      makeNode("artifact", "artifact", { slot: 1, sets: [], stats: { crit_rate: 0.311 } }),
+      makeNode("weapon", "weapon", { slot: 1, asset: "weapon:11520" }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const edges = [
+      makeEdge("e1", "root", "out", "char", "in"),
+      makeEdge("e2", "artifact", "out", "weapon", "in"),
+      makeEdge("e3", "weapon", "out", "char", "in"),
+      makeEdge("e4", "char", "out", "region-1", "out"),
+      makeEdge("e5", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(1);
+    expect(result.members[0]!.item_id).toBe("node:artifact+node:weapon+node:char");
+    const team = result.members[0]!.input.team as Array<Record<string, unknown>>;
+    expect(team[0]!.character).toBeDefined();
+    expect((team[0]!.weapon as Record<string, unknown>).asset_key).toBe("weapon:11520");
+    expect(team[0]!.artifacts).toEqual({ sets: [], stats: { crit_rate: 0.311 } });
+  });
+
+  it("方法输入同路径时节点自身片段后生效并警告", () => {
+    const nodes = [
+      makeNode("root", "root"),
+      makeNode("char", "character", { slot: 1, asset: "character:barbara" }),
+      makeNode("enum", "enum", {
+        path: "team[0].character",
+        value_type: "asset",
+        values: [{ item_id: "e-1", value: "character:kaeya", label: null }],
+      }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const edges = [
+      makeEdge("e1", "root", "out", "char", "in"),
+      makeEdge("e2", "enum", "out", "char", "in"),
+      makeEdge("e3", "char", "out", "region-1", "out"),
+      makeEdge("e4", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(1);
+    expect(result.members[0]!.item_id).toBe("node:char");
+    const team = result.members[0]!.input.team as Array<Record<string, unknown>>;
+    expect((team[0]!.character as Record<string, unknown>).asset_key).toBe("character:barbara");
+    expect(result.diagnostics.map((item) => item.code)).toContain("PATH_OVERRIDE");
+  });
+
+  it("枚举方法输入在接触点放大成员", () => {
+    const nodes = [
+      makeNode("root", "root"),
+      makeNode("char", "character", { slot: 1, asset: "character:barbara" }),
+      makeNode("enum", "enum", {
+        path: "team[1].character",
+        value_type: "asset",
+        values: [
+          { item_id: "e-1", value: "character:kaeya", label: null },
+          { item_id: "e-2", value: "character:lisa", label: null },
+        ],
+      }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const edges = [
+      makeEdge("e1", "root", "out", "char", "in"),
+      makeEdge("e2", "enum", "out", "char", "in"),
+      makeEdge("e3", "char", "out", "region-1", "out"),
+      makeEdge("e4", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(2);
+    expect(result.members.map((member) => member.item_id)).toEqual([
+      "e-1+node:char",
+      "e-2+node:char",
+    ]);
+    for (const member of result.members) {
+      const team = member.input.team as Array<Record<string, unknown>>;
+      expect((team[0]!.character as Record<string, unknown>).asset_key).toBe(
+        "character:barbara",
+      );
+      expect(team[1]!.slot).toBe(2);
+    }
+  });
+
+  it("方法汇入边界时作用于隐式初始文档", () => {
+    const nodes = [
+      makeNode("root", "root"),
+      makeNode("artifact", "artifact", { slot: 1, sets: [], stats: { flat_atk: 311 } }),
+      makeNode("sim", "simulation", {}, null),
+    ];
+    const edges = [
+      makeEdge("e1", "root", "out", "region-1", "out"),
+      makeEdge("e2", "artifact", "out", "region-1", "out"),
+      makeEdge("e3", "region-1", "out", "sim", "in"),
+    ];
+    const definition = makeDefinition([makeRegion()], nodes, edges);
+
+    const result = compileConfigurationRegion(definition, "region-1");
+    expect(result.ok).toBe(true);
+    expect(result.members).toHaveLength(1);
+    expect(result.members[0]!.item_id).toBe("node:artifact");
+    const team = result.members[0]!.input.team as Array<Record<string, unknown>>;
+    expect(team[0]!.artifacts).toEqual({ sets: [], stats: { flat_atk: 311 } });
+  });
 });

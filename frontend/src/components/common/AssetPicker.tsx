@@ -22,7 +22,7 @@ type AssetFilters = {
   usableFilter: number | null;
 };
 
-/** 资产详情缓存：同一资产在多个节点中选择时不重复请求；失败结果也缓存为 null。 */
+/** 资产详情缓存：同一资产在多个节点中选择时不重复请求；瞬态失败不缓存以便重试。 */
 const detailCache = new Map<string, Promise<AssetResponse | null>>();
 
 function sourceIdFromAssetKey(assetKey: string): string | null {
@@ -43,10 +43,17 @@ function fetchAssetDetail(
     return cached;
   }
   const sourceId = sourceIdFromAssetKey(assetKey);
-  const promise =
-    sourceId === null
-      ? Promise.resolve(null)
-      : getAsset(assetType, sourceId).catch(() => null);
+  if (sourceId === null) {
+    // 无效引用是永久失败，缓存避免重复解析。
+    const invalid = Promise.resolve<AssetResponse | null>(null);
+    detailCache.set(assetKey, invalid);
+    return invalid;
+  }
+  const promise = getAsset(assetType, sourceId).catch(() => {
+    // 请求失败可能是瞬态网络问题：移除缓存占位，下次选中同一资产时重试。
+    detailCache.delete(assetKey);
+    return null;
+  });
   detailCache.set(assetKey, promise);
   return promise;
 }

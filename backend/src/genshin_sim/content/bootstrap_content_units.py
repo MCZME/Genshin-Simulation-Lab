@@ -372,9 +372,8 @@ def create_default_content_unit_registry(
         A_TEASPOON_OF_TRANSCENDENCE_HANDLER_KEY,
         create_a_teaspoon_of_transcendence_identity_unit,
     )
-    # 低星（1~3 星）武器被动：判定、资产参数解读与钩子的共用部件在
-    # ``content/generic/``（命中追加伤害、反应窗口、能量治疗、生命门控等），
-    # 各包只声明自己的键与触发面。
+    # 低星（1~3 星）武器被动：判定、资产参数解读与钩子在各内容包内自持
+    # （与白湖冬羽的单包结构一致），不设 generic 共享层。
     for handler_key, factory in (
         (WHITE_TASSEL_HANDLER_KEY, create_white_tassel_identity_unit),
         (HARBINGER_OF_DAWN_HANDLER_KEY, create_harbinger_of_dawn_identity_unit),

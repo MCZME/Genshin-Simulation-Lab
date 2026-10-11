@@ -28,10 +28,6 @@ FRAMES_PER_SECOND = 60
 # 触发概率：文案声明为 50%，资产效果参数不含概率，由本内容包声明。
 TRIGGER_PROBABILITY = 0.5
 
-# 触发用主攻击标签：文案为「攻击命中」，即任意直接伤害命中；
-# 传空元组由通用部件按通用公式过滤（排除反应伤害）。
-TRIGGER_ATTACK_TAGS: tuple[str, ...] = ()
-
 # proc 元素：物理（追加物理伤害）。
 PROC_ELEMENT = Element.PHYSICAL
 

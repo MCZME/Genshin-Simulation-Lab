@@ -6,7 +6,7 @@
 角色包只提供数据（``GenericCharacterActionSpec``）与状态挂载；解释器无实例
 可变字段，链状态经 ``state_patch`` 意图提交，与既有解释器口径一致。
 
-链状态生命周期两条规则（issue #34 的修复语义）：
+链状态生命周期两条规则：
 
 - **存活判定**：链状态里的上一动作只在 ``frame < 起手帧 + duration_frames``
   内代表「在进行的动作」，参与衔接判定；动作结束后按「无前置动作」衔接。
@@ -16,8 +16,7 @@
   结束帧），窗口外普攻回第一段，连段不无限存活。窗口即动作表已有数据，
   无新增数值。
 
-有独立机制的角色（如桑多涅的左键蓄力状态机）以子类覆写命名挂点接入；挂点
-默认实现均为无操作，纯数据角色（砂糖、芭芭拉）零覆写。
+有独立机制的角色以子类覆写命名挂点接入，挂点默认实现均为无操作。
 """
 
 from __future__ import annotations
@@ -151,9 +150,7 @@ class GenericCharacterActionSpec:
             "plunge_action_key": (self.plunge_action_key,),
             "elemental_skill_action_key": (self.elemental_skill_action_key,),
             "elemental_burst_action_key": (self.elemental_burst_action_key,),
-            "jump_action_key": (
-                () if self.jump_action_key is None else (self.jump_action_key,)
-            ),
+            "jump_action_key": (() if self.jump_action_key is None else (self.jump_action_key,)),
             "charged_attack_action_key": (
                 () if self.charged_attack_action_key is None else (self.charged_attack_action_key,)
             ),
@@ -179,17 +176,14 @@ class GenericCharacterActionInterpreter:
 
     子类可覆写的命名挂点（默认全部无操作或直通用途）：
 
-    - ``_input_override``：触发前独占接管任意已映射输入的全部触发器（桑多涅
-      蓄力状态机、阿罗夏 E 长按按住上限自动起手）。返回 ``None`` 表示不由本
-      挂点处理，落入通用触发器过滤。
+    - ``_input_override``：触发前独占接管任意已映射输入的全部触发器。
+      返回 ``None`` 表示不由本挂点处理，落入通用触发器过滤。
     - ``_ability_gate_override``：按输入种类返回 ``(ability_key, 阻断文案)``
-      覆写数据面门槛（奥黛塔特殊战技窗口）。
-    - ``_select_action_override``：覆写动作选择（奥黛塔窗口内切换特殊战技、
-      阿罗夏长柄重击骑普攻衔接列改判）。
-    - ``_state_patch_extra_fields``：向连段状态补丁追加字段（奥黛塔窗口锚点）。
-    - ``_cast_frame_effects``：施放帧效果，返回值并入 ``PreparedAction`` 参数
-      （桑多涅 E 排空 / Q 消费改进战术、芭芭拉爆发治疗目标）。
-    - ``_action_kind_value``：覆写动作参数里的动作种类值（奥黛塔特殊战技参数）。
+      覆写数据面门槛。
+    - ``_select_action_override``：覆写动作选择。
+    - ``_state_patch_extra_fields``：向连段状态补丁追加字段。
+    - ``_cast_frame_effects``：施放帧效果，返回值并入 ``PreparedAction`` 参数。
+    - ``_action_kind_value``：覆写动作参数里的动作种类值。
     """
 
     def __init__(
@@ -327,8 +321,7 @@ class GenericCharacterActionInterpreter:
         """触发前独占接管；默认不接管。
 
         覆盖范围是任意已映射输入的全部触发器（按下/长按/松开），用于带会话
-        状态的输入语义（如桑多涅法洁欧蓄力状态机、阿罗夏 E 长按按住上限
-        自动起手）。返回 ``None`` 表示不由本挂点处理，落入通用触发器过滤。
+        状态的输入语义。返回 ``None`` 表示不由本挂点处理，落入通用触发器过滤。
         """
 
         return None
@@ -568,10 +561,7 @@ class GenericCharacterActionInterpreter:
     def _is_airborne_plunge(self, last_action_key: str, height: float) -> bool:
         """空中左键改判下落攻击；已在下落中不重复起手，回落由同一次下落承载。"""
 
-        return (
-            height >= PLUNGE_LOW_AIR_HEIGHT
-            and last_action_key != self._spec.plunge_action_key
-        )
+        return height >= PLUNGE_LOW_AIR_HEIGHT and last_action_key != self._spec.plunge_action_key
 
     # --- 选择 ---------------------------------------------------------------------
 

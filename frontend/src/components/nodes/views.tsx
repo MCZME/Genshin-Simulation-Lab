@@ -933,12 +933,3 @@ export function sortRowIndexes(
   });
   return indexes;
 }
-
-/** 按排序键顺序排序行（条件列组合 + 数据列单列）。 */
-export function sortRows(
-  rows: unknown[][],
-  keys: SortKey[],
-  columnIndex: Map<string, number>,
-): unknown[][] {
-  return sortRowIndexes(rows, keys, columnIndex).map((index) => rows[index]);
-}

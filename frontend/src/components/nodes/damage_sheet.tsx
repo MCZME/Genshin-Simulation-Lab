@@ -3,27 +3,8 @@
 import { useState } from "react";
 import type { EventDetailResponse } from "../../api/client";
 import { COLORS } from "../../theme/tokens";
+import { ELEMENT_LABELS, FORMULA_KEY_LABELS } from "../../theme/elements";
 import { attributeLabel } from "./attributeLabels";
-
-/** 元素显示名；键与后端 Element 枚举值对应，未知值显示原样。 */
-const ELEMENT_LABELS: Record<string, string> = {
-  physical: "物理",
-  pyro: "火",
-  hydro: "水",
-  electro: "雷",
-  cryo: "冰",
-  anemo: "风",
-  geo: "岩",
-  dendro: "草",
-};
-
-/** 伤害公式显示名；键与后端 formula_key 常量对应。 */
-const FORMULA_KEY_LABELS: Record<string, string> = {
-  "damage_formula.general": "直伤",
-  "damage_formula.transformative_reaction": "剧变",
-  "damage_formula.lunar_reaction": "月曜反应",
-  "damage_formula.stellar_reaction": "星烁反应",
-};
 
 /** 反应族显示名；键取 reaction_profile.<family> 的第二段，未知族回退完整 profile key。 */
 const REACTION_LABELS: Record<string, string> = {

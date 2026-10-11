@@ -15,7 +15,7 @@ import {
   estimateMemberTableLayout,
   estimateTextWidth,
   formatCell,
-  sortRows,
+  sortRowIndexes,
   type ViewFitInfo,
 } from "./views";
 
@@ -487,7 +487,7 @@ describe("表格纯逻辑", () => {
     expect(compareCells(2, 1)).toBeGreaterThan(0);
   });
 
-  it("sortRows 按多键稳定排序", () => {
+  it("sortRowIndexes 按多键稳定排序", () => {
     const rows = [
       ["b", 2],
       ["a", 2],
@@ -498,10 +498,10 @@ describe("表格纯逻辑", () => {
       ["group", 0],
       ["value", 1],
     ]);
-    const sorted = sortRows(rows, [
+    const sorted = sortRowIndexes(rows, [
       { column: "group", direction: "asc" },
       { column: "value", direction: "desc" },
-    ], columnIndex);
+    ], columnIndex).map((index) => rows[index]);
     expect(sorted).toEqual([
       ["a", 2],
       ["a", 1],

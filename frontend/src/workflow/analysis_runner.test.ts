@@ -93,6 +93,28 @@ describe("节点运行时计划", () => {
     expect(plan.nodes[1]!.inputs).toEqual(["runs1"]);
   });
 
+  it("图内出现环时不静默丢节点：剩余节点按原顺序追加", () => {
+    // filter1 ↔ compute2 互相依赖形成环；环上节点应仍出现在执行序末尾。
+    const def = definition(
+      [
+        simulation("sim", ["a"]),
+        analysisNode("runs1", "fetch", { source: "runs" }),
+        analysisNode("filter1", "filter", { conditions: [] }),
+        analysisNode("compute2", "compute", { expr: "1" }),
+      ],
+      [
+        edge("b1", "sim", "out", "analysis-1", "in"),
+        edge("w1", "analysis-1", "in", "runs1", "in"),
+        edge("e1", "runs1", "out", "filter1", "in"),
+        edge("e2", "filter1", "out", "compute2", "in"),
+        edge("e3", "compute2", "out", "filter1", "in"),
+      ],
+    );
+
+    const plan = buildStageRegionPlan(def, "analysis-1");
+    expect(plan.nodes.map((node) => node.id)).toEqual(["runs1", "filter1", "compute2"]);
+  });
+
   it("join 按端口名对齐左右输入顺序", () => {
     const def = definition(
       [

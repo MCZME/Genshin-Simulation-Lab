@@ -253,7 +253,7 @@ function extractShape(
 }
 
 /** 路径模板（{0}/{1} 占位）与具体路径是否匹配。 */
-function matchesPathTemplate(path: string, template: string): boolean {
+export function matchesPathTemplate(path: string, template: string): boolean {
   const pattern = template
     .split(".")
     .map((segment) => segment.replace(/^\{(\d+)\}$/, "[0-9]+"))

@@ -244,6 +244,38 @@ function collectStageNodeIds(
   return Array.from(seen);
 }
 
+/**
+ * Kahn 拓扑排序：依赖先于自身，同批就绪节点按 id 序输出。
+ * 图内出现环导致无就绪节点时，剩余节点按原顺序追加到末尾——
+ * 图校验（CYCLE_DETECTED）先行拦截，这里保证执行层不静默丢节点，
+ * 由逐节点执行错误暴露环问题。
+ */
+function topologicalOrder(
+  ids: ReadonlyArray<string>,
+  dependenciesOf: (id: string) => ReadonlyArray<string>,
+): string[] {
+  const ordered: string[] = [];
+  const processed = new Set<string>();
+  const remaining = new Set(ids);
+  while (remaining.size > 0) {
+    const ready = Array.from(remaining)
+      .filter((id) => dependenciesOf(id).every((dep) => !remaining.has(dep)))
+      .sort();
+    if (ready.length === 0) {
+      for (const id of remaining) {
+        ordered.push(id);
+      }
+      break;
+    }
+    for (const id of ready) {
+      ordered.push(id);
+      remaining.delete(id);
+      processed.add(id);
+    }
+  }
+  return ordered;
+}
+
 /** 节点运行时执行计划：阶段节点拓扑序 + 已解析输入。 */
 export function buildStageRegionPlan(
   definition: WorkflowDefinition,
@@ -268,20 +300,7 @@ export function buildStageRegionPlan(
       );
     }
   }
-  const ordered: string[] = [];
-  const remaining = new Set(ids);
-  while (remaining.size > 0) {
-    const ready = Array.from(remaining)
-      .filter((id) => (inputsOf.get(id) ?? []).every((inputId) => !remaining.has(inputId)))
-      .sort((left, right) => byId.get(left)?.id.localeCompare(byId.get(right)?.id ?? "") ?? 0);
-    if (ready.length === 0) {
-      break;
-    }
-    for (const id of ready) {
-      ordered.push(id);
-      remaining.delete(id);
-    }
-  }
+  const ordered = topologicalOrder(ids, (id) => inputsOf.get(id) ?? []);
   return {
     session_ids: resolveBoundarySessionGroup(definition, regionId),
     nodes: ordered.map((id) => {
@@ -508,31 +527,15 @@ export async function executeAnalysisSelectionBranch(
       .map((node) => [node.id, node]),
   );
   const results = new Map<string, AnalysisNodeResult>();
-  const ordered: string[] = [];
-  const processed = new Set<string>();
-  const remaining = new Set(branchIds);
-  while (remaining.size > 0) {
-    const ready = Array.from(remaining).filter((id) => {
+  const ordered = topologicalOrder(
+    [...branchIds],
+    (id) => {
       const node = byId.get(id);
-      if (node === undefined) {
-        return true;
-      }
-      return branchDependenciesFor(definition, node, viewId, byId).every(
-        (item) => processed.has(item),
-      );
-    });
-    if (ready.length === 0) {
-      for (const id of remaining) {
-        ordered.push(id);
-      }
-      break;
-    }
-    for (const id of ready.sort()) {
-      ordered.push(id);
-      remaining.delete(id);
-      processed.add(id);
-    }
-  }
+      return node === undefined
+        ? []
+        : branchDependenciesFor(definition, node, viewId, byId);
+    },
+  );
 
   for (const nodeId of ordered) {
     const node = byId.get(nodeId);

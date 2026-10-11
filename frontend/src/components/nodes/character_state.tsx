@@ -3,6 +3,8 @@
 import { useState } from "react";
 import type { FrameCharacterState, FrameStateResponse } from "../../api/client";
 import { ATTRIBUTE_STAGE_LABELS, attributeLabel } from "./attributeLabels";
+import { formatNumber, formatPercent, formatSignedNumber, formatSignedPercent } from "./format";
+import { isRecord, readNumber, readRecord, readRecordList, readString } from "./jsonParse";
 
 const FRAMES_PER_SECOND = 60;
 
@@ -825,25 +827,6 @@ function termTitle(term: Record<string, unknown>): string {
   return parts.join(" · ");
 }
 
-function formatNumber(value: number): string {
-  return Number.isInteger(value)
-    ? value.toLocaleString("en-US")
-    : Number(value.toFixed(3)).toLocaleString("en-US");
-}
-
-function formatPercent(value: number): string {
-  return `${(value * 100).toFixed(1)}%`;
-}
-
-function formatSignedPercent(value: number): string {
-  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
-}
-
-function formatSignedNumber(value: number): string {
-  const formatted = formatNumber(value);
-  return value >= 0 ? `+${formatted}` : formatted;
-}
-
 function toggleKey(current: ReadonlySet<string>, key: string): ReadonlySet<string> {
   const next = new Set(current);
   if (next.has(key)) {
@@ -869,37 +852,4 @@ function toggleGroupKey(
   }
   next.add(key);
   return next;
-}
-
-function readRecordList(record: unknown, key: string): Record<string, unknown>[] {
-  const value = isRecord(record) ? record[key] : undefined;
-  return Array.isArray(value) ? value.filter(isRecord) : [];
-}
-
-function readRecord(record: unknown, key: string): Record<string, unknown> | null {
-  if (!isRecord(record)) {
-    return null;
-  }
-  const value = record[key];
-  return isRecord(value) ? value : null;
-}
-
-function readString(record: Record<string, unknown> | null, key: string): string | null {
-  if (record === null) {
-    return null;
-  }
-  const value = record[key];
-  return typeof value === "string" && value !== "" ? value : null;
-}
-
-function readNumber(record: Record<string, unknown> | null, key: string): number | null {
-  if (record === null) {
-    return null;
-  }
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
 }

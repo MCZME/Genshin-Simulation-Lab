@@ -4,6 +4,8 @@ import { useState } from "react";
 import type { EventDetailResponse } from "../../api/client";
 import { COLORS } from "../../theme/tokens";
 import { ELEMENT_LABELS, FORMULA_KEY_LABELS } from "../../theme/elements";
+import { formatNumber, formatPercent, formatSignedPercent } from "./format";
+import { isRecord, readBoolean, readNumber, readRecord, readRecordList, readString } from "./jsonParse";
 import { attributeLabel } from "./attributeLabels";
 
 /** 反应族显示名；键取 reaction_profile.<family> 的第二段，未知族回退完整 profile key。 */
@@ -1811,61 +1813,13 @@ function formatDamage(value: number): string {
   return Math.round(value).toLocaleString("en-US");
 }
 
-function formatNumber(value: number): string {
-  return Number.isInteger(value)
-    ? value.toLocaleString("en-US")
-    : Number(value.toFixed(3)).toLocaleString("en-US");
-}
-
 /** 公式区结果的乘数显示：三位小数，不带乘号。 */
 function formatFactor(value: number): string {
   return value.toFixed(3);
 }
 
-function formatPercent(value: number): string {
-  return `${(value * 100).toFixed(1)}%`;
-}
-
-function formatSignedPercent(value: number): string {
-  return `${value >= 0 ? "+" : ""}${(value * 100).toFixed(1)}%`;
-}
-
 function formatOptionalNumber(value: number | null): string {
   return value === null ? "—" : formatNumber(value);
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
-function readString(record: Record<string, unknown>, key: string): string | null {
-  const value = record[key];
-  return typeof value === "string" && value !== "" ? value : null;
-}
-
-function readNumber(record: Record<string, unknown>, key: string): number | null {
-  const value = record[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
-}
-
-function readBoolean(record: Record<string, unknown>, key: string): boolean {
-  return record[key] === true;
-}
-
-function readRecord(
-  record: Record<string, unknown>,
-  key: string,
-): Record<string, unknown> | null {
-  const value = record[key];
-  return isRecord(value) ? value : null;
-}
-
-function readRecordList(
-  record: Record<string, unknown>,
-  key: string,
-): Record<string, unknown>[] {
-  const value = record[key];
-  return Array.isArray(value) ? value.filter(isRecord) : [];
 }
 
 export function DamageSheet({ event }: { event: EventDetailResponse }) {

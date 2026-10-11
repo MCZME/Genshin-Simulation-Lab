@@ -7,9 +7,58 @@ from genshin_sim.core.elements import AuraKind, ElementalSubjectKind, ElementalS
 from genshin_sim.core.simulation.team import TeamRuntimeState
 from genshin_sim.core.systems.buff.models import BuffRecord
 from genshin_sim.core.systems.buff.protocols import BuffReader
+from genshin_sim.core.systems.health.runtime import HealthRuntime
 from genshin_sim.core.systems.reaction.runtime import ReactionRuntime
 from genshin_sim.core.systems.shield.enums import ShieldProtectionKind
 from genshin_sim.core.systems.shield.runtime import ShieldRuntime
+
+
+class HealthReadAdapter:
+    """通过 HealthRuntime 查询角色当前生命比值。"""
+
+    def __init__(self, health_runtime: HealthRuntime) -> None:
+        self._health_runtime = health_runtime
+
+    def hp_ratio(self, character_ref: AttributeSubjectRef, frame: int) -> float:
+        return self._health_runtime.get_hp_ratio(character_ref, frame)
+
+
+class TargetElementAuraReadAdapter:
+    """通过 Aura 与 Reaction 运行态查询目标的元素附着与冻结状态。
+
+    供内容侧条件伤害修饰使用：只回答「目标是否带有指定元素附着」「目标是否
+    处于冻结状态」，不暴露 Aura 记录细节。
+    """
+
+    def __init__(
+        self,
+        aura_runtime,
+        reaction_runtime: ReactionRuntime,
+    ) -> None:
+        self._aura_runtime = aura_runtime
+        self._reaction_runtime = reaction_runtime
+
+    def has_component(
+        self,
+        target_ref: AttributeSubjectRef,
+        aura_kind: AuraKind,
+        frame: int,
+    ) -> bool:
+        del frame
+        subject = self._elemental_subject(target_ref)
+        view = self._aura_runtime.view(subject)
+        return view.component_for(aura_kind) is not None
+
+    def is_frozen(self, target_ref: AttributeSubjectRef, frame: int) -> bool:
+        del frame
+        subject = self._elemental_subject(target_ref)
+        return self._reaction_runtime.frozen_state_for(subject) is not None
+
+    def _elemental_subject(self, target_ref: AttributeSubjectRef) -> ElementalSubjectRef:
+        return ElementalSubjectRef(
+            ElementalSubjectKind(target_ref.kind.value),
+            target_ref.entity_id,
+        )
 
 
 class AuraFrozenReadAdapter:

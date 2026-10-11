@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import inspect
 from dataclasses import replace
 from typing import Any
 
@@ -27,7 +28,9 @@ from genshin_sim.application.assembly.models import (
 )
 from genshin_sim.application.assembly.moonsign import build_moonsign_bundle
 from genshin_sim.application.assembly.ports import (
+    HealthReadAdapter,
     TargetBuffPresenceReadAdapter,
+    TargetElementAuraReadAdapter,
     TeamScopeProjectionAdapter,
 )
 from genshin_sim.application.assembly.reaction_capabilities import (
@@ -249,6 +252,7 @@ from genshin_sim.core.systems.reaction.mechanics.swirl import (
     SwirlGeneratedImpactDamageInputAdapter,
     swirl_aura_application_profile,
 )
+from genshin_sim.core.systems.reaction.runtime import ReactionRuntime
 from genshin_sim.core.systems.resonance import ResonanceRuntime
 from genshin_sim.core.systems.shield import (
     ShieldImpactRequestHandler,
@@ -601,10 +605,6 @@ class RuntimeAssembler:
             )
         except BuffSystemError as exc:
             raise InvalidRuntimePayloadError(str(exc)) from exc
-        self._bind_content_runtime_ports(
-            content_bundle,
-            buff_reader=buff_runtime.reader,
-        )
         # 星烁辉映证据窄端口：包装 BuffReader 的只读适配器，注册为仿真系统
         # 供角色内容经 ``simulation.get_system`` 读取（与 AttributeResolver 同模式）。
         radiance_port: StellarRadianceEvidenceReader = StellarRadianceEvidenceReader(
@@ -699,6 +699,13 @@ class RuntimeAssembler:
             team_state=team_state,
         )
         reaction_spatial_planning_port = ReactionSpatialPlanningAdapter(space)
+        self._bind_content_runtime_ports(
+            content_bundle,
+            buff_reader=buff_runtime.reader,
+            health_runtime=health_runtime,
+            aura_runtime=aura_runtime,
+            reaction_runtime=reaction_runtime,
+        )
         crystallize_shard_pickup_coordinator = CrystallizeShardPickupCoordinator(
             reaction_state_port=reaction_runtime,
             spatial_planning_port=reaction_spatial_planning_port,
@@ -1043,23 +1050,36 @@ class RuntimeAssembler:
         content_bundle: RuntimeContentBundle,
         *,
         buff_reader: BuffReader,
+        health_runtime: HealthRuntime,
+        aura_runtime: AuraRuntime,
+        reaction_runtime: ReactionRuntime,
     ) -> None:
         """为声明了 ``bind_runtime_ports`` 的内容对象注入只读运行端口。
 
-        覆盖伤害修饰 provider 与事件钩子：两者都可能需要读取目标 Buff 状态
-        （条件伤害加成、带层数条件的触发效果）。必须在 ``buff_runtime`` 创建
-        之后调用。绑定只发生在装配期；未绑定时实现必须自行判定为不生效，
-        因此条件效果不会在装配前触发。
+        覆盖伤害修饰 provider 与事件钩子：两者都可能需要读取目标状态（条件
+        伤害加成、带层数条件的触发效果）。按绑定方声明的形参注入可用端口，
+        未声明的端口不传入，既有绑定方无需同步修改。必须在 ``buff_runtime``
+        与 ``aura_runtime``/``reaction_runtime`` 创建之后调用。绑定只发生在
+        装配期；未绑定时实现必须自行判定为不生效，因此条件效果不会在装配前
+        触发。
         """
 
-        target_status_port = TargetBuffPresenceReadAdapter(buff_reader)
+        available_ports: dict[str, object] = {
+            "target_status_port": TargetBuffPresenceReadAdapter(buff_reader),
+            "health_port": HealthReadAdapter(health_runtime),
+            "element_aura_port": TargetElementAuraReadAdapter(aura_runtime, reaction_runtime),
+        }
         for unit in content_bundle.content_units:
             for bindable in (*unit.damage_modifier_providers, *unit.event_hooks):
                 binder = getattr(bindable, "bind_runtime_ports", None)
                 if binder is None:
                     continue
                 try:
-                    binder(target_status_port=target_status_port)
+                    declared = inspect.signature(binder).parameters
+                    kwargs = {
+                        name: port for name, port in available_ports.items() if name in declared
+                    }
+                    binder(**kwargs)
                 except Exception as exc:
                     raise InvalidRuntimePayloadError(f"内容运行时端口绑定失败：{exc}") from exc
 

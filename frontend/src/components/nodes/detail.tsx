@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { getFrameState, getResultEvent } from "../../api/client";
+import { readNumber, readString } from "./jsonParse";
 import type { FrameCharacterState, FrameStateResponse } from "../../api/client";
 import type { AnalysisNodeResult } from "../../workflow/analysis_runner";
 import type { AnalysisTableResult } from "../../workflow/templates";
@@ -306,16 +307,6 @@ function KeyValueView({ title, data }: { title: string; data: unknown }) {
       <pre className="detail-item-pre">{JSON.stringify(data, null, 2)}</pre>
     </div>
   );
-}
-
-function readString(item: Record<string, unknown>, key: string): string | null {
-  const value = item[key];
-  return typeof value === "string" && value !== "" ? value : null;
-}
-
-function readNumber(item: Record<string, unknown>, key: string): number | null {
-  const value = item[key];
-  return typeof value === "number" && Number.isFinite(value) ? value : null;
 }
 
 function readOptionalNumber(item: Record<string, unknown>, key: string): number | null {

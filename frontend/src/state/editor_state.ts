@@ -222,12 +222,71 @@ export function setNodeParams(
   nodeId: string,
   params: Record<string, unknown>,
 ): EditorState {
+  const previous = state.definition.nodes.find((node) => node.id === nodeId);
+  const nodes = state.definition.nodes.map((node) =>
+    node.id === nodeId ? { ...node, params } : node,
+  );
+  let definition: WorkflowDefinition = { ...state.definition, nodes };
+  if (previous !== undefined && previous.kind === "enum") {
+    definition = pruneRemovedEnumProjectionEdges(definition, nodeId, previous, params);
+  }
+  return performEdit(state, definition);
+}
+
+/** 批量参数修改合并为单个撤销步骤（运行编排的批次会话回写用）。 */
+export function mergeNodeParams(
+  state: EditorState,
+  updates: ReadonlyMap<string, Record<string, unknown>>,
+): EditorState {
+  if (updates.size === 0) {
+    return state;
+  }
   return performEdit(state, {
     ...state.definition,
-    nodes: state.definition.nodes.map((node) =>
-      node.id === nodeId ? { ...node, params } : node,
-    ),
+    nodes: state.definition.nodes.map((node) => {
+      const params = updates.get(node.id);
+      return params === undefined ? node : { ...node, params };
+    }),
   });
+}
+
+/**
+ * 枚举成员删除后，指向已删 item_id 成员投影端口（out:<item_id>）的连线一并清理：
+ * 投影端口随成员存在，悬空连线会在下一次校验才暴露为 PORT_NOT_FOUND。
+ */
+function pruneRemovedEnumProjectionEdges(
+  definition: WorkflowDefinition,
+  nodeId: string,
+  previous: { kind: string; params: Record<string, unknown> },
+  params: Record<string, unknown>,
+): WorkflowDefinition {
+  const itemIds = (values: unknown): Set<string> => {
+    const ids = new Set<string>();
+    if (Array.isArray(values)) {
+      for (const item of values) {
+        if (
+          item !== null &&
+          typeof item === "object" &&
+          typeof (item as Record<string, unknown>).item_id === "string"
+        ) {
+          ids.add((item as Record<string, unknown>).item_id as string);
+        }
+      }
+    }
+    return ids;
+  };
+  const previousIds = itemIds(previous.params.values);
+  for (const id of itemIds(params.values)) {
+    previousIds.delete(id);
+  }
+  if (previousIds.size === 0) {
+    return definition;
+  }
+  const removedPorts = new Set([...previousIds].map((id) => `out:${id}`));
+  const edges = definition.edges.filter(
+    (edge) => !(edge.source_node_id === nodeId && removedPorts.has(edge.source_port_id)),
+  );
+  return edges.length === definition.edges.length ? definition : { ...definition, edges };
 }
 
 export function deleteNode(state: EditorState, nodeId: string): EditorState {

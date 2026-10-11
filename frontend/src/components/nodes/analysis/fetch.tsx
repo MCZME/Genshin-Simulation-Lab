@@ -6,7 +6,7 @@ import type {
   AnalysisSchemaNode,
   SnapshotLeaf,
 } from "../../../workflow/templates";
-import { snapshotLeaves } from "../../../workflow/templates";
+import { matchesPathTemplate, snapshotLeaves } from "../../../workflow/templates";
 import type { WorkflowNode } from "../../../workflow/types";
 import { asString } from "../common";
 import {
@@ -140,7 +140,7 @@ function FetchSummary({ node, onEdit }: { node: WorkflowNode; onEdit: () => void
   const sourceOf = (column: EditorRow): string => {
     if (source === "runs") {
       const path = asString(column.path) ?? "";
-      const leaf = runLeaves.find((item) => matchesTemplate(path, item.pathTemplate));
+      const leaf = runLeaves.find((item) => matchesPathTemplate(path, item.pathTemplate));
       return leaf === undefined
         ? pathLabel(column.path)
         : describeLeaf(leaf, path);
@@ -365,7 +365,7 @@ function SnapshotColumnCatalog({
     return leaf === undefined ? [] : [leaf];
   });
   const addLeaf = (leaf: SnapshotLeaf, values: number[]) => {
-    if (columns.some((row) => matchesTemplate(asString(row.path) ?? "", leaf.pathTemplate))) {
+    if (columns.some((row) => matchesPathTemplate(asString(row.path) ?? "", leaf.pathTemplate))) {
       return;
     }
     onChange([
@@ -380,7 +380,7 @@ function SnapshotColumnCatalog({
   const removeTemplate = (leaf: SnapshotLeaf) =>
     onChange(
       columns.filter(
-        (row) => !matchesTemplate(asString(row.path) ?? "", leaf.pathTemplate),
+        (row) => !matchesPathTemplate(asString(row.path) ?? "", leaf.pathTemplate),
       ),
     );
 
@@ -575,7 +575,7 @@ function SnapshotLeafRow({
   onRemove: (leaf: SnapshotLeaf) => void;
 }) {
   const selected = columns.some((row) =>
-    matchesTemplate(asString(row.path) ?? "", leaf.pathTemplate),
+    matchesPathTemplate(asString(row.path) ?? "", leaf.pathTemplate),
   );
   const pendingOpen = pending?.leaf.pathTemplate === leaf.pathTemplate;
   const listCount = leaf.listLabels.length;
@@ -908,15 +908,10 @@ function quickSnapshotLabel(leaf: SnapshotLeaf): string {
 /** 已选行来源展示：优先结构树标签链 + 位置，找不到回退路径叶子。 */
 function describeSelectedSource(leaves: SnapshotLeaf[], row: EditorRow): string {
   const path = asString(row.path) ?? "";
-  const leaf = leaves.find((item) => matchesTemplate(path, item.pathTemplate));
+  const leaf = leaves.find((item) => matchesPathTemplate(path, item.pathTemplate));
   return leaf === undefined ? pathLabel(row.path) : describeLeaf(leaf, path);
 }
 
-/** 路径模板匹配：{n} 占位符对应任意数字段。 */
-function matchesTemplate(path: string, template: string): boolean {
-  const pattern = template.replace(/\{\d+\}/g, "\\d+");
-  return new RegExp(`^${pattern}$`).test(path);
-}
 
 /** 绝对路径（0 基）转路径模板：数字段按出现顺序变成 {0}/{1}... */
 function toPathTemplate(path: string): string {

@@ -15,6 +15,7 @@ import {
   moveNodeWithRegion,
   moveNode,
   moveEdgeIncomingOrder,
+  mergeNodeParams,
   nudgeSelection,
   redo,
   renameRegion,
@@ -71,6 +72,68 @@ describe("editor state mutations", () => {
 
     state = setNodeParams(state, nodeId, { path: "a.b", start: 1, end: 5, step: 1 });
     expect(state.definition.nodes[0]!.params).toEqual({ path: "a.b", start: 1, end: 5, step: 1 });
+  });
+
+  it("删除枚举成员时同步清理对应投影连线", () => {
+    let state = createEmptyEditorState();
+    state = addRegion(state, "configuration", "主配置", { x: 0, y: 0, width: 800, height: 600 });
+    state = addNode(state, "enum", { x: 0, y: 0 }, "region-1");
+    state = addNode(state, "character", { x: 0, y: 0 }, "region-1");
+    const enumParams = (values: Array<{ item_id: string; value: string }>) => ({
+      dimension: "character.asset_key",
+      path_params: { slot: 1 },
+      values: values.map((item) => ({ ...item, label: null })),
+    });
+    state = setNodeParams(
+      state,
+      "node-1",
+      enumParams([
+        { item_id: "e-1", value: "character:barbara" },
+        { item_id: "e-2", value: "character:odette" },
+      ]),
+    );
+    state = addEdge(state, {
+      source_node_id: "node-1",
+      source_port_id: "out:e-1",
+      target_node_id: "node-2",
+      target_port_id: "in",
+    });
+    state = addEdge(state, {
+      source_node_id: "node-1",
+      source_port_id: "out:e-2",
+      target_node_id: "node-2",
+      target_port_id: "in",
+    });
+    expect(state.definition.edges).toHaveLength(2);
+
+    state = setNodeParams(
+      state,
+      "node-1",
+      enumParams([{ item_id: "e-1", value: "character:barbara" }]),
+    );
+    expect(state.definition.edges.map((edge) => edge.source_port_id)).toEqual(["out:e-1"]);
+
+    state = undo(state);
+    expect(state.definition.edges).toHaveLength(2);
+  });
+
+  it("批量参数修改合并为单个撤销步骤", () => {
+    let state = createEmptyEditorState();
+    state = addNode(state, "simulation", { x: 0, y: 0 }, null);
+    state = addNode(state, "simulation", { x: 0, y: 0 }, null);
+    const updates = new Map<string, Record<string, unknown>>([
+      ["node-1", { last_sessions: ["s-1"] }],
+      ["node-2", { last_sessions: ["s-2"] }],
+    ]);
+    const pastBefore = state.past.length;
+    state = mergeNodeParams(state, updates);
+    expect(state.definition.nodes[0]!.params.last_sessions).toEqual(["s-1"]);
+    expect(state.definition.nodes[1]!.params.last_sessions).toEqual(["s-2"]);
+    expect(state.past).toHaveLength(pastBefore + 1);
+
+    state = undo(state);
+    expect(state.definition.nodes[0]!.params.last_sessions).toBeUndefined();
+    expect(state.definition.nodes[1]!.params.last_sessions).toBeUndefined();
   });
 
   it("连线去重并生成稳定 id", () => {

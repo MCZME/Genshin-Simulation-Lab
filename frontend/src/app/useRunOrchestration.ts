@@ -7,7 +7,7 @@ import { cancelRun, getRun, submitRun, validateInputs } from "../api/client";
 import type { ValidateInputsResponse } from "../api/client";
 import { pollRun } from "../api/runtime_subscription";
 import type { EditorState } from "../state/editor_state";
-import { setNodeParams } from "../state/editor_state";
+import { mergeNodeParams } from "../state/editor_state";
 import {
   applyBatchView,
   batchStatusFromRunState,
@@ -435,20 +435,22 @@ export function useRunOrchestration(options: RunOrchestrationOptions) {
           : node,
       ),
     };
+    // 会话回写合并为单个撤销步骤：多节点逐个 setNodeParams 会产生 N 个撤销步骤，
+    // 一次 Ctrl+Z 只能回退一个节点。
+    const updates = new Map<string, Record<string, unknown>>();
     for (const [nodeId, sessions] of byNode) {
       const target = definition.nodes.find((node) => node.id === nodeId);
       if (target !== undefined) {
-        updateEditor((state) =>
-          setNodeParams(state, nodeId, {
-            ...target.params,
-            last_sessions: sessions,
-            ...(fingerprintByNode?.get(nodeId) !== undefined
-              ? { last_input_fingerprint: fingerprintByNode.get(nodeId) }
-              : {}),
-          }),
-        );
+        updates.set(nodeId, {
+          ...target.params,
+          last_sessions: sessions,
+          ...(fingerprintByNode?.get(nodeId) !== undefined
+            ? { last_input_fingerprint: fingerprintByNode.get(nodeId) }
+            : {}),
+        });
       }
     }
+    updateEditor((state) => mergeNodeParams(state, updates));
     return updated;
   }
 

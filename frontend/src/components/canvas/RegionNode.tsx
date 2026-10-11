@@ -145,7 +145,7 @@ export function RegionNode({
   }
 
   function handleResizePointerDown(event: React.PointerEvent<HTMLDivElement>) {
-    if (event.button !== 0) {
+    if (event.button !== 0 || interactionLocked) {
       return;
     }
     event.preventDefault();

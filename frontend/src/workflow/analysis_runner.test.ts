@@ -89,8 +89,8 @@ describe("节点运行时计划", () => {
     expect(plan.session_ids).toEqual(["a"]);
     expect(plan.nodes.find((node) => node.id === "runs1")?.inputs).toEqual([]);
     expect(plan.nodes.map((node) => node.id)).toEqual(["runs1", "lim1"]);
-    expect(plan.nodes[1].params).toEqual({ count: 10 });
-    expect(plan.nodes[1].inputs).toEqual(["runs1"]);
+    expect(plan.nodes[1]!.params).toEqual({ count: 10 });
+    expect(plan.nodes[1]!.inputs).toEqual(["runs1"]);
   });
 
   it("join 按端口名对齐左右输入顺序", () => {

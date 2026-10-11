@@ -298,10 +298,12 @@ export async function getFrameState(
 /** 创建分析节点运行时上下文（阶段结果留在后端）。 */
 export async function createAnalysisContext(
   sessionIds: string[],
+  options: { signal?: AbortSignal } = {},
 ): Promise<CreateAnalysisContextResponse> {
   return request<CreateAnalysisContextResponse>("/analysis/runtime/contexts", {
     method: "POST",
     body: JSON.stringify({ session_ids: sessionIds } satisfies CreateAnalysisContextRequest),
+    signal: options.signal,
   });
 }
 
@@ -309,12 +311,14 @@ export async function createAnalysisContext(
 export async function executeAnalysisNode(
   contextId: string,
   payload: NodeExecutionRequest,
+  options: { signal?: AbortSignal } = {},
 ): Promise<StageResponse> {
   return request<StageResponse>(
     `/analysis/runtime/contexts/${encodeURIComponent(contextId)}/nodes/execute`,
     {
       method: "POST",
       body: JSON.stringify(payload),
+      signal: options.signal,
     },
   );
 }
@@ -348,12 +352,14 @@ export async function selectAnalysisStage(
 export async function mergeAnalysisStages(
   contextId: string,
   stageIds: string[],
+  options: { signal?: AbortSignal } = {},
 ): Promise<StageResponse> {
   return request<StageResponse>(
     `/analysis/runtime/contexts/${encodeURIComponent(contextId)}/merge`,
     {
       method: "POST",
       body: JSON.stringify({ stage_ids: stageIds } satisfies MergeStagesRequest),
+      signal: options.signal,
     },
   );
 }

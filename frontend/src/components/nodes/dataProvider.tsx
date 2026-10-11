@@ -74,7 +74,7 @@ export function DataProviderEditor({ node, onChange }: EditorProps) {
       return;
     }
     let alive = true;
-    (async () => {
+    void (async () => {
       await Promise.resolve();
       if (!alive) {
         return;
@@ -214,7 +214,7 @@ function DataProviderPicker({
 
   useEffect(() => {
     let alive = true;
-    (async () => {
+    void (async () => {
       await Promise.resolve();
       if (!alive) {
         return;
@@ -251,7 +251,7 @@ function DataProviderPicker({
       return;
     }
     let alive = true;
-    (async () => {
+    void (async () => {
       await Promise.resolve();
       if (!alive) {
         return;
@@ -341,7 +341,13 @@ function DataProviderPicker({
         return previous;
       }
       const next = [...previous];
-      [next[index], next[target]] = [next[target], next[index]];
+      const current = next[index];
+      const swapWith = next[target];
+      if (current === undefined || swapWith === undefined) {
+        return previous;
+      }
+      next[index] = swapWith;
+      next[target] = current;
       return next;
     });
   };

@@ -12,9 +12,17 @@ export function parsePath(path: string): PathSegment[] {
     if (match === null) {
       throw new Error(`路径语法错误：${path}`);
     }
-    segments.push(match[1]);
-    for (const indexMatch of match[2].matchAll(/\[(\d+)\]/g)) {
-      segments.push(Number(indexMatch[1]));
+    const name = match[1];
+    const indexPart = match[2];
+    if (name === undefined || indexPart === undefined) {
+      throw new Error(`路径语法错误：${path}`);
+    }
+    segments.push(name);
+    for (const indexMatch of indexPart.matchAll(/\[(\d+)\]/g)) {
+      const value = indexMatch[1];
+      if (value !== undefined) {
+        segments.push(Number(value));
+      }
     }
   }
   return segments;
@@ -30,6 +38,9 @@ export function setPath(
 ): boolean {
   const segments = parsePath(path);
   const last = segments[segments.length - 1];
+  if (last === undefined) {
+    throw new Error("路径不能为空");
+  }
   const parent = resolveParent(document, segments);
 
   let existed: boolean;
@@ -52,19 +63,23 @@ function resolveParent(
   let current: unknown = document;
   for (let index = 0; index < segments.length - 1; index += 1) {
     const segment = segments[index];
+    if (segment === undefined) {
+      throw new Error(`路径索引越界：${segments.join(".")}`);
+    }
     const next = segments[index + 1];
     if (typeof segment === "number") {
       if (!Array.isArray(current)) {
         throw new Error(`路径索引落在非数组上：${segments.join(".")}`);
       }
-      ensureLength(current, segment);
-      const existing = current[segment];
+      const array = current as unknown[];
+      ensureLength(array, segment);
+      const existing = array[segment];
       if (existing === undefined || existing === null) {
-        current[segment] = typeof next === "number" ? [] : {};
+        array[segment] = typeof next === "number" ? [] : {};
       } else if (typeof existing !== "object") {
         throw new Error(`路径与既有值类型冲突：${segments.join(".")}`);
       }
-      current = current[segment];
+      current = array[segment];
     } else {
       const record = current as Record<string, unknown>;
       const existing = record[segment];

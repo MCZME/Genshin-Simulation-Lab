@@ -109,9 +109,9 @@ describe("数据提供节点编辑器（摘要 + 选择弹层）", () => {
     expect(await screen.findByText("运行 s-1")).not.toBeNull();
 
     const checkboxes = screen.getAllByRole("checkbox");
-    fireEvent.click(checkboxes[1]);
-    fireEvent.click(checkboxes[2]);
-    fireEvent.click(screen.getAllByTitle("下移")[0]);
+    fireEvent.click(checkboxes[1]!);
+    fireEvent.click(checkboxes[2]!);
+    fireEvent.click(screen.getAllByTitle("下移")[0]!);
     fireEvent.click(screen.getByRole("button", { name: "完成" }));
 
     expect(onChange).toHaveBeenCalledWith({ session_ids: ["s-2", "s-1"] });

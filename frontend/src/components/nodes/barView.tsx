@@ -412,7 +412,7 @@ export function BarChartView({
       }
       const stageContextId =
         stageId === undefined ? null : stageSelection?.contextIdFor(node.region_id ?? "") ?? null;
-      const firstRow = table.rows[rowIndexes[0]];
+      const firstRow = table.rows[rowIndexes[0] ?? -1];
       if (
         stageContextId !== null &&
         firstRow !== undefined &&

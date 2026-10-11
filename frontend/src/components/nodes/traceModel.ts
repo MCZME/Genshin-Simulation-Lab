@@ -411,7 +411,7 @@ export function toTimeMs(value: unknown): number | null {
     return value.getTime();
   }
   if (value !== null && typeof value === "object") {
-    const valueOf = (value as { valueOf?: unknown }).valueOf;
+    const valueOf = (value as { valueOf?: () => unknown }).valueOf;
     if (typeof valueOf === "function") {
       const resolved = valueOf.call(value);
       if (typeof resolved === "number" && Number.isFinite(resolved)) {

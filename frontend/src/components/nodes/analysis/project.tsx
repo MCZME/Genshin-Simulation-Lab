@@ -78,7 +78,7 @@ export function ProjectEditor({ node, onChange }: EditorProps) {
           key={index}
           row={row}
           shape={shape}
-          error={errors[index]}
+          error={errors[index] ?? null}
           onChange={(patch) => updateRow(index, patch)}
           onRemove={() =>
             onChange({

@@ -285,7 +285,7 @@ export function PieChartView({
       const stageContextId =
         stageId === undefined ? null : stageSelection?.contextIdFor(node.region_id ?? "") ?? null;
       const groupIndex = columnIndex.get(group);
-      const firstRow = table.rows[slice.rowIndexes[0]];
+      const firstRow = table.rows[slice.rowIndexes[0] ?? -1];
       if (
         stageContextId !== null &&
         groupIndex !== undefined &&

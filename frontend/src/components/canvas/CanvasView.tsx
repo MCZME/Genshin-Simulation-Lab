@@ -17,7 +17,6 @@ import type {
   OnConnect,
   OnEdgesDelete,
   OnNodesDelete,
-  OnNodeDrag,
   OnSelectionChangeParams,
   ReactFlowInstance,
 } from "@xyflow/react";
@@ -308,15 +307,15 @@ export function CanvasView({
       return;
     }
     if (viewportCommand === "zoom-in") {
-      instance.zoomIn();
+      void instance.zoomIn();
     } else if (viewportCommand === "zoom-out") {
-      instance.zoomOut();
+      void instance.zoomOut();
     } else if (viewportCommand === "fit") {
-      instance.fitView();
+      void instance.fitView();
     } else if (viewportCommand !== null) {
       const target = instance.getNode(viewportCommand.nodeId);
       if (target !== undefined) {
-        instance.fitView({ nodes: [target], padding: 0.4, maxZoom: 1.5 });
+        void instance.fitView({ nodes: [target], padding: 0.4, maxZoom: 1.5 });
       }
     }
     latestRef.current.onViewportCommandHandled();
@@ -438,7 +437,7 @@ export function CanvasView({
         onInit={handleInit}
         onNodesChange={onNodesChange}
         onEdgesChange={onEdgesChange}
-        onNodeDragStop={handleNodeDragStop as OnNodeDrag}
+        onNodeDragStop={handleNodeDragStop}
         onConnect={handleConnect}
         onSelectionChange={handleSelectionChange}
         onNodesDelete={handleNodesDelete}
@@ -692,7 +691,7 @@ function fragmentPath(
   }
   const variants = groupFragments(node);
   if (variants.length > 0) {
-    return variants[0].path;
+    return variants[0]!.path;
   }
   return singleFragment(node, definition)?.path ?? null;
 }

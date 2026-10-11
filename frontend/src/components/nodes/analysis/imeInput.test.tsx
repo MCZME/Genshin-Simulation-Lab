@@ -11,7 +11,7 @@ describe("ImeSafeInput", () => {
   it("普通输入即时写回", () => {
     const onChange = vi.fn();
     render(<ImeSafeInput value="" onChange={onChange} />);
-    const input = screen.getByRole("textbox") as HTMLInputElement;
+    const input = screen.getByRole("textbox");
     fireEvent.change(input, { target: { value: "dps" } });
     expect(onChange).toHaveBeenLastCalledWith("dps");
   });
@@ -19,7 +19,7 @@ describe("ImeSafeInput", () => {
   it("输入法组合期间镜像草稿且不写回，组合结束写回最终值", () => {
     const onChange = vi.fn();
     render(<ImeSafeInput value="" onChange={onChange} />);
-    const input = screen.getByRole("textbox") as HTMLInputElement;
+    const input = screen.getByRole("textbox");
 
     fireEvent.compositionStart(input);
     fireEvent.change(input, { target: { value: "jues" } });
@@ -33,11 +33,11 @@ describe("ImeSafeInput", () => {
   it("组合期间受控值镜像 DOM，父组件重渲染不打断组合", () => {
     const onChange = vi.fn();
     const { rerender } = render(<ImeSafeInput value="旧值" onChange={onChange} />);
-    const input = screen.getByRole("textbox") as HTMLInputElement;
+    const input = screen.getByRole("textbox");
 
     fireEvent.compositionStart(input);
     fireEvent.change(input, { target: { value: "dian" } });
     rerender(<ImeSafeInput value="旧值" onChange={onChange} />);
-    expect(input.value).toBe("dian");
+    expect((input as HTMLInputElement).value).toBe("dian");
   });
 });

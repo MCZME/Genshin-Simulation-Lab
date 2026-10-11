@@ -111,11 +111,11 @@ describe("分组聚合节点编辑器（卡片直编）", () => {
     fireEvent.click(screen.getByRole("button", { name: "＋ 添加统计指标" }));
     const columnSelect = screen.getAllByRole("combobox")[1];
 
-    fireEvent.change(columnSelect, { target: { value: "element" } });
+    fireEvent.change(columnSelect!, { target: { value: "element" } });
     expect(screen.queryByRole("option", { name: "求和" })).toBeNull();
     expect(screen.getByRole("option", { name: "计数" })).not.toBeNull();
 
-    fireEvent.change(columnSelect, { target: { value: "dps" } });
+    fireEvent.change(columnSelect!, { target: { value: "dps" } });
     expect(screen.getByRole("option", { name: "求和" })).not.toBeNull();
   });
 
@@ -124,7 +124,7 @@ describe("分组聚合节点编辑器（卡片直编）", () => {
     const onChange = vi.fn();
     render(<Harness node={aggregateNode({})} onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: "＋ 添加统计指标" }));
-    fireEvent.change(screen.getAllByRole("combobox")[1], {
+    fireEvent.change(screen.getAllByRole("combobox")[1]!, {
       target: { value: "dps" },
     });
 
@@ -147,7 +147,7 @@ describe("分组聚合节点编辑器（卡片直编）", () => {
     fireEvent.change(screen.getByPlaceholderText("默认：sum_dps"), {
       target: { value: "total" },
     });
-    fireEvent.change(screen.getAllByRole("combobox")[1], {
+    fireEvent.change(screen.getAllByRole("combobox")[1]!, {
       target: { value: "hit_count" },
     });
 

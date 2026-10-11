@@ -183,7 +183,7 @@ export function DeriveEditor({ node, onChange }: EditorProps) {
               )}
             </div>
           )}
-          {rowErrors[index].map((message) => (
+          {(rowErrors[index] ?? []).map((message) => (
             <p key={message} className="analysis-row-error">
               {message}
             </p>

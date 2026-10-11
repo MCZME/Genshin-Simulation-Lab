@@ -280,7 +280,10 @@ function mergeDocSets(
 ): FlowDoc[] {
   let result = sets[0] ?? [];
   for (let index = 1; index < sets.length; index += 1) {
-    result = mergeTwo(result, sets[index], diagnostics, warningSeen);
+    const nextSet = sets[index];
+    if (nextSet !== undefined) {
+      result = mergeTwo(result, nextSet, diagnostics, warningSeen);
+    }
   }
   return result;
 }
@@ -394,7 +397,7 @@ function mergeInto(
 ): void {
   for (const [key, value] of Object.entries(source)) {
     if (isPlainObject(value) && isPlainObject(target[key])) {
-      mergeInto(target[key] as Record<string, unknown>, value);
+      mergeInto(target[key], value);
     } else if (Array.isArray(value) && Array.isArray(target[key])) {
       mergeArrays(target[key] as unknown[], value);
     } else {
@@ -414,7 +417,7 @@ function mergeArrays(target: unknown[], source: unknown[]): void {
       // 源数组的未写入槽位保留目标槽位（跳号索引写入产生的空洞）。
       continue;
     } else if (isPlainObject(targetValue) && isPlainObject(sourceValue)) {
-      mergeInto(targetValue as Record<string, unknown>, sourceValue as Record<string, unknown>);
+      mergeInto(targetValue, sourceValue);
     } else {
       target[index] = structuredClone(sourceValue);
     }

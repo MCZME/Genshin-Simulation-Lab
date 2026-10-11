@@ -147,12 +147,18 @@ export function FilterEditor({ node, onChange }: EditorProps) {
   const changeColumn = (index: number, column: string) => {
     const type = shape.find((item) => item.name === column)?.type ?? "";
     const target = conditions[index];
+    if (target === undefined) {
+      return;
+    }
     const op = operatorsForType(type, "").includes(target.op) ? target.op : "eq";
     const value = op === target.op ? target.value : toScalarValue(target.value, type);
     replaceCondition(index, { column, op, value });
   };
   const changeOp = (index: number, op: string) => {
     const target = conditions[index];
+    if (target === undefined) {
+      return;
+    }
     const type = shape.find((item) => item.name === target.column)?.type ?? "";
     const next: FilterCondition = { column: target.column, op };
     if (op !== "is_null" && op !== "is_not_null") {
@@ -189,7 +195,7 @@ export function FilterEditor({ node, onChange }: EditorProps) {
           key={index}
           condition={condition}
           shape={shape}
-          error={errors[index]}
+          error={errors[index] ?? null}
           onChangeColumn={(column) => changeColumn(index, column)}
           onChangeOp={(op) => changeOp(index, op)}
           onChangeValue={(value) => updateCondition(index, { value })}

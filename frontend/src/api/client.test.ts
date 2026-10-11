@@ -68,8 +68,9 @@ describe("api client", () => {
       body: { run_id: "run_1", state: "queued", members: [] },
     });
     await submitRun([{ item_id: "a", input: {} }], { name: "批次", concurrency: 2 });
-    const [, init] = fetchMock.mock.calls[0];
-    expect(JSON.parse((init as RequestInit).body as string)).toEqual({
+    const call = fetchMock.mock.calls[0]! as [string, RequestInit?];
+    const init = call[1] ?? {};
+    expect(JSON.parse(init.body as string)).toEqual({
       name: "批次",
       concurrency: 2,
       members: [{ item_id: "a", input: {} }],

@@ -132,7 +132,7 @@ describe("设置列值节点编辑器（卡片直编）", () => {
         onChange={onChange}
       />,
     );
-    const textarea = screen.getByLabelText("设置列值 1") as HTMLTextAreaElement;
+    const textarea = screen.getByLabelText("设置列值 1");
     expect(textarea.tagName).toBe("TEXTAREA");
     const longValue = "这是一段比较长的固定文本，用于验证多行文本域可以完整输入与查看。";
     fireEvent.change(textarea, { target: { value: longValue } });

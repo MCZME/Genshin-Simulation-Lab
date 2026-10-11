@@ -453,7 +453,7 @@ function aggregateShape(node: WorkflowNode, source: TableShape[]): TableShape[] 
     if (fn !== "count" && !NUMERIC_TYPES.has(type)) {
       return null;
     }
-    const final = (item.as as string | undefined) ?? (fn + "_" + column);
+    const final = (item.as) ?? (fn + "_" + column);
     if (typeof final !== "string" || !COLUMN_NAME_PATTERN.test(final) || seen.has(final)) {
       return null;
     }
@@ -484,7 +484,7 @@ function projectShape(node: WorkflowNode, source: TableShape[]): TableShape[] | 
     if (!isRecord(item) || typeof item.name !== "string" || !types.has(item.name)) {
       return null;
     }
-    const final = (item.as as string | undefined) ?? item.name;
+    const final = (item.as) ?? item.name;
     if (typeof final !== "string" || !COLUMN_NAME_PATTERN.test(final) || seen.has(final)) {
       return null;
     }
@@ -840,7 +840,7 @@ function orderInputsFor(node: WorkflowNode, edgesInto: WorkflowEdge[]): string[]
       edgesInto.find((edge) => edge.target_port_id === port),
     );
     if (ordered.every((edge) => edge !== undefined)) {
-      return ordered.map((edge) => (edge as WorkflowEdge).source_node_id);
+      return ordered.map((edge) => (edge).source_node_id);
     }
   }
   return edgesInto.map((edge) => edge.source_node_id).slice(0, 1);

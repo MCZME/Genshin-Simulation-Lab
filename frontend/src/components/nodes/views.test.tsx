@@ -239,9 +239,9 @@ describe("表格视图", () => {
   it("交替行带 stripe 标记（按绝对行号）", () => {
     renderView(readyResult());
     const rows = screen.getAllByRole("row").slice(1);
-    expect(rows[0].className).not.toContain("stripe");
-    expect(rows[1].className).toContain("stripe");
-    expect(rows[2].className).not.toContain("stripe");
+    expect(rows[0]!.className).not.toContain("stripe");
+    expect(rows[1]!.className).toContain("stripe");
+    expect(rows[2]!.className).not.toContain("stripe");
   });
 
   it("数据列点击表头单列升降排序并可清除", () => {
@@ -250,17 +250,17 @@ describe("表格视图", () => {
     fireEvent.click(damageHeader);
     expect(damageHeader.className).toContain("sorted");
     const rows = screen.getAllByRole("row").slice(1);
-    expect(rows[0].textContent).toContain("polearm");
-    expect(rows[2].textContent).toContain("claymore");
+    expect(rows[0]!.textContent).toContain("polearm");
+    expect(rows[2]!.textContent).toContain("claymore");
 
     fireEvent.click(damageHeader);
     const descRows = screen.getAllByRole("row").slice(1);
-    expect(descRows[0].textContent).toContain("claymore");
-    expect(descRows[2].textContent).toContain("polearm");
+    expect(descRows[0]!.textContent).toContain("claymore");
+    expect(descRows[2]!.textContent).toContain("polearm");
 
     fireEvent.click(screen.getByRole("button", { name: "清除排序" }));
     const resetRows = screen.getAllByRole("row").slice(1);
-    expect(resetRows[0].textContent).toContain("sword");
+    expect(resetRows[0]!.textContent).toContain("sword");
     expect(screen.queryByRole("button", { name: "清除排序" })).toBeNull();
   });
 
@@ -300,10 +300,10 @@ describe("表格视图", () => {
     expect(screen.getByText("②")).not.toBeNull();
     const rows = screen.getAllByRole("row").slice(1);
     // 主键 weapon 升序，组内按 level 升序。
-    expect(rows[0].textContent).toContain("claymore");
-    expect(rows[1].textContent).toContain("polearm");
-    expect(within(rows[2]).getByText("1")).not.toBeNull();
-    expect(within(rows[3]).getByText("2")).not.toBeNull();
+    expect(rows[0]!.textContent).toContain("claymore");
+    expect(rows[1]!.textContent).toContain("polearm");
+    expect(within(rows[2]!).getByText("1")).not.toBeNull();
+    expect(within(rows[3]!).getByText("2")).not.toBeNull();
   });
 
   it("排序后点击行把原始行号提交给后端行选择", () => {
@@ -341,9 +341,9 @@ describe("表格视图", () => {
       screen.getByRole("columnheader", { name: /total_damage/ }),
     );
     const rows = screen.getAllByRole("row").slice(1);
-    expect(rows[0].textContent).toContain("polearm");
+    expect(rows[0]!.textContent).toContain("polearm");
 
-    fireEvent.click(rows[0]);
+    fireEvent.click(rows[0]!);
 
     expect(selectionSelect).toHaveBeenCalledWith("view-1", null);
     expect(selectionSelect).toHaveBeenCalledTimes(1);
@@ -372,7 +372,7 @@ describe("表格视图", () => {
       </AnalysisSelectionContext.Provider>,
     );
 
-    fireEvent.click(screen.getAllByRole("row")[1]);
+    fireEvent.click(screen.getAllByRole("row")[1]!);
 
     expect(selectionSelect).toHaveBeenCalledWith("view-1", {
       columns: table.columns,
@@ -400,10 +400,10 @@ describe("表格视图", () => {
     const headers = () => screen.getAllByRole("columnheader");
     const first = headers()[0];
     const last = headers()[2];
-    fireEvent.dragStart(first);
-    fireEvent.dragOver(last);
-    fireEvent.drop(last);
-    fireEvent.dragEnd(first);
+    fireEvent.dragStart(first!);
+    fireEvent.dragOver(last!);
+    fireEvent.drop(last!);
+    fireEvent.dragEnd(first!);
     expect(headerNames()).toEqual(["total_damage", "dps", "weapon"]);
   });
 
@@ -419,7 +419,7 @@ describe("表格视图", () => {
       onFitChange,
     });
     expect(onFitChange).toHaveBeenCalled();
-    const info = onFitChange.mock.calls[0][0] as ViewFitInfo;
+    const info = onFitChange.mock.calls[0]![0] as ViewFitInfo;
     expect(info.fitWidth).toBeGreaterThan(200);
     expect(info.hiddenColumns).toBeGreaterThan(0);
     expect(info.fitHeight).not.toBeNull();
@@ -537,8 +537,8 @@ describe("表格纯逻辑", () => {
       dataColumns: ["damage"],
     });
     expect(layout.widths).toHaveLength(2);
-    expect(layout.fitWidth).toBe(layout.widths[0] + layout.widths[1]);
-    expect(layout.widths[1]).toBeGreaterThan(layout.widths[0]);
+    expect(layout.fitWidth).toBe(layout.widths[0]! + layout.widths[1]!);
+    expect(layout.widths[1]).toBeGreaterThan(layout.widths[0]!);
     expect(layout.widths[0]).toBeGreaterThanOrEqual(72);
     expect(layout.widths[0]).toBeLessThanOrEqual(240);
   });

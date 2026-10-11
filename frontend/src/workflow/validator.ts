@@ -942,14 +942,14 @@ function validateConfigForwarders(
         }),
       );
     } else {
-      const source = nodeById.get(inputEdges[0].source_node_id);
+      const source = nodeById.get(inputEdges[0]!.source_node_id);
       if (source === undefined || !ANALYSIS_TABLE_NODE_KINDS.has(source.kind)) {
         diagnostics.push(
           diagnostic(
             "error",
             "CONFIG_INPUT_INVALID",
             "展示配置节点只能接收表节点（取数/算子）输入",
-            { node_id: node.id, edge_id: inputEdges[0].id },
+            { node_id: node.id, edge_id: inputEdges[0]!.id },
           ),
         );
       }

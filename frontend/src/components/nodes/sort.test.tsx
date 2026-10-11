@@ -109,7 +109,7 @@ describe("排序节点编辑器（卡片直编）", () => {
     expect(onChange).toHaveBeenLastCalledWith({
       keys: [{ column: "", direction: "desc" }],
     });
-    fireEvent.change(screen.getAllByRole("combobox")[0], {
+    fireEvent.change(screen.getAllByRole("combobox")[0]!, {
       target: { value: "dps" },
     });
 
@@ -127,7 +127,7 @@ describe("排序节点编辑器（卡片直编）", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.change(screen.getAllByRole("combobox")[1], {
+    fireEvent.change(screen.getAllByRole("combobox")[1]!, {
       target: { value: "asc" },
     });
 
@@ -150,7 +150,7 @@ describe("排序节点编辑器（卡片直编）", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getAllByRole("button", { name: "↓" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "↓" })[0]!);
 
     expect(onChange).toHaveBeenLastCalledWith({
       keys: [
@@ -228,7 +228,7 @@ describe("排序节点编辑器（卡片直编）", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getAllByRole("button", { name: "×" })[0]);
+    fireEvent.click(screen.getAllByRole("button", { name: "×" })[0]!);
 
     expect(onChange).toHaveBeenLastCalledWith({
       keys: [{ column: "element", direction: "asc" }],

@@ -98,7 +98,7 @@ describe("CharacterStateSheet", () => {
     render(
       <CharacterStateSheet
         frameState={FRAME_STATE}
-        character={FRAME_STATE.characters[0]}
+        character={FRAME_STATE.characters[0]!}
       />,
     );
 
@@ -136,7 +136,7 @@ describe("CharacterStateSheet", () => {
     render(
       <CharacterStateSheet
         frameState={FRAME_STATE}
-        character={FRAME_STATE.characters[0]}
+        character={FRAME_STATE.characters[0]!}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /攻击力/ }));
@@ -150,7 +150,7 @@ describe("CharacterStateSheet", () => {
     render(
       <CharacterStateSheet
         frameState={FRAME_STATE}
-        character={FRAME_STATE.characters[0]}
+        character={FRAME_STATE.characters[0]!}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /暴击率/ }));
@@ -161,7 +161,7 @@ describe("CharacterStateSheet", () => {
     render(
       <CharacterStateSheet
         frameState={FRAME_STATE}
-        character={FRAME_STATE.characters[0]}
+        character={FRAME_STATE.characters[0]!}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /buff\.maiden_2pc/ }));
@@ -175,7 +175,7 @@ describe("CharacterStateSheet", () => {
     render(
       <CharacterStateSheet
         frameState={FRAME_STATE}
-        character={FRAME_STATE.characters[0]}
+        character={FRAME_STATE.characters[0]!}
         focusAttributeKey="stat.crit_rate"
       />,
     );
@@ -188,7 +188,7 @@ describe("CharacterStateSheet", () => {
     render(
       <CharacterStateSheet
         frameState={FRAME_STATE}
-        character={FRAME_STATE.characters[0]}
+        character={FRAME_STATE.characters[0]!}
         focusAttributeKey="stat.hp.base"
       />,
     );
@@ -200,11 +200,11 @@ describe("CharacterStateSheet", () => {
 
   it("Buff 带 display_name 时主标题优先显示显示名", () => {
     const namedBuffState = JSON.parse(JSON.stringify(FRAME_STATE)) as FrameStateResponse;
-    namedBuffState.characters[0].buffs![0].display_name = "被怜爱的少女 2件套";
+    namedBuffState.characters[0]!.buffs![0]!.display_name = "被怜爱的少女 2件套";
     render(
       <CharacterStateSheet
         frameState={namedBuffState}
-        character={namedBuffState.characters[0]}
+        character={namedBuffState.characters[0]!}
       />,
     );
 
@@ -216,7 +216,7 @@ describe("CharacterStateSheet", () => {
     render(
       <CharacterStateSheet
         frameState={FRAME_STATE}
-        character={FRAME_STATE.characters[0]}
+        character={FRAME_STATE.characters[0]!}
         characterName="芭芭拉"
       />,
     );
@@ -230,13 +230,13 @@ describe("CharacterStateSheet", () => {
     const { container } = render(
       <CharacterStateSheet
         frameState={FRAME_STATE}
-        character={FRAME_STATE.characters[0]}
+        character={FRAME_STATE.characters[0]!}
       />,
     );
 
     const rows = container.querySelectorAll(".state-sheet-attr-row");
     expect(rows.length).toBeGreaterThan(0);
-    const firstRow = rows[0];
+    const firstRow = rows[0]!;
     expect(firstRow.querySelectorAll(".state-sheet-attr-head")).toHaveLength(3);
     expect(firstRow.textContent).toContain("生命值上限");
     expect(firstRow.textContent).toContain("攻击力");
@@ -247,7 +247,7 @@ describe("CharacterStateSheet", () => {
     render(
       <CharacterStateSheet
         frameState={FRAME_STATE}
-        character={FRAME_STATE.characters[0]}
+        character={FRAME_STATE.characters[0]!}
       />,
     );
 
@@ -263,7 +263,7 @@ describe("CharacterStateSheet", () => {
     render(
       <CharacterStateSheet
         frameState={FRAME_STATE}
-        character={FRAME_STATE.characters[0]}
+        character={FRAME_STATE.characters[0]!}
       />,
     );
 
@@ -279,7 +279,7 @@ describe("CharacterStateSheet", () => {
       <CharacterStateSheet
         frameState={FRAME_STATE}
         character={{
-          ...FRAME_STATE.characters[0],
+          ...FRAME_STATE.characters[0]!,
           attributes: {
             "stat.atk.base": { value: 820, applied_terms: [] },
             "stat.atk.total": { value: 820, applied_terms: [] },
@@ -299,7 +299,7 @@ describe("CharacterStateSheet", () => {
       <CharacterStateSheet
         frameState={FRAME_STATE}
         character={{
-          ...FRAME_STATE.characters[0],
+          ...FRAME_STATE.characters[0]!,
           attributes: {
             "stat.atk.total": { value: 1543.9, applied_terms: [] },
           },
@@ -316,7 +316,7 @@ describe("CharacterStateSheet", () => {
     render(
       <CharacterStateSheet
         frameState={FRAME_STATE}
-        character={FRAME_STATE.characters[0]}
+        character={FRAME_STATE.characters[0]!}
       />,
     );
     fireEvent.click(screen.getByRole("button", { name: /攻击力/ }));
@@ -330,7 +330,7 @@ describe("CharacterStateSheet", () => {
       <CharacterStateSheet
         frameState={FRAME_STATE}
         character={{
-          ...FRAME_STATE.characters[1],
+          ...FRAME_STATE.characters[1]!,
           health: { current_hp: 2000, max_hp: 13000, hp_ratio: 0.1538 },
         }}
       />,
@@ -344,7 +344,7 @@ describe("CharacterStateSheet", () => {
       <CharacterStateSheet
         frameState={FRAME_STATE}
         character={{
-          ...FRAME_STATE.characters[1],
+          ...FRAME_STATE.characters[1]!,
           energy: { current_energy: 60, capacity: 60, burst_ready: true },
         }}
       />,
@@ -356,8 +356,8 @@ describe("CharacterStateSheet", () => {
 
   it("Buff 剩余不超过 2 秒时显示 warn 态", () => {
     const buffState = JSON.parse(JSON.stringify(FRAME_STATE)) as FrameStateResponse;
-    buffState.characters[0].buffs![0].expires_at_frame = 180; // 距帧 120 仅 1 秒
-    render(<CharacterStateSheet frameState={buffState} character={buffState.characters[0]} />);
+    buffState.characters[0]!.buffs![0]!.expires_at_frame = 180; // 距帧 120 仅 1 秒
+    render(<CharacterStateSheet frameState={buffState} character={buffState.characters[0]!} />);
 
     const remaining = screen.getByText(/剩余 60 帧/);
     expect(remaining.className).toContain("warn");
@@ -365,8 +365,8 @@ describe("CharacterStateSheet", () => {
 
   it("Buff 已过期时显示 expired 态", () => {
     const buffState = JSON.parse(JSON.stringify(FRAME_STATE)) as FrameStateResponse;
-    buffState.characters[0].buffs![0].expires_at_frame = 60; // 早于帧 120
-    render(<CharacterStateSheet frameState={buffState} character={buffState.characters[0]} />);
+    buffState.characters[0]!.buffs![0]!.expires_at_frame = 60; // 早于帧 120
+    render(<CharacterStateSheet frameState={buffState} character={buffState.characters[0]!} />);
 
     const remaining = screen.getByText(/剩余 0 帧/);
     expect(remaining.className).toContain("expired");

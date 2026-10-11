@@ -157,12 +157,12 @@ describe("表格配置节点编辑器", () => {
       ".table-config-editor",
     ) as HTMLElement;
     const rows = Array.from(container.querySelectorAll(".table-binding-row"));
-    const drag = rows[0].querySelector(".table-binding-drag") as HTMLElement;
+    const drag = rows[0]!.querySelector(".table-binding-drag") as HTMLElement;
     expect(drag.className).toContain("nodrag");
     const transfer = dragDataTransfer();
     fireEvent.dragStart(drag, { dataTransfer: transfer });
-    fireEvent.dragOver(rows[1], { dataTransfer: transfer });
-    fireEvent.drop(rows[1], { dataTransfer: transfer });
+    fireEvent.dragOver(rows[1]!, { dataTransfer: transfer });
+    fireEvent.drop(rows[1]!, { dataTransfer: transfer });
     fireEvent.dragEnd(drag);
     expect(onChange).toHaveBeenLastCalledWith({
       condition_columns: ["weapon_key", "char_key"],
@@ -179,11 +179,11 @@ describe("表格配置节点编辑器", () => {
       ".table-config-editor",
     ) as HTMLElement;
     const rows = Array.from(container.querySelectorAll(".table-binding-row"));
-    const drag = rows[0].querySelector(".table-binding-drag") as HTMLElement;
+    const drag = rows[0]!.querySelector(".table-binding-drag") as HTMLElement;
     const transfer = dragDataTransfer();
     fireEvent.dragStart(drag, { dataTransfer: transfer });
-    fireEvent.dragOver(rows[1], { dataTransfer: transfer });
-    fireEvent.drop(rows[1], { dataTransfer: transfer });
+    fireEvent.dragOver(rows[1]!, { dataTransfer: transfer });
+    fireEvent.drop(rows[1]!, { dataTransfer: transfer });
     fireEvent.dragEnd(drag);
     expect(onChange).toHaveBeenLastCalledWith({
       condition_columns: [],

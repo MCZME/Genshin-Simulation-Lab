@@ -51,7 +51,7 @@ const { oneRegionDefinition, twoRegionDefinition, conflictDefinition, definition
     }
     for (const [index, simulationId] of simulationIds.entries()) {
       nodes.push(node(simulationId, "simulation", {}, null));
-      edges.push(edge(`sim-${index}`, regionIds[index], "out", simulationId, "in"));
+      edges.push(edge(`sim-${index}`, regionIds[index]!, "out", simulationId, "in"));
     }
     return {
       schema_version: 1,
@@ -379,7 +379,7 @@ describe("App 运行编排", () => {
 
     const regionButtons = await screen.findAllByRole("button", { name: "区域运行" });
     expect(regionButtons).toHaveLength(2);
-    fireEvent.click(regionButtons[0]);
+    fireEvent.click(regionButtons[0]!);
 
     await waitFor(() => expect(mocks.validateInputs).toHaveBeenCalledTimes(1));
     await waitFor(() => expect(mocks.submitRun).toHaveBeenCalledTimes(1));

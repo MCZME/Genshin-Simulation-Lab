@@ -12,8 +12,6 @@ from genshin_sim.content.weapons.sword.freedom_sworn.data import (
 from genshin_sim.core.attributes import AttributeSubjectRef, RuntimeSourceKind, RuntimeSourceRef
 from genshin_sim.core.systems.buff import ApplyBuffRequest, BuffModifierValue
 
-_SIGILS_REQUIRED = SIGILS_REQUIRED
-
 
 class FreedomSwornSigilHook:
     """装备者触发元素反应积攒奋起之符，满 2 枚消耗并开启全队抗争之歌。"""
@@ -88,7 +86,7 @@ class FreedomSwornSigilHook:
             return HookResult()
         self._last_sigil_frame = frame
         self._sigil_count += 1
-        if self._sigil_count < _SIGILS_REQUIRED:
+        if self._sigil_count < SIGILS_REQUIRED:
             return HookResult()
         self._sigil_count = 0
         self._lockout_until_frame = frame + self._sigil_lockout_frames

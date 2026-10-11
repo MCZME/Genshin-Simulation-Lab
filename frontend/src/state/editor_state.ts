@@ -375,10 +375,10 @@ export function markSaved(state: EditorState): EditorState {
 }
 
 export function undo(state: EditorState): EditorState {
-  if (state.past.length === 0) {
+  const previous = state.past[state.past.length - 1];
+  if (previous === undefined) {
     return state;
   }
-  const previous = state.past[state.past.length - 1];
   return {
     ...state,
     definition: previous,
@@ -390,10 +390,10 @@ export function undo(state: EditorState): EditorState {
 }
 
 export function redo(state: EditorState): EditorState {
-  if (state.future.length === 0) {
+  const next = state.future[0];
+  if (next === undefined) {
     return state;
   }
-  const next = state.future[0];
   return {
     ...state,
     definition: next,
@@ -433,10 +433,16 @@ export function moveEdgeIncomingOrder(
   if (swapIndex < 0 || swapIndex >= group.length) {
     return state;
   }
-  const from = edges.indexOf(group[groupIndex]);
-  const to = edges.indexOf(group[swapIndex]);
+  const from = edges.indexOf(group[groupIndex]!);
+  const to = edges.indexOf(group[swapIndex]!);
   const next = [...edges];
-  [next[from], next[to]] = [next[to], next[from]];
+  const fromEdge = next[from];
+  const toEdge = next[to];
+  if (fromEdge === undefined || toEdge === undefined) {
+    return state;
+  }
+  next[from] = toEdge;
+  next[to] = fromEdge;
   return performEdit(state, { ...state.definition, edges: next });
 }
 
@@ -464,8 +470,22 @@ function pruneSelection(
   };
 }
 
+/** 定义对象在 reducer 中不可变（每次编辑产生新对象），序列化结果可按引用缓存，
+ * 避免每次按键都对整份文档做两次 JSON.stringify。 */
+const definitionJsonCache = new WeakMap<WorkflowDefinition, string>();
+
+function definitionJson(definition: WorkflowDefinition): string {
+  const cached = definitionJsonCache.get(definition);
+  if (cached !== undefined) {
+    return cached;
+  }
+  const json = JSON.stringify(definition);
+  definitionJsonCache.set(definition, json);
+  return json;
+}
+
 function sameDefinition(left: WorkflowDefinition, right: WorkflowDefinition): boolean {
-  return JSON.stringify(left) === JSON.stringify(right);
+  return definitionJson(left) === definitionJson(right);
 }
 
 function clone<T>(value: T): T {

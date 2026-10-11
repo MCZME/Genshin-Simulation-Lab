@@ -1,8 +1,5 @@
 """昔日宗室之仪圣遗物套装实现。
 
-资产数据来源：Project Amber / Yatta 当前默认数据（``artifact_set:15007``）；
-套装命名采用官方英文名 Noblesse Oblige（meropide.cn/en/artifacts）。
-
 效果与落点：
 
 - 2 件套：元素爆发造成的伤害提升 20% -> 通用公式

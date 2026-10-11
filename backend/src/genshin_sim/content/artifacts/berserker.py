@@ -1,8 +1,5 @@
 """战狂圣遗物套装实现。
 
-资产数据来源：Project Amber / Yatta 当前默认数据（``artifact_set:10005``）；
-套装命名采用官方英文名 Berserker（meropide.cn/en/artifacts）。
-
 效果与落点：
 
 - 2 件套：暴击率提高 12% -> ``stat.crit.rate`` ``flat_add``，静态绑定

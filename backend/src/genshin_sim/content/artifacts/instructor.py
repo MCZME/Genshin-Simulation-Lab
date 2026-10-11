@@ -1,8 +1,5 @@
 """教官圣遗物套装实现。
 
-资产数据来源：Project Amber / Yatta 当前默认数据（``artifact_set:10007``）；
-套装命名采用官方英文名 Instructor（meropide.cn/en/artifacts）。
-
 效果与落点：
 
 - 2 件套：元素精通提高 80 点 -> ``stat.elemental_mastery``

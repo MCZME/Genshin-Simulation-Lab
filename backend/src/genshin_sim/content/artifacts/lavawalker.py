@@ -1,8 +1,5 @@
 """渡过烈火的贤人圣遗物套装实现。
 
-资产数据来源：Project Amber / Yatta 当前默认数据（``artifact_set:14003``）；
-套装命名采用官方英文名 Lavawalker（meropide.cn/en/artifacts）。
-
 效果与落点：
 
 - 2 件套：火元素抗性提高 40% -> ``resistance.pyro`` ``flat_add``，

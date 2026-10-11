@@ -1,8 +1,5 @@
 """冰风迷途的勇士圣遗物套装实现。
 
-资产数据来源：Project Amber / Yatta 当前默认数据（``artifact_set:14001``）；
-套装命名采用官方英文名 Blizzard Strayer（meropide.cn/en/artifacts）。
-
 效果与落点：
 
 - 2 件套：获得 15% 冰元素伤害加成 -> ``bonus.damage.cryo``

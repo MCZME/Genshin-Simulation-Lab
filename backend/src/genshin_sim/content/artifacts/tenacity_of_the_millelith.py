@@ -1,8 +1,5 @@
 """千岩牢固圣遗物套装实现。
 
-资产数据来源：Project Amber / Yatta 当前默认数据（``artifact_set:15017``）；
-套装命名采用官方英文名 Tenacity of the Millelith（meropide.cn/en/artifacts）。
-
 效果与落点：
 
 - 2 件套：生命值提升 20% -> ``stat.hp.max`` ``percent_add``，静态绑定

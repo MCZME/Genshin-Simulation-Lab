@@ -1,31 +1,21 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
-  cancelRun,
-  closeAnalysisContext,
   createWorkflow,
   deleteWorkflow,
   getAnalysisSchema,
-  getRun,
   getWorkflow,
   getWorkspace,
   listWorkflows,
   saveWorkflow,
   searchAssets,
-  selectAnalysisStage,
-  submitRun,
-  validateInputs,
 } from "../api/client";
-import type { ValidateInputsResponse, WorkflowListItem } from "../api/client";
-import { pollRun } from "../api/runtime_subscription";
+import type { WorkflowListItem } from "../api/client";
 import { CanvasView } from "../components/canvas/CanvasView";
 import {
   AnalysisStageSelectionContext,
   AnalysisResultsContext,
   AnalysisSchemaCatalogContext,
   AnalysisSelectionContext,
-  type AnalysisSelectionStore,
-  type AnalysisStageSelectionRecord,
-  type AnalysisStageSelectionStore,
 } from "../components/analysis_context";
 import { createAnalysisSchemaCatalog } from "../workflow/templates";
 import type { AnalysisSchemaCatalog } from "../workflow/templates";
@@ -75,40 +65,16 @@ import {
   migrateWorkflowDefinition,
 } from "../state/converters";
 import {
-  applyBatchView,
-  batchStatusFromRunState,
-  createEmptyRunState,
-  createRunView,
-  setBatchStatus,
-  setMethodStatus,
-  setRunPhase,
-} from "../state/run_state";
-import type { RunState } from "../state/run_state";
-import {
-  executeAnalysisSelectionBranch,
   planFetchNodes,
-  populateAnalysisTerminalResults,
-  runAnalysisRegionStages,
-  selectionBranchNodeIds,
 } from "../workflow/analysis_runner";
-import type { AnalysisNodeResult } from "../workflow/analysis_runner";
 import { compileConfigurationRegion } from "../workflow/compiler";
-import type { AnalysisTableResult } from "../workflow/templates";
 import {
-  analysisInputStatus,
-  batchInputFingerprint,
   hasRunnableBatch,
-  paceBuildSteps,
   planAnalysisInputRun,
   planRegionRun,
   planWorkflowRun,
   scopedDiagnostics,
-  validationErrorMessage,
-  withAutoBatchSeed,
 } from "../workflow/runner";
-import type { BatchPlan, RunPlan } from "../workflow/runner";
-import { regionAnalysisSnapshot } from "../workflow/analysis_snapshot";
-import type { AnalysisRunPhase } from "../components/canvas/RegionNode";
 import {
   assetMissingDiagnostics,
   collectAssetReferences,
@@ -120,242 +86,20 @@ import { getNodeKindSpec } from "../workflow/registry";
 import { createAppSettings, loadAppSettingsFromApi, saveAppSettingsToApi } from "../state/settings";
 import type { AppSettings } from "../state/settings";
 import { SettingsModal } from "../components/shell/SettingsModal";
+import { toMessage } from "./errors";
+import { useAnalysisRuntime } from "./useAnalysisRuntime";
+import { planErrorDiagnostic, useRunOrchestration } from "./useRunOrchestration";
 
 type Tool = "objects" | "problems" | "results" | null;
-
-/** 构建阶段计划错误 → 问题面板诊断（决策 2.40 修订）。 */
-function planErrorDiagnostic(message: string, plan: RunPlan): Diagnostic {
-  return {
-    severity: "error",
-    code: "BUILD_FAILED",
-    message,
-    node_id: null,
-    edge_id: null,
-    region_id: plan.participating[0]?.regionId ?? null,
-    path: null,
-  };
-}
-
-/** 批次区域校验失败的成员级诊断 → 问题面板（决策 2.40 修订）。 */
-function validationFailureDiagnostics(
-  validation: ValidateInputsResponse,
-  batch: BatchPlan,
-): Diagnostic[] {
-  return validation.members
-    .filter((member) => !member.ok)
-    .map((member) => {
-      const detail = member.details?.[0];
-      return {
-        severity: "error",
-        code: detail?.code ?? "INPUT_INVALID",
-        message: detail?.message ?? `${member.item_id} 校验未通过`,
-        node_id: batch.nodeId,
-        edge_id: null,
-        region_id: batch.sourceRegionIds[0] ?? null,
-        path: detail?.path ?? null,
-      };
-    });
-}
 
 export function App() {
   const [appState, setAppState] = useState(() => createAppState());
   const [editorState, setEditorState] = useState<EditorState | null>(null);
   const [workflowList, setWorkflowList] = useState<WorkflowListItem[]>([]);
-  const [runState, setRunState] = useState<RunState>(() => createEmptyRunState());
   const [schemaCatalog, setSchemaCatalog] = useState<AnalysisSchemaCatalog | null>(null);
-  const [analysisSelections, setAnalysisSelections] = useState<Map<string, AnalysisTableResult>>(
-    new Map(),
-  );
-  const analysisSelectionStore = useMemo<AnalysisSelectionStore>(
-    () => ({
-      selections: analysisSelections,
-      select: (nodeId, table) => {
-        setAnalysisSelections((current) => {
-          const next = new Map(current);
-          if (table === null) {
-            next.delete(nodeId);
-          } else {
-            next.set(nodeId, table);
-          }
-          return next;
-        });
-      },
-    }),
-    [analysisSelections],
-  );
-  const [analysisStageSelections, setAnalysisStageSelections] = useState<
-    Map<string, AnalysisStageSelectionRecord | null>
-  >(new Map());
-  const [analysisStageContextIds, setAnalysisStageContextIds] = useState<
-    ReadonlyMap<string, string>
-  >(new Map());
-  const [analysisResults, setAnalysisResults] = useState<Map<string, AnalysisNodeResult>>(
-    () => new Map(),
-  );
-  const analysisSelectionBranchSeqRef = useRef(0);
-  const analysisStageSelectionStore = useMemo<AnalysisStageSelectionStore>(
-    () => ({
-      records: analysisStageSelections,
-      contextIdFor: (regionId: string) =>
-        analysisStageContextIds.get(regionId) ?? null,
-      select: (nodeId, record) => {
-        setAnalysisStageSelections((current) => {
-          const next = new Map(current);
-          if (record === null) {
-            next.delete(nodeId);
-          } else {
-            next.set(nodeId, record);
-          }
-          return next;
-        });
-        const definition = editorState?.definition;
-        const viewNode = definition?.nodes.find((item) => item.id === nodeId);
-        if (definition === undefined || viewNode === undefined) {
-          return;
-        }
-        if (record === null) {
-          setAnalysisResults((current) => {
-            const next = new Map(current);
-            for (const targetId of selectionBranchNodeIds(
-              definition,
-              viewNode.region_id ?? "",
-              nodeId,
-            )) {
-              next.set(targetId, { status: "idle" });
-            }
-            return next;
-          });
-          setAnalysisSelections((current) => {
-            const next = new Map(current);
-            next.delete(nodeId);
-            return next;
-          });
-          return;
-        }
-        const regionId = viewNode.region_id;
-        if (regionId === null) {
-          return;
-        }
-        const contextId = analysisStageContextIds.get(regionId);
-        const viewStageId = analysisResults.get(nodeId)?.stage_id;
-        if (contextId === undefined || viewStageId === undefined) {
-          return;
-        }
-        const seq = ++analysisSelectionBranchSeqRef.current;
-        void (async () => {
-          const selectionStage =
-            record.kind === "row"
-              ? await selectAnalysisStage(contextId, viewStageId, {
-                  kind: "row",
-                  row_index: record.row_index,
-                })
-              : await selectAnalysisStage(contextId, viewStageId, {
-                  kind: "group",
-                  columns: record.groupColumns,
-                  values: record.groupValues,
-                });
-          if (seq !== analysisSelectionBranchSeqRef.current) {
-            return;
-          }
-          const selectionTable: AnalysisTableResult = {
-            columns: selectionStage.columns.map((column) => ({
-              name: column.name,
-              type: column.type,
-            })),
-            rows: selectionStage.rows,
-            truncated: selectionStage.truncated,
-          };
-          setAnalysisSelections((current) => {
-            const next = new Map(current);
-            next.set(nodeId, selectionTable);
-            return next;
-          });
-          const existingStages = new Map<string, string>();
-          for (const item of definition.nodes) {
-            const stageId = analysisResults.get(item.id)?.stage_id;
-            if (stageId !== undefined) {
-              existingStages.set(item.id, stageId);
-            }
-          }
-          const branchResults = await executeAnalysisSelectionBranch(
-            definition,
-            regionId,
-            nodeId,
-            contextId,
-            selectionStage.stage_id,
-            existingStages,
-          );
-          if (
-            seq !== analysisSelectionBranchSeqRef.current ||
-            analysisStageContextIdsRef.current.get(regionId) !== contextId
-          ) {
-            return;
-          }
-          setAnalysisResults((current) => {
-            const next = new Map(current);
-            for (const [branchNodeId, result] of branchResults) {
-              next.set(branchNodeId, result);
-            }
-            return populateAnalysisTerminalResults(definition, regionId, next);
-          });
-        })().catch(() => {
-          // 选择分支失败时保留旧结果；自动重算会在下次定义变化后刷新。
-        });
-      },
-    }),
-    [
-      analysisStageSelections,
-      analysisStageContextIds,
-      analysisResults,
-      editorState,
-    ],
-  );
-  /** 每个分析区域最近一次阶段运行保留的后端上下文（供点击选择派生阶段）。 */
-  const analysisStageContextIdsRef = useRef<Map<string, string>>(new Map());
-  /** 关闭全部分析运行时上下文并清空阶段运行态（工作流切换/新建/删除时调用）。 */
-  async function closeAnalysisContexts(): Promise<void> {
-    analysisSelectionBranchSeqRef.current += 1;
-    const contexts = [...analysisStageContextIdsRef.current.values()];
-    analysisStageContextIdsRef.current = new Map();
-    setAnalysisStageContextIds(new Map());
-    setAnalysisResults(new Map());
-    setAnalysisStageSelections(new Map());
-    setAnalysisSelections(new Map());
-    await Promise.all(
-      contexts.map((contextId) =>
-        closeAnalysisContext(contextId).catch(() => {
-          // 旧上下文回收失败不阻断工作流切换。
-        }),
-      ),
-    );
-  }
-  /** 分析区域运行阶段（2026-08-26 定案：获取输入 → 查询 → 视图加载）。 */
-  const [analysisRunPhase, setAnalysisRunPhase] = useState<AnalysisRunPhase | null>(null);
-  /** 分析区域自动重算快照：只对影响查询/展示的定义变化触发。 */
-  const analysisSnapshots = useMemo(() => {
-    const map = new Map<string, string>();
-    if (editorState === null) {
-      return map;
-    }
-    for (const region of editorState.definition.regions) {
-      if (region.kind === "analysis") {
-        map.set(region.id, regionAnalysisSnapshot(editorState.definition, region.id));
-      }
-    }
-    return map;
-  }, [editorState]);
-  /** 最近一次自动重算/显式刷新对应的区域快照；相同则跳过请求。 */
-  const lastAutoAnalysisSnapshotsRef = useRef<Map<string, string>>(new Map());
-  /** 自动重算竞态序号：过期响应丢弃。 */
-  const analysisAutoSeqRef = useRef(0);
-  /** 最新工作流定义（自动重算 effect 经 ref 读取，避免依赖函数身份）。 */
-  const latestDefinitionRef = useRef<WorkflowDefinition | null>(null);
   const [saving, setSaving] = useState(false);
-  const [running, setRunning] = useState(false);
   /** 资产预检（决策 2.40 节点校验）：加载/切换工作流时核对的失效资产 key。 */
   const [missingAssetKeys, setMissingAssetKeys] = useState<string[]>([]);
-  /** 最近一次运行/校验的区域校验失败诊断：进问题面板而非顶部横幅（决策 2.40 修订）。 */
-  const [validationDiagnostics, setValidationDiagnostics] = useState<Diagnostic[]>([]);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [activeTool, setActiveTool] = useState<Tool>("objects");
   /** 结果面板定位请求（决策 2.37）：非空时面板打开并选中该 session，随后清空。 */
@@ -369,17 +113,44 @@ export function App() {
     "zoom-in" | "zoom-out" | "fit" | { type: "locate"; nodeId: string } | null
   >(null);
   const initializedRef = useRef(false);
-  /** 运行编排内部信号：取消整次工作流运行（当前批取消 + 剩余批次跳过）。 */
-  const cancelRequestedRef = useRef(false);
-  /** 当前运行的请求取消源：卸载时中断在途的校验/提交/轮询请求。 */
-  const runAbortRef = useRef<AbortController | null>(null);
-  /** 当前在跑批次：模拟节点 id 与后端 run_id，供「取消整批」定位。 */
-  const currentBatchRef = useRef<{ nodeId: string; runId: string | null } | null>(null);
   /** 资产预检请求序号：丢弃加载/切换竞态中的过期结果。 */
   const preflightSeqRef = useRef(0);
 
+  /** 构建/运行期诊断（完整校验 + 资产预检），并按区域运行范围过滤（决策 2.40）。 */
+  const runScopeDiagnostics = useMemo(
+    () =>
+      (definition: WorkflowDefinition, scopeRegionIds?: Set<string>): Diagnostic[] => {
+        const fullDiagnostics = [
+          ...validateWorkflow(definition),
+          ...assetMissingDiagnostics(definition, missingAssetKeys),
+        ];
+        return scopeRegionIds === undefined
+          ? fullDiagnostics
+          : scopedDiagnostics(definition, fullDiagnostics, scopeRegionIds);
+      },
+    [missingAssetKeys],
+  );
+
+  const analysis = useAnalysisRuntime({
+    definition: editorState?.definition ?? null,
+    schemaCatalog,
+    runScopeDiagnostics,
+  });
+  const run = useRunOrchestration({
+    settings,
+    runScopeDiagnostics,
+    updateEditor,
+    analysis: {
+      refreshAnalysis: analysis.refreshAnalysis,
+      syncAnalysisSnapshotRef: analysis.syncAnalysisSnapshotRef,
+    },
+    setErrorMessage,
+    openProblems: () => setActiveTool("problems"),
+    openResultAt,
+  });
+
   /** 运行持有全局编辑锁（决策 2.33）。 */
-  const busy = running;
+  const busy = run.running;
 
   /** 节点校验的资产预检（决策 2.40）：加载/切换工作流时核对一次，竞态以序号丢弃。 */
   async function runAssetPreflight(definition: WorkflowDefinition): Promise<void> {
@@ -460,19 +231,6 @@ export function App() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  useEffect(() => {
-    return () => {
-      // 应用退出时中断在途运行请求并尽力回收后端阶段上下文；竞态序号同时作废未完成的选择分支。
-      runAbortRef.current?.abort();
-      analysisSelectionBranchSeqRef.current += 1;
-      for (const contextId of analysisStageContextIdsRef.current.values()) {
-        void closeAnalysisContext(contextId).catch(() => {
-          // 卸载阶段回收失败不影响页面退出。
-        });
-      }
-    };
-  }, []);
-
   const { diagnostics, compiles } = useMemo(() => {
     if (editorState === null) {
       return { diagnostics: [] as Diagnostic[], compiles: [] as CompileResult[] };
@@ -491,10 +249,6 @@ export function App() {
     };
   }, [editorState, missingAssetKeys]);
 
-  useEffect(() => {
-    latestDefinitionRef.current = editorState?.definition ?? null;
-  }, [editorState]);
-
   const canRun = useMemo(() => {
     return (
       editorState !== null &&
@@ -506,62 +260,49 @@ export function App() {
 
   /** 运行进行中：参与执行路径的节点保持亮度，其余置灰（决策 2.34）。 */
   const dimmedNodeIds = useMemo(() => {
-    const run = runState.run;
+    const currentRun = run.runState.run;
     if (
       editorState === null ||
-      run === null ||
-      (run.phase !== "building" && run.phase !== "validating" && run.phase !== "simulating")
+      currentRun === null ||
+      (currentRun.phase !== "building" &&
+        currentRun.phase !== "validating" &&
+        currentRun.phase !== "simulating")
     ) {
       return [];
     }
     const participants = new Set<string>();
-    for (const slice of run.build) {
+    for (const slice of currentRun.build) {
       for (const method of slice.methods) {
         participants.add(method.nodeId);
       }
     }
-    for (const batch of run.batches) {
+    for (const batch of currentRun.batches) {
       participants.add(batch.nodeId);
     }
     return editorState.definition.nodes
       .filter((node) => !participants.has(node.id))
       .map((node) => node.id);
-  }, [editorState, runState.run]);
+  }, [editorState, run.runState.run]);
 
   /** 构建限速推进时，当前应用中的节点（画布高亮）。 */
   const runningMethodNodeIds = useMemo(() => {
-    const run = runState.run;
-    if (run === null || run.phase !== "building") {
+    const currentRun = run.runState.run;
+    if (currentRun === null || currentRun.phase !== "building") {
       return [];
     }
-    return run.build
+    return currentRun.build
       .flatMap((slice) => slice.methods)
       .filter((method) => method.status === "running")
       .map((method) => method.nodeId);
-  }, [runState.run]);
-
-  /** 构建/运行诊断（完整校验 + 资产预检），并按区域运行范围过滤（决策 2.40）。 */
-  const runScopeDiagnostics = useMemo(
-    () =>
-      (definition: WorkflowDefinition, scopeRegionIds?: Set<string>): Diagnostic[] => {
-        const fullDiagnostics = [
-          ...validateWorkflow(definition),
-          ...assetMissingDiagnostics(definition, missingAssetKeys),
-        ];
-        return scopeRegionIds === undefined
-          ? fullDiagnostics
-          : scopedDiagnostics(definition, fullDiagnostics, scopeRegionIds);
-      },
-    [missingAssetKeys],
-  );
+  }, [run.runState.run]);
 
   /** 问题面板诊断：编辑期节点级诊断；最近一次运行/校验失败时显示校验/构建诊断（决策 2.40 修订）。 */
   const problemDiagnostics = useMemo<Diagnostic[]>(() => {
     if (editorState === null) {
       return [];
     }
-    return validationDiagnostics.length > 0 ? validationDiagnostics : diagnostics;
-  }, [diagnostics, editorState, validationDiagnostics]);
+    return run.validationDiagnostics.length > 0 ? run.validationDiagnostics : diagnostics;
+  }, [diagnostics, editorState, run.validationDiagnostics]);
 
   function updateSettings(next: AppSettings) {
     setSettings(next);
@@ -599,9 +340,12 @@ export function App() {
           width: 880,
           height: 440,
         });
-        const createdRegionId = next.definition.regions[next.definition.regions.length - 1].id;
-        setRenameRegionRequestId(createdRegionId);
-        return setSelection(next, { regions: [createdRegionId], nodes: [], edges: [] });
+        const createdRegion = next.definition.regions[next.definition.regions.length - 1];
+        if (createdRegion === undefined) {
+          return state;
+        }
+        setRenameRegionRequestId(createdRegion.id);
+        return setSelection(next, { regions: [createdRegion.id], nodes: [], edges: [] });
       }
       if (kind === "analysis_region") {
         const next = addRegion(state, "analysis", "分析区域", {
@@ -610,9 +354,12 @@ export function App() {
           width: 880,
           height: 440,
         });
-        const createdRegionId = next.definition.regions[next.definition.regions.length - 1].id;
-        setRenameRegionRequestId(createdRegionId);
-        return setSelection(next, { regions: [createdRegionId], nodes: [], edges: [] });
+        const createdRegion = next.definition.regions[next.definition.regions.length - 1];
+        if (createdRegion === undefined) {
+          return state;
+        }
+        setRenameRegionRequestId(createdRegion.id);
+        return setSelection(next, { regions: [createdRegion.id], nodes: [], edges: [] });
       }
       const spec = getNodeKindSpec(kind);
       if (spec === null) {
@@ -620,8 +367,11 @@ export function App() {
       }
       const targetRegionId = spec.region === null ? null : regionId;
       const next = addNode(state, kind, position, targetRegionId);
-      const createdNodeId = next.definition.nodes[next.definition.nodes.length - 1].id;
-      return setSelection(next, { nodes: [createdNodeId], regions: [], edges: [] });
+      const createdNode = next.definition.nodes[next.definition.nodes.length - 1];
+      if (createdNode === undefined) {
+        return state;
+      }
+      return setSelection(next, { nodes: [createdNode.id], regions: [], edges: [] });
     });
     setDragKind(null);
   }
@@ -845,7 +595,7 @@ export function App() {
   async function handleSwitchTo(workflowId: string): Promise<void> {
     const detail = await getWorkflow(workflowId);
     const definition = detail.definition as unknown as WorkflowDefinition;
-    await closeAnalysisContexts();
+    await analysis.closeAnalysisContexts();
     setEditorState(definitionToEditorState(definition));
     setAppState((current) =>
       withCurrentWorkflow(current, {
@@ -856,7 +606,7 @@ export function App() {
     rememberLastWorkflowId(workflowId);
     setRenameRegionRequestId(null);
     setSelectionEpoch((epoch) => epoch + 1);
-    setValidationDiagnostics([]);
+    run.setValidationDiagnostics([]);
     void runAssetPreflight(definition);
   }
 
@@ -891,7 +641,7 @@ export function App() {
     if (busy) {
       return;
     }
-    await closeAnalysisContexts();
+    await analysis.closeAnalysisContexts();
     setEditorState(createEmptyEditorState("未命名工作流"));
     setAppState((current) =>
       withCurrentWorkflow(current, { id: null, name: "未命名工作流" }),
@@ -900,7 +650,7 @@ export function App() {
     setRenameRegionRequestId(null);
     setSelectionEpoch((epoch) => epoch + 1);
     setMissingAssetKeys([]);
-    setValidationDiagnostics([]);
+    run.setValidationDiagnostics([]);
   }
 
   async function handleSaveAndCreate(): Promise<void> {
@@ -927,7 +677,7 @@ export function App() {
     try {
       await deleteWorkflow(workflowId);
       if (appState.workflowId === workflowId) {
-        await closeAnalysisContexts();
+        await analysis.closeAnalysisContexts();
         setEditorState(createEmptyEditorState("未命名工作流"));
         setAppState((current) =>
           withCurrentWorkflow(current, { id: null, name: "未命名工作流" }),
@@ -936,7 +686,7 @@ export function App() {
         setRenameRegionRequestId(null);
         setSelectionEpoch((epoch) => epoch + 1);
         setMissingAssetKeys([]);
-        setValidationDiagnostics([]);
+        run.setValidationDiagnostics([]);
       }
       await refreshWorkflowList();
     } catch (error) {
@@ -958,506 +708,6 @@ export function App() {
     }
   }
 
-  /**
-   * 共用运行/校验编排（决策 2.40 修订）：全部运行与区域运行走同一条链路——
-   * 构建（前端编译与图校验，失败零提交，限速动画）→ 模拟（每批提交前先做
-   * 区域校验，再提交并轮询，按画布顺序串行，决策 2.32）→ 终态；
-   * 区域校验入口以 check 模式复用同一条链路，在批次校验后终止、不提交。
-   */
-  async function executeRunPlan(
-    definition: WorkflowDefinition,
-    plan: RunPlan,
-    scopeRegionIds?: Set<string>,
-    mode: "run" | "check" = "run",
-    onCompleted?: (updatedDefinition: WorkflowDefinition) => Promise<void>,
-  ) {
-    setValidationDiagnostics([]);
-    setErrorMessage(null);
-    const runDiagnostics = runScopeDiagnostics(definition, scopeRegionIds);
-    const buildErrors = [
-      ...runDiagnostics
-        .filter((item) => item.severity === "error")
-        .map((item) => item.message),
-      ...plan.errors,
-    ];
-    if (buildErrors.length > 0 || plan.batches.length === 0) {
-      const errors =
-        buildErrors.length > 0
-          ? buildErrors
-          : ["没有可运行的批次：配置区域未连接模拟节点"];
-      setRunState((current) => {
-        const started = {
-          ...current,
-          run: createRunView({
-            participating: plan.participating,
-            batches: [],
-            buildErrors: errors,
-          }),
-        };
-        return setRunPhase(started, "build_failed");
-      });
-      // 构建/校验失败（零提交）进问题面板并自动打开；顶部横幅只保留操作类错误（决策 2.40 修订）。
-      const failureDiagnostics: Diagnostic[] = [
-        ...runDiagnostics.filter((item) => item.severity === "error"),
-        ...plan.errors.map((message) => planErrorDiagnostic(message, plan)),
-      ];
-      if (failureDiagnostics.length === 0) {
-        failureDiagnostics.push(
-          planErrorDiagnostic("没有可运行的批次：配置区域未连接模拟节点", plan),
-        );
-      }
-      setValidationDiagnostics(failureDiagnostics);
-      setActiveTool("problems");
-      return;
-    }
-
-    const controller = new AbortController();
-    runAbortRef.current = controller;
-    setRunning(true);
-    try {
-      await runBatches(definition, plan, mode, onCompleted, controller.signal);
-    } catch (error) {
-      // 批次内错误已在 runBatches 逐批处理；这里兜底编排本身的未预期异常，
-      // 保证运行锁一定释放（否则 busy 永真，保存/运行/切换全部禁用）。
-      setErrorMessage(`运行编排异常：${toMessage(error)}`);
-    } finally {
-      runAbortRef.current = null;
-      setRunning(false);
-    }
-  }
-
-  /** 构建校验通过后的批次执行段：限速动画 → 取消检查 → 校验/提交/轮询 → 终态。 */
-  async function runBatches(
-    definition: WorkflowDefinition,
-    plan: RunPlan,
-    mode: "run" | "check",
-    onCompleted: ((updatedDefinition: WorkflowDefinition) => Promise<void>) | undefined,
-    signal: AbortSignal,
-  ): Promise<void> {
-    setRunState((current) => ({
-      ...current,
-      run: createRunView(plan),
-    }));
-
-    // 构建阶段逐节点限速推进（决策 2.34 修订）：每个方法步骤保留最小执行时长，
-    // 运行过程按节点顺序真实推进；取消时剩余步骤立即跳过。
-    await paceBuildSteps(plan.participating, {
-      enabled: settings.runAnimation,
-      shouldStop: () => cancelRequestedRef.current,
-      onMethodStatus: (regionId, nodeId, status) =>
-        setRunState((current) => setMethodStatus(current, regionId, nodeId, status)),
-    });
-
-    // 构建期间请求取消：全部批次跳过，不进入校验/提交。
-    if (cancelRequestedRef.current) {
-      setRunState((current) => {
-        const skipped = plan.batches.reduce(
-          (state, batch) => setBatchStatus(state, batch.nodeId, "skipped"),
-          current,
-        );
-        return setRunPhase(skipped, "cancelled");
-      });
-      return;
-    }
-
-    if (mode === "check") {
-      setRunState((current) => setRunPhase(current, "validating"));
-      let cancelled = false;
-      for (const batch of plan.batches) {
-        if (cancelRequestedRef.current) {
-          setRunState((current) => setBatchStatus(current, batch.nodeId, "skipped"));
-          cancelled = true;
-          continue;
-        }
-        setRunState((current) => setBatchStatus(current, batch.nodeId, "validating"));
-        try {
-          const validation = await validateInputs(batch.members, { signal });
-          if (cancelRequestedRef.current) {
-            setRunState((current) => setBatchStatus(current, batch.nodeId, "skipped"));
-            cancelled = true;
-            continue;
-          }
-          if (!validation.ok) {
-            setValidationDiagnostics((current) => [
-              ...current,
-              ...validationFailureDiagnostics(validation, batch),
-            ]);
-            setActiveTool("problems");
-          }
-          setRunState((current) =>
-            setBatchStatus(
-              current,
-              batch.nodeId,
-              validation.ok ? "validated" : "failed",
-              validation.ok ? null : validationErrorMessage(validation),
-            ),
-          );
-        } catch (error) {
-          setRunState((current) =>
-            setBatchStatus(
-              current,
-              batch.nodeId,
-              isAbortError(error) ? "cancelled" : "failed",
-              toMessage(error),
-            ),
-          );
-        }
-      }
-      setRunState((current) => setRunPhase(current, cancelled ? "cancelled" : "validated"));
-      return;
-    }
-
-    setRunState((current) => setRunPhase(current, "simulating"));
-
-    const fingerprintByNode = new Map(
-      plan.batches.map((batch) => [batch.nodeId, batchInputFingerprint(batch)]),
-    );
-    let cancelled = false;
-    let validationFailed = false;
-    const completedSessions: Array<{
-      nodeId: string;
-      itemId: string;
-      sessionId: string;
-    }> = [];
-
-    for (const batch of plan.batches) {
-      if (cancelRequestedRef.current) {
-        setRunState((current) => setBatchStatus(current, batch.nodeId, "skipped"));
-        cancelled = true;
-        continue;
-      }
-      setRunState((current) => setBatchStatus(current, batch.nodeId, "validating"));
-      // 区域校验（决策 2.40）：提交前对批次成员做后端统一校验；
-      // 失败该批标失败并附成员级诊断，其余批次照跑（对齐 2.32）。
-      // 随机种子未设置时提交前自动随机生成（同批共用），校验与提交使用同一份成员。
-      const seededMembers = withAutoBatchSeed(batch.members);
-      try {
-        const validation = await validateInputs(seededMembers, { signal });
-        if (cancelRequestedRef.current) {
-          setRunState((current) => setBatchStatus(current, batch.nodeId, "skipped"));
-          cancelled = true;
-          continue;
-        }
-        if (!validation.ok) {
-          validationFailed = true;
-          setValidationDiagnostics((current) => [
-            ...current,
-            ...validationFailureDiagnostics(validation, batch),
-          ]);
-          setActiveTool("problems");
-          setRunState((current) =>
-            setBatchStatus(current, batch.nodeId, "failed", validationErrorMessage(validation)),
-          );
-          continue;
-        }
-      } catch (error) {
-        setRunState((current) =>
-          setBatchStatus(
-            current,
-            batch.nodeId,
-            isAbortError(error) ? "cancelled" : "failed",
-            toMessage(error),
-          ),
-        );
-        continue;
-      }
-      setRunState((current) => setBatchStatus(current, batch.nodeId, "submitting"));
-      currentBatchRef.current = { nodeId: batch.nodeId, runId: null };
-      try {
-        const submitted = await submitRun(seededMembers, {
-          name: batch.name,
-          concurrency: batch.concurrency ?? undefined,
-          signal,
-        });
-        if (cancelRequestedRef.current) {
-          const view = await cancelRun(submitted.run_id);
-          setRunState((current) => applyBatchView(current, batch.nodeId, view));
-        }
-        currentBatchRef.current = { nodeId: batch.nodeId, runId: submitted.run_id };
-        setRunState((current) => {
-          const applied = applyBatchView(current, batch.nodeId, submitted);
-          return setBatchStatus(applied, batch.nodeId, "running");
-        });
-        const finalView = await pollRun(
-          submitted.run_id,
-          (view) => setRunState((current) => applyBatchView(current, batch.nodeId, view)),
-          {
-            intervalMs: 1000,
-            signal,
-            getRun: (runId) => getRun(runId, { signal }),
-          },
-        );
-        setRunState((current) =>
-          setBatchStatus(current, batch.nodeId, batchStatusFromRunState(finalView.state)),
-        );
-        for (const member of finalView.members) {
-          if (member.state === "completed" && member.session_id != null) {
-            completedSessions.push({
-              nodeId: batch.nodeId,
-              itemId: member.item_id,
-              sessionId: member.session_id,
-            });
-          }
-        }
-      } catch (error) {
-        // 某批失败不中断后续批次（决策 2.32）。
-        setRunState((current) =>
-          setBatchStatus(
-            current,
-            batch.nodeId,
-            isAbortError(error) ? "cancelled" : "failed",
-            toMessage(error),
-          ),
-        );
-      } finally {
-        currentBatchRef.current = null;
-      }
-    }
-
-    if (cancelled) {
-      setRunState((current) => setRunPhase(current, "cancelled"));
-    } else {
-      setRunState((current) => setRunPhase(current, "completed"));
-      const updatedDefinition = persistSimulationSessions(
-        definition,
-        completedSessions,
-        fingerprintByNode,
-      );
-      if (onCompleted !== undefined) {
-        await onCompleted(updatedDefinition);
-      } else {
-        await refreshAnalysis(updatedDefinition);
-        syncAnalysisSnapshotRef(updatedDefinition);
-        // 运行结束联动（决策 2.37）：自动打开结果面板并定位最新记录；
-        // 存在区域校验失败时保留问题面板，不再切到结果面板（决策 2.40 修订）。
-        if (!validationFailed) {
-          openResultAt(completedSessions[0]?.sessionId ?? null);
-        }
-      }
-    }
-  }
-
-  /** 模拟节点保存最近一次批次会话 ID（决策：随工作流持久化）。 */
-  function persistSimulationSessions(
-    definition: WorkflowDefinition,
-    completedSessions: Array<{ nodeId: string; sessionId: string }>,
-    fingerprintByNode?: Map<string, string>,
-  ): WorkflowDefinition {
-    const byNode = new Map<string, string[]>();
-    for (const item of completedSessions) {
-      const list = byNode.get(item.nodeId) ?? [];
-      list.push(item.sessionId);
-      byNode.set(item.nodeId, list);
-    }
-    if (byNode.size === 0) {
-      return definition;
-    }
-    const updated: WorkflowDefinition = {
-      ...definition,
-      nodes: definition.nodes.map((node) =>
-        node.kind === "simulation" && byNode.has(node.id)
-          ? {
-              ...node,
-              params: {
-                ...node.params,
-                last_sessions: byNode.get(node.id),
-                ...(fingerprintByNode?.get(node.id) !== undefined
-                  ? { last_input_fingerprint: fingerprintByNode.get(node.id) }
-                  : {}),
-              },
-            }
-          : node,
-      ),
-    };
-    for (const [nodeId, sessions] of byNode) {
-      const target = definition.nodes.find((node) => node.id === nodeId);
-      if (target !== undefined) {
-        updateEditor((state) =>
-          setNodeParams(state, nodeId, {
-            ...target.params,
-            last_sessions: sessions,
-            ...(fingerprintByNode?.get(nodeId) !== undefined
-              ? { last_input_fingerprint: fingerprintByNode.get(nodeId) }
-              : {}),
-          }),
-        );
-      }
-    }
-    return updated;
-  }
-
-  /** 分析区域执行：编译查询计划一次调用，视图节点读终端表；可限定单个区域。 */
-  async function refreshAnalysis(
-    definition: WorkflowDefinition,
-    onlyRegionId?: string,
-  ): Promise<void> {
-    // 新一轮阶段运行开始：作废尚未完成的选择分支，避免旧上下文写回结果。
-    analysisSelectionBranchSeqRef.current += 1;
-    if (schemaCatalog === null) {
-      return;
-    }
-    const updates = new Map<string, AnalysisNodeResult>();
-    for (const region of definition.regions) {
-      if (
-        region.kind !== "analysis" ||
-        (onlyRegionId !== undefined && region.id !== onlyRegionId)
-      ) {
-        continue;
-      }
-      try {
-        const previousContext = analysisStageContextIdsRef.current.get(region.id);
-        const run = await runAnalysisRegionStages(definition, region.id);
-        const results = run.results;
-        if (previousContext !== undefined && previousContext !== run.context_id) {
-          void closeAnalysisContext(previousContext).catch(() => {
-            // 旧上下文回收失败不阻断新结果。
-          });
-        }
-        const contextIds = new Map(analysisStageContextIdsRef.current);
-        if (run.context_id === null) {
-          contextIds.delete(region.id);
-        } else {
-          contextIds.set(region.id, run.context_id);
-        }
-        analysisStageContextIdsRef.current = contextIds;
-        setAnalysisStageContextIds(contextIds);
-        for (const [nodeId, result] of results) {
-          updates.set(nodeId, result);
-        }
-        const populated = populateAnalysisTerminalResults(definition, region.id, updates);
-        for (const [nodeId, result] of populated) {
-          updates.set(nodeId, result);
-        }
-      } catch (error) {
-        // 单区域查询失败不中断其他区域；视图落 error 态并保留错误信息。
-        markAnalysisRegionError(definition, region.id, toMessage(error));
-      }
-    }
-    setAnalysisResults((current) => new Map([...current, ...updates]));
-  }
-
-  /** 显式刷新/补跑后记录区域快照，避免自动重算重复发同一请求。 */
-  function syncAnalysisSnapshotRef(definition: WorkflowDefinition) {
-    const snapshots = new Map<string, string>();
-    for (const region of definition.regions) {
-      if (region.kind === "analysis") {
-        snapshots.set(region.id, regionAnalysisSnapshot(definition, region.id));
-      }
-    }
-    lastAutoAnalysisSnapshotsRef.current = snapshots;
-  }
-
-  /** 自动重算触发前：保留旧表并标 stale，无旧表标 loading（不闪空）。 */
-  function markAnalysisRegionLoading(definition: WorkflowDefinition, regionId: string) {
-    setAnalysisResults((current) => {
-      const next = new Map(current);
-      for (const node of definition.nodes) {
-        if (node.region_id !== regionId) {
-          continue;
-        }
-        const existing = current.get(node.id);
-        next.set(
-          node.id,
-          existing?.table !== undefined
-            ? { status: "stale", table: existing.table }
-            : { status: "loading" },
-        );
-      }
-      return next;
-    });
-  }
-
-  /** 输入未就绪/过期：视图给出可操作提示（缺会话与过期区分文案）。 */
-  function markAnalysisInputPending(
-    definition: WorkflowDefinition,
-    regionId: string,
-    message: string,
-  ) {
-    setAnalysisResults((current) => {
-      const next = new Map(current);
-      for (const view of definition.nodes) {
-        if (view.region_id !== regionId || !isAnalysisViewKind(view.kind)) {
-          continue;
-        }
-        next.set(view.id, { status: "error", error: message });
-      }
-      return next;
-    });
-  }
-
-  /** 查询失败：区域视图落 error 态并显示错误信息（区别于 loading/stale）。 */
-  function markAnalysisRegionError(
-    definition: WorkflowDefinition,
-    regionId: string,
-    message: string,
-  ) {
-    setAnalysisResults((current) => {
-      const next = new Map(current);
-      for (const view of definition.nodes) {
-        if (view.region_id !== regionId || !isAnalysisViewKind(view.kind)) {
-          continue;
-        }
-        next.set(view.id, { status: "error", error: message });
-      }
-      return next;
-    });
-  }
-
-  /** 自动重算：快照变化后防抖执行；缺会话/过期不查询只提示。 */
-  async function refreshStaleAnalysisRegions(definition: WorkflowDefinition) {
-    const latest = new Map(lastAutoAnalysisSnapshotsRef.current);
-    for (const region of definition.regions) {
-      if (region.kind !== "analysis") {
-        continue;
-      }
-      const snapshot = analysisSnapshots.get(region.id);
-      if (snapshot === undefined || latest.get(region.id) === snapshot) {
-        continue;
-      }
-      if (analysisRunPhase?.regionId === region.id) {
-        continue;
-      }
-      if (planFetchNodes(definition, region.id).length === 0) {
-        latest.set(region.id, snapshot);
-        continue;
-      }
-      const input = analysisInputStatus(definition, region.id);
-      if (input.needsRun) {
-        const first = input.nodes.find((item) => item.status !== "ready");
-        const message =
-          first?.status === "missing"
-            ? "模拟数据未运行，请点击区域「运行分析」补跑"
-            : "配置已变更或输入指纹缺失，会话可能过期，请点击区域「运行分析」刷新";
-        markAnalysisInputPending(definition, region.id, message);
-        latest.set(region.id, snapshot);
-        continue;
-      }
-      const regionDiagnostics = runScopeDiagnostics(definition, new Set([region.id]));
-      if (regionDiagnostics.some((item) => item.severity === "error")) {
-        continue;
-      }
-      const seq = ++analysisAutoSeqRef.current;
-      markAnalysisRegionLoading(definition, region.id);
-      await refreshAnalysis(definition, region.id);
-      if (seq !== analysisAutoSeqRef.current) {
-        continue;
-      }
-      latest.set(region.id, snapshot);
-      lastAutoAnalysisSnapshotsRef.current = latest;
-    }
-  }
-
-  useEffect(() => {
-    const definition = latestDefinitionRef.current;
-    if (definition === null || schemaCatalog === null) {
-      return;
-    }
-    const timer = window.setTimeout(() => {
-      void refreshStaleAnalysisRegions(definition);
-    }, 300);
-    return () => window.clearTimeout(timer);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analysisSnapshots, schemaCatalog]);
 
   /** 全部运行：整个工作流的运行计划进入共用编排。 */
   async function handleRun() {
@@ -1465,7 +715,7 @@ export function App() {
       return;
     }
     const definition = editorStateToDefinition(editorState);
-    await executeRunPlan(definition, planWorkflowRun(definition));
+    await run.executeRunPlan(definition, planWorkflowRun(definition));
   }
 
   /** 区域运行（决策 2.40）：区域范围的运行计划进入共用编排，复用动画、校验与取消。 */
@@ -1474,7 +724,7 @@ export function App() {
       return;
     }
     const definition = editorStateToDefinition(editorState);
-    await executeRunPlan(definition, planRegionRun(definition, regionId), new Set([regionId]));
+    await run.executeRunPlan(definition, planRegionRun(definition, regionId), new Set([regionId]));
   }
 
   /** 区域校验（决策 2.40 修订）：区域运行的子集，构建 + 批次校验，不提交模拟。 */
@@ -1483,7 +733,7 @@ export function App() {
       return;
     }
     const definition = editorStateToDefinition(editorState);
-    await executeRunPlan(
+    await run.executeRunPlan(
       definition,
       planRegionRun(definition, regionId),
       new Set([regionId]),
@@ -1502,7 +752,7 @@ export function App() {
       return;
     }
     const definition = editorStateToDefinition(editorState);
-    setValidationDiagnostics([]);
+    run.setValidationDiagnostics([]);
     setErrorMessage(null);
     const runDiagnostics = runScopeDiagnostics(definition, new Set([regionId]));
     const inputPlan = planAnalysisInputRun(definition, regionId);
@@ -1510,78 +760,35 @@ export function App() {
     const errors = [...graphErrors.map((item) => item.message), ...inputPlan.errors];
     const hasFetch = planFetchNodes(definition, regionId).length > 0;
     if (errors.length > 0 || !hasFetch) {
-      const finalErrors =
-        errors.length > 0 ? errors : ["分析区域没有可运行的取数节点（未连接区域边界输入）"];
-      setRunState((current) => {
-        const started = {
-          ...current,
-          run: createRunView({ participating: [], batches: [], buildErrors: finalErrors }),
-        };
-        return setRunPhase(started, "build_failed");
-      });
-      const failureDiagnostics: Diagnostic[] = [
-        ...graphErrors,
-        ...inputPlan.errors.map((message) => planErrorDiagnostic(message, inputPlan)),
-      ];
-      if (errors.length === 0) {
-        failureDiagnostics.push(
-          planErrorDiagnostic("分析区域没有可运行的取数节点（未连接区域边界输入）", inputPlan),
-        );
-      }
-      setValidationDiagnostics(failureDiagnostics);
-      setActiveTool("problems");
+      run.reportBuildFailure(
+        inputPlan,
+        errors.length > 0 ? errors : ["分析区域没有可运行的取数节点（未连接区域边界输入）"],
+        [
+          ...graphErrors,
+          ...inputPlan.errors.map((message) => planErrorDiagnostic(message, inputPlan)),
+        ],
+        "分析区域没有可运行的取数节点（未连接区域边界输入）",
+      );
       return;
     }
     const completeAnalysis = async (updated: WorkflowDefinition) => {
-      setAnalysisRunPhase({ regionId, phase: "query" });
-      await refreshAnalysis(updated, regionId);
-      syncAnalysisSnapshotRef(updated);
-      setAnalysisRunPhase(null);
+      analysis.setAnalysisRunPhase({ regionId, phase: "query" });
+      await analysis.refreshAnalysis(updated, regionId);
+      analysis.syncAnalysisSnapshotRef(updated);
+      analysis.setAnalysisRunPhase(null);
     };
     if (inputPlan.batches.length > 0) {
-      setAnalysisRunPhase({ regionId, phase: "input" });
-      await executeRunPlan(
+      analysis.setAnalysisRunPhase({ regionId, phase: "input" });
+      await run.executeRunPlan(
         definition,
         inputPlan,
         new Set([regionId]),
         "run",
         completeAnalysis,
       );
-      setAnalysisRunPhase(null);
+      analysis.setAnalysisRunPhase(null);
     } else {
       await completeAnalysis(definition);
-    }
-  }
-
-  /** 取消整次工作流运行：取消当前批次，剩余批次由编排循环跳过（决策 2.32）；顶栏双击触发。 */
-  async function handleCancelRun() {
-    if (!running) {
-      return;
-    }
-    cancelRequestedRef.current = true;
-    const current = currentBatchRef.current;
-    if (current?.runId == null) {
-      return;
-    }
-    try {
-      const view = await cancelRun(current.runId);
-      setRunState((state) => applyBatchView(state, current.nodeId, view));
-    } catch (error) {
-      setErrorMessage(toMessage(error));
-    }
-  }
-
-  /** 取消本批（决策 2.38）：仅取消当前批次，该批终态后后续批次照常继续。 */
-  async function handleCancelBatch(nodeId: string) {
-    const current = currentBatchRef.current;
-    if (current === null || current.nodeId !== nodeId || current.runId === null) {
-      return;
-    }
-    try {
-      const view = await cancelRun(current.runId);
-      setRunState((state) => applyBatchView(state, nodeId, view));
-    } catch (error) {
-      setErrorMessage(toMessage(error));
     }
   }
 
@@ -1592,17 +799,17 @@ export function App() {
   }
 
   const runContextValue = {
-    runState,
-    onCancelRun: handleCancelRun,
-    onCancelBatch: handleCancelBatch,
+    runState: run.runState,
+    onCancelRun: run.handleCancelRun,
+    onCancelBatch: run.handleCancelBatch,
   };
 
   return (
     <RunStateContext.Provider value={runContextValue}>
-      <AnalysisSelectionContext.Provider value={analysisSelectionStore}>
-      <AnalysisResultsContext.Provider value={analysisResults}>
+      <AnalysisSelectionContext.Provider value={analysis.analysisSelectionStore}>
+      <AnalysisResultsContext.Provider value={analysis.analysisResults}>
       <AnalysisSchemaCatalogContext.Provider value={schemaCatalog}>
-      <AnalysisStageSelectionContext.Provider value={analysisStageSelectionStore}>
+      <AnalysisStageSelectionContext.Provider value={analysis.analysisStageSelectionStore}>
         <div className="app-shell">
         <TopBar
           name={editorState?.definition.meta.name ?? appState.workflowName}
@@ -1619,7 +826,7 @@ export function App() {
           onRedo={handleRedo}
           onSave={() => void handleSave()}
           onRun={() => void handleRun()}
-          onCancelRun={() => void handleCancelRun()}
+          onCancelRun={() => void run.handleCancelRun()}
           onCreate={() => void handleCreateWorkflow()}
           onSaveAndCreate={() => void handleSaveAndCreate()}
           onSwitch={(workflowId) => void handleSwitchWorkflow(workflowId)}
@@ -1698,7 +905,7 @@ export function App() {
             {editorState !== null && (
               <CanvasView
                 definition={editorState.definition}
-                analysisResults={analysisResults}
+                analysisResults={analysis.analysisResults}
                 selection={editorState.selection}
                 diagnostics={diagnostics}
                 dragKind={dragKind}
@@ -1739,7 +946,7 @@ export function App() {
                 onValidateRegion={(regionId) => void handleValidateRegion(regionId)}
                 onRunRegion={(regionId) => void handleRunRegion(regionId)}
                 onRunAnalysis={(regionId) => void handleRunAnalysis(regionId)}
-                analysisRunPhase={analysisRunPhase}
+                analysisRunPhase={analysis.analysisRunPhase}
               />
             )}
             <RegionSummaryBar compiles={compiles} />
@@ -1761,18 +968,6 @@ export function App() {
   );
 }
 
-function toMessage(error: unknown): string {
-  if (error instanceof Error) {
-    return error.message;
-  }
-  return String(error);
-}
-
-/** fetch 中断与轮询取消都以 AbortError 抛出；批次步骤按取消而非失败呈现。 */
-function isAbortError(error: unknown): boolean {
-  return error instanceof DOMException && error.name === "AbortError";
-}
-
 function sameSelection(left: EditorSelection, right: EditorSelection): boolean {
   return (
     sameStringList(left.regions, right.regions) &&
@@ -1783,8 +978,4 @@ function sameSelection(left: EditorSelection, right: EditorSelection): boolean {
 
 function sameStringList(left: string[], right: string[]): boolean {
   return left.length === right.length && left.every((value, index) => right[index] === value);
-}
-
-function isAnalysisViewKind(kind: string): boolean {
-  return kind === "member_table" || kind === "pie" || kind === "bar";
 }

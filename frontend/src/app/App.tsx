@@ -371,6 +371,8 @@ export function App() {
   const initializedRef = useRef(false);
   /** 运行编排内部信号：取消整次工作流运行（当前批取消 + 剩余批次跳过）。 */
   const cancelRequestedRef = useRef(false);
+  /** 当前运行的请求取消源：卸载时中断在途的校验/提交/轮询请求。 */
+  const runAbortRef = useRef<AbortController | null>(null);
   /** 当前在跑批次：模拟节点 id 与后端 run_id，供「取消整批」定位。 */
   const currentBatchRef = useRef<{ nodeId: string; runId: string | null } | null>(null);
   /** 资产预检请求序号：丢弃加载/切换竞态中的过期结果。 */
@@ -460,7 +462,8 @@ export function App() {
 
   useEffect(() => {
     return () => {
-      // 应用退出时尽力回收后端阶段上下文；竞态序号同时作废未完成的选择分支。
+      // 应用退出时中断在途运行请求并尽力回收后端阶段上下文；竞态序号同时作废未完成的选择分支。
+      runAbortRef.current?.abort();
       analysisSelectionBranchSeqRef.current += 1;
       for (const contextId of analysisStageContextIdsRef.current.values()) {
         void closeAnalysisContext(contextId).catch(() => {
@@ -1008,7 +1011,29 @@ export function App() {
       return;
     }
 
+    const controller = new AbortController();
+    runAbortRef.current = controller;
     setRunning(true);
+    try {
+      await runBatches(definition, plan, mode, onCompleted, controller.signal);
+    } catch (error) {
+      // 批次内错误已在 runBatches 逐批处理；这里兜底编排本身的未预期异常，
+      // 保证运行锁一定释放（否则 busy 永真，保存/运行/切换全部禁用）。
+      setErrorMessage(`运行编排异常：${toMessage(error)}`);
+    } finally {
+      runAbortRef.current = null;
+      setRunning(false);
+    }
+  }
+
+  /** 构建校验通过后的批次执行段：限速动画 → 取消检查 → 校验/提交/轮询 → 终态。 */
+  async function runBatches(
+    definition: WorkflowDefinition,
+    plan: RunPlan,
+    mode: "run" | "check",
+    onCompleted: ((updatedDefinition: WorkflowDefinition) => Promise<void>) | undefined,
+    signal: AbortSignal,
+  ): Promise<void> {
     setRunState((current) => ({
       ...current,
       run: createRunView(plan),
@@ -1023,9 +1048,20 @@ export function App() {
         setRunState((current) => setMethodStatus(current, regionId, nodeId, status)),
     });
 
+    // 构建期间请求取消：全部批次跳过，不进入校验/提交。
+    if (cancelRequestedRef.current) {
+      setRunState((current) => {
+        const skipped = plan.batches.reduce(
+          (state, batch) => setBatchStatus(state, batch.nodeId, "skipped"),
+          current,
+        );
+        return setRunPhase(skipped, "cancelled");
+      });
+      return;
+    }
+
     if (mode === "check") {
       setRunState((current) => setRunPhase(current, "validating"));
-      cancelRequestedRef.current = false;
       let cancelled = false;
       for (const batch of plan.batches) {
         if (cancelRequestedRef.current) {
@@ -1035,7 +1071,7 @@ export function App() {
         }
         setRunState((current) => setBatchStatus(current, batch.nodeId, "validating"));
         try {
-          const validation = await validateInputs(batch.members);
+          const validation = await validateInputs(batch.members, { signal });
           if (cancelRequestedRef.current) {
             setRunState((current) => setBatchStatus(current, batch.nodeId, "skipped"));
             cancelled = true;
@@ -1058,18 +1094,21 @@ export function App() {
           );
         } catch (error) {
           setRunState((current) =>
-            setBatchStatus(current, batch.nodeId, "failed", toMessage(error)),
+            setBatchStatus(
+              current,
+              batch.nodeId,
+              isAbortError(error) ? "cancelled" : "failed",
+              toMessage(error),
+            ),
           );
         }
       }
       setRunState((current) => setRunPhase(current, cancelled ? "cancelled" : "validated"));
-      setRunning(false);
       return;
     }
 
     setRunState((current) => setRunPhase(current, "simulating"));
 
-    cancelRequestedRef.current = false;
     const fingerprintByNode = new Map(
       plan.batches.map((batch) => [batch.nodeId, batchInputFingerprint(batch)]),
     );
@@ -1093,7 +1132,7 @@ export function App() {
       // 随机种子未设置时提交前自动随机生成（同批共用），校验与提交使用同一份成员。
       const seededMembers = withAutoBatchSeed(batch.members);
       try {
-        const validation = await validateInputs(seededMembers);
+        const validation = await validateInputs(seededMembers, { signal });
         if (cancelRequestedRef.current) {
           setRunState((current) => setBatchStatus(current, batch.nodeId, "skipped"));
           cancelled = true;
@@ -1113,7 +1152,12 @@ export function App() {
         }
       } catch (error) {
         setRunState((current) =>
-          setBatchStatus(current, batch.nodeId, "failed", toMessage(error)),
+          setBatchStatus(
+            current,
+            batch.nodeId,
+            isAbortError(error) ? "cancelled" : "failed",
+            toMessage(error),
+          ),
         );
         continue;
       }
@@ -1123,6 +1167,7 @@ export function App() {
         const submitted = await submitRun(seededMembers, {
           name: batch.name,
           concurrency: batch.concurrency ?? undefined,
+          signal,
         });
         if (cancelRequestedRef.current) {
           const view = await cancelRun(submitted.run_id);
@@ -1136,7 +1181,11 @@ export function App() {
         const finalView = await pollRun(
           submitted.run_id,
           (view) => setRunState((current) => applyBatchView(current, batch.nodeId, view)),
-          { intervalMs: 1000, getRun },
+          {
+            intervalMs: 1000,
+            signal,
+            getRun: (runId) => getRun(runId, { signal }),
+          },
         );
         setRunState((current) =>
           setBatchStatus(current, batch.nodeId, batchStatusFromRunState(finalView.state)),
@@ -1153,7 +1202,12 @@ export function App() {
       } catch (error) {
         // 某批失败不中断后续批次（决策 2.32）。
         setRunState((current) =>
-          setBatchStatus(current, batch.nodeId, "failed", toMessage(error)),
+          setBatchStatus(
+            current,
+            batch.nodeId,
+            isAbortError(error) ? "cancelled" : "failed",
+            toMessage(error),
+          ),
         );
       } finally {
         currentBatchRef.current = null;
@@ -1181,7 +1235,6 @@ export function App() {
         }
       }
     }
-    setRunning(false);
   }
 
   /** 模拟节点保存最近一次批次会话 ID（决策：随工作流持久化）。 */
@@ -1251,28 +1304,33 @@ export function App() {
       ) {
         continue;
       }
-      const previousContext = analysisStageContextIdsRef.current.get(region.id);
-      const run = await runAnalysisRegionStages(definition, region.id);
-      const results = run.results;
-      if (previousContext !== undefined && previousContext !== run.context_id) {
-        void closeAnalysisContext(previousContext).catch(() => {
-          // 旧上下文回收失败不阻断新结果。
-        });
-      }
-      const contextIds = new Map(analysisStageContextIdsRef.current);
-      if (run.context_id === null) {
-        contextIds.delete(region.id);
-      } else {
-        contextIds.set(region.id, run.context_id);
-      }
-      analysisStageContextIdsRef.current = contextIds;
-      setAnalysisStageContextIds(contextIds);
-      for (const [nodeId, result] of results) {
-        updates.set(nodeId, result);
-      }
-      const populated = populateAnalysisTerminalResults(definition, region.id, updates);
-      for (const [nodeId, result] of populated) {
-        updates.set(nodeId, result);
+      try {
+        const previousContext = analysisStageContextIdsRef.current.get(region.id);
+        const run = await runAnalysisRegionStages(definition, region.id);
+        const results = run.results;
+        if (previousContext !== undefined && previousContext !== run.context_id) {
+          void closeAnalysisContext(previousContext).catch(() => {
+            // 旧上下文回收失败不阻断新结果。
+          });
+        }
+        const contextIds = new Map(analysisStageContextIdsRef.current);
+        if (run.context_id === null) {
+          contextIds.delete(region.id);
+        } else {
+          contextIds.set(region.id, run.context_id);
+        }
+        analysisStageContextIdsRef.current = contextIds;
+        setAnalysisStageContextIds(contextIds);
+        for (const [nodeId, result] of results) {
+          updates.set(nodeId, result);
+        }
+        const populated = populateAnalysisTerminalResults(definition, region.id, updates);
+        for (const [nodeId, result] of populated) {
+          updates.set(nodeId, result);
+        }
+      } catch (error) {
+        // 单区域查询失败不中断其他区域；视图落 error 态并保留错误信息。
+        markAnalysisRegionError(definition, region.id, toMessage(error));
       }
     }
     setAnalysisResults((current) => new Map([...current, ...updates]));
@@ -1311,6 +1369,24 @@ export function App() {
 
   /** 输入未就绪/过期：视图给出可操作提示（缺会话与过期区分文案）。 */
   function markAnalysisInputPending(
+    definition: WorkflowDefinition,
+    regionId: string,
+    message: string,
+  ) {
+    setAnalysisResults((current) => {
+      const next = new Map(current);
+      for (const view of definition.nodes) {
+        if (view.region_id !== regionId || !isAnalysisViewKind(view.kind)) {
+          continue;
+        }
+        next.set(view.id, { status: "error", error: message });
+      }
+      return next;
+    });
+  }
+
+  /** 查询失败：区域视图落 error 态并显示错误信息（区别于 loading/stale）。 */
+  function markAnalysisRegionError(
     definition: WorkflowDefinition,
     regionId: string,
     message: string,
@@ -1690,6 +1766,11 @@ function toMessage(error: unknown): string {
     return error.message;
   }
   return String(error);
+}
+
+/** fetch 中断与轮询取消都以 AbortError 抛出；批次步骤按取消而非失败呈现。 */
+function isAbortError(error: unknown): boolean {
+  return error instanceof DOMException && error.name === "AbortError";
 }
 
 function sameSelection(left: EditorSelection, right: EditorSelection): boolean {

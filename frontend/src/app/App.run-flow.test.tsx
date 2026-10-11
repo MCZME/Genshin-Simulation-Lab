@@ -1,10 +1,11 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { RunStatusResponse } from "../api/client";
 import { App } from "./App";
 
-const { oneRegionDefinition, twoRegionDefinition, conflictDefinition } = vi.hoisted(() => {
+const { oneRegionDefinition, twoRegionDefinition, conflictDefinition, definitionWithAnalysisRegion } =
+  vi.hoisted(() => {
   const region = (id: string) => ({
     id,
     kind: "configuration",
@@ -79,12 +80,25 @@ const { oneRegionDefinition, twoRegionDefinition, conflictDefinition } = vi.hois
     ],
     layout: {},
   };
+  const definitionWithAnalysisRegion = (() => {
+    const base = structuredClone(definition(["region-1"], ["sim-1"]));
+    base.regions.push({
+      id: "region-analysis",
+      kind: "analysis",
+      name: "分析区域",
+      rect: { x: 0, y: 0, width: 800, height: 600 },
+    });
+    return base;
+  })();
   return {
     oneRegionDefinition: definition(["region-1"], ["sim-1"]),
     twoRegionDefinition: definition(["region-1", "region-2"], ["sim-1", "sim-2"]),
     conflictDefinition,
+    definitionWithAnalysisRegion,
   };
 });
+
+const settingsState = vi.hoisted(() => ({ runAnimation: false }));
 
 const mocks = vi.hoisted(() => ({
   getWorkspace: vi.fn(),
@@ -95,11 +109,13 @@ const mocks = vi.hoisted(() => ({
   saveWorkflow: vi.fn(),
   searchAssets: vi.fn(),
   getAsset: vi.fn(),
+  getAnalysisSchema: vi.fn(),
   validateInputs: vi.fn(),
   submitRun: vi.fn(),
   getRun: vi.fn(),
   cancelRun: vi.fn(),
   pollRun: vi.fn(),
+  runAnalysisRegionStages: vi.fn(),
 }));
 
 vi.mock("../api/client", () => ({
@@ -111,6 +127,7 @@ vi.mock("../api/client", () => ({
   saveWorkflow: mocks.saveWorkflow,
   searchAssets: mocks.searchAssets,
   getAsset: mocks.getAsset,
+  getAnalysisSchema: mocks.getAnalysisSchema,
   validateInputs: mocks.validateInputs,
   submitRun: mocks.submitRun,
   getRun: mocks.getRun,
@@ -123,13 +140,21 @@ vi.mock("../api/runtime_subscription", () => ({
   pollRun: mocks.pollRun,
 }));
 
+vi.mock("../workflow/analysis_runner", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../workflow/analysis_runner")>();
+  return {
+    ...actual,
+    runAnalysisRegionStages: mocks.runAnalysisRegionStages,
+  };
+});
+
 vi.mock("../state/settings", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../state/settings")>();
   return {
     ...actual,
     loadAppSettingsFromApi: vi.fn(async () => ({
       ...actual.createAppSettings(),
-      runAnimation: false,
+      runAnimation: settingsState.runAnimation,
     })),
   };
 });
@@ -361,5 +386,73 @@ describe("App 运行编排", () => {
     expect(screen.getAllByText("成功").length).toBeGreaterThan(0);
     const problemsButton = screen.getByRole("button", { name: /问题/ });
     expect(problemsButton.textContent).toContain("1");
+  });
+
+  it("全部运行：分析刷新失败不锁死运行状态", async () => {
+    mocks.getAnalysisSchema.mockResolvedValue({
+      tables: [],
+      event_types: [],
+      snapshot_tree: null,
+    });
+    mocks.runAnalysisRegionStages.mockRejectedValue(new Error("查询失败"));
+    mocks.getWorkflow.mockResolvedValue({
+      id: "wf-1",
+      name: "测试工作流",
+      updated_at: "",
+      definition: definitionWithAnalysisRegion,
+    });
+    mocks.validateInputs.mockResolvedValue({
+      ok: true,
+      members: [{ item_id: "root", ok: true }],
+    });
+    mocks.submitRun.mockResolvedValue(runView("queued", "queued", null));
+    mocks.pollRun.mockResolvedValue(runView("completed", "completed", "s-1"));
+    render(<App />);
+
+    const runButton = await screen.findByRole("button", { name: "全部运行" });
+    await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(runButton);
+
+    await waitFor(() => expect(mocks.submitRun).toHaveBeenCalledTimes(1));
+    // 分析刷新被 mock 为失败：运行锁必须释放，运行按钮恢复可用（回归：busy 永真锁死）。
+    await waitFor(() =>
+      expect(
+        (screen.getByRole("button", { name: "全部运行" }) as HTMLButtonElement).disabled,
+      ).toBe(false),
+    );
+  });
+
+  it("全部运行：构建阶段取消则跳过全部批次且不提交", async () => {
+    mocks.getAnalysisSchema.mockRejectedValue(new Error("schema 不可用"));
+    settingsState.runAnimation = true;
+    try {
+      mocks.validateInputs.mockResolvedValue({
+        ok: true,
+        members: [{ item_id: "root", ok: true }],
+      });
+      render(<App />);
+
+      const runButton = await screen.findByRole("button", { name: "全部运行" });
+      await waitFor(() => expect((runButton as HTMLButtonElement).disabled).toBe(false));
+      vi.useFakeTimers();
+      try {
+        fireEvent.click(runButton);
+        // 构建限速动画挂起在定时器上时双击运行按钮请求取消（决策 2.38 入口）。
+        fireEvent.doubleClick(runButton);
+        await act(async () => {
+          await vi.advanceTimersByTimeAsync(200);
+        });
+        expect(mocks.validateInputs).not.toHaveBeenCalled();
+        expect(mocks.submitRun).not.toHaveBeenCalled();
+        expect(screen.getAllByText("跳过").length).toBeGreaterThan(0);
+        expect(
+          (screen.getByRole("button", { name: "全部运行" }) as HTMLButtonElement).disabled,
+        ).toBe(false);
+      } finally {
+        vi.useRealTimers();
+      }
+    } finally {
+      settingsState.runAnimation = false;
+    }
   });
 });

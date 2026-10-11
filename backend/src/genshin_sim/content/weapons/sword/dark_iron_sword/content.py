@@ -6,14 +6,14 @@
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping, Sequence
+
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
     ContentUnitValidationError,
 )
-from genshin_sim.content.generic.passive_params import component_value, refinement_offset
-from genshin_sim.content.generic.reaction_surge import ReactionSurgeHook
-from genshin_sim.content.generic.weapon_buffs import atk_percent_buff_definition
 from genshin_sim.content.registries import EffectContentUnitRequest, WeaponContentUnitRequest
 from genshin_sim.content.weapons.sword.dark_iron_sword.data import (
     ATK_PERCENT_COMPONENT_INDEX,
@@ -24,11 +24,15 @@ from genshin_sim.content.weapons.sword.dark_iron_sword.data import (
     DARK_IRON_SWORD_KEY_PREFIX,
     DARK_IRON_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
     FRAMES_PER_SECOND,
-    SWIRL_DIRECTION_KEYS,
-    SWIRL_REACTION_KEY_DECLARED,
-    TRIGGER_REACTION_KEYS,
 )
-from genshin_sim.core.systems.buff import BuffApplicationPolicy, BuffStackScaling
+from genshin_sim.content.weapons.sword.dark_iron_sword.hooks import OverchargeReactionHook
+from genshin_sim.core.attributes import STAT_ATK_TOTAL, AttributeSubjectKind, ModifierStage
+from genshin_sim.core.systems.buff import (
+    BuffApplicationPolicy,
+    BuffAttributeModifierTemplate,
+    BuffDefinition,
+    BuffValueRefreshPolicy,
+)
 
 BUFF_DURATION_FRAMES = round(BUFF_DURATION_SECONDS * FRAMES_PER_SECOND)
 
@@ -57,21 +61,12 @@ def create_dark_iron_sword_passive_unit(
         raise ContentUnitValidationError("暗铁剑被动缺少有效的队伍槽位")
     slot = request.slot
     owner_ref = f"character:slot_{slot}"
-    offset = refinement_offset(
-        request.params,
-        request.owner_context.refinement,
-        owner_label="暗铁剑被动",
-    )
-    atk_percent = component_value(
-        request.params,
+    atk_percent = _passive_value(
+        request,
         component_index=ATK_PERCENT_COMPONENT_INDEX,
-        offset=offset,
         label="攻击力提升",
-        owner_label="暗铁剑被动",
-        minimum=0.0,
     )
     definition_key = _surge_definition_key(slot)
-    source_key = f"{DARK_IRON_SWORD_KEY_PREFIX}:slot:{slot}"
     return ContentUnit(
         owner_type=ContentUnitOwnerType.WEAPON,
         owner_key=request.owner_key,
@@ -79,36 +74,103 @@ def create_dark_iron_sword_passive_unit(
         version=DARK_IRON_SWORD_CONTENT_VERSION,
         slot=slot,
         event_hooks=(
-            ReactionSurgeHook(
+            OverchargeReactionHook(
                 handler_key=DARK_IRON_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
                 owner_ref=owner_ref,
                 slot=slot,
-                definition_key=definition_key,
-                term_key=DARK_IRON_SWORD_ATK_TERM_KEY,
                 atk_percent=atk_percent,
                 duration_frames=BUFF_DURATION_FRAMES,
-                source_key=source_key,
-                reaction_keys=TRIGGER_REACTION_KEYS,
-                swirl_reaction_key=SWIRL_REACTION_KEY_DECLARED,
-                swirl_direction_keys=SWIRL_DIRECTION_KEYS,
-            ),
-        ),
-        buff_definitions=(
-            atk_percent_buff_definition(
                 definition_key=definition_key,
-                mechanic_key=f"{DARK_IRON_SWORD_KEY_PREFIX}.surge",
-                handler_key=DARK_IRON_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
-                conflict_key=definition_key,
-                term_key=DARK_IRON_SWORD_ATK_TERM_KEY,
-                display_name="过载",
-                application_policy=BuffApplicationPolicy.REFRESH,
-                stack_scaling=BuffStackScaling.CONSTANT,
-                audit_tags=("dark_iron_sword_surge",),
+                source_key=f"{DARK_IRON_SWORD_KEY_PREFIX}:slot:{slot}",
             ),
         ),
+        buff_definitions=(_surge_buff_definition(definition_key),),
         metadata={"purpose": "dark_iron_sword_passive"},
     )
 
 
+def _passive_value(
+    request: EffectContentUnitRequest,
+    *,
+    component_index: int,
+    label: str,
+) -> float:
+    """按精炼从资产效果参数 components 取一个分量；非法在装配期报错。"""
+
+    params = request.params
+    refinement = request.owner_context.refinement
+    if refinement is None:
+        raise ContentUnitValidationError("暗铁剑被动缺少拥有者提供的精炼等级")
+    if isinstance(refinement, bool) or not isinstance(refinement, int):
+        raise ContentUnitValidationError("暗铁剑被动精炼必须是整数")
+    refinement_min = _refinement_bound(params, "refinement_min")
+    refinement_max = _refinement_bound(params, "refinement_max")
+    if not refinement_min <= refinement <= refinement_max:
+        raise ContentUnitValidationError(
+            f"暗铁剑被动精炼必须在资产声明的 {refinement_min} 到 {refinement_max} 之间，"
+            f"实际 {refinement}"
+        )
+    offset = refinement - refinement_min
+    components = params.get("components")
+    if (
+        not isinstance(components, Sequence)
+        or isinstance(components, (str, bytes, bytearray))
+        or len(components) <= component_index
+    ):
+        raise ContentUnitValidationError(
+            f"暗铁剑被动缺少资产效果参数 components[{component_index}]（{label}）"
+        )
+    component = components[component_index]
+    if not isinstance(component, Mapping):
+        raise ContentUnitValidationError(f"暗铁剑被动{label}分量必须是对象")
+    values = component.get("values")
+    if (
+        not isinstance(values, Sequence)
+        or isinstance(values, (str, bytes, bytearray))
+        or offset >= len(values)
+    ):
+        raise ContentUnitValidationError(
+            f"暗铁剑被动{label}分量的 values 未覆盖该精炼（需要下标 {offset}）"
+        )
+    value = values[offset]
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ContentUnitValidationError(f"暗铁剑被动{label}分量在该精炼下不是数字")
+    number = float(value)
+    if not math.isfinite(number) or number <= 0:
+        raise ContentUnitValidationError(f"暗铁剑被动{label}分量在该精炼下必须是正数")
+    return number
+
+
+def _refinement_bound(params: Mapping[str, object], key: str) -> int:
+    value = params.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ContentUnitValidationError(f"暗铁剑被动缺少资产效果参数 {key}（整数）")
+    return value
+
+
 def _surge_definition_key(slot: int) -> str:
     return f"{DARK_IRON_SWORD_KEY_PREFIX}.surge.slot:{slot}"
+
+
+def _surge_buff_definition(definition_key: str) -> BuffDefinition:
+    """「过载」：单实例攻击力 Buff，再次触发时续期。"""
+
+    return BuffDefinition(
+        definition_key=definition_key,
+        mechanic_key=f"{DARK_IRON_SWORD_KEY_PREFIX}.surge",
+        handler_key=DARK_IRON_SWORD_PASSIVE_EFFECT_HANDLER_KEY,
+        conflict_key=definition_key,
+        target_kinds=frozenset({AttributeSubjectKind.CHARACTER}),
+        application_policy=BuffApplicationPolicy.REFRESH,
+        value_refresh_policy=BuffValueRefreshPolicy.REPLACE_LATEST,
+        max_stacks=1,
+        display_name="过载",
+        attribute_modifiers=(
+            BuffAttributeModifierTemplate(
+                term_key=DARK_IRON_SWORD_ATK_TERM_KEY,
+                target_key=STAT_ATK_TOTAL,
+                stage=ModifierStage.PERCENT_ADD,
+                audit_tags=("dark_iron_sword_surge",),
+            ),
+        ),
+    )

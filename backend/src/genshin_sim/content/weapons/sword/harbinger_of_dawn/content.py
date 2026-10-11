@@ -5,18 +5,19 @@
 提供。
 
 被动以「生命阈值门控 Buff」维持：生命比例高于 90% 期间为装备者施加暴击率
-Buff，条件失效后不再续期、Buff 自然到期（残留窗口见 data.py 的工程约定说明）。
+Buff，条件失效后不再续期、Buff 自然到期（残留窗口见 hooks.py 的工程近似说明）。
 """
 
 from __future__ import annotations
+
+import math
+from collections.abc import Mapping, Sequence
 
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
     ContentUnitValidationError,
 )
-from genshin_sim.content.generic.hp_gated_buff import HpGatedBuffHook
-from genshin_sim.content.generic.passive_params import component_value, refinement_offset
 from genshin_sim.content.registries import EffectContentUnitRequest, WeaponContentUnitRequest
 from genshin_sim.content.weapons.sword.harbinger_of_dawn.data import (
     CRIT_RATE_BUFF_DURATION_FRAMES,
@@ -29,16 +30,12 @@ from genshin_sim.content.weapons.sword.harbinger_of_dawn.data import (
     HP_GATE_REFRESH_INTERVAL_FRAMES,
     HP_THRESHOLD,
 )
-from genshin_sim.core.attributes import (
-    STAT_CRIT_RATE,
-    AttributeSubjectKind,
-    ModifierStage,
-)
+from genshin_sim.content.weapons.sword.harbinger_of_dawn.hooks import EncourageCritRateHook
+from genshin_sim.core.attributes import STAT_CRIT_RATE, AttributeSubjectKind, ModifierStage
 from genshin_sim.core.systems.buff import (
     BuffApplicationPolicy,
     BuffAttributeModifierTemplate,
     BuffDefinition,
-    BuffModifierValue,
     BuffValueRefreshPolicy,
 )
 
@@ -67,18 +64,10 @@ def create_harbinger_of_dawn_passive_unit(
         raise ContentUnitValidationError("黎明神剑被动缺少有效的队伍槽位")
     slot = request.slot
     owner_ref = f"character:slot_{slot}"
-    offset = refinement_offset(
-        request.params,
-        request.owner_context.refinement,
-        owner_label="黎明神剑被动",
-    )
-    crit_rate = component_value(
-        request.params,
+    crit_rate = _passive_value(
+        request,
         component_index=CRIT_RATE_COMPONENT_INDEX,
-        offset=offset,
         label="暴击率提升",
-        owner_label="黎明神剑被动",
-        minimum=0.0,
     )
     definition_key = _crit_rate_definition_key(slot)
     return ContentUnit(
@@ -88,27 +77,80 @@ def create_harbinger_of_dawn_passive_unit(
         version=HARBINGER_OF_DAWN_CONTENT_VERSION,
         slot=slot,
         event_hooks=(
-            HpGatedBuffHook(
+            EncourageCritRateHook(
                 handler_key=HARBINGER_OF_DAWN_PASSIVE_EFFECT_HANDLER_KEY,
                 owner_ref=owner_ref,
                 slot=slot,
-                definition_key=definition_key,
-                source_key=f"{HARBINGER_OF_DAWN_KEY_PREFIX}:slot:{slot}",
+                crit_rate=crit_rate,
                 duration_frames=CRIT_RATE_BUFF_DURATION_FRAMES,
                 refresh_interval_frames=HP_GATE_REFRESH_INTERVAL_FRAMES,
                 threshold=HP_THRESHOLD,
-                direction="above",
-                modifier_values=(
-                    BuffModifierValue(
-                        term_key=HARBINGER_OF_DAWN_CRIT_RATE_TERM_KEY,
-                        value=crit_rate,
-                    ),
-                ),
+                definition_key=definition_key,
+                source_key=f"{HARBINGER_OF_DAWN_KEY_PREFIX}:slot:{slot}",
             ),
         ),
         buff_definitions=(_crit_rate_buff_definition(definition_key),),
         metadata={"purpose": "harbinger_of_dawn_passive"},
     )
+
+
+def _passive_value(
+    request: EffectContentUnitRequest,
+    *,
+    component_index: int,
+    label: str,
+) -> float:
+    """按精炼从资产效果参数 components 取一个分量；非法在装配期报错。"""
+
+    params = request.params
+    refinement = request.owner_context.refinement
+    if refinement is None:
+        raise ContentUnitValidationError("黎明神剑被动缺少拥有者提供的精炼等级")
+    if isinstance(refinement, bool) or not isinstance(refinement, int):
+        raise ContentUnitValidationError("黎明神剑被动精炼必须是整数")
+    refinement_min = _refinement_bound(params, "refinement_min")
+    refinement_max = _refinement_bound(params, "refinement_max")
+    if not refinement_min <= refinement <= refinement_max:
+        raise ContentUnitValidationError(
+            f"黎明神剑被动精炼必须在资产声明的 {refinement_min} 到 {refinement_max} 之间，"
+            f"实际 {refinement}"
+        )
+    offset = refinement - refinement_min
+    components = params.get("components")
+    if (
+        not isinstance(components, Sequence)
+        or isinstance(components, (str, bytes, bytearray))
+        or len(components) <= component_index
+    ):
+        raise ContentUnitValidationError(
+            f"黎明神剑被动缺少资产效果参数 components[{component_index}]（{label}）"
+        )
+    component = components[component_index]
+    if not isinstance(component, Mapping):
+        raise ContentUnitValidationError(f"黎明神剑被动{label}分量必须是对象")
+    values = component.get("values")
+    if (
+        not isinstance(values, Sequence)
+        or isinstance(values, (str, bytes, bytearray))
+        or offset >= len(values)
+    ):
+        raise ContentUnitValidationError(
+            f"黎明神剑被动{label}分量的 values 未覆盖该精炼（需要下标 {offset}）"
+        )
+    value = values[offset]
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ContentUnitValidationError(f"黎明神剑被动{label}分量在该精炼下不是数字")
+    number = float(value)
+    if not math.isfinite(number) or number <= 0:
+        raise ContentUnitValidationError(f"黎明神剑被动{label}分量在该精炼下必须是正数")
+    return number
+
+
+def _refinement_bound(params: Mapping[str, object], key: str) -> int:
+    value = params.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ContentUnitValidationError(f"黎明神剑被动缺少资产效果参数 {key}（整数）")
+    return value
 
 
 def _crit_rate_definition_key(slot: int) -> str:

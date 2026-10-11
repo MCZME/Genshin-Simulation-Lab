@@ -20,7 +20,7 @@ HARBINGER_OF_DAWN_CRIT_RATE_TERM_KEY = f"{HARBINGER_OF_DAWN_KEY_PREFIX}.crit_rat
 # 帧率基准：资产效果参数以秒记录时间，运行态以帧推进。
 FRAMES_PER_SECOND = 60
 
-# 条件重评与 Buff 续期口径（工程约定，见 hp_gated_buff 模块说明）：
+# 条件重评与 Buff 续期口径（工程约定，见 hooks.py 模块说明）：
 # 每 10 帧（1/6 秒）重评一次条件，Buff 每次施加持续 20 帧（1/3 秒）。
 # 游戏内条件失效时加成立即消失；本实现的残留窗口不作为游戏真值。
 HP_GATE_REFRESH_INTERVAL_FRAMES = 10

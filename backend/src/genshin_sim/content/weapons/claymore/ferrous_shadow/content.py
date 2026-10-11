@@ -10,13 +10,14 @@
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping, Sequence
+
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
     ContentUnitValidationError,
 )
-from genshin_sim.content.generic.hp_gated_buff import HpGatedBuffHook
-from genshin_sim.content.generic.passive_params import component_value, refinement_offset
 from genshin_sim.content.registries import EffectContentUnitRequest, WeaponContentUnitRequest
 from genshin_sim.content.weapons.claymore.ferrous_shadow.data import (
     CHARGED_BONUS_COMPONENT_INDEX,
@@ -30,6 +31,7 @@ from genshin_sim.content.weapons.claymore.ferrous_shadow.data import (
     HP_THRESHOLD,
     MARKER_DURATION_FRAMES,
 )
+from genshin_sim.content.weapons.claymore.ferrous_shadow.hooks import UnyieldingMarkerHook
 from genshin_sim.content.weapons.claymore.ferrous_shadow.modifiers import (
     FerrousShadowChargedBonusProvider,
 )
@@ -65,18 +67,10 @@ def create_ferrous_shadow_passive_unit(
         raise ContentUnitValidationError("铁影阔剑被动缺少有效的队伍槽位")
     slot = request.slot
     owner_ref = f"character:slot_{slot}"
-    offset = refinement_offset(
-        request.params,
-        request.owner_context.refinement,
-        owner_label="铁影阔剑被动",
-    )
-    bonus = component_value(
-        request.params,
+    bonus = _passive_value(
+        request,
         component_index=CHARGED_BONUS_COMPONENT_INDEX,
-        offset=offset,
         label="重击伤害加成",
-        owner_label="铁影阔剑被动",
-        minimum=0.0,
     )
     definition_key = FERROUS_SHADOW_MARKER_DEFINITION_KEY_TEMPLATE.format(slot=slot)
     source_key = f"{FERROUS_SHADOW_KEY_PREFIX}:slot:{slot}"
@@ -87,7 +81,7 @@ def create_ferrous_shadow_passive_unit(
         version=FERROUS_SHADOW_CONTENT_VERSION,
         slot=slot,
         event_hooks=(
-            HpGatedBuffHook(
+            UnyieldingMarkerHook(
                 handler_key=FERROUS_SHADOW_PASSIVE_EFFECT_HANDLER_KEY,
                 owner_ref=owner_ref,
                 slot=slot,
@@ -96,7 +90,6 @@ def create_ferrous_shadow_passive_unit(
                 duration_frames=MARKER_DURATION_FRAMES,
                 refresh_interval_frames=HP_GATE_REFRESH_INTERVAL_FRAMES,
                 threshold=HP_THRESHOLD,
-                direction="below",
             ),
         ),
         buff_definitions=(_marker_buff_definition(definition_key),),
@@ -112,6 +105,65 @@ def create_ferrous_shadow_passive_unit(
         ),
         metadata={"purpose": "ferrous_shadow_passive"},
     )
+
+
+def _passive_value(
+    request: EffectContentUnitRequest,
+    *,
+    component_index: int,
+    label: str,
+) -> float:
+    """按精炼从资产效果参数 components 取一个分量；非法在装配期报错。"""
+
+    params = request.params
+    refinement = request.owner_context.refinement
+    if refinement is None:
+        raise ContentUnitValidationError("铁影阔剑被动缺少拥有者提供的精炼等级")
+    if isinstance(refinement, bool) or not isinstance(refinement, int):
+        raise ContentUnitValidationError("铁影阔剑被动精炼必须是整数")
+    refinement_min = _refinement_bound(params, "refinement_min")
+    refinement_max = _refinement_bound(params, "refinement_max")
+    if not refinement_min <= refinement <= refinement_max:
+        raise ContentUnitValidationError(
+            f"铁影阔剑被动精炼必须在资产声明的 {refinement_min} 到 {refinement_max} 之间，"
+            f"实际 {refinement}"
+        )
+    offset = refinement - refinement_min
+    components = params.get("components")
+    if (
+        not isinstance(components, Sequence)
+        or isinstance(components, (str, bytes, bytearray))
+        or len(components) <= component_index
+    ):
+        raise ContentUnitValidationError(
+            f"铁影阔剑被动缺少资产效果参数 components[{component_index}]（{label}）"
+        )
+    component = components[component_index]
+    if not isinstance(component, Mapping):
+        raise ContentUnitValidationError(f"铁影阔剑被动{label}分量必须是对象")
+    values = component.get("values")
+    if (
+        not isinstance(values, Sequence)
+        or isinstance(values, (str, bytes, bytearray))
+        or offset >= len(values)
+    ):
+        raise ContentUnitValidationError(
+            f"铁影阔剑被动{label}分量的 values 未覆盖该精炼（需要下标 {offset}）"
+        )
+    value = values[offset]
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ContentUnitValidationError(f"铁影阔剑被动{label}分量在该精炼下不是数字")
+    number = float(value)
+    if not math.isfinite(number) or number < 0:
+        raise ContentUnitValidationError(f"铁影阔剑被动{label}分量在该精炼下必须是非负有限数")
+    return number
+
+
+def _refinement_bound(params: Mapping[str, object], key: str) -> int:
+    value = params.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ContentUnitValidationError(f"铁影阔剑被动缺少资产效果参数 {key}（整数）")
+    return value
 
 
 def _marker_buff_definition(definition_key: str) -> BuffDefinition:

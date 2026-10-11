@@ -24,7 +24,7 @@ FERROUS_SHADOW_ATTACK_TAG = "重击"
 # 帧率基准：资产效果参数以秒记录时间，运行态以帧推进。
 FRAMES_PER_SECOND = 60
 
-# 条件重评与标记续期口径（工程约定，见 hp_gated_buff 模块说明）：
+# 条件重评与标记续期口径（工程约定，见 hooks.py 模块说明）：
 # 每 10 帧（1/6 秒）重评一次条件，标记每次施加持续 20 帧（1/3 秒）。
 HP_GATE_REFRESH_INTERVAL_FRAMES = 10
 MARKER_DURATION_FRAMES = 20

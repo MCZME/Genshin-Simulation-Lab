@@ -6,13 +6,14 @@
 
 from __future__ import annotations
 
+import math
+from collections.abc import Mapping, Sequence
+
 from genshin_sim.content.definitions.content_unit import (
     ContentUnit,
     ContentUnitOwnerType,
     ContentUnitValidationError,
 )
-from genshin_sim.content.generic.hit_proc_damage import HitProcDamageHook
-from genshin_sim.content.generic.passive_params import component_value, refinement_offset
 from genshin_sim.content.registries import EffectContentUnitRequest, WeaponContentUnitRequest
 from genshin_sim.content.weapons.polearm.halberd.data import (
     FRAMES_PER_SECOND,
@@ -24,9 +25,9 @@ from genshin_sim.content.weapons.polearm.halberd.data import (
     HALBERD_PROC_IMPACT_KEY,
     MULTIPLIER_COMPONENT_INDEX,
     PROC_ELEMENT,
-    TRIGGER_ATTACK_TAG,
     TRIGGER_INTERVAL_SECONDS,
 )
+from genshin_sim.content.weapons.polearm.halberd.hooks import HeavyProcHook
 from genshin_sim.core.attributes import STAT_ATK_TOTAL
 from genshin_sim.core.impacts import DamageImpactSpec
 from genshin_sim.core.systems.damage import DamageScalingTerm
@@ -58,19 +59,12 @@ def create_halberd_passive_unit(
         raise ContentUnitValidationError("钺矛被动缺少有效的队伍槽位")
     slot = request.slot
     owner_ref = f"character:slot_{slot}"
-    offset = refinement_offset(
-        request.params,
-        request.owner_context.refinement,
-        owner_label="钺矛被动",
-    )
-    multiplier = component_value(
-        request.params,
+    multiplier = _passive_value(
+        request,
         component_index=MULTIPLIER_COMPONENT_INDEX,
-        offset=offset,
         label="追加伤害倍率",
-        owner_label="钺矛被动",
-        minimum=0.0,
     )
+    impact_key = HALBERD_PROC_IMPACT_KEY
     return ContentUnit(
         owner_type=ContentUnitOwnerType.WEAPON,
         owner_key=request.owner_key,
@@ -78,13 +72,12 @@ def create_halberd_passive_unit(
         version=HALBERD_CONTENT_VERSION,
         slot=slot,
         event_hooks=(
-            HitProcDamageHook(
+            HeavyProcHook(
                 handler_key=HALBERD_PASSIVE_EFFECT_HANDLER_KEY,
-                impact_key=HALBERD_PROC_IMPACT_KEY,
                 owner_ref=owner_ref,
                 slot=slot,
                 damage_spec=DamageImpactSpec(
-                    impact_ref=HALBERD_PROC_IMPACT_KEY,
+                    impact_ref=impact_key,
                     main_attack_tag=HALBERD_PROC_ATTACK_TAG,
                     element=PROC_ELEMENT,
                     scaling_terms=(
@@ -96,9 +89,67 @@ def create_halberd_passive_unit(
                     ),
                     display_name=HALBERD_PROC_DISPLAY_NAME,
                 ),
-                attack_tags=(TRIGGER_ATTACK_TAG,),
                 interval_frames=TRIGGER_INTERVAL_FRAMES,
             ),
         ),
         metadata={"purpose": "halberd_passive"},
     )
+
+
+def _passive_value(
+    request: EffectContentUnitRequest,
+    *,
+    component_index: int,
+    label: str,
+) -> float:
+    """按精炼从资产效果参数 components 取一个分量；非法在装配期报错。"""
+
+    params = request.params
+    refinement = request.owner_context.refinement
+    if refinement is None:
+        raise ContentUnitValidationError("钺矛被动缺少拥有者提供的精炼等级")
+    if isinstance(refinement, bool) or not isinstance(refinement, int):
+        raise ContentUnitValidationError("钺矛被动精炼必须是整数")
+    refinement_min = _refinement_bound(params, "refinement_min")
+    refinement_max = _refinement_bound(params, "refinement_max")
+    if not refinement_min <= refinement <= refinement_max:
+        raise ContentUnitValidationError(
+            f"钺矛被动精炼必须在资产声明的 {refinement_min} 到 {refinement_max} 之间，"
+            f"实际 {refinement}"
+        )
+    offset = refinement - refinement_min
+    components = params.get("components")
+    if (
+        not isinstance(components, Sequence)
+        or isinstance(components, (str, bytes, bytearray))
+        or len(components) <= component_index
+    ):
+        raise ContentUnitValidationError(
+            f"钺矛被动缺少资产效果参数 components[{component_index}]（{label}）"
+        )
+    component = components[component_index]
+    if not isinstance(component, Mapping):
+        raise ContentUnitValidationError(f"钺矛被动{label}分量必须是对象")
+    values = component.get("values")
+    if (
+        not isinstance(values, Sequence)
+        or isinstance(values, (str, bytes, bytearray))
+        or offset >= len(values)
+    ):
+        raise ContentUnitValidationError(
+            f"钺矛被动{label}分量的 values 未覆盖该精炼（需要下标 {offset}）"
+        )
+    value = values[offset]
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ContentUnitValidationError(f"钺矛被动{label}分量在该精炼下不是数字")
+    number = float(value)
+    if not math.isfinite(number) or number < 0:
+        raise ContentUnitValidationError(f"钺矛被动{label}分量在该精炼下必须是非负有限数")
+    return number
+
+
+def _refinement_bound(params: Mapping[str, object], key: str) -> int:
+    value = params.get(key)
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ContentUnitValidationError(f"钺矛被动缺少资产效果参数 {key}（整数）")
+    return value

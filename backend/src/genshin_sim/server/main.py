@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from pathlib import Path
 
 import uvicorn
@@ -12,6 +13,8 @@ from genshin_sim.server import create_app
 
 SERVER_LOG_FILE_NAME = "server.jsonl"
 
+logger = logging.getLogger(__name__)
+
 
 def run_server(
     *,
@@ -20,6 +23,7 @@ def run_server(
     result_db_path: str | Path | None = None,
     host: str = "127.0.0.1",
     port: int = 8000,
+    static_dir: str | Path | None = None,
 ) -> None:
     """组装进程执行的应用并启动同源 HTTP 服务。"""
 
@@ -29,8 +33,16 @@ def run_server(
         asset_db_path=asset_db_path,
         result_db_path=result_db_path,
     )
-    app = create_app(application)
+    app = create_app(application, static_dir=static_dir)
+    _log_static_hosting(static_dir)
     uvicorn.run(app, host=host, port=port)
+
+
+def _log_static_hosting(static_dir: str | Path | None) -> None:
+    if static_dir is None:
+        logger.info("前端静态托管未启用（未提供 --static-dir），仅提供 HTTP API")
+    else:
+        logger.info("前端静态托管目录：%s", Path(static_dir).resolve())
 
 
 def _configure_server_logging(project_root: str | Path) -> None:
@@ -52,6 +64,13 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--results-db", dest="result_db", type=Path, default=None)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument(
+        "--static-dir",
+        dest="static_dir",
+        type=Path,
+        default=None,
+        help="前端构建产物目录（需含 index.html）；提供后由本服务同源托管前端页面",
+    )
     args = parser.parse_args(argv)
     run_server(
         project_root=args.root,
@@ -59,6 +78,7 @@ def main(argv: list[str] | None = None) -> int:
         result_db_path=args.result_db,
         host=args.host,
         port=args.port,
+        static_dir=args.static_dir,
     )
     return 0
 

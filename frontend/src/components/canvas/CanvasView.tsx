@@ -487,35 +487,6 @@ export function CanvasView({
       </ReactFlow>
       {definition.regions.length === 0 && definition.nodes.length === 0 && (
         <div className="canvas-empty">
-          <svg className="canvas-empty-sigil" viewBox="0 0 160 160" aria-hidden="true">
-            <circle className="canvas-empty-sigil-ring" cx="80" cy="80" r="64" />
-            <circle
-              className="canvas-empty-sigil-ring canvas-empty-sigil-ring--inner"
-              cx="80"
-              cy="80"
-              r="48"
-            />
-            {[0, 1, 2, 3, 4, 5, 6, 7].map((index) => (
-              <line
-                key={index}
-                className="canvas-empty-sigil-tick"
-                x1="80"
-                y1="4"
-                x2="80"
-                y2="12"
-                transform={`rotate(${index * 45} 80 80)`}
-              />
-            ))}
-            <circle className="canvas-empty-sigil-dot canvas-empty-sigil-dot--pyro" cx="80" cy="24" r="3" />
-            <circle className="canvas-empty-sigil-dot canvas-empty-sigil-dot--hydro" cx="123.8" cy="45.1" r="3" />
-            <circle className="canvas-empty-sigil-dot canvas-empty-sigil-dot--electro" cx="134.6" cy="92.5" r="3" />
-            <circle className="canvas-empty-sigil-dot canvas-empty-sigil-dot--cryo" cx="104.3" cy="130.5" r="3" />
-            <circle className="canvas-empty-sigil-dot canvas-empty-sigil-dot--anemo" cx="55.7" cy="130.5" r="3" />
-            <circle className="canvas-empty-sigil-dot canvas-empty-sigil-dot--geo" cx="25.4" cy="92.5" r="3" />
-            <circle className="canvas-empty-sigil-dot canvas-empty-sigil-dot--dendro" cx="36.2" cy="45.1" r="3" />
-            <path className="canvas-empty-sigil-core" d="M80 66 L94 80 L80 94 L66 80 Z" />
-            <circle className="canvas-empty-sigil-center" cx="80" cy="80" r="2.5" />
-          </svg>
           <p className="canvas-empty-title">拖入区域开始</p>
           <p className="canvas-empty-hint">从左侧对象面板拖入</p>
           <div className="canvas-empty-stages">

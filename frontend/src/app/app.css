@@ -2129,7 +2129,24 @@ button svg,
 }
 
 .batch-progress-segment.seg-running {
-  background: var(--color-status-running);
+  background-color: var(--color-status-running);
+  background-image: linear-gradient(
+    100deg,
+    rgba(255, 255, 255, 0) 30%,
+    rgba(255, 255, 255, 0.28) 50%,
+    rgba(255, 255, 255, 0) 70%
+  );
+  background-size: 200% 100%;
+  animation: seg-shimmer 1.6s linear infinite;
+}
+
+@keyframes seg-shimmer {
+  from {
+    background-position: 100% 0;
+  }
+  to {
+    background-position: -100% 0;
+  }
 }
 
 .batch-progress-segment.seg-stopping {
@@ -2204,6 +2221,19 @@ button svg,
 
 .status-completed {
   background: var(--color-status-completed);
+}
+
+.simulation-editor .status-badge.status-completed {
+  animation: badge-pulse 640ms ease-out 1;
+}
+
+@keyframes badge-pulse {
+  0% {
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.5);
+  }
+  100% {
+    box-shadow: 0 0 0 6px rgba(34, 197, 94, 0);
+  }
 }
 
 .status-running {
@@ -2350,6 +2380,17 @@ button svg,
   opacity: 1;
   filter: none;
   z-index: 2;
+  animation: step-running-breathe 1.2s ease-in-out infinite;
+}
+
+@keyframes step-running-breathe {
+  0%,
+  100% {
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.35);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.12);
+  }
 }
 
 /* ---- 结果面板：结果库历史浏览器（决策 2.37）---- */
@@ -5664,4 +5705,23 @@ button svg,
 .damage-sheet-row--rejected .damage-sheet-row-value {
   color: var(--color-text-faint);
   text-decoration: line-through;
+}
+
+/* ---- 动效可访问性：系统减少动态偏好时全部关闭 ---- */
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__edge.animated path {
+    animation: none;
+  }
+
+  .batch-progress-segment.seg-running {
+    animation: none;
+  }
+
+  .node-card.step-running {
+    animation: none;
+  }
+
+  .simulation-editor .status-badge.status-completed {
+    animation: none;
+  }
 }

@@ -16,9 +16,9 @@ import type {
 
 echarts.use([BarChart, PieChart, GridComponent, LegendComponent, TooltipComponent, SVGRenderer]);
 
-/** 分析视图系列配色：首位与展示视图节点类别色对齐，其余取画布类别色的补充色相。 */
+/** 分析视图系列配色：首位与展示视图节点类别色（tokens.ts displayView）对齐，其余取画布类别色的补充色相。 */
 export const VIEW_CHART_PALETTE = [
-  "#ef4444",
+  "#f43f5e",
   "#3b82f6",
   "#22c55e",
   "#f59e0b",

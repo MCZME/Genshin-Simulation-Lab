@@ -11,6 +11,7 @@ import {
   type RunDetailResponse,
   type RunListItem,
 } from "../../api/client";
+import { Refresh } from "../common/icons";
 
 const PAGE_SIZE = 50;
 
@@ -214,7 +215,7 @@ export function ResultsPanel({ focusSessionId, onFocusHandled, onCollapse }: Res
             disabled={loading}
             onClick={() => void loadPage(0, false)}
           >
-            ↻
+            <Refresh />
           </button>
           <button
             type="button"

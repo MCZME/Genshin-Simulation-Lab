@@ -2,11 +2,12 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getAsset, searchAssets } from "../../api/client";
 import type { AssetResponse } from "../../api/client";
 import {
-  ELEMENT_COLORS,
   ELEMENT_LABELS,
   WEAPON_LABELS,
 } from "../../theme/elements";
-
+import { COLORS } from "../../theme/tokens";
+
+import { ChevronDown } from "./icons";
 interface AssetPickerProps {
   assetType: "characters" | "weapons" | "artifact-sets";
   value: string;
@@ -184,7 +185,7 @@ export function AssetPicker({ assetType, value, onChange, ariaLabel }: AssetPick
     selectedFromList ?? (fallback !== null && fallback.asset_key === value ? fallback : null);
   const elementColor =
     assetType === "characters" && selected !== null && selected.element != null
-      ? (ELEMENT_COLORS[selected.element] ?? null)
+      ? (COLORS.element[selected.element as keyof typeof COLORS.element] ?? null)
       : null;
   const filteredItems = items.filter((item) => {
     if (elementFilter !== null && item.element !== elementFilter) {
@@ -308,7 +309,9 @@ export function AssetPicker({ assetType, value, onChange, ariaLabel }: AssetPick
             </span>
           )}
         </span>
-        <span className="asset-caret">▾</span>
+        <span className="asset-caret">
+          <ChevronDown size={12} />
+        </span>
       </button>
       {open && (
         <div className="asset-dropdown nowheel">

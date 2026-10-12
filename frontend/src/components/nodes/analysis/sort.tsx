@@ -2,6 +2,7 @@
 
 import type { TableShape } from "../../../workflow/templates";
 import { upstreamShape, type EditorProps, type EditorRow } from "./context";
+import { ChevronDown, ChevronUp, Close, Plus } from "../../common/icons";
 
 const SORT_DIRECTION_LABELS: Record<string, string> = {
   asc: "升序",
@@ -95,7 +96,7 @@ export function SortEditor({ node, onChange }: EditorProps) {
           })
         }
       >
-        ＋ 添加排序键
+        <Plus /> 添加排序键
       </button>
     </div>
   );
@@ -154,7 +155,7 @@ function SortKeyRow({
           disabled={index === 0}
           onClick={() => onMove(-1)}
         >
-          ↑
+          <ChevronUp />
         </button>
         <button
           type="button"
@@ -163,10 +164,10 @@ function SortKeyRow({
           disabled={index === total - 1}
           onClick={() => onMove(1)}
         >
-          ↓
+          <ChevronDown />
         </button>
         <button type="button" className="analysis-row-remove" title="移除排序键" onClick={onRemove}>
-          ×
+          <Close />
         </button>
       </div>
       {error !== null && <p className="analysis-row-error">{error}</p>}

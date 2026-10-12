@@ -1,4 +1,5 @@
 import type { AppSettings } from "../../state/settings";
+import { Close } from "../common/icons";
 
 export interface SettingsModalProps {
   settings: AppSettings;
@@ -28,7 +29,7 @@ export function SettingsModal({ settings, onChange, onClose }: SettingsModalProp
             aria-label="关闭设置"
             onClick={onClose}
           >
-            ×
+            <Close />
           </button>
         </div>
         <div className="settings-group">

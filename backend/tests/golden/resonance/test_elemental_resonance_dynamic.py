@@ -66,7 +66,7 @@ from tests.helpers.events import (
     make_reaction_occurrence_event,
 )
 from tests.helpers.resonance_ports import (
-    FakeAuraFrozenPort,
+    FakeElementAuraPort,
     FakeLunarCagePresencePort,
     FakeShieldPresencePort,
     make_damage_modifier_query,
@@ -196,7 +196,7 @@ def test_geo_resonance_res_shred_uses_15s_geo_res_reduction():
 
 def test_cryo_and_geo_resonance_damage_modifier_values():
     cryo = ResonanceCryoCritDamageProvider(active=True)
-    cryo.bind_runtime_ports(aura_frozen_port=FakeAuraFrozenPort(True))
+    cryo.bind_runtime_ports(element_aura_port=FakeElementAuraPort(True))
     cryo_terms = cryo.contribute(make_damage_modifier_query(), None)
     assert len(cryo_terms) == 1
     assert cryo_terms[0].stage is DamageModifierStage.CRIT_RATE_ADD

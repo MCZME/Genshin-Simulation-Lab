@@ -8,20 +8,26 @@ from genshin_sim.core.attributes import (
     AttributeSubjectKind,
     AttributeSubjectRef,
 )
+from genshin_sim.core.elements import Element
 from genshin_sim.core.systems.damage.keys import FORMULA_KEY_GENERAL
 
 
-class FakeAuraFrozenPort:
-    """可配置的目标冰附着/冻结只读端口。"""
+class FakeElementAuraPort:
+    """可配置的目标元素影响/冻结只读端口。"""
 
     def __init__(self, result: bool) -> None:
         self.result = result
 
-    def has_cryo_or_frozen(
+    def is_affected_by(
         self,
         target_ref: AttributeSubjectRef,
+        element: Element,
         frame: int,
     ) -> bool:
+        del target_ref, element, frame
+        return self.result
+
+    def is_frozen(self, target_ref: AttributeSubjectRef, frame: int) -> bool:
         del target_ref, frame
         return self.result
 

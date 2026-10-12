@@ -3,7 +3,13 @@
 from __future__ import annotations
 
 from genshin_sim.core.attributes import AttributeSubjectKind, AttributeSubjectRef
-from genshin_sim.core.elements import AuraKind, ElementalSubjectKind, ElementalSubjectRef
+from genshin_sim.core.elements import (
+    AuraKind,
+    Element,
+    ElementalSubjectKind,
+    ElementalSubjectRef,
+    affected_aura_kinds,
+)
 from genshin_sim.core.simulation.team import TeamRuntimeState
 from genshin_sim.core.systems.buff.models import BuffRecord
 from genshin_sim.core.systems.buff.protocols import BuffReader
@@ -24,10 +30,13 @@ class HealthReadAdapter:
 
 
 class TargetElementAuraReadAdapter:
-    """通过 Aura 与 Reaction 运行态查询目标的元素附着与冻结状态。
+    """通过 Aura 与 Reaction 运行态查询目标的元素影响与冻结状态。
 
-    供内容侧条件伤害修饰使用：只回答「目标是否带有指定元素附着」「目标是否
-    处于冻结状态」，不暴露 Aura 记录细节。
+    面向条件效果（圣遗物、武器、元素共鸣）的窄只读端口实现：只回答「目标是否
+    受某元素影响」「目标是否处于冻结状态」，不暴露 Aura 记录细节。元素影响口径
+    来自 ``core.elements.affected_aura_kinds``（燃烧归火、冻结归冰、激化归草）；
+    冻结在持久 Aura 分量之外还可能只以 Reaction 冻结状态呈现，故对含冻结归属的
+    元素一并查询冻结状态。
     """
 
     def __init__(
@@ -38,20 +47,27 @@ class TargetElementAuraReadAdapter:
         self._aura_runtime = aura_runtime
         self._reaction_runtime = reaction_runtime
 
-    def has_component(
+    def is_affected_by(
         self,
         target_ref: AttributeSubjectRef,
-        aura_kind: AuraKind,
+        element: Element,
         frame: int,
     ) -> bool:
         del frame
+        kinds = affected_aura_kinds(element)
+        if not kinds:
+            return False
         subject = self._elemental_subject(target_ref)
         view = self._aura_runtime.view(subject)
-        return view.component_for(aura_kind) is not None
+        if any(view.component_for(aura_kind) is not None for aura_kind in kinds):
+            return True
+        return AuraKind.FROZEN in kinds and self._is_frozen(subject)
 
     def is_frozen(self, target_ref: AttributeSubjectRef, frame: int) -> bool:
         del frame
-        subject = self._elemental_subject(target_ref)
+        return self._is_frozen(self._elemental_subject(target_ref))
+
+    def _is_frozen(self, subject: ElementalSubjectRef) -> bool:
         return self._reaction_runtime.frozen_state_for(subject) is not None
 
     def _elemental_subject(self, target_ref: AttributeSubjectRef) -> ElementalSubjectRef:
@@ -59,33 +75,6 @@ class TargetElementAuraReadAdapter:
             ElementalSubjectKind(target_ref.kind.value),
             target_ref.entity_id,
         )
-
-
-class AuraFrozenReadAdapter:
-    """通过 Aura 与 Reaction 运行态查询目标冰附着/冻结状态。"""
-
-    def __init__(
-        self,
-        aura_runtime,
-        reaction_runtime: ReactionRuntime,
-    ) -> None:
-        self._aura_runtime = aura_runtime
-        self._reaction_runtime = reaction_runtime
-
-    def has_cryo_or_frozen(
-        self,
-        target_ref: AttributeSubjectRef,
-        frame: int,
-    ) -> bool:
-        del frame
-        subject = ElementalSubjectRef(
-            ElementalSubjectKind(target_ref.kind.value),
-            target_ref.entity_id,
-        )
-        view = self._aura_runtime.view(subject)
-        if view.component_for(AuraKind.CRYO) is not None:
-            return True
-        return self._reaction_runtime.frozen_state_for(subject) is not None
 
 
 class ShieldPresenceReadAdapter:

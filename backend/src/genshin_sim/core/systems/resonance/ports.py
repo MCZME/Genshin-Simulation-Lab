@@ -18,16 +18,6 @@ from genshin_sim.core.systems.cooldown import (
 from genshin_sim.core.systems.resonance.models import ResonanceActivation, ResonanceDefinition
 
 
-class TargetAuraFrozenReadPort(Protocol):
-    """查询目标是否处于冰附着或冻结状态。"""
-
-    def has_cryo_or_frozen(
-        self,
-        target_ref: AttributeSubjectRef,
-        frame: int,
-    ) -> bool: ...
-
-
 class CharacterShieldPresenceReadPort(Protocol):
     """查询角色是否处于护盾庇护下。"""
 

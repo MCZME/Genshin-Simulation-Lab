@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
-import { ELEMENT_COLORS, ELEMENT_LABELS } from "../../theme/elements";
+import { ELEMENT_LABELS } from "../../theme/elements";
+import { COLORS } from "../../theme/tokens";
 import { RESISTANCE_ELEMENT_KEYS } from "../../workflow/vocabularies";
 import { FieldRow, InlineError, NumberField, TextField } from "../common/fields";
 import type { NodeEditorProps } from "./common";
@@ -65,7 +66,9 @@ export function TargetEditor({ node, onChange, fieldErrors = {} }: NodeEditorPro
                 className="target-resistance-field"
                 style={
                   {
-                    "--element-color": ELEMENT_COLORS[key] ?? "#64748b",
+                    "--element-color":
+                      COLORS.element[key as keyof typeof COLORS.element] ??
+                      COLORS.textFaint,
                   } as CSSProperties
                 }
               >

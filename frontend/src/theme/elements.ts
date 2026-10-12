@@ -1,3 +1,5 @@
+/** 元素显示色的唯一事实源在 theme/tokens.ts 的 COLORS.element（游戏惯例配色）。 */
+
 export const ELEMENT_LABELS: Record<string, string> = {
   anemo: "风",
   cryo: "冰",
@@ -7,17 +9,6 @@ export const ELEMENT_LABELS: Record<string, string> = {
   hydro: "水",
   physical: "物理",
   pyro: "火",
-};
-
-export const ELEMENT_COLORS: Record<string, string> = {
-  anemo: "#10b981",
-  cryo: "#22d3ee",
-  dendro: "#84cc16",
-  electro: "#a855f7",
-  geo: "#f59e0b",
-  hydro: "#3b82f6",
-  physical: "#cbd5e1",
-  pyro: "#ef4444",
 };
 
 export const WEAPON_LABELS: Record<string, string> = {

@@ -2,10 +2,10 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { getAsset, searchAssets } from "../../api/client";
 import type { AssetResponse } from "../../api/client";
 import {
-  ELEMENT_COLORS,
   ELEMENT_LABELS,
   WEAPON_LABELS,
 } from "../../theme/elements";
+import { COLORS } from "../../theme/tokens";
 
 interface AssetPickerProps {
   assetType: "characters" | "weapons" | "artifact-sets";
@@ -184,7 +184,7 @@ export function AssetPicker({ assetType, value, onChange, ariaLabel }: AssetPick
     selectedFromList ?? (fallback !== null && fallback.asset_key === value ? fallback : null);
   const elementColor =
     assetType === "characters" && selected !== null && selected.element != null
-      ? (ELEMENT_COLORS[selected.element] ?? null)
+      ? (COLORS.element[selected.element as keyof typeof COLORS.element] ?? null)
       : null;
   const filteredItems = items.filter((item) => {
     if (elementFilter !== null && item.element !== elementFilter) {

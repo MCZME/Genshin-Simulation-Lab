@@ -166,7 +166,7 @@ export function nodeKindColor(kind: string): string {
     return COLORS.region.analysis;
   }
   const category = nodeCategoryOf(kind);
-  return category === null ? "#64748b" : COLORS.nodeCategory[category];
+  return category === null ? COLORS.fallback : COLORS.nodeCategory[category];
 }
 
 /** 配置区域：运行设置。 */

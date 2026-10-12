@@ -58,6 +58,7 @@ function renderRegion(
     interactionLocked: false,
     incomingGroups: [],
     dropTarget: false,
+    invalidDropTarget: false,
     renameRequested: false,
     onRenameRequestHandled: vi.fn(),
     ...overrides.data,

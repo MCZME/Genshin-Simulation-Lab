@@ -626,6 +626,150 @@ button svg,
   --xy-connectionline-stroke: var(--color-accent);
 }
 
+/* ---- 空画布空态（画布设计既定：拖入区域开始）---- */
+.canvas-empty {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  pointer-events: none;
+}
+
+.canvas-empty-sigil {
+  width: 160px;
+  height: 160px;
+  animation: sigil-spin 48s linear infinite;
+}
+
+.canvas-empty-sigil-ring {
+  fill: none;
+  stroke: rgba(148, 163, 184, 0.32);
+  stroke-width: 1;
+}
+
+.canvas-empty-sigil-ring--inner {
+  stroke: rgba(148, 163, 184, 0.18);
+  stroke-dasharray: 3 5;
+}
+
+.canvas-empty-sigil-tick {
+  stroke: rgba(148, 163, 184, 0.28);
+  stroke-width: 1;
+}
+
+.canvas-empty-sigil-dot {
+  opacity: 0.9;
+}
+
+.canvas-empty-sigil-dot--pyro {
+  fill: var(--color-element-pyro);
+}
+
+.canvas-empty-sigil-dot--hydro {
+  fill: var(--color-element-hydro);
+}
+
+.canvas-empty-sigil-dot--electro {
+  fill: var(--color-element-electro);
+}
+
+.canvas-empty-sigil-dot--cryo {
+  fill: var(--color-element-cryo);
+}
+
+.canvas-empty-sigil-dot--anemo {
+  fill: var(--color-element-anemo);
+}
+
+.canvas-empty-sigil-dot--geo {
+  fill: var(--color-element-geo);
+}
+
+.canvas-empty-sigil-dot--dendro {
+  fill: var(--color-element-dendro);
+}
+
+.canvas-empty-sigil-core {
+  fill: none;
+  stroke: var(--color-accent);
+  stroke-width: 1.5;
+}
+
+.canvas-empty-sigil-center {
+  fill: var(--color-accent);
+}
+
+.canvas-empty-title {
+  margin: 0;
+  font-size: var(--font-size-title);
+  letter-spacing: 0.1em;
+  color: var(--color-text-faint);
+}
+
+.canvas-empty-hint {
+  margin: -8px 0 0;
+  font-size: var(--font-size-caption);
+  color: var(--color-text-faint);
+  opacity: 0.75;
+}
+
+.canvas-empty-stages {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.canvas-empty-stage {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 10px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  font-size: var(--font-size-caption);
+  color: var(--color-text-faint);
+}
+
+.canvas-empty-stage-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+}
+
+.canvas-empty-stage-dot--config {
+  background: var(--color-region-configuration);
+}
+
+.canvas-empty-stage-dot--sim {
+  background: var(--color-node-simulation);
+}
+
+.canvas-empty-stage-dot--analysis {
+  background: var(--color-region-analysis);
+}
+
+.canvas-empty-arrow {
+  width: 18px;
+  height: 1px;
+  background: var(--color-border-strong);
+}
+
+@keyframes sigil-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* ---- 小地图仪表化（修正库默认浅色遮罩与深色画布的冲突）---- */
+.workflow-minimap {
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-card);
+}
+
 .region-summary-bar {
   display: flex;
   gap: 12px;
@@ -672,6 +816,15 @@ button svg,
 
 .region-node.drop-target {
   outline: 2px dashed var(--color-accent);
+  outline-offset: 4px;
+  box-shadow:
+    inset 0 0 0 1px rgba(56, 189, 248, 0.3),
+    inset 0 0 28px rgba(56, 189, 248, 0.1);
+}
+
+/* 拖拽悬停在错误类型区域上（如配置节点拖到分析区域）：红色虚线劝阻。 */
+.region-node.drop-invalid {
+  outline: 2px dashed var(--color-severity-error);
   outline-offset: 4px;
 }
 
@@ -790,6 +943,20 @@ button svg,
   border: 1px solid var(--color-border);
   border-radius: var(--radius-card);
   box-shadow: var(--shadow-card);
+}
+
+/* 节点类别色带（决策 D-034）：3px 顶带取类别色，扫一眼可辨数据流角色；
+   纯 ::before 装饰，不占布局、不影响手柄与连线锚点。 */
+.node-card::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 0;
+  height: 3px;
+  border-radius: var(--radius-card) var(--radius-card) 0 0;
+  background: var(--node-category, var(--color-fallback));
+  pointer-events: none;
 }
 
 .node-card.node-card-trace {
@@ -924,6 +1091,7 @@ button svg,
   font-family: var(--font-mono);
   font-size: var(--font-size-caption);
   line-height: 16px;
+  font-variant-numeric: tabular-nums;
 }
 
 .member-ports {
@@ -2163,6 +2331,7 @@ button svg,
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+  font-variant-numeric: tabular-nums;
 }
 
 .member-failures {
@@ -3222,15 +3391,17 @@ button svg,
   color: var(--color-text);
 }
 
+/* 最大/最小高亮定向：max 用琥珀系（与暴击高光同族的「庆祝」语义），
+   min 用中性冷灰——原实现的 min 取严重度红，与错误语义冲突。 */
 .analysis-member-table td.hl-max {
-  background: rgba(34, 197, 94, 0.22);
-  color: #bbf7d0;
+  background: rgba(251, 191, 36, 0.18);
+  color: var(--color-selection);
   font-weight: 700;
 }
 
 .analysis-member-table td.hl-min {
-  background: rgba(239, 68, 68, 0.2);
-  color: var(--color-error-text);
+  background: rgba(100, 116, 139, 0.16);
+  color: var(--color-text-muted);
   font-weight: 700;
 }
 
@@ -5438,6 +5609,7 @@ button svg,
   justify-content: center;
   gap: 4px 6px;
   padding: 4px 10px 2px;
+  font-variant-numeric: tabular-nums;
 }
 
 /* 乘号连接符与链段绑定为不可分割单元，换行时随链段移到下一行行首；
@@ -5722,6 +5894,10 @@ button svg,
   }
 
   .simulation-editor .status-badge.status-completed {
+    animation: none;
+  }
+
+  .canvas-empty-sigil {
     animation: none;
   }
 }

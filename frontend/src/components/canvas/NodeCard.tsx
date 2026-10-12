@@ -70,6 +70,9 @@ export interface MemberPortInfo {
   connected: boolean;
 }
 
+/** 节点卡样式：在 CSSProperties 上扩展类别色自定义属性（驱动 ::before 色带）。 */
+type NodeCardStyle = React.CSSProperties & { "--node-category"?: string };
+
 export function NodeCard({ data, selected }: NodeProps) {
   const {
     node,
@@ -240,11 +243,15 @@ export function NodeCard({ data, selected }: NodeProps) {
     <div
       className={`node-card ${isAnalysisView(node.kind) ? "node-card-view" : ""} ${node.kind === "input_trace" ? "node-card-trace" : ""} ${isAnalysisDetailKind(node.kind) ? "node-card-detail" : ""} ${node.kind === "artifact" ? "node-card-artifact" : ""} ${node.kind === "fetch" ? "node-card-fetch" : ""} ${node.kind === "table_config" ? "node-card-table-config" : ""} ${node.kind === "pie_config" || node.kind === "bar_config" ? "node-card-display-config" : ""} ${node.kind === "filter" ? "node-card-filter" : ""} ${node.kind === "aggregate" ? "node-card-aggregate" : ""} ${node.kind === "project" ? "node-card-project" : ""} ${node.kind === "sort" ? "node-card-sort" : ""} ${node.kind === "join" ? "node-card-join" : ""} ${node.kind === "compute" ? "node-card-compute" : ""} ${node.kind === "derive" ? "node-card-derive" : ""} ${selected ? "selected" : ""} ${isDraft ? "draft" : ""} ${dimmed ? "dimmed" : ""} ${stepRunning ? "step-running" : ""}`}
       style={
-        isView
-          ? { width: displayWidth, height: displayHeight }
-          : isWidthOnlyResizable
-            ? { width: displayWidth }
-            : undefined
+        {
+          ...(isView
+            ? { width: displayWidth, height: displayHeight }
+            : isWidthOnlyResizable
+              ? { width: displayWidth }
+              : {}),
+          // 类别色带取色（决策 D-034 类别色）：CSS 自定义属性驱动 ::before，不占布局。
+          "--node-category": nodeKindColor(node.kind),
+        } as NodeCardStyle
       }
     >
       <header className="node-card-header">

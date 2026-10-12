@@ -48,6 +48,8 @@ export type RegionNodeData = {
   interactionLocked: boolean;
   incomingGroups: IncomingOrderGroup[];
   dropTarget: boolean;
+  /** 拖拽悬停在错误类型区域上（如配置节点拖到分析区域）：红色虚线劝阻。 */
+  invalidDropTarget: boolean;
   /** 新创建区域的一次性命名请求；处理后通过回调清除。 */
   renameRequested: boolean;
   onRenameRequestHandled: () => void;
@@ -75,6 +77,7 @@ export function RegionNode({
     interactionLocked,
     incomingGroups,
     dropTarget,
+    invalidDropTarget,
     renameRequested,
     onRenameRequestHandled,
   } = data as RegionNodeData;
@@ -278,7 +281,7 @@ export function RegionNode({
 
   return (
     <div
-      className={`region-node ${selected ? "selected" : ""} ${dropTarget ? "drop-target" : ""}`}
+      className={`region-node ${selected ? "selected" : ""} ${dropTarget ? "drop-target" : ""} ${invalidDropTarget ? "drop-invalid" : ""}`}
       style={{
         width: previewSize?.width ?? width ?? region.rect.width,
         height: previewSize?.height ?? height ?? region.rect.height,

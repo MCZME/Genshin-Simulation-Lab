@@ -98,6 +98,14 @@ from genshin_sim.content.artifacts.thundersoother import (
     create_thundersoother_identity_unit,
     create_thundersoother_two_piece_unit,
 )
+from genshin_sim.content.artifacts.viridescent_venerer import (
+    VIRIDESCENT_VENERER_2P_HANDLER_KEY,
+    VIRIDESCENT_VENERER_4P_HANDLER_KEY,
+    VIRIDESCENT_VENERER_HANDLER_KEY,
+    create_viridescent_venerer_four_piece_unit,
+    create_viridescent_venerer_identity_unit,
+    create_viridescent_venerer_two_piece_unit,
+)
 from genshin_sim.content.characters.mondstadt.barbara import (
     BARBARA_CHARACTER_HANDLER_KEY,
     BARBARA_CONSTELLATION_C1_HANDLER_KEY,
@@ -729,6 +737,9 @@ def create_default_content_unit_registry(
         (THUNDERSOOTHER_HANDLER_KEY, create_thundersoother_identity_unit),
         (THUNDERSOOTHER_2P_HANDLER_KEY, create_thundersoother_two_piece_unit),
         (THUNDERSOOTHER_4P_HANDLER_KEY, create_thundersoother_four_piece_unit),
+        (VIRIDESCENT_VENERER_HANDLER_KEY, create_viridescent_venerer_identity_unit),
+        (VIRIDESCENT_VENERER_2P_HANDLER_KEY, create_viridescent_venerer_two_piece_unit),
+        (VIRIDESCENT_VENERER_4P_HANDLER_KEY, create_viridescent_venerer_four_piece_unit),
     ):
         registry.register_artifact_factory(handler_key, factory)
     registry.register_effect_factory(

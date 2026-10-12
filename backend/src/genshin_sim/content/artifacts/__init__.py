@@ -93,6 +93,14 @@ from genshin_sim.content.artifacts.thundersoother import (
     create_thundersoother_identity_unit,
     create_thundersoother_two_piece_unit,
 )
+from genshin_sim.content.artifacts.viridescent_venerer import (
+    VIRIDESCENT_VENERER_2P_HANDLER_KEY,
+    VIRIDESCENT_VENERER_4P_HANDLER_KEY,
+    VIRIDESCENT_VENERER_CONTENT_VERSION,
+    create_viridescent_venerer_four_piece_unit,
+    create_viridescent_venerer_identity_unit,
+    create_viridescent_venerer_two_piece_unit,
+)
 
 __all__ = [
     "MAIDEN_BELOVED_2P_HANDLER_KEY",
@@ -131,6 +139,9 @@ __all__ = [
     "THUNDERSOOTHER_2P_HANDLER_KEY",
     "THUNDERSOOTHER_4P_HANDLER_KEY",
     "THUNDERSOOTHER_CONTENT_VERSION",
+    "VIRIDESCENT_VENERER_2P_HANDLER_KEY",
+    "VIRIDESCENT_VENERER_4P_HANDLER_KEY",
+    "VIRIDESCENT_VENERER_CONTENT_VERSION",
     "create_maiden_beloved_four_piece_unit",
     "create_maiden_beloved_two_piece_unit",
     "create_disenchantment_in_deep_shadow_four_piece_unit",
@@ -164,4 +175,7 @@ __all__ = [
     "create_thundersoother_four_piece_unit",
     "create_thundersoother_identity_unit",
     "create_thundersoother_two_piece_unit",
+    "create_viridescent_venerer_four_piece_unit",
+    "create_viridescent_venerer_identity_unit",
+    "create_viridescent_venerer_two_piece_unit",
 ]

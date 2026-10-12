@@ -581,8 +581,49 @@ button svg,
 }
 
 .canvas-viewport {
+  position: relative;
   flex: 1;
   min-height: 0;
+}
+
+/* ---- 画布氛围层（画布设计既定：视口固定的元素微光）----
+   叠加色取区域色（配置蓝 / 分析紫）的低透明度径向光，不随画布平移；
+   点阵网格由 React Flow Background 承担；纯装饰层，不接收指针事件。 */
+.canvas-atmosphere {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(760px 520px at 10% 4%, rgba(37, 99, 235, 0.12), transparent 70%),
+    radial-gradient(880px 620px at 92% 96%, rgba(124, 58, 237, 0.09), transparent 72%);
+}
+
+/* ---- 连线状态语言（决策 D-028：运行中高亮 / 未参与置灰）----
+   路径与箭头同受 --xy-edge-stroke 驱动，改变量即整体换色；
+   只改 stroke 派生属性，不触碰节点几何与连线锚点。 */
+.react-flow__edge {
+  --xy-edge-stroke: rgba(100, 116, 139, 0.5);
+  --xy-edge-stroke-width: 1.5;
+  --xy-edge-stroke-selected: var(--color-accent);
+}
+
+.react-flow__edge:hover {
+  --xy-edge-stroke: var(--color-accent);
+  --xy-edge-stroke-width: 2;
+}
+
+.react-flow__edge.edge-running {
+  --xy-edge-stroke: var(--color-status-running);
+  --xy-edge-stroke-width: 2;
+}
+
+.react-flow__edge.edge-dimmed {
+  --xy-edge-stroke: rgba(100, 116, 139, 0.18);
+}
+
+.react-flow__connection {
+  --xy-connectionline-stroke: var(--color-accent);
 }
 
 .region-summary-bar {

@@ -247,7 +247,7 @@ export function CanvasView({
         current,
       ),
     );
-    setEdges(buildEdges(definition));
+    setEdges(buildEdges(definition, dimmedNodeIds, runningMethodNodeIds));
   }, [
     definition,
     diagnostics,
@@ -430,6 +430,7 @@ export function CanvasView({
       onDrop={handleDrop}
       onDragEnd={handleDragEnd}
     >
+      <div className="canvas-atmosphere" aria-hidden="true" />
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -605,7 +606,13 @@ function mergeNodeState(next: Node[], current: Node[]): Node[] {
   });
 }
 
-function buildEdges(definition: WorkflowDefinition): Edge[] {
+function buildEdges(
+  definition: WorkflowDefinition,
+  dimmedNodeIds: string[],
+  runningMethodNodeIds: string[],
+): Edge[] {
+  const dimmed = new Set(dimmedNodeIds);
+  const running = new Set(runningMethodNodeIds);
   return definition.edges.map((edge) => {
     const sourceNode = definition.nodes.find((node) => node.id === edge.source_node_id);
     const groupCount =
@@ -614,6 +621,11 @@ function buildEdges(definition: WorkflowDefinition): Edge[] {
       edge.source_port_id === "out"
         ? memberItemIds(sourceNode).length
         : 0;
+    // 执行轨迹驱动的连线状态（决策 D-028）：运行中高亮、未参与置灰。
+    // 只挂 class / animated 改变 stroke 派生变量，不触碰节点几何与连线锚点。
+    const isRunning = running.has(edge.source_node_id) || running.has(edge.target_node_id);
+    const isDimmed =
+      !isRunning && (dimmed.has(edge.source_node_id) || dimmed.has(edge.target_node_id));
     return {
       id: edge.id,
       source: edge.source_node_id,
@@ -622,10 +634,16 @@ function buildEdges(definition: WorkflowDefinition): Edge[] {
       targetHandle: edge.target_port_id,
       markerEnd: { type: MarkerType.ArrowClosed },
       selected: false,
+      animated: isRunning,
+      className: isRunning ? "edge-running" : isDimmed ? "edge-dimmed" : undefined,
       label: groupCount > 0 ? `×${groupCount}` : undefined,
       labelStyle:
         groupCount > 0
-          ? { fill: "#94a3b8", fontSize: 10, fontFamily: "ui-monospace, Consolas, monospace" }
+          ? {
+              fill: "var(--color-text-muted)",
+              fontSize: "var(--font-size-caption)",
+              fontFamily: "var(--font-mono)",
+            }
           : undefined,
     };
   });

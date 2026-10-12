@@ -345,6 +345,12 @@ from genshin_sim.content.weapons.polearm.beginner_protector import (
     BEGINNER_PROTECTOR_HANDLER_KEY,
     create_beginner_protector_content_unit,
 )
+from genshin_sim.content.weapons.polearm.black_tassel import (
+    BLACK_TASSEL_HANDLER_KEY,
+    BLACK_TASSEL_PASSIVE_EFFECT_HANDLER_KEY,
+    create_black_tassel_identity_unit,
+    create_black_tassel_passive_unit,
+)
 from genshin_sim.content.weapons.polearm.favonius_lance import (
     FAVONIUS_LANCE_HANDLER_KEY,
     FAVONIUS_LANCE_PASSIVE_EFFECT_HANDLER_KEY,
@@ -560,6 +566,7 @@ def create_default_content_unit_registry(
         (RECURVE_BOW_HANDLER_KEY, create_recurve_bow_identity_unit),
         (WHITE_IRON_GREATSWORD_HANDLER_KEY, create_white_iron_greatsword_identity_unit),
         (TWIN_NEPHRITE_HANDLER_KEY, create_twin_nephrite_identity_unit),
+        (BLACK_TASSEL_HANDLER_KEY, create_black_tassel_identity_unit),
     ):
         registry.register_weapon_factory(handler_key, factory)
     for handler_key, factory in (
@@ -609,6 +616,7 @@ def create_default_content_unit_registry(
             create_white_iron_greatsword_passive_unit,
         ),
         (TWIN_NEPHRITE_PASSIVE_EFFECT_HANDLER_KEY, create_twin_nephrite_passive_unit),
+        (BLACK_TASSEL_PASSIVE_EFFECT_HANDLER_KEY, create_black_tassel_passive_unit),
     ):
         registry.register_effect_factory(handler_key, factory)
     # 西风系列五把武器各自一个内容包与一个 handler 键；判定、资产参数解读与钩子

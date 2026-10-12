@@ -8,6 +8,7 @@ import {
   SelectField,
   TextField,
 } from "../common/fields";
+import { Close } from "../common/icons";
 import type { NodeEditorProps } from "./common";
 import { asNumber, asString, firstError, firstErrorPrefix, isPlainObject } from "./common";
 import {
@@ -325,7 +326,7 @@ export function EnumEditor({ node, onChange, fieldErrors = {} }: NodeEditorProps
                 title="删除取值"
                 onClick={() => updateValues(values.filter((_, valueIndex) => valueIndex !== index))}
               >
-                ×
+                <Close />
               </button>
             </div>
           ))}

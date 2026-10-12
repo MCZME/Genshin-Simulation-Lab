@@ -6,7 +6,8 @@ import {
   WEAPON_LABELS,
 } from "../../theme/elements";
 import { COLORS } from "../../theme/tokens";
-
+
+import { ChevronDown } from "./icons";
 interface AssetPickerProps {
   assetType: "characters" | "weapons" | "artifact-sets";
   value: string;
@@ -308,7 +309,9 @@ export function AssetPicker({ assetType, value, onChange, ariaLabel }: AssetPick
             </span>
           )}
         </span>
-        <span className="asset-caret">▾</span>
+        <span className="asset-caret">
+          <ChevronDown size={12} />
+        </span>
       </button>
       {open && (
         <div className="asset-dropdown nowheel">

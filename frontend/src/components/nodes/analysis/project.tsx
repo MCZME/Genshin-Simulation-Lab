@@ -8,6 +8,7 @@ import {
   type EditorRow,
 } from "./context";
 import { ImeSafeInput } from "./imeInput";
+import { Close, Plus } from "../../common/icons";
 
 function normalizeProjectRow(row: EditorRow): EditorRow {
   const next = { ...row };
@@ -93,7 +94,7 @@ export function ProjectEditor({ node, onChange }: EditorProps) {
         className="analysis-add-button"
         onClick={() => onChange({ ...node.params, columns: [...rows, {}] })}
       >
-        ＋ 添加列
+        <Plus /> 添加列
       </button>
     </div>
   );
@@ -131,7 +132,7 @@ function ProjectRow({
           onChange={(value) => onChange({ as: value })}
         />
         <button type="button" className="analysis-row-remove" title="移除列" onClick={onRemove}>
-          ×
+          <Close />
         </button>
       </div>
       {error !== null && <p className="analysis-row-error">{error}</p>}

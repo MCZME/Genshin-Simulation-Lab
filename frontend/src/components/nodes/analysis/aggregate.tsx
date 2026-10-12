@@ -9,6 +9,7 @@ import {
   type EditorRow,
 } from "./context";
 import { ImeSafeInput } from "./imeInput";
+import { Close, Plus } from "../../common/icons";
 
 const AGGREGATE_FUNCTION_LABELS: Record<string, string> = {
   sum: "求和",
@@ -184,7 +185,7 @@ export function AggregateEditor({ node, onChange }: EditorProps) {
             })
           }
         >
-          ＋ 添加统计指标
+          <Plus /> 添加统计指标
         </button>
         {groupBy.length === 0 && aggregates.length === 0 && (
           <p className="analysis-editor-empty">至少选择一个统计维度或添加一个统计指标</p>
@@ -240,7 +241,7 @@ function AggregateRow({
           onChange={(value) => onChange({ as: value })}
         />
         <button type="button" className="analysis-row-remove" title="移除指标" onClick={onRemove}>
-          ×
+          <Close />
         </button>
       </div>
       {error !== null && <p className="analysis-row-error">{error}</p>}

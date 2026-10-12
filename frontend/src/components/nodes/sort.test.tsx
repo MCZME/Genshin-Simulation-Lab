@@ -105,7 +105,7 @@ describe("排序节点编辑器（卡片直编）", () => {
     withUpstream();
     const onChange = vi.fn();
     render(<Harness node={sortNode({})} onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: "＋ 添加排序键" }));
+    fireEvent.click(screen.getByRole("button", { name: "添加排序键" }));
     expect(onChange).toHaveBeenLastCalledWith({
       keys: [{ column: "", direction: "desc" }],
     });
@@ -150,7 +150,7 @@ describe("排序节点编辑器（卡片直编）", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getAllByRole("button", { name: "↓" })[0]!);
+    fireEvent.click(screen.getAllByRole("button", { name: "下移" })[0]!);
 
     expect(onChange).toHaveBeenLastCalledWith({
       keys: [
@@ -174,10 +174,10 @@ describe("排序节点编辑器（卡片直编）", () => {
       />,
     );
     expect(
-      (screen.getAllByRole("button", { name: "↑" })[0] as HTMLButtonElement).disabled,
+      (screen.getAllByRole("button", { name: "上移" })[0] as HTMLButtonElement).disabled,
     ).toBe(true);
     expect(
-      (screen.getAllByRole("button", { name: "↓" })[1] as HTMLButtonElement).disabled,
+      (screen.getAllByRole("button", { name: "下移" })[1] as HTMLButtonElement).disabled,
     ).toBe(true);
   });
 
@@ -228,7 +228,7 @@ describe("排序节点编辑器（卡片直编）", () => {
         onChange={onChange}
       />,
     );
-    fireEvent.click(screen.getAllByRole("button", { name: "×" })[0]!);
+    fireEvent.click(screen.getAllByRole("button", { name: "移除排序键" })[0]!);
 
     expect(onChange).toHaveBeenLastCalledWith({
       keys: [{ column: "element", direction: "asc" }],

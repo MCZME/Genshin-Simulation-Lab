@@ -11,6 +11,7 @@ import { AnalysisDetailBody, isAnalysisDetailKind, SingleItemBody } from "../nod
 import { AnalysisViewBody, type ViewFitInfo } from "../nodes/views";
 import { getNodeKindSpec } from "../../workflow/registry";
 import type { NodeSize, WorkflowDefinition, WorkflowNode } from "../../workflow/types";
+import { Close } from "../common/icons";
 import {
   DEFAULT_ATTRIBUTE_DETAIL_WIDTH,
   DEFAULT_DETAIL_WIDTH,
@@ -270,7 +271,7 @@ export function NodeCard({ data, selected }: NodeProps) {
           disabled={interactionLocked}
           onClick={() => onDeleteNode(node.id)}
         >
-          ×
+          <Close />
         </button>
       </header>
       <div className="node-card-body">

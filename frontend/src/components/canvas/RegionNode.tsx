@@ -9,6 +9,7 @@ import {
 } from "../../workflow/types";
 import { InputOrderPopover } from "./InputOrderPopover";
 import type { IncomingOrderGroup } from "./InputOrderPopover";
+import { Close, Pencil } from "../common/icons";
 
 const MIN_REGION_WIDTH = 400;
 const MIN_REGION_HEIGHT = 240;
@@ -379,7 +380,7 @@ export function RegionNode({
               aria-label={`重命名区域 ${region.name}`}
               onClick={startRename}
             >
-              ✎
+              <Pencil />
             </button>
           )}
           {selected && (
@@ -391,7 +392,7 @@ export function RegionNode({
               disabled={interactionLocked}
               onClick={() => onDeleteRegion(region.id)}
             >
-              ×
+              <Close />
             </button>
           )}
         </div>

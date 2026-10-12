@@ -219,11 +219,29 @@ from genshin_sim.content.weapons.bow.hunter_bow import (
     HUNTER_BOW_HANDLER_KEY,
     create_hunter_bow_content_unit,
 )
+from genshin_sim.content.weapons.bow.messenger import (
+    MESSENGER_HANDLER_KEY,
+    MESSENGER_PASSIVE_EFFECT_HANDLER_KEY,
+    create_messenger_identity_unit,
+    create_messenger_passive_unit,
+)
 from genshin_sim.content.weapons.bow.raven_bow import (
     RAVEN_BOW_HANDLER_KEY,
     RAVEN_BOW_PASSIVE_EFFECT_HANDLER_KEY,
     create_raven_bow_identity_unit,
     create_raven_bow_passive_unit,
+)
+from genshin_sim.content.weapons.bow.recurve_bow import (
+    RECURVE_BOW_HANDLER_KEY,
+    RECURVE_BOW_PASSIVE_EFFECT_HANDLER_KEY,
+    create_recurve_bow_identity_unit,
+    create_recurve_bow_passive_unit,
+)
+from genshin_sim.content.weapons.bow.sharpshooters_oath import (
+    SHARPSHOOTERS_OATH_HANDLER_KEY,
+    SHARPSHOOTERS_OATH_PASSIVE_EFFECT_HANDLER_KEY,
+    create_sharpshooters_oath_identity_unit,
+    create_sharpshooters_oath_passive_unit,
 )
 from genshin_sim.content.weapons.catalyst.apprentice_notes import (
     APPRENTICE_NOTES_HANDLER_KEY,
@@ -258,6 +276,12 @@ from genshin_sim.content.weapons.catalyst.thrilling_tales_of_dragon_slayers impo
     THRILLING_TALES_PASSIVE_EFFECT_HANDLER_KEY,
     create_thrilling_tales_identity_unit,
     create_thrilling_tales_passive_unit,
+)
+from genshin_sim.content.weapons.catalyst.twin_nephrite import (
+    TWIN_NEPHRITE_HANDLER_KEY,
+    TWIN_NEPHRITE_PASSIVE_EFFECT_HANDLER_KEY,
+    create_twin_nephrite_identity_unit,
+    create_twin_nephrite_passive_unit,
 )
 from genshin_sim.content.weapons.claymore.a_teaspoon_of_transcendence import (
     A_TEASPOON_OF_TRANSCENDENCE_HANDLER_KEY,
@@ -310,6 +334,12 @@ from genshin_sim.content.weapons.claymore.tidal_shadow import (
 from genshin_sim.content.weapons.claymore.waster_greatsword import (
     WASTER_GREATSWORD_HANDLER_KEY,
     create_waster_greatsword_content_unit,
+)
+from genshin_sim.content.weapons.claymore.white_iron_greatsword import (
+    WHITE_IRON_GREATSWORD_HANDLER_KEY,
+    WHITE_IRON_GREATSWORD_PASSIVE_EFFECT_HANDLER_KEY,
+    create_white_iron_greatsword_identity_unit,
+    create_white_iron_greatsword_passive_unit,
 )
 from genshin_sim.content.weapons.polearm.beginner_protector import (
     BEGINNER_PROTECTOR_HANDLER_KEY,
@@ -523,6 +553,13 @@ def create_default_content_unit_registry(
             create_bloodtainted_greatsword_identity_unit,
         ),
         (COOL_STEEL_HANDLER_KEY, create_cool_steel_identity_unit),
+        # 缺口 2/3（弱点、敌人击败）当前不建模，见 D-095：这些武器照常接入，
+        # 索引行与效果行都绑定，效果单元为显式 no-op，范围边界写在各自 data.py。
+        (SHARPSHOOTERS_OATH_HANDLER_KEY, create_sharpshooters_oath_identity_unit),
+        (MESSENGER_HANDLER_KEY, create_messenger_identity_unit),
+        (RECURVE_BOW_HANDLER_KEY, create_recurve_bow_identity_unit),
+        (WHITE_IRON_GREATSWORD_HANDLER_KEY, create_white_iron_greatsword_identity_unit),
+        (TWIN_NEPHRITE_HANDLER_KEY, create_twin_nephrite_identity_unit),
     ):
         registry.register_weapon_factory(handler_key, factory)
     for handler_key, factory in (
@@ -561,6 +598,17 @@ def create_default_content_unit_registry(
             create_bloodtainted_greatsword_passive_unit,
         ),
         (COOL_STEEL_PASSIVE_EFFECT_HANDLER_KEY, create_cool_steel_passive_unit),
+        (
+            SHARPSHOOTERS_OATH_PASSIVE_EFFECT_HANDLER_KEY,
+            create_sharpshooters_oath_passive_unit,
+        ),
+        (MESSENGER_PASSIVE_EFFECT_HANDLER_KEY, create_messenger_passive_unit),
+        (RECURVE_BOW_PASSIVE_EFFECT_HANDLER_KEY, create_recurve_bow_passive_unit),
+        (
+            WHITE_IRON_GREATSWORD_PASSIVE_EFFECT_HANDLER_KEY,
+            create_white_iron_greatsword_passive_unit,
+        ),
+        (TWIN_NEPHRITE_PASSIVE_EFFECT_HANDLER_KEY, create_twin_nephrite_passive_unit),
     ):
         registry.register_effect_factory(handler_key, factory)
     # 西风系列五把武器各自一个内容包与一个 handler 键；判定、资产参数解读与钩子

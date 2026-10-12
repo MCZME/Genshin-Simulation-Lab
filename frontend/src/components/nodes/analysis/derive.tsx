@@ -6,6 +6,7 @@ import {
   type EditorProps,
 } from "./context";
 import { ImeSafeInput, ImeSafeTextarea } from "./imeInput";
+import { Close, Plus } from "../../common/icons";
 
 const DERIVE_TYPES = ["string", "int", "float", "bool"] as const;
 
@@ -144,7 +145,7 @@ export function DeriveEditor({ node, onChange }: EditorProps) {
                 })
               }
             >
-              ×
+              <Close />
             </button>
           </div>
           {row.type !== "bool" && (
@@ -200,7 +201,7 @@ export function DeriveEditor({ node, onChange }: EditorProps) {
           })
         }
       >
-        ＋ 添加列设置
+        <Plus /> 添加列设置
       </button>
     </div>
   );

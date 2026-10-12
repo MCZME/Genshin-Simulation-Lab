@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { asString } from "../common";
 import { upstreamShape, type EditorProps } from "./context";
+import { ChevronDown, ChevronRight, Close, Plus } from "../../common/icons";
 
 type RoleConfig =
   | { role: string; required: boolean; list?: false }
@@ -134,7 +135,7 @@ function BindingList({
             setAddOpen(false);
           }}
         >
-          {collapsed ? "▸" : "▾"}
+          {collapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}
         </button>
         <span className="table-binding-title">{title}</span>
         <span className="table-binding-count">{columns.length}</span>
@@ -146,7 +147,7 @@ function BindingList({
             title={`添加${title}`}
             onClick={toggleAdd}
           >
-            ＋
+            <Plus />
           </button>
         )}
       </div>
@@ -213,7 +214,7 @@ function BindingList({
                     aria-label={`移除 ${column}`}
                     onClick={() => onChange(columns.filter((_, i) => i !== index))}
                   >
-                    ×
+                    <Close />
                   </button>
                 </li>
               ))}

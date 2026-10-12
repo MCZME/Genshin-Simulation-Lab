@@ -14,6 +14,7 @@ import {
   type EditorRow,
 } from "./context";
 import { ImeSafeInput } from "./imeInput";
+import { Close, Plus } from "../../common/icons";
 
 export function ComputeEditor({ node, onChange }: EditorProps) {
   const shape = upstreamShape(node.id);
@@ -67,7 +68,7 @@ export function ComputeEditor({ node, onChange }: EditorProps) {
         className="analysis-add-button"
         onClick={() => onChange({ ...node.params, columns: [...rows, {}] })}
       >
-        ＋ 添加计算列
+        <Plus /> 添加计算列
       </button>
     </div>
   );
@@ -165,7 +166,7 @@ function ComputeRow({
           ))}
         </select>
         <button type="button" className="analysis-row-remove" title="移除计算列" onClick={onRemove}>
-          ×
+          <Close />
         </button>
       </div>
       <input

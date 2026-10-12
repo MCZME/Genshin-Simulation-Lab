@@ -5,6 +5,7 @@ import { createPortal } from "react-dom";
 import { listResults } from "../../api/client";
 import type { RunListResponse, RunListItem } from "../../api/client";
 import type { WorkflowNode } from "../../workflow/types";
+import { ChevronDown, ChevronUp, Close } from "../common/icons";
 
 const PROVIDER_PAGE_SIZE = 50;
 const PICKER_WIDTH = 680;
@@ -381,7 +382,7 @@ function DataProviderPicker({
             aria-label="关闭"
             onClick={onClose}
           >
-            ×
+            <Close />
           </button>
         </header>
         <div className="data-provider-toolbar">
@@ -560,7 +561,7 @@ function DataProviderPicker({
                           disabled={index === 0}
                           onClick={() => move(index, -1)}
                         >
-                          ↑
+                          <ChevronUp />
                         </button>
                         <button
                           type="button"
@@ -569,7 +570,7 @@ function DataProviderPicker({
                           disabled={index === draft.length - 1}
                           onClick={() => move(index, 1)}
                         >
-                          ↓
+                          <ChevronDown />
                         </button>
                         <button
                           type="button"
@@ -577,7 +578,7 @@ function DataProviderPicker({
                           title="移除"
                           onClick={() => remove(sessionId)}
                         >
-                          ×
+                          <Close />
                         </button>
                       </span>
                     </li>

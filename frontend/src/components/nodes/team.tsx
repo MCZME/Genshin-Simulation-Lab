@@ -8,6 +8,7 @@ import {
 } from "../../workflow/vocabularies";
 import type { NodeEditorProps } from "./common";
 import { asNumber, asString, firstError, isPlainObject } from "./common";
+import { Close } from "../common/icons";
 const CHARACTER_LEVELS = [...Array.from({ length: 90 }, (_, index) => index + 1), 95, 100];
 const ARTIFACT_PIECE_OPTIONS = [1, 2, 4];
 
@@ -303,7 +304,7 @@ export function ArtifactEditor({ node, onChange, fieldErrors = {} }: NodeEditorP
               title={`删除套装 ${index + 1}`}
               onClick={() => removeSetRow(index)}
             >
-              ×
+              <Close />
             </button>
           </div>
         ))}
@@ -348,7 +349,7 @@ export function ArtifactEditor({ node, onChange, fieldErrors = {} }: NodeEditorP
                       title={`删除词条 ${label}`}
                       onClick={() => removeStatRow(row.key)}
                     >
-                      ×
+                      <Close />
                     </button>
                   </div>
                   {firstError(fieldErrors, `stats.${row.key}`) !== undefined && (

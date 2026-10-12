@@ -5,7 +5,6 @@ import type { FrameCharacterState, FrameStateResponse } from "../../api/client";
 import { ATTRIBUTE_STAGE_LABELS, attributeLabel } from "./attributeLabels";
 import { formatNumber, formatPercent, formatSignedNumber, formatSignedPercent } from "./format";
 import { isRecord, readNumber, readRecord, readRecordList, readString } from "./jsonParse";
-import { ChevronDown, ChevronRight } from "../common/icons";
 
 const FRAMES_PER_SECOND = 60;
 
@@ -288,7 +287,7 @@ function BuffSection({
                 aria-expanded={open}
                 onClick={() => onToggle(key)}
               >
-                <span className="state-sheet-buff-arrow">{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
+                <span className="state-sheet-buff-arrow">{open ? "▾" : "▸"}</span>
                 <span className="state-sheet-buff-name" title={buffTitle(buff)}>
                   {buffDisplayName(buff)}
                 </span>
@@ -368,7 +367,7 @@ function AttributeGroup({
                   key={entry.key}
                 >
                   <span className="state-sheet-attr-head-label">
-                    <span className="state-sheet-attr-arrow">{open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}</span>
+                    <span className="state-sheet-attr-arrow">{open ? "▾" : "▸"}</span>
                     <span className="state-sheet-attr-name">{attributeLabel(entry.key)}</span>
                     {entry.terms.length > 0 && (
                       <span className="state-sheet-attr-count">{entry.terms.length}</span>

@@ -28,7 +28,6 @@ import { useAssetNames } from "./useAssetNames";
 import { BarChartView } from "./barView";
 import { PieChartView } from "./pieView";
 import { asString } from "./common";
-import { ChevronDown, ChevronUp } from "../common/icons";
 import {
   MAX_VIEW_FIT_HEIGHT,
   MIN_VIEW_HEIGHT,
@@ -626,7 +625,7 @@ function MemberTable({
                     )}
                     {direction !== undefined && (
                       <span className="member-sort-direction">
-                        {direction === "asc" ? <ChevronUp size={12} /> : <ChevronDown size={12} />}
+                        {direction === "asc" ? "▲" : "▼"}
                       </span>
                     )}
                     {isData && isNumeric && (
@@ -638,7 +637,7 @@ function MemberTable({
                           setMenuColumn(menuColumn === column ? null : column);
                         }}
                       >
-                        <ChevronDown size={12} />
+                        ▾
                       </span>
                     )}
                     {menuColumn === column && (

@@ -1,5 +1,4 @@
 import { useState } from "react";
-import { ChevronDown, ChevronUp } from "../common/icons";
 
 export interface IncomingOrderItem {
   edgeId: string;
@@ -67,7 +66,7 @@ export function InputOrderPopover({
                         disabled={index === 0}
                         onClick={() => onMoveEdgeOrder(targetNodeId, group.portId, item.edgeId, "up")}
                       >
-                        <ChevronUp />
+                        ↑
                       </button>
                       <button
                         type="button"
@@ -78,7 +77,7 @@ export function InputOrderPopover({
                           onMoveEdgeOrder(targetNodeId, group.portId, item.edgeId, "down")
                         }
                       >
-                        <ChevronDown />
+                        ↓
                       </button>
                     </div>
                   </li>

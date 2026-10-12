@@ -85,8 +85,7 @@ describe("AssetPicker", () => {
     expect(screen.getByText("★4")).toBeTruthy();
     expect(screen.queryByText("水")).toBeNull();
     const trigger = screen.getByRole("button", { name: /芭芭拉/ });
-    // 元素描边色取 tokens.ts COLORS.element.hydro（#4cc2f1）。
-    expect(trigger.style.borderColor).toBe("rgb(76, 194, 241)");
+    expect(trigger.style.borderColor).toBe("rgb(59, 130, 246)");
   });
 
   it("按元素过滤列表", async () => {

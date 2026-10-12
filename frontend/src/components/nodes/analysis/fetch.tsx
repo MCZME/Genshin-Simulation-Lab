@@ -16,7 +16,6 @@ import {
   type EditorRow,
 } from "./context";
 import { ImeSafeInput } from "./imeInput";
-import { Close, Plus } from "../../common/icons";
 
 /** 输出列类型选项（与后端类型词表一致）。 */
 const EXTRACT_TYPES = ["string", "int", "float", "bool"] as const;
@@ -271,7 +270,7 @@ function FetchConfigModal({
         <header className="fetch-modal-header">
           <span>配置获取数据</span>
           <button type="button" className="icon-button" title="关闭" onClick={onClose}>
-            <Close />
+            ×
           </button>
         </header>
         <div className="fetch-modal-body">
@@ -464,7 +463,7 @@ function SnapshotColumnCatalog({
               aria-label={`移除输出列 ${index + 1}`}
               onClick={() => onChange(columns.filter((_, i) => i !== index))}
             >
-              <Close />
+              ×
             </button>
           </div>
         ))}
@@ -795,7 +794,7 @@ function EventColumnCatalog({
               aria-label={`移除输出列 ${index + 1}`}
               onClick={() => onChangeColumns(columns.filter((_, i) => i !== index))}
             >
-              <Close />
+              ×
             </button>
           </div>
         ))}
@@ -893,7 +892,7 @@ function ManualColumnAdder({
         </div>
       ) : (
         <button type="button" className="snapshot-add" onClick={() => setOpen(true)}>
-          <Plus /> 手动添加列
+          ＋ 手动添加列
         </button>
       )}
     </div>

@@ -108,7 +108,7 @@ describe("分组聚合节点编辑器（卡片直编）", () => {
   it("函数按列类型过滤：文本列只有计数，数值列有求和", () => {
     withUpstream();
     render(<Harness node={aggregateNode({})} onChange={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "添加统计指标" }));
+    fireEvent.click(screen.getByRole("button", { name: "＋ 添加统计指标" }));
     const columnSelect = screen.getAllByRole("combobox")[1];
 
     fireEvent.change(columnSelect!, { target: { value: "element" } });
@@ -123,7 +123,7 @@ describe("分组聚合节点编辑器（卡片直编）", () => {
     withUpstream();
     const onChange = vi.fn();
     render(<Harness node={aggregateNode({})} onChange={onChange} />);
-    fireEvent.click(screen.getByRole("button", { name: "添加统计指标" }));
+    fireEvent.click(screen.getByRole("button", { name: "＋ 添加统计指标" }));
     fireEvent.change(screen.getAllByRole("combobox")[1]!, {
       target: { value: "dps" },
     });

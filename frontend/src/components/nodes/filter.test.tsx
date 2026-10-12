@@ -107,7 +107,7 @@ describe("过滤节点编辑器（卡片直编）", () => {
   it("操作符按列类型过滤：文本列无大小比较，数值列有", () => {
     withUpstream();
     render(<Harness node={filterNode({})} onChange={vi.fn()} />);
-    fireEvent.click(screen.getByRole("button", { name: "添加条件" }));
+    fireEvent.click(screen.getByRole("button", { name: "＋ 添加条件" }));
     const columnSelect = screen.getAllByRole("combobox")[0];
 
     fireEvent.change(columnSelect!, { target: { value: "element" } });

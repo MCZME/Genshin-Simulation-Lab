@@ -4,7 +4,6 @@ import { useState } from "react";
 import { CONDITION_OPERATORS } from "../../../workflow/templates";
 import type { FilterCondition, TableShape } from "../../../workflow/templates";
 import { upstreamShape, type EditorProps } from "./context";
-import { Close, Plus } from "../../common/icons";
 
 const FILTER_OPERATOR_LABELS: Record<string, string> = {
   eq: "等于",
@@ -213,7 +212,7 @@ export function FilterEditor({ node, onChange }: EditorProps) {
           })
         }
       >
-        <Plus /> 添加条件
+        ＋ 添加条件
       </button>
     </div>
   );
@@ -266,7 +265,7 @@ function FilterConditionRow({
           title="移除条件"
           onClick={onRemove}
         >
-          <Close />
+          ×
         </button>
       </div>
       {error !== null && <p className="analysis-row-error">{error}</p>}
@@ -382,7 +381,7 @@ function FilterMultiValue({
             title="移除"
             onClick={() => onChange(values.filter((_, i) => i !== index))}
           >
-            <Close />
+            ×
           </button>
         </span>
       ))}

@@ -1,16 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import type { WorkflowListItem } from "../../api/client";
-import {
-  Check,
-  ChevronDown,
-  Pencil,
-  Play,
-  Plus,
-  Redo,
-  Save,
-  Trash,
-  Undo,
-} from "../common/icons";
 
 export interface TopBarProps {
   name: string;
@@ -228,7 +217,7 @@ export function TopBar({
               setDeletingId(null);
             }}
           >
-            <ChevronDown />
+            ▾
           </button>
           {menuOpen && (
             <div className="workflow-menu">
@@ -331,9 +320,7 @@ export function TopBar({
                                 {formatUpdatedAt(item.updated_at)}
                               </span>
                               {item.id === workflowId && (
-                                <span className="workflow-menu-item-check">
-                                  <Check />
-                                </span>
+                                <span className="workflow-menu-item-check">✓</span>
                               )}
                             </button>
                             <div className="workflow-menu-item-actions">
@@ -344,7 +331,7 @@ export function TopBar({
                                 disabled={saving || running}
                                 onClick={() => startRename(item)}
                               >
-                                <Pencil />
+                                ✎
                               </button>
                               <button
                                 type="button"
@@ -354,7 +341,7 @@ export function TopBar({
                                 disabled={saving || running}
                                 onClick={() => setDeletingId(item.id)}
                               >
-                                <Trash />
+                                🗑
                               </button>
                             </div>
                           </>
@@ -368,7 +355,7 @@ export function TopBar({
                     disabled={saving || running}
                     onClick={handleCreate}
                   >
-                    <Plus /> 新建工作流
+                    ＋ 新建工作流
                   </button>
                 </>
               )}
@@ -382,36 +369,32 @@ export function TopBar({
           type="button"
           className="action-button"
           title="撤销 (Ctrl+Z)"
-          aria-label="撤销"
           disabled={!canUndo || running}
           onClick={onUndo}
         >
-          <Undo />
+          ↶
         </button>
         <button
           type="button"
           className="action-button"
           title="重做 (Ctrl+Shift+Z / Ctrl+Y)"
-          aria-label="重做"
           disabled={!canRedo || running}
           onClick={onRedo}
         >
-          <Redo />
+          ↷
         </button>
         <button
           type="button"
           className="action-button"
           disabled={!dirty || saving || running}
-          aria-busy={saving}
           onClick={onSave}
         >
-          <Save /> {saving ? "保存中…" : "保存"}
+          {saving ? "保存中…" : "保存"}
         </button>
         <button
           type="button"
           className={`action-button primary ${running ? "running" : ""}`}
           disabled={!running && !canRun}
-          aria-busy={running}
           title={running ? "双击取消整次运行" : undefined}
           onClick={() => {
             if (!running) {
@@ -424,11 +407,7 @@ export function TopBar({
             }
           }}
         >
-          {running ? "运行中…" : (
-            <>
-              <Play /> 全部运行
-            </>
-          )}
+          {running ? "运行中…" : "全部运行"}
         </button>
       </div>
     </header>

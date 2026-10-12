@@ -1,6 +1,5 @@
 import { useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
-import { ChevronDown, ChevronRight } from "./icons";
 
 interface TextFieldProps {
   value: string;
@@ -318,9 +317,7 @@ export function CollapsibleGroup({
         className="collapsible-header"
         onClick={() => setOpen((current) => !current)}
       >
-        <span className="collapsible-caret">
-          {open ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
-        </span>
+        <span className="collapsible-caret">{open ? "▾" : "▸"}</span>
         <span className="collapsible-title">{title}</span>
         {!open && summary !== undefined && (
           <span className="collapsible-summary">{summary}</span>

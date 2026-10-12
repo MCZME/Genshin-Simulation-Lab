@@ -70,7 +70,7 @@ describe("设置列值节点编辑器（卡片直编）", () => {
     const onChange = vi.fn();
     render(<DeriveEditor node={deriveNode({ columns: [] })} onChange={onChange} />);
     expect(screen.getByText("至少添加一个列设置")).toBeTruthy();
-    fireEvent.click(screen.getByRole("button", { name: "添加列设置" }));
+    fireEvent.click(screen.getByRole("button", { name: "＋ 添加列设置" }));
     expect(onChange).toHaveBeenCalledWith({
       columns: [{ name: "", type: "string", value: "" }],
     });

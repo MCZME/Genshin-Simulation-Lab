@@ -16,7 +16,6 @@
     "test": "vitest run"
   },
   "dependencies": {
-    "@tabler/icons-react": "^3.49.0",
     "@xyflow/react": "^12.11.3",
     "echarts": "^6.1.0",
     "react": "^19.2.8",

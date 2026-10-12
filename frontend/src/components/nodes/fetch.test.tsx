@@ -248,7 +248,7 @@ describe("获取数据节点编辑器", () => {
     render(<Harness node={fetchNode({ source: "runs" })} onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: "编辑数据…" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "手动添加列" }));
+    fireEvent.click(screen.getByRole("button", { name: "＋ 手动添加列" }));
     fireEvent.change(screen.getByPlaceholderText("路径（目录外）"), {
       target: { value: "custom.path" },
     });
@@ -270,7 +270,7 @@ describe("获取数据节点编辑器", () => {
     render(<Harness node={fetchNode({ source: "runs" })} onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: "编辑数据…" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "手动添加列" }));
+    fireEvent.click(screen.getByRole("button", { name: "＋ 手动添加列" }));
     fireEvent.change(screen.getByPlaceholderText("路径（目录外）"), {
       target: { value: "custom.path" },
     });
@@ -292,7 +292,7 @@ describe("获取数据节点编辑器", () => {
     render(<Harness node={fetchNode({ source: "runs" })} onChange={onChange} />);
     fireEvent.click(screen.getByRole("button", { name: "编辑数据…" }));
 
-    fireEvent.click(screen.getByRole("button", { name: "手动添加列" }));
+    fireEvent.click(screen.getByRole("button", { name: "＋ 手动添加列" }));
     fireEvent.change(screen.getByPlaceholderText("路径（目录外）"), {
       target: { value: "a.b" },
     });

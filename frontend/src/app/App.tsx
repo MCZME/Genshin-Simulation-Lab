@@ -25,7 +25,6 @@ import { RegionSummaryBar } from "../components/panels/RegionSummaryBar";
 import { ResultsPanel } from "../components/panels/ResultsPanel";
 import { RunStateContext } from "../components/run_state_context";
 import { TopBar } from "../components/shell/TopBar";
-import { Close, Settings } from "../components/common/icons";
 import {
   addEdge,
   addNode,
@@ -840,13 +839,8 @@ export function App() {
         {errorMessage !== null && (
           <div className="error-banner">
             <span>{errorMessage}</span>
-            <button
-              type="button"
-              className="icon-button"
-              aria-label="关闭错误提示"
-              onClick={() => setErrorMessage(null)}
-            >
-              <Close />
+            <button type="button" className="icon-button" onClick={() => setErrorMessage(null)}>
+              ×
             </button>
           </div>
         )}
@@ -881,15 +875,15 @@ export function App() {
             >
               结果
             </button>
-              <button
-                type="button"
-                className="rail-button rail-settings"
-                title="设置"
-                aria-label="设置"
-                onClick={() => setSettingsOpen(true)}
-              >
-                <Settings size={20} />
-              </button>
+            <button
+              type="button"
+              className="rail-button rail-settings"
+              title="设置"
+              aria-label="设置"
+              onClick={() => setSettingsOpen(true)}
+            >
+              ⚙
+            </button>
           </aside>
           {activeTool === "objects" && (
             <ObjectPanel

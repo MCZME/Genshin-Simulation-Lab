@@ -87,7 +87,7 @@ describe("TopBar 工作流切换器", () => {
     fireEvent.click(screen.getByRole("button", { name: "切换工作流" }));
     expect(screen.getByText("主配队")).toBeTruthy();
     expect(screen.getByText("深渊上半")).toBeTruthy();
-    expect(screen.getByRole("button", { name: "新建工作流" })).toBeTruthy();
+    expect(screen.getByText("＋ 新建工作流")).toBeTruthy();
   });
 
   it("无未保存改动时点击其他工作流直接切换", () => {
@@ -96,7 +96,7 @@ describe("TopBar 工作流切换器", () => {
     fireEvent.click(screen.getByRole("button", { name: "切换工作流" }));
     fireEvent.click(screen.getByText("深渊上半"));
     expect(onSwitch).toHaveBeenCalledWith("wf_b");
-    expect(screen.queryByRole("button", { name: "新建工作流" })).toBeNull();
+    expect(screen.queryByText("＋ 新建工作流")).toBeNull();
   });
 
   it("点击当前工作流只关闭菜单", () => {
@@ -105,7 +105,7 @@ describe("TopBar 工作流切换器", () => {
     fireEvent.click(screen.getByRole("button", { name: "切换工作流" }));
     fireEvent.click(screen.getByText("主配队"));
     expect(onSwitch).not.toHaveBeenCalled();
-    expect(screen.queryByRole("button", { name: "新建工作流" })).toBeNull();
+    expect(screen.queryByText("＋ 新建工作流")).toBeNull();
   });
 
   it("有未保存改动时切换需三选确认", () => {
@@ -135,7 +135,7 @@ describe("TopBar 工作流切换器", () => {
     fireEvent.click(screen.getByRole("button", { name: "切换工作流" }));
     fireEvent.click(screen.getByText("深渊上半"));
     fireEvent.click(screen.getByText("取消"));
-    expect(screen.getByRole("button", { name: "新建工作流" })).toBeTruthy();
+    expect(screen.getByText("＋ 新建工作流")).toBeTruthy();
     expect(screen.queryByText("当前工作流有未保存改动")).toBeNull();
   });
 
@@ -143,7 +143,7 @@ describe("TopBar 工作流切换器", () => {
     const onCreate = vi.fn();
     renderTopBar({ onCreate });
     fireEvent.click(screen.getByRole("button", { name: "切换工作流" }));
-    fireEvent.click(screen.getByRole("button", { name: "新建工作流" }));
+    fireEvent.click(screen.getByText("＋ 新建工作流"));
     expect(onCreate).toHaveBeenCalled();
   });
 
@@ -152,7 +152,7 @@ describe("TopBar 工作流切换器", () => {
     const onSaveAndCreate = vi.fn();
     renderTopBar({ dirty: true, onCreate, onSaveAndCreate });
     fireEvent.click(screen.getByRole("button", { name: "切换工作流" }));
-    fireEvent.click(screen.getByRole("button", { name: "新建工作流" }));
+    fireEvent.click(screen.getByText("＋ 新建工作流"));
     fireEvent.click(screen.getByText("保存并新建"));
     expect(onSaveAndCreate).toHaveBeenCalled();
     expect(onCreate).not.toHaveBeenCalled();
@@ -195,14 +195,14 @@ describe("TopBar 工作流切换器", () => {
     const toggle = screen.getByRole("button", { name: "切换工作流" });
     expect(toggle.hasAttribute("disabled")).toBe(true);
     fireEvent.click(toggle);
-    expect(screen.queryByRole("button", { name: "新建工作流" })).toBeNull();
+    expect(screen.queryByText("＋ 新建工作流")).toBeNull();
   });
 
   it("点击切换器外部关闭菜单", () => {
     renderTopBar();
     fireEvent.click(screen.getByRole("button", { name: "切换工作流" }));
-    expect(screen.getByRole("button", { name: "新建工作流" })).toBeTruthy();
+    expect(screen.getByText("＋ 新建工作流")).toBeTruthy();
     fireEvent.mouseDown(document.body);
-    expect(screen.queryByRole("button", { name: "新建工作流" })).toBeNull();
+    expect(screen.queryByText("＋ 新建工作流")).toBeNull();
   });
 });

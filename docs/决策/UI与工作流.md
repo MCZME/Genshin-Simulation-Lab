@@ -152,7 +152,6 @@ RunState 结构与运行链路（2026-08-22、2026-08-23 确认）：
 - 区域不属于节点类别：配置区域/分析区域继续使用区域色（配置蓝 #2563eb、分析紫 #7c3aed）；面板与小地图中的区域对象同步修正为区域色，不再回落灰色。
 
 变更记录：2026-09-09 类别名「变体扫描」更名「参数扫描」，类别色键同步 `variantScan` → `paramScan`（D-067）。
-变更记录：2026-10-12 类别色取值按[UI 设计系统](../架构/UI/设计系统.md)调整：`displayView`、`teamConfig`、`targetConfig`、`dataSource`、`displayConfig`、`itemDetail` 让出与严重度/状态色冲突的精确色值（错误红、警告琥珀、完成绿、信息蓝），元素配色统一为 `tokens.ts` 的游戏惯例 palette（`elements.ts` 的 `ELEMENT_COLORS` 退役），未知节点回落色让出 `status.cancelled` 色值。类别划分、面板分组与取色机制不变；图表分类色首位随 `displayView` 同步。
 
 ### D-036 单项详情节点与时间呈现（2026-08-29）
 

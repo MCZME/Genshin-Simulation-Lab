@@ -7,7 +7,6 @@ import { ELEMENT_LABELS, FORMULA_KEY_LABELS } from "../../theme/elements";
 import { formatNumber, formatPercent, formatSignedPercent } from "./format";
 import { isRecord, readBoolean, readNumber, readRecord, readRecordList, readString } from "./jsonParse";
 import { attributeLabel } from "./attributeLabels";
-import { ChevronDown, ChevronRight } from "../common/icons";
 
 /** 反应族显示名；键取 reaction_profile.<family> 的第二段，未知族回退完整 profile key。 */
 const REACTION_LABELS: Record<string, string> = {
@@ -1771,7 +1770,7 @@ function SegmentDetail({
               className="damage-sheet-drawer-head"
               onClick={() => toggle(drawer.id)}
             >
-              <span className="damage-sheet-drawer-arrow">{isCollapsed ? <ChevronRight size={12} /> : <ChevronDown size={12} />}</span>
+              <span className="damage-sheet-drawer-arrow">{isCollapsed ? "▸" : "▾"}</span>
               <span className="damage-sheet-drawer-title">{drawer.title}</span>
               <span className="damage-sheet-drawer-total">{drawer.total}</span>
             </button>

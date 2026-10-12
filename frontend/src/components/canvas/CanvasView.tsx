@@ -225,11 +225,9 @@ export function CanvasView({
   const [edges, setEdges, onEdgesChange] = useEdgesState<Edge>([]);
   const [preview, setPreview] = useState<DragPreview | null>(null);
   const [highlightRegionId, setHighlightRegionId] = useState<string | null>(null);
-  const [invalidRegionId, setInvalidRegionId] = useState<string | null>(null);
 
   const visiblePreview = dragKind === null ? null : preview;
   const visibleHighlight = dragKind === null ? null : highlightRegionId;
-  const visibleInvalidHighlight = dragKind === null ? null : invalidRegionId;
 
   useEffect(() => {
     setNodes((current) =>
@@ -238,7 +236,6 @@ export function CanvasView({
           definition,
           diagnostics,
           visibleHighlight,
-          visibleInvalidHighlight,
           latestRef.current,
           renameRegionRequestId,
           dimmedNodeIds,
@@ -250,12 +247,11 @@ export function CanvasView({
         current,
       ),
     );
-    setEdges(buildEdges(definition, dimmedNodeIds, runningMethodNodeIds));
+    setEdges(buildEdges(definition));
   }, [
     definition,
     diagnostics,
     visibleHighlight,
-    visibleInvalidHighlight,
     renameRegionRequestId,
     dimmedNodeIds,
     runningMethodNodeIds,
@@ -406,9 +402,6 @@ export function CanvasView({
     const regionId = compatibleRegionId(definition, dragKind, point);
     setPreview({ kind: dragKind, x: event.clientX, y: event.clientY, regionId });
     setHighlightRegionId(regionId);
-    setInvalidRegionId(
-      regionId === null ? invalidDropRegionId(definition, dragKind, point) : null,
-    );
   }
 
   function handleDrop(event: React.DragEvent<HTMLDivElement>) {
@@ -423,13 +416,11 @@ export function CanvasView({
     onDropObject(dragKind, point, compatibleRegionId(definition, dragKind, point));
     setPreview(null);
     setHighlightRegionId(null);
-    setInvalidRegionId(null);
   }
 
   function handleDragEnd() {
     setPreview(null);
     setHighlightRegionId(null);
-    setInvalidRegionId(null);
   }
 
   return (
@@ -439,7 +430,6 @@ export function CanvasView({
       onDrop={handleDrop}
       onDragEnd={handleDragEnd}
     >
-      <div className="canvas-atmosphere" aria-hidden="true" />
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -468,14 +458,6 @@ export function CanvasView({
           position="bottom-right"
           pannable
           zoomable
-          className="workflow-minimap"
-          nodeStrokeColor="rgba(15, 23, 42, 0.85)"
-          nodeStrokeWidth={2}
-          nodeBorderRadius={2}
-          bgColor="rgba(15, 23, 42, 0.85)"
-          maskColor="rgba(15, 23, 42, 0.62)"
-          maskStrokeColor="rgba(56, 189, 248, 0.5)"
-          maskStrokeWidth={1}
           nodeColor={(node) =>
             node.type === "region"
               ? (node.data as RegionNodeData).region.kind === "configuration"
@@ -485,28 +467,6 @@ export function CanvasView({
           }
         />
       </ReactFlow>
-      {definition.regions.length === 0 && definition.nodes.length === 0 && (
-        <div className="canvas-empty">
-          <p className="canvas-empty-title">拖入区域开始</p>
-          <p className="canvas-empty-hint">从左侧对象面板拖入</p>
-          <div className="canvas-empty-stages">
-            <span className="canvas-empty-stage">
-              <i className="canvas-empty-stage-dot canvas-empty-stage-dot--config" />
-              配置区域
-            </span>
-            <span className="canvas-empty-arrow" />
-            <span className="canvas-empty-stage">
-              <i className="canvas-empty-stage-dot canvas-empty-stage-dot--sim" />
-              模拟节点
-            </span>
-            <span className="canvas-empty-arrow" />
-            <span className="canvas-empty-stage">
-              <i className="canvas-empty-stage-dot canvas-empty-stage-dot--analysis" />
-              分析区域
-            </span>
-          </div>
-        </div>
-      )}
       {visiblePreview !== null && (
         <div
           className={`drag-ghost ${visiblePreview.kind !== "region" && visiblePreview.regionId === null ? "draft" : ""}`}
@@ -534,7 +494,6 @@ function buildNodes(
   definition: WorkflowDefinition,
   diagnostics: Diagnostic[],
   highlightRegionId: string | null,
-  invalidRegionId: string | null,
   callbacks: CallbackSnapshot,
   renameRegionRequestId: string | null,
   dimmedNodeIds: string[],
@@ -562,7 +521,6 @@ function buildNodes(
       interactionLocked,
       incomingGroups: incoming.get(region.id) ?? [],
       dropTarget: highlightRegionId === region.id,
-      invalidDropTarget: invalidRegionId === region.id,
       renameRequested: region.id === renameRegionRequestId,
       onRenameRequestHandled: callbacks.onRenameRegionRequestHandled,
     };
@@ -647,13 +605,7 @@ function mergeNodeState(next: Node[], current: Node[]): Node[] {
   });
 }
 
-function buildEdges(
-  definition: WorkflowDefinition,
-  dimmedNodeIds: string[],
-  runningMethodNodeIds: string[],
-): Edge[] {
-  const dimmed = new Set(dimmedNodeIds);
-  const running = new Set(runningMethodNodeIds);
+function buildEdges(definition: WorkflowDefinition): Edge[] {
   return definition.edges.map((edge) => {
     const sourceNode = definition.nodes.find((node) => node.id === edge.source_node_id);
     const groupCount =
@@ -662,11 +614,6 @@ function buildEdges(
       edge.source_port_id === "out"
         ? memberItemIds(sourceNode).length
         : 0;
-    // 执行轨迹驱动的连线状态（决策 D-028）：运行中高亮、未参与置灰。
-    // 只挂 class / animated 改变 stroke 派生变量，不触碰节点几何与连线锚点。
-    const isRunning = running.has(edge.source_node_id) || running.has(edge.target_node_id);
-    const isDimmed =
-      !isRunning && (dimmed.has(edge.source_node_id) || dimmed.has(edge.target_node_id));
     return {
       id: edge.id,
       source: edge.source_node_id,
@@ -675,16 +622,10 @@ function buildEdges(
       targetHandle: edge.target_port_id,
       markerEnd: { type: MarkerType.ArrowClosed },
       selected: false,
-      animated: isRunning,
-      className: isRunning ? "edge-running" : isDimmed ? "edge-dimmed" : undefined,
       label: groupCount > 0 ? `×${groupCount}` : undefined,
       labelStyle:
         groupCount > 0
-          ? {
-              fill: "var(--color-text-muted)",
-              fontSize: "var(--font-size-caption)",
-              fontFamily: "var(--font-mono)",
-            }
+          ? { fill: "#94a3b8", fontSize: 10, fontFamily: "ui-monospace, Consolas, monospace" }
           : undefined,
     };
   });
@@ -782,33 +723,4 @@ function compatibleRegionId(
     }
   }
   return match;
-}
-
-/**
- * 拖拽悬停在错误类型区域上时的劝阻目标：仅区域归属类节点有意义
- * （配置节点拖到分析区域上等违反阶段顺序的场景）；画布级节点与新建区域不参与。
- */
-function invalidDropRegionId(
-  definition: WorkflowDefinition,
-  kind: string,
-  point: { x: number; y: number },
-): string | null {
-  const spec = getNodeKindSpec(kind);
-  if (spec === null || spec.region === null) {
-    return null;
-  }
-  for (const region of definition.regions) {
-    if (region.kind === spec.region) {
-      continue;
-    }
-    const inside =
-      point.x >= region.rect.x &&
-      point.x <= region.rect.x + region.rect.width &&
-      point.y >= region.rect.y &&
-      point.y <= region.rect.y + region.rect.height;
-    if (inside) {
-      return region.id;
-    }
-  }
-  return null;
 }

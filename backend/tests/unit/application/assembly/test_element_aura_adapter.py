@@ -1,6 +1,8 @@
-"""目标元素影响只读适配器单测：对着真实 Aura 运行态验证口径落点。"""
+"""目标元素影响只读适配器单测：对真实 Aura 运行态验证条件读取与主体转换。"""
 
 from __future__ import annotations
+
+import pytest
 
 from genshin_sim.application.assembly.ports import TargetElementAuraReadAdapter
 from genshin_sim.core.attributes import AttributeSubjectRef
@@ -41,30 +43,27 @@ def _adapter(runtime: AuraRuntime) -> TargetElementAuraReadAdapter:
     return TargetElementAuraReadAdapter(runtime, ReactionRuntime(ReactionRegistry()))
 
 
-def test_hydro_aura_counts_only_as_hydro():
-    """水附着只判受水元素影响，不跨到其他元素。"""
+@pytest.mark.parametrize(
+    ("aura_element", "other_elements"),
+    (
+        (Element.HYDRO, (Element.PYRO, Element.ELECTRO, Element.CRYO, Element.DENDRO)),
+        (Element.ELECTRO, (Element.PYRO, Element.HYDRO, Element.CRYO, Element.DENDRO)),
+    ),
+)
+def test_aura_counts_only_as_its_own_element(aura_element, other_elements):
+    """附着只判自己那一种元素影响，不跨到其他元素。"""
 
-    adapter = _adapter(_runtime_with_aura("target:1", Element.HYDRO))
-    target = AttributeSubjectRef.target("target:1")
+    target_id = f"target:{aura_element.value}"
+    adapter = _adapter(_runtime_with_aura(target_id, aura_element))
+    target = AttributeSubjectRef.target(target_id)
 
-    assert adapter.is_affected_by(target, Element.HYDRO, 0) is True
-    for element in (Element.PYRO, Element.ELECTRO, Element.CRYO, Element.DENDRO):
+    assert adapter.is_affected_by(target, aura_element, 0) is True
+    for element in other_elements:
         assert adapter.is_affected_by(target, element, 0) is False
 
 
-def test_electro_aura_counts_only_as_electro():
-    """雷附着只判受雷元素影响（激化归草，不影响雷）。"""
-
-    adapter = _adapter(_runtime_with_aura("target:2", Element.ELECTRO))
-    target = AttributeSubjectRef.target("target:2")
-
-    assert adapter.is_affected_by(target, Element.ELECTRO, 0) is True
-    for element in (Element.PYRO, Element.HYDRO, Element.CRYO, Element.DENDRO):
-        assert adapter.is_affected_by(target, element, 0) is False
-
-
-def test_elements_without_persistent_aura_never_match():
-    """风、岩与物理没有持久 Aura 分量，恒判不受影响。"""
+def test_adapter_short_circuits_for_elements_without_persistent_aura():
+    """风、岩与物理没有持久 Aura 分量：适配器在空分量集合上直接短路为 False。"""
 
     adapter = _adapter(_runtime_with_aura("target:3", Element.PYRO))
     target = AttributeSubjectRef.target("target:3")

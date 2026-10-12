@@ -35,6 +35,15 @@
 
 `content/` 可以提供类型化 Impact、元素施加意图、ICD Binding、来源观察和队伍能力证据，但不得注册全局 Reaction Definition、拥有 ReactionState 或直接修改 Aura/Reaction Store。
 
+### 「受元素影响」的统一口径
+
+条件效果（圣遗物、武器、元素共鸣）判断「目标是否受某元素影响」时，必须消费唯一口径，不得各自维护元素到 Aura 分量的映射：
+
+- 分量归属由 `core/elements/` 的 `AURA_KIND_ELEMENT` 冻结：普通 Aura 归同名元素，派生 Aura 归其源元素——燃烧归火、冻结归冰、激化归草。`affected_aura_kinds(element)` 返回该元素对应的分量集合；风、岩与物理没有持久 Aura 分量，返回空集。
+- 读取经 `core/systems/aura/ports.py` 的 `TargetElementAuraReadPort` 窄只读端口：`is_affected_by(target_ref, element, frame)` 按上述集合判定，`is_frozen(...)` 单独回答冻结状态用于分档效果。端口只回答存在性，不暴露 Aura 记录、不允许写入。
+- 装配期由 `application/assembly/ports.py` 的 `TargetElementAuraReadAdapter` 实现并注入；冻结在持久 Aura 分量之外还可能只以 Reaction 冻结状态呈现，适配器对含冻结归属的元素一并查询冻结状态。
+- 未绑定端口的内容对象必须返回空，条件不得在装配完成前提前生效。
+
 ## 3. 稳定身份与精度
 
 同一元素命中的伤害、元素施加、ICD、Reaction 和后续 Effect 必须能够稳定关联。至少区分以下身份：

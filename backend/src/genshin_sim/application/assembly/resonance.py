@@ -8,9 +8,9 @@ from typing import Protocol
 
 from genshin_sim.application.assembly.errors import InvalidRuntimePayloadError
 from genshin_sim.application.assembly.ports import (
-    AuraFrozenReadAdapter,
     LunarCagePresenceReadAdapter,
     ShieldPresenceReadAdapter,
+    TargetElementAuraReadAdapter,
 )
 from genshin_sim.assets.models import CharacterAsset
 from genshin_sim.content.team import create_resonance_definitions
@@ -72,12 +72,12 @@ class ResonanceRuntimeBundle:
     ) -> tuple[CharacterShieldPresenceReadPort, LunarCagePresenceReadPort]:
         """领域运行态创建后绑定只读端口；未绑定时 provider 返回空。"""
 
-        aura_frozen_port = AuraFrozenReadAdapter(aura_runtime, reaction_runtime)
+        element_aura_port = TargetElementAuraReadAdapter(aura_runtime, reaction_runtime)
         shield_port = ShieldPresenceReadAdapter(shield_runtime, team_state)
         lunar_cage_port = LunarCagePresenceReadAdapter(reaction_runtime)
         for provider in self.damage_providers:
             if isinstance(provider, ResonanceCryoCritDamageProvider):
-                provider.bind_runtime_ports(aura_frozen_port=aura_frozen_port)
+                provider.bind_runtime_ports(element_aura_port=element_aura_port)
             elif isinstance(provider, ResonanceGeoDamageProvider):
                 provider.bind_runtime_ports(
                     shield_port=shield_port,

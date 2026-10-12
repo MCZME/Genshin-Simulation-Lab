@@ -6,15 +6,16 @@
   ``flat_add``，静态绑定穿戴者。
 - 4 件套：攻击处于冰元素影响下的敌人时，暴击率提高 20%；若敌人处于
   冻结状态下，则暴击率额外提高 20% -> 通用公式 ``crit_rate_add`` 阶段，
-  条件经装配期注入的 ``TargetElementAuraReadAdapter`` 查目标的冰附着
-  与冻结状态，静态绑定穿戴者，不落 Buff。
+  条件经装配期注入的 ``TargetElementAuraReadPort`` 查目标的冰元素影响与
+  冻结状态，静态绑定穿戴者，不落 Buff。
 
 行为约定：
 
-- 「处于冰元素影响下」按 Aura 分量判定：目标带有 ``cryo`` 分量**或**
-  处于冻结状态即成立（冻结目标按游戏行为属于受冰元素影响，与双冰
-  共鸣 ``ResonanceCryoCritDamageProvider`` 同一口径）。
-- 「冻结状态」经 Reaction 运行态查询 ``frozen_state_for``。
+- 「处于冰元素影响下」沿用统一口径 ``affected_aura_kinds(Element.CRYO)``：
+  ``cryo`` 或 ``frozen`` 分量即成立（冻结按 ``core.elements.AURA_KIND_ELEMENT``
+  归冰，与双冰共鸣同一口径）。
+- 「冻结状态」经 ``TargetElementAuraReadPort.is_frozen`` 判定，用于区分
+  受冰影响与冻结两档暴击率。
 - 两段暴击率合并为一条 ``crit_rate_add`` term：受冰影响未冻结贡献
   0.2，冻结贡献合计 0.4。
 - ``crit_rate_add`` 只属于通用公式，必须自筛公式，越界阶段会被
@@ -23,8 +24,6 @@
 """
 
 from __future__ import annotations
-
-from typing import Protocol
 
 from genshin_sim.content.artifacts._common import (
     content_source_ref,
@@ -47,7 +46,8 @@ from genshin_sim.core.attributes import (
     ModifierTerm,
     StaticModifierProvider,
 )
-from genshin_sim.core.elements import AuraKind
+from genshin_sim.core.elements import Element
+from genshin_sim.core.systems.aura.ports import TargetElementAuraReadPort
 from genshin_sim.core.systems.damage import (
     DamageModifierProviderSpec,
     DamageModifierStage,
@@ -66,20 +66,7 @@ BLIZZARD_STRAYER_CONTENT_VERSION = "release"
 BLIZZARD_STRAYER_2P_AUDIT_TAG = "blizzard_strayer_2p"
 BLIZZARD_STRAYER_4P_AUDIT_TAG = "blizzard_strayer_4p"
 
-BLIZZARD_STRAYER_AFFECTED_AURA_KIND = AuraKind.CRYO
-
-
-class TargetElementAuraReadPort(Protocol):
-    """内容侧条件效果读取目标元素附着与冻结状态的窄只读端口。"""
-
-    def has_component(
-        self,
-        target_ref: AttributeSubjectRef,
-        aura_kind: AuraKind,
-        frame: int,
-    ) -> bool: ...
-
-    def is_frozen(self, target_ref: AttributeSubjectRef, frame: int) -> bool: ...
+BLIZZARD_STRAYER_AFFECTED_ELEMENT = Element.CRYO
 
 
 def create_blizzard_strayer_identity_unit(
@@ -233,9 +220,9 @@ class BlizzardStrayerCryoCritProvider:
         if port is None:
             return ()
         frozen = port.is_frozen(request.target_ref, request.frame)
-        cryo_affected = frozen or port.has_component(
+        cryo_affected = port.is_affected_by(
             request.target_ref,
-            BLIZZARD_STRAYER_AFFECTED_AURA_KIND,
+            BLIZZARD_STRAYER_AFFECTED_ELEMENT,
             request.frame,
         )
         if not cryo_affected:

@@ -6,23 +6,20 @@
   静态绑定穿戴者。
 - 4 件套：对处于火元素影响下的敌人造成的伤害提升 35% -> 通用公式
   ``damage_bonus_add`` 阶段，条件经装配期注入的
-  ``TargetElementAuraReadAdapter`` 查目标是否带有火元素附着分量，
-  静态绑定穿戴者，不落 Buff。
+  ``TargetElementAuraReadPort`` 查目标是否受火元素影响，静态绑定穿戴者，
+  不落 Buff。
 
 行为约定：
 
-- 「处于火元素影响下」按 Aura 分量判定：目标带有 ``pyro`` 或
-  ``burning`` 分量即视为受火元素影响。燃烧状态在 Aura 系统中是独立
-  分量（且不保证与 ``pyro`` 分量并存），而燃烧中的敌人按游戏行为属于
-  「受火元素影响」，故同时检查两种分量。
+- 「处于火元素影响下」沿用统一口径 ``affected_aura_kinds(Element.PYRO)``：
+  ``pyro`` 或 ``burning`` 分量即视为受火元素影响（燃烧按
+  ``core.elements.AURA_KIND_ELEMENT`` 归火）。
 - 伤害 provider 自筛公式：``damage_bonus_add`` 只属于通用公式，越界
   阶段会被 ``validate_formula_modifier_stages`` 硬拒绝并让整次结算失败。
 - 附着端口未绑定时（装配完成前）不贡献，条件不会提前生效。
 """
 
 from __future__ import annotations
-
-from typing import Protocol
 
 from genshin_sim.content.artifacts._common import (
     content_source_ref,
@@ -45,7 +42,8 @@ from genshin_sim.core.attributes import (
     ModifierTerm,
     StaticModifierProvider,
 )
-from genshin_sim.core.elements import AuraKind
+from genshin_sim.core.elements import Element
+from genshin_sim.core.systems.aura.ports import TargetElementAuraReadPort
 from genshin_sim.core.systems.damage import (
     DamageModifierProviderSpec,
     DamageModifierStage,
@@ -64,18 +62,7 @@ LAVAWALKER_CONTENT_VERSION = "release"
 LAVAWALKER_2P_AUDIT_TAG = "lavawalker_2p"
 LAVAWALKER_4P_AUDIT_TAG = "lavawalker_4p"
 
-LAVAWALKER_AFFECTED_AURA_KINDS = (AuraKind.PYRO, AuraKind.BURNING)
-
-
-class TargetElementAuraReadPort(Protocol):
-    """内容侧条件效果读取目标元素附着状态的窄只读端口。"""
-
-    def has_component(
-        self,
-        target_ref: AttributeSubjectRef,
-        aura_kind: AuraKind,
-        frame: int,
-    ) -> bool: ...
+LAVAWALKER_AFFECTED_ELEMENT = Element.PYRO
 
 
 def create_lavawalker_identity_unit(
@@ -219,9 +206,10 @@ class LavawalkerPyroAffectedBonusProvider:
         port = self._aura_port
         if port is None:
             return ()
-        if not any(
-            port.has_component(request.target_ref, aura_kind, request.frame)
-            for aura_kind in LAVAWALKER_AFFECTED_AURA_KINDS
+        if not port.is_affected_by(
+            request.target_ref,
+            LAVAWALKER_AFFECTED_ELEMENT,
+            request.frame,
         ):
             return ()
         return (

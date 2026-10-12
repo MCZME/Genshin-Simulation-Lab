@@ -13,6 +13,8 @@ from genshin_sim.core.attributes import (
     RuntimeSourceRef,
     StaticModifierProvider,
 )
+from genshin_sim.core.elements import Element
+from genshin_sim.core.systems.aura.ports import TargetElementAuraReadPort
 from genshin_sim.core.systems.damage import (
     DamageModifierProviderSpec,
     DamageModifierStage,
@@ -30,7 +32,6 @@ from genshin_sim.core.systems.resonance.models import (
 from genshin_sim.core.systems.resonance.ports import (
     CharacterShieldPresenceReadPort,
     LunarCagePresenceReadPort,
-    TargetAuraFrozenReadPort,
 )
 
 
@@ -86,7 +87,10 @@ def build_resonance_static_providers(
 
 
 class ResonanceCryoCritDamageProvider:
-    """双冰：攻击冰附着或冻结目标时暴击率 +15%。
+    """双冰：攻击受冰元素影响的敌人时暴击率 +15%。
+
+    冰元素影响沿用统一口径 ``affected_aura_kinds(Element.CRYO)``（``cryo`` 或
+    ``frozen``），与冰风迷途的勇士 4 件套同一口径。
 
     ``crit_rate_add`` 只属于通用公式的槽位；若不加公式过滤，provider 会在
     剧变等反应伤害查询上成交，被 ``validate_formula_modifier_stages`` 硬拒绝并让整次
@@ -100,26 +104,27 @@ class ResonanceCryoCritDamageProvider:
 
     def __init__(self, active: bool) -> None:
         self._active = active
-        self._aura_frozen_port: TargetAuraFrozenReadPort | None = None
+        self._element_aura_port: TargetElementAuraReadPort | None = None
 
     def bind_runtime_ports(
         self,
         *,
-        aura_frozen_port: TargetAuraFrozenReadPort,
+        element_aura_port: TargetElementAuraReadPort,
     ) -> None:
-        self._aura_frozen_port = aura_frozen_port
+        self._element_aura_port = element_aura_port
 
     def contribute(self, query, scope):
         del scope
-        if not self._active or self._aura_frozen_port is None:
+        if not self._active or self._element_aura_port is None:
             return ()
         if query.request.formula_key is not FORMULA_KEY_GENERAL:
             return ()
         target_ref = query.request.target_ref
         if target_ref.kind is not AttributeSubjectKind.TARGET:
             return ()
-        if not self._aura_frozen_port.has_cryo_or_frozen(
+        if not self._element_aura_port.is_affected_by(
             target_ref,
+            Element.CRYO,
             query.request.frame,
         ):
             return ()

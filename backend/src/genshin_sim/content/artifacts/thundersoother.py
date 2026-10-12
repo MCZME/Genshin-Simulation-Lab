@@ -6,21 +6,20 @@
   静态绑定穿戴者。
 - 4 件套：对处于雷元素影响下的敌人造成的伤害提升 35% -> 通用公式
   ``damage_bonus_add`` 阶段，条件经装配期注入的
-  ``TargetElementAuraReadAdapter`` 查目标是否带有雷元素附着分量，
-  静态绑定穿戴者，不落 Buff。
+  ``TargetElementAuraReadPort`` 查目标是否受雷元素影响，静态绑定穿戴者，
+  不落 Buff。
 
 行为约定：
 
-- 「处于雷元素影响下」按 Aura 分量判定：目标带有 ``electro`` 分量即
-  视为受雷元素影响；不做冻结/燃烧等衍生状态的外推。
+- 「处于雷元素影响下」沿用统一口径 ``affected_aura_kinds(Element.ELECTRO)``：
+  只认 ``electro`` 分量；雷元素没有燃烧/冻结式的衍生持久分量，激化按
+  ``core.elements.AURA_KIND_ELEMENT`` 归草，不算受雷元素影响。
 - 伤害 provider 自筛公式：``damage_bonus_add`` 只属于通用公式，越界
   阶段会被 ``validate_formula_modifier_stages`` 硬拒绝并让整次结算失败。
 - 附着端口未绑定时（装配完成前）不贡献，条件不会提前生效。
 """
 
 from __future__ import annotations
-
-from typing import Protocol
 
 from genshin_sim.content.artifacts._common import (
     content_source_ref,
@@ -43,7 +42,8 @@ from genshin_sim.core.attributes import (
     ModifierTerm,
     StaticModifierProvider,
 )
-from genshin_sim.core.elements import AuraKind
+from genshin_sim.core.elements import Element
+from genshin_sim.core.systems.aura.ports import TargetElementAuraReadPort
 from genshin_sim.core.systems.damage import (
     DamageModifierProviderSpec,
     DamageModifierStage,
@@ -62,18 +62,7 @@ THUNDERSOOTHER_CONTENT_VERSION = "release"
 THUNDERSOOTHER_2P_AUDIT_TAG = "thundersoother_2p"
 THUNDERSOOTHER_4P_AUDIT_TAG = "thundersoother_4p"
 
-THUNDERSOOTHER_AFFECTED_AURA_KIND = AuraKind.ELECTRO
-
-
-class TargetElementAuraReadPort(Protocol):
-    """内容侧条件效果读取目标元素附着状态的窄只读端口。"""
-
-    def has_component(
-        self,
-        target_ref: AttributeSubjectRef,
-        aura_kind: AuraKind,
-        frame: int,
-    ) -> bool: ...
+THUNDERSOOTHER_AFFECTED_ELEMENT = Element.ELECTRO
 
 
 def create_thundersoother_identity_unit(
@@ -217,9 +206,9 @@ class ThundersootherElectroAffectedBonusProvider:
         port = self._aura_port
         if port is None:
             return ()
-        if not port.has_component(
+        if not port.is_affected_by(
             request.target_ref,
-            THUNDERSOOTHER_AFFECTED_AURA_KIND,
+            THUNDERSOOTHER_AFFECTED_ELEMENT,
             request.frame,
         ):
             return ()

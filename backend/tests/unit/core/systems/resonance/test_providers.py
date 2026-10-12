@@ -31,7 +31,7 @@ from genshin_sim.core.systems.resonance import (
     build_resonance_static_providers,
 )
 from tests.helpers.resonance_ports import (
-    FakeAuraFrozenPort,
+    FakeElementAuraPort,
     FakeLunarCagePresencePort,
     FakeShieldPresencePort,
     make_damage_modifier_query,
@@ -122,7 +122,7 @@ def test_static_providers_reject_unknown_activation_key():
 
 def test_cryo_crit_provider_contributes_only_for_frozen_target():
     provider = ResonanceCryoCritDamageProvider(active=True)
-    provider.bind_runtime_ports(aura_frozen_port=FakeAuraFrozenPort(True))
+    provider.bind_runtime_ports(element_aura_port=FakeElementAuraPort(True))
 
     terms = provider.contribute(make_damage_modifier_query(), None)
     assert len(terms) == 1
@@ -137,7 +137,7 @@ def test_cryo_crit_provider_contributes_only_for_frozen_target():
     )
 
     blocked = ResonanceCryoCritDamageProvider(active=True)
-    blocked.bind_runtime_ports(aura_frozen_port=FakeAuraFrozenPort(False))
+    blocked.bind_runtime_ports(element_aura_port=FakeElementAuraPort(False))
     assert blocked.contribute(make_damage_modifier_query(), None) == ()
 
     inactive = ResonanceCryoCritDamageProvider(active=False)
@@ -175,7 +175,7 @@ def test_geo_damage_provider_contributes_when_shielded_or_lunar_cage():
 
 def _bound_cryo_crit_provider() -> ResonanceCryoCritDamageProvider:
     provider = ResonanceCryoCritDamageProvider(active=True)
-    provider.bind_runtime_ports(aura_frozen_port=FakeAuraFrozenPort(True))
+    provider.bind_runtime_ports(element_aura_port=FakeElementAuraPort(True))
     return provider
 
 

@@ -219,6 +219,12 @@ from genshin_sim.content.weapons.bow.hunter_bow import (
     HUNTER_BOW_HANDLER_KEY,
     create_hunter_bow_content_unit,
 )
+from genshin_sim.content.weapons.bow.raven_bow import (
+    RAVEN_BOW_HANDLER_KEY,
+    RAVEN_BOW_PASSIVE_EFFECT_HANDLER_KEY,
+    create_raven_bow_identity_unit,
+    create_raven_bow_passive_unit,
+)
 from genshin_sim.content.weapons.catalyst.apprentice_notes import (
     APPRENTICE_NOTES_HANDLER_KEY,
     create_apprentice_notes_content_unit,
@@ -234,6 +240,12 @@ from genshin_sim.content.weapons.catalyst.favonius_codex import (
     FAVONIUS_CODEX_PASSIVE_EFFECT_HANDLER_KEY,
     create_favonius_codex_identity_unit,
     create_favonius_codex_passive_unit,
+)
+from genshin_sim.content.weapons.catalyst.magic_guide import (
+    MAGIC_GUIDE_HANDLER_KEY,
+    MAGIC_GUIDE_PASSIVE_EFFECT_HANDLER_KEY,
+    create_magic_guide_identity_unit,
+    create_magic_guide_passive_unit,
 )
 from genshin_sim.content.weapons.catalyst.otherworldly_story import (
     OTHERWORLDLY_STORY_HANDLER_KEY,
@@ -252,6 +264,12 @@ from genshin_sim.content.weapons.claymore.a_teaspoon_of_transcendence import (
     A_TEASPOON_OF_TRANSCENDENCE_PASSIVE_EFFECT_HANDLER_KEY,
     create_a_teaspoon_of_transcendence_identity_unit,
     create_a_teaspoon_of_transcendence_passive_unit,
+)
+from genshin_sim.content.weapons.claymore.bloodtainted_greatsword import (
+    BLOODTAINTED_GREATSWORD_HANDLER_KEY,
+    BLOODTAINTED_GREATSWORD_PASSIVE_EFFECT_HANDLER_KEY,
+    create_bloodtainted_greatsword_identity_unit,
+    create_bloodtainted_greatsword_passive_unit,
 )
 from genshin_sim.content.weapons.claymore.debate_club import (
     DEBATE_CLUB_HANDLER_KEY,
@@ -314,6 +332,12 @@ from genshin_sim.content.weapons.polearm.white_tassel import (
     WHITE_TASSEL_PASSIVE_EFFECT_HANDLER_KEY,
     create_white_tassel_identity_unit,
     create_white_tassel_passive_unit,
+)
+from genshin_sim.content.weapons.sword.cool_steel import (
+    COOL_STEEL_HANDLER_KEY,
+    COOL_STEEL_PASSIVE_EFFECT_HANDLER_KEY,
+    create_cool_steel_identity_unit,
+    create_cool_steel_passive_unit,
 )
 from genshin_sim.content.weapons.sword.dark_iron_sword import (
     DARK_IRON_SWORD_HANDLER_KEY,
@@ -490,6 +514,15 @@ def create_default_content_unit_registry(
         (DEBATE_CLUB_HANDLER_KEY, create_debate_club_identity_unit),
         (TRAVELERS_HANDY_SWORD_HANDLER_KEY, create_travelers_handy_sword_identity_unit),
         (OTHERWORLDLY_STORY_HANDLER_KEY, create_otherworldly_story_identity_unit),
+        # 元素影响条件增伤（issue #43 缺口 1）：条件读取统一走
+        # ``TargetElementAuraReadPort``，元素影响口径由 core.elements 冻结。
+        (RAVEN_BOW_HANDLER_KEY, create_raven_bow_identity_unit),
+        (MAGIC_GUIDE_HANDLER_KEY, create_magic_guide_identity_unit),
+        (
+            BLOODTAINTED_GREATSWORD_HANDLER_KEY,
+            create_bloodtainted_greatsword_identity_unit,
+        ),
+        (COOL_STEEL_HANDLER_KEY, create_cool_steel_identity_unit),
     ):
         registry.register_weapon_factory(handler_key, factory)
     for handler_key, factory in (
@@ -521,6 +554,13 @@ def create_default_content_unit_registry(
             OTHERWORLDLY_STORY_PASSIVE_EFFECT_HANDLER_KEY,
             create_otherworldly_story_passive_unit,
         ),
+        (RAVEN_BOW_PASSIVE_EFFECT_HANDLER_KEY, create_raven_bow_passive_unit),
+        (MAGIC_GUIDE_PASSIVE_EFFECT_HANDLER_KEY, create_magic_guide_passive_unit),
+        (
+            BLOODTAINTED_GREATSWORD_PASSIVE_EFFECT_HANDLER_KEY,
+            create_bloodtainted_greatsword_passive_unit,
+        ),
+        (COOL_STEEL_PASSIVE_EFFECT_HANDLER_KEY, create_cool_steel_passive_unit),
     ):
         registry.register_effect_factory(handler_key, factory)
     # 西风系列五把武器各自一个内容包与一个 handler 键；判定、资产参数解读与钩子

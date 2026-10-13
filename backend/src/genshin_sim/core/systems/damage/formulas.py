@@ -142,8 +142,7 @@ STELLAR_ALLOWED_MODIFIER_STAGES = frozenset(
         # 羽毛区：形状与通用 base_damage_flat_add 相似但宿主乘区不同
         # （星烁羽毛不被基础系数/基础增伤/精通增伤区/大权区乘算），因此另设专属阶段。
         DamageModifierStage.STELLAR_FEATHER_ADDITION_ADD,
-        # 暴击区：暴击率与暴击伤害都读取面板，复用通用阶段，
-        # 作用范围由 provider 自筛 formula_key 决定。
+        # 暴击区：暴击率与暴击伤害都读取面板，复用通用阶段；本公式可暴击。
         DamageModifierStage.CRIT_RATE_ADD,
         DamageModifierStage.CRIT_DAMAGE_ADD,
         # 抗性区：与通用公式的位置相同，复用通用阶段。
@@ -171,8 +170,7 @@ LUNAR_ALLOWED_MODIFIER_STAGES = frozenset(
         DamageModifierStage.LUNAR_ADDITIONAL_BASE_DAMAGE_ADD,
         # 擢升乘数：乘性括号 (1 + Σ)，多个擢升来源互相加算。
         DamageModifierStage.LUNAR_ASCENSION_BONUS_ADD,
-        # 暴击区：暴击率与暴击伤害都读取面板，复用通用阶段，
-        # 作用范围由 provider 自筛 formula_key 决定。
+        # 暴击区：暴击率与暴击伤害都读取面板，复用通用阶段；本公式可暴击。
         DamageModifierStage.CRIT_RATE_ADD,
         DamageModifierStage.CRIT_DAMAGE_ADD,
         # 抗性区：与通用公式的位置相同，复用通用阶段。

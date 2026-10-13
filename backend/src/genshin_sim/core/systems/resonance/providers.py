@@ -92,9 +92,8 @@ class ResonanceCryoCritDamageProvider:
     冰元素影响沿用统一口径 ``affected_aura_kinds(Element.CRYO)``（``cryo`` 或
     ``frozen``），与冰风迷途的勇士 4 件套同一口径。
 
-    ``crit_rate_add`` 只属于通用公式的槽位；若不加公式过滤，provider 会在
-    剧变等反应伤害查询上成交，被 ``validate_formula_modifier_stages`` 硬拒绝并让整次
-    结算失败。因此按 ``FORMULA_KEY_GENERAL`` 自筛。
+    按请求的 ``can_crit`` 自筛：``crit_rate_add`` 由通用、月曜与星烁三个公式
+    放行，剧变因不可暴击而不放行。
     """
 
     provider_spec = DamageModifierProviderSpec(
@@ -117,7 +116,7 @@ class ResonanceCryoCritDamageProvider:
         del scope
         if not self._active or self._element_aura_port is None:
             return ()
-        if query.request.formula_key is not FORMULA_KEY_GENERAL:
+        if not query.request.can_crit:
             return ()
         target_ref = query.request.target_ref
         if target_ref.kind is not AttributeSubjectKind.TARGET:
@@ -145,8 +144,8 @@ class ResonanceCryoCritDamageProvider:
 class ResonanceGeoDamageProvider:
     """双岩：处于护盾庇护下或存在月笼时造成的伤害 +15%。
 
-    与双冰同理，``damage_bonus_add`` 只属于通用公式，必须按
-    ``FORMULA_KEY_GENERAL`` 自筛，否则会在反应伤害查询上触发硬报错。
+    ``damage_bonus_add`` 是通用公式独有的增伤槽；月曜与星烁的增伤位是各自的
+    ``lunar_base_damage_bonus_add`` / ``stellar_base_bonus_add``，不放行本阶段。
     """
 
     provider_spec = DamageModifierProviderSpec(

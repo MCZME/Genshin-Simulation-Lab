@@ -4,7 +4,7 @@
 
 - 2 件套：攻击力提高 18% -> ``stat.atk.total`` 的 ``percent_add``，
   静态绑定穿戴者。
-- 4 件套：重击的暴击率提升 30% -> 通用公式 ``crit_rate_add`` 阶段，
+- 4 件套：重击的暴击率提升 30% -> ``crit_rate_add`` 阶段，
   按 ``main_attack_tag == "重击"`` 过滤，静态绑定穿戴者，不落 Buff。
 
 行为约定：
@@ -14,8 +14,8 @@
   面板或做成有生命周期的 Buff 都会把作用域放大到多次伤害。
 - 「重击」按内容层攻击标签约定识别：各角色重击伤害统一使用
   ``"重击"`` 主攻击标签。
-- 伤害 provider 自筛公式：``crit_rate_add`` 只属于通用公式，越界阶段
-  会被 ``validate_formula_modifier_stages`` 硬拒绝并让整次结算失败。
+- 按请求的 ``can_crit`` 自筛：``crit_rate_add`` 由通用、月曜与星烁三个公式
+  放行，不可暴击的剧变不放行。
 """
 
 from __future__ import annotations
@@ -46,7 +46,6 @@ from genshin_sim.core.systems.damage import (
     DamageModifierStage,
     DamageModifierTerm,
 )
-from genshin_sim.core.systems.damage.keys import FORMULA_KEY_GENERAL
 from genshin_sim.core.systems.damage.models import DamageQuery
 from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 
@@ -159,11 +158,7 @@ def create_resolution_of_sojourner_four_piece_unit(
 
 
 class ResolutionOfSojournerChargedCritProvider:
-    """4 件套：装备者的重击暴击率提升。
-
-    ``crit_rate_add`` 只属于通用公式；必须自筛公式，否则会在反应伤害
-    查询上被 ``validate_formula_modifier_stages`` 硬拒绝并让整次结算失败。
-    """
+    """4 件套：装备者的重击暴击率提升。"""
 
     def __init__(self, *, owner_ref: str, slot: int, crit_rate: float) -> None:
         self._owner_ref = AttributeSubjectRef.character(owner_ref)
@@ -186,7 +181,7 @@ class ResolutionOfSojournerChargedCritProvider:
         request = query.request
         if request.source_ref != self._owner_ref:
             return ()
-        if request.formula_key is not FORMULA_KEY_GENERAL:
+        if not request.can_crit:
             return ()
         if request.main_attack_tag != CHARGED_ATTACK_MAIN_ATTACK_TAG:
             return ()

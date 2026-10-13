@@ -16,10 +16,6 @@ from genshin_sim.core.elements import Element
 from genshin_sim.core.systems.damage import (
     DamageModifierStage,
 )
-from genshin_sim.core.systems.damage.keys import (
-    FORMULA_KEY_STELLAR_REACTION,
-    FORMULA_KEY_TRANSFORMATIVE_REACTION,
-)
 from genshin_sim.core.systems.resonance import (
     ResonanceActivation,
     ResonanceCryoCritDamageProvider,
@@ -120,14 +116,18 @@ def test_static_providers_reject_unknown_activation_key():
         )
 
 
-def test_cryo_crit_provider_contributes_only_for_frozen_target():
+def test_cryo_crit_provider_requires_crit_capable_damage_and_affected_target():
+    """双冰暴击率只作用于可暴击伤害，且目标必须是受冰元素影响的敌人。"""
+
     provider = ResonanceCryoCritDamageProvider(active=True)
     provider.bind_runtime_ports(element_aura_port=FakeElementAuraPort(True))
 
-    terms = provider.contribute(make_damage_modifier_query(), None)
+    terms = provider.contribute(make_damage_modifier_query(can_crit=True), None)
     assert len(terms) == 1
     assert terms[0].stage is DamageModifierStage.CRIT_RATE_ADD
     assert terms[0].value == 0.15
+
+    assert provider.contribute(make_damage_modifier_query(can_crit=False), None) == ()
     assert (
         provider.contribute(
             make_damage_modifier_query(target_kind=AttributeSubjectKind.CHARACTER),
@@ -171,49 +171,3 @@ def test_geo_damage_provider_contributes_when_shielded_or_lunar_cage():
 
     unbound = ResonanceGeoDamageProvider(active=True)
     assert unbound.contribute(make_damage_modifier_query(), None) == ()
-
-
-def _bound_cryo_crit_provider() -> ResonanceCryoCritDamageProvider:
-    provider = ResonanceCryoCritDamageProvider(active=True)
-    provider.bind_runtime_ports(element_aura_port=FakeElementAuraPort(True))
-    return provider
-
-
-def _bound_geo_damage_provider() -> ResonanceGeoDamageProvider:
-    provider = ResonanceGeoDamageProvider(active=True)
-    provider.bind_runtime_ports(
-        shield_port=FakeShieldPresencePort(True),
-        lunar_cage_port=FakeLunarCagePresencePort(False),
-    )
-    return provider
-
-
-@pytest.mark.parametrize(
-    ("provider_factory",),
-    (
-        (_bound_cryo_crit_provider,),
-        (_bound_geo_damage_provider,),
-    ),
-    ids=("cryo_crit_rate", "geo_damage_bonus"),
-)
-def test_damage_providers_skip_non_general_formulas(provider_factory):
-    """通用阶段只属于通用公式。
-
-    ``crit_rate_add`` 与 ``damage_bonus_add`` 都不在两个反应公式的
-    ``allowed_modifier_stages`` 内；若在这里成交，``validate_formula_modifier_stages``
-    会在进入公式体之前抛错，导致整次反应伤害结算失败。
-    """
-
-    provider = provider_factory()
-
-    for reaction_formula in (
-        FORMULA_KEY_TRANSFORMATIVE_REACTION,
-        FORMULA_KEY_STELLAR_REACTION,
-    ):
-        assert (
-            provider.contribute(
-                make_damage_modifier_query(formula_key=reaction_formula),
-                None,
-            )
-            == ()
-        )

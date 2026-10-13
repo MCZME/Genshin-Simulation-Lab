@@ -10,6 +10,7 @@ import {
   buildIntervalData,
   estimateIntervalFit,
   formatAxisLabel,
+  rescaleWindowForWidth,
   type IntervalBinding,
 } from "./intervalView";
 
@@ -273,6 +274,24 @@ describe("区间图刻度标签", () => {
     expect(formatAxisLabel(null, 100, true)).toBe("");
     expect(formatAxisLabel(undefined, 100, false)).toBe("");
     expect(formatAxisLabel("not-a-date", 100, false)).toBe("");
+  });
+});
+
+describe("区间图宽度变化", () => {
+  it("保持每帧像素宽：窗口起点不动，终点按新宽度等比延伸", () => {
+    const next = rescaleWindowForWidth(0, 1000, 500, 1000);
+    expect(next).toEqual({ start: 0, end: 2000 });
+  });
+
+  it("拖窄则缩短可见跨度", () => {
+    const next = rescaleWindowForWidth(100, 1100, 1000, 250);
+    expect(next).toEqual({ start: 100, end: 350 });
+  });
+
+  it("宽度无效或未变化时返回 null（不改窗口）", () => {
+    expect(rescaleWindowForWidth(0, 1000, 500, 500)).toBeNull();
+    expect(rescaleWindowForWidth(0, 1000, 0, 500)).toBeNull();
+    expect(rescaleWindowForWidth(0, 1000, 500, 0)).toBeNull();
   });
 });
 

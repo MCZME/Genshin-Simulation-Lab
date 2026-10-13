@@ -348,6 +348,23 @@ export function formatAxisLabel(value: unknown, spanFrames: number, major: boole
     : `${frame}帧`;
 }
 
+/**
+ * 容器宽度变化后，在**保持每像素时间不变**的前提下算出新的可见窗口。
+ * 返回 null 表示无需调整（宽度无效或未变化）。
+ */
+export function rescaleWindowForWidth(
+  windowStartMs: number,
+  windowEndMs: number,
+  previousWidth: number,
+  width: number,
+): { start: number; end: number } | null {
+  if (previousWidth <= 0 || width <= 0 || previousWidth === width) {
+    return null;
+  }
+  const msPerPx = (windowEndMs - windowStartMs) / previousWidth;
+  return { start: windowStartMs, end: windowStartMs + msPerPx * width };
+}
+
 export function IntervalChartView({
   node,
   definition,
@@ -574,6 +591,7 @@ export function IntervalChartView({
     timeline.on("rangechanged", handleRangeChange);
     // vis-timeline 的 autoResize 只跟随窗口，不监听容器自身尺寸；
     // 节点拖宽/拖高后必须手动 redraw，否则内部面板是被 CSS 拉伸而非按新尺寸重排。
+    let lastWidth = container.clientWidth;
     let redrawFrame: number | null = null;
     const resizeObserver =
       typeof ResizeObserver === "undefined"
@@ -584,6 +602,24 @@ export function IntervalChartView({
             }
             redrawFrame = window.requestAnimationFrame(() => {
               redrawFrame = null;
+              const width = container.clientWidth;
+              if (width <= 0) {
+                return;
+              }
+              const previous = lastWidth;
+              lastWidth = width;
+              // 宽度变化保持「每像素对应的时间」不变，改的是可见时间跨度：
+              // 拖宽看到更多帧、拖窄看到更少，而不是把同一段窗口等比缩放。
+              const current = timeline.getWindow();
+              const next = rescaleWindowForWidth(
+                current.start.getTime(),
+                current.end.getTime(),
+                previous,
+                width,
+              );
+              if (next !== null) {
+                timeline.setWindow(next.start, next.end, { animation: false });
+              }
               timeline.redraw();
             });
           });
@@ -613,12 +649,14 @@ export function IntervalChartView({
     }
     timeline.setGroups(groups);
     timeline.setItems(items);
+    // 可配置时间范围两侧各留一个数据跨度：保持每帧像素宽时，拖宽需要能把窗口
+    // 延伸到数据以外，否则会被 min/max 夹回、又退化成等比缩放。
     const span = Math.max(1, bounds.maxFrame - bounds.minFrame);
     timeline.setOptions({
-      min: bounds.minFrame * MS_PER_FRAME,
-      max: bounds.maxFrame * MS_PER_FRAME,
+      min: (bounds.minFrame - span) * MS_PER_FRAME,
+      max: (bounds.maxFrame + span) * MS_PER_FRAME,
       zoomMin: MS_PER_FRAME * Math.max(1, Math.floor(span / 200)),
-      zoomMax: MS_PER_FRAME * Math.ceil(span * 1.1),
+      zoomMax: MS_PER_FRAME * Math.ceil(span * 3),
     });
     if (appliedBoundsRef.current !== boundsKey) {
       appliedBoundsRef.current = boundsKey;

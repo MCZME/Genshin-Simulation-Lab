@@ -1363,7 +1363,7 @@ describe("DamageSheet", () => {
     expect(screen.getByText(/1\.200/, { selector: ".damage-sheet-formula-result" })).toBeDefined();
   });
 
-  it("星烁复合模式按参与者列出组分账本", () => {
+  it("星烁复合模式按求和行下钻到组分公式与槽位抽屉", () => {
     const base = CRIT_GENERAL_EVENT as unknown as {
       damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
     };
@@ -1375,18 +1375,28 @@ describe("DamageSheet", () => {
           ...base.damage.summary,
           formula_key: "damage_formula.stellar_reaction",
           main_attack_tag: "星扩散风",
+          official_damage: 3000,
+          final_damage: 3000,
           stellar_reaction: {
             mode: "reaction_composite",
             components: [
               {
                 participant_ref: { kind: "character", entity_id: "character:slot_1" },
-                base_damage: 1000,
+                reaction_base_value: 1000,
+                base_damage: 1140,
                 crit_multiplier: 1.962,
                 resistance_multiplier: 0.9,
+                mastery_bonus: 0,
                 weight: 0.6,
                 component_damage: 5000,
                 weighted_damage: 3000,
                 slots: [
+                  {
+                    slot_key: "stellar_base_bonus",
+                    baseline: 0,
+                    modifier_sum: 0.14,
+                    merged: 0.14,
+                  },
                   {
                     slot_key: "stellar_ascension_bonus",
                     baseline: 0,
@@ -1401,6 +1411,12 @@ describe("DamageSheet", () => {
                     provider_key: "character.sandrone.stellar_base_bonus",
                     provider_display_name: "星耀祝礼·唯理为光",
                   },
+                  {
+                    stage: "stellar_ascension_bonus_add",
+                    value: 0.2,
+                    provider_key: "character.sandrone.constellation.c6",
+                    provider_display_name: "命之座第6层·星烁擢升",
+                  },
                 ],
                 panel_terms: [],
               },
@@ -1410,20 +1426,34 @@ describe("DamageSheet", () => {
       },
     } as unknown as EventDetailResponse;
     render(<DamageSheet event={event} />);
+    // 第一行是加权求和：组分伤害是可点击槽位，权重与合计同排。
+    const sumTerm = screen.getByText("5,000", { selector: ".damage-sheet-slot" });
+    expect(sumTerm.getAttribute("title")).toBe("点击展开「组分 · 芭芭拉」的计算公式");
+    expect(screen.getByText("× 0.6")).toBeDefined();
+    expect(screen.getByText("= 3,000", { selector: ".damage-sheet-formula-result" })).toBeDefined();
+    // 未点击时不展开组分公式与抽屉。
+    expect(screen.queryByTitle("点击展开或收起「星烁基础增伤」的修饰明细")).toBeNull();
+
+    fireEvent.click(sumTerm);
+    // 第二行是该组分的计算公式：基线 × (1 + 基础增伤) × 暴击 × 抗性 × (1 + 擢升) = 组分伤害。
+    expect(sumTerm.className).toContain("damage-sheet-slot--selected");
+    expect(screen.getByText("组分 · 芭芭拉", { selector: ".damage-sheet-formula-muted" })).toBeDefined();
     expect(
-      screen.getByText("组分 · 芭芭拉", { selector: ".damage-sheet-drawer-title" }),
+      screen.getByTitle("点击展开或收起「星烁基础增伤」的修饰明细").textContent,
+    ).toBe("14.0%");
+    expect(screen.getByTitle("点击展开或收起「暴击」的修饰明细").textContent).toBe("1.962");
+    expect(screen.getByTitle("点击展开或收起「抗性」的修饰明细").textContent).toBe("0.900");
+    expect(screen.getByTitle("点击展开或收起「星烁擢升」的修饰明细").textContent).toBe("+20.0%");
+    // 最下面是该组分的槽位修饰抽屉。
+    expect(
+      screen.getByText("星烁基础增伤", { selector: ".damage-sheet-drawer-title" }),
     ).toBeDefined();
-    expect(screen.getByText("3,000", { selector: ".damage-sheet-drawer-total" })).toBeDefined();
-    expect(screen.getByText("组分基础区")).toBeDefined();
-    expect(screen.getByText("暴击乘数")).toBeDefined();
-    expect(screen.getByText("抗性乘数")).toBeDefined();
-    // 星烁组分的擢升来自槽位三段审计（baseline 0 + Σ 0.2 → 乘数 1.2）。
-    expect(screen.getByText("擢升乘数")).toBeDefined();
-    expect(screen.getByText("1.200")).toBeDefined();
     expect(screen.getByText("星耀祝礼·唯理为光")).toBeDefined();
+    // 星烁组分的擢升来自槽位三段审计（baseline 0 + Σ 0.2）。
+    expect(screen.getByText("+20.0%", { selector: ".damage-sheet-drawer-total" })).toBeDefined();
   });
 
-  it("月曜复合模式按参与者列出组分账本", () => {
+  it("月曜复合模式按求和行下钻到组分公式与槽位抽屉", () => {
     const base = CRIT_GENERAL_EVENT as unknown as {
       damage: { summary: Record<string, unknown>; audit: Record<string, unknown> };
     };
@@ -1434,6 +1464,8 @@ describe("DamageSheet", () => {
         summary: {
           ...base.damage.summary,
           formula_key: "damage_formula.lunar_reaction",
+          official_damage: 2400,
+          final_damage: 2400,
           lunar_reaction: {
             reaction: {
               reaction_profile_key:
@@ -1443,13 +1475,31 @@ describe("DamageSheet", () => {
             components: [
               {
                 participant_ref: "character:slot_1",
-                base_damage_after_reaction: 2000,
+                core_base_damage: 1446.9,
+                reaction_multiplier: 3,
+                base_damage_bonus: 0.2,
+                mastery_bonus: 0,
+                base_damage_after_reaction: 2083.5,
                 crit_multiplier: 1.0,
                 resistance_multiplier: 0.9,
                 ascension_multiplier: 1.2,
                 weight: 0.6,
                 component_damage: 4000,
                 weighted_damage: 2400,
+                slots: [
+                  {
+                    slot_key: "lunar_base_damage_bonus",
+                    baseline: 0,
+                    modifier_sum: 0.2,
+                    merged: 0.2,
+                  },
+                  {
+                    slot_key: "lunar_ascension_multiplier",
+                    baseline: 1,
+                    modifier_sum: 0.2,
+                    merged: 1.2,
+                  },
+                ],
                 modifier_terms: [
                   {
                     stage: "lunar_base_damage_bonus_add",
@@ -1466,13 +1516,21 @@ describe("DamageSheet", () => {
       },
     } as unknown as EventDetailResponse;
     render(<DamageSheet event={event} />);
+    const sumTerm = screen.getByText("4,000", { selector: ".damage-sheet-slot" });
+    expect(screen.getByText("= 2,400", { selector: ".damage-sheet-formula-result" })).toBeDefined();
+
+    fireEvent.click(sumTerm);
+    // 月曜组分：等级基础值 × 反应倍率 × (1 + 基础伤害提升) × 擢升 × 抗性 = 组分伤害。
+    expect(screen.getByText("1,446.9", { selector: ".damage-sheet-formula-text" })).toBeDefined();
+    expect(screen.getByText("× 3", { selector: ".damage-sheet-formula-text" })).toBeDefined();
     expect(
-      screen.getByText("组分 · 芭芭拉", { selector: ".damage-sheet-drawer-title" }),
-    ).toBeDefined();
-    expect(screen.getByText("2,400", { selector: ".damage-sheet-drawer-total" })).toBeDefined();
-    expect(screen.getByText("2,000")).toBeDefined();
-    // 月曜组分直接携带擢升乘数。
-    expect(screen.getByText("擢升乘数")).toBeDefined();
+      screen.getByTitle("点击展开或收起「月曜基础伤害提升」的修饰明细").textContent,
+    ).toBe("20.0%");
+    // 月曜组分的擢升槽位合并值本身就是乘数。
+    expect(screen.getByTitle("点击展开或收起「月曜擢升」的修饰明细").textContent).toBe("1.200");
+    expect(
+      screen.getByTitle("点击展开或收起「抗性」的修饰明细").textContent,
+    ).toBe("0.900");
     expect(screen.getByText("月兆祝赐")).toBeDefined();
   });
 

@@ -357,7 +357,7 @@ function FinalRow({ summary }: { summary: Record<string, unknown> }) {
 type FormulaToken =
   | { kind: "text"; text: string }
   | { kind: "muted"; text: string }
-  | { kind: "slot"; slotId: string; label: string }
+  | { kind: "slot"; slotId: string; label: string; title?: string }
   | { kind: "result"; text: string };
 
 interface SlotRow {
@@ -382,6 +382,11 @@ interface ZoneDetailModel {
   lines: FormulaToken[][];
   drawers: SlotDrawerData[];
   note: string | null;
+  /**
+   * 复合模式（月曜/星烁）的逐参与者下钻分支。存在时 `lines` 只有一行加权求和，
+   * 每个分支的 `line` 与 `drawers` 由 SegmentDetail 按当前选中的组分渲染。
+   */
+  components?: readonly ZoneComponentBranch[];
 }
 
 /** 固定值类伤害修饰阶段：显示数值而非百分比。 */
@@ -602,16 +607,27 @@ function termTitle(term: Record<string, unknown>, providerKey: string | null): s
   return parts.length > 0 ? parts.join(" · ") : undefined;
 }
 
-/** 复合模式（月曜/星烁）单个参与者组分的账本抽屉。 */
-interface CompositeComponentLedger {
+/**
+ * 复合模式（月曜/星烁）一个参与者的下钻分支：一行完整计算公式 + 该组分的槽位修饰抽屉。
+ *
+ * 后端把逐参与者账单落在各组分审计内（决策 D-082），顶层 `applied_terms` 为空、
+ * 扁平字段只取排名第一参与者的投影，无法代表全部参与者。基础区因此按「求和行 →
+ * 点组分伤害下钻 → 组分公式 → 点乘区看修饰」呈现，槽位与抽屉规则与普通伤害一致。
+ */
+interface ZoneComponentBranch {
+  /** 组分 id：求和行的槽位 token 与该组分抽屉的 id 前缀共用。 */
   id: string;
-  title: string;
-  total: string;
-  rows: SlotRow[];
+  /** 组分显示名（`组分 · <参与者名>`）。 */
+  label: string;
+  componentDamage: number | null;
+  weight: number | null;
+  /** 该组分的完整计算公式；可修饰位置为槽位胶囊。 */
+  line: FormulaToken[];
+  drawers: SlotDrawerData[];
 }
 
 /** 从槽位三段审计里取合并值；没有该槽位返回 null。 */
-function slotMergedValue(slots: Record<string, unknown>[], slotKey: string): number | null {
+function slotMerged(slots: Record<string, unknown>[], slotKey: string): number | null {
   for (const slot of slots) {
     if (readString(slot, "slot_key") === slotKey) {
       return readNumber(slot, "merged");
@@ -620,16 +636,328 @@ function slotMergedValue(slots: Record<string, unknown>[], slotKey: string): num
   return null;
 }
 
+/** 组分内的星烁专属位置；槽位键与阶段名按后端 `stellar.py` / `enums.py` 对齐。 */
+const STELLAR_COMPONENT_SLOTS: readonly StellarSlotSpec[] = [
+  {
+    id: "stellar-base-multiplier",
+    title: "星烁基础系数",
+    slotKey: "stellar_base_multiplier",
+    stage: "stellar_base_multiplier_add",
+    neutral: 1,
+    format: formatNumber,
+  },
+  {
+    id: "stellar-base-bonus",
+    title: "星烁基础增伤",
+    slotKey: "stellar_base_bonus",
+    stage: "stellar_base_bonus_add",
+    neutral: 0,
+    format: formatSignedPercent,
+  },
+  {
+    id: "stellar-reaction-bonus",
+    title: "星烁增伤",
+    slotKey: "stellar_reaction_bonus",
+    stage: "stellar_reaction_bonus_add",
+    neutral: 0,
+    format: formatSignedPercent,
+  },
+  {
+    id: "stellar-authority",
+    title: "星烁大权区",
+    slotKey: "stellar_authority_multiplier",
+    stage: "stellar_authority_multiplier_add",
+    neutral: 1,
+    format: formatNumber,
+  },
+  {
+    id: "stellar-feather",
+    title: "星烁羽毛区",
+    slotKey: "stellar_feather_addition",
+    stage: "stellar_feather_addition_add",
+    neutral: 0,
+    format: formatNumber,
+  },
+  {
+    id: "stellar-ascension",
+    title: "星烁擢升",
+    slotKey: "stellar_ascension_bonus",
+    stage: "stellar_ascension_bonus_add",
+    neutral: 0,
+    format: formatSignedPercent,
+  },
+];
+
+/** 组分内的月曜专属位置；擢升在月曜是乘数、在星烁是加算项，两处口径不同。 */
+const LUNAR_COMPONENT_SLOTS: readonly StellarSlotSpec[] = [
+  {
+    id: "lunar-base-bonus",
+    title: "月曜基础伤害提升",
+    slotKey: "lunar_base_damage_bonus",
+    stage: "lunar_base_damage_bonus_add",
+    neutral: 0,
+    format: formatSignedPercent,
+  },
+  {
+    id: "lunar-reaction-bonus",
+    title: "月曜反应加成",
+    slotKey: "lunar_reaction_bonus",
+    stage: "lunar_reaction_bonus_add",
+    neutral: 0,
+    format: formatSignedPercent,
+  },
+  {
+    id: "lunar-additional",
+    title: "月曜附加基础伤害",
+    slotKey: "lunar_additional_base_damage",
+    stage: "lunar_additional_base_damage_add",
+    neutral: 0,
+    format: formatNumber,
+  },
+  {
+    id: "lunar-ascension",
+    title: "月曜擢升",
+    slotKey: "lunar_ascension_multiplier",
+    stage: "lunar_ascension_bonus_add",
+    neutral: 1,
+    format: formatNumber,
+  },
+];
+
+/** 公式里的可修饰位置胶囊；title 说明点开的是哪个位置的修饰明细。 */
+function componentSlot(slotId: string, label: string, title: string): FormulaToken {
+  return { kind: "slot", slotId, label, title: `点击展开或收起「${title}」的修饰明细` };
+}
+
 /**
- * 复合模式的逐参与者组分账本：顶层 `applied_terms` 为空，
- * 账单落在各组分审计内（决策 D-082）。每个组分列出基础区、乘区、
- * 组分伤害、权重与该组分自己的词条，使组分内的乘法链可以逐项对账；
- * 顶层扁平字段只取排名第一的组分，无法代表全部参与者。
+ * 星烁一个组分的完整计算公式：
+ * `基础值 × 基础系数 × (1 + 基础增伤) × (1 + 精通 + 星烁增伤) × 大权区 + 羽毛 = 括号值`
+ * `× 暴击 × 抗性 × (1 + 擢升) = 组分伤害`。
+ * 中性乘区（乘数 1、加项 0）整段省略，与普通伤害的乘区省略口径一致。
  */
-function compositeComponentLedgers(
+function stellarComponentLine(
+  component: Record<string, unknown>,
+  slots: Record<string, unknown>[],
+): FormulaToken[] {
+  const tokens: FormulaToken[] = [];
+  const baseValue = readNumber(component, "reaction_base_value");
+  tokens.push({ kind: "text", text: formatOptionalNumber(baseValue) });
+
+  const baseMultiplier = slotMerged(slots, "stellar_base_multiplier");
+  if (baseMultiplier !== null && baseMultiplier !== 1) {
+    tokens.push({ kind: "text", text: " × " });
+    tokens.push(
+      componentSlot("stellar-base-multiplier", formatNumber(baseMultiplier), "星烁基础系数"),
+    );
+  }
+  const baseBonus = slotMerged(slots, "stellar_base_bonus");
+  if (baseBonus !== null && baseBonus !== 0) {
+    tokens.push({ kind: "text", text: " × (1 + " });
+    tokens.push(componentSlot("stellar-base-bonus", formatPercent(baseBonus), "星烁基础增伤"));
+    tokens.push({ kind: "text", text: ")" });
+  }
+  const masteryBonus = readNumber(component, "mastery_bonus") ?? 0;
+  const reactionBonus = slotMerged(slots, "stellar_reaction_bonus");
+  if (masteryBonus !== 0 || (reactionBonus !== null && reactionBonus !== 0)) {
+    tokens.push({ kind: "text", text: " × (1" });
+    if (masteryBonus !== 0) {
+      tokens.push({ kind: "text", text: " + " });
+      tokens.push(componentSlot("mastery", formatPercent(masteryBonus), "精通加成"));
+    }
+    if (reactionBonus !== null && reactionBonus !== 0) {
+      tokens.push({ kind: "text", text: reactionBonus < 0 ? " − " : " + " });
+      tokens.push(
+        componentSlot(
+          "stellar-reaction-bonus",
+          formatPercent(Math.abs(reactionBonus)),
+          "星烁增伤",
+        ),
+      );
+    }
+    tokens.push({ kind: "text", text: ")" });
+  }
+  const authority = slotMerged(slots, "stellar_authority_multiplier");
+  if (authority !== null && authority !== 1) {
+    tokens.push({ kind: "text", text: " × " });
+    tokens.push(componentSlot("stellar-authority", formatNumber(authority), "星烁大权区"));
+  }
+  const feather = slotMerged(slots, "stellar_feather_addition");
+  if (feather !== null && feather !== 0) {
+    tokens.push({ kind: "text", text: " + " });
+    tokens.push(componentSlot("stellar-feather", formatNumber(feather), "星烁羽毛区"));
+  }
+  const bracket = readNumber(component, "base_damage");
+  if (bracket !== null) {
+    tokens.push({ kind: "result", text: ` = ${formatDamage(bracket)}` });
+  }
+  appendComponentPostFactors(tokens, component, slots, "stellar_ascension_bonus");
+  return tokens;
+}
+
+/**
+ * 月曜一个组分的完整计算公式：
+ * `等级基础值 × 反应倍率 × (1 + 基础伤害提升) × (1 + 精通 + 反应加成) + 附加伤害 = 括号值`
+ * `× 暴击 × 擢升 × 抗性 = 组分伤害`。反应倍率是机制冻结口径、内容侧无来源，按普通数值呈现。
+ */
+function lunarComponentLine(
+  component: Record<string, unknown>,
+  slots: Record<string, unknown>[],
+): FormulaToken[] {
+  const tokens: FormulaToken[] = [];
+  const coreBaseDamage = readNumber(component, "core_base_damage");
+  tokens.push({ kind: "text", text: formatOptionalNumber(coreBaseDamage) });
+  const reactionMultiplier = readNumber(component, "reaction_multiplier");
+  if (reactionMultiplier !== null && reactionMultiplier !== 1) {
+    tokens.push({ kind: "text", text: ` × ${formatNumber(reactionMultiplier)}` });
+  }
+  const baseBonus = slotMerged(slots, "lunar_base_damage_bonus");
+  if (baseBonus !== null && baseBonus !== 0) {
+    tokens.push({ kind: "text", text: " × (1 + " });
+    tokens.push(componentSlot("lunar-base-bonus", formatPercent(baseBonus), "月曜基础伤害提升"));
+    tokens.push({ kind: "text", text: ")" });
+  }
+  const masteryBonus = readNumber(component, "mastery_bonus") ?? 0;
+  const reactionBonus = slotMerged(slots, "lunar_reaction_bonus");
+  if (masteryBonus !== 0 || (reactionBonus !== null && reactionBonus !== 0)) {
+    tokens.push({ kind: "text", text: " × (1" });
+    if (masteryBonus !== 0) {
+      tokens.push({ kind: "text", text: " + " });
+      tokens.push(componentSlot("mastery", formatPercent(masteryBonus), "精通加成"));
+    }
+    if (reactionBonus !== null && reactionBonus !== 0) {
+      tokens.push({ kind: "text", text: reactionBonus < 0 ? " − " : " + " });
+      tokens.push(
+        componentSlot(
+          "lunar-reaction-bonus",
+          formatPercent(Math.abs(reactionBonus)),
+          "月曜反应加成",
+        ),
+      );
+    }
+    tokens.push({ kind: "text", text: ")" });
+  }
+  const additional = slotMerged(slots, "lunar_additional_base_damage");
+  if (additional !== null && additional !== 0) {
+    tokens.push({ kind: "text", text: " + " });
+    tokens.push(componentSlot("lunar-additional", formatNumber(additional), "月曜附加基础伤害"));
+  }
+  const bracket = readNumber(component, "base_damage_after_reaction");
+  if (bracket !== null) {
+    tokens.push({ kind: "result", text: ` = ${formatDamage(bracket)}` });
+  }
+  appendComponentPostFactors(tokens, component, slots, "lunar_ascension_multiplier", "lunar-ascension");
+  return tokens;
+}
+
+/**
+ * 组分括号值之后的乘数链：暴击 × 抗性 × 擢升 = 组分伤害；三者皆中性时不再重复收尾。
+ * 星烁的擢升是加算项（乘数为 `1 + merged`），月曜的槽位合并值本身就是乘数。
+ */
+function appendComponentPostFactors(
+  tokens: FormulaToken[],
+  component: Record<string, unknown>,
+  slots: Record<string, unknown>[],
+  ascensionSlotKey: string,
+  ascensionSlotId = "stellar-ascension",
+): void {
+  const critMultiplier = readNumber(component, "crit_multiplier");
+  const resistanceMultiplier = readNumber(component, "resistance_multiplier");
+  const ascension = slotMerged(slots, ascensionSlotKey);
+  const isLunar = ascensionSlotKey === "lunar_ascension_multiplier";
+  const ascensionActive = ascension !== null && (isLunar ? ascension !== 1 : ascension !== 0);
+
+  const factors: FormulaToken[] = [];
+  if (critMultiplier !== null && critMultiplier !== 1) {
+    factors.push({ kind: "text", text: " × " });
+    factors.push(componentSlot("crit", formatFactor(critMultiplier), "暴击"));
+  }
+  if (resistanceMultiplier !== null && resistanceMultiplier !== 1) {
+    factors.push({ kind: "text", text: " × " });
+    factors.push(componentSlot("resistance", formatFactor(resistanceMultiplier), "抗性"));
+  }
+  if (ascensionActive && ascension !== null) {
+    factors.push({ kind: "text", text: isLunar ? " × " : " × (1 + " });
+    factors.push(
+      componentSlot(
+        ascensionSlotId,
+        isLunar ? formatFactor(ascension) : formatSignedPercent(ascension),
+        isLunar ? "月曜擢升" : "星烁擢升",
+      ),
+    );
+    if (!isLunar) {
+      factors.push({ kind: "text", text: ")" });
+    }
+  }
+  const componentDamage = readNumber(component, "component_damage");
+  if (factors.length === 0 || componentDamage === null) {
+    return;
+  }
+  tokens.push(...factors, { kind: "result", text: ` = ${formatDamage(componentDamage)}` });
+}
+
+/** 组分内的暴击 / 抗性 / 精通账单：与普通伤害同名抽屉，行只取该组分自己的词条。 */
+function componentPanelDrawers(
+  component: Record<string, unknown>,
+  modifierTerms: Record<string, unknown>[],
+  panelTerms: Record<string, unknown>[],
+): SlotDrawerData[] {
+  const drawers: SlotDrawerData[] = [];
+  const critRows: SlotRow[] = [];
+  const critMultiplier = readNumber(component, "crit_multiplier");
+  const critOutcome = readString(component, "crit_outcome");
+  if (critOutcome !== null) {
+    critRows.push({ label: "暴击判定", value: formatCritOutcome(critOutcome), base: true });
+  }
+  critRows.push(
+    ...collectSlotTerms(panelTerms, [], "panel_crit_rate", null).rows,
+    ...collectSlotTerms(panelTerms, [], "panel_crit_damage", null).rows,
+    ...collectSlotTerms(modifierTerms, [], "crit_rate_add", null).rows,
+    ...collectSlotTerms(modifierTerms, [], "crit_damage_add", null).rows,
+  );
+  pushDrawer(drawers, "crit", "暴击", formatFactor(critMultiplier ?? 1), critRows);
+
+  const resistanceRows: SlotRow[] = [
+    ...collectSlotTerms(panelTerms, [], "panel_resistance", null).rows,
+    ...collectSlotTerms(modifierTerms, [], "resistance_add", null).rows,
+  ];
+  const resistanceMultiplier = readNumber(component, "resistance_multiplier");
+  pushDrawer(drawers, "resistance", "抗性", formatFactor(resistanceMultiplier ?? 1), resistanceRows);
+
+  const masteryBonus = readNumber(component, "mastery_bonus") ?? 0;
+  if (masteryBonus !== 0) {
+    pushDrawer(drawers, "mastery", "精通加成", formatSignedPercent(masteryBonus), [
+      ...collectSlotTerms(panelTerms, [], "panel_elemental_mastery", null).rows,
+      {
+        label: "精通加成（由元素精通派生）",
+        value: formatSignedPercent(masteryBonus),
+        base: true,
+      },
+    ]);
+  }
+  return drawers;
+}
+
+/** 一个组分的专属槽位 + 面板账单抽屉；无内容的槽位不生成空抽屉。 */
+function componentDrawers(
+  component: Record<string, unknown>,
+  slots: Record<string, unknown>[],
+  modifierTerms: Record<string, unknown>[],
+  panelTerms: Record<string, unknown>[],
+  isLunarComposite: boolean,
+): SlotDrawerData[] {
+  const drawers: SlotDrawerData[] = [];
+  for (const spec of isLunarComposite ? LUNAR_COMPONENT_SLOTS : STELLAR_COMPONENT_SLOTS) {
+    pushStellarSlotDrawer(drawers, slots, modifierTerms, [], spec);
+  }
+  drawers.push(...componentPanelDrawers(component, modifierTerms, panelTerms));
+  return drawers;
+}
+
+/** 复合模式的逐参与者分支；非复合模式返回空数组。 */
+function compositeComponentBranches(
   summary: Record<string, unknown>,
   resolveRef: (ref: string) => string,
-): CompositeComponentLedger[] {
+): ZoneComponentBranch[] {
   const stellar = readRecord(summary, "stellar_reaction");
   const lunar = readRecord(summary, "lunar_reaction");
   const isStellarComposite =
@@ -648,54 +976,27 @@ function compositeComponentLedgers(
   return components.map((component, index) => {
     const rawRef = component.participant_ref;
     const ref =
-      typeof rawRef === "string"
-        ? rawRef
-        : readString(isRecord(rawRef) ? rawRef : {}, "entity_id");
+      typeof rawRef === "string" ? rawRef : readString(isRecord(rawRef) ? rawRef : {}, "entity_id");
     const slots = readRecordList(component, "slots");
-    // 星烁组分的擢升只有槽位三段审计，月曜组分直接带乘数。
-    const ascension = isLunarComposite
-      ? readNumber(component, "ascension_multiplier")
-      : (() => {
-          const bonus = slotMergedValue(slots, "stellar_ascension_bonus");
-          return bonus === null ? null : 1 + bonus;
-        })();
-    const rows: SlotRow[] = [];
-    const baseDamage = readNumber(
-      component,
-      isLunarComposite ? "base_damage_after_reaction" : "base_damage",
-    );
-    if (baseDamage !== null) {
-      rows.push({ label: "组分基础区", value: formatDamage(baseDamage), base: true });
-    }
-    const crit = readNumber(component, "crit_multiplier");
-    if (crit !== null && crit !== 1) {
-      rows.push({ label: "暴击乘数", value: formatFactor(crit), base: true });
-    }
-    const resistance = readNumber(component, "resistance_multiplier");
-    if (resistance !== null && resistance !== 1) {
-      rows.push({ label: "抗性乘数", value: formatFactor(resistance), base: true });
-    }
-    if (ascension !== null && ascension !== 1) {
-      rows.push({ label: "擢升乘数", value: formatFactor(ascension), base: true });
-    }
-    const componentDamage = readNumber(component, "component_damage");
-    if (componentDamage !== null) {
-      rows.push({ label: "组分伤害", value: formatDamage(componentDamage), base: true });
-    }
-    const weight = readNumber(component, "weight");
-    if (weight !== null) {
-      rows.push({ label: "权重", value: formatNumber(weight), base: true });
-    }
-    rows.push(
-      ...readRecordList(component, "modifier_terms").map(slotRowFromTerm),
-      ...readRecordList(component, "panel_terms").map(slotRowFromTerm),
-    );
-    const weightedDamage = readNumber(component, "weighted_damage");
+    const modifierTerms = readRecordList(component, "modifier_terms");
+    const panelTerms = readRecordList(component, "panel_terms");
+    const label = `组分 · ${ref === null ? `${index + 1} 号位` : resolveRef(ref)}`;
+    const line = isLunarComposite
+      ? lunarComponentLine(component, slots)
+      : stellarComponentLine(component, slots);
     return {
       id: `component-${index}`,
-      title: `组分 · ${ref === null ? `${index + 1} 号位` : resolveRef(ref)}`,
-      total: weightedDamage !== null ? formatDamage(weightedDamage) : "—",
-      rows,
+      label,
+      componentDamage: readNumber(component, "component_damage"),
+      weight: readNumber(component, "weight"),
+      line: [{ kind: "muted", text: `${label} ` }, ...line],
+      drawers: componentDrawers(
+        component,
+        slots,
+        modifierTerms,
+        panelTerms,
+        isLunarComposite,
+      ),
     };
   });
 }
@@ -766,6 +1067,43 @@ function buildZoneModel(
   }
 }
 
+/**
+ * 复合模式（月曜/星烁）的基础区公式骨架：第一行是加权求和，每个组分伤害为可点击
+ * 槽位（点击下钻到该组分的计算公式）；组分的公式行与抽屉由 SegmentDetail 按当前
+ * 选中项渲染。求和行右侧取摘要的 `official_damage`，调试倍率由乘法链的调试段承载。
+ */
+function buildCompositeBaseZone(
+  summary: Record<string, unknown>,
+  branches: readonly ZoneComponentBranch[],
+): ZoneDetailModel {
+  const sumTokens: FormulaToken[] = [];
+  for (const [index, branch] of branches.entries()) {
+    if (index > 0) {
+      sumTokens.push({ kind: "text", text: " + " });
+    }
+    sumTokens.push({
+      kind: "slot",
+      slotId: branch.id,
+      label: branch.componentDamage === null ? "—" : formatDamage(branch.componentDamage),
+      title: `点击展开「${branch.label}」的计算公式`,
+    });
+    if (branch.weight !== null) {
+      sumTokens.push({ kind: "text", text: ` × ${formatNumber(branch.weight)}` });
+    }
+  }
+  const officialDamage = readNumber(summary, "official_damage");
+  if (officialDamage !== null) {
+    sumTokens.push({ kind: "result", text: ` = ${formatDamage(officialDamage)}` });
+  }
+  return {
+    title: "基础区",
+    lines: [sumTokens],
+    drawers: [],
+    note: null,
+    components: branches,
+  };
+}
+
 function buildBaseZone(
   summary: Record<string, unknown>,
   audit: Record<string, unknown> | null,
@@ -773,6 +1111,12 @@ function buildBaseZone(
 ): ZoneDetailModel {
   if (audit === null) {
     return { title: "基础区", lines: [], drawers: [], note: "无审计数据" };
+  }
+  // 复合模式（月曜/星烁）的顶层账单为空，账本落在各组分审计内（决策 D-082），
+  // 顶层扁平字段只取排名第一参与者的投影，无法代表全部参与者。
+  const branches = compositeComponentBranches(summary, resolveRef);
+  if (branches.length > 0) {
+    return buildCompositeBaseZone(summary, branches);
   }
   const applied = readRecordList(audit, "applied_terms");
   const rejected = readRecordList(audit, "rejected_terms");
@@ -1082,10 +1426,7 @@ function buildBaseZone(
     }
   }
 
-  // 复合模式（月曜/星烁）的顶层账单为空，账本落在各组分审计内（决策 D-082）。
-  for (const ledger of compositeComponentLedgers(summary, resolveRef)) {
-    pushDrawer(drawers, ledger.id, ledger.title, ledger.total, ledger.rows);
-  }
+  // 复合模式（月曜/星烁）已在函数开头按组分下钻呈现，不落入通用骨架。
 
   // 合计行只在多组件求和或还有加值要加时有信息量；单组件且无加值时组件行结果就是基础伤害。
   // 月曜的倍率区组件是反应前数值，与 base_damage（反应后加权值）不同量纲，因此不追加合计。
@@ -1438,7 +1779,7 @@ function buildReactionZone(
         ? "无反应结算明细"
         : isReactionMultiplierKind(record)
           ? null
-          : "该伤害的反应明细不在反应乘区（见基础区与组分账本）",
+          : "该伤害的反应明细不在反应乘区（见基础区与组分公式）",
   };
 }
 
@@ -1743,6 +2084,8 @@ function SegmentDetail({
 }) {
   const model = buildZoneModel(segmentId, summary, audit, resolveRef);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
+  // 复合模式：求和行里的组分伤害是选择器，选中后展开该组分的公式与抽屉。
+  const [selectedComponent, setSelectedComponent] = useState<string | null>(null);
   function toggle(id: string) {
     setCollapsed((current) => {
       const next = new Set(current);
@@ -1754,40 +2097,61 @@ function SegmentDetail({
       return next;
     });
   }
+  const branches = model.components ?? [];
+  const isComponentSelector = (slotId: string) =>
+    branches.some((branch) => branch.id === slotId);
+  const activeComponent = branches.find((branch) => branch.id === selectedComponent) ?? null;
+  const drawers = activeComponent === null ? model.drawers : activeComponent.drawers;
+
+  function renderFormula(line: readonly FormulaToken[], keyPrefix: string) {
+    return (
+      <div className={`damage-sheet-formula${keyPrefix === "component" ? " damage-sheet-formula--component" : ""}`} key={keyPrefix}>
+        {line.map((token, tokenIndex) => {
+          if (token.kind === "slot") {
+            const selector = isComponentSelector(token.slotId);
+            const modifier = selector
+              ? selectedComponent === token.slotId
+                ? " damage-sheet-slot--selected"
+                : ""
+              : collapsed.has(token.slotId)
+                ? " damage-sheet-slot--collapsed"
+                : "";
+            return (
+              <button
+                type="button"
+                key={tokenIndex}
+                className={`damage-sheet-slot${modifier}`}
+                title={token.title ?? "点击展开或收起该位置的修饰明细"}
+                onClick={() =>
+                  selector ? setSelectedComponent(token.slotId) : toggle(token.slotId)
+                }
+              >
+                {token.label}
+              </button>
+            );
+          }
+          const className =
+            token.kind === "muted"
+              ? "damage-sheet-formula-muted"
+              : token.kind === "result"
+                ? "damage-sheet-formula-result"
+                : "damage-sheet-formula-text";
+          return (
+            <span className={className} key={tokenIndex}>
+              {token.text}
+            </span>
+          );
+        })}
+      </div>
+    );
+  }
+
   return (
     <>
       {model.title !== null && <div className="damage-sheet-zone-title">{model.title}</div>}
-      {model.lines.map((line, lineIndex) => (
-        <div className="damage-sheet-formula" key={lineIndex}>
-          {line.map((token, tokenIndex) => {
-            if (token.kind === "slot") {
-              return (
-                <button
-                  type="button"
-                  key={tokenIndex}
-                  className={`damage-sheet-slot${collapsed.has(token.slotId) ? " damage-sheet-slot--collapsed" : ""}`}
-                  title="点击展开或收起该位置的修饰明细"
-                  onClick={() => toggle(token.slotId)}
-                >
-                  {token.label}
-                </button>
-              );
-            }
-            const className =
-              token.kind === "muted"
-                ? "damage-sheet-formula-muted"
-                : token.kind === "result"
-                  ? "damage-sheet-formula-result"
-                  : "damage-sheet-formula-text";
-            return (
-              <span className={className} key={tokenIndex}>
-                {token.text}
-              </span>
-            );
-          })}
-        </div>
-      ))}
-      {model.drawers.map((drawer) => {
+      {model.lines.map((line, lineIndex) => renderFormula(line, `line-${lineIndex}`))}
+      {activeComponent !== null && renderFormula(activeComponent.line, "component")}
+      {drawers.map((drawer) => {
         const isCollapsed = collapsed.has(drawer.id);
         return (
           <div

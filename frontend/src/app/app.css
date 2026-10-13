@@ -5758,6 +5758,19 @@ button svg,
   border-style: solid;
 }
 
+/* 复合模式的组分选择器：选中项以强调色实线胶囊标记，其余保持虚线可点。 */
+.damage-sheet-slot--selected {
+  border-style: solid;
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* 下钻出来的组分公式行：相对求和行缩进并加左侧导轨，表明层级从属关系。 */
+.damage-sheet-formula--component {
+  padding-left: 8px;
+  border-left: 2px solid rgba(148, 163, 184, 0.25);
+}
+
 /* 抽屉：卡中卡面板，展开时有背景、折叠时弱化，边界清晰可辨。 */
 .damage-sheet-drawer {
   background: rgba(15, 23, 42, 0.45);

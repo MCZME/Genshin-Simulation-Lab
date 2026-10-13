@@ -568,7 +568,7 @@ function MemberTable({
           </button>
         )}
       </div>
-      <div className="analysis-member-scroll" ref={scrollRef}>
+      <div className="analysis-member-scroll nowheel" ref={scrollRef}>
         <table style={{ width: layout.fitWidth }}>
           <thead>
             <tr>

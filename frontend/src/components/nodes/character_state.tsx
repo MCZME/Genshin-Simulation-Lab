@@ -3,7 +3,14 @@
 import { useState } from "react";
 import type { FrameCharacterState, FrameStateResponse } from "../../api/client";
 import { ATTRIBUTE_STAGE_LABELS, attributeLabel } from "./attributeLabels";
-import { formatNumber, formatPercent, formatSignedNumber, formatSignedPercent } from "./format";
+import {
+  formatInteger,
+  formatNumber,
+  formatNumberTwoDecimals,
+  formatPercent,
+  formatSignedNumber,
+  formatSignedPercent,
+} from "./format";
 import { isRecord, readNumber, readRecord, readRecordList, readString } from "./jsonParse";
 import { ChevronDown, ChevronRight } from "../common/icons";
 
@@ -390,7 +397,7 @@ function AttributeGroup({
   );
 }
 
-/** 属性行数值：核心属性显示“总值（基础 + 加成）”，基础与加成分色。 */
+/** 属性行数值：核心属性显示“总值（基础 + 加成）”，总值保留两位小数、基础与加成取整，基础与加成分色。 */
 function AttributeValue({ entry }: { entry: AttributeEntry }) {
   if (entry.value === null) {
     return (
@@ -401,19 +408,22 @@ function AttributeValue({ entry }: { entry: AttributeEntry }) {
   }
   const total = entry.value;
   const base = entry.baseValue;
-  const bonus =
-    base !== null && base !== undefined && Number.isFinite(base) ? total - base : null;
-  const showBreakdown = bonus !== null && Math.abs(bonus) >= 0.0005;
+  const coreStat = base !== null && base !== undefined && Number.isFinite(base);
+  const bonus = coreStat ? total - base : null;
+  // 加成为整数展示，小于 0.5 会被取整成 0：此时不显示拆分，避免出现“+0”。
+  const showBreakdown = bonus !== null && Math.abs(bonus) >= 0.5;
   return (
     <span className="state-sheet-attr-value">
-      <span className="state-sheet-attr-total">{formatAttributeValue(entry.key, total)}</span>
+      <span className="state-sheet-attr-total">
+        {coreStat ? formatNumberTwoDecimals(total) : formatAttributeValue(entry.key, total)}
+      </span>
       {showBreakdown && base !== null && base !== undefined && (
         <span className="state-sheet-attr-breakdown">
           （
-          <span className="state-sheet-attr-base">{formatNumber(base)}</span>
+          <span className="state-sheet-attr-base">{formatInteger(base)}</span>
           <span className={`state-sheet-attr-bonus${bonus < 0 ? " neg" : ""}`}>
             {bonus > 0 ? "+" : "-"}
-            {formatNumber(Math.abs(bonus))}
+            {formatInteger(Math.abs(bonus))}
           </span>
           ）
         </span>

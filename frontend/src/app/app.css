@@ -4878,6 +4878,63 @@ button svg,
   font-size: var(--font-size-caption);
 }
 
+/* 事件目录：类型行徽标、扁平字段搜索结果与「仅作范围筛选」折叠区。 */
+.fetch-event-type-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fetch-event-type-count {
+  flex: none;
+  color: var(--color-text-faint);
+  font-size: var(--font-size-caption);
+}
+
+.fetch-field-result label {
+  align-items: baseline;
+}
+
+.fetch-field-result em,
+.fetch-field-row-source {
+  flex: none;
+  font-style: normal;
+  color: var(--color-text-faint);
+  font-size: var(--font-size-caption);
+}
+
+.fetch-field-row-source {
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fetch-scope-group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+}
+
+.fetch-scope-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  text-align: left;
+  cursor: pointer;
+}
+
+.fetch-scope-toggle:hover {
+  color: var(--color-text-tertiary);
+}
+
 .fetch-field-list {
   margin: 0 0 4px 22px;
   padding: 0;
@@ -5699,6 +5756,26 @@ button svg,
 .damage-sheet-slot--collapsed {
   opacity: 0.6;
   border-style: solid;
+}
+
+/* 复合模式的卡顶加权求和行：替代不成立的乘法链，居中与链段对齐、字号提一级。 */
+.damage-sheet-sum {
+  justify-content: center;
+  padding: 4px 10px 2px;
+  font-size: var(--font-size-body);
+}
+
+/* 复合模式的组分选择器：选中项以强调色实线胶囊标记，其余保持虚线可点。 */
+.damage-sheet-slot--selected {
+  border-style: solid;
+  border-color: var(--color-accent);
+  color: var(--color-accent);
+}
+
+/* 下钻出来的组分公式行：相对求和行缩进并加左侧导轨，表明层级从属关系。 */
+.damage-sheet-formula--component {
+  padding-left: 8px;
+  border-left: 2px solid rgba(148, 163, 184, 0.25);
 }
 
 /* 抽屉：卡中卡面板，展开时有背景、折叠时弱化，边界清晰可辨。 */

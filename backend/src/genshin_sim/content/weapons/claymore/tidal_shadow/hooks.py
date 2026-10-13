@@ -63,10 +63,13 @@ class TidalShadowHealingHook:
         target_ref = getattr(result, "target_ref", None)
         if getattr(target_ref, "entity_id", None) != self._owner_ref:
             return HookResult()
+        healing_id = getattr(result, "healing_id", None)
+        if not isinstance(healing_id, str) or not healing_id:
+            return HookResult()
         return HookResult(
             buff_requests=(
                 ApplyBuffRequest(
-                    request_id=f"hook:{self.hook_key}:{frame}",
+                    request_id=f"hook:{self.hook_key}:{frame}:{healing_id}",
                     frame=frame,
                     order=0,
                     definition_key=self._definition_key,

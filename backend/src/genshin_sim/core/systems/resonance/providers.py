@@ -99,6 +99,7 @@ class ResonanceCryoCritDamageProvider:
     provider_spec = DamageModifierProviderSpec(
         provider_key="resonance.cryo.crit_rate",
         writes=frozenset({DamageModifierStage.CRIT_RATE_ADD}),
+        display_name="元素共鸣（双冰）暴击率提升",
     )
 
     def __init__(self, active: bool) -> None:
@@ -151,6 +152,7 @@ class ResonanceGeoDamageProvider:
     provider_spec = DamageModifierProviderSpec(
         provider_key="resonance.geo.damage_bonus",
         writes=frozenset({DamageModifierStage.DAMAGE_BONUS_ADD}),
+        display_name="元素共鸣（双岩）伤害提升",
     )
 
     def __init__(self, active: bool) -> None:

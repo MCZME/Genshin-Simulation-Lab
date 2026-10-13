@@ -7,7 +7,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Timeline } from "vis-timeline/standalone";
-import type { TimelineItem, TimelineOptions } from "vis-timeline/standalone";
+import type { DataItem, TimelineOptions } from "vis-timeline/standalone";
 import "vis-timeline/styles/vis-timeline-graph2d.css";
 import {
   computeAnalysisShapes,
@@ -291,14 +291,14 @@ function toTimelineItems(
   data: IntervalData,
   colorIndex: ReadonlyMap<string, number>,
   hiddenColors: ReadonlySet<string>,
-): TimelineItem[] {
-  const items: TimelineItem[] = [];
+): DataItem[] {
+  const items: DataItem[] = [];
   for (const item of data.items) {
     if (item.colorKey !== null && hiddenColors.has(item.colorKey)) {
       continue;
     }
     const isPoint = item.end === null || item.end <= item.start;
-    const timelineItem: TimelineItem = {
+    const timelineItem: DataItem = {
       id: item.id,
       group: item.laneKey,
       start: item.start * MS_PER_FRAME,
@@ -487,8 +487,7 @@ export function IntervalChartView({
     [bindingReady, table, binding, formatValue],
   );
 
-  // 渲染前置状态。视图只在无阻塞时挂载时间轴容器，故该标记同时作为时间轴重建的依赖：
-  // 否则「先出错、再恢复」时容器不会重新拿到 Timeline 实例。
+  // 渲染前置状态：只在无阻塞时挂载时间轴容器。
   let stateMessage: string | null = null;
   let stateIsError = false;
   if (binding.lane === "" || binding.start === "") {
@@ -502,7 +501,6 @@ export function IntervalChartView({
   } else if (data === null || data.items.length === 0) {
     stateMessage = "无可渲染区间（泳道或起始列为空、或类型不符）";
   }
-  const chartReady = stateMessage === null;
 
   const colorIndex = useMemo(
     () => new Map((data?.colorKeys ?? []).map((key, index) => [key, index])),
@@ -553,19 +551,27 @@ export function IntervalChartView({
   const containerRef = useRef<HTMLDivElement | null>(null);
   const timelineRef = useRef<Timeline | null>(null);
   const spanFramesRef = useRef(SECONDS_AXIS_THRESHOLD);
+  /** 图例过滤只改条目可见性，数据引用不变；据此判断能否沿用既有窗口。 */
+  const lastDataRef = useRef<IntervalData | null>(null);
+  const windowRef = useRef<{ start: number; end: number } | null>(null);
 
   useEffect(() => {
     const container = containerRef.current;
     if (container === null) {
       return;
     }
-    // 高度下发实测像素值而不是 "100%"：vis-timeline 在构造时按容器尺寸布局内部面板，
-    // 若此刻百分比高度尚未解析（flex 链未定高）就会按 0 布局且不再自行重算，
-    // 表现为「必须交互一次（点击/缩放触发内部 redraw）才显示」。同按键轨迹节点的做法。
-    const initialHeight = Math.max(1, Math.round(container.clientHeight));
+    // 用「数据 + 窗口」一次性构造实例，而不是先建空实例再 setItems：
+    // setItems 只把内部 itemsDone 置为 false，条目要等一次范围变化才会被真正排布，
+    // 先建空实例会出现「必须缩放/拖动一次才显示」，数据刷新时同理。
+    // 高度也下发实测像素值（百分比在 flex 链未定高时会被解析为 0）。
+    const measuredWidth = Math.max(1, Math.round(container.clientWidth));
+    const measuredHeight = Math.max(1, Math.round(container.clientHeight));
+    // 可配置时间范围两侧各留一个数据跨度：保持每帧像素宽时，拖宽需要能把窗口
+    // 延伸到数据以外，否则会被 min/max 夹回、又退化成等比缩放。
+    const span = Math.max(1, bounds.maxFrame - bounds.minFrame);
     const options: TimelineOptions = {
       width: "100%",
-      height: initialHeight,
+      height: measuredHeight,
       editable: false,
       selectable: false,
       stack: true,
@@ -577,14 +583,27 @@ export function IntervalChartView({
       orientation: { axis: "bottom", item: "top" },
       margin: { axis: 8, item: { horizontal: 4, vertical: 2 } },
       maxMinorChars: 8,
+      min: (bounds.minFrame - span) * MS_PER_FRAME,
+      max: (bounds.maxFrame + span) * MS_PER_FRAME,
+      zoomMin: MS_PER_FRAME * Math.max(1, Math.floor(span / 200)),
+      zoomMax: MS_PER_FRAME * Math.ceil(span * 3),
       format: {
         minorLabels: (value: unknown) => formatAxisLabel(value, spanFramesRef.current, false),
         majorLabels: (value: unknown) => formatAxisLabel(value, spanFramesRef.current, true),
       },
       tooltip: { followMouse: true, delay: 150 },
     };
-    const timeline = new Timeline(container, [], options);
+    const timeline = new Timeline(container, items, options);
     timelineRef.current = timeline;
+    timeline.setGroups(groups);
+    // 图例过滤重建时数据引用不变：沿用既有窗口，避免每次点图例都把缩放拉回默认；
+    // 数据真的变了才按新数据重新取景。
+    const restored = lastDataRef.current === data ? windowRef.current : null;
+    timeline.setWindow(
+      restored?.start ?? bounds.minFrame * MS_PER_FRAME,
+      restored?.end ?? bounds.maxFrame * MS_PER_FRAME,
+      { animation: false },
+    );
     const handleRangeChange = (properties: { start: Date; end: Date }) => {
       spanFramesRef.current = Math.max(
         1,
@@ -594,7 +613,7 @@ export function IntervalChartView({
     timeline.on("rangechange", handleRangeChange);
     timeline.on("rangechanged", handleRangeChange);
     // vis-timeline 的 autoResize 只跟随窗口，不监听容器自身尺寸，尺寸变化必须手动同步。
-    let lastWidth = container.clientWidth;
+    let lastWidth = measuredWidth;
     let syncFrame: number | null = null;
     const syncToContainer = () => {
       const width = container.clientWidth;
@@ -636,6 +655,12 @@ export function IntervalChartView({
     // 首次布局后主动同步一次，避免容器尺寸晚于构造就绪时停留在空白。
     scheduleSync();
     return () => {
+      const current = timeline.getWindow();
+      windowRef.current = {
+        start: current.start.getTime(),
+        end: current.end.getTime(),
+      };
+      lastDataRef.current = data;
       resizeObserver?.disconnect();
       if (syncFrame !== null) {
         window.cancelAnimationFrame(syncFrame);
@@ -643,41 +668,7 @@ export function IntervalChartView({
       timeline.destroy();
       timelineRef.current = null;
     };
-  }, [chartReady]);
-
-  const boundsKey = `${bounds.minFrame}:${bounds.maxFrame}`;
-  const appliedBoundsRef = useRef("");
-  useEffect(() => {
-    const timeline = timelineRef.current;
-    if (timeline === null) {
-      return;
-    }
-    if (groups.length === 0 || items.length === 0) {
-      timeline.setGroups([]);
-      timeline.setItems([]);
-      appliedBoundsRef.current = "";
-      return;
-    }
-    timeline.setGroups(groups);
-    timeline.setItems(items);
-    // 可配置时间范围两侧各留一个数据跨度：保持每帧像素宽时，拖宽需要能把窗口
-    // 延伸到数据以外，否则会被 min/max 夹回、又退化成等比缩放。
-    const span = Math.max(1, bounds.maxFrame - bounds.minFrame);
-    timeline.setOptions({
-      min: (bounds.minFrame - span) * MS_PER_FRAME,
-      max: (bounds.maxFrame + span) * MS_PER_FRAME,
-      zoomMin: MS_PER_FRAME * Math.max(1, Math.floor(span / 200)),
-      zoomMax: MS_PER_FRAME * Math.ceil(span * 3),
-    });
-    if (appliedBoundsRef.current !== boundsKey) {
-      appliedBoundsRef.current = boundsKey;
-      timeline.setWindow(
-        bounds.minFrame * MS_PER_FRAME,
-        bounds.maxFrame * MS_PER_FRAME,
-        { animation: false },
-      );
-    }
-  }, [groups, items, bounds.minFrame, bounds.maxFrame, boundsKey]);
+  }, [data, items, groups, bounds.minFrame, bounds.maxFrame]);
 
   if (stateMessage !== null || data === null) {
     return (

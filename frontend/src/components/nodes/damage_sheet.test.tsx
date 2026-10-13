@@ -451,7 +451,9 @@ describe("DamageSheet", () => {
     // 默认选中基础区：属性值成为可点击槽位，抽屉展示面板读取词条
     expect(screen.getByText("2,136", { selector: ".damage-sheet-slot" })).toBeDefined();
     expect(screen.getByText("倍率段属性")).toBeDefined();
-    expect(screen.getByText("攻击力（attack.main）")).toBeDefined();
+    expect(
+      screen.getByText("攻击力", { selector: ".damage-sheet-row-label" }),
+    ).toBeDefined();
     expect(screen.getByText("2,136", { selector: ".damage-sheet-row-value" })).toBeDefined();
   });
 

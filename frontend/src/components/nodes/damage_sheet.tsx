@@ -528,15 +528,11 @@ function panelValueText(stage: string, value: number): string {
 }
 
 /** 面板读取词条显示名；provider_key 形如 panel.<attribute_key>。 */
-function panelStageLabel(
-  stage: string,
-  providerKey: string | null,
-  componentKey: string | null,
-): string {
+function panelStageLabel(stage: string, providerKey: string | null): string {
   switch (stage) {
     case "panel_attribute_value": {
       const attributeKey = providerKey !== null ? providerKey.replace(/^panel\./, "") : "";
-      return `${attributeLabel(attributeKey)}${componentKey !== null ? `（${componentKey}）` : ""}`;
+      return attributeLabel(attributeKey);
     }
     case "panel_element_bonus":
       return "元素伤害加成";
@@ -559,19 +555,30 @@ interface CollectedTerms {
   sum: number;
 }
 
-/** 单条伤害修饰词条 → 抽屉行；面板读取词条渲染为基础值行。 */
-function slotRowFromTerm(term: Record<string, unknown>): SlotRow {
+/**
+ * 单条伤害修饰词条 → 抽屉行；面板读取词条渲染为基础值行。
+ *
+ * 行内不展示 `component_key`（机器键，形如 `line_01_param_1.param1`）：同一 damage
+ * 只有多组件时才需要区分，此时用 `componentOrdinal` 追加「组件 N」，避免出现同名列。
+ */
+function slotRowFromTerm(
+  term: Record<string, unknown>,
+  componentOrdinal: number | null = null,
+): SlotRow {
   const stage = readString(term, "stage") ?? "";
   const providerKey = readString(term, "provider_key");
   const provider = readString(term, "provider_display_name") ?? providerKey ?? "未知来源";
   const comp = readString(term, "component_key");
   const value = readNumber(term, "value");
   const panel = isPanelStage(stage);
+  // 只对确实绑定到组件的词条追加序号；无组件阶段（如增伤、抗性）保持原样。
+  const ordinalSuffix =
+    componentOrdinal !== null && comp !== null ? `（组件 ${componentOrdinal}）` : "";
   return {
     label: panel
-      ? panelStageLabel(stage, providerKey, comp)
+      ? `${panelStageLabel(stage, providerKey)}${ordinalSuffix}`
       : comp !== null
-        ? `${provider}（${comp}）`
+        ? `${provider}${ordinalSuffix}`
         : provider,
     value:
       value === null
@@ -699,6 +706,7 @@ function collectSlotTerms(
   rejected: Record<string, unknown>[],
   stage: string,
   componentKey: string | null,
+  componentOrdinal: number | null = null,
 ): CollectedTerms {
   const match = (term: Record<string, unknown>) =>
     readString(term, "stage") === stage &&
@@ -706,8 +714,8 @@ function collectSlotTerms(
   const matchedApplied = applied.filter(match);
   const matchedRejected = rejected.filter(match);
   return {
-    rows: matchedApplied.map(slotRowFromTerm),
-    rejectedRows: matchedRejected.map(slotRowFromTerm),
+    rows: matchedApplied.map((term) => slotRowFromTerm(term, componentOrdinal)),
+    rejectedRows: matchedRejected.map((term) => slotRowFromTerm(term, componentOrdinal)),
     sum: matchedApplied.reduce(
       (total, term) => total + (readNumber(term, "value") ?? 0),
       0,
@@ -786,9 +794,29 @@ function buildBaseZone(
     const attributeKey = readString(component, "attribute_key") ?? "";
     const attributeValue = readNumber(component, "attribute_value");
     const original = readNumber(component, "original_coefficient");
-    const percent = collectSlotTerms(applied, rejected, "component_coefficient_percent_add", componentKey);
-    const flat = collectSlotTerms(applied, rejected, "component_coefficient_flat_add", componentKey);
-    const attributePanel = collectSlotTerms(applied, rejected, "panel_attribute_value", componentKey);
+    // 多组件时抽屉行用「组件 N」区分，替代原先直接暴露的 component_key。
+    const ordinal = components.length > 1 ? index + 1 : null;
+    const percent = collectSlotTerms(
+      applied,
+      rejected,
+      "component_coefficient_percent_add",
+      componentKey,
+      ordinal,
+    );
+    const flat = collectSlotTerms(
+      applied,
+      rejected,
+      "component_coefficient_flat_add",
+      componentKey,
+      ordinal,
+    );
+    const attributePanel = collectSlotTerms(
+      applied,
+      rejected,
+      "panel_attribute_value",
+      componentKey,
+      ordinal,
+    );
     percentSum.value += percent.sum;
     flatSum.value += flat.sum;
     percentRows.push(...percent.rows, ...percent.rejectedRows.map((row) => ({ ...row, rejected: true })));

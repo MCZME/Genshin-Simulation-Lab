@@ -572,7 +572,27 @@ export function IntervalChartView({
     };
     timeline.on("rangechange", handleRangeChange);
     timeline.on("rangechanged", handleRangeChange);
+    // vis-timeline 的 autoResize 只跟随窗口，不监听容器自身尺寸；
+    // 节点拖宽/拖高后必须手动 redraw，否则内部面板是被 CSS 拉伸而非按新尺寸重排。
+    let redrawFrame: number | null = null;
+    const resizeObserver =
+      typeof ResizeObserver === "undefined"
+        ? null
+        : new ResizeObserver(() => {
+            if (redrawFrame !== null) {
+              return;
+            }
+            redrawFrame = window.requestAnimationFrame(() => {
+              redrawFrame = null;
+              timeline.redraw();
+            });
+          });
+    resizeObserver?.observe(container);
     return () => {
+      resizeObserver?.disconnect();
+      if (redrawFrame !== null) {
+        window.cancelAnimationFrame(redrawFrame);
+      }
       timeline.destroy();
       timelineRef.current = null;
     };

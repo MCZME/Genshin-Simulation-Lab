@@ -18,6 +18,7 @@ import {
   DEFAULT_VIEW_HEIGHT,
   MAX_DETAIL_WIDTH,
   MAX_TRACE_WIDTH,
+  MAX_VIEW_FIT_HEIGHT,
   MAX_VIEW_HEIGHT,
   MIN_TRACE_WIDTH,
   MIN_DETAIL_WIDTH,
@@ -152,9 +153,12 @@ export function NodeCard({ data, selected }: NodeProps) {
       : isPie || isInterval
         ? VIEW_SOFT_CAP_WIDTH
         : undefined;
-  const dragMaxHeight = isBar || isTable || isInterval
+  // 柱状图/表格的高度上限是内容估算值；区间图在节点内纵向滚动，高度可自由拖到内容估算封顶。
+  const dragMaxHeight = isBar || isTable
     ? fitInfo?.fitHeight ?? MAX_VIEW_HEIGHT
-    : MAX_VIEW_HEIGHT;
+    : isInterval
+      ? MAX_VIEW_FIT_HEIGHT
+      : MAX_VIEW_HEIGHT;
   const displayWidth = previewSize?.width ?? resolvedWidth;
   const displayHeight = previewSize?.height ?? resolvedHeight;
   const hasMemberPorts = memberPorts.length > 0;

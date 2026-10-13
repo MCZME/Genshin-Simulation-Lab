@@ -95,12 +95,20 @@ export function resolveIntervalWidth(width: number | undefined): number {
   );
 }
 
-/** 区间图高度语义与柱状图一致：内容估算高（泳道数 × 最大层数）+ 手动夹持。 */
+/**
+ * 区间图高度语义：手动高度在 [最小高, 内容估算上限] 内自由调节。
+ * 时间轴在节点内纵向滚动，内容少时不得把高度夹回去（与饼图同理，不做内容收缩）；
+ * 未手动设置时按「泳道数 × 最大层数」内容估算取默认值，默认夹持在软上限内。
+ */
 export function resolveIntervalHeight(
   fitHeight: number | null,
   manualHeight: number | undefined,
 ): number {
-  return resolveBarHeight(fitHeight, manualHeight);
+  if (manualHeight !== undefined) {
+    return clamp(Math.round(manualHeight), MIN_VIEW_HEIGHT, MAX_VIEW_FIT_HEIGHT);
+  }
+  const natural = fitHeight === null ? DEFAULT_VIEW_HEIGHT : fitHeight;
+  return clamp(Math.round(natural), MIN_VIEW_HEIGHT, MAX_VIEW_HEIGHT);
 }
 
 /**

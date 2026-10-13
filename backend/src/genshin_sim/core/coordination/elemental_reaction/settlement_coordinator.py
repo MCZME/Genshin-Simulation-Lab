@@ -195,6 +195,10 @@ from genshin_sim.core.systems.reaction.mechanics.shattered.mechanic import (
     SHATTERED_DAMAGE_PROFILE_KEY,
     SHATTERED_REACTION_KEY,
 )
+from genshin_sim.core.systems.reaction.mechanics.stellar_swirl.keys import (
+    STELLAR_SWIRL_ICE_DAMAGE_PROFILE_KEY,
+    STELLAR_SWIRL_WIND_DAMAGE_PROFILE_KEY,
+)
 from genshin_sim.core.systems.reaction.mechanics.superconduct.mechanic import (
     SUPERCONDUCT_DAMAGE_PROFILE_KEY,
 )
@@ -3012,6 +3016,10 @@ _REACTION_DAMAGE_DISPLAY_NAMES: dict[str, str] = {
     LUNAR_BLOOM_DAMAGE_PROFILE_KEY: "月绽放",
     LUNAR_CRYSTALLIZE_DAMAGE_PROFILE_KEY: "月结晶",
     LUNAR_ELECTRO_CHARGED_DAMAGE_PROFILE_KEY: "月感电",
+    # 星烁反应：星扩散分风/冰两个 Profile，名称与冻结的伤害标签一致（D-076）。
+    # 星超导不产生公共反应伤害（见 D-068），故不在此登记。
+    STELLAR_SWIRL_WIND_DAMAGE_PROFILE_KEY: "星扩散风",
+    STELLAR_SWIRL_ICE_DAMAGE_PROFILE_KEY: "星扩散冰",
 }
 
 

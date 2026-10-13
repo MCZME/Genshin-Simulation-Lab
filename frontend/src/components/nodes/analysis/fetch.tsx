@@ -16,7 +16,7 @@ import {
   type EditorRow,
 } from "./context";
 import { ImeSafeInput } from "./imeInput";
-import { Close, Plus } from "../../common/icons";
+import { ChevronDown, ChevronRight, Close, Plus } from "../../common/icons";
 
 /** 输出列类型选项（与后端类型词表一致）。 */
 const EXTRACT_TYPES = ["string", "int", "float", "bool"] as const;
@@ -32,7 +32,7 @@ const QUICK_EVENT_FIELDS: { event_type: string; path: string; label: string }[] 
   { event_type: "DAMAGE_RESOLVED", path: "result.final_damage", label: "伤害值" },
   {
     event_type: "DAMAGE_RESOLVED",
-    path: "result.source_ref.entity_id",
+    path: "result.source_ref",
     label: "伤害来源",
   },
   { event_type: "HEALING_RESOLVED", path: "result.final_healing", label: "治疗值" },
@@ -635,7 +635,7 @@ function SnapshotLeafRow({
   );
 }
 
-/** 事件记录：事件类型 + 字段目录勾选。 */
+/** 事件记录：字段中心目录 + 全字段搜索；无登记字段的类型收进范围筛选折叠区。 */
 function EventColumnCatalog({
   eventTypes,
   selectedTypes,
@@ -650,8 +650,13 @@ function EventColumnCatalog({
   onChangeColumns: (next: EditorRow[]) => void;
 }) {
   const [search, setSearch] = useState("");
+  const [scopeExpanded, setScopeExpanded] = useState(false);
   const query = search.trim().toLowerCase();
-  const visible = eventTypes.filter((item) => item.name.toLowerCase().includes(query));
+
+  // 有登记字段的类型可直接勾选加列；其余类型只能作为行范围筛选。
+  const selectable = eventTypes.filter((item) => item.fields.length > 0);
+  const scopeOnly = eventTypes.filter((item) => item.fields.length === 0);
+
   const toggleType = (name: string) =>
     onChangeTypes(
       selectedTypes.includes(name)
@@ -660,26 +665,26 @@ function EventColumnCatalog({
     );
   const hasColumn = (type: string, path: string) =>
     columns.some((row) => row.event_type === type && row.path === path);
-  const toggleField = (type: { name: string }, field: { path: string; type: string }) => {
-    if (hasColumn(type.name, field.path)) {
+  const toggleField = (typeName: string, field: { path: string; type: string }) => {
+    if (hasColumn(typeName, field.path)) {
       onChangeColumns(
         columns.filter(
-          (row) => !(row.event_type === type.name && row.path === field.path),
+          (row) => !(row.event_type === typeName && row.path === field.path),
         ),
       );
-    } else {
-      onChangeColumns([
-        ...columns,
-        {
-          event_type: type.name,
-          path: field.path,
-          name: defaultFieldName(field.path),
-          type: field.type,
-        },
-      ]);
-      if (!selectedTypes.includes(type.name)) {
-        onChangeTypes([...selectedTypes, type.name]);
-      }
+      return;
+    }
+    onChangeColumns([
+      ...columns,
+      {
+        event_type: typeName,
+        path: field.path,
+        name: defaultFieldName(field.path),
+        type: field.type,
+      },
+    ]);
+    if (!selectedTypes.includes(typeName)) {
+      onChangeTypes([...selectedTypes, typeName]);
     }
   };
   const updateName = (index: number, name: string) =>
@@ -691,6 +696,22 @@ function EventColumnCatalog({
         item.fields.some((field) => field.path === quick.path),
     ),
   );
+  // 搜索同时匹配事件类型名、字段描述与字段路径：命中字段直接扁平列出。
+  const matchedFields =
+    query === ""
+      ? []
+      : selectable.flatMap((type) =>
+          type.fields
+            .filter(
+              (field) =>
+                type.name.toLowerCase().includes(query) ||
+                field.description.toLowerCase().includes(query) ||
+                field.path.toLowerCase().includes(query),
+            )
+            .map((field) => ({ typeName: type.name, field })),
+        );
+  const matchedScopeTypes =
+    query === "" ? [] : scopeOnly.filter((type) => type.name.toLowerCase().includes(query));
 
   return (
     <div className="fetch-catalog">
@@ -701,44 +722,126 @@ function EventColumnCatalog({
         </div>
         <input
           className="field"
-          placeholder="搜索事件类型…"
+          placeholder="搜索事件类型 / 字段…"
           value={search}
           onChange={(event) => setSearch(event.target.value)}
         />
         <ul className="fetch-catalog-list">
-          {visible.map((type) => (
-            <li key={type.name} className="fetch-event-type-item">
-              <label>
-                <input
-                  type="checkbox"
-                  checked={selectedTypes.includes(type.name)}
-                  onChange={() => toggleType(type.name)}
-                />
-                <span>{type.name}</span>
-              </label>
-              <ul className="fetch-field-list">
-                {type.fields.map((field) => (
-                  <li key={field.path}>
-                    <label title={field.path}>
-                      <input
-                        type="checkbox"
-                        checked={hasColumn(type.name, field.path)}
-                        onChange={() => toggleField(type, field)}
-                      />
-                      <span className="fetch-field-label">
-                        {field.description !== "" ? field.description : field.path}
+          {query !== "" ? (
+            <>
+              {matchedFields.map((item) => (
+                <li
+                  key={`${item.typeName}:${item.field.path}`}
+                  className="fetch-field-result"
+                >
+                  <label title={item.field.path}>
+                    <input
+                      type="checkbox"
+                      checked={hasColumn(item.typeName, item.field.path)}
+                      onChange={() => toggleField(item.typeName, item.field)}
+                    />
+                    <span className="fetch-field-row-source">{item.typeName}</span>
+                    <span className="fetch-field-label">
+                      {item.field.description !== ""
+                        ? item.field.description
+                        : item.field.path}
+                    </span>
+                    <em>{item.field.type}</em>
+                  </label>
+                </li>
+              ))}
+              {matchedScopeTypes.map((type) => (
+                <li key={type.name} className="fetch-field-result">
+                  <label title="该类型暂无可提取字段，勾选只筛选行范围">
+                    <input
+                      type="checkbox"
+                      checked={selectedTypes.includes(type.name)}
+                      onChange={() => toggleType(type.name)}
+                    />
+                    <span className="fetch-field-label">{type.name}</span>
+                    <em>仅筛选</em>
+                  </label>
+                </li>
+              ))}
+              {matchedFields.length === 0 && matchedScopeTypes.length === 0 && (
+                <li className="analysis-editor-empty">无匹配事件类型或字段</li>
+              )}
+            </>
+          ) : (
+            <>
+              {selectable.map((type) => {
+                const selectedCount = type.fields.filter((field) =>
+                  hasColumn(type.name, field.path),
+                ).length;
+                return (
+                  <li key={type.name} className="fetch-event-type-item">
+                    <div className="fetch-event-type-head">
+                      <label title="仅作为行范围筛选，不产生输出列">
+                        <input
+                          type="checkbox"
+                          checked={selectedTypes.includes(type.name)}
+                          onChange={() => toggleType(type.name)}
+                        />
+                        <span>{type.name}</span>
+                      </label>
+                      <span className="fetch-event-type-count">
+                        已选 {selectedCount}/{type.fields.length} 字段
                       </span>
-                      <em>{field.type}</em>
-                    </label>
+                    </div>
+                    <ul className="fetch-field-list">
+                      {type.fields.map((field) => (
+                        <li key={field.path}>
+                          <label title={field.path}>
+                            <input
+                              type="checkbox"
+                              checked={hasColumn(type.name, field.path)}
+                              onChange={() => toggleField(type.name, field)}
+                            />
+                            <span className="fetch-field-label">
+                              {field.description !== "" ? field.description : field.path}
+                            </span>
+                            <em>{field.type}</em>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
                   </li>
-                ))}
-                {type.fields.length === 0 && (
-                  <li className="analysis-editor-empty">暂无可选字段</li>
-                )}
-              </ul>
-            </li>
-          ))}
-          {visible.length === 0 && <li className="analysis-editor-empty">无匹配事件类型</li>}
+                );
+              })}
+              {selectable.length === 0 && (
+                <li className="analysis-editor-empty">暂无可用字段目录</li>
+              )}
+              {scopeOnly.length > 0 && (
+                <li className="fetch-scope-group">
+                  <button
+                    type="button"
+                    className="fetch-scope-toggle"
+                    aria-expanded={scopeExpanded}
+                    onClick={() => setScopeExpanded((current) => !current)}
+                  >
+                    {scopeExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+                    仅作范围筛选（{scopeOnly.length}）
+                  </button>
+                  {scopeExpanded && (
+                    <ul className="fetch-field-list">
+                      {scopeOnly.map((type) => (
+                        <li key={type.name}>
+                          <label title="该类型暂无可提取字段，勾选只筛选行范围">
+                            <input
+                              type="checkbox"
+                              checked={selectedTypes.includes(type.name)}
+                              onChange={() => toggleType(type.name)}
+                            />
+                            <span className="fetch-field-label">{type.name}</span>
+                          </label>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                </li>
+              )}
+            </>
+          )}
         </ul>
       </div>
       <div className="fetch-catalog-right">

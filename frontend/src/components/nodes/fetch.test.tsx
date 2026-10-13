@@ -231,10 +231,10 @@ describe("获取数据节点编辑器", () => {
     fireEvent.click(screen.getByRole("checkbox", { name: "DAMAGE_RESOLVED" }));
     expect(screen.getByText("事件范围：已选 1 类")).not.toBeNull();
 
-    fireEvent.change(screen.getByPlaceholderText("搜索事件类型…"), {
+    fireEvent.change(screen.getByPlaceholderText("搜索事件类型 / 字段…"), {
       target: { value: "NOPE" },
     });
-    expect(screen.getByText("无匹配事件类型")).not.toBeNull();
+    expect(screen.getByText("无匹配事件类型或字段")).not.toBeNull();
 
     fireEvent.click(screen.getByRole("button", { name: "完成" }));
     expect(onChange).toHaveBeenLastCalledWith(

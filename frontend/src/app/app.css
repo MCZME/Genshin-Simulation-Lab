@@ -4878,6 +4878,63 @@ button svg,
   font-size: var(--font-size-caption);
 }
 
+/* 事件目录：类型行徽标、扁平字段搜索结果与「仅作范围筛选」折叠区。 */
+.fetch-event-type-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fetch-event-type-count {
+  flex: none;
+  color: var(--color-text-faint);
+  font-size: var(--font-size-caption);
+}
+
+.fetch-field-result label {
+  align-items: baseline;
+}
+
+.fetch-field-result em,
+.fetch-field-row-source {
+  flex: none;
+  font-style: normal;
+  color: var(--color-text-faint);
+  font-size: var(--font-size-caption);
+}
+
+.fetch-field-row-source {
+  max-width: 42%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fetch-scope-group {
+  margin-top: 6px;
+  padding-top: 6px;
+  border-top: 1px solid var(--color-border);
+}
+
+.fetch-scope-toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  width: 100%;
+  padding: 2px 0;
+  border: 0;
+  background: transparent;
+  color: var(--color-text-muted);
+  font-size: var(--font-size-caption);
+  text-align: left;
+  cursor: pointer;
+}
+
+.fetch-scope-toggle:hover {
+  color: var(--color-text-tertiary);
+}
+
 .fetch-field-list {
   margin: 0 0 4px 22px;
   padding: 0;

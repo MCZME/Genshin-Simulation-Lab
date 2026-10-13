@@ -25,6 +25,7 @@ from genshin_sim.core.actions.models import (
     PreparedAction,
     TargetingSpec,
 )
+from genshin_sim.core.actions.protocols import ActiveActionLinkPort
 from genshin_sim.core.events import EventType, GameEvent, TeamSwitchedPayload
 from genshin_sim.core.movement import MovementFact, MovementRuntime
 from genshin_sim.core.space.space import ACTIVE_CHARACTER_ENTITY_ID
@@ -43,6 +44,9 @@ if TYPE_CHECKING:
 
 TEAM_SWITCH_ACTION_KEY = "team.switch"
 TEAM_SWITCH_TARGET_SLOT_PARAM = "target_slot"
+# 切人的中断身份：既作为 ``PreparedAction.interrupt_kind``，也作为切人打断旧角色
+# 动作实例与旧角色输入会话的统一原因文案。
+TEAM_SWITCH_INTERRUPT_KIND = "character_switch"
 
 
 @dataclass(frozen=True, slots=True)
@@ -365,21 +369,36 @@ class TeamSwitchAction:
 
 
 class TeamActionInterpreter:
-    """队伍级数字键解释器。"""
+    """队伍级数字键解释器。
+
+    切人遵循当前场上角色「在进行的动作」的衔接数据，与其它输入同一原则：
+
+    - 没有在进行的动作、或该动作未声明可切人帧：立即可切；
+    - 已到可切人帧：起手切人；
+    - 未到可切人帧：``defer``（动作请求已产生但时间结构条件未满足），由管理器
+      缓冲逐帧重评，到帧自动起手，语义与角色动作的衔接缓冲一致。
+    """
 
     supported_action_keys = (TEAM_SWITCH_ACTION_KEY,)
+
+    def __init__(self, action_link_port: ActiveActionLinkPort | None = None) -> None:
+        # 只读衔接端口未接线时不限制切换（既有单元测试只构造队伍解释器；真实
+        # 装配必须提供端口，见 runtime_assembler）。
+        self._action_link_port = action_link_port
 
     def interpret(
         self,
         context: ActionInterpretationContext,
         session: InputSessionView,
     ) -> ActionInterpretationResult:
-        del context
         if session.trigger is not ActionInterpretationTrigger.PRESS:
             return ActionInterpretationResult.wait()
         target_slot = _switch_slot_from_key(session.key)
         if target_slot is None:
             return ActionInterpretationResult.reject(f"队伍解释器不支持输入：{session.key}")
+        pending_reason = self._pending_link_reason(context, session.current_frame)
+        if pending_reason is not None:
+            return ActionInterpretationResult.defer(pending_reason)
         return ActionInterpretationResult.start(
             PreparedAction(
                 action_key=TEAM_SWITCH_ACTION_KEY,
@@ -387,8 +406,29 @@ class TeamActionInterpreter:
                 requested_start_frame=session.current_frame,
                 params={TEAM_SWITCH_TARGET_SLOT_PARAM: target_slot},
                 source_session_id=session.session_id,
+                interrupt_kind=TEAM_SWITCH_INTERRUPT_KIND,
             )
         )
+
+    def _pending_link_reason(
+        self,
+        context: ActionInterpretationContext,
+        frame: int,
+    ) -> str | None:
+        """未到可切人帧时返回推迟原因；可以切换时返回 ``None``。
+
+        只读当前场上角色的在进行的动作衔接视图，不读冷却 / 能量等资源条件：
+        资源类条件不因当前动作结束而满足，故不进入缓冲。
+        """
+
+        port = self._action_link_port
+        if port is None:
+            return None
+        view = port.read(context.simulation)
+        earliest = view.earliest_switch_frame
+        if earliest is None or frame >= earliest:
+            return None
+        return f"当前动作 {view.action_key} 最早可在第 {earliest} 帧切换"
 
 
 def _switch_slot_from_key(key: str) -> int | None:

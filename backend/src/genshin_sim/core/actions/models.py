@@ -131,6 +131,62 @@ class CandidateTargetRef:
 
 
 @dataclass(frozen=True, slots=True)
+class ActiveActionLinkView:
+    """当前场上角色「在进行的动作」的衔接只读视图。
+
+    只读衔接端口（``ActiveActionLinkPort``）在解释切人输入时提供本视图，表达
+    「现在能不能切」所需的全部证据，不暴露角色动作表的其它内容：
+
+    - ``action_key`` 为空表示当前没有在进行的动作，切换不受动作衔接约束；
+    - ``switch_offset_frames`` 是该动作声明的可切人帧（相对 ``start_frame``
+      的偏移）；``None`` 表示该动作未声明可切人帧，由消费方决定是否限制。
+    """
+
+    active_slot: int | None = None
+    action_key: str | None = None
+    start_frame: int | None = None
+    switch_offset_frames: int | None = None
+
+    def __post_init__(self) -> None:
+        if self.active_slot is not None and (
+            isinstance(self.active_slot, bool) or self.active_slot <= 0
+        ):
+            msg = "active_slot 提供时必须是正整数"
+            raise ValueError(msg)
+        if self.action_key is None:
+            if self.start_frame is not None or self.switch_offset_frames is not None:
+                msg = "没有在进行的动作时不能携带起手帧或可切人帧"
+                raise ValueError(msg)
+            return
+        if not isinstance(self.action_key, str) or not self.action_key.strip():
+            msg = "action_key 提供时必须是非空字符串"
+            raise ValueError(msg)
+        if (
+            isinstance(self.start_frame, bool)
+            or not isinstance(self.start_frame, int)
+            or self.start_frame < 0
+        ):
+            msg = "在进行的动作必须提供非负 start_frame"
+            raise ValueError(msg)
+        if self.switch_offset_frames is not None and (
+            isinstance(self.switch_offset_frames, bool)
+            or not isinstance(self.switch_offset_frames, int)
+            or self.switch_offset_frames < 0
+        ):
+            msg = "switch_offset_frames 提供时必须是非负整数"
+            raise ValueError(msg)
+
+    @property
+    def earliest_switch_frame(self) -> int | None:
+        """该动作最早可切人的绝对帧；未声明可切人帧时为 ``None``。"""
+
+        if self.action_key is None or self.switch_offset_frames is None:
+            return None
+        assert self.start_frame is not None
+        return self.start_frame + self.switch_offset_frames
+
+
+@dataclass(frozen=True, slots=True)
 class ActionImpactPoint:
     """动作运行过程中产生的机制影响点。"""
 

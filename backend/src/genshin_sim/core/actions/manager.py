@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import replace
 from typing import TYPE_CHECKING
 
+from genshin_sim.core.actions.actions import TEAM_SWITCH_INTERRUPT_KIND
 from genshin_sim.core.actions.enums import (
     ActionDecisionRejectReason,
     ActionInterpretationKind,
@@ -744,9 +745,19 @@ class ActionManager(FrameUpdatable):
             if record.get("type") == "team_switch" and record.get("accepted") is True:
                 previous_slot = record.get("previous_slot")
                 if isinstance(previous_slot, int):
+                    previous_owner = ActionOwnerRef.character(previous_slot)
                     self.cancel_sessions_for_owner(
-                        ActionOwnerRef.character(previous_slot),
-                        reason="character_switch",
+                        previous_owner,
+                        reason=TEAM_SWITCH_INTERRUPT_KIND,
+                        context=context,
+                        frame=frame,
+                    )
+                    # 切人同时终结旧角色已起手的动作实例：切人只发生在旧动作的
+                    # 可切人帧之后（由解释器的衔接判定保证），因此这里是合法的
+                    # 中断；未分发影响点按 ``cancel_with_action`` 一并取消。
+                    self.cancel_instances_for_owner(
+                        previous_owner,
+                        reason=TEAM_SWITCH_INTERRUPT_KIND,
                         context=context,
                         frame=frame,
                     )
@@ -829,6 +840,31 @@ class ActionManager(FrameUpdatable):
                     frame=frame,
                     reason=reason,
                 )
+
+    def cancel_instances_for_owner(
+        self,
+        owner: ActionOwnerRef,
+        *,
+        reason: str,
+        context: SimulationContext,
+        frame: int,
+    ) -> tuple[int, ...]:
+        """取消归属该 owner 的 scheduled/running 动作实例（切人等场景）。
+
+        与 ``cancel_sessions_for_owner`` 对称：会话一侧终结的是输入控制，这里
+        终结的是已经起手的动作实例。取消时 ``pending`` 且 ``cancel_with_action``
+        的影响点一并取消，已 dispatched 的影响点不回滚。返回被取消的实例 id。
+        """
+
+        canceled: list[int] = []
+        for instance in tuple(self._instances):
+            if instance.owner != owner:
+                continue
+            if instance.lifecycle not in {ActionLifecycle.SCHEDULED, ActionLifecycle.RUNNING}:
+                continue
+            self._cancel_instance(context, instance, frame, reason)
+            canceled.append(instance.instance_id)
+        return tuple(canceled)
 
     def _apply_session_policy(
         self,

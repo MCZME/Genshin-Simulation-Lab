@@ -8,6 +8,7 @@ import pytest
 
 from genshin_sim.core.actions import (
     TEAM_SWITCH_ACTION_KEY,
+    TEAM_SWITCH_INTERRUPT_KIND,
     TEAM_SWITCH_TARGET_SLOT_PARAM,
     ActionAdmissionPolicy,
     ActionDecisionRejectReason,
@@ -16,9 +17,11 @@ from genshin_sim.core.actions import (
     ActionInterpretationTrigger,
     ActionInterpreterRegistry,
     ActionInterruptPolicy,
+    ActionLifecycle,
     ActionManager,
     ActionOwnerRef,
     ActionRegistry,
+    ActiveActionLinkView,
     ActiveCharacterInterpreterSelector,
     InputControlState,
     InputSessionView,
@@ -85,6 +88,45 @@ class ReleaseStartInterpreter:
                 source_session_id=session.session_id,
             )
         )
+
+
+@dataclass(slots=True)
+class StubActionLinkPort:
+    """固定回答的衔接只读端口（切人衔接用例用）。"""
+
+    view: ActiveActionLinkView
+
+    def read(self, context) -> ActiveActionLinkView:
+        del context
+        return self.view
+
+
+def _switch_manager(
+    frames: list[KeyInputFrame],
+    *,
+    link_view: ActiveActionLinkView,
+    character_interpreter=None,
+    actions: tuple = (),
+) -> ActionManager:
+    """切人键走带衔接端口的队伍解释器，动作键走角色解释器。"""
+
+    registry = ActionInterpreterRegistry()
+    registry.register(
+        "keyboard.2",
+        TeamInterpreterSelector(
+            TeamActionInterpreter(action_link_port=StubActionLinkPort(link_view))
+        ),
+    )
+    if character_interpreter is not None:
+        registry.register(
+            "mouse.left",
+            ActiveCharacterInterpreterSelector({1: character_interpreter}),
+        )
+    return ActionManager(
+        input_trace=InputTraceCompiler().compile(frames),
+        interpreter_registry=registry,
+        action_registry=ActionRegistry(actions),
+    )
 
 
 def _context(*, team_size: int = 2, active_slot: int = 1) -> SimulationContext:
@@ -1083,3 +1125,133 @@ def test_buffering_is_reproducible_for_same_input():
         return started, outcomes
 
     assert run() == run()
+
+
+# --- 切人遵循当前动作衔接数据 -------------------------------------------------
+
+
+def _switch_frames(press_frame: int) -> list[KeyInputFrame]:
+    """切人键的一次点按（按下帧 + 次帧松开）。"""
+
+    return [
+        KeyInputFrame(press_frame, (KeyEvent("keyboard.2", KeyPhase.PRESS),)),
+        KeyInputFrame(press_frame + 1, (KeyEvent("keyboard.2", KeyPhase.RELEASE),)),
+    ]
+
+
+def test_switch_defers_until_switchable_frame_then_interrupts_previous_action():
+    """未到可切人帧：切人进缓冲；到帧自动起手并取消旧角色的动作实例。"""
+
+    character_interpreter = PressStartInterpreter({"mouse.left": "character.one.skill"})
+    manager = _switch_manager(
+        [
+            KeyInputFrame(1, (KeyEvent("mouse.left", KeyPhase.PRESS),)),
+            KeyInputFrame(2, (KeyEvent("mouse.left", KeyPhase.RELEASE),)),
+            *_switch_frames(5),
+        ],
+        link_view=ActiveActionLinkView(
+            active_slot=1,
+            action_key="character.one.skill",
+            start_frame=1,
+            switch_offset_frames=20,
+        ),
+        character_interpreter=character_interpreter,
+        actions=(
+            TimedImpactAction(
+                action_key="character.one.skill",
+                duration_frames=60,
+                impact_keys=("character.one.skill.hit",),
+                impact_frame_offsets={"character.one.skill.hit": 10},
+            ),
+            TeamSwitchAction(),
+        ),
+    )
+    context = _context(team_size=2, active_slot=1)
+
+    for frame in range(1, 21):
+        manager.update_frame(context, frame)
+
+    # 未到最早可切人帧（1 + 20 = 21）：请求被缓冲，未创建切人实例。
+    assert manager.deferred_session_ids == (2,)
+    assert [instance.action_key for instance in manager.instances] == ["character.one.skill"]
+    assert context.space_runtime is not None
+    assert context.space_runtime.team_state.active_slot == 1
+
+    manager.update_frame(context, 21)
+
+    assert manager.deferred_session_ids == ()
+    assert [instance.action_key for instance in manager.instances] == [
+        "character.one.skill",
+        TEAM_SWITCH_ACTION_KEY,
+    ]
+    assert manager.instances[1].params == {TEAM_SWITCH_TARGET_SLOT_PARAM: 2}
+    assert context.space_runtime.team_state.active_slot == 2
+    # 旧角色动作实例被切人中断，未分发影响点随动作取消。
+    previous = manager.instances[0]
+    assert previous.lifecycle is ActionLifecycle.CANCELED
+    assert previous.cancel_reason == TEAM_SWITCH_INTERRUPT_KIND
+    assert [point.status for point in previous.impact_points] == ["canceled"]
+
+
+def test_switch_starts_immediately_without_live_action():
+    """没有在进行的动作：切人立即起手，不进入缓冲。"""
+
+    manager = _switch_manager(
+        _switch_frames(4),
+        link_view=ActiveActionLinkView(active_slot=1),
+        actions=(TeamSwitchAction(),),
+    )
+    context = _context(team_size=2, active_slot=1)
+
+    manager.update_frame(context, 4)
+
+    assert manager.deferred_session_ids == ()
+    assert manager.decisions[-1].accepted
+    assert len(manager.instances) == 1
+    assert manager.instances[0].action_key == TEAM_SWITCH_ACTION_KEY
+    assert context.space_runtime is not None
+    assert context.space_runtime.team_state.active_slot == 2
+
+
+def test_switch_is_permissive_when_action_declares_no_switch_frame():
+    """在进行的动作未声明可切人帧：不限制切换（跳跃 / 下落等空衔接表）。"""
+
+    manager = _switch_manager(
+        _switch_frames(4),
+        link_view=ActiveActionLinkView(
+            active_slot=1,
+            action_key="character.one.jump",
+            start_frame=2,
+            switch_offset_frames=None,
+        ),
+        actions=(TeamSwitchAction(),),
+    )
+    context = _context(team_size=2, active_slot=1)
+
+    manager.update_frame(context, 4)
+
+    assert manager.deferred_session_ids == ()
+    assert manager.decisions[-1].accepted
+    assert context.space_runtime is not None
+    assert context.space_runtime.team_state.active_slot == 2
+
+
+def test_active_action_link_view_earliest_frame_is_start_plus_offset():
+    """衔接视图只回答证据：最早可切人帧 = 起手帧 + 声明偏移。"""
+
+    live = ActiveActionLinkView(
+        active_slot=2,
+        action_key="character.two.skill",
+        start_frame=30,
+        switch_offset_frames=11,
+    )
+    assert live.earliest_switch_frame == 41
+    assert ActiveActionLinkView(active_slot=2).earliest_switch_frame is None
+    assert (
+        ActiveActionLinkView(
+            active_slot=2,
+            action_key="character.two.jump",
+            start_frame=30,
+        ).earliest_switch_frame
+        is None
+    )

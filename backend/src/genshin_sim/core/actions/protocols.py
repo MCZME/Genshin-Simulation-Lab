@@ -3,15 +3,19 @@
 from __future__ import annotations
 
 from collections.abc import Iterable, Mapping
-from typing import Protocol, runtime_checkable
+from typing import TYPE_CHECKING, Protocol, runtime_checkable
 
 from genshin_sim.core.actions.helpers import _validate_non_empty_text
 from genshin_sim.core.actions.models import (
     ActionAdmissionPolicy,
     ActionExecutionContext,
     ActionExecutionResult,
+    ActiveActionLinkView,
     ControlActionRequest,
 )
+
+if TYPE_CHECKING:
+    from genshin_sim.core.simulation import SimulationContext
 
 
 @runtime_checkable
@@ -83,3 +87,18 @@ class ActionRegistry:
 
     def contains(self, action_key: str) -> bool:
         return action_key in self._actions
+
+
+class ActiveActionLinkPort(Protocol):
+    """当前场上角色动作衔接的只读端口。
+
+    切人解释器在 PRESS 时经本端口读取当前场上角色「在进行的动作」的衔接证据，
+    据此判断切换是否已到可切人帧。端口只回答证据，不决定切人策略、不修改任何
+    状态；角色动作表与链状态仍由内容侧拥有。
+
+    端口未接线时（如既有单元测试只构造队伍解释器）视为不受动作衔接约束。
+    """
+
+    def read(self, context: SimulationContext) -> ActiveActionLinkView:
+        """读取当前场上角色的在进行的动作衔接视图。"""
+        ...

@@ -14,6 +14,7 @@ from genshin_sim.content.generic.character_actions import (
     ELEMENTAL_BURST_INPUT,
     ELEMENTAL_SKILL_INPUT,
     NORMAL_ATTACK_INPUT,
+    SWITCH_INPUT,
     GenericAbilityGate,
     GenericCharacterActionSpec,
 )
@@ -433,9 +434,12 @@ ALYOSHA_ACTION_TABLE: dict[str, TimedActionSpec] = {
         cooldown_start_frame=1,
         cooldown_ability_key=ALYOSHA_ELEMENTAL_BURST_COOLDOWN_ABILITY_KEY,
         transitions={
-            NORMAL_ATTACK_INPUT: 149,
-            ELEMENTAL_SKILL_INPUT: 149,
+            # Q 动作最快衔接帧实测 76（维护者提供，2026-10-14）：普攻 / 战技 /
+            # 切人列按实测声明；Q→Q 未实测，维持 duration+1 兜底。
+            NORMAL_ATTACK_INPUT: 76,
+            ELEMENTAL_SKILL_INPUT: 76,
             ELEMENTAL_BURST_INPUT: 149,
+            SWITCH_INPUT: 76,
         },
     ),
     # 下落攻击：不使用固定时间线，也不由动作写位移（`docs/架构/动作系统设计.md`

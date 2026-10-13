@@ -49,6 +49,7 @@ from genshin_sim.core.actions import (
     ActionInterpretationResult,
     ActionInterpretationTrigger,
     ActionOwnerRef,
+    ActiveActionLinkView,
     FallPlungeAction,
     InputSessionView,
     PreparedAction,
@@ -72,6 +73,26 @@ CHARGED_ATTACK_INPUT = "charged_attack"
 ELEMENTAL_SKILL_INPUT = "elemental_skill"
 ELEMENTAL_BURST_INPUT = "elemental_burst"
 JUMP_INPUT = "jump"
+SWITCH_INPUT = "switch"
+
+
+def switch_offset_frames(spec: TimedActionSpec) -> int | None:
+    """派生一个动作的「可切人帧」（相对起手帧的偏移）；无从派生时返回 ``None``。
+
+    动作表尚未逐条声明切人列，按「该动作各衔接列的最早帧」派生，即切换与其它
+    输入共用同一份时间口径、不引入新的数值来源。内容取得来源后可显式声明
+    ``transitions[SWITCH_INPUT]`` 覆盖派生值。
+
+    整表没有衔接数据（跳跃、下落等）时无可派生帧，返回 ``None`` 由消费方解释为
+    「该动作不限制切换」——切人不是动作表里的动作，缺数据不代表禁止切换。
+    """
+
+    explicit = spec.transitions.get(SWITCH_INPUT)
+    if explicit is not None:
+        return explicit
+    if not spec.transitions:
+        return None
+    return min(spec.transitions.values())
 
 
 class GenericCharacterActionError(RuntimeError):
@@ -307,6 +328,41 @@ class GenericCharacterActionInterpreter:
                 },
                 source_session_id=session.session_id,
             )
+        )
+
+    # --- 只读衔接视图（供队伍切人判定） -----------------------------------------------
+
+    def read_active_action_link(
+        self,
+        simulation: SimulationContext,
+        slot: int,
+    ) -> ActiveActionLinkView:
+        """读取该槽位「在进行的动作」的可切人衔接视图（只读，不写状态）。
+
+        复用与输入解释完全相同的链状态读取（``_read_state``）与存活判定
+        （``_live_action_key``），因此「切人可用的帧」与「其它输入可衔接的帧」
+        同源，不另立时间口径。
+
+        链状态挂载缺失属于装配缺陷，与角色输入解释一致地确定性报错，不静默降级。
+        """
+
+        last_action_key, last_action_start_frame = self._read_state(simulation, slot)
+        self._validate_known_state(last_action_key)
+        height = self._current_height(simulation)
+        if last_action_key == self._spec.plunge_action_key and height <= 0:
+            last_action_key = ""
+        live_action_key = self._live_action_key(
+            last_action_key,
+            last_action_start_frame,
+            simulation.current_frame,
+        )
+        if not live_action_key:
+            return ActiveActionLinkView(active_slot=slot)
+        return ActiveActionLinkView(
+            active_slot=slot,
+            action_key=live_action_key,
+            start_frame=last_action_start_frame,
+            switch_offset_frames=switch_offset_frames(self._action_table[live_action_key]),
         )
 
     # --- 挂点（默认无操作或直通） -------------------------------------------------

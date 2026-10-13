@@ -559,9 +559,13 @@ export function IntervalChartView({
     if (container === null) {
       return;
     }
+    // 高度下发实测像素值而不是 "100%"：vis-timeline 在构造时按容器尺寸布局内部面板，
+    // 若此刻百分比高度尚未解析（flex 链未定高）就会按 0 布局且不再自行重算，
+    // 表现为「必须交互一次（点击/缩放触发内部 redraw）才显示」。同按键轨迹节点的做法。
+    const initialHeight = Math.max(1, Math.round(container.clientHeight));
     const options: TimelineOptions = {
       width: "100%",
-      height: "100%",
+      height: initialHeight,
       editable: false,
       selectable: false,
       stack: true,
@@ -589,45 +593,52 @@ export function IntervalChartView({
     };
     timeline.on("rangechange", handleRangeChange);
     timeline.on("rangechanged", handleRangeChange);
-    // vis-timeline 的 autoResize 只跟随窗口，不监听容器自身尺寸；
-    // 节点拖宽/拖高后必须手动 redraw，否则内部面板是被 CSS 拉伸而非按新尺寸重排。
+    // vis-timeline 的 autoResize 只跟随窗口，不监听容器自身尺寸，尺寸变化必须手动同步。
     let lastWidth = container.clientWidth;
-    let redrawFrame: number | null = null;
+    let syncFrame: number | null = null;
+    const syncToContainer = () => {
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+      if (width <= 0 || height <= 0) {
+        return;
+      }
+      const previous = lastWidth;
+      lastWidth = width;
+      if (previous > 0 && previous !== width) {
+        // 宽度变化保持「每像素对应的时间」不变，改的是可见时间跨度：
+        // 拖宽看到更多帧、拖窄看到更少，而不是把同一段窗口等比缩放。
+        const current = timeline.getWindow();
+        const next = rescaleWindowForWidth(
+          current.start.getTime(),
+          current.end.getTime(),
+          previous,
+          width,
+        );
+        if (next !== null) {
+          timeline.setWindow(next.start, next.end, { animation: false });
+        }
+      }
+      timeline.setOptions({ height: Math.round(height) });
+      timeline.redraw();
+    };
+    const scheduleSync = () => {
+      if (syncFrame !== null) {
+        return;
+      }
+      syncFrame = window.requestAnimationFrame(() => {
+        syncFrame = null;
+        syncToContainer();
+      });
+    };
     const resizeObserver =
-      typeof ResizeObserver === "undefined"
-        ? null
-        : new ResizeObserver(() => {
-            if (redrawFrame !== null) {
-              return;
-            }
-            redrawFrame = window.requestAnimationFrame(() => {
-              redrawFrame = null;
-              const width = container.clientWidth;
-              if (width <= 0) {
-                return;
-              }
-              const previous = lastWidth;
-              lastWidth = width;
-              // 宽度变化保持「每像素对应的时间」不变，改的是可见时间跨度：
-              // 拖宽看到更多帧、拖窄看到更少，而不是把同一段窗口等比缩放。
-              const current = timeline.getWindow();
-              const next = rescaleWindowForWidth(
-                current.start.getTime(),
-                current.end.getTime(),
-                previous,
-                width,
-              );
-              if (next !== null) {
-                timeline.setWindow(next.start, next.end, { animation: false });
-              }
-              timeline.redraw();
-            });
-          });
+      typeof ResizeObserver === "undefined" ? null : new ResizeObserver(scheduleSync);
     resizeObserver?.observe(container);
+    // 首次布局后主动同步一次，避免容器尺寸晚于构造就绪时停留在空白。
+    scheduleSync();
     return () => {
       resizeObserver?.disconnect();
-      if (redrawFrame !== null) {
-        window.cancelAnimationFrame(redrawFrame);
+      if (syncFrame !== null) {
+        window.cancelAnimationFrame(syncFrame);
       }
       timeline.destroy();
       timelineRef.current = null;

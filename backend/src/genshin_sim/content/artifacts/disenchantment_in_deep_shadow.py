@@ -1,32 +1,4 @@
-"""影中沉凝的幻灭圣遗物套装实现。
-
-资产数据来源：Project Amber / Yatta 当前默认数据（``artifact_set:15046``）。
-
-效果与落点：
-
-- 2 件套：攻击力提高 18% -> ``stat.atk.total`` 的 ``percent_add``，
-  静态绑定穿戴者。
-- 4 件套 C1：超导反应造成的伤害提升 80% -> 剧变公式专属阶段
-  ``transformative_reaction_bonus_add``。
-- 4 件套 C2：星超导反应造成的伤害提升 40% -> 星烁公式专属阶段
-  ``stellar_reaction_bonus_add``。
-- 4 件套 C3：装备者攻击受到超导或星超导反应影响的敌人时，本次攻击暴击率
-  提高 16% -> 通用阶段 ``crit_rate_add``。
-
-行为约定：
-
-- 4 件套三段都是「瞬时作用于一次伤害」，一律用伤害系统的修饰项实现，
-  **不落 Buff**：``crit_rate_add`` 的契约语义就是「只参与本次伤害的暴击率
-  调整」，写进面板或做成有生命周期的 Buff 都会把作用域放大到多次伤害。
-- 三个伤害 provider 都按 ``source_ref`` 过滤穿戴者，不同穿戴者互不污染。
-- C1 / C2 用 ``main_attack_tag`` 区分反应类型，**不用** ``reaction_profile_key``
-  （后者带方向，会漏掉半边），也不依赖 ``formula_key`` 区分星超导与星扩散
-  （星烁复合模式的组分查询走通用公式）。
-- C3 的目标状态经装配期注入的 ``TargetBuffPresenceReadPort`` 读取；未绑定时
-  返回空，因此装配完成前不会生效。
-- 每个 provider 都自筛公式：越界阶段会被 ``validate_formula_modifier_stages`` 硬拒绝
-  并让整次结算失败，而不是静默跳过。
-"""
+"""影中沉凝的幻灭圣遗物套装实现。"""
 
 from __future__ import annotations
 
@@ -268,8 +240,8 @@ class DisenchantmentInDeepShadowReactionBonusProvider:
 class DisenchantmentInDeepShadowCritRateProvider:
     """4 件套 C3：攻击受到超导或星超导反应影响的敌人时，本次攻击暴击率提高。
 
-    ``crit_rate_add`` 只属于通用公式；必须自筛公式，否则会在反应伤害查询上
-    被 ``validate_formula_modifier_stages`` 硬拒绝并让整次结算失败。
+    公式自筛覆盖「装备者攻击」的两条承载路径（两者都在各自白名单里放行
+    ``crit_rate_add``，见[伤害系统契约]第 6 节位置开放度表）：
 
     条件判定只查一个 Buff 定义：普通超导与星超导极星辉域施加的是同一个
     ``buff.reaction.superconduct.physical_resistance_reduction``，因此两种来源
@@ -300,6 +272,25 @@ class DisenchantmentInDeepShadowCritRateProvider:
 
         self._target_status_port = target_status_port
 
+    @staticmethod
+    def covers_formula(
+        *,
+        formula_key: str,
+        stellar_mode: str | None,
+    ) -> bool:
+        """本次查询是否属于文案的「装备者攻击」，按公式与星烁分支判定。
+
+        ``stellar_mode`` 为 ``request.stellar_reaction`` 的 ``mode``；非星烁
+        公式传 ``None``。保留为纯函数以便直接测试判定边界。
+        """
+
+        if formula_key == FORMULA_KEY_GENERAL:
+            return True
+        if formula_key != FORMULA_KEY_STELLAR_REACTION:
+            return False
+        # 星烁公式只有角色直伤分支属于「装备者攻击」；星扩散复合组分不是。
+        return stellar_mode == "character_direct"
+
     def contribute(
         self,
         query: DamageQuery,
@@ -309,7 +300,11 @@ class DisenchantmentInDeepShadowCritRateProvider:
         request = query.request
         if request.source_ref != self._owner_ref:
             return ()
-        if request.formula_key is not FORMULA_KEY_GENERAL:
+        stellar = request.stellar_reaction
+        if not self.covers_formula(
+            formula_key=request.formula_key,
+            stellar_mode=None if stellar is None else stellar.mode,
+        ):
             return ()
         if request.target_ref.kind is not AttributeSubjectKind.TARGET:
             return ()

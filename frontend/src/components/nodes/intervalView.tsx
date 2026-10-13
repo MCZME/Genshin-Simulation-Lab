@@ -318,7 +318,28 @@ function toTimelineItems(
   return items;
 }
 
-function axisLabel(frame: number, spanFrames: number, major: boolean): string {
+/** vis-timeline 的刻度回调可能传 Date，也可能直接传毫秒数，统一归一到毫秒。 */
+function timeToMs(value: unknown): number | null {
+  if (value instanceof Date) {
+    return value.getTime();
+  }
+  if (typeof value === "number" && Number.isFinite(value)) {
+    return value;
+  }
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : parsed;
+  }
+  return null;
+}
+
+/** 刻度标签：次刻度显示帧号；主刻度在可视跨度较大时改用秒。 */
+export function formatAxisLabel(value: unknown, spanFrames: number, major: boolean): string {
+  const ms = timeToMs(value);
+  if (ms === null) {
+    return "";
+  }
+  const frame = Math.round(ms / MS_PER_FRAME);
   if (!major) {
     return String(frame);
   }
@@ -449,6 +470,23 @@ export function IntervalChartView({
     [bindingReady, table, binding, formatValue],
   );
 
+  // 渲染前置状态。视图只在无阻塞时挂载时间轴容器，故该标记同时作为时间轴重建的依赖：
+  // 否则「先出错、再恢复」时容器不会重新拿到 Timeline 实例。
+  let stateMessage: string | null = null;
+  let stateIsError = false;
+  if (binding.lane === "" || binding.start === "") {
+    stateMessage = config === null ? "直连视图未找到可用的泳道列与起始列" : "区间图配置未就绪";
+  } else if (missingColumn !== undefined) {
+    stateMessage = `绑定列不在上游表中：${missingColumn}`;
+    stateIsError = true;
+  } else if (startType !== "int" && startType !== "float") {
+    stateMessage = `起始列必须是数值列：${binding.start}`;
+    stateIsError = true;
+  } else if (data === null || data.items.length === 0) {
+    stateMessage = "无可渲染区间（泳道或起始列为空、或类型不符）";
+  }
+  const chartReady = stateMessage === null;
+
   const colorIndex = useMemo(
     () => new Map((data?.colorKeys ?? []).map((key, index) => [key, index])),
     [data],
@@ -519,10 +557,8 @@ export function IntervalChartView({
       margin: { axis: 8, item: { horizontal: 4, vertical: 2 } },
       maxMinorChars: 8,
       format: {
-        minorLabels: (date: Date) =>
-          axisLabel(Math.round(date.getTime() / MS_PER_FRAME), spanFramesRef.current, false),
-        majorLabels: (date: Date) =>
-          axisLabel(Math.round(date.getTime() / MS_PER_FRAME), spanFramesRef.current, true),
+        minorLabels: (value: unknown) => formatAxisLabel(value, spanFramesRef.current, false),
+        majorLabels: (value: unknown) => formatAxisLabel(value, spanFramesRef.current, true),
       },
       tooltip: { followMouse: true, delay: 150 },
     };
@@ -540,7 +576,7 @@ export function IntervalChartView({
       timeline.destroy();
       timelineRef.current = null;
     };
-  }, []);
+  }, [chartReady]);
 
   const boundsKey = `${bounds.minFrame}:${bounds.maxFrame}`;
   const appliedBoundsRef = useRef("");
@@ -574,31 +610,12 @@ export function IntervalChartView({
     }
   }, [groups, items, bounds.minFrame, bounds.maxFrame, boundsKey]);
 
-  if (binding.lane === "" || binding.start === "") {
+  if (stateMessage !== null || data === null) {
     return (
-      <div className="analysis-view-state">
-        {config === null ? "直连视图未找到可用的泳道列与起始列" : "区间图配置未就绪"}
-      </div>
-    );
-  }
-  if (missingColumn !== undefined) {
-    return (
-      <div className="analysis-view-state analysis-view-error">
-        绑定列不在上游表中：{missingColumn}
-      </div>
-    );
-  }
-  if (startType !== "int" && startType !== "float") {
-    return (
-      <div className="analysis-view-state analysis-view-error">
-        起始列必须是数值列：{binding.start}
-      </div>
-    );
-  }
-  if (data === null || data.items.length === 0) {
-    return (
-      <div className="analysis-view-state">
-        无可渲染区间（泳道或起始列为空、或类型不符）
+      <div
+        className={`analysis-view-state${stateIsError ? " analysis-view-error" : ""}`}
+      >
+        {stateMessage ?? "无可渲染区间"}
       </div>
     );
   }

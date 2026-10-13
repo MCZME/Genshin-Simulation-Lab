@@ -9,8 +9,12 @@ import type { WorkflowNode } from "../../workflow/types";
 import {
   buildIntervalData,
   estimateIntervalFit,
+  formatAxisLabel,
   type IntervalBinding,
 } from "./intervalView";
+
+/** 1 帧对应的毫秒数（与视图内部时间基准一致）。 */
+const MS_PER_FRAME = 1000 / 60;
 
 const NO_OPTIONAL: Pick<
   IntervalBinding,
@@ -251,6 +255,24 @@ describe("区间图默认绑定", () => {
 
   it("没有数值列时无法推导绑定", () => {
     expect(defaultIntervalBinding([{ name: "lane", type: "string" }])).toBeNull();
+  });
+});
+
+describe("区间图刻度标签", () => {
+  it("同时接受 Date 与毫秒数两种回调入参", () => {
+    expect(formatAxisLabel(new Date(60 * MS_PER_FRAME), 100, false)).toBe("60");
+    expect(formatAxisLabel(60 * MS_PER_FRAME, 100, false)).toBe("60");
+  });
+
+  it("主刻度在可视跨度较大时改用秒", () => {
+    expect(formatAxisLabel(600 * MS_PER_FRAME, 1200, true)).toBe("10.0s");
+    expect(formatAxisLabel(600 * MS_PER_FRAME, 100, true)).toBe("600帧");
+  });
+
+  it("无法解析的入参返回空串而不是抛错", () => {
+    expect(formatAxisLabel(null, 100, true)).toBe("");
+    expect(formatAxisLabel(undefined, 100, false)).toBe("");
+    expect(formatAxisLabel("not-a-date", 100, false)).toBe("");
   });
 });
 

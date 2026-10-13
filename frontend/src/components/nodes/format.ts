@@ -6,6 +6,16 @@ export function formatNumber(value: number): string {
     : Number(value.toFixed(3)).toLocaleString("en-US");
 }
 
+/** 保留两位小数（尾随 0 省略）并千分位分组。 */
+export function formatNumberTwoDecimals(value: number): string {
+  return Number(value.toFixed(2)).toLocaleString("en-US");
+}
+
+/** 四舍五入取整并千分位分组。 */
+export function formatInteger(value: number): string {
+  return Math.round(value).toLocaleString("en-US");
+}
+
 export function formatPercent(value: number): string {
   return `${(value * 100).toFixed(1)}%`;
 }

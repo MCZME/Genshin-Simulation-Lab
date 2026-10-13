@@ -118,7 +118,7 @@ describe("CharacterStateSheet", () => {
     expect(screen.getByText("攻击力")).toBeDefined();
     expect(screen.getByText("1,543.9")).toBeDefined();
     expect(screen.getByText("820").className).toContain("state-sheet-attr-base");
-    expect(screen.getByText("+723.9").className).toContain("state-sheet-attr-bonus");
+    expect(screen.getByText("+724").className).toContain("state-sheet-attr-bonus");
     expect(screen.getByText("防御力")).toBeDefined();
     expect(screen.getByText("1,200")).toBeDefined();
     expect(screen.getByText("1,120").className).toContain("state-sheet-attr-base");

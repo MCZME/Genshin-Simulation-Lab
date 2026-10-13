@@ -579,13 +579,11 @@ def test_stellar_baseline_unchanged_without_terms() -> None:
 
 
 def test_unfiltered_provider_hard_fails_reaction_resolution() -> None:
-    """内容侧 provider 不自筛 formula_key 时，反应伤害结算会硬报错而非静默跳过。
+    """内容侧 provider 不自筛适用范围时，反应伤害结算会硬报错而非静默跳过。
 
-    这是「必须自筛公式」这条约束的成因：``DamageModifierIndex.collect`` 只校验
-    term 是否越出 provider 自身的 ``writes`` 声明，公式级白名单由
-    ``validate_formula_modifier_stages`` 在进入公式体之前强制执行。因此一个无条件
-    返回普通阶段的 provider（例如双冰共鸣 ``ResonanceCryoCritDamageProvider``
-    这一形态）一旦在反应伤害查询上成交，整次结算直接失败。
+    ``DamageModifierIndex.collect`` 只校验 term 是否越出 provider 自身的 ``writes``
+    声明，公式级白名单由 ``validate_formula_modifier_stages`` 在进入公式体前强制执行。
+    因此把通用公式的增伤槽写到剧变伤害上这类越界成交，会让整次结算直接失败。
     """
 
     query = _transformative_query()

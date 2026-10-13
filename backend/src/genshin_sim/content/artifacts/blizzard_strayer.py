@@ -5,7 +5,7 @@
 - 2 件套：获得 15% 冰元素伤害加成 -> ``bonus.damage.cryo``
   ``flat_add``，静态绑定穿戴者。
 - 4 件套：攻击处于冰元素影响下的敌人时，暴击率提高 20%；若敌人处于
-  冻结状态下，则暴击率额外提高 20% -> 通用公式 ``crit_rate_add`` 阶段，
+  冻结状态下，则暴击率额外提高 20% -> ``crit_rate_add`` 阶段，
   条件经装配期注入的 ``TargetElementAuraReadPort`` 查目标的冰元素影响与
   冻结状态，静态绑定穿戴者，不落 Buff。
 
@@ -18,8 +18,8 @@
   受冰影响与冻结两档暴击率。
 - 两段暴击率合并为一条 ``crit_rate_add`` term：受冰影响未冻结贡献
   0.2，冻结贡献合计 0.4。
-- ``crit_rate_add`` 只属于通用公式，必须自筛公式，越界阶段会被
-  ``validate_formula_modifier_stages`` 硬拒绝并让整次结算失败。
+- 按请求的 ``can_crit`` 自筛：``crit_rate_add`` 由通用、月曜与星烁三个公式
+  放行，不可暴击的剧变不放行。
 - 附着端口未绑定时（装配完成前）不贡献，条件不会提前生效。
 """
 
@@ -53,7 +53,6 @@ from genshin_sim.core.systems.damage import (
     DamageModifierStage,
     DamageModifierTerm,
 )
-from genshin_sim.core.systems.damage.keys import FORMULA_KEY_GENERAL
 from genshin_sim.core.systems.damage.models import DamageQuery
 from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 
@@ -167,11 +166,7 @@ def create_blizzard_strayer_four_piece_unit(
 
 
 class BlizzardStrayerCryoCritProvider:
-    """4 件套：攻击冰影响/冻结敌人的条件暴击率。
-
-    ``crit_rate_add`` 只属于通用公式；必须自筛公式，否则会在反应伤害
-    查询上被 ``validate_formula_modifier_stages`` 硬拒绝并让整次结算失败。
-    """
+    """4 件套：攻击冰影响/冻结敌人的条件暴击率。"""
 
     def __init__(
         self,
@@ -212,7 +207,7 @@ class BlizzardStrayerCryoCritProvider:
         request = query.request
         if request.source_ref != self._owner_ref:
             return ()
-        if request.formula_key is not FORMULA_KEY_GENERAL:
+        if not request.can_crit:
             return ()
         if request.target_ref.kind is not AttributeSubjectKind.TARGET:
             return ()

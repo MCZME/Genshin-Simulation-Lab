@@ -63,6 +63,7 @@ def make_damage_modifier_query(
     target_kind: AttributeSubjectKind = AttributeSubjectKind.TARGET,
     frame: int = 70,
     formula_key: str = FORMULA_KEY_GENERAL,
+    can_crit: bool = True,
 ) -> SimpleNamespace:
     """构造伤害修饰 provider 查询替身。"""
 
@@ -82,5 +83,6 @@ def make_damage_modifier_query(
             target_ref=target_ref,
             frame=frame,
             formula_key=formula_key,
+            can_crit=can_crit,
         )
     )

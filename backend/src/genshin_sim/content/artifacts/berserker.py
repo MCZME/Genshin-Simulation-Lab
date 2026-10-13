@@ -4,16 +4,16 @@
 
 - 2 件套：暴击率提高 12% -> ``stat.crit.rate`` ``flat_add``，静态绑定
   穿戴者。
-- 4 件套：生命值低于 70% 时，暴击率额外提升 24% -> 通用公式
-  ``crit_rate_add`` 阶段，条件经装配期注入的 ``HealthReadAdapter``
+- 4 件套：生命值低于 70% 时，暴击率额外提升 24% -> ``crit_rate_add``
+  阶段，条件经装配期注入的 ``HealthReadAdapter``
   读取穿戴者当前生命比值，静态绑定穿戴者，不落 Buff。
 
 行为约定：
 
 - 4 件套是「瞬时作用于一次伤害」的判定：结算时读当前生命比值，不持有
   状态、不自行计时；生命比值阈值（0.7）来自效果数值的第一段。
-- ``crit_rate_add`` 只属于通用公式，必须自筛公式，否则会在反应伤害
-  查询上被 ``validate_formula_modifier_stages`` 硬拒绝并让整次结算失败。
+- 按请求的 ``can_crit`` 自筛：``crit_rate_add`` 由通用、月曜与星烁三个公式
+  放行，不可暴击的剧变不放行。
 - 生命端口未绑定时（装配完成前）不贡献，条件不会提前生效。
 """
 
@@ -48,7 +48,6 @@ from genshin_sim.core.systems.damage import (
     DamageModifierStage,
     DamageModifierTerm,
 )
-from genshin_sim.core.systems.damage.keys import FORMULA_KEY_GENERAL
 from genshin_sim.core.systems.damage.models import DamageQuery
 from genshin_sim.core.systems.damage.resolver import DamageResolutionScope
 
@@ -213,7 +212,7 @@ class BerserkerLowHpCritProvider:
         request = query.request
         if request.source_ref != self._owner_ref:
             return ()
-        if request.formula_key is not FORMULA_KEY_GENERAL:
+        if not request.can_crit:
             return ()
         port = self._health_port
         if port is None:

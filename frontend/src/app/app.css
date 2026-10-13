@@ -5758,6 +5758,13 @@ button svg,
   border-style: solid;
 }
 
+/* 复合模式的卡顶加权求和行：替代不成立的乘法链，居中与链段对齐、字号提一级。 */
+.damage-sheet-sum {
+  justify-content: center;
+  padding: 4px 10px 2px;
+  font-size: var(--font-size-body);
+}
+
 /* 复合模式的组分选择器：选中项以强调色实线胶囊标记，其余保持虚线可点。 */
 .damage-sheet-slot--selected {
   border-style: solid;

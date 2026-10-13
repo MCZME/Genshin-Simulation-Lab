@@ -1430,7 +1430,9 @@ describe("DamageSheet", () => {
     const sumTerm = screen.getByText("5,000", { selector: ".damage-sheet-slot" });
     expect(sumTerm.getAttribute("title")).toBe("点击展开「组分 · 芭芭拉」的计算公式");
     expect(screen.getByText("× 0.6")).toBeDefined();
-    expect(screen.getByText("= 3,000", { selector: ".damage-sheet-formula-result" })).toBeDefined();
+    // 求和行在卡顶部，合计由下方结果行承载；复合模式不再渲染乘法链。
+    expect(screen.getByText("3,000", { selector: ".damage-sheet-total-value" })).toBeDefined();
+    expect(screen.queryByText("基础", { selector: ".damage-sheet-seg-label" })).toBeNull();
 
     // 默认展开排名第一的组分，避免基础区只剩一行求和看不出还有下钻内容。
     expect(sumTerm.className).toContain("damage-sheet-slot--selected");
@@ -1522,7 +1524,8 @@ describe("DamageSheet", () => {
     } as unknown as EventDetailResponse;
     render(<DamageSheet event={event} />);
     const sumTerm = screen.getByText("4,000", { selector: ".damage-sheet-slot" });
-    expect(screen.getByText("= 2,400", { selector: ".damage-sheet-formula-result" })).toBeDefined();
+    expect(screen.getByText("2,400", { selector: ".damage-sheet-total-value" })).toBeDefined();
+    expect(screen.queryByText("基础", { selector: ".damage-sheet-seg-label" })).toBeNull();
     // 默认展开排名第一的组分。
     expect(sumTerm.className).toContain("damage-sheet-slot--selected");
     // 月曜组分：等级基础值 × 反应倍率 × (1 + 基础伤害提升) × 擢升 × 抗性 = 组分伤害。

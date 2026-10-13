@@ -1068,40 +1068,29 @@ function buildZoneModel(
 }
 
 /**
- * 复合模式（月曜/星烁）的基础区公式骨架：第一行是加权求和，每个组分伤害为可点击
- * 槽位（点击下钻到该组分的计算公式）；组分的公式行与抽屉由 SegmentDetail 按当前
- * 选中项渲染。求和行右侧取摘要的 `official_damage`，调试倍率由乘法链的调试段承载。
+ * 复合模式卡顶部的加权求和行：`组分伤害 × 权重 + …`，每个组分伤害是可点击槽位。
+ *
+ * 复合伤害的乘法链不成立（顶层乘数是排名第一组分的投影，与各组分别乘算再加权
+ * 的真实口径只在组分口径一致时偶然相等），因此求和行直接替代乘法链；合计由下方
+ * 结果行承载，这里不再追加等号结果。
  */
-function buildCompositeBaseZone(
-  summary: Record<string, unknown>,
-  branches: readonly ZoneComponentBranch[],
-): ZoneDetailModel {
-  const sumTokens: FormulaToken[] = [];
+function compositeSumTokens(branches: readonly ZoneComponentBranch[]): FormulaToken[] {
+  const tokens: FormulaToken[] = [];
   for (const [index, branch] of branches.entries()) {
     if (index > 0) {
-      sumTokens.push({ kind: "text", text: " + " });
+      tokens.push({ kind: "text", text: " + " });
     }
-    sumTokens.push({
+    tokens.push({
       kind: "slot",
       slotId: branch.id,
       label: branch.componentDamage === null ? "—" : formatDamage(branch.componentDamage),
       title: `点击展开「${branch.label}」的计算公式`,
     });
     if (branch.weight !== null) {
-      sumTokens.push({ kind: "text", text: ` × ${formatNumber(branch.weight)}` });
+      tokens.push({ kind: "text", text: ` × ${formatNumber(branch.weight)}` });
     }
   }
-  const officialDamage = readNumber(summary, "official_damage");
-  if (officialDamage !== null) {
-    sumTokens.push({ kind: "result", text: ` = ${formatDamage(officialDamage)}` });
-  }
-  return {
-    title: "基础区",
-    lines: [sumTokens],
-    drawers: [],
-    note: null,
-    components: branches,
-  };
+  return tokens;
 }
 
 function buildBaseZone(
@@ -1113,10 +1102,11 @@ function buildBaseZone(
     return { title: "基础区", lines: [], drawers: [], note: "无审计数据" };
   }
   // 复合模式（月曜/星烁）的顶层账单为空，账本落在各组分审计内（决策 D-082），
-  // 顶层扁平字段只取排名第一参与者的投影，无法代表全部参与者。
+  // 顶层扁平字段只取排名第一参与者的投影，无法代表全部参与者。求和行提到卡顶部
+  // 替代乘法链，基础区只承载所选组分的公式行与抽屉。
   const branches = compositeComponentBranches(summary, resolveRef);
   if (branches.length > 0) {
-    return buildCompositeBaseZone(summary, branches);
+    return { title: "基础区", lines: [], drawers: [], note: null, components: branches };
   }
   const applied = readRecordList(audit, "applied_terms");
   const rejected = readRecordList(audit, "rejected_terms");
@@ -2076,19 +2066,17 @@ function SegmentDetail({
   summary,
   audit,
   resolveRef,
+  selectedComponent = null,
 }: {
   segmentId: ChainSegmentId;
   summary: Record<string, unknown>;
   audit: Record<string, unknown> | null;
   resolveRef: (ref: string) => string;
+  /** 复合模式下卡顶求和行选中的组分 id；由 DamageSheet 持有以供求和行联动。 */
+  selectedComponent?: string | null;
 }) {
   const model = buildZoneModel(segmentId, summary, audit, resolveRef);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
-  // 复合模式：求和行里的组分伤害是选择器，选中的组分展开公式与抽屉。
-  // 默认选中排名第一的组分，避免基础区只剩一行求和、看不出还有下钻内容。
-  const [selectedComponent, setSelectedComponent] = useState<string | null>(
-    () => model.components?.[0]?.id ?? null,
-  );
   function toggle(id: string) {
     setCollapsed((current) => {
       const next = new Set(current);
@@ -2101,37 +2089,24 @@ function SegmentDetail({
     });
   }
   const branches = model.components ?? [];
-  const isComponentSelector = (slotId: string) =>
-    branches.some((branch) => branch.id === slotId);
   const activeComponent = branches.find((branch) => branch.id === selectedComponent) ?? null;
   const drawers = activeComponent === null ? model.drawers : activeComponent.drawers;
 
   function renderFormula(line: readonly FormulaToken[], keyPrefix: string) {
     return (
-      <div className={`damage-sheet-formula${keyPrefix === "component" ? " damage-sheet-formula--component" : ""}`} key={keyPrefix}>
+      <div
+        className={`damage-sheet-formula${keyPrefix === "component" ? " damage-sheet-formula--component" : ""}`}
+        key={keyPrefix}
+      >
         {line.map((token, tokenIndex) => {
           if (token.kind === "slot") {
-            const selector = isComponentSelector(token.slotId);
-            const modifier = selector
-              ? selectedComponent === token.slotId
-                ? " damage-sheet-slot--selected"
-                : ""
-              : collapsed.has(token.slotId)
-                ? " damage-sheet-slot--collapsed"
-                : "";
             return (
               <button
                 type="button"
                 key={tokenIndex}
-                className={`damage-sheet-slot${modifier}`}
+                className={`damage-sheet-slot${collapsed.has(token.slotId) ? " damage-sheet-slot--collapsed" : ""}`}
                 title={token.title ?? "点击展开或收起该位置的修饰明细"}
-                onClick={() =>
-                  selector
-                    ? setSelectedComponent((current) =>
-                        current === token.slotId ? null : token.slotId,
-                      )
-                    : toggle(token.slotId)
-                }
+                onClick={() => toggle(token.slotId)}
               >
                 {token.label}
               </button>
@@ -2158,6 +2133,9 @@ function SegmentDetail({
       {model.title !== null && <div className="damage-sheet-zone-title">{model.title}</div>}
       {model.lines.map((line, lineIndex) => renderFormula(line, `line-${lineIndex}`))}
       {activeComponent !== null && renderFormula(activeComponent.line, "component")}
+      {model.components !== undefined && activeComponent === null && (
+        <div className="analysis-view-state">点击上方求和行的组分伤害展开该组分的计算明细</div>
+      )}
       {drawers.map((drawer) => {
         const isCollapsed = collapsed.has(drawer.id);
         return (
@@ -2222,18 +2200,59 @@ function formatOptionalNumber(value: number | null): string {
   return value === null ? "—" : formatNumber(value);
 }
 
+/** 复合模式卡顶的加权求和行；组分伤害为可点击槽位，选中项以强调色标记。 */
+function CompositeSumRow({
+  branches,
+  selected,
+  onSelect,
+}: {
+  branches: readonly ZoneComponentBranch[];
+  selected: string | null;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="damage-sheet-formula damage-sheet-sum">
+      {compositeSumTokens(branches).map((token, tokenIndex) =>
+        token.kind === "slot" ? (
+          <button
+            type="button"
+            key={tokenIndex}
+            className={`damage-sheet-slot${selected === token.slotId ? " damage-sheet-slot--selected" : ""}`}
+            title={token.title ?? "点击展开该组分的计算公式"}
+            onClick={() => onSelect(token.slotId)}
+          >
+            {token.label}
+          </button>
+        ) : (
+          <span className="damage-sheet-formula-text" key={tokenIndex}>
+            {token.text}
+          </span>
+        ),
+      )}
+    </div>
+  );
+}
+
 export function DamageSheet({ event }: { event: EventDetailResponse }) {
   const [selectedId, setSelectedId] = useState<ChainSegmentId | null>("base");
-  const damage = event.damage;
-  if (damage === null || damage === undefined) {
+  const damage = event.damage ?? null;
+  const summary = damage !== null && isRecord(damage.summary) ? damage.summary : {};
+  const audit = damage !== null && isRecord(damage.audit) ? damage.audit : null;
+  const resolveRef = (ref: string) => resolveEntityName(event, ref) ?? ref;
+  // 复合模式（月曜/星烁）的乘法链不成立，卡顶改为加权求和行；链段随之省略，
+  // 各组分各自的乘区由基础区的组分下钻承载。
+  const branches = compositeComponentBranches(summary, resolveRef);
+  const isComposite = branches.length > 0;
+  const [selectedComponent, setSelectedComponent] = useState<string | null>(
+    () => branches[0]?.id ?? null,
+  );
+  const segments = isComposite ? [] : buildChainSegments(summary);
+
+  if (damage === null) {
     return (
       <div className="analysis-view-state">该事件不是伤害事件（{event.event_type}）</div>
     );
   }
-  const summary = isRecord(damage.summary) ? damage.summary : {};
-  const audit = isRecord(damage.audit) ? damage.audit : null;
-  const segments = buildChainSegments(summary);
-  const resolveRef = (ref: string) => resolveEntityName(event, ref) ?? ref;
 
   function toggle(id: ChainSegmentId) {
     setSelectedId((current) => (current === id ? null : id));
@@ -2242,7 +2261,16 @@ export function DamageSheet({ event }: { event: EventDetailResponse }) {
   return (
     <div className="damage-sheet">
       <ContextBar event={event} summary={summary} />
-      {segments.length > 0 && (
+      {isComposite && (
+        <CompositeSumRow
+          branches={branches}
+          selected={selectedComponent}
+          onSelect={(id) =>
+            setSelectedComponent((current) => (current === id ? null : id))
+          }
+        />
+      )}
+      {!isComposite && segments.length > 0 && (
         <div className="damage-sheet-chain">
           {segments.map((segment, index) => (
             <span className="damage-sheet-step" key={segment.id}>
@@ -2275,6 +2303,7 @@ export function DamageSheet({ event }: { event: EventDetailResponse }) {
             summary={summary}
             audit={audit}
             resolveRef={resolveRef}
+            selectedComponent={selectedComponent}
           />
         )}
       </div>

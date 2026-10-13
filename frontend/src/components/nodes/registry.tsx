@@ -102,6 +102,7 @@ export function NodeEditorHost({
       return <DeriveEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "pie_config":
     case "bar_config":
+    case "interval_config":
       return <DisplayConfigEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
     case "table_config":
       return <TableConfigEditor node={node} onChange={onChange} fieldErrors={fieldErrors} />;
@@ -144,9 +145,11 @@ const NODE_CATEGORY_OF: Record<string, NodeCategory> = {
   table_config: "displayConfig",
   pie_config: "displayConfig",
   bar_config: "displayConfig",
+  interval_config: "displayConfig",
   member_table: "displayView",
   pie: "displayView",
   bar: "displayView",
+  interval: "displayView",
   single: "dataProcessing",
   frame_state: "itemDetail",
   damage_detail: "itemDetail",
@@ -213,10 +216,11 @@ export const ANALYSIS_DISPLAY_CONFIG_KINDS = [
   "table_config",
   "pie_config",
   "bar_config",
+  "interval_config",
 ] as const;
 
 /** 分析区域：展示视图节点（与单项详情节点语义不同类）。 */
-export const ANALYSIS_VIEW_KINDS = ["member_table", "pie", "bar"] as const;
+export const ANALYSIS_VIEW_KINDS = ["member_table", "pie", "bar", "interval"] as const;
 
 /** 分析区域：单项详情节点族（消费单行表，独立于展示视图）。 */
 export const ANALYSIS_DETAIL_KINDS = [

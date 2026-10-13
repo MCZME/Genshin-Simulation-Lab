@@ -1,10 +1,14 @@
 import { describe, expect, it } from "vitest";
 import {
+  DEFAULT_INTERVAL_WIDTH,
   MAX_VIEW_FIT_HEIGHT,
   MAX_VIEW_HEIGHT,
+  MIN_INTERVAL_WIDTH,
   MIN_VIEW_WIDTH,
   VIEW_SOFT_CAP_WIDTH,
   resolveBarHeight,
+  resolveIntervalHeight,
+  resolveIntervalWidth,
   resolveManualViewWidth,
   resolveViewHeight,
   resolveViewWidth,
@@ -56,5 +60,27 @@ describe("view_size 高度解析", () => {
     expect(resolveViewHeight(2000, 1200)).toBe(1200);
     expect(resolveViewHeight(900, null)).toBe(MAX_VIEW_HEIGHT);
     expect(resolveViewHeight(500, 400)).toBe(400);
+  });
+});
+
+describe("view_size 区间图尺寸解析", () => {
+  it("宽度手动：默认 560，夹持在 [400, 软上限]", () => {
+    expect(resolveIntervalWidth(undefined)).toBe(DEFAULT_INTERVAL_WIDTH);
+    expect(resolveIntervalWidth(700)).toBe(700);
+    expect(resolveIntervalWidth(200)).toBe(MIN_INTERVAL_WIDTH);
+    expect(resolveIntervalWidth(1200)).toBe(VIEW_SOFT_CAP_WIDTH);
+  });
+
+  it("高度未手动设置时按内容估算取默认值，夹持在软上限内", () => {
+    expect(resolveIntervalHeight(null, undefined)).toBe(360);
+    expect(resolveIntervalHeight(500, undefined)).toBe(500);
+    expect(resolveIntervalHeight(1200, undefined)).toBe(MAX_VIEW_HEIGHT);
+  });
+
+  it("手动高度不被内容估算夹回（时间轴在节点内纵向滚动）", () => {
+    // 内容估算只有 240 时，也必须能往下拖高。
+    expect(resolveIntervalHeight(240, 600)).toBe(600);
+    expect(resolveIntervalHeight(240, 200)).toBe(240);
+    expect(resolveIntervalHeight(null, 2000)).toBe(MAX_VIEW_FIT_HEIGHT);
   });
 });

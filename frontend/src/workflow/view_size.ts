@@ -81,6 +81,37 @@ export function resolveManualViewWidth(width: number | undefined): number {
 }
 
 /**
+ * 区间图宽度语义：手动画布几何（默认 560，夹持 400–960px）。
+ * 时间轴不随数据长度膨胀，可视帧范围由节点内缩放决定，宽度只决定像素密度。
+ */
+export const DEFAULT_INTERVAL_WIDTH = 560;
+export const MIN_INTERVAL_WIDTH = 400;
+
+export function resolveIntervalWidth(width: number | undefined): number {
+  return clamp(
+    Math.round(width ?? DEFAULT_INTERVAL_WIDTH),
+    MIN_INTERVAL_WIDTH,
+    VIEW_SOFT_CAP_WIDTH,
+  );
+}
+
+/**
+ * 区间图高度语义：手动高度在 [最小高, 内容估算上限] 内自由调节。
+ * 时间轴在节点内纵向滚动，内容少时不得把高度夹回去（与饼图同理，不做内容收缩）；
+ * 未手动设置时按「泳道数 × 最大层数」内容估算取默认值，默认夹持在软上限内。
+ */
+export function resolveIntervalHeight(
+  fitHeight: number | null,
+  manualHeight: number | undefined,
+): number {
+  if (manualHeight !== undefined) {
+    return clamp(Math.round(manualHeight), MIN_VIEW_HEIGHT, MAX_VIEW_FIT_HEIGHT);
+  }
+  const natural = fitHeight === null ? DEFAULT_VIEW_HEIGHT : fitHeight;
+  return clamp(Math.round(natural), MIN_VIEW_HEIGHT, MAX_VIEW_HEIGHT);
+}
+
+/**
  * 解析柱状图节点高度：
  * - 未保存手动高度：min(内容估算高, 高度软上限)，未测量时用默认高；
  * - 已保存手动高度：夹持在 [最小高, 内容估算高]（未测量时上限回落高度软上限）。

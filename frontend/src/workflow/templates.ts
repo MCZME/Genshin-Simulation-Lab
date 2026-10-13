@@ -352,6 +352,7 @@ export const ANALYSIS_VIEW_NODE_KINDS = new Set([
   "member_table",
   "pie",
   "bar",
+  "interval",
 ]);
 
 /** 展示配置转发节点：消费 table 并原样转发给视图，不进入查询计划。 */
@@ -359,6 +360,7 @@ export const ANALYSIS_CONFIG_NODE_KINDS = new Set([
   "table_config",
   "pie_config",
   "bar_config",
+  "interval_config",
 ]);
 
 const CATEGORY_COLUMN_TYPES = new Set(["string", "int", "float"]);
@@ -389,6 +391,24 @@ export function defaultBarBinding(
     (column) => column.name !== y && CATEGORY_COLUMN_TYPES.has(column.type),
   )?.name;
   return x === undefined ? null : { x, y, series: null };
+}
+
+/** 直连区间图视图的默认绑定：第一个字符串列做泳道，前两个数值列做起止帧。 */
+export function defaultIntervalBinding(
+  columns: { name: string; type: string }[],
+): { lane: string; start: string; end: string | null } | null {
+  const lane = columns.find((column) => column.type === "string")?.name;
+  if (lane === undefined) {
+    return null;
+  }
+  const numeric = columns
+    .filter((column) => column.type === "int" || column.type === "float")
+    .map((column) => column.name);
+  const start = numeric[0];
+  if (start === undefined) {
+    return null;
+  }
+  return { lane, start, end: numeric[1] ?? null };
 }
 
 function isAnalysisShapeNode(

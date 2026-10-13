@@ -91,7 +91,12 @@ const TABLE_NODE_KINDS = new Set([
   "compute",
   "derive",
 ]);
-const CONFIG_NODE_KINDS = new Set(["table_config", "pie_config", "bar_config"]);
+const CONFIG_NODE_KINDS = new Set([
+  "table_config",
+  "pie_config",
+  "bar_config",
+  "interval_config",
+]);
 
 /** 区域内取数节点：边界输入的直接消费者（会话组经边界注入）。 */
 export function planFetchNodes(
@@ -212,7 +217,7 @@ function collectStageNodeIds(
       ) {
         continue;
       }
-      if (target.kind === "table_config" || target.kind === "pie_config" || target.kind === "bar_config") {
+      if (CONFIG_NODE_KINDS.has(target.kind)) {
         for (const configEdge of definition.edges.filter(
           (item) => item.source_node_id === target.id,
         )) {
@@ -222,7 +227,9 @@ function collectStageNodeIds(
           if (
             configTarget !== undefined &&
             regionNodeIds.has(configTarget.id) &&
-            (configTarget.kind === "pie" || configTarget.kind === "bar")
+            (configTarget.kind === "pie" ||
+              configTarget.kind === "bar" ||
+              configTarget.kind === "interval")
           ) {
             seen.add(configTarget.id);
             queue.push(configTarget.id);
@@ -234,7 +241,8 @@ function collectStageNodeIds(
         isStageNodeKind(target.kind) &&
         (TABLE_NODE_KINDS.has(target.kind) ||
           target.kind === "pie" ||
-          target.kind === "bar")
+          target.kind === "bar" ||
+          target.kind === "interval")
       ) {
         seen.add(target.id);
         queue.push(target.id);

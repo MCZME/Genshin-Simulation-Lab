@@ -24,6 +24,15 @@ const ROLE_CONFIGS: Record<string, RoleConfig[]> = {
     { role: "y", required: true },
     { role: "series", required: false },
   ],
+  interval_config: [
+    { role: "lane", required: true },
+    { role: "start", required: true },
+    { role: "end", required: false },
+    { role: "label", required: false },
+    { role: "value", required: false },
+    { role: "color", required: false },
+    { role: "lane_order", required: false },
+  ],
 };
 
 /** 绑定角色的可读名：列名即显示名，角色标签统一用业务语义。 */
@@ -34,6 +43,11 @@ const ROLE_LABELS: Record<string, string> = {
   x: "X 轴列",
   y: "Y 轴列",
   series: "系列列",
+  lane: "泳道列",
+  start: "起始列",
+  end: "结束列",
+  color: "着色列",
+  lane_order: "泳道顺序列",
 };
 
 /** 摘要行字段短名：卡顶一行读出当前绑定，未绑定显示「—」。 */
@@ -44,6 +58,11 @@ const SUMMARY_LABELS: Record<string, string> = {
   x: "X",
   y: "Y",
   series: "系列",
+  lane: "泳道",
+  start: "起始",
+  end: "结束",
+  color: "着色",
+  lane_order: "泳道序",
 };
 
 function asStringArray(value: unknown): string[] {

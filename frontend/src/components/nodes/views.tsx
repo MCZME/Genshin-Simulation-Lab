@@ -26,6 +26,7 @@ import {
 } from "../analysis_context";
 import { useAssetNames } from "./useAssetNames";
 import { BarChartView } from "./barView";
+import { IntervalChartView } from "./intervalView";
 import { PieChartView } from "./pieView";
 import { asString } from "./common";
 import { ChevronDown, ChevronUp } from "../common/icons";
@@ -154,6 +155,29 @@ export function AnalysisViewBody({
       }
     }
   }
+  if (node.kind === "interval") {
+    const config = connectedConfigNode(definition, node.id, "interval_config");
+    if (config !== null) {
+      const lane = asString(config.params.lane) ?? "";
+      const start = asString(config.params.start) ?? "";
+      if (lane === "" || start === "") {
+        return (
+          <div className="analysis-view-state">
+            <span>区间图配置未绑定列</span>
+            {onLocateNode !== undefined && (
+              <button
+                type="button"
+                className="text-button"
+                onClick={() => onLocateNode(config.id)}
+              >
+                打开区间图配置
+              </button>
+            )}
+          </div>
+        );
+      }
+    }
+  }
   if (result === undefined || result.status === "idle") {
     return <div className="analysis-view-state">未执行（连接数据后运行工作流）</div>;
   }
@@ -236,6 +260,15 @@ function renderAnalysisTable(
           table={table}
           onFitChange={onFitChange}
           stageId={stageId}
+        />
+      );
+    case "interval":
+      return (
+        <IntervalChartView
+          node={node}
+          definition={definition}
+          table={table}
+          onFitChange={onFitChange}
         />
       );
     default:

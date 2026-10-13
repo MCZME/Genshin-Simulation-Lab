@@ -909,6 +909,10 @@ function validateBarConfig(node: WorkflowNode): Diagnostic[] {
   return validateRoleColumns(node, ["x", "y"]);
 }
 
+function validateIntervalConfig(node: WorkflowNode): Diagnostic[] {
+  return validateRoleColumns(node, ["lane", "start"]);
+}
+
 function validateView(): Diagnostic[] {
   return [];
 }
@@ -1272,6 +1276,35 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     fragment: () => null,
     validate: validateBarConfig,
   },
+  interval_config: {
+    kind: "interval_config",
+    displayName: "区间图配置",
+    region: "analysis",
+    ports: {
+      inputs: [analysisPort("in", "table", "single", 1)],
+      outputs: [analysisPort("out", "table", "single", 1)],
+    },
+    paramFields: {
+      lane: { type: "string", required: true },
+      start: { type: "string", required: true },
+      end: { type: "string" },
+      label: { type: "string" },
+      value: { type: "string" },
+      color: { type: "string" },
+      lane_order: { type: "string" },
+    },
+    defaultParams: {
+      lane: "",
+      start: "",
+      end: "",
+      label: "",
+      value: "",
+      color: "",
+      lane_order: "",
+    },
+    fragment: () => null,
+    validate: validateIntervalConfig,
+  },
   member_table: {
     kind: "member_table",
     displayName: "表格",
@@ -1305,6 +1338,20 @@ export const REGISTRY: Record<NodeKind, NodeKindSpec> = {
     ports: {
       inputs: [analysisPort("in", "table", "single", Number.POSITIVE_INFINITY)],
       outputs: [analysisPort("selection", "table")],
+    },
+    paramFields: {},
+    defaultParams: {},
+    fragment: () => null,
+    validate: validateView,
+  },
+  interval: {
+    kind: "interval",
+    displayName: "区间图",
+    region: "analysis",
+    // 一期无选择输出：只消费上游 table，不产生下游数据。
+    ports: {
+      inputs: [analysisPort("in", "table", "single", Number.POSITIVE_INFINITY)],
+      outputs: [],
     },
     paramFields: {},
     defaultParams: {},

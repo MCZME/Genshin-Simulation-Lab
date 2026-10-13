@@ -100,7 +100,7 @@ function useUpstreamTable(
 }
 
 function isViewKind(kind: string): boolean {
-  return kind === "member_table" || kind === "pie" || kind === "bar";
+  return kind === "member_table" || kind === "pie" || kind === "bar" || kind === "interval";
 }
 
 /** 表行转数据对象：列名 -> 单元格值。 */

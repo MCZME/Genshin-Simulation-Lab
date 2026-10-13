@@ -27,6 +27,8 @@ import {
   clamp,
   resolveBarHeight,
   resolveDragMaxWidth,
+  resolveIntervalHeight,
+  resolveIntervalWidth,
   resolveManualViewWidth,
   resolveTraceWidth,
   resolveViewHeight,
@@ -97,6 +99,7 @@ export function NodeCard({ data, selected }: NodeProps) {
   const isTable = node.kind === "member_table";
   const isPie = node.kind === "pie";
   const isBar = node.kind === "bar";
+  const isInterval = node.kind === "interval";
   // 伤害详情/角色状态详情卡支持手动调宽（高度随内容），其余详情节点维持固定宽度。
   const isDetailResizable = node.kind === "damage_detail" || node.kind === "attribute_detail";
   const defaultDetailWidth =
@@ -123,29 +126,33 @@ export function NodeCard({ data, selected }: NodeProps) {
       ? resolveViewWidth(fitInfo?.fitWidth ?? null, node.size?.width)
       : isPie
         ? resolveManualViewWidth(node.size?.width)
-        : isDetailResizable
-          ? clamp(
-              Math.round(node.size?.width ?? defaultDetailWidth),
-              MIN_DETAIL_WIDTH,
-              MAX_DETAIL_WIDTH,
-            )
-          : isTraceResizable
-            ? resolveTraceWidth(node.size?.width)
-            : undefined;
+        : isInterval
+          ? resolveIntervalWidth(node.size?.width)
+          : isDetailResizable
+            ? clamp(
+                Math.round(node.size?.width ?? defaultDetailWidth),
+                MIN_DETAIL_WIDTH,
+                MAX_DETAIL_WIDTH,
+              )
+            : isTraceResizable
+              ? resolveTraceWidth(node.size?.width)
+              : undefined;
   const resolvedHeight = isBar
     ? resolveBarHeight(fitInfo?.fitHeight ?? null, node.size?.height)
-    : isTable
-      ? resolveViewHeight(node.size?.height, fitInfo?.fitHeight ?? null)
-      : isView
-        ? resolveViewHeight(node.size?.height)
-        : undefined;
+    : isInterval
+      ? resolveIntervalHeight(fitInfo?.fitHeight ?? null, node.size?.height)
+      : isTable
+        ? resolveViewHeight(node.size?.height, fitInfo?.fitHeight ?? null)
+        : isView
+          ? resolveViewHeight(node.size?.height)
+          : undefined;
   const dragMaxWidth =
     isTable || isBar
       ? resolveDragMaxWidth(fitInfo?.fitWidth ?? null)
-      : isPie
+      : isPie || isInterval
         ? VIEW_SOFT_CAP_WIDTH
         : undefined;
-  const dragMaxHeight = isBar || isTable
+  const dragMaxHeight = isBar || isTable || isInterval
     ? fitInfo?.fitHeight ?? MAX_VIEW_HEIGHT
     : MAX_VIEW_HEIGHT;
   const displayWidth = previewSize?.width ?? resolvedWidth;
@@ -289,7 +296,11 @@ export function NodeCard({ data, selected }: NodeProps) {
             definition={definition}
             onLocateNode={onLocateNode}
             viewWidth={isView ? resolvedWidth : undefined}
-            onFitChange={node.kind === "member_table" ? handleFitChange : undefined}
+            onFitChange={
+              node.kind === "member_table" || node.kind === "interval"
+                ? handleFitChange
+                : undefined
+            }
           />
         ) : isAnalysisDetailKind(node.kind) ? (
           <AnalysisDetailBody node={node} definition={definition} />
@@ -414,7 +425,7 @@ export function NodeCard({ data, selected }: NodeProps) {
 }
 
 function isAnalysisView(kind: string): boolean {
-  return kind === "member_table" || kind === "pie" || kind === "bar";
+  return kind === "member_table" || kind === "pie" || kind === "bar" || kind === "interval";
 }
 
 function collectFieldErrors(

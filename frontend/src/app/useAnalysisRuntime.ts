@@ -31,7 +31,9 @@ export interface AnalysisRuntimeOptions {
 }
 
 function isAnalysisViewKind(kind: string): boolean {
-  return kind === "member_table" || kind === "pie" || kind === "bar";
+  return (
+    kind === "member_table" || kind === "pie" || kind === "bar" || kind === "interval"
+  );
 }
 
 export function useAnalysisRuntime(options: AnalysisRuntimeOptions) {

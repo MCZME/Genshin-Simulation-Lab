@@ -801,7 +801,7 @@ function warnNodesOutsideRegions(
   }
 }
 
-const ANALYSIS_VIEW_KINDS = new Set(["member_table", "pie", "bar"]);
+const ANALYSIS_VIEW_KINDS = new Set(["member_table", "pie", "bar", "interval"]);
 /** 单项详情节点：接收 table，输出为空（分析区域设计 6.4）。 */
 const ANALYSIS_DETAIL_KINDS = new Set([
   "frame_state",
@@ -817,6 +817,7 @@ const VIEW_KIND_BY_CONFIG: Record<string, string> = {
   table_config: "member_table",
   pie_config: "pie",
   bar_config: "bar",
+  interval_config: "interval",
 };
 
 /** 分析区域图级校验：算子参数、视图配置与同结构输入（依赖形状推导）。 */

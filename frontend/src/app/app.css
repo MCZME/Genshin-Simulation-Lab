@@ -3376,6 +3376,44 @@ button svg,
   display: block;
 }
 
+/* ── 区间图：着色图例与时间轴画布 ── */
+
+.analysis-interval-legend {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding-bottom: 6px;
+  font-size: var(--font-size-caption);
+}
+
+.analysis-interval-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 1px 8px;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: transparent;
+  color: var(--color-text-tertiary);
+  font-size: var(--font-size-caption);
+  cursor: pointer;
+}
+
+.analysis-interval-chip.muted {
+  opacity: 0.4;
+}
+
+.analysis-interval-swatch {
+  width: 8px;
+  height: 8px;
+  border-radius: 2px;
+}
+
+.analysis-interval-canvas {
+  min-height: 0;
+}
+
 /* ── 表格配置节点：条件列 / 数据列绑定 ── */
 
 .node-card.node-card-table-config {

@@ -48,6 +48,7 @@ from genshin_sim.content import (
     RESONANCE_GEO_RES_SHRED_BUFF_KEY,
     create_resonance_buff_definitions,
 )
+from genshin_sim.content.generic.action_link import SlotActionLinkPort
 from genshin_sim.content.hooks import HookDispatcher, build_hook_unlock_specs
 from genshin_sim.content.state_container import StatePatchIntentHandler
 from genshin_sim.content.team.mage import build_mage_roster
@@ -531,7 +532,13 @@ class RuntimeAssembler:
         context.space_runtime = space_runtime
 
         action_interpreter_registry = ActionInterpreterRegistry()
-        team_selector = TeamInterpreterSelector(TeamActionInterpreter())
+        # 切人遵循当前场上角色在进行的动作的衔接数据：端口按槽位读取角色动作表
+        # 与链状态，装配期注入队伍解释器。
+        team_selector = TeamInterpreterSelector(
+            TeamActionInterpreter(
+                action_link_port=SlotActionLinkPort(content_bundle.action_interpreters)
+            )
+        )
         for key in TEAM_INPUT_KEYS:
             action_interpreter_registry.register(key, team_selector)
         character_selector = ActiveCharacterInterpreterSelector(content_bundle.action_interpreters)

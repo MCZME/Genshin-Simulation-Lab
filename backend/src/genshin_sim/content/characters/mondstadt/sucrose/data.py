@@ -10,6 +10,7 @@ from genshin_sim.content.generic.character_actions import (
     ELEMENTAL_SKILL_INPUT,
     JUMP_INPUT,
     NORMAL_ATTACK_INPUT,
+    SWITCH_INPUT,
     GenericAbilityGate,
     GenericCharacterActionSpec,
 )
@@ -408,6 +409,7 @@ SUCROSE_ACTION_TABLE: dict[str, TimedActionSpec] = {
             ELEMENTAL_SKILL_INPUT: 56,
             ELEMENTAL_BURST_INPUT: 57,
             JUMP_INPUT: 11,
+            SWITCH_INPUT: 57,
         },
     ),
     SUCROSE_ELEMENTAL_BURST_ACTION_KEY: TimedActionSpec(
@@ -432,6 +434,7 @@ SUCROSE_ACTION_TABLE: dict[str, TimedActionSpec] = {
             CHARGED_ATTACK_INPUT: 48,
             ELEMENTAL_SKILL_INPUT: 48,
             JUMP_INPUT: 47,
+            SWITCH_INPUT: 46,
         },
     ),
     SUCROSE_JUMP_ACTION_KEY: TimedActionSpec(

@@ -3,6 +3,10 @@
 generic 部件不带键；由内容包包装时传入内容级键与参数。
 """
 
+from genshin_sim.content.generic.action_link import (
+    ActionLinkSource,
+    SlotActionLinkPort,
+)
 from genshin_sim.content.generic.chain_state import (
     CHAIN_STATE_LAST_ACTION_KEY,
     CHAIN_STATE_LAST_START_FRAME,
@@ -14,11 +18,13 @@ from genshin_sim.content.generic.character_actions import (
     ELEMENTAL_SKILL_INPUT,
     JUMP_INPUT,
     NORMAL_ATTACK_INPUT,
+    SWITCH_INPUT,
     GenericAbilityGate,
     GenericCharacterActionError,
     GenericCharacterActionInterpreter,
     GenericCharacterActionSpec,
     compile_character_actions,
+    switch_offset_frames,
 )
 from genshin_sim.content.generic.constellations import (
     ConstellationMountError,
@@ -84,6 +90,7 @@ from genshin_sim.content.generic.transitions import (
 )
 
 __all__ = [
+    "ActionLinkSource",
     "CHAIN_STATE_LAST_ACTION_KEY",
     "CHAIN_STATE_LAST_START_FRAME",
     "CHARGED_ATTACK_INPUT",
@@ -111,8 +118,10 @@ __all__ = [
     "PlungeCollisionData",
     "PlungeLandingData",
     "PlungeWeaponAttackData",
+    "SWITCH_INPUT",
     "ScalingCompileError",
     "ScalingCompiler",
+    "SlotActionLinkPort",
     "TalentFrameworkError",
     "TalentLevelResolution",
     "TalentLevelResolver",
@@ -144,5 +153,6 @@ __all__ = [
     "resolve_unlocked_constellations",
     "stacks_above",
     "stacks_at_least",
+    "switch_offset_frames",
     "windfall_parameters",
 ]

@@ -2,6 +2,7 @@
 
 from genshin_sim.core.actions.actions import (
     TEAM_SWITCH_ACTION_KEY,
+    TEAM_SWITCH_INTERRUPT_KIND,
     TEAM_SWITCH_TARGET_SLOT_PARAM,
     FallPlungeAction,
     TeamActionInterpreter,
@@ -39,6 +40,7 @@ from genshin_sim.core.actions.models import (
     ActionInterpretationResult,
     ActionInterruptPolicy,
     ActionOwnerRef,
+    ActiveActionLinkView,
     CandidateTargetRef,
     ControlActionRequest,
     InputSessionView,
@@ -48,10 +50,15 @@ from genshin_sim.core.actions.models import (
     SearchAreaSpec,
     TargetingSpec,
 )
-from genshin_sim.core.actions.protocols import Action, ActionRegistry
+from genshin_sim.core.actions.protocols import (
+    Action,
+    ActionRegistry,
+    ActiveActionLinkPort,
+)
 
 __all__ = [
     "TEAM_SWITCH_ACTION_KEY",
+    "TEAM_SWITCH_INTERRUPT_KIND",
     "TEAM_SWITCH_TARGET_SLOT_PARAM",
     "Action",
     "ActionAdmissionPolicy",
@@ -75,6 +82,8 @@ __all__ = [
     "ActionOwnerKind",
     "ActionOwnerRef",
     "ActionRegistry",
+    "ActiveActionLinkPort",
+    "ActiveActionLinkView",
     "ActiveCharacterInterpreterSelector",
     "CandidateTargetRef",
     "ControlActionRequest",

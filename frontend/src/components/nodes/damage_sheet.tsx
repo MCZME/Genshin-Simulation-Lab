@@ -2084,8 +2084,11 @@ function SegmentDetail({
 }) {
   const model = buildZoneModel(segmentId, summary, audit, resolveRef);
   const [collapsed, setCollapsed] = useState<ReadonlySet<string>>(new Set());
-  // 复合模式：求和行里的组分伤害是选择器，选中后展开该组分的公式与抽屉。
-  const [selectedComponent, setSelectedComponent] = useState<string | null>(null);
+  // 复合模式：求和行里的组分伤害是选择器，选中的组分展开公式与抽屉。
+  // 默认选中排名第一的组分，避免基础区只剩一行求和、看不出还有下钻内容。
+  const [selectedComponent, setSelectedComponent] = useState<string | null>(
+    () => model.components?.[0]?.id ?? null,
+  );
   function toggle(id: string) {
     setCollapsed((current) => {
       const next = new Set(current);
@@ -2123,7 +2126,11 @@ function SegmentDetail({
                 className={`damage-sheet-slot${modifier}`}
                 title={token.title ?? "点击展开或收起该位置的修饰明细"}
                 onClick={() =>
-                  selector ? setSelectedComponent(token.slotId) : toggle(token.slotId)
+                  selector
+                    ? setSelectedComponent((current) =>
+                        current === token.slotId ? null : token.slotId,
+                      )
+                    : toggle(token.slotId)
                 }
               >
                 {token.label}

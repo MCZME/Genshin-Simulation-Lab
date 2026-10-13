@@ -1431,11 +1431,8 @@ describe("DamageSheet", () => {
     expect(sumTerm.getAttribute("title")).toBe("点击展开「组分 · 芭芭拉」的计算公式");
     expect(screen.getByText("× 0.6")).toBeDefined();
     expect(screen.getByText("= 3,000", { selector: ".damage-sheet-formula-result" })).toBeDefined();
-    // 未点击时不展开组分公式与抽屉。
-    expect(screen.queryByTitle("点击展开或收起「星烁基础增伤」的修饰明细")).toBeNull();
 
-    fireEvent.click(sumTerm);
-    // 第二行是该组分的计算公式：基线 × (1 + 基础增伤) × 暴击 × 抗性 × (1 + 擢升) = 组分伤害。
+    // 默认展开排名第一的组分，避免基础区只剩一行求和看不出还有下钻内容。
     expect(sumTerm.className).toContain("damage-sheet-slot--selected");
     expect(screen.getByText("组分 · 芭芭拉", { selector: ".damage-sheet-formula-muted" })).toBeDefined();
     expect(
@@ -1451,6 +1448,14 @@ describe("DamageSheet", () => {
     expect(screen.getByText("星耀祝礼·唯理为光")).toBeDefined();
     // 星烁组分的擢升来自槽位三段审计（baseline 0 + Σ 0.2）。
     expect(screen.getByText("+20.0%", { selector: ".damage-sheet-drawer-total" })).toBeDefined();
+
+    // 再点已选项收起，只留求和行。
+    fireEvent.click(sumTerm);
+    expect(sumTerm.className).not.toContain("damage-sheet-slot--selected");
+    expect(screen.queryByText("星耀祝礼·唯理为光")).toBeNull();
+    expect(screen.queryByText("组分 · 芭芭拉", { selector: ".damage-sheet-formula-muted" })).toBeNull();
+    fireEvent.click(sumTerm);
+    expect(screen.getByText("组分 · 芭芭拉", { selector: ".damage-sheet-formula-muted" })).toBeDefined();
   });
 
   it("月曜复合模式按求和行下钻到组分公式与槽位抽屉", () => {
@@ -1518,8 +1523,8 @@ describe("DamageSheet", () => {
     render(<DamageSheet event={event} />);
     const sumTerm = screen.getByText("4,000", { selector: ".damage-sheet-slot" });
     expect(screen.getByText("= 2,400", { selector: ".damage-sheet-formula-result" })).toBeDefined();
-
-    fireEvent.click(sumTerm);
+    // 默认展开排名第一的组分。
+    expect(sumTerm.className).toContain("damage-sheet-slot--selected");
     // 月曜组分：等级基础值 × 反应倍率 × (1 + 基础伤害提升) × 擢升 × 抗性 = 组分伤害。
     expect(screen.getByText("1,446.9", { selector: ".damage-sheet-formula-text" })).toBeDefined();
     expect(screen.getByText("× 3", { selector: ".damage-sheet-formula-text" })).toBeDefined();

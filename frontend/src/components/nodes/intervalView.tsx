@@ -623,7 +623,7 @@ export function IntervalChartView({
   return (
     <div className="analysis-chart-view">
       {data.colorKeys.length > 0 && (
-        <div className="analysis-interval-legend">
+        <div className="analysis-interval-legend nodrag nowheel">
           {data.colorKeys.map((key) => {
             const hidden = hiddenColors.has(key);
             return (
@@ -653,7 +653,11 @@ export function IntervalChartView({
           })}
         </div>
       )}
-      <div className="analysis-chart analysis-interval-canvas" ref={containerRef} />
+      {/* nowheel/nodrag：滚轮缩放与拖拽平移交给时间轴自身，不冒泡到画布（同 traceTimeline）。 */}
+      <div
+        className="analysis-chart analysis-interval-canvas nodrag nowheel"
+        ref={containerRef}
+      />
       {table.truncated && (
         <div className="analysis-member-footer">
           <span className="analysis-member-truncated">
